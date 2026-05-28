@@ -1,6 +1,6 @@
 # Product Spec
 
-See also [Project Brief](project-brief.md), [Architecture](architecture.md), [Contracts](contracts.md), and [Kanban](kanban.md).
+See also [Project Brief](project-brief.md), [UI Flows](ui-flows.md), [UI Information Architecture](ui-information-architecture.md), [Source Strategy](source-strategy.md), [Architecture](architecture.md), [Contracts](contracts.md), and [Kanban](kanban.md).
 
 ## V1 Experience
 
@@ -59,7 +59,7 @@ Each company has a notebook tied to its canonical company identity. Notes should
 Notebook entries should support:
 
 - title
-- body
+- Markdown body
 - tags
 - source/provenance links
 - optional event date
@@ -67,7 +67,7 @@ Notebook entries should support:
 - optional quarter or reporting period
 - status for claims that should be checked later
 
-The first claim-tracking workflow should support management statements such as "the board said X should happen in the near future" and later review whether the company delivered after one or more quarters.
+The first claim-tracking workflow should support management statements such as "the board said X should happen in the near future" and later review whether the company delivered after one or more quarters. Claim review supports both a review quarter and an exact review date, with quarters emphasized in the UI.
 
 ## Sources
 
@@ -107,13 +107,23 @@ The first video AI workflow should support:
 - entering a YouTube press conference URL
 - running a transcription or transcript-like extraction job
 - reviewing transcript segments
-- selecting segments or AI-suggested claims to add to a specific company's notebook
+- selecting transcript segments, text ranges, or AI-suggested claims to add to a specific company's notebook
 - preserving the YouTube URL, timestamp range when available, provider, and created note provenance
 
 AI output must be presented as decision support. It must not contain direct buy/sell/hold recommendations.
 
+Default AI analysis mode is source-grounded. A future opinionated mode may be added behind explicit user opt-in, but it must remain source-cited and must not provide buy/sell/hold or personalized portfolio advice.
+
+## Settings, Export, And Local Data
+
+The Settings panel edits runtime settings stored in SQLite. YAML is supported as import/export/bootstrap format for non-secret settings. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
+
+App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs only and no telemetry.
+
+Export is part of normal v1 implementation. Notes should export as Markdown with metadata, and watchlists/companies/settings should export as structured JSON or YAML. Import/restore and full local backup are late-v1 items. Cloud backup/sync requires a later design discussion.
+
 ## Monetization
 
-The app should leave room for an open-core model with paid convenience features. Potential paid features include packaged builds, sync, backups, managed AI configuration, and notifications.
+The app should leave room for future monetization, but the model is undecided. Open core plus paid convenience features is one possible path, but not a committed direction. Potential paid features could include packaged builds, sync, backups, managed AI configuration, and notifications.
 
-The exact license and commercial boundary require a future ADR before public release.
+Brawler is all rights reserved for now. The exact license, monetization model, and commercial boundary require a future ADR before public release, accepting external contributions, or publishing release artifacts.

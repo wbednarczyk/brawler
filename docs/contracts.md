@@ -2,7 +2,7 @@
 
 This file defines initial contracts for the first implementation. Field names are intentionally stable enough for code scaffolding, but exact serialization may be refined with tests before the first API release.
 
-See also [Project Brief](project-brief.md), [Architecture](architecture.md), and [Product Spec](product-spec.md).
+See also [Project Brief](project-brief.md), [Architecture](architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Project Practices](project-practices.md), and [Product Spec](product-spec.md).
 
 ## Company Identity
 
@@ -112,11 +112,13 @@ Rules:
   "companyId": "company_gpw_cdr",
   "title": "Management claim about release schedule",
   "body": "Management said the next major release milestone should happen in the next two quarters.",
+  "bodyFormat": "markdown",
   "tags": ["management-guidance", "product"],
   "kind": "claim",
   "claimStatus": "open",
   "eventDate": "2026-05-28",
   "reviewAfter": "2026-Q4",
+  "reviewDate": "2026-11-30",
   "createdAt": "2026-05-28T13:20:00Z",
   "updatedAt": "2026-05-28T13:20:00Z",
   "provenance": [
@@ -150,6 +152,8 @@ Allowed claim statuses:
 Rules:
 
 - Notes belong to exactly one canonical company.
+- Note body format is Markdown in v1.
+- Claim notes may include both `reviewAfter` for quarter/period review and `reviewDate` for exact date review.
 - Notes created from feed items or transcripts must retain provenance.
 - Claim notes should support a future review period, but review automation is not required in the first implementation.
 
@@ -219,7 +223,8 @@ Rules:
 
 - Segment timestamps should be stored when the provider returns enough information.
 - The original YouTube URL must be retained.
-- Transcript text should be editable before turning it into a note.
+- Transcript segment text is immutable source output in v1.
+- Notes created from transcript segments are editable before saving.
 
 ## Transcript-To-Note Selection
 
@@ -241,6 +246,7 @@ Rules:
 Rules:
 
 - The user chooses which transcript segments become notes.
+- Selection can be implemented as whole-segment selection, text-range selection, or accepting an AI-suggested draft.
 - AI may suggest note drafts, but the user confirms before saving.
 - Saved notes must link back to transcript segments and the original video URL.
 
@@ -276,10 +282,13 @@ Allowed statuses:
   "theme": "dark",
   "accentPalette": "night-neon",
   "pollIntervalSeconds": 900,
+  "settingsSource": "sqlite",
+  "settingsImportExportFormat": "yaml",
   "aiProviders": {
     "youtubeTranscriptionProvider": "provider_gemini",
     "generalAnalysisProvider": null
-  }
+  },
+  "aiAnalysisMode": "source_grounded"
 }
 ```
 
@@ -295,6 +304,12 @@ Rules:
 - `system` may be added to the UI as a convenience, but first-run behavior still defaults to `dark` until the user changes it.
 - The initial accent palette is `night-neon`, inspired by deep navy, electric blue/cyan, pink, and purple.
 - General AI analysis has no default provider yet.
+- SQLite is the runtime source of truth for settings.
+- YAML is allowed for settings import/export/bootstrap.
+- YAML must not contain secrets.
+- API keys and provider secrets live in the OS keychain.
+- Default AI analysis mode is `source_grounded`.
+- Future `opinionated` mode requires explicit user opt-in and still cannot provide buy/sell/hold or personalized portfolio advice.
 
 ## UI-Facing Command Boundaries
 

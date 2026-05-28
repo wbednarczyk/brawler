@@ -1,6 +1,6 @@
 # Architecture
 
-See also [Project Brief](project-brief.md), [Product Spec](product-spec.md), [Contracts](contracts.md), and the accepted ADRs in [docs/adr](adr/).
+See also [Project Brief](project-brief.md), [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Engineering Workflow](engineering-workflow.md), [Project Practices](project-practices.md), [Contracts](contracts.md), and the accepted ADRs in [docs/adr](adr/).
 
 ## Chosen Stack
 
@@ -49,6 +49,10 @@ The React UI talks to Rust through typed Tauri commands. Feed, job, transcriptio
 
 SQLite stores local app state and fetched content. The initial database should be migration-managed from the first code milestone.
 
+SQLite is the runtime source of truth for non-secret settings. YAML is an import/export/bootstrap format. API keys and provider secrets live in the OS keychain.
+
+SQLite data and local logs live in the OS app data directory by default. Development builds may override the data directory through a dev-only setting or environment variable.
+
 Data must include enough provenance to audit a feed item:
 
 - source adapter ID
@@ -73,3 +77,20 @@ Gemini is preferred only for the YouTube press conference transcription workflow
 Notebook entries should be source-linked. A note can originate from manual entry, a feed item, an AI summary, a transcript segment, or a selected AI-suggested claim.
 
 Premium or hosted convenience features must be added behind explicit interfaces, not by making local-first behavior depend on cloud services.
+
+## Build And Test Posture
+
+The codebase should be easy to build in GitHub Actions. Default CI must stay fast, require no secrets, and avoid live external services.
+
+Testing should be lean and behavior-focused:
+
+- Rust unit tests for domain logic, migrations, adapters, and provider mapping.
+- Frontend component tests for critical UI workflows.
+- Fixture-based tests for source adapters and AI provider contracts.
+- A small number of smoke tests for desktop startup and command availability.
+
+## Security And Observability Posture
+
+The React frontend must call typed Tauri commands only. It must not receive API keys, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
+
+V1 uses local logs only. Telemetry and remote error reporting require a future ADR. Source and job errors surface in the Sources screen.

@@ -4,6 +4,13 @@
 
 - [Architecture](architecture.md)
 - [Product Spec](product-spec.md)
+- [UI Flows](ui-flows.md)
+- [UI Information Architecture](ui-information-architecture.md)
+- [Data Model](data-model.md)
+- [Source Strategy](source-strategy.md)
+- [Roadmap](roadmap.md)
+- [Engineering Workflow](engineering-workflow.md)
+- [Project Practices](project-practices.md)
 - [Contracts](contracts.md)
 - [Kanban](kanban.md)
 - [ADR 0001: Local-First Desktop Application](adr/0001-local-first-desktop.md)
@@ -12,6 +19,12 @@
 - [ADR 0004: Source and AI Policy](adr/0004-source-and-ai-policy.md)
 - [ADR 0005: Company Notebooks and Transcripts](adr/0005-company-notebooks-and-transcripts.md)
 - [ADR 0006: Theme and Visual Direction](adr/0006-theme-and-visual-direction.md)
+- [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md)
+- [ADR 0008: License and Project Governance](adr/0008-license-and-project-governance.md)
+- [ADR 0009: Local Config, Secrets, Data, and Observability](adr/0009-local-config-secrets-data-and-observability.md)
+- [ADR 0010: Security, Dependencies, and AI Policy](adr/0010-security-dependencies-and-ai-policy.md)
+- [ADR 0011: Export, Backup, Versioning, and Releases](adr/0011-export-backup-versioning-and-releases.md)
+- [ADR 0012: Nix Development Environment](adr/0012-nix-development-environment.md)
 
 ## Product Intent
 
@@ -52,10 +65,17 @@ Initial source priorities:
 - Notes must preserve provenance so future review can trace a claim back to a report, article, or transcript.
 - AI must explain and cite source material, not provide buy/sell recommendations.
 - Dark theme is the default UI mode, with a user-selectable light theme.
+- GitHub Actions should provide fast build and test feedback from the first scaffold.
+- GitHub Actions usage should be conservative to avoid paid usage at the start.
+- Nix is the day-1 development environment, with WSL2 Ubuntu 24.04 as the primary local dev layer.
+- Tests should be lean, behavior-focused, and fixture-backed for external integrations.
+- Secrets live in the OS keychain; YAML config is import/export/bootstrap only.
+- The app uses strict Tauri permissions and typed command boundaries from day 1.
+- Versioning starts with SemVer-style `0.x.y` releases.
 - The architecture should stay modular enough for frequent iteration.
 
 ## Monetization Direction
 
-The intended future model is open core plus paid convenience features. Examples include packaged builds, cloud sync, backups, managed AI configuration, notifications, or premium convenience integrations.
+The current GitHub repository is private. The future monetization model is undecided. Open core plus paid convenience features remains one candidate, but other approaches are still possible.
 
-The exact license is unresolved and must be decided before public release.
+Brawler is all rights reserved for now. The exact future license and monetization model must be decided before public release, accepting external contributions, or publishing release artifacts.

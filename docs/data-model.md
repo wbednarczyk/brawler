@@ -1,0 +1,364 @@
+# Data Model
+
+This document maps the UX and contracts to the first local SQLite data model. It is not a final migration file, but it should be concrete enough to guide the first schema implementation.
+
+See also [UI Information Architecture](ui-information-architecture.md), [UI Flows](ui-flows.md), [Contracts](contracts.md), and [Architecture](architecture.md).
+
+## Model Principles
+
+- SQLite is the local source of truth in v1.
+- IDs are stable application IDs, not user-visible labels.
+- Tickers are user-facing, but `qualified_ticker` is the uniqueness boundary.
+- Fetched content and notes must preserve provenance.
+- Transcript source output is immutable in v1.
+- Settings are local and must not require cloud identity.
+- Secrets live in the OS keychain, not in SQLite.
+- YAML config is import/export/bootstrap, not runtime truth.
+- Schema changes must be migration-managed from the first implementation milestone.
+
+## Core Entities
+
+### Companies
+
+Supports Companies screen, company workspace, feed matching, notebooks, and transcript ownership.
+
+Fields:
+
+- `id`
+- `exchange`
+- `ticker`
+- `qualified_ticker`
+- `display_name`
+- `isin`
+- `cik`
+- `lei`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- `qualified_ticker` is unique.
+- `ticker` alone is not unique.
+- `isin`, `cik`, and `lei` are optional.
+
+Related tables:
+
+- `company_aliases`
+- `company_source_ids`
+
+### Watchlists
+
+Supports the sidebar, Inbox filters, and first-run setup.
+
+Fields:
+
+- `id`
+- `name`
+- `description`
+- `created_at`
+- `updated_at`
+
+Join table:
+
+- `watchlist_companies`
+
+Rules:
+
+- A company can belong to multiple watchlists.
+- Watchlists are user-maintained local data.
+
+### Source Adapters
+
+Supports Sources screen and ingestion jobs.
+
+Fields:
+
+- `id`
+- `display_name`
+- `source_type`
+- `fetch_mode`
+- `enabled`
+- `default_poll_interval_seconds`
+- `last_success_at`
+- `last_error_at`
+- `last_error`
+- `created_at`
+- `updated_at`
+
+Related tables:
+
+- `source_adapter_markets`
+- `source_adapter_state`
+
+Rules:
+
+- Adapter IDs should be stable, for example `gpw-espi-ebi`.
+- Source-specific cursors or checkpoints live in adapter state.
+
+### Feed Items
+
+Supports Inbox, company Feed tab, source attribution, notes from feed, and AI analysis.
+
+Fields:
+
+- `id`
+- `type`
+- `source_adapter_id`
+- `source_name`
+- `source_url`
+- `title`
+- `summary`
+- `body_text`
+- `language`
+- `published_at`
+- `fetched_at`
+- `dedupe_key`
+- `read`
+- `saved`
+- `attribution`
+- `created_at`
+- `updated_at`
+
+Join table:
+
+- `feed_item_companies`
+
+Rules:
+
+- `dedupe_key` should be unique per source adapter.
+- `fetched_at` is required.
+- `published_at` may be null only when the source does not provide it.
+
+### Notebook Entries
+
+Supports company notebooks, cross-company Notebooks screen, claims review, and notes from feed/transcripts.
+
+Fields:
+
+- `id`
+- `company_id`
+- `title`
+- `body`
+- `body_format`
+- `kind`
+- `claim_status`
+- `event_date`
+- `review_after`
+- `review_date`
+- `created_at`
+- `updated_at`
+
+Related tables:
+
+- `notebook_entry_tags`
+- `notebook_entry_provenance`
+
+Rules:
+
+- `body_format` is `markdown` in v1.
+- Notes belong to exactly one company.
+- Claim notes may use both `review_after` and `review_date`.
+- Provenance is required for notes created from feed items, AI outputs, or transcript segments.
+
+### Transcript Jobs
+
+Supports Transcripts screen and company Transcripts tab.
+
+Fields:
+
+- `id`
+- `company_id`
+- `provider_id`
+- `source_type`
+- `source_url`
+- `status`
+- `created_at`
+- `started_at`
+- `finished_at`
+- `error`
+
+Rules:
+
+- Gemini is preferred only for YouTube transcription jobs.
+- Source URL is required.
+- Jobs emit status changes to the UI.
+
+### Transcript Segments
+
+Supports transcript review and note creation from selected conference excerpts.
+
+Fields:
+
+- `id`
+- `transcript_job_id`
+- `company_id`
+- `start_seconds`
+- `end_seconds`
+- `speaker`
+- `text`
+- `language`
+- `created_at`
+
+Rules:
+
+- Segment text is immutable source output in v1.
+- Timestamps are optional because providers may return different precision.
+- Notes created from transcript segments reference them through provenance.
+
+### AI Analysis Results
+
+Supports feed item summaries, significance labels, tags, and future provider-neutral analysis.
+
+Fields:
+
+- `id`
+- `feed_item_id`
+- `provider_id`
+- `model`
+- `summary`
+- `significance`
+- `reasoning`
+- `language`
+- `created_at`
+
+Related tables:
+
+- `ai_analysis_tags`
+- `ai_analysis_source_references`
+
+Rules:
+
+- General AI analysis has no preferred provider yet.
+- AI output must not contain buy/sell/hold recommendations.
+- Source references are required.
+
+### Jobs
+
+Supports Sources screen, background ingestion, manual refresh, and transcript processing status.
+
+Fields:
+
+- `id`
+- `type`
+- `adapter_id`
+- `transcript_job_id`
+- `status`
+- `started_at`
+- `finished_at`
+- `items_fetched`
+- `items_created`
+- `warnings_json`
+- `error`
+
+Rules:
+
+- `adapter_id` is used for source polling jobs.
+- `transcript_job_id` is used for transcript jobs when represented in the shared job list.
+- Warnings can be JSON in v1 unless they need filtering.
+
+### Settings
+
+Supports theme selection, polling defaults, local privacy choices, and provider configuration.
+
+Recommended storage:
+
+- `settings` key/value table for simple local preferences
+- optional structured JSON values for provider configuration
+
+Initial keys:
+
+- `theme`
+- `accent_palette`
+- `poll_interval_seconds`
+- `youtube_transcription_provider`
+- `general_analysis_provider`
+- `ai_analysis_mode`
+- `settings_import_export_format`
+
+Rules:
+
+- Default theme is `dark`.
+- Default accent palette is `night-neon`.
+- Default poll interval is `900`.
+- General AI provider is null until the user configures one.
+- Default AI analysis mode is `source_grounded`.
+- Runtime settings live in SQLite.
+- YAML import/export excludes secrets.
+- Provider secrets are referenced indirectly and stored in the OS keychain.
+
+## Provenance Model
+
+Notebook provenance should be flexible enough to link notes to different source types.
+
+Fields for `notebook_entry_provenance`:
+
+- `id`
+- `notebook_entry_id`
+- `source_type`
+- `source_id`
+- `source_url`
+- `label`
+- `created_at`
+
+Allowed source types:
+
+- `feed_item`
+- `transcript_segment`
+- `ai_analysis`
+- `manual`
+- `external_url`
+
+Rules:
+
+- Feed-created notes link to `feed_items`.
+- Transcript-created notes link to `transcript_segments` and retain original YouTube URL.
+- Manual notes may use `manual` provenance or no external source.
+
+## Search Inputs
+
+The first schema should leave room for search across:
+
+- company ticker and display name
+- feed item title and body text
+- notebook title and Markdown body
+- transcript segment text
+
+SQLite FTS can be added after the base schema is stable.
+
+## First Migration Scope
+
+The first migration should create:
+
+- companies
+- company_aliases
+- company_source_ids
+- watchlists
+- watchlist_companies
+- source_adapters
+- source_adapter_markets
+- source_adapter_state
+- feed_items
+- feed_item_companies
+- notebook_entries
+- notebook_entry_tags
+- notebook_entry_provenance
+- transcript_jobs
+- transcript_segments
+- ai_analysis_results
+- ai_analysis_tags
+- ai_analysis_source_references
+- jobs
+- settings
+
+## Explicitly Deferred
+
+Do not model these in v1:
+
+- portfolio positions
+- trades
+- account balances
+- billing records
+- users or organizations
+- cloud sync metadata
+- team permissions
+- cloud backup/sync metadata
