@@ -59,6 +59,9 @@ Acceptance criteria:
 - `flake.nix` and committed `flake.lock` provide the development environment.
 - `nix develop` works on WSL2 Ubuntu 24.04.
 - App build/test commands run inside `nix develop`.
+- Makefile targets run automated build/test commands through `nix develop`.
+- Windows hands-on sanity testing is supported by a documented PowerShell helper script.
+- The planned Windows-from-Linux packaged app sanity target is named `make package-windows-from-linux`.
 - Tauri app starts on the development machine.
 - React UI renders a basic investor inbox shell.
 - UI supports dark and light theme selection with dark as the default.
@@ -70,6 +73,7 @@ Acceptance criteria:
 - GitHub Actions uses the same commands as local development or thin wrappers.
 - GitHub Actions validates the Nix setup if it remains fast enough.
 - Default CI uses standard Linux runners only and avoids larger runners, scheduled jobs, and packaging builds.
+- WSL is documented as the automated test/build environment, while Windows is documented as the native hands-on GUI test environment.
 
 Docs/contracts touched: architecture, contracts.
 

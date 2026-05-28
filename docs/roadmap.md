@@ -67,6 +67,9 @@ Exit criteria:
 
 - app starts locally
 - app build/test commands work inside `nix develop`
+- Makefile exposes thin WSL/Nix wrappers for install, check, test, build, and preview commands
+- Windows hands-on sanity testing is documented and supported by a PowerShell helper script
+- WSL can trigger the planned `package-windows-from-linux` flow once the Windows cross-build spike is accepted
 - UI renders shell with primary navigation
 - dark theme is active on first run
 - theme can be changed and persists
@@ -75,6 +78,8 @@ Exit criteria:
 - default CI uses the same commands as local development or thin wrappers
 - default CI validates Nix setup if it remains fast enough
 - default CI uses standard Linux runners and avoids heavy packaging jobs
+- native Windows click-testing can be run on demand from a Windows checkout or worktree
+- packaged Windows app sanity testing direction is named `make package-windows-from-linux`
 
 ## Milestone 2: Local Domain And Storage Foundation
 
