@@ -25,6 +25,15 @@
             "rustfmt"
           ];
         };
+        rustWindowsToolchain = pkgs.rust-bin.stable.latest.default.override {
+          extensions = [
+            "clippy"
+            "rustfmt"
+          ];
+          targets = [
+            "x86_64-pc-windows-msvc"
+          ];
+        };
       in
       {
         devShells.default = pkgs.mkShell {
@@ -54,6 +63,27 @@
             echo "  npm install       # after scaffold dependency changes"
             echo "  npm run dev       # start Tauri dev app"
             echo "  npm run check     # run local frontend/Rust checks when dependencies are installed"
+          '';
+        };
+
+        devShells.windows-cross = pkgs.mkShell {
+          packages = with pkgs; [
+            cargo-xwin
+            clang
+            imagemagick
+            lld
+            llvm
+            nodejs_22
+            nsis
+            pkg-config
+            rustWindowsToolchain
+          ];
+
+          shellHook = ''
+            export RUST_BACKTRACE=1
+            export XWIN_CACHE_DIR="$PWD/.xwin-cache"
+            echo "Brawler Windows-from-Linux packaging shell"
+            echo "  npm run tauri -- build --runner cargo-xwin --target x86_64-pc-windows-msvc"
           '';
         };
       });

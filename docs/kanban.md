@@ -61,7 +61,7 @@ Acceptance criteria:
 - App build/test commands run inside `nix develop`.
 - Makefile targets run automated build/test commands through `nix develop`.
 - Windows hands-on sanity testing is supported by a documented PowerShell helper script.
-- The planned Windows-from-Linux packaged app sanity target is named `make package-windows-from-linux`.
+- The experimental Windows-from-Linux packaged app sanity target is named `make package-windows-from-linux`.
 - Tauri app starts on the development machine.
 - React UI renders a basic investor inbox shell.
 - UI supports dark and light theme selection with dark as the default.

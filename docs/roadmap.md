@@ -69,7 +69,7 @@ Exit criteria:
 - app build/test commands work inside `nix develop`
 - Makefile exposes thin WSL/Nix wrappers for install, check, test, build, and preview commands
 - Windows hands-on sanity testing is documented and supported by a PowerShell helper script
-- WSL can trigger the planned `package-windows-from-linux` flow once the Windows cross-build spike is accepted
+- WSL can trigger the experimental `package-windows-from-linux` flow during the Windows cross-build spike
 - UI renders shell with primary navigation
 - dark theme is active on first run
 - theme can be changed and persists

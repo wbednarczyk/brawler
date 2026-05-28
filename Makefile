@@ -2,6 +2,10 @@ SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
 NIX := nix develop -c
+NIX_WINDOWS := nix develop .\#windows-cross -c
+WINDOWS_TARGET := x86_64-pc-windows-msvc
+WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
+WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
 
 .PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
@@ -53,10 +57,24 @@ tauri-build:
 	$(NIX) npm run tauri -- build
 
 package-windows-from-linux:
-	@printf "package-windows-from-linux is the planned Windows cross-build target.\n"
-	@printf "It will use a dedicated Nix shell once the cargo-xwin/NSIS spike is implemented.\n"
-	@printf "Current fallback target: make windows-package, which requires Windows-native tooling.\n"
-	@exit 2
+	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	@if [ ! -f "$(WINDOWS_EXE)" ]; then \
+		printf "Expected Windows executable not found: $(WINDOWS_EXE)\n"; \
+		exit 1; \
+	fi
+	@if command -v powershell.exe >/dev/null 2>&1; then \
+		powershell.exe -ExecutionPolicy Bypass -Command '$$ErrorActionPreference = "SilentlyContinue"; Stop-Process -Name brawler; exit 0'; \
+	fi
+	@mkdir -p "$(WINDOWS_OUT_DIR)"
+	@cp -f "$(WINDOWS_EXE)" "$(WINDOWS_OUT_DIR)/brawler.exe"
+	@printf "Copied Windows executable to %s\n" "$(WINDOWS_OUT_DIR)/brawler.exe"
+	@if command -v powershell.exe >/dev/null 2>&1; then \
+		EXE_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)/brawler.exe")"; \
+		DIR_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)")"; \
+		powershell.exe -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$$EXE_WIN' -WorkingDirectory '$$DIR_WIN'" ; \
+	else \
+		printf "powershell.exe not found; copied artifact but did not launch it.\n"; \
+	fi
 
 windows-package:
 	@if ! command -v powershell.exe >/dev/null 2>&1; then \

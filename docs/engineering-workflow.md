@@ -46,7 +46,7 @@ Recommended workflow:
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.
 - From that Windows checkout, run `scripts/windows/dev.ps1` to start Tauri dev mode.
-- The preferred direction is `make package-windows-from-linux`: build the Windows executable from the Linux/WSL Nix environment, copy it to a Windows test directory, and launch it.
+- The preferred experimental direction is `make package-windows-from-linux`: build the portable Windows executable from the Linux/WSL Nix environment, copy it to a Windows test directory, and launch it.
 - `make windows-package` remains a fallback that triggers a native Windows package build, but it requires Windows Node/Rust/MSVC tooling.
 
 Do not routinely run Windows npm/Rust builds inside the same working tree used by WSL/Nix. Mixing Windows and Linux `node_modules` and Rust `target` artifacts in one tree can create slow, confusing, and noisy changes. Prefer `package-windows-from-linux` if the spike proves stable. If native Windows packaging is needed, use a separate Windows checkout/worktree.
@@ -186,7 +186,7 @@ Recommended WSL commands:
 - `make build`: build the frontend inside `nix develop`
 - `make dev`: start Tauri dev mode inside `nix develop`, only useful when Linux GUI forwarding exists
 - `make frontend-preview`: serve the frontend preview to a Windows browser; not a native Tauri test
-- `make package-windows-from-linux`: planned experimental target for building the Windows executable from Linux/WSL
+- `make package-windows-from-linux`: experimental target for building the Windows executable from Linux/WSL
 - `make windows-package`: fallback target that calls Windows PowerShell to build, copy, and run the native packaged Windows app from the default `D:\Brawler` checkout
 - `make windows-package-no-run`: fallback target that builds and copies the native packaged Windows app without launching it
 - `make windows-test-help`: print the Windows hands-on testing path
@@ -220,17 +220,19 @@ Recommended Windows commands:
 
 When using fallback `make windows-package` from WSL, `BRAWLER_WINDOWS_REPO` and `BRAWLER_WINDOWS_OUT` may use WSL-style `/mnt/c/...` paths. The Makefile converts them before invoking PowerShell.
 
-Planned Windows-from-Linux packaging target:
+Experimental Windows-from-Linux packaging target:
 
 - `package-windows-from-linux`
 
-Expected implementation direction:
+Implementation direction:
 
-- Add a dedicated Nix shell named `windows-cross`.
+- Use the dedicated Nix shell named `windows-cross`.
 - Include the Rust `x86_64-pc-windows-msvc` target, `cargo-xwin`, NSIS, LLVM/LLD, Clang, Node, npm, and Tauri CLI prerequisites.
-- Run the Tauri build from Linux with a Windows target.
-- Copy the resulting executable to `D:\Brawler\Builds\latest`.
+- Run the Tauri build from Linux with a Windows target and `--no-bundle`.
+- Copy the resulting portable executable to `D:\Brawler\Builds\latest`.
+- Stop an already-running copied `brawler.exe` before replacing it.
 - Launch the copied executable through `powershell.exe`.
+- Treat Windows installer generation as a later target; the first Windows-from-Linux loop validates the runnable `.exe`.
 
 ## Lean Testing Strategy
 

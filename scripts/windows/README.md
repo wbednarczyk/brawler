@@ -21,13 +21,13 @@ Optional flags:
 
 ## Packaged App Sanity Test
 
-The preferred future direction is to build the Windows executable from Linux/WSL:
+The preferred experimental direction is to build the Windows executable from Linux/WSL:
 
 ```bash
 make package-windows-from-linux
 ```
 
-That target is reserved for the planned cross-build spike. It should build the Windows executable from the Linux/Nix toolchain, copy it to the output directory, and launch the copied executable by default.
+That target builds the portable Windows executable from the Linux/Nix toolchain, copies it to the output directory, and launches the copied executable by default. Installer generation is intentionally separate and deferred.
 
 The scripts in this directory are the fallback native-Windows path. They require Windows Node/Rust/MSVC tooling.
 
