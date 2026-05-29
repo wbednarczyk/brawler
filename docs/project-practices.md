@@ -69,6 +69,19 @@ Rules:
 - Review licenses before adding runtime dependencies.
 - Mention meaningful dependency additions in PR or commit descriptions.
 
+## UX Quality
+
+Intuitive UX and responsive UI are first-class project requirements, not polish to add at the end.
+
+Rules:
+
+- Prefer workflows that make the likely next action obvious.
+- Mutating actions should provide quick visual feedback.
+- Buttons and controls should communicate intent through position, label, icon, color, and state.
+- Dense investor workflows must remain scannable and keyboard/mouse efficient.
+- Temporary UX shortcuts are allowed during early scaffolding, but known UX debt should be recorded in docs or Kanban.
+- Responsiveness is part of correctness: common actions should feel immediate even when background work is pending.
+
 ## Security Baseline
 
 Brawler uses a strict Tauri/security baseline from day 1.

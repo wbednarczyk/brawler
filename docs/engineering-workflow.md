@@ -28,6 +28,29 @@ Rules:
 - CI may run on Linux for cost and speed, but it should validate the same code paths as local commands where practical.
 - Environment differences must be explicit, for example `CI=true` or a documented test database path.
 
+## WSL And Windows Runtime Split
+
+The primary development layer is WSL2 Ubuntu 24.04 with Nix. The primary hands-on runtime target is Windows 11.
+
+This creates an intentional split:
+
+- WSL/Nix is the canonical environment for automated checks, frontend builds, Rust tests, contract tests, and CI-equivalent validation.
+- Windows is the canonical environment for clickable desktop sanity testing, native Tauri window behavior, OS integration, file dialogs, keychain behavior, packaging checks, and subjective UX review.
+
+The project must not assume that the developer has a Linux GUI inside WSL. A Tauri build produced from WSL is a Linux application, not a Windows executable.
+
+Recommended workflow:
+
+- Run `make check` in WSL before pushing or opening a pull request.
+- Run `make build` in WSL when validating frontend production output.
+- Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
+- Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.
+- From that Windows checkout, run `scripts/windows/dev.ps1` to start Tauri dev mode.
+- The preferred experimental direction is `make package-windows-from-linux`: build the portable Windows executable from the Linux/WSL Nix environment, copy it to a Windows test directory, and launch it.
+- `make windows-package` remains a fallback that triggers a native Windows package build, but it requires Windows Node/Rust/MSVC tooling.
+
+Do not routinely run Windows npm/Rust builds inside the same working tree used by WSL/Nix. Mixing Windows and Linux `node_modules` and Rust `target` artifacts in one tree can create slow, confusing, and noisy changes. Prefer `package-windows-from-linux` if the spike proves stable. If native Windows packaging is needed, use a separate Windows checkout/worktree.
+
 ## Nix Development Environment
 
 Brawler uses Nix from the first scaffold.
@@ -62,6 +85,7 @@ Optional later flake outputs:
 - `checks` for local/CI test entrypoints
 - `packages` for app packaging experiments
 - `devShells` split by purpose if the default shell becomes too heavy
+- `devShells.windows-cross` for the experimental Windows-from-Linux packaging toolchain
 
 GitHub Actions relationship:
 
@@ -152,7 +176,22 @@ Open decision for the project owner:
 
 Once the scaffold exists, the repo should expose a small set of predictable commands.
 
-Recommended commands:
+The Makefile is the preferred local command surface from WSL. Targets must remain thin wrappers around documented project commands.
+
+Recommended WSL commands:
+
+- `make install`: install npm dependencies inside `nix develop`
+- `make check`: run the full local automated check suite inside `nix develop`
+- `make test`: run frontend tests inside `nix develop`
+- `make build`: build the frontend inside `nix develop`
+- `make dev`: start Tauri dev mode inside `nix develop`, only useful when Linux GUI forwarding exists
+- `make frontend-preview`: serve the frontend preview to a Windows browser; not a native Tauri test
+- `make package-windows-from-linux`: experimental target for building the Windows executable from Linux/WSL
+- `make windows-package`: fallback target that calls Windows PowerShell to build, copy, and run the native packaged Windows app from the default `D:\Brawler` checkout
+- `make windows-package-no-run`: fallback target that builds and copies the native packaged Windows app without launching it
+- `make windows-test-help`: print the Windows hands-on testing path
+
+Underlying commands:
 
 - `npm run dev`: start the Tauri app in development mode
 - `npm run build`: build the frontend
@@ -162,9 +201,38 @@ Recommended commands:
 - `cargo clippy`: run Rust lints
 - `cargo fmt --check`: check Rust formatting
 
-If command wrappers are added later, they should call these underlying tools rather than hide them.
-
 GitHub Actions must use these same commands or thin wrappers around them.
+
+Recommended Windows commands:
+
+- `powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1`: start native Tauri dev mode from a Windows checkout
+- `powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1 -Check`: run checks before native dev mode
+- `powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1 -Build`: create a native Windows Tauri build
+- `powershell -ExecutionPolicy Bypass -File scripts/windows/package.ps1`: build, copy, and launch the packaged Windows executable
+
+`scripts/windows/package.ps1` accepts:
+
+- `-WindowsRepo`: native Windows checkout path; defaults to `BRAWLER_WINDOWS_REPO` or `D:\Brawler`
+- `-OutputDir`: copied artifact directory; defaults to `BRAWLER_WINDOWS_OUT` or `D:\Brawler\Builds\latest`
+- `-NoRun`: copy the executable without launching it
+- `-OpenOutput`: open the artifact directory in Explorer
+- `-SkipInstall`: skip `npm ci`
+
+When using fallback `make windows-package` from WSL, `BRAWLER_WINDOWS_REPO` and `BRAWLER_WINDOWS_OUT` may use WSL-style `/mnt/c/...` paths. The Makefile converts them before invoking PowerShell.
+
+Experimental Windows-from-Linux packaging target:
+
+- `package-windows-from-linux`
+
+Implementation direction:
+
+- Use the dedicated Nix shell named `windows-cross`.
+- Include the Rust `x86_64-pc-windows-msvc` target, `cargo-xwin`, NSIS, LLVM/LLD, Clang, Node, npm, and Tauri CLI prerequisites.
+- Run the Tauri build from Linux with a Windows target and `--no-bundle`.
+- Copy the resulting portable executable to `D:\Brawler\Builds\latest`.
+- Stop an already-running copied `brawler.exe` before replacing it.
+- Launch the copied executable through `powershell.exe`.
+- Treat Windows installer generation as a later target; the first Windows-from-Linux loop validates the runnable `.exe`.
 
 ## Lean Testing Strategy
 
@@ -261,7 +329,7 @@ Initial `ci.yml` should prefer parallel jobs:
 Later jobs:
 
 - `tauri-smoke`
-- `windows-package`
+- `package-windows-from-linux`
 - `release`
 
 Packaging jobs can be slower. The default PR feedback loop should stay quick.

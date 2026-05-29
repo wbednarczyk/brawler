@@ -32,6 +32,35 @@ Rules:
 - `isin`, `cik`, and `lei` are optional.
 - Source adapters may attach source-specific IDs without changing the canonical identity.
 
+## Watchlist Membership
+
+Watchlists group canonical company identities for filtering and later ingestion scope.
+
+```json
+{
+  "id": "watchlist_main_gpw",
+  "name": "Main GPW",
+  "description": null,
+  "companyCount": 12
+}
+```
+
+Membership mutation input:
+
+```json
+{
+  "watchlistId": "watchlist_main_gpw",
+  "companyId": "company_gpw_cdr"
+}
+```
+
+Rules:
+
+- Assigning a company to the same watchlist more than once is harmless.
+- Removing a company from a watchlist must not delete the company.
+- Deleting a company removes its watchlist memberships through local referential integrity.
+- UI-facing read models may list watchlist memberships separately from company identity so company identity remains canonical and watchlist-specific views stay explicit.
+
 ## Source Adapter
 
 Each source adapter must expose metadata and a fetch operation.
@@ -43,7 +72,11 @@ Each source adapter must expose metadata and a fetch operation.
   "sourceType": "official_report",
   "supportedMarkets": ["GPW"],
   "fetchMode": "public_page",
-  "defaultPollIntervalSeconds": 900
+  "enabled": true,
+  "defaultPollIntervalSeconds": 900,
+  "lastSuccessAt": null,
+  "lastErrorAt": null,
+  "lastError": null
 }
 ```
 
@@ -73,6 +106,7 @@ Rules:
 - Adapters must preserve source URLs and attribution.
 - Adapters must declare and respect source-specific rate limits.
 - Restricted scraping is not allowed without a source-specific ADR.
+- The Sources screen reads adapter status from local SQLite before real fetching exists.
 
 ## Feed Item
 
@@ -90,6 +124,7 @@ Rules:
   "publishedAt": "2026-05-28T12:04:52Z",
   "fetchedAt": "2026-05-28T12:15:00Z",
   "companies": ["company_gpw_cdr"],
+  "displayCompany": "GPW:CDR",
   "dedupeKey": "gpw-espi-ebi:report:example",
   "read": false,
   "saved": false,
@@ -102,7 +137,24 @@ Rules:
 - `publishedAt` may be null only when the source does not provide it.
 - `fetchedAt` is always required.
 - `dedupeKey` must be stable for the same source item.
+- `displayCompany` is allowed in UI-facing read models so the Inbox can show a ticker label even before a full canonical company relationship is available. Canonical storage still uses `companies`/`feed_item_companies`.
+- `read` and `saved` are user state and must persist locally.
 - Original source text should be retained when legally and technically allowed.
+
+UI-facing state mutation input:
+
+```json
+{
+  "id": "feed_01",
+  "read": true,
+  "saved": true
+}
+```
+
+Rules:
+
+- `read` and `saved` are independently optional for partial state updates.
+- Updating read/saved state must not alter source attribution, timestamps, matched companies, or dedupe identity.
 
 ## Notebook Entry
 
@@ -306,6 +358,7 @@ Rules:
 - General AI analysis has no default provider yet.
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.
+- YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.
 - YAML must not contain secrets.
 - API keys and provider secrets live in the OS keychain.
 - Default AI analysis mode is `source_grounded`.

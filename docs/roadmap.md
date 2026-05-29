@@ -67,6 +67,9 @@ Exit criteria:
 
 - app starts locally
 - app build/test commands work inside `nix develop`
+- Makefile exposes thin WSL/Nix wrappers for install, check, test, build, and preview commands
+- Windows hands-on sanity testing is documented and supported by a PowerShell helper script
+- WSL can trigger the experimental `package-windows-from-linux` flow during the Windows cross-build spike
 - UI renders shell with primary navigation
 - dark theme is active on first run
 - theme can be changed and persists
@@ -75,10 +78,19 @@ Exit criteria:
 - default CI uses the same commands as local development or thin wrappers
 - default CI validates Nix setup if it remains fast enough
 - default CI uses standard Linux runners and avoids heavy packaging jobs
+- native Windows click-testing can be run on demand from a Windows checkout or worktree
+- packaged Windows app sanity testing direction is named `make package-windows-from-linux`
 
 ## Milestone 2: Local Domain And Storage Foundation
 
 Goal: implement the local persistence layer and core domain modules without external source dependencies.
+
+Status: complete.
+
+Notes:
+
+- YAML settings import/export/bootstrap is contract-accepted and implementation-deferred to later export/import/backup work.
+- Some early Milestone 3 UI pieces were built during Milestone 2, but Milestone 2 closure is based on local storage, settings, fixture feed, and command-boundary completion.
 
 Included:
 
@@ -88,7 +100,7 @@ Included:
 - companies
 - watchlists
 - settings
-- YAML settings import/export/bootstrap contract
+- YAML settings import/export/bootstrap contract, with implementation deferred to later export/import/backup work
 - seed or fixture feed items
 - Tauri commands for companies, watchlists, settings, and fixture feed
 
@@ -100,10 +112,15 @@ Exit criteria:
 - fixture feed can be shown in Inbox
 - migration tests exist
 - migration check runs in CI
+- runtime settings can be read and updated through Tauri commands
+- theme persistence uses SQLite as the runtime source of truth
+- YAML settings import/export/bootstrap is explicitly deferred with a follow-up card
 
 ## Milestone 3: Inbox And Company Workspace
 
 Goal: make the primary non-AI research workflow usable with local/fixture data.
+
+Status: next active milestone.
 
 Included:
 
@@ -229,7 +246,28 @@ Exit criteria:
 - AI results preserve source references
 - tests cover contract mapping
 
-## Milestone 9: V1 Packaging Candidate
+## Milestone 9: Keyboard Shortcuts And Workflow Polish
+
+Goal: make repeated desktop use faster without making shortcuts the only way to operate the app.
+
+Included:
+
+- app-wide shortcut map
+- discoverable shortcut reference in Settings or Help/About
+- Inbox shortcuts for navigation, read/unread, save/unsave, opening source, search focus, and refresh
+- Company/notebook shortcuts where they reduce repeated work
+- conflict checks with native Windows/browser text-editing shortcuts
+- tests for critical shortcut workflows
+
+Exit criteria:
+
+- common daily inbox actions can be performed from the keyboard
+- shortcuts are visible/discoverable in the app
+- every shortcut action remains available through visible UI controls
+- text inputs and editors do not accidentally trigger global shortcuts
+- workflow tests cover the most important shortcuts
+
+## Milestone 10: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -252,6 +290,32 @@ Exit criteria:
 - packaging workflow can be run from GitHub
 - packaging workflow is manually triggered unless release automation is explicitly approved
 - known limitations are documented
+
+## Future Exploration: Terminal Interface
+
+Goal: explore a keyboard-first terminal version after the desktop v1 foundations are stable.
+
+Intent:
+
+- provide a dense TUI experience loosely inspired by `k9s`
+- reuse the same local domain/storage contracts as the desktop app
+- use the night-neon visual identity in terminal-safe colors
+- support fast feed, watchlist, company, and notebook navigation
+- make optional synthwave-style background music an explicit opt-in experiment
+
+Not in scope for v1.
+
+## Future Exploration: Mobile And Sync
+
+Goal: explore mobile clients and cross-device sync after local-first desktop workflows are proven.
+
+Intent:
+
+- provide access to watchlists, inbox, notes, claims, and transcripts on mobile devices
+- preserve offline-first behavior where practical
+- design sync, encryption, conflict resolution, account model, and privacy guarantees before implementation
+
+Not in scope for v1. Cloud backup/sync remains a separate design discussion.
 
 ## Future: Cloud Backup And Sync
 

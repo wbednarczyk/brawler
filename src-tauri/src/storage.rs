@@ -1,0 +1,1488 @@
+use std::path::Path;
+use std::sync::Mutex;
+
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("sqlite error: {0}")]
+    Sqlite(#[from] rusqlite::Error),
+    #[error("invalid setting value for {key}: {value}")]
+    InvalidSettingValue { key: &'static str, value: String },
+}
+
+pub type StorageResult<T> = Result<T, StorageError>;
+
+pub struct AppState {
+    connection: Mutex<Connection>,
+}
+
+impl AppState {
+    pub fn new(connection: Connection) -> Self {
+        Self {
+            connection: Mutex::new(connection),
+        }
+    }
+
+    pub fn database_status(&self) -> StorageResult<DatabaseStatus> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        database_status(&connection)
+    }
+
+    pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_companies(&connection)
+    }
+
+    pub fn create_company(&self, input: NewCompany) -> StorageResult<Company> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_company(&connection, input)
+    }
+
+    pub fn lookup_company(
+        &self,
+        input: CompanyLookupInput,
+    ) -> StorageResult<Option<CompanyLookupResult>> {
+        Ok(lookup_company(input))
+    }
+
+    pub fn delete_company(&self, company_id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        delete_company(&connection, company_id)
+    }
+
+    pub fn list_watchlists(&self) -> StorageResult<Vec<Watchlist>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_watchlists(&connection)
+    }
+
+    pub fn list_watchlist_memberships(&self) -> StorageResult<Vec<WatchlistMembership>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_watchlist_memberships(&connection)
+    }
+
+    pub fn create_watchlist(&self, input: NewWatchlist) -> StorageResult<Watchlist> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_watchlist(&connection, input)
+    }
+
+    pub fn add_company_to_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        add_company_to_watchlist(&connection, input)
+    }
+
+    pub fn remove_company_from_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        remove_company_from_watchlist(&connection, input)
+    }
+
+    pub fn list_feed_items(&self) -> StorageResult<Vec<FeedItem>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_feed_items(&connection)
+    }
+
+    pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        update_feed_item_state(&connection, input)
+    }
+
+    pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_source_adapters(&connection)
+    }
+
+    pub fn get_settings(&self) -> StorageResult<UserSettings> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        get_settings(&connection)
+    }
+
+    pub fn update_settings(&self, input: SettingsUpdate) -> StorageResult<UserSettings> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        update_settings(&connection, input)
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DatabaseStatus {
+    pub applied_migrations: i64,
+    pub companies: i64,
+    pub source_adapters: i64,
+    pub settings: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Company {
+    pub id: String,
+    pub exchange: String,
+    pub ticker: String,
+    pub qualified_ticker: String,
+    pub display_name: String,
+    pub isin: Option<String>,
+    pub cik: Option<String>,
+    pub lei: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewCompany {
+    pub exchange: String,
+    pub ticker: String,
+    pub display_name: String,
+    pub isin: Option<String>,
+    pub cik: Option<String>,
+    pub lei: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Watchlist {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub company_count: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchlistMembership {
+    pub watchlist_id: String,
+    pub watchlist_name: String,
+    pub company_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewWatchlist {
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatchlistCompanyInput {
+    pub watchlist_id: String,
+    pub company_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedItem {
+    pub id: String,
+    pub company: String,
+    #[serde(rename = "type")]
+    pub item_type: String,
+    pub source: String,
+    pub time: String,
+    pub title: String,
+    pub unread: bool,
+    pub saved: bool,
+    pub source_url: String,
+    pub language: String,
+    pub published_at: String,
+    pub fetched_at: String,
+    pub attribution: String,
+    pub summary: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedItemStateInput {
+    pub id: String,
+    pub read: Option<bool>,
+    pub saved: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceAdapter {
+    pub id: String,
+    pub display_name: String,
+    pub source_type: String,
+    pub fetch_mode: String,
+    pub enabled: bool,
+    pub default_poll_interval_seconds: i64,
+    pub last_success_at: Option<String>,
+    pub last_error_at: Option<String>,
+    pub last_error: Option<String>,
+    pub markets: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProviderSettings {
+    pub youtube_transcription_provider: String,
+    pub general_analysis_provider: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSettings {
+    pub theme: String,
+    pub accent_palette: String,
+    pub poll_interval_seconds: i64,
+    pub settings_source: &'static str,
+    pub settings_import_export_format: String,
+    pub yaml_import_export_status: &'static str,
+    pub ai_providers: AiProviderSettings,
+    pub ai_analysis_mode: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SettingsUpdate {
+    pub theme: Option<String>,
+    pub poll_interval_seconds: Option<i64>,
+    pub youtube_transcription_provider: Option<String>,
+    pub general_analysis_provider: Option<String>,
+    pub ai_analysis_mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyLookupInput {
+    pub exchange: String,
+    pub ticker: Option<String>,
+    pub display_name: Option<String>,
+    pub isin: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone, Copy)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyLookupResult {
+    pub exchange: &'static str,
+    pub ticker: &'static str,
+    pub qualified_ticker: &'static str,
+    pub display_name: &'static str,
+    pub isin: &'static str,
+    pub source: &'static str,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct CompanyFixture {
+    exchange: &'static str,
+    ticker: &'static str,
+    qualified_ticker: &'static str,
+    display_name: &'static str,
+    isin: &'static str,
+}
+
+const COMPANY_FIXTURES: &[CompanyFixture] = &[
+    CompanyFixture {
+        exchange: "GPW",
+        ticker: "CDR",
+        qualified_ticker: "GPW:CDR",
+        display_name: "CD PROJEKT S.A.",
+        isin: "PLOPTTC00011",
+    },
+    CompanyFixture {
+        exchange: "GPW",
+        ticker: "PKN",
+        qualified_ticker: "GPW:PKN",
+        display_name: "ORLEN S.A.",
+        isin: "PLPKN0000018",
+    },
+    CompanyFixture {
+        exchange: "GPW",
+        ticker: "KGH",
+        qualified_ticker: "GPW:KGH",
+        display_name: "KGHM POLSKA MIEDZ S.A.",
+        isin: "PLKGHM000017",
+    },
+    CompanyFixture {
+        exchange: "GPW",
+        ticker: "PZU",
+        qualified_ticker: "GPW:PZU",
+        display_name: "PZU S.A.",
+        isin: "PLPZU0000011",
+    },
+];
+
+#[derive(Debug, Clone, Copy)]
+struct Migration {
+    version: i64,
+    name: &'static str,
+    sql: &'static str,
+}
+
+const MIGRATIONS: &[Migration] = &[
+    Migration {
+        version: 1,
+        name: "initial_schema",
+        sql: include_str!("../migrations/0001_initial.sql"),
+    },
+    Migration {
+        version: 2,
+        name: "feed_item_display_company",
+        sql: include_str!("../migrations/0002_feed_item_display_company.sql"),
+    },
+];
+
+pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
+    let mut connection = Connection::open(path)?;
+    apply_migrations(&mut connection)?;
+    Ok(connection)
+}
+
+pub fn open_in_memory_database() -> StorageResult<Connection> {
+    let mut connection = Connection::open_in_memory()?;
+    apply_migrations(&mut connection)?;
+    Ok(connection)
+}
+
+fn database_status(connection: &Connection) -> StorageResult<DatabaseStatus> {
+    Ok(DatabaseStatus {
+        applied_migrations: count_rows(connection, "schema_migrations")?,
+        companies: count_rows(connection, "companies")?,
+        source_adapters: count_rows(connection, "source_adapters")?,
+        settings: count_rows(connection, "settings")?,
+    })
+}
+
+fn list_companies(connection: &Connection) -> StorageResult<Vec<Company>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id, exchange, ticker, qualified_ticker, display_name, isin, cik, lei
+        FROM companies
+        ORDER BY exchange, ticker
+        ",
+    )?;
+
+    let rows = statement.query_map([], |row| {
+        Ok(Company {
+            id: row.get(0)?,
+            exchange: row.get(1)?,
+            ticker: row.get(2)?,
+            qualified_ticker: row.get(3)?,
+            display_name: row.get(4)?,
+            isin: row.get(5)?,
+            cik: row.get(6)?,
+            lei: row.get(7)?,
+        })
+    })?;
+
+    let companies = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(companies)
+}
+
+fn create_company(connection: &Connection, input: NewCompany) -> StorageResult<Company> {
+    let exchange = input.exchange.trim().to_uppercase();
+    let ticker = input.ticker.trim().to_uppercase();
+    let display_name = input.display_name.trim().to_owned();
+    let qualified_ticker = format!("{exchange}:{ticker}");
+    let id = company_id(&exchange, &ticker);
+
+    connection.execute(
+        "
+        INSERT INTO companies (
+            id,
+            exchange,
+            ticker,
+            qualified_ticker,
+            display_name,
+            isin,
+            cik,
+            lei
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        ",
+        params![
+            id,
+            exchange,
+            ticker,
+            qualified_ticker,
+            display_name,
+            empty_string_to_none(input.isin),
+            empty_string_to_none(input.cik),
+            empty_string_to_none(input.lei),
+        ],
+    )?;
+
+    connection
+        .query_row(
+            "
+        SELECT id, exchange, ticker, qualified_ticker, display_name, isin, cik, lei
+        FROM companies
+        WHERE id = ?1
+        ",
+            [id],
+            |row| {
+                Ok(Company {
+                    id: row.get(0)?,
+                    exchange: row.get(1)?,
+                    ticker: row.get(2)?,
+                    qualified_ticker: row.get(3)?,
+                    display_name: row.get(4)?,
+                    isin: row.get(5)?,
+                    cik: row.get(6)?,
+                    lei: row.get(7)?,
+                })
+            },
+        )
+        .map_err(StorageError::from)
+}
+
+fn lookup_company(input: CompanyLookupInput) -> Option<CompanyLookupResult> {
+    let exchange = input.exchange.trim().to_uppercase();
+    let ticker = input.ticker.as_deref().map(normalize_lookup_value);
+    let isin = input.isin.as_deref().map(normalize_lookup_value);
+    let display_name = input.display_name.as_deref().map(normalize_name_lookup);
+
+    COMPANY_FIXTURES
+        .iter()
+        .find(|fixture| {
+            if fixture.exchange != exchange {
+                return false;
+            }
+
+            if let Some(ticker) = ticker.as_deref().filter(|value| !value.is_empty()) {
+                return fixture.ticker == ticker;
+            }
+
+            if let Some(isin) = isin.as_deref().filter(|value| !value.is_empty()) {
+                return fixture.isin == isin;
+            }
+
+            if let Some(display_name) = display_name.as_deref().filter(|value| value.len() >= 3) {
+                return normalize_name_lookup(fixture.display_name).contains(display_name);
+            }
+
+            false
+        })
+        .map(|fixture| CompanyLookupResult {
+            exchange: fixture.exchange,
+            ticker: fixture.ticker,
+            qualified_ticker: fixture.qualified_ticker,
+            display_name: fixture.display_name,
+            isin: fixture.isin,
+            source: "local_fixture",
+        })
+}
+
+fn delete_company(connection: &Connection, company_id: &str) -> StorageResult<()> {
+    connection.execute("DELETE FROM companies WHERE id = ?1", [company_id])?;
+
+    Ok(())
+}
+
+fn list_watchlists(connection: &Connection) -> StorageResult<Vec<Watchlist>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            watchlists.id,
+            watchlists.name,
+            watchlists.description,
+            COUNT(watchlist_companies.company_id) AS company_count
+        FROM watchlists
+        LEFT JOIN watchlist_companies
+            ON watchlist_companies.watchlist_id = watchlists.id
+        GROUP BY watchlists.id, watchlists.name, watchlists.description
+        ORDER BY watchlists.name
+        ",
+    )?;
+
+    let rows = statement.query_map([], |row| {
+        Ok(Watchlist {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+            company_count: row.get(3)?,
+        })
+    })?;
+
+    let watchlists = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(watchlists)
+}
+
+fn list_watchlist_memberships(connection: &Connection) -> StorageResult<Vec<WatchlistMembership>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            watchlists.id,
+            watchlists.name,
+            watchlist_companies.company_id
+        FROM watchlist_companies
+        INNER JOIN watchlists
+            ON watchlists.id = watchlist_companies.watchlist_id
+        ORDER BY watchlists.name, watchlist_companies.company_id
+        ",
+    )?;
+
+    let rows = statement.query_map([], |row| {
+        Ok(WatchlistMembership {
+            watchlist_id: row.get(0)?,
+            watchlist_name: row.get(1)?,
+            company_id: row.get(2)?,
+        })
+    })?;
+
+    let memberships = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(memberships)
+}
+
+fn create_watchlist(connection: &Connection, input: NewWatchlist) -> StorageResult<Watchlist> {
+    let name = input.name.trim().to_owned();
+    let id = watchlist_id(&name);
+    let description = empty_string_to_none(input.description);
+
+    connection.execute(
+        "
+        INSERT INTO watchlists (id, name, description)
+        VALUES (?1, ?2, ?3)
+        ",
+        params![id, name, description],
+    )?;
+
+    connection
+        .query_row(
+            "
+            SELECT id, name, description, 0 AS company_count
+            FROM watchlists
+            WHERE id = ?1
+            ",
+            [id],
+            |row| {
+                Ok(Watchlist {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    description: row.get(2)?,
+                    company_count: row.get(3)?,
+                })
+            },
+        )
+        .map_err(StorageError::from)
+}
+
+fn add_company_to_watchlist(
+    connection: &Connection,
+    input: WatchlistCompanyInput,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        INSERT OR IGNORE INTO watchlist_companies (watchlist_id, company_id)
+        VALUES (?1, ?2)
+        ",
+        params![input.watchlist_id, input.company_id],
+    )?;
+
+    Ok(())
+}
+
+fn remove_company_from_watchlist(
+    connection: &Connection,
+    input: WatchlistCompanyInput,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        DELETE FROM watchlist_companies
+        WHERE watchlist_id = ?1
+            AND company_id = ?2
+        ",
+        params![input.watchlist_id, input.company_id],
+    )?;
+
+    Ok(())
+}
+
+fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            COALESCE(display_company, 'Unmatched') AS company,
+            type,
+            source_name,
+            COALESCE(published_at, fetched_at) AS item_time,
+            title,
+            read,
+            saved,
+            source_url,
+            COALESCE(language, 'unknown') AS language,
+            COALESCE(published_at, '') AS published_at,
+            fetched_at,
+            COALESCE(attribution, source_name) AS attribution,
+            COALESCE(summary, '') AS summary
+        FROM feed_items
+        ORDER BY COALESCE(published_at, fetched_at) DESC, fetched_at DESC, id
+        ",
+    )?;
+
+    let rows = statement.query_map([], feed_item_from_row)?;
+    let feed_items = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(feed_items)
+}
+
+fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdapter>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            source_adapters.id,
+            source_adapters.display_name,
+            source_adapters.source_type,
+            source_adapters.fetch_mode,
+            source_adapters.enabled,
+            source_adapters.default_poll_interval_seconds,
+            source_adapters.last_success_at,
+            source_adapters.last_error_at,
+            source_adapters.last_error,
+            COALESCE(GROUP_CONCAT(source_adapter_markets.market, ','), '') AS markets
+        FROM source_adapters
+        LEFT JOIN source_adapter_markets
+            ON source_adapter_markets.source_adapter_id = source_adapters.id
+        GROUP BY
+            source_adapters.id,
+            source_adapters.display_name,
+            source_adapters.source_type,
+            source_adapters.fetch_mode,
+            source_adapters.enabled,
+            source_adapters.default_poll_interval_seconds,
+            source_adapters.last_success_at,
+            source_adapters.last_error_at,
+            source_adapters.last_error
+        ORDER BY source_adapters.display_name
+        ",
+    )?;
+
+    let rows = statement.query_map([], |row| {
+        let markets: String = row.get(9)?;
+
+        Ok(SourceAdapter {
+            id: row.get(0)?,
+            display_name: row.get(1)?,
+            source_type: row.get(2)?,
+            fetch_mode: row.get(3)?,
+            enabled: row.get(4)?,
+            default_poll_interval_seconds: row.get(5)?,
+            last_success_at: row.get(6)?,
+            last_error_at: row.get(7)?,
+            last_error: row.get(8)?,
+            markets: markets
+                .split(',')
+                .filter(|market| !market.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        })
+    })?;
+
+    let adapters = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(adapters)
+}
+
+fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
+    Ok(UserSettings {
+        theme: setting_string(connection, "theme")?,
+        accent_palette: setting_string(connection, "accent_palette")?,
+        poll_interval_seconds: setting_i64(connection, "poll_interval_seconds")?,
+        settings_source: "sqlite",
+        settings_import_export_format: setting_string(connection, "settings_import_export_format")?,
+        yaml_import_export_status: "accepted_deferred",
+        ai_providers: AiProviderSettings {
+            youtube_transcription_provider: setting_string(
+                connection,
+                "youtube_transcription_provider",
+            )?,
+            general_analysis_provider: empty_setting_to_none(setting_string(
+                connection,
+                "general_analysis_provider",
+            )?),
+        },
+        ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
+    })
+}
+
+fn update_settings(connection: &Connection, input: SettingsUpdate) -> StorageResult<UserSettings> {
+    if let Some(theme) = input.theme {
+        validate_allowed_setting("theme", &theme, &["dark", "light", "system"])?;
+        update_setting(connection, "theme", &theme)?;
+    }
+
+    if let Some(poll_interval_seconds) = input.poll_interval_seconds {
+        update_setting(
+            connection,
+            "poll_interval_seconds",
+            &poll_interval_seconds.to_string(),
+        )?;
+    }
+
+    if let Some(youtube_transcription_provider) = input.youtube_transcription_provider {
+        update_setting(
+            connection,
+            "youtube_transcription_provider",
+            &youtube_transcription_provider,
+        )?;
+    }
+
+    if let Some(general_analysis_provider) = input.general_analysis_provider {
+        update_setting(
+            connection,
+            "general_analysis_provider",
+            &general_analysis_provider,
+        )?;
+    }
+
+    if let Some(ai_analysis_mode) = input.ai_analysis_mode {
+        validate_allowed_setting(
+            "ai_analysis_mode",
+            &ai_analysis_mode,
+            &["source_grounded", "opinionated"],
+        )?;
+        update_setting(connection, "ai_analysis_mode", &ai_analysis_mode)?;
+    }
+
+    get_settings(connection)
+}
+
+fn setting_string(connection: &Connection, key: &'static str) -> StorageResult<String> {
+    connection
+        .query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+            row.get(0)
+        })
+        .map_err(StorageError::from)
+}
+
+fn setting_i64(connection: &Connection, key: &'static str) -> StorageResult<i64> {
+    let value = setting_string(connection, key)?;
+
+    value
+        .parse::<i64>()
+        .map_err(|_| StorageError::InvalidSettingValue { key, value })
+}
+
+fn update_setting(connection: &Connection, key: &'static str, value: &str) -> StorageResult<()> {
+    connection.execute(
+        "
+        UPDATE settings
+        SET value = ?2,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE key = ?1
+        ",
+        params![key, value],
+    )?;
+
+    Ok(())
+}
+
+fn validate_allowed_setting(key: &'static str, value: &str, allowed: &[&str]) -> StorageResult<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidSettingValue {
+            key,
+            value: value.to_owned(),
+        })
+    }
+}
+
+fn empty_setting_to_none(value: String) -> Option<String> {
+    if value.trim().is_empty() {
+        None
+    } else {
+        Some(value)
+    }
+}
+
+fn update_feed_item_state(
+    connection: &Connection,
+    input: FeedItemStateInput,
+) -> StorageResult<FeedItem> {
+    if let Some(read) = input.read {
+        connection.execute(
+            "
+            UPDATE feed_items
+            SET read = ?2,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1
+            ",
+            params![input.id, read],
+        )?;
+    }
+
+    if let Some(saved) = input.saved {
+        connection.execute(
+            "
+            UPDATE feed_items
+            SET saved = ?2,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1
+            ",
+            params![input.id, saved],
+        )?;
+    }
+
+    get_feed_item(connection, &input.id)
+}
+
+fn get_feed_item(connection: &Connection, feed_item_id: &str) -> StorageResult<FeedItem> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                COALESCE(display_company, 'Unmatched') AS company,
+                type,
+                source_name,
+                COALESCE(published_at, fetched_at) AS item_time,
+                title,
+                read,
+                saved,
+                source_url,
+                COALESCE(language, 'unknown') AS language,
+                COALESCE(published_at, '') AS published_at,
+                fetched_at,
+                COALESCE(attribution, source_name) AS attribution,
+                COALESCE(summary, '') AS summary
+            FROM feed_items
+            WHERE id = ?1
+            ",
+            [feed_item_id],
+            feed_item_from_row,
+        )
+        .map_err(StorageError::from)
+}
+
+fn feed_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FeedItem> {
+    let read: bool = row.get(6)?;
+
+    Ok(FeedItem {
+        id: row.get(0)?,
+        company: row.get(1)?,
+        item_type: row.get(2)?,
+        source: row.get(3)?,
+        time: row.get(4)?,
+        title: row.get(5)?,
+        unread: !read,
+        saved: row.get(7)?,
+        source_url: row.get(8)?,
+        language: row.get(9)?,
+        published_at: row.get(10)?,
+        fetched_at: row.get(11)?,
+        attribution: row.get(12)?,
+        summary: row.get(13)?,
+    })
+}
+
+fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
+    let feed_item_count: i64 =
+        connection.query_row("SELECT COUNT(*) FROM feed_items", [], |row| row.get(0))?;
+
+    if feed_item_count > 0 {
+        return Ok(());
+    }
+
+    let fixtures = [
+        (
+            "feed_fixture_cdr_report",
+            "Official report",
+            "GPW ESPI/EBI",
+            "https://www.gpw.pl/komunikaty",
+            "Current report placeholder for watchlist company",
+            "Fixture official report used to validate feed filtering and detail rendering.",
+            "pl",
+            "2026-05-29T09:12:00Z",
+            "2026-05-29T09:15:00Z",
+            "gpw-espi-ebi:fixture:cdr-report",
+            false,
+            false,
+            "GPW",
+            "GPW:CDR",
+        ),
+        (
+            "feed_fixture_pkn_news",
+            "News",
+            "Fixture feed",
+            "https://example.local/fixture/pkn",
+            "Fixture item proving the inbox layout can scan dense rows",
+            "Saved fixture item used to validate the saved filter before real ingestion exists.",
+            "en",
+            "2026-05-28T16:00:00Z",
+            "2026-05-28T16:03:00Z",
+            "fixture:pkn-news",
+            true,
+            true,
+            "Fixture",
+            "GPW:PKN",
+        ),
+        (
+            "feed_fixture_msft_transcript",
+            "Transcript",
+            "Local fixture",
+            "https://example.local/fixture/msft-transcript",
+            "Transcript-derived note candidate waits for future provider work",
+            "Transcript placeholder for future video and notebook workflows.",
+            "en",
+            "2026-05-25T10:00:00Z",
+            "2026-05-25T10:00:00Z",
+            "fixture:msft-transcript",
+            true,
+            false,
+            "Fixture",
+            "NASDAQ:MSFT",
+        ),
+    ];
+
+    for fixture in fixtures {
+        connection.execute(
+            "
+            INSERT OR IGNORE INTO feed_items (
+                id,
+                type,
+                source_adapter_id,
+                source_name,
+                source_url,
+                title,
+                summary,
+                language,
+                published_at,
+                fetched_at,
+                dedupe_key,
+                read,
+                saved,
+                attribution,
+                display_company
+            ) VALUES (?1, ?2, 'gpw-espi-ebi', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            ",
+            params![
+                fixture.0, fixture.1, fixture.2, fixture.3, fixture.4, fixture.5, fixture.6,
+                fixture.7, fixture.8, fixture.9, fixture.10, fixture.11, fixture.12, fixture.13
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    connection.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+        ",
+    )?;
+
+    let transaction = connection.transaction()?;
+
+    for migration in MIGRATIONS {
+        let already_applied: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?1)",
+            [migration.version],
+            |row| row.get(0),
+        )?;
+
+        if already_applied {
+            continue;
+        }
+
+        transaction.execute_batch(migration.sql)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            (migration.version, migration.name),
+        )?;
+    }
+
+    transaction.commit()?;
+    seed_fixture_feed_items(connection)?;
+    Ok(())
+}
+
+fn count_rows(connection: &Connection, table_name: &str) -> StorageResult<i64> {
+    let sql = format!("SELECT COUNT(*) FROM {table_name}");
+
+    connection
+        .query_row(&sql, [], |row| row.get(0))
+        .map_err(StorageError::from)
+}
+
+fn company_id(exchange: &str, ticker: &str) -> String {
+    format!("company_{}_{}", slug_part(exchange), slug_part(ticker))
+}
+
+fn watchlist_id(name: &str) -> String {
+    format!("watchlist_{}", slug_part(name))
+}
+
+fn slug_part(value: &str) -> String {
+    value
+        .chars()
+        .filter_map(|character| {
+            if character.is_ascii_alphanumeric() {
+                Some(character.to_ascii_lowercase())
+            } else if character == '_' || character == '-' {
+                Some('_')
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+fn empty_string_to_none(value: Option<String>) -> Option<String> {
+    value.and_then(|inner| {
+        let trimmed = inner.trim().to_owned();
+
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    })
+}
+
+fn normalize_lookup_value(value: &str) -> String {
+    value.trim().to_uppercase()
+}
+
+fn normalize_name_lookup(value: &str) -> String {
+    value.trim().to_uppercase()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn creates_clean_database_with_initial_schema() {
+        let connection = open_in_memory_database().expect("database should initialize");
+
+        let migration_count: i64 = connection
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
+            .expect("schema_migrations should exist");
+
+        assert_eq!(migration_count, 2);
+
+        let company_table_exists: bool = connection
+            .query_row(
+                "SELECT EXISTS(
+                    SELECT 1
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'companies'
+                )",
+                [],
+                |row| row.get(0),
+            )
+            .expect("companies table lookup should work");
+
+        assert!(company_table_exists);
+    }
+
+    #[test]
+    fn seeds_default_settings_and_gpw_adapter() {
+        let connection = open_in_memory_database().expect("database should initialize");
+
+        let theme: String = connection
+            .query_row(
+                "SELECT value FROM settings WHERE key = 'theme'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("theme setting should be seeded");
+
+        let adapter_name: String = connection
+            .query_row(
+                "SELECT display_name FROM source_adapters WHERE id = 'gpw-espi-ebi'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("GPW adapter should be seeded");
+
+        assert_eq!(theme, "dark");
+        assert_eq!(adapter_name, "GPW ESPI/EBI");
+    }
+
+    #[test]
+    fn enforces_exchange_qualified_ticker_uniqueness() {
+        let connection = open_in_memory_database().expect("database should initialize");
+
+        connection
+            .execute(
+                "
+                INSERT INTO companies (
+                    id,
+                    exchange,
+                    ticker,
+                    qualified_ticker,
+                    display_name
+                ) VALUES (?1, ?2, ?3, ?4, ?5)
+                ",
+                (
+                    "company_gpw_cdr",
+                    "GPW",
+                    "CDR",
+                    "GPW:CDR",
+                    "CD PROJEKT S.A.",
+                ),
+            )
+            .expect("first company insert should pass");
+
+        let duplicate = connection.execute(
+            "
+            INSERT INTO companies (
+                id,
+                exchange,
+                ticker,
+                qualified_ticker,
+                display_name
+            ) VALUES (?1, ?2, ?3, ?4, ?5)
+            ",
+            (
+                "company_gpw_cdr_duplicate",
+                "GPW",
+                "CDR",
+                "GPW:CDR",
+                "Duplicate",
+            ),
+        );
+
+        assert!(duplicate.is_err());
+    }
+
+    #[test]
+    fn creates_and_lists_company_through_storage_api() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let created = state
+            .create_company(NewCompany {
+                exchange: "gpw".to_owned(),
+                ticker: "cdr".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let companies = state.list_companies().expect("companies should be listed");
+
+        assert_eq!(created.id, "company_gpw_cdr");
+        assert_eq!(created.qualified_ticker, "GPW:CDR");
+        assert_eq!(companies.len(), 1);
+        assert_eq!(companies[0].display_name, "CD PROJEKT S.A.");
+    }
+
+    #[test]
+    fn reports_database_status() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let status = database_status(&connection).expect("status should be available");
+
+        assert_eq!(status.applied_migrations, 2);
+        assert_eq!(status.companies, 0);
+        assert_eq!(status.source_adapters, 1);
+        assert_eq!(status.settings, 7);
+    }
+
+    #[test]
+    fn seeds_and_lists_fixture_feed_items() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let feed_items = state.list_feed_items().expect("feed items should list");
+
+        assert_eq!(feed_items.len(), 3);
+        assert_eq!(feed_items[0].id, "feed_fixture_cdr_report");
+        assert_eq!(feed_items[0].company, "GPW:CDR");
+        assert!(feed_items[0].unread);
+    }
+
+    #[test]
+    fn persists_feed_item_read_and_saved_state() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let updated = state
+            .update_feed_item_state(FeedItemStateInput {
+                id: "feed_fixture_cdr_report".to_owned(),
+                read: Some(true),
+                saved: Some(true),
+            })
+            .expect("feed item state should update");
+
+        assert!(!updated.unread);
+        assert!(updated.saved);
+
+        let feed_items = state.list_feed_items().expect("feed items should list");
+        let cdr = feed_items
+            .iter()
+            .find(|item| item.id == "feed_fixture_cdr_report")
+            .expect("CDR fixture should remain present");
+
+        assert!(!cdr.unread);
+        assert!(cdr.saved);
+    }
+
+    #[test]
+    fn lists_seeded_source_adapters() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let adapters = state
+            .list_source_adapters()
+            .expect("source adapters should list");
+
+        assert_eq!(adapters.len(), 1);
+        assert_eq!(adapters[0].id, "gpw-espi-ebi");
+        assert_eq!(adapters[0].display_name, "GPW ESPI/EBI");
+        assert_eq!(adapters[0].markets, vec!["GPW".to_owned()]);
+        assert!(adapters[0].enabled);
+    }
+
+    #[test]
+    fn reads_default_settings_from_sqlite() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let settings = state.get_settings().expect("settings should load");
+
+        assert_eq!(settings.theme, "dark");
+        assert_eq!(settings.accent_palette, "night-neon");
+        assert_eq!(settings.poll_interval_seconds, 900);
+        assert_eq!(settings.settings_source, "sqlite");
+        assert_eq!(settings.settings_import_export_format, "yaml");
+        assert_eq!(settings.yaml_import_export_status, "accepted_deferred");
+        assert_eq!(
+            settings.ai_providers.youtube_transcription_provider,
+            "gemini"
+        );
+        assert!(settings.ai_providers.general_analysis_provider.is_none());
+        assert_eq!(settings.ai_analysis_mode, "source_grounded");
+    }
+
+    #[test]
+    fn updates_settings_through_storage_api() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let settings = state
+            .update_settings(SettingsUpdate {
+                theme: Some("light".to_owned()),
+                poll_interval_seconds: Some(600),
+                youtube_transcription_provider: None,
+                general_analysis_provider: None,
+                ai_analysis_mode: None,
+            })
+            .expect("settings should update");
+
+        assert_eq!(settings.theme, "light");
+        assert_eq!(settings.poll_interval_seconds, 600);
+
+        let persisted = state.get_settings().expect("settings should persist");
+
+        assert_eq!(persisted.theme, "light");
+        assert_eq!(persisted.poll_interval_seconds, 600);
+    }
+
+    #[test]
+    fn rejects_invalid_theme_setting() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let result = state.update_settings(SettingsUpdate {
+            theme: Some("sepia".to_owned()),
+            poll_interval_seconds: None,
+            youtube_transcription_provider: None,
+            general_analysis_provider: None,
+            ai_analysis_mode: None,
+        });
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn looks_up_company_fixture_by_ticker() {
+        let result = lookup_company(CompanyLookupInput {
+            exchange: "gpw".to_owned(),
+            ticker: Some("cdr".to_owned()),
+            display_name: None,
+            isin: None,
+        })
+        .expect("fixture should match");
+
+        assert_eq!(result.qualified_ticker, "GPW:CDR");
+        assert_eq!(result.display_name, "CD PROJEKT S.A.");
+        assert_eq!(result.isin, "PLOPTTC00011");
+    }
+
+    #[test]
+    fn looks_up_company_fixture_by_isin() {
+        let result = lookup_company(CompanyLookupInput {
+            exchange: "GPW".to_owned(),
+            ticker: None,
+            display_name: None,
+            isin: Some("plpzu0000011".to_owned()),
+        })
+        .expect("fixture should match");
+
+        assert_eq!(result.ticker, "PZU");
+        assert_eq!(result.display_name, "PZU S.A.");
+    }
+
+    #[test]
+    fn deletes_company_through_storage_api() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let created = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        state
+            .delete_company(&created.id)
+            .expect("company should be deleted");
+
+        let companies = state.list_companies().expect("companies should be listed");
+
+        assert!(companies.is_empty());
+    }
+
+    #[test]
+    fn creates_watchlist_and_assigns_company() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let watchlist = state
+            .create_watchlist(NewWatchlist {
+                name: "Main GPW".to_owned(),
+                description: Some("Primary Polish watchlist".to_owned()),
+            })
+            .expect("watchlist should be created");
+
+        state
+            .add_company_to_watchlist(WatchlistCompanyInput {
+                watchlist_id: watchlist.id,
+                company_id: company.id,
+            })
+            .expect("company should be assigned");
+
+        let watchlists = state.list_watchlists().expect("watchlists should list");
+
+        assert_eq!(watchlists.len(), 1);
+        assert_eq!(watchlists[0].name, "Main GPW");
+        assert_eq!(watchlists[0].company_count, 1);
+    }
+
+    #[test]
+    fn lists_watchlist_memberships() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let watchlist = state
+            .create_watchlist(NewWatchlist {
+                name: "Main GPW".to_owned(),
+                description: None,
+            })
+            .expect("watchlist should be created");
+
+        state
+            .add_company_to_watchlist(WatchlistCompanyInput {
+                watchlist_id: watchlist.id.clone(),
+                company_id: company.id.clone(),
+            })
+            .expect("company should be assigned");
+
+        let memberships = state
+            .list_watchlist_memberships()
+            .expect("memberships should list");
+
+        assert_eq!(memberships.len(), 1);
+        assert_eq!(memberships[0].watchlist_id, watchlist.id);
+        assert_eq!(memberships[0].watchlist_name, "Main GPW");
+        assert_eq!(memberships[0].company_id, company.id);
+    }
+
+    #[test]
+    fn removes_company_from_watchlist() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let watchlist = state
+            .create_watchlist(NewWatchlist {
+                name: "Main GPW".to_owned(),
+                description: None,
+            })
+            .expect("watchlist should be created");
+
+        state
+            .add_company_to_watchlist(WatchlistCompanyInput {
+                watchlist_id: watchlist.id.clone(),
+                company_id: company.id.clone(),
+            })
+            .expect("company should be assigned");
+
+        state
+            .remove_company_from_watchlist(WatchlistCompanyInput {
+                watchlist_id: watchlist.id,
+                company_id: company.id,
+            })
+            .expect("company should be removed");
+
+        let watchlists = state.list_watchlists().expect("watchlists should list");
+
+        assert_eq!(watchlists[0].company_count, 0);
+    }
+}
