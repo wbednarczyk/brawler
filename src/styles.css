@@ -169,6 +169,10 @@ button {
   background: var(--warning);
 }
 
+.status-danger {
+  background: var(--danger);
+}
+
 .workspace {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -395,6 +399,12 @@ h1 {
 .detail-pane dt {
   color: var(--muted);
   font-size: 12px;
+}
+
+.status-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .detail-pane dd {

@@ -21,6 +21,25 @@ type HealthResponse = {
   version: string;
 };
 
+type DatabaseStatus = {
+  appliedMigrations: number;
+  companies: number;
+  sourceAdapters: number;
+  settings: number;
+};
+
+function databaseIndicatorClass(status: DatabaseStatus | null, error: string | null) {
+  if (error) {
+    return "status-dot status-danger";
+  }
+
+  if (status) {
+    return "status-dot status-ok";
+  }
+
+  return "status-dot status-warn";
+}
+
 const sections = [
   { label: "Inbox", icon: Inbox, active: true },
   { label: "Companies", icon: Building2 },
@@ -71,6 +90,8 @@ export function App() {
   });
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
+  const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(null);
+  const [databaseError, setDatabaseError] = useState<string | null>(null);
 
   const effectiveTheme = useMemo(() => resolveTheme(theme), [theme]);
 
@@ -88,6 +109,18 @@ export function App() {
       .catch((error) => {
         setHealth(null);
         setHealthError(String(error));
+      });
+  }, []);
+
+  useEffect(() => {
+    invoke<DatabaseStatus>("database_status")
+      .then((response) => {
+        setDatabaseStatus(response);
+        setDatabaseError(null);
+      })
+      .catch((error) => {
+        setDatabaseStatus(null);
+        setDatabaseError(String(error));
       });
   }, []);
 
@@ -202,8 +235,32 @@ export function App() {
                 <dt>AI mode</dt>
                 <dd>source_grounded</dd>
               </div>
+              <div>
+                <dt className="status-label">
+                  <span
+                    aria-label={
+                      databaseError
+                        ? "Database connection failed"
+                        : databaseStatus
+                          ? "Database connection active"
+                          : "Database connection pending"
+                    }
+                    className={databaseIndicatorClass(databaseStatus, databaseError)}
+                    role="status"
+                  />
+                  Database
+                </dt>
+                <dd>
+                  {databaseStatus
+                    ? `${databaseStatus.appliedMigrations} migration, ${databaseStatus.sourceAdapters} source, ${databaseStatus.settings} settings`
+                    : "pending"}
+                </dd>
+              </div>
             </dl>
             {healthError ? <p className="error-text">Health command failed: {healthError}</p> : null}
+            {databaseError ? (
+              <p className="error-text">Database command failed: {databaseError}</p>
+            ) : null}
           </aside>
         </section>
       </main>
