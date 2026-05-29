@@ -258,6 +258,32 @@ Exit criteria:
 - packaging workflow is manually triggered unless release automation is explicitly approved
 - known limitations are documented
 
+## Future Exploration: Terminal Interface
+
+Goal: explore a keyboard-first terminal version after the desktop v1 foundations are stable.
+
+Intent:
+
+- provide a dense TUI experience loosely inspired by `k9s`
+- reuse the same local domain/storage contracts as the desktop app
+- use the night-neon visual identity in terminal-safe colors
+- support fast feed, watchlist, company, and notebook navigation
+- make optional synthwave-style background music an explicit opt-in experiment
+
+Not in scope for v1.
+
+## Future Exploration: Mobile And Sync
+
+Goal: explore mobile clients and cross-device sync after local-first desktop workflows are proven.
+
+Intent:
+
+- provide access to watchlists, inbox, notes, claims, and transcripts on mobile devices
+- preserve offline-first behavior where practical
+- design sync, encryption, conflict resolution, account model, and privacy guarantees before implementation
+
+Not in scope for v1. Cloud backup/sync remains a separate design discussion.
+
 ## Future: Cloud Backup And Sync
 
 Cloud backup/sync is not part of core v1 implementation. It is a future roadmap area that requires a separate design discussion and ADR covering identity, encryption, sync conflicts, storage provider, monetization, and cost.

@@ -122,6 +122,41 @@ App data lives in the OS app data directory by default, with development-only ov
 
 Export is part of normal v1 implementation. Notes should export as Markdown with metadata, and watchlists/companies/settings should export as structured JSON or YAML. Import/restore and full local backup are late-v1 items. Cloud backup/sync requires a later design discussion.
 
+## Future Experience Directions
+
+These ideas are intentionally out of v1 scope, but should influence architectural choices where the cost is low.
+
+### Terminal Interface
+
+A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.
+
+The intended feeling is:
+
+- loosely similar to `k9s` in navigation density, speed, and operational ergonomics
+- retro terminal style adapted to the Brawler night-neon palette
+- dark, high-contrast blue, pink, purple, and cyan accents
+- fast watchlist/feed/company switching
+- keyboard-first commands for reading, filtering, saving, and opening notes
+- optional synthwave-style background music as an explicit opt-in ambience feature
+
+The TUI should remain useful without sound, animation, or decorative effects. Music must never start automatically.
+
+### Mobile And Sync
+
+A much later product direction may include mobile clients with data sync across desktop and mobile devices.
+
+This is not part of v1 and requires separate design work for:
+
+- sync ownership and hosting model
+- encryption and key management
+- conflict resolution
+- offline-first behavior
+- subscription or monetization implications
+- mobile UX scope versus desktop parity
+- privacy policy and data deletion guarantees
+
+Until that design exists, v1 remains local-first and single-device.
+
 ## Monetization
 
 The app should leave room for future monetization, but the model is undecided. Open core plus paid convenience features is one possible path, but not a committed direction. Potential paid features could include packaged builds, sync, backups, managed AI configuration, and notifications.

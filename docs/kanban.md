@@ -2,6 +2,37 @@
 
 ## Backlog
 
+### Explore terminal interface
+
+Intent: record and later evaluate a terminal/TUI version of Brawler for keyboard-first investor research.
+
+Acceptance criteria:
+
+- TUI scope is designed after desktop v1 foundations are stable.
+- Design is loosely inspired by `k9s` density and navigation ergonomics.
+- Theme uses terminal-safe variants of the night-neon palette.
+- Optional synthwave-style background music is opt-in only.
+- TUI reuses the core domain and storage contracts.
+
+Docs/contracts touched: product spec, roadmap, architecture if accepted.
+
+Test expectations: future TUI command/navigation tests if implemented.
+
+### Explore mobile clients and sync
+
+Intent: record and later evaluate mobile versions with cross-device sync.
+
+Acceptance criteria:
+
+- Sync ownership, hosting, encryption, conflict resolution, and privacy model are designed before implementation.
+- Mobile scope is defined separately from desktop parity.
+- Offline-first expectations are documented.
+- Monetization implications are captured before launch.
+
+Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
+
+Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
+
 ### Implement company notebooks
 
 Intent: add per-company notebook support with notes that can be created manually or from feed items.
@@ -50,6 +81,44 @@ Test expectations: adapter unit tests with fixtures.
 
 ## Ready
 
+### Define UI design system tokens
+
+Intent: define theme tokens for the dark-default and light theme UI.
+
+Acceptance criteria:
+
+- Theme setting is persisted through the settings contract.
+- Dark theme is the first-run default.
+- Night-neon palette tokens cover background, surface, text, border, primary accent, secondary accent, focus, warning, success, and danger.
+- Light theme uses the same accent identity with accessible light surfaces.
+
+Docs/contracts touched: product spec, contracts, theme ADR.
+
+Test expectations: UI token tests or visual smoke coverage once UI exists.
+
+## In Progress
+
+No active card.
+
+## Review
+
+### Design initial SQLite migrations
+
+Intent: create migration-managed local storage for companies, watchlists, feed items, source records, notebook entries, transcript jobs, transcript segments, jobs, and settings.
+
+Acceptance criteria:
+
+- Migration runner exists.
+- Initial schema represents contracts in `docs/contracts.md` and the entity list in `docs/data-model.md`.
+- Migration tests cover clean database creation.
+- Migration check is suitable for GitHub Actions.
+
+Docs/contracts touched: contracts, architecture.
+
+Test expectations: migration tests.
+
+## Done
+
 ### Scaffold desktop application
 
 Intent: create the Tauri + React + TypeScript desktop shell with Rust domain modules.
@@ -67,57 +136,17 @@ Acceptance criteria:
 - UI supports dark and light theme selection with dark as the default.
 - Initial visual tokens implement the night-neon blue, pink, and purple palette.
 - Rust command `health` returns app status.
-- Tauri events can notify the UI about job/feed updates.
 - Local build/test commands are documented.
 - GitHub Actions CI skeleton runs frontend and Rust checks without secrets.
 - GitHub Actions uses the same commands as local development or thin wrappers.
 - GitHub Actions validates the Nix setup if it remains fast enough.
 - Default CI uses standard Linux runners only and avoids larger runners, scheduled jobs, and packaging builds.
 - WSL is documented as the automated test/build environment, while Windows is documented as the native hands-on GUI test environment.
-
-Docs/contracts touched: architecture, contracts.
-
-Test expectations: Nix shell check, desktop smoke test, Rust command test, and initial CI check.
-
-### Define UI design system tokens
-
-Intent: define theme tokens for the dark-default and light theme UI.
-
-Acceptance criteria:
-
-- Theme setting is persisted through the settings contract.
-- Dark theme is the first-run default.
-- Night-neon palette tokens cover background, surface, text, border, primary accent, secondary accent, focus, warning, success, and danger.
-- Light theme uses the same accent identity with accessible light surfaces.
-
-Docs/contracts touched: product spec, contracts, theme ADR.
-
-Test expectations: UI token tests or visual smoke coverage once UI exists.
-
-### Design initial SQLite migrations
-
-Intent: create migration-managed local storage for companies, watchlists, feed items, source records, notebook entries, transcript jobs, transcript segments, jobs, and settings.
-
-Acceptance criteria:
-
-- Migration runner exists.
-- Initial schema represents contracts in `docs/contracts.md` and the entity list in `docs/data-model.md`.
-- Migration tests cover clean database creation.
-- Migration check is suitable for GitHub Actions.
+- `make package-windows-from-linux` builds, copies, and launches a portable Windows `.exe` from WSL/Linux.
 
 Docs/contracts touched: contracts, architecture.
 
-Test expectations: migration tests.
-
-## In Progress
-
-No active card.
-
-## Review
-
-No cards.
-
-## Done
+Test expectations: Nix shell check, desktop smoke test, Rust command test, initial CI check, and Windows-from-Linux package check.
 
 ### Bootstrap docs and agent contract
 
