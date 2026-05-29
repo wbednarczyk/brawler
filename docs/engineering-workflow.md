@@ -120,6 +120,7 @@ The repository should be designed for GitHub Actions from the first scaffold.
 Cost posture:
 
 - The GitHub repository is currently private, so default workflows must be conservative with included GitHub Actions minutes and storage.
+- Automatic GitHub Actions triggers are currently disabled. CI is manual-only through `workflow_dispatch` until the project owner decides otherwise.
 - If the repository becomes public later, standard GitHub-hosted runner cost assumptions may improve, but the project should still avoid waste.
 - Avoid larger runners because GitHub bills them separately.
 - Avoid macOS runners in default CI because they are usually the most expensive runner class when billed.
@@ -144,7 +145,7 @@ Recommended workflow files once code exists:
 
 Rules:
 
-- CI should run on pull requests and pushes to `master`.
+- CI should run manually while the repository is private. Push and pull request triggers can be restored later when the owner accepts the Actions usage tradeoff.
 - Keep the default CI path fast.
 - Packaging jobs can be manual or release-triggered until v1 stabilizes.
 - Do not require secrets for default CI.

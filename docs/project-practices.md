@@ -152,6 +152,8 @@ Rules:
 
 Local build and test commands are the primary development interface. GitHub Actions mirrors local commands.
 
+Current repository posture: automatic GitHub Actions triggers are disabled while the repository is private. The CI workflow is kept as a manual `workflow_dispatch` entry point so checks can be run in GitHub only on demand.
+
 Rules:
 
 - Every default CI check must have a documented local equivalent.
