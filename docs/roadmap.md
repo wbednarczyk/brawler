@@ -120,7 +120,14 @@ Exit criteria:
 
 Goal: make the primary non-AI research workflow usable with local/fixture data.
 
-Status: next active milestone.
+Status: complete.
+
+Notes:
+
+- Milestone 3 uses SQLite-backed local feed items and development seed data.
+- Real source ingestion remains deferred to Milestone 5.
+- Notebook, Claims, and Transcripts workspace tabs are present as placeholders and move into their dedicated later milestones.
+- Manual source refresh remains a disabled placeholder until source adapter jobs exist.
 
 Included:
 

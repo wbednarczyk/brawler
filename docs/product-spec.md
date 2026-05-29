@@ -10,6 +10,13 @@ Early fixture feed implementations should already obey local watchlist, company,
 Fixture feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state in SQLite.
 Source URLs in item details must be directly actionable so the user can verify the original report or article quickly.
 When filters hide all feed items, the UI must offer a quick way to clear active filters and return to the full feed.
+Inbox empty states should distinguish first-run setup from filter misses. If no companies are tracked, the Inbox should point directly to adding a company. If companies exist but no feed items are stored, the Inbox should make clear that source ingestion or refresh is not wired yet and offer a path to source status. If filters hide existing feed items, the Inbox should offer `Clear filters`.
+The app shell should expose an Inbox unread count badge when unread feed items exist.
+The top toolbar should remain visible while the active workspace scrolls so search, status, refresh placeholders, and theme controls are always reachable.
+Inbox feed rows should be usable by mouse and keyboard. Enter or Space on a focused row selects the item and updates the detail pane. Up and Down arrows move focus through feed rows and update the selected detail item.
+The selected Inbox row should remain visually and semantically anchored to the detail pane so the user can always tell which item is being inspected.
+When the selected item leaves the current filtered feed, for example after marking it read in the Unread filter, the Inbox should move selection to the next visible item or show the relevant empty state.
+The Inbox should show a compact review summary for the current filtered set, including visible, unread, and saved counts. This summary is informational only and should not compete with the primary filters.
 
 Expected v1 UI areas:
 
@@ -24,6 +31,10 @@ Expected v1 UI areas:
 - action to create a company notebook note from a feed item
 - manual refresh control
 - in-app badges for new/unread items
+
+Milestone 3 introduces the company workspace as the second primary research surface after the Inbox. Opening a company from the Companies screen should show one ticker-focused page with Feed, Notebook, Claims, Transcripts, and Metadata tabs. The first implemented tab is Feed, backed by the same stored feed item model as the Inbox and filtered by the company's exchange-qualified ticker. Notebook, Claims, and Transcripts tabs may begin as placeholders until their dedicated milestones, but the navigation shape should be stable.
+
+The global Notebooks and Transcripts navigation entries may begin as explicit placeholder screens during Milestone 3. They should not be blank dead ends; they should state the planned milestone and scope without pretending the workflows are implemented.
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
 
@@ -48,6 +59,11 @@ Light theme should preserve the same brand accent colors while using readable li
 ## Watchlists And Companies
 
 Users can maintain multiple watchlists. Companies can be assigned to and removed from watchlists without deleting the company from the local registry. Company list rows should make existing watchlist memberships visible at a glance. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
+
+The Companies screen should let the user open a company workspace by clicking the company row itself, not a separate `Open` button. The workspace expands inline directly under the selected company row and collapses when the same row is clicked again. Up/Down arrows move focus through company rows. If a workspace is already open, arrow movement moves the open workspace to the focused company; if no workspace is open, arrow movement keeps the list collapsed. The workspace Feed tab follows the same pattern: clicking a feed row or pressing Enter/Space on a focused feed row expands source details directly under that row, repeating the action collapses the details, Up/Down arrows move focus between company feed rows, and if detail is already open the detail moves to the focused feed row. An explicit action can open the same item in the Inbox with the company filter applied.
+
+If a tracked company has no stored feed items, the company Feed tab should show an explicit empty state. The empty state should explain that the company is tracked but has no fixture or ingested items yet, and it should offer a quick path to the Inbox with that company filter applied.
+The Inbox detail pane should also let the user open the matched company workspace when the feed item maps to a locally tracked company. Opening from Inbox should keep the Company Feed tab active and expand the same feed item inline in the company workspace.
 
 Company metadata may include:
 
@@ -97,6 +113,8 @@ Later sources should be possible through adapters:
 The app should prefer official/public/RSS sources and avoid restricted scraping by default.
 
 The Sources screen shows locally configured source adapters, supported markets, fetch mode, enabled state, poll interval, and last success or error status. Before real ingestion exists, this screen still reads the seeded adapter registry from SQLite so source monitoring has a stable UI home.
+Source adapter rows should follow the app-wide row interaction rule: the row is the primary click target, and adapter operational details expand inline under the selected source row. Enter or Space on a focused source row should expand or collapse the same inline detail.
+The topbar should expose a compact source status entry point that summarizes adapter readiness and opens the Sources screen. Opening source status should expand the most relevant adapter immediately, preferring adapters with errors, then enabled adapters, then the first configured adapter. This is separate from manual source refresh; before real ingestion exists, refresh remains disabled while status inspection is available.
 
 ## Ingestion
 

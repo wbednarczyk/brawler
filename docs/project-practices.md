@@ -76,6 +76,8 @@ Intuitive UX and responsive UI are first-class project requirements, not polish 
 Rules:
 
 - Prefer workflows that make the likely next action obvious.
+- Prefer direct row interaction for list/detail workflows. When a row opens more context, clicking the row should expand details inline near that row, and clicking the same row again should collapse it when that behavior is natural.
+- Avoid adding explicit row-level buttons for primary open/inspect behavior when the whole row can safely be the target. Keep buttons for secondary actions such as delete, source links, or explicit state changes.
 - Mutating actions should provide quick visual feedback.
 - Buttons and controls should communicate intent through position, label, icon, color, and state.
 - Dense investor workflows must remain scannable and keyboard/mouse efficient.

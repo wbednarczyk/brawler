@@ -28,6 +28,9 @@ Shell behavior:
 
 - Dark theme is the first-run default.
 - Sidebar should be collapsible after v1 if space becomes tight, but v1 can keep it fixed.
+- The top toolbar stays visible while the current workspace scrolls.
+- The Inbox navigation item shows an unread count badge when unread feed items exist.
+- The top toolbar source health indicator summarizes locally registered source adapters and opens the Sources screen with the most relevant adapter expanded. Manual source refresh remains a separate disabled control until ingestion jobs exist.
 - Detail pane should be dismissible.
 - Empty states should offer direct actions and avoid marketing copy.
 - Common mutations should provide immediate visual confirmation without blocking the workflow.
@@ -40,6 +43,7 @@ Purpose: fast daily review of new reports and news.
 Main regions:
 
 - filter toolbar: watchlist, company, item type, unread, saved, significance
+- review summary: visible, unread, and saved counts for the current filtered set
 - feed list: newest first, dense rows
 - detail pane: selected item content and actions
 
@@ -53,6 +57,10 @@ Feed row should show:
 - unread/saved state
 - significance when available
 
+The selected feed row remains visually highlighted and exposes semantic current-item state so it stays clearly connected to the detail pane.
+
+If the selected item disappears from the current filtered set, the next visible row becomes selected. If no rows remain, the feed list shows the appropriate empty state and the detail pane becomes unselected.
+
 Detail pane should show:
 
 - title
@@ -61,11 +69,12 @@ Detail pane should show:
 - matched companies
 - original excerpt/body when available
 - AI summary/significance when available
-- actions: mark read/unread, save/unsave, open source, create note
+- actions: mark read/unread, save/unsave, open matched company workspace, open source, create note
 
 Empty states:
 
 - no companies tracked: prompt to add a company
+- no stored feed items after companies exist: show refresh pending and link to Sources
 - no items for filters: prompt to clear filters
 - source errors: link to Sources screen
 
@@ -88,6 +97,8 @@ Actions:
 
 Early implementation may expose watchlist assignment directly on company rows. This is acceptable for proving storage and command behavior, but the workflow should be refined before v1 because repeated row-level assign/remove actions are tedious.
 
+Milestone 3 implementation starts the company workspace from the Companies screen. Clicking a company row expands the ticker-focused workspace inline directly under that row, and clicking the same row again collapses it. Up and Down arrows move through company rows while preserving expansion state: collapsed lists stay collapsed, and an already-open workspace moves to the focused company. This keeps the expanded context anchored to the company the user selected and avoids adding another row-level button.
+
 ## Company Workspace
 
 Purpose: one company page for all research around a ticker.
@@ -99,6 +110,7 @@ Header should show:
 - exchange
 - watchlist membership
 - last feed update
+- feed, unread, and saved counts
 - quick actions: refresh company, add note, add transcript
 
 Tabs or segmented views:
@@ -114,6 +126,10 @@ Feed tab:
 - company-filtered feed list
 - same feed item detail behavior as Inbox
 - create note from item
+
+Milestone 3 starts with inline source/provenance detail inside the Company Feed tab. The feed row itself is the click target instead of a separate inspect button. Clicking a feed row, or pressing Enter/Space on a focused feed row, expands the detail directly under that row; repeating the action collapses it. Up and Down arrows move through company feed rows while preserving expansion state: collapsed feed details stay collapsed, and already-open detail moves to the focused feed row. Company feed rows use the same unread dot and read/unread typography as Inbox feed rows. The inline detail should show source, type, timestamps, attribution, language, summary, source URL, read/save actions, and an explicit action to open the item in the Inbox with the company filter applied.
+
+If the selected company has no stored feed items, the Feed tab shows an inline empty state instead of a blank panel. The empty state keeps the workspace anchored to the selected company and provides an `Open filtered Inbox` action so the user can verify the same company filter in the main review surface.
 
 Notebook tab:
 
@@ -191,6 +207,8 @@ Main regions:
 - next scheduled poll
 - manual refresh action
 - source policy notes or links
+
+Source rows follow the same list/detail behavior as the rest of the app: clicking a source adapter, or pressing Enter/Space on a focused source row, expands operational details inline under that row. Repeating the action collapses the details.
 
 V1 adapters:
 
