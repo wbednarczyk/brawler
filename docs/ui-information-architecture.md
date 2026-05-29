@@ -30,6 +30,8 @@ Shell behavior:
 - Sidebar should be collapsible after v1 if space becomes tight, but v1 can keep it fixed.
 - Detail pane should be dismissible.
 - Empty states should offer direct actions and avoid marketing copy.
+- Common mutations should provide immediate visual confirmation without blocking the workflow.
+- Intuitive, responsive UX is a core product requirement for every screen.
 
 ## Inbox Screen
 
@@ -83,6 +85,8 @@ Actions:
 - edit company metadata
 - add/remove company from watchlist
 - open company workspace
+
+Early implementation may expose watchlist assignment directly on company rows. This is acceptable for proving storage and command behavior, but the workflow should be refined before v1 because repeated row-level assign/remove actions are tedious.
 
 ## Company Workspace
 

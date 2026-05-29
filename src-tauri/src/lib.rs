@@ -44,6 +44,115 @@ mod commands {
             .create_company(input)
             .map_err(|error| error.to_string())
     }
+
+    #[tauri::command]
+    pub fn lookup_company(
+        input: storage::CompanyLookupInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Option<storage::CompanyLookupResult>, String> {
+        state
+            .lookup_company(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn delete_company(
+        company_id: String,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<(), String> {
+        state
+            .delete_company(&company_id)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_watchlists(
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::Watchlist>, String> {
+        state.list_watchlists().map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_watchlist_memberships(
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::WatchlistMembership>, String> {
+        state
+            .list_watchlist_memberships()
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn create_watchlist(
+        input: storage::NewWatchlist,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::Watchlist, String> {
+        state
+            .create_watchlist(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn add_company_to_watchlist(
+        input: storage::WatchlistCompanyInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<(), String> {
+        state
+            .add_company_to_watchlist(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn remove_company_from_watchlist(
+        input: storage::WatchlistCompanyInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<(), String> {
+        state
+            .remove_company_from_watchlist(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_feed_items(
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::FeedItem>, String> {
+        state.list_feed_items().map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn update_feed_item_state(
+        input: storage::FeedItemStateInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::FeedItem, String> {
+        state
+            .update_feed_item_state(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_source_adapters(
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::SourceAdapter>, String> {
+        state
+            .list_source_adapters()
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn get_settings(
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::UserSettings, String> {
+        state.get_settings().map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn update_settings(
+        input: storage::SettingsUpdate,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::UserSettings, String> {
+        state
+            .update_settings(input)
+            .map_err(|error| error.to_string())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -64,7 +173,19 @@ pub fn run() {
             commands::health,
             commands::database_status,
             commands::list_companies,
-            commands::create_company
+            commands::create_company,
+            commands::lookup_company,
+            commands::delete_company,
+            commands::list_watchlists,
+            commands::list_watchlist_memberships,
+            commands::create_watchlist,
+            commands::add_company_to_watchlist,
+            commands::remove_company_from_watchlist,
+            commands::list_feed_items,
+            commands::update_feed_item_state,
+            commands::list_source_adapters,
+            commands::get_settings,
+            commands::update_settings
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Brawler application");

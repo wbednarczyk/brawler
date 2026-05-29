@@ -85,6 +85,13 @@ Exit criteria:
 
 Goal: implement the local persistence layer and core domain modules without external source dependencies.
 
+Status: complete.
+
+Notes:
+
+- YAML settings import/export/bootstrap is contract-accepted and implementation-deferred to later export/import/backup work.
+- Some early Milestone 3 UI pieces were built during Milestone 2, but Milestone 2 closure is based on local storage, settings, fixture feed, and command-boundary completion.
+
 Included:
 
 - SQLite migration runner
@@ -93,7 +100,7 @@ Included:
 - companies
 - watchlists
 - settings
-- YAML settings import/export/bootstrap contract
+- YAML settings import/export/bootstrap contract, with implementation deferred to later export/import/backup work
 - seed or fixture feed items
 - Tauri commands for companies, watchlists, settings, and fixture feed
 
@@ -105,10 +112,15 @@ Exit criteria:
 - fixture feed can be shown in Inbox
 - migration tests exist
 - migration check runs in CI
+- runtime settings can be read and updated through Tauri commands
+- theme persistence uses SQLite as the runtime source of truth
+- YAML settings import/export/bootstrap is explicitly deferred with a follow-up card
 
 ## Milestone 3: Inbox And Company Workspace
 
 Goal: make the primary non-AI research workflow usable with local/fixture data.
+
+Status: next active milestone.
 
 Included:
 
@@ -234,7 +246,28 @@ Exit criteria:
 - AI results preserve source references
 - tests cover contract mapping
 
-## Milestone 9: V1 Packaging Candidate
+## Milestone 9: Keyboard Shortcuts And Workflow Polish
+
+Goal: make repeated desktop use faster without making shortcuts the only way to operate the app.
+
+Included:
+
+- app-wide shortcut map
+- discoverable shortcut reference in Settings or Help/About
+- Inbox shortcuts for navigation, read/unread, save/unsave, opening source, search focus, and refresh
+- Company/notebook shortcuts where they reduce repeated work
+- conflict checks with native Windows/browser text-editing shortcuts
+- tests for critical shortcut workflows
+
+Exit criteria:
+
+- common daily inbox actions can be performed from the keyboard
+- shortcuts are visible/discoverable in the app
+- every shortcut action remains available through visible UI controls
+- text inputs and editors do not accidentally trigger global shortcuts
+- workflow tests cover the most important shortcuts
+
+## Milestone 10: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 

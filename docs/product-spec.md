@@ -6,11 +6,17 @@ See also [Project Brief](project-brief.md), [UI Flows](ui-flows.md), [UI Informa
 
 The first screen is an investor inbox: a dense chronological feed of company-specific reports and news. It should support repeated daily use and fast scanning. Each company also has a notebook for durable research notes.
 
+Early fixture feed implementations should already obey local watchlist, company, unread, and saved filters, even before real source ingestion exists.
+Fixture feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state in SQLite.
+Source URLs in item details must be directly actionable so the user can verify the original report or article quickly.
+When filters hide all feed items, the UI must offer a quick way to clear active filters and return to the full feed.
+
 Expected v1 UI areas:
 
 - feed list with newest items first
 - watchlist selector
 - company filter
+- search across visible feed items
 - source/type filter
 - unread/read state
 - saved items
@@ -20,6 +26,8 @@ Expected v1 UI areas:
 - in-app badges for new/unread items
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
+
+Keyboard shortcuts are in v1 scope as late workflow polish. They should speed up repeated inbox and research actions, but every shortcut action must remain available through visible UI controls. Shortcuts must be discoverable in the app and must not interfere with text editing in search fields, note editors, forms, or transcript selection workflows.
 
 ## Theme And Visual Direction
 
@@ -39,7 +47,7 @@ Light theme should preserve the same brand accent colors while using readable li
 
 ## Watchlists And Companies
 
-Users can maintain multiple watchlists. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
+Users can maintain multiple watchlists. Companies can be assigned to and removed from watchlists without deleting the company from the local registry. Company list rows should make existing watchlist memberships visible at a glance. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
 
 Company metadata may include:
 
@@ -51,6 +59,10 @@ Company metadata may include:
 - LEI
 - aliases
 - source-specific IDs
+
+Company entry should support lookup/enrichment. After the user selects an exchange and enters a ticker, ISIN, or company name, the app should be able to fill the remaining company fields when a confident match exists. Exact ticker and ISIN lookups may auto-fill directly. Name lookup may require suggestions or user confirmation when multiple matches exist.
+
+The first implementation may use local fixtures for GPW metadata. Later implementations should replace or extend fixtures with a source-specific company registry adapter and preserve metadata provenance.
 
 ## Company Notebooks
 
@@ -84,11 +96,18 @@ Later sources should be possible through adapters:
 
 The app should prefer official/public/RSS sources and avoid restricted scraping by default.
 
+The Sources screen shows locally configured source adapters, supported markets, fetch mode, enabled state, poll interval, and last success or error status. Before real ingestion exists, this screen still reads the seeded adapter registry from SQLite so source monitoring has a stable UI home.
+
 ## Ingestion
 
-The default polling interval is 15 minutes while the app is open. Manual refresh must be supported.
+The default polling interval is 15 minutes while the app is open. Manual source refresh must be supported.
+Before real source ingestion exists, the topbar source refresh control is a disabled placeholder. It must eventually trigger or enqueue source refresh jobs.
+
+The DB status indicator may expose a small database-backed view refresh action for development and recovery ergonomics. That action reloads local SQLite-backed app state such as feed items, companies, watchlists, memberships, and database status, but it is not the product-level news/source refresh workflow.
 
 Ingestion should preserve source attribution, publication time, fetch time, original language, matched company, and source URL.
+
+Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with AI analysis or explicit user decisions should not be removed by routine cleanup without clear user control.
 
 ## AI Analysis
 
@@ -116,7 +135,7 @@ Default AI analysis mode is source-grounded. A future opinionated mode may be ad
 
 ## Settings, Export, And Local Data
 
-The Settings panel edits runtime settings stored in SQLite. YAML is supported as import/export/bootstrap format for non-secret settings. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
+The Settings panel edits runtime settings stored in SQLite. YAML is accepted as the future import/export/bootstrap format for non-secret settings, but YAML implementation is deferred until the later export/import/backup work. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
 
 App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs only and no telemetry.
 

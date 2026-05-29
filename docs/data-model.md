@@ -112,6 +112,7 @@ Fields:
 - `language`
 - `published_at`
 - `fetched_at`
+- `display_company`
 - `dedupe_key`
 - `read`
 - `saved`
@@ -128,6 +129,9 @@ Rules:
 - `dedupe_key` should be unique per source adapter.
 - `fetched_at` is required.
 - `published_at` may be null only when the source does not provide it.
+- `display_company` is a UI read-model helper for early feed rows and unmatched/source-derived ticker labels. Canonical company relationships still live in `feed_item_companies`.
+- Read and saved state are stored in SQLite and must survive app restart.
+- Retention policy must be designed before broad ingestion. Feed item storage should support cleanup without deleting saved items, items linked to notes, items with AI analysis, or items otherwise explicitly preserved by the user.
 
 ### Notebook Entries
 
@@ -283,7 +287,7 @@ Rules:
 - General AI provider is null until the user configures one.
 - Default AI analysis mode is `source_grounded`.
 - Runtime settings live in SQLite.
-- YAML import/export excludes secrets.
+- YAML import/export excludes secrets and is contract-accepted but implementation-deferred until later export/import/backup work.
 - Provider secrets are referenced indirectly and stored in the OS keychain.
 
 ## Provenance Model
