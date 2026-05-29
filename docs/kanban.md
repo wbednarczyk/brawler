@@ -143,47 +143,46 @@ Test expectations: adapter unit tests with fixtures.
 
 ## Ready
 
-Milestone 2 is closed. Start Milestone 3 work on a separate branch after merging the Milestone 2 branch to `master`.
+Milestone 4 is next after the Milestone 3 branch is committed and merged.
 
 ## In Progress
 
-### Replace fixture inbox with stored feed items
-
-Intent: move the Inbox from hard-coded fixture rows to feed items stored in SQLite.
-
-Acceptance criteria:
-
-- Feed items are read from local storage.
-- Inbox watchlist, company, source, type, unread, and saved filters apply to stored feed items.
-- Inbox search applies to stored feed items by company, title, source, type, and summary.
-- Active feed filters can be cleared in one action, including from the empty state.
-- Selecting a feed item updates the detail pane with source URL, timestamps, attribution, and summary.
-- Source URL remains directly actionable from the detail pane.
-- Read/unread and saved/unsaved changes persist in SQLite.
-- Empty states distinguish no tracked companies from no matching items.
-- Fixture data is only used in tests or development seeding.
-
-Current slice:
-
-- SQLite-backed feed item read model exists.
-- Development fixture feed rows are seeded only when the local feed is empty.
-- Read/unread and saved/unsaved state updates round-trip through Tauri/Rust and persist in SQLite.
-- Topbar source refresh is a disabled placeholder until real source adapter refresh jobs exist.
-- DB status pill reloads local SQLite-backed app state as a small utility action.
-- Sources screen lists configured SQLite-backed source adapters and their status.
-- Feed detail pane is scoped to Inbox instead of appearing on unrelated screens.
-- Native select options use explicit theme colors so dark-mode dropdowns remain readable.
-- Inbox feed/detail split can be resized with a drag handle between panels.
-
-Docs/contracts touched: product spec, contracts, data model.
-
-Test expectations: Rust feed storage tests and UI filter workflow tests.
+No cards.
 
 ## Review
 
 No cards.
 
 ## Done
+
+### Complete Milestone 3: Inbox And Company Workspace
+
+Intent: make the primary non-AI research workflow usable with local/fixture data.
+
+Acceptance criteria:
+
+- Feed items are read from local SQLite storage.
+- Inbox filters cover watchlist, company, source, type, unread, saved, and search.
+- Feed item detail shows source URL, timestamps, attribution, and summary.
+- Source URLs are directly actionable.
+- Read/unread and saved/unsaved state persists through the Tauri/Rust command boundary.
+- Empty states distinguish no companies, no stored feed items, and no matching filters.
+- Company workspace opens from company rows and matching Inbox items.
+- Company workspace includes Feed, Notebook, Claims, Transcripts, and Metadata tabs.
+- Company Feed tab shows company-scoped feed items, inline details, read/save actions, and open-in-Inbox behavior.
+- Sources screen shows local source adapter status, and the topbar source status opens the most relevant adapter.
+- Top toolbar remains visible while workspace content scrolls.
+- Daily review workflow has automated frontend coverage.
+
+Notes:
+
+- Fixture feed rows are development seed data only and are inserted only when the local feed is empty.
+- Real source ingestion and manual refresh jobs are deferred to later source milestones.
+- Notebook, Claims, and Transcripts tabs remain intentional placeholders until their roadmap milestones.
+
+Docs/contracts touched: roadmap, kanban, product spec, UI information architecture, contracts, data model.
+
+Test expectations: `make check` before commit and Windows package sanity by the project owner.
 
 ### Finish Milestone 2 before Milestone 3
 

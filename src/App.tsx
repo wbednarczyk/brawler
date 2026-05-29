@@ -45,6 +45,7 @@ type DatabaseStatus = {
 };
 
 type Section = "Inbox" | "Companies" | "Notebooks" | "Transcripts" | "Sources" | "Settings";
+type CompanyWorkspaceTab = "Feed" | "Notebook" | "Claims" | "Transcripts" | "Metadata";
 
 type InboxStatusFilter = "all" | "unread" | "saved";
 type DbRefreshState = "idle" | "refreshing" | "done";
@@ -196,9 +197,13 @@ export function App() {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [sourceAdapters, setSourceAdapters] = useState<SourceAdapter[]>([]);
   const [sourceAdaptersError, setSourceAdaptersError] = useState<string | null>(null);
+  const [selectedSourceAdapterId, setSelectedSourceAdapterId] = useState<string | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
+  const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
+  const [companyWorkspaceTab, setCompanyWorkspaceTab] = useState<CompanyWorkspaceTab>("Feed");
   const [detailPaneWidth, setDetailPaneWidth] = useState(detailPaneDefaultWidth);
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
   const [searchQuery, setSearchQuery] = useState("");
@@ -227,6 +232,10 @@ export function App() {
       return indexed;
     }, {});
   }, [companies]);
+  const totalUnreadFeedItems = useMemo(
+    () => feedState.filter((item) => item.unread).length,
+    [feedState],
+  );
   const feedTypes = useMemo(() => {
     return Array.from(new Set(feedState.map((item) => item.type))).sort();
   }, [feedState]);
@@ -283,6 +292,71 @@ export function App() {
   ]);
   const selectedFeedItem =
     filteredFeedItems.find((item) => item.id === selectedFeedItemId) ?? filteredFeedItems[0] ?? null;
+  const inboxReviewStats = useMemo(
+    () => ({
+      visible: filteredFeedItems.length,
+      unread: filteredFeedItems.filter((item) => item.unread).length,
+      saved: filteredFeedItems.filter((item) => item.saved).length,
+    }),
+    [filteredFeedItems],
+  );
+  const selectedFeedCompany =
+    selectedFeedItem
+      ? companies.find((company) => company.qualifiedTicker === selectedFeedItem.company) ?? null
+      : null;
+  const selectedCompany =
+    companies.find((company) => company.id === selectedCompanyId) ?? null;
+  const selectedCompanyFeedItems = useMemo(() => {
+    if (!selectedCompany) {
+      return [];
+    }
+
+    return feedState.filter((item) => item.company === selectedCompany.qualifiedTicker);
+  }, [feedState, selectedCompany]);
+  const selectedCompanyFeedItem =
+    selectedCompanyFeedItems.find((item) => item.id === selectedCompanyFeedItemId) ?? null;
+  const selectedCompanyFeedStats = useMemo(
+    () => ({
+      total: selectedCompanyFeedItems.length,
+      unread: selectedCompanyFeedItems.filter((item) => item.unread).length,
+      saved: selectedCompanyFeedItems.filter((item) => item.saved).length,
+    }),
+    [selectedCompanyFeedItems],
+  );
+  const sourceStatusSummary = useMemo(() => {
+    if (sourceAdaptersError) {
+      return {
+        label: "error",
+        title: `Source adapter command failed: ${sourceAdaptersError}`,
+        tone: "danger",
+      };
+    }
+
+    if (sourceAdapters.length === 0) {
+      return {
+        label: "0 sources",
+        title: "No source adapters configured",
+        tone: "warn",
+      };
+    }
+
+    const enabledAdapters = sourceAdapters.filter((adapter) => adapter.enabled);
+    const adaptersWithErrors = sourceAdapters.filter((adapter) => adapter.lastError);
+
+    if (adaptersWithErrors.length > 0) {
+      return {
+        label: `${adaptersWithErrors.length} issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
+        title: `${adaptersWithErrors.length} source adapter issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
+        tone: "danger",
+      };
+    }
+
+    return {
+      label: `${enabledAdapters.length}/${sourceAdapters.length}`,
+      title: `${enabledAdapters.length} enabled source adapter${enabledAdapters.length === 1 ? "" : "s"} ready`,
+      tone: "ok",
+    };
+  }, [sourceAdapters, sourceAdaptersError]);
   const hasActiveInboxFilters =
     searchQuery.trim().length > 0 ||
     inboxWatchlistFilter !== "all" ||
@@ -290,10 +364,30 @@ export function App() {
     inboxTypeFilter !== "all" ||
     inboxSourceFilter !== "all" ||
     inboxStatusFilter !== "all";
+  const inboxEmptyState =
+    companies.length === 0
+      ? "no-companies"
+      : feedState.length === 0
+        ? "no-feed"
+        : filteredFeedItems.length === 0
+          ? "no-matches"
+          : null;
 
   useEffect(() => {
     document.documentElement.dataset.theme = effectiveTheme;
   }, [effectiveTheme]);
+
+  useEffect(() => {
+    if (selectedFeedItemId && filteredFeedItems.some((item) => item.id === selectedFeedItemId)) {
+      return;
+    }
+
+    const nextSelectedFeedItemId = filteredFeedItems[0]?.id ?? null;
+
+    if (selectedFeedItemId !== nextSelectedFeedItemId) {
+      setSelectedFeedItemId(nextSelectedFeedItemId);
+    }
+  }, [filteredFeedItems, selectedFeedItemId]);
 
   useEffect(() => {
     invoke<HealthResponse>("health")
@@ -652,12 +746,8 @@ export function App() {
     }, 1200);
   }
 
-  function updateSelectedFeedItem(update: (item: FeedItem) => FeedItem) {
-    if (!selectedFeedItem) {
-      return;
-    }
-
-    const nextItem = update(selectedFeedItem);
+  function updateFeedItemState(item: FeedItem, update: (item: FeedItem) => FeedItem) {
+    const nextItem = update(item);
 
     invoke<FeedItem>("update_feed_item_state", {
       input: {
@@ -677,23 +767,45 @@ export function App() {
       });
   }
 
+  function updateSelectedFeedItem(update: (item: FeedItem) => FeedItem) {
+    if (!selectedFeedItem) {
+      return;
+    }
+
+    updateFeedItemState(selectedFeedItem, update);
+  }
+
   function toggleFeedItemReadState(item: FeedItem) {
-    invoke<FeedItem>("update_feed_item_state", {
-      input: {
-        id: item.id,
-        read: item.unread,
-        saved: item.saved,
-      },
-    })
-      .then((response) => {
-        setFeedState((current) =>
-          current.map((feedItem) => (feedItem.id === response.id ? response : feedItem)),
-        );
-        setFeedError(null);
-      })
-      .catch((error) => {
-        setFeedError(String(error));
-      });
+    updateFeedItemState(item, (current) => ({
+      ...current,
+      unread: !current.unread,
+    }));
+  }
+
+  function selectFeedItemFromKeyboard(event: KeyboardEvent<HTMLElement>, item: FeedItem) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setSelectedFeedItemId(item.id);
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+
+      const rows = Array.from(
+        event.currentTarget.parentElement?.querySelectorAll<HTMLElement>("[data-feed-row='true']") ??
+          [],
+      );
+      const currentIndex = rows.indexOf(event.currentTarget);
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = Math.min(Math.max(currentIndex + direction, 0), rows.length - 1);
+      const nextRow = rows[nextIndex];
+      const nextFeedItemId = nextRow?.dataset.feedItemId;
+
+      if (nextRow && nextFeedItemId) {
+        nextRow.focus();
+        setSelectedFeedItemId(nextFeedItemId);
+      }
+    }
   }
 
   function clearInboxFilters() {
@@ -703,6 +815,130 @@ export function App() {
     setInboxTypeFilter("all");
     setInboxSourceFilter("all");
     setInboxStatusFilter("all");
+  }
+
+  function openCompanyWorkspace(company: Company) {
+    setSelectedCompanyId((current) => (current === company.id ? null : company.id));
+    setCompanyWorkspaceTab("Feed");
+    setActiveSection("Companies");
+  }
+
+  function focusCompanyWorkspace(companyId: string) {
+    setSelectedCompanyId(companyId);
+    setCompanyWorkspaceTab("Feed");
+    setActiveSection("Companies");
+  }
+
+  function openCompanyWorkspaceFromKeyboard(event: KeyboardEvent<HTMLElement>, company: Company) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      openCompanyWorkspace(company);
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+
+      const rows = Array.from(
+        event.currentTarget
+          .closest("[data-company-list='true']")
+          ?.querySelectorAll<HTMLElement>("[data-company-row='true']") ?? [],
+      );
+      const currentIndex = rows.indexOf(event.currentTarget);
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = Math.min(Math.max(currentIndex + direction, 0), rows.length - 1);
+      const nextRow = rows[nextIndex];
+      const nextCompanyId = nextRow?.dataset.companyId;
+
+      if (nextRow && nextCompanyId) {
+        nextRow.focus();
+        if (selectedCompanyId) {
+          focusCompanyWorkspace(nextCompanyId);
+        }
+      }
+    }
+  }
+
+  function openCompanyWorkspaceFromFeedItem(item: FeedItem) {
+    const company = companies.find((candidate) => candidate.qualifiedTicker === item.company);
+
+    if (!company) {
+      return;
+    }
+
+    setSelectedCompanyId(company.id);
+    setSelectedCompanyFeedItemId(item.id);
+    setCompanyWorkspaceTab("Feed");
+    setActiveSection("Companies");
+  }
+
+  function inspectCompanyFeedItem(item: FeedItem) {
+    setSelectedFeedItemId(item.id);
+    setInboxCompanyFilter(item.company);
+    setActiveSection("Inbox");
+  }
+
+  function openCompanyInboxFilter(company: Company) {
+    setSelectedFeedItemId(null);
+    setInboxCompanyFilter(company.qualifiedTicker);
+    setActiveSection("Inbox");
+  }
+
+  function toggleCompanyFeedItem(item: FeedItem) {
+    setSelectedCompanyFeedItemId((current) => (current === item.id ? null : item.id));
+  }
+
+  function selectCompanyFeedItemFromKeyboard(event: KeyboardEvent<HTMLElement>, item: FeedItem) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleCompanyFeedItem(item);
+    }
+
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+
+      const rows = Array.from(
+        event.currentTarget
+          .closest("[data-company-feed-list='true']")
+          ?.querySelectorAll<HTMLElement>("[data-company-feed-row='true']") ?? [],
+      );
+      const currentIndex = rows.indexOf(event.currentTarget);
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const nextIndex = Math.min(Math.max(currentIndex + direction, 0), rows.length - 1);
+      const nextRow = rows[nextIndex];
+      const nextFeedItemId = nextRow?.dataset.companyFeedItemId;
+
+      if (nextRow && nextFeedItemId) {
+        nextRow.focus();
+        if (selectedCompanyFeedItemId) {
+          setSelectedCompanyFeedItemId(nextFeedItemId);
+        }
+      }
+    }
+  }
+
+  function toggleSourceAdapter(adapterId: string) {
+    setSelectedSourceAdapterId((current) => (current === adapterId ? null : adapterId));
+  }
+
+  function openSourceStatus() {
+    const relevantAdapter =
+      sourceAdapters.find((adapter) => adapter.lastError) ??
+      sourceAdapters.find((adapter) => adapter.enabled) ??
+      sourceAdapters[0] ??
+      null;
+
+    setSelectedSourceAdapterId(relevantAdapter?.id ?? null);
+    setActiveSection("Sources");
+  }
+
+  function toggleSourceAdapterFromKeyboard(
+    event: KeyboardEvent<HTMLElement>,
+    adapterId: string,
+  ) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleSourceAdapter(adapterId);
+    }
   }
 
   function clampDetailPaneWidth(width: number) {
@@ -785,6 +1021,11 @@ export function App() {
               >
                 <Icon size={18} aria-hidden="true" />
                 <span>{section.label}</span>
+                {section.label === "Inbox" && totalUnreadFeedItems > 0 ? (
+                  <span className="nav-badge" aria-label={`${totalUnreadFeedItems} unread feed item`}>
+                    {totalUnreadFeedItems}
+                  </span>
+                ) : null}
               </button>
             );
           })}
@@ -814,6 +1055,24 @@ export function App() {
               <span>AI</span>
               <strong>source</strong>
             </div>
+            <button
+              aria-label="Open source status"
+              className={[
+                "source-status-pill",
+                sourceStatusSummary.tone === "ok" ? "source-status-pill-ok" : "",
+                sourceStatusSummary.tone === "warn" ? "source-status-pill-warn" : "",
+                sourceStatusSummary.tone === "danger" ? "source-status-pill-danger" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              onClick={openSourceStatus}
+              title={sourceStatusSummary.title}
+              type="button"
+            >
+              <Activity size={14} aria-hidden="true" />
+              <span>Sources</span>
+              <strong>{sourceStatusSummary.label}</strong>
+            </button>
             <button
               aria-label={
                 dbRefreshState === "refreshing"
@@ -922,6 +1181,17 @@ export function App() {
               </div>
 
               <div className="filter-reset-row" aria-label="Inbox filter reset">
+                <div className="inbox-review-summary" aria-label="Inbox review summary">
+                  <span>
+                    <strong>{inboxReviewStats.visible}</strong> visible
+                  </span>
+                  <span>
+                    <strong>{inboxReviewStats.unread}</strong> unread
+                  </span>
+                  <span>
+                    <strong>{inboxReviewStats.saved}</strong> saved
+                  </span>
+                </div>
                 <button
                   className="secondary-button compact-button"
                   disabled={!hasActiveInboxFilters}
@@ -998,6 +1268,8 @@ export function App() {
               <div className="feed-list" aria-label="Feed items">
                 {filteredFeedItems.map((item) => (
                   <article
+                    aria-label={`Select feed item: ${item.title}`}
+                    aria-current={selectedFeedItem?.id === item.id ? "true" : undefined}
                     className={[
                       "feed-row",
                       item.unread ? "unread" : "",
@@ -1006,8 +1278,14 @@ export function App() {
                       .filter(Boolean)
                       .join(" ")}
                     key={item.id}
+                    data-feed-item-id={item.id}
+                    data-feed-row="true"
                     onClick={() => setSelectedFeedItemId(item.id)}
                     onDoubleClick={() => toggleFeedItemReadState(item)}
+                    onKeyDown={(event) => selectFeedItemFromKeyboard(event, item)}
+                    role="button"
+                    tabIndex={0}
+                    title="Select feed item"
                   >
                     <div className="feed-row-main">
                       <div className="feed-meta">
@@ -1022,17 +1300,57 @@ export function App() {
                     {item.unread ? <span className="unread-dot" title="Unread" /> : null}
                   </article>
                 ))}
-                {filteredFeedItems.length === 0 ? (
+                {inboxEmptyState ? (
                   <div className="empty-state">
-                    <span>No feed items for selected filters.</span>
-                    {hasActiveInboxFilters ? (
-                      <button
-                        className="secondary-button compact-button"
-                        onClick={clearInboxFilters}
-                        type="button"
-                      >
-                        Clear filters
-                      </button>
+                    {inboxEmptyState === "no-companies" ? (
+                      <>
+                        <span>No companies tracked yet.</span>
+                        <button
+                          className="secondary-button compact-button"
+                          onClick={() => setActiveSection("Companies")}
+                          type="button"
+                        >
+                          Add company
+                        </button>
+                      </>
+                    ) : null}
+
+                    {inboxEmptyState === "no-feed" ? (
+                      <>
+                        <span>No stored feed items yet.</span>
+                        <div className="empty-state-actions">
+                          <button
+                            className="secondary-button compact-button"
+                            disabled
+                            title="Source refresh will pull latest remote feeds after source ingestion is wired"
+                            type="button"
+                          >
+                            Refresh pending
+                          </button>
+                          <button
+                            className="secondary-button compact-button"
+                            onClick={openSourceStatus}
+                            type="button"
+                          >
+                            Open Sources
+                          </button>
+                        </div>
+                      </>
+                    ) : null}
+
+                    {inboxEmptyState === "no-matches" ? (
+                      <>
+                        <span>No feed items for selected filters.</span>
+                        {hasActiveInboxFilters ? (
+                          <button
+                            className="secondary-button compact-button"
+                            onClick={clearInboxFilters}
+                            type="button"
+                          >
+                            Clear filters
+                          </button>
+                        ) : null}
+                      </>
                     ) : null}
                   </div>
                 ) : null}
@@ -1137,78 +1455,324 @@ export function App() {
                   </button>
                 </form>
 
-                <div className="company-list" aria-label="Companies list">
+                <div className="company-list" aria-label="Companies list" data-company-list="true">
                   {companies.map((company) => (
-                    <article className="company-row" key={company.id}>
-                      <div className="company-row-main">
-                        <h2>{company.qualifiedTicker}</h2>
-                        <p>{company.displayName}</p>
-                        <div
-                          className="membership-list"
-                          aria-label={`Watchlist memberships for ${company.qualifiedTicker}`}
-                        >
-                          {(membershipsByCompany[company.id] ?? []).map((membership) => (
-                            <span className="membership-chip" key={membership.watchlistId}>
-                              {membership.watchlistName}
-                            </span>
-                          ))}
-                          {(membershipsByCompany[company.id] ?? []).length === 0 ? (
-                            <span className="membership-empty">No watchlist</span>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div className="company-row-actions">
-                        <span>{company.isin ?? "No ISIN"}</span>
-                        <select
-                          aria-label={`Watchlist for ${company.qualifiedTicker}`}
-                          disabled={watchlists.length === 0}
-                          value={watchlistAssignments[company.id] || watchlists[0]?.id || ""}
-                          onChange={(event) =>
-                            updateWatchlistAssignment(company.id, event.target.value)
-                          }
-                        >
-                          {watchlists.map((watchlist) => (
-                            <option key={watchlist.id} value={watchlist.id}>
-                              {watchlist.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className="secondary-button compact-button assign-button"
-                          disabled={watchlists.length === 0}
-                          onClick={() => addCompanyToWatchlist(company)}
-                          type="button"
-                        >
-                          Assign
-                        </button>
-                        <button
-                          className="secondary-button compact-button remove-button"
-                          disabled={watchlists.length === 0}
-                          onClick={() => removeCompanyFromWatchlist(company)}
-                          type="button"
-                        >
-                          Remove
-                        </button>
-                        {watchlistFeedback?.companyId === company.id ? (
-                          <span
-                            aria-label={watchlistFeedback.message}
-                            className="inline-success"
-                            role="status"
-                            title={watchlistFeedback.message}
+                    <div className="company-row-block" key={company.id}>
+                      <article
+                        aria-label={`Open ${company.qualifiedTicker} workspace`}
+                        className={[
+                          "company-row",
+                          selectedCompany?.id === company.id ? "company-row-selected" : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        data-company-id={company.id}
+                        data-company-row="true"
+                        onClick={() => openCompanyWorkspace(company)}
+                        onKeyDown={(event) => openCompanyWorkspaceFromKeyboard(event, company)}
+                        role="button"
+                        tabIndex={0}
+                        title={`Open ${company.qualifiedTicker} workspace`}
+                      >
+                        <div className="company-row-main">
+                          <h2>{company.qualifiedTicker}</h2>
+                          <p>{company.displayName}</p>
+                          <div
+                            className="membership-list"
+                            aria-label={`Watchlist memberships for ${company.qualifiedTicker}`}
                           >
-                            <CheckCircle2 size={16} />
-                          </span>
-                        ) : null}
-                        <button
-                          className="icon-button danger-button"
-                          onClick={() => deleteCompany(company)}
-                          title={`Delete ${company.qualifiedTicker}`}
-                          type="button"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </article>
+                            {(membershipsByCompany[company.id] ?? []).map((membership) => (
+                              <span className="membership-chip" key={membership.watchlistId}>
+                                {membership.watchlistName}
+                              </span>
+                            ))}
+                            {(membershipsByCompany[company.id] ?? []).length === 0 ? (
+                              <span className="membership-empty">No watchlist</span>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="company-row-actions" onClick={(event) => event.stopPropagation()}>
+                          <span>{company.isin ?? "No ISIN"}</span>
+                          <select
+                            aria-label={`Watchlist for ${company.qualifiedTicker}`}
+                            disabled={watchlists.length === 0}
+                            value={watchlistAssignments[company.id] || watchlists[0]?.id || ""}
+                            onChange={(event) =>
+                              updateWatchlistAssignment(company.id, event.target.value)
+                            }
+                          >
+                            {watchlists.map((watchlist) => (
+                              <option key={watchlist.id} value={watchlist.id}>
+                                {watchlist.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            className="secondary-button compact-button assign-button"
+                            disabled={watchlists.length === 0}
+                            onClick={() => addCompanyToWatchlist(company)}
+                            type="button"
+                          >
+                            Assign
+                          </button>
+                          <button
+                            className="secondary-button compact-button remove-button"
+                            disabled={watchlists.length === 0}
+                            onClick={() => removeCompanyFromWatchlist(company)}
+                            type="button"
+                          >
+                            Remove
+                          </button>
+                          {watchlistFeedback?.companyId === company.id ? (
+                            <span
+                              aria-label={watchlistFeedback.message}
+                              className="inline-success"
+                              role="status"
+                              title={watchlistFeedback.message}
+                            >
+                              <CheckCircle2 size={16} />
+                            </span>
+                          ) : null}
+                          <button
+                            className="icon-button danger-button"
+                            onClick={() => deleteCompany(company)}
+                            title={`Delete ${company.qualifiedTicker}`}
+                            type="button"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
+                      </article>
+
+                      {selectedCompany?.id === company.id ? (
+                        <section className="company-workspace" aria-label="Company workspace">
+                          <div className="company-workspace-header">
+                            <div>
+                              <span className="eyebrow">Company workspace</span>
+                              <h2>{selectedCompany.qualifiedTicker}</h2>
+                              <p>{selectedCompany.displayName}</p>
+                            </div>
+                            <div className="company-workspace-meta" aria-label="Selected company metadata">
+                              <span>{selectedCompany.exchange}</span>
+                              <span>{selectedCompany.isin ?? "No ISIN"}</span>
+                              <span>{selectedCompanyFeedStats.total} feed</span>
+                              <span>{selectedCompanyFeedStats.unread} unread</span>
+                              <span>{selectedCompanyFeedStats.saved} saved</span>
+                              {(membershipsByCompany[selectedCompany.id] ?? []).map((membership) => (
+                                <span key={membership.watchlistId}>{membership.watchlistName}</span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="segmented-control company-tabs" aria-label="Company workspace tabs">
+                            {(["Feed", "Notebook", "Claims", "Transcripts", "Metadata"] as const).map(
+                              (tab) => (
+                                <button
+                                  className={companyWorkspaceTab === tab ? "segment-active" : undefined}
+                                  key={tab}
+                                  onClick={() => setCompanyWorkspaceTab(tab)}
+                                  type="button"
+                                >
+                                  {tab}
+                                </button>
+                              ),
+                            )}
+                          </div>
+
+                          {companyWorkspaceTab === "Feed" ? (
+                            <div
+                              className="company-tab-panel"
+                              aria-label="Company feed"
+                              data-company-feed-list="true"
+                            >
+                              {selectedCompanyFeedItems.map((item) => (
+                                <div className="company-feed-row-block" key={item.id}>
+                                  <article
+                                    aria-label={`Open company feed item: ${item.title}`}
+                                    className={[
+                                      "company-feed-row",
+                                      item.unread ? "unread" : "",
+                                      selectedCompanyFeedItem?.id === item.id
+                                        ? "company-feed-row-selected"
+                                        : "",
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" ")}
+                                    data-company-feed-item-id={item.id}
+                                    data-company-feed-row="true"
+                                    onClick={() => toggleCompanyFeedItem(item)}
+                                    onKeyDown={(event) => selectCompanyFeedItemFromKeyboard(event, item)}
+                                    role="button"
+                                    tabIndex={0}
+                                    title="Open company feed item details"
+                                  >
+                                    <div className="feed-row-main">
+                                      <div className="feed-meta">
+                                        <span>{item.type}</span>
+                                        <span>{item.source}</span>
+                                        <span>{item.time}</span>
+                                      </div>
+                                      <h3>{item.title}</h3>
+                                      <p>{item.summary}</p>
+                                    </div>
+                                    {item.saved ? <span className="saved-pill">Saved</span> : null}
+                                    {item.unread ? <span className="unread-dot" title="Unread" /> : null}
+                                  </article>
+
+                                  {selectedCompanyFeedItem?.id === item.id ? (
+                                    <aside className="company-feed-detail" aria-label="Company feed item details">
+                                      <div>
+                                        <span className="eyebrow">Selected item</span>
+                                        <h3>{selectedCompanyFeedItem.title}</h3>
+                                        <p>{selectedCompanyFeedItem.summary}</p>
+                                      </div>
+                                      <div className="detail-actions" aria-label="Company feed item actions">
+                                        <button
+                                          className="secondary-button compact-button"
+                                          onClick={() =>
+                                            updateFeedItemState(selectedCompanyFeedItem, (feedItem) => ({
+                                              ...feedItem,
+                                              unread: !feedItem.unread,
+                                            }))
+                                          }
+                                          type="button"
+                                        >
+                                          {selectedCompanyFeedItem.unread ? (
+                                            <MailOpen size={15} />
+                                          ) : (
+                                            <Mail size={15} />
+                                          )}
+                                          {selectedCompanyFeedItem.unread ? "Mark read" : "Mark unread"}
+                                        </button>
+                                        <button
+                                          className="secondary-button compact-button"
+                                          onClick={() =>
+                                            updateFeedItemState(selectedCompanyFeedItem, (feedItem) => ({
+                                              ...feedItem,
+                                              saved: !feedItem.saved,
+                                            }))
+                                          }
+                                          type="button"
+                                        >
+                                          <Save size={15} />
+                                          {selectedCompanyFeedItem.saved ? "Unsave" : "Save"}
+                                        </button>
+                                        <button
+                                          className="secondary-button compact-button"
+                                          onClick={() => inspectCompanyFeedItem(selectedCompanyFeedItem)}
+                                          type="button"
+                                        >
+                                          Open in Inbox
+                                        </button>
+                                        <a
+                                          className="secondary-button compact-button"
+                                          href={selectedCompanyFeedItem.sourceUrl}
+                                          rel="noreferrer"
+                                          target="_blank"
+                                        >
+                                          Open source
+                                        </a>
+                                      </div>
+                                      <dl className="metadata-grid">
+                                        <div>
+                                          <dt>Source</dt>
+                                          <dd>{selectedCompanyFeedItem.source}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Type</dt>
+                                          <dd>{selectedCompanyFeedItem.type}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Published</dt>
+                                          <dd>{selectedCompanyFeedItem.publishedAt}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Fetched</dt>
+                                          <dd>{selectedCompanyFeedItem.fetchedAt}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Attribution</dt>
+                                          <dd>{selectedCompanyFeedItem.attribution}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Language</dt>
+                                          <dd>{selectedCompanyFeedItem.language}</dd>
+                                        </div>
+                                      </dl>
+                                    </aside>
+                                  ) : null}
+                                </div>
+                              ))}
+                              {selectedCompanyFeedItems.length === 0 ? (
+                                <div className="empty-state company-feed-empty">
+                                  <div>
+                                    <strong>No stored feed items for {selectedCompany.qualifiedTicker} yet.</strong>
+                                    <p>
+                                      This company is tracked locally, but no fixture or ingested items are attached to
+                                      it yet.
+                                    </p>
+                                  </div>
+                                  <button
+                                    className="secondary-button compact-button"
+                                    onClick={() => openCompanyInboxFilter(selectedCompany)}
+                                    type="button"
+                                  >
+                                    Open filtered Inbox
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          ) : null}
+
+                          {companyWorkspaceTab === "Notebook" ? (
+                            <div className="company-tab-panel empty-state">
+                              Notebook editing starts in Milestone 4.
+                            </div>
+                          ) : null}
+
+                          {companyWorkspaceTab === "Claims" ? (
+                            <div className="company-tab-panel empty-state">
+                              Claim tracking starts in Milestone 4.
+                            </div>
+                          ) : null}
+
+                          {companyWorkspaceTab === "Transcripts" ? (
+                            <div className="company-tab-panel empty-state">
+                              YouTube transcript workflows start in Milestone 7.
+                            </div>
+                          ) : null}
+
+                          {companyWorkspaceTab === "Metadata" ? (
+                            <dl className="company-tab-panel metadata-grid" aria-label="Company metadata">
+                              <div>
+                                <dt>Qualified ticker</dt>
+                                <dd>{selectedCompany.qualifiedTicker}</dd>
+                              </div>
+                              <div>
+                                <dt>Exchange</dt>
+                                <dd>{selectedCompany.exchange}</dd>
+                              </div>
+                              <div>
+                                <dt>Ticker</dt>
+                                <dd>{selectedCompany.ticker}</dd>
+                              </div>
+                              <div>
+                                <dt>ISIN</dt>
+                                <dd>{selectedCompany.isin ?? "Not set"}</dd>
+                              </div>
+                              <div>
+                                <dt>CIK</dt>
+                                <dd>{selectedCompany.cik ?? "Not set"}</dd>
+                              </div>
+                              <div>
+                                <dt>LEI</dt>
+                                <dd>{selectedCompany.lei ?? "Not set"}</dd>
+                              </div>
+                            </dl>
+                          ) : null}
+                        </section>
+                      ) : null}
+                    </div>
                   ))}
                   {companies.length === 0 ? (
                     <div className="empty-state">No companies yet.</div>
@@ -1219,6 +1783,60 @@ export function App() {
                   <p className="error-text">Companies command failed: {companiesError}</p>
                 ) : null}
                 {lookupStatus ? <p className="helper-text">{lookupStatus}</p> : null}
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "Notebooks" ? (
+            <section className="feed-panel" aria-labelledby="notebooks-title">
+              <div className="panel-header">
+                <div>
+                  <h1 id="notebooks-title">Notebooks</h1>
+                  <p>Cross-company research notes begin in Milestone 4.</p>
+                </div>
+              </div>
+
+              <div className="section-placeholder" aria-label="Notebooks placeholder">
+                <div className="empty-state">
+                  <span>Notebook workflows are planned after the company workspace foundation.</span>
+                </div>
+                <dl className="settings-grid">
+                  <div>
+                    <dt>Planned scope</dt>
+                    <dd>Markdown notes, provenance, tags, claims, and review periods</dd>
+                  </div>
+                  <div>
+                    <dt>First entry point</dt>
+                    <dd>Create note from a feed item inside a company workspace</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "Transcripts" ? (
+            <section className="feed-panel" aria-labelledby="transcripts-title">
+              <div className="panel-header">
+                <div>
+                  <h1 id="transcripts-title">Transcripts</h1>
+                  <p>YouTube press conference transcription begins in Milestone 7.</p>
+                </div>
+              </div>
+
+              <div className="section-placeholder" aria-label="Transcripts placeholder">
+                <div className="empty-state">
+                  <span>Transcript jobs are deferred until provider setup and note workflows exist.</span>
+                </div>
+                <dl className="settings-grid">
+                  <div>
+                    <dt>Preferred provider</dt>
+                    <dd>Gemini for YouTube transcription only</dd>
+                  </div>
+                  <div>
+                    <dt>Planned flow</dt>
+                    <dd>Submit URL, review immutable segments, save selected text as editable notes</dd>
+                  </div>
+                </dl>
               </div>
             </section>
           ) : null}
@@ -1234,49 +1852,69 @@ export function App() {
 
               <div className="sources-layout" aria-label="Source adapters">
                 {sourceAdapters.map((adapter) => (
-                  <article className="source-row" key={adapter.id}>
-                    <div className="source-row-main">
-                      <div className="source-title-line">
-                        <span
-                          className={adapter.enabled ? "status-dot status-ok" : "status-dot status-warn"}
-                          title={adapter.enabled ? "Enabled" : "Disabled"}
-                        />
-                        <h2>{adapter.displayName}</h2>
-                        <span className="source-id">{adapter.id}</span>
+                  <div className="source-row-block" key={adapter.id}>
+                    <article
+                      aria-label={`Open source adapter: ${adapter.displayName}`}
+                      className={[
+                        "source-row",
+                        selectedSourceAdapterId === adapter.id ? "source-row-selected" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      onClick={() => toggleSourceAdapter(adapter.id)}
+                      onKeyDown={(event) => toggleSourceAdapterFromKeyboard(event, adapter.id)}
+                      role="button"
+                      tabIndex={0}
+                      title={`Open ${adapter.displayName} details`}
+                    >
+                      <div className="source-row-main">
+                        <div className="source-title-line">
+                          <span
+                            className={adapter.enabled ? "status-dot status-ok" : "status-dot status-warn"}
+                            title={adapter.enabled ? "Enabled" : "Disabled"}
+                          />
+                          <h2>{adapter.displayName}</h2>
+                          <span className="source-id">{adapter.id}</span>
+                        </div>
+                        <p>
+                          {adapter.sourceType} · {adapter.fetchMode}
+                        </p>
+                        <div className="source-chip-list" aria-label={`Markets for ${adapter.displayName}`}>
+                          {adapter.markets.map((market) => (
+                            <span className="membership-chip" key={market}>
+                              {market}
+                            </span>
+                          ))}
+                          {adapter.markets.length === 0 ? (
+                            <span className="membership-empty">No markets</span>
+                          ) : null}
+                        </div>
                       </div>
-                      <p>
-                        {adapter.sourceType} · {adapter.fetchMode}
-                      </p>
-                      <div className="source-chip-list" aria-label={`Markets for ${adapter.displayName}`}>
-                        {adapter.markets.map((market) => (
-                          <span className="membership-chip" key={market}>
-                            {market}
-                          </span>
-                        ))}
-                        {adapter.markets.length === 0 ? (
-                          <span className="membership-empty">No markets</span>
-                        ) : null}
+                      <div className="source-row-status">
+                        <span>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</span>
                       </div>
-                    </div>
-                    <dl className="source-status-grid">
-                      <div>
-                        <dt>Poll</dt>
-                        <dd>{formatPollInterval(adapter.defaultPollIntervalSeconds)}</dd>
-                      </div>
-                      <div>
-                        <dt>Last success</dt>
-                        <dd>{adapter.lastSuccessAt ?? "Never"}</dd>
-                      </div>
-                      <div>
-                        <dt>Last error</dt>
-                        <dd>{adapter.lastErrorAt ?? "None"}</dd>
-                      </div>
-                      <div>
-                        <dt>Status</dt>
-                        <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
-                      </div>
-                    </dl>
-                  </article>
+                    </article>
+                    {selectedSourceAdapterId === adapter.id ? (
+                      <dl className="source-status-grid source-status-detail" aria-label="Source adapter details">
+                        <div>
+                          <dt>Poll</dt>
+                          <dd>{formatPollInterval(adapter.defaultPollIntervalSeconds)}</dd>
+                        </div>
+                        <div>
+                          <dt>Last success</dt>
+                          <dd>{adapter.lastSuccessAt ?? "Never"}</dd>
+                        </div>
+                        <div>
+                          <dt>Last error</dt>
+                          <dd>{adapter.lastErrorAt ?? "None"}</dd>
+                        </div>
+                        <div>
+                          <dt>Status</dt>
+                          <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
+                        </div>
+                      </dl>
+                    ) : null}
+                  </div>
                 ))}
                 {sourceAdapters.length === 0 ? (
                   <div className="empty-state">No source adapters configured.</div>
@@ -1409,6 +2047,15 @@ export function App() {
                       <Save size={15} />
                       {selectedFeedItem.saved ? "Unsave" : "Save"}
                     </button>
+                    {selectedFeedCompany ? (
+                      <button
+                        className="secondary-button compact-button"
+                        onClick={() => openCompanyWorkspaceFromFeedItem(selectedFeedItem)}
+                        type="button"
+                      >
+                        Open company
+                      </button>
+                    ) : null}
                     <a
                       className="secondary-button compact-button"
                       href={selectedFeedItem.sourceUrl}
