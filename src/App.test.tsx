@@ -38,20 +38,36 @@ const initialFeedItems = [
     summary: "Saved fixture item used to validate the saved filter before real ingestion exists.",
   },
   {
-    id: "feed_fixture_msft_transcript",
-    company: "NASDAQ:MSFT",
+    id: "feed_fixture_kgh_transcript",
+    company: "GPW:KGH",
     type: "Transcript",
     source: "Local fixture",
     time: "Mon",
     title: "Transcript-derived note candidate waits for future provider work",
     unread: false,
     saved: false,
-    sourceUrl: "https://example.local/fixture/msft-transcript",
+    sourceUrl: "https://example.local/fixture/kgh-transcript",
     language: "en",
     publishedAt: "Mon",
     fetchedAt: "Mon",
     attribution: "Fixture",
     summary: "Transcript placeholder for future video and notebook workflows.",
+  },
+  {
+    id: "feed_fixture_pzu_report",
+    company: "GPW:PZU",
+    type: "Official report",
+    source: "GPW ESPI/EBI",
+    time: "Fri",
+    title: "PZU governance report placeholder",
+    unread: false,
+    saved: false,
+    sourceUrl: "https://www.gpw.pl/komunikaty",
+    language: "pl",
+    publishedAt: "Fri",
+    fetchedAt: "Fri",
+    attribution: "GPW",
+    summary: "Fourth fixture item keeps the sample feed aligned with local GPW lookup companies.",
   },
 ];
 
@@ -95,7 +111,87 @@ const initialCompanies = [
     cik: null,
     lei: null,
   },
+  {
+    id: "company_gpw_pkn",
+    exchange: "GPW",
+    ticker: "PKN",
+    qualifiedTicker: "GPW:PKN",
+    displayName: "ORLEN S.A.",
+    isin: "PLPKN0000018",
+    cik: null,
+    lei: null,
+  },
+  {
+    id: "company_gpw_kgh",
+    exchange: "GPW",
+    ticker: "KGH",
+    qualifiedTicker: "GPW:KGH",
+    displayName: "KGHM POLSKA MIEDZ S.A.",
+    isin: "PLKGHM000017",
+    cik: null,
+    lei: null,
+  },
+  {
+    id: "company_gpw_pzu",
+    exchange: "GPW",
+    ticker: "PZU",
+    qualifiedTicker: "GPW:PZU",
+    displayName: "PZU S.A.",
+    isin: "PLPZU0000011",
+    cik: null,
+    lei: null,
+  },
 ];
+
+type TestNotebookEntry = {
+  id: string;
+  companyId: string;
+  title: string;
+  body: string;
+  bodyFormat: string;
+  tags: string[];
+  kind: string;
+  claimStatus: string | null;
+  eventDate: string | null;
+  followUpAfter: string | null;
+  followUpDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  origins: Array<{
+    id: string;
+    sourceType: string;
+    sourceId: string | null;
+    sourceUrl: string | null;
+    label: string | null;
+    createdAt: string;
+  }>;
+};
+
+const initialNotebookEntry: TestNotebookEntry = {
+  id: "note_company_gpw_cdr_release_schedule",
+  companyId: "company_gpw_cdr",
+  title: "Release schedule promise",
+  body: "Management promised a release milestone in the next two quarters.",
+  bodyFormat: "markdown",
+  tags: ["management-guidance", "product"],
+  kind: "claim",
+  claimStatus: "open",
+  eventDate: "2026-05-29",
+  followUpAfter: "2026-Q4",
+  followUpDate: "2026-11-30",
+  createdAt: "2026-05-29T10:00:00Z",
+  updatedAt: "2026-05-29T10:00:00Z",
+  origins: [
+    {
+      id: "note_origin_release_schedule_manual_1",
+      sourceType: "manual",
+      sourceId: null,
+      sourceUrl: null,
+      label: "Manual note",
+      createdAt: "2026-05-29T10:00:00Z",
+    },
+  ],
+};
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -104,10 +200,12 @@ vi.mock("@tauri-apps/api/core", () => ({
 describe("App", () => {
   let companiesResponse = initialCompanies;
   let feedItemsResponse = initialFeedItems;
+  let notebookEntriesResponse: TestNotebookEntry[] = [];
 
   beforeEach(() => {
     companiesResponse = initialCompanies;
     feedItemsResponse = initialFeedItems;
+    notebookEntriesResponse = [];
     vi.mocked(invoke).mockClear();
     vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
       if (command === "health") {
@@ -116,7 +214,7 @@ describe("App", () => {
 
       if (command === "database_status") {
         return Promise.resolve({
-          appliedMigrations: 1,
+          appliedMigrations: 3,
           companies: 0,
           sourceAdapters: 1,
           settings: 7,
@@ -182,6 +280,100 @@ describe("App", () => {
 
       if (command === "list_feed_items") {
         return Promise.resolve(feedItemsResponse);
+      }
+
+      if (command === "list_notebook_entries") {
+        const companyId = (args as { companyId: string }).companyId;
+
+        return Promise.resolve(
+          notebookEntriesResponse.filter((entry) => entry.companyId === companyId),
+        );
+      }
+
+      if (command === "create_notebook_entry") {
+        const input = (args as {
+          input: {
+            companyId: string;
+            title: string;
+            body: string;
+            bodyFormat: string;
+            tags: string[];
+            kind: string;
+            claimStatus: string | null;
+            eventDate: string | null;
+            followUpAfter: string | null;
+            followUpDate: string | null;
+            origins: Array<{
+              sourceType: string;
+              sourceId: string | null;
+              sourceUrl: string | null;
+              label: string | null;
+            }>;
+          };
+        }).input;
+        const created = {
+          id: `note_${input.companyId}_${input.title.toLowerCase().replace(/\s+/g, "_")}`,
+          companyId: input.companyId,
+          title: input.title,
+          body: input.body,
+          bodyFormat: input.bodyFormat,
+          tags: input.tags.map((tag) => tag.toLowerCase()).sort(),
+          kind: input.kind,
+          claimStatus: input.claimStatus,
+          eventDate: input.eventDate,
+          followUpAfter: input.followUpAfter,
+          followUpDate: input.followUpDate,
+          createdAt: "2026-05-29T10:00:00Z",
+          updatedAt: "2026-05-29T10:00:00Z",
+          origins: input.origins.map((item, index) => ({
+            id: `note_origin_${index}`,
+            sourceType: item.sourceType,
+            sourceId: item.sourceId,
+            sourceUrl: item.sourceUrl,
+            label: item.label,
+            createdAt: "2026-05-29T10:00:00Z",
+          })),
+        };
+
+        notebookEntriesResponse = [created, ...notebookEntriesResponse];
+
+        return Promise.resolve(created);
+      }
+
+      if (command === "update_notebook_entry") {
+        const input = (args as {
+          input: {
+            id: string;
+            title: string;
+            body: string;
+            tags: string[];
+            kind: string;
+            claimStatus: string | null;
+            eventDate: string | null;
+            followUpAfter: string | null;
+            followUpDate: string | null;
+          };
+        }).input;
+        const existing = notebookEntriesResponse.find((entry) => entry.id === input.id);
+        const updated = {
+          ...(existing ?? initialNotebookEntry),
+          id: input.id,
+          title: input.title,
+          body: input.body,
+          tags: input.tags.map((tag) => tag.toLowerCase()).sort(),
+          kind: input.kind,
+          claimStatus: input.claimStatus,
+          eventDate: input.eventDate,
+          followUpAfter: input.followUpAfter,
+          followUpDate: input.followUpDate,
+          updatedAt: "2026-05-29T10:05:00Z",
+        };
+
+        notebookEntriesResponse = notebookEntriesResponse.map((entry) =>
+          entry.id === updated.id ? updated : entry,
+        );
+
+        return Promise.resolve(updated);
       }
 
       if (command === "list_source_adapters") {
@@ -282,6 +474,73 @@ describe("App", () => {
     expect(screen.getByRole("button", {
       name: "Open company feed item: Current report placeholder for watchlist company",
     })).toHaveClass("company-feed-row-selected");
+  });
+
+  it("creates a notebook draft from an inbox feed item with feed origins", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await screen.findByLabelText("Feed item details");
+    await user.click(screen.getByRole("button", { name: "Note" }));
+
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+
+    expect(screen.getByRole("heading", { name: "Notebooks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Notebook screen note title")).toHaveValue(
+      "Current report placeholder for watchlist company",
+    );
+    expect(screen.getByLabelText("Notebook screen note body")).toHaveValue(
+      "Fixture official report used to validate feed filtering and detail rendering.",
+    );
+    expect(screen.getByLabelText("Notebook screen note tags")).toHaveValue(
+      "feed, official-report, gpw-espi/ebi",
+    );
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_notebook_entry", {
+        input: {
+          companyId: "company_gpw_cdr",
+          title: "Current report placeholder for watchlist company",
+          body: "Fixture official report used to validate feed filtering and detail rendering.",
+          bodyFormat: "markdown",
+          tags: ["feed", "official-report", "gpw-espi/ebi"],
+          kind: "observation",
+          claimStatus: null,
+          eventDate: null,
+          followUpAfter: null,
+          followUpDate: null,
+          origins: [
+            {
+              sourceType: "feed_item",
+              sourceId: "feed_fixture_cdr_report",
+              sourceUrl: "https://www.gpw.pl/komunikaty",
+              label: "GPW ESPI/EBI: Current report placeholder for watchlist company",
+            },
+          ],
+        },
+      });
+    });
+
+    const originFeedButton = await within(notebooksWorkspace).findByRole("button", {
+      name: "Open origin feed item: GPW ESPI/EBI: Current report placeholder for watchlist company",
+    });
+    expect(
+      within(notebooksWorkspace).getByRole("link", {
+        name: "Open origin source: GPW ESPI/EBI: Current report placeholder for watchlist company",
+      }),
+    ).toHaveAttribute("href", "https://www.gpw.pl/komunikaty");
+
+    await user.click(originFeedButton);
+
+    expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Feed item details")).getByRole("heading", {
+        name: "Current report placeholder for watchlist company",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("selects inbox feed items with the keyboard", async () => {
@@ -440,7 +699,7 @@ describe("App", () => {
 
     const summary = screen.getByLabelText("Inbox review summary");
 
-    expect(within(summary).getByText("3")).toBeInTheDocument();
+    expect(within(summary).getByText("4")).toBeInTheDocument();
     expect(within(summary).getByText("visible")).toBeInTheDocument();
     expect(within(summary).getAllByText("1")).toHaveLength(2);
     expect(within(summary).getByText("unread")).toBeInTheDocument();
@@ -671,17 +930,82 @@ describe("App", () => {
     expect(screen.queryByLabelText("Source adapter details")).not.toBeInTheDocument();
   });
 
-  it("shows planned notebook and transcript placeholder screens", async () => {
+  it("shows the notebooks workspace and planned transcript placeholder screen", async () => {
     const user = userEvent.setup();
+
+    notebookEntriesResponse = [initialNotebookEntry];
 
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Notebooks" }));
 
-    const notebooksPlaceholder = await screen.findByLabelText("Notebooks placeholder");
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
 
     expect(screen.getByRole("heading", { name: "Notebooks" })).toBeInTheDocument();
-    expect(within(notebooksPlaceholder).getByText("Markdown notes, provenance, tags, claims, and review periods")).toBeInTheDocument();
+    expect(
+      await within(notebooksWorkspace).findByRole("button", {
+        name: "Open notebook company: GPW:CDR",
+      }),
+    ).toBeInTheDocument();
+    const notebookCompanyButton = within(notebooksWorkspace).getByRole("button", {
+      name: "Open notebook company: GPW:CDR",
+    });
+    expect(notebookCompanyButton).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).getByRole("button", { name: "Show open claims for GPW:CDR" }),
+    ).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).getByRole("button", { name: "Show follow-ups for GPW:CDR" }),
+    ).toBeInTheDocument();
+    const notebookRow = await within(notebooksWorkspace).findByRole("button", {
+      name: "Select notebook screen entry: Release schedule promise",
+    });
+
+    expect(notebookRow).toBeInTheDocument();
+    expect(screen.queryByLabelText("Notebook screen selected body")).not.toBeInTheDocument();
+
+    await user.click(notebookRow);
+
+    expect(screen.getByLabelText("Notebook screen selected body")).toHaveTextContent(
+      "Management promised a release milestone in the next two quarters.",
+    );
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "New note" }));
+    await user.type(screen.getByLabelText("Notebook screen note title"), "Notebook desk note");
+    await user.type(screen.getByLabelText("Notebook screen note body"), "Created from the main notebooks pane.");
+    await user.type(screen.getByLabelText("Notebook screen note tags"), "desk, workflow");
+    await user.selectOptions(screen.getByLabelText("Notebook screen note kind"), "observation");
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_notebook_entry", {
+        input: {
+          companyId: "company_gpw_cdr",
+          title: "Notebook desk note",
+          body: "Created from the main notebooks pane.",
+          bodyFormat: "markdown",
+          tags: ["desk", "workflow"],
+          kind: "observation",
+          claimStatus: null,
+          eventDate: null,
+          followUpAfter: null,
+          followUpDate: null,
+          origins: [
+            {
+              sourceType: "manual",
+              sourceId: null,
+              sourceUrl: null,
+              label: "Manual note",
+            },
+          ],
+        },
+      });
+    });
+
+    const createdNotebookRow = await within(notebooksWorkspace).findByRole("button", {
+      name: "Select notebook screen entry: Notebook desk note",
+    });
+    expect(createdNotebookRow).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
 
@@ -689,6 +1013,188 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
     expect(within(transcriptsPlaceholder).getByText("Gemini for YouTube transcription only")).toBeInTheDocument();
+  });
+
+  it("filters notebook screen entries by kind, status, tag, and follow-up scheduling", async () => {
+    const user = userEvent.setup();
+
+    notebookEntriesResponse = [
+      initialNotebookEntry,
+      {
+        ...initialNotebookEntry,
+        id: "note_company_gpw_cdr_margin_observation",
+        title: "Margin observation",
+        body: "Desk note about margin pressure after the call.",
+        tags: ["desk", "margin"],
+        kind: "observation",
+        claimStatus: null,
+        followUpAfter: null,
+        followUpDate: null,
+      },
+      {
+        ...initialNotebookEntry,
+        id: "note_company_gpw_cdr_capex_claim",
+        title: "Capex delivery claim",
+        body: "Management claimed capex should normalize.",
+        tags: ["capex", "management-guidance"],
+        kind: "claim",
+        claimStatus: "delivered",
+        followUpAfter: "2026-Q3",
+      },
+    ];
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Notebooks" }));
+
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+
+    expect(
+      await within(notebooksWorkspace).findByRole("button", {
+        name: "Select notebook screen entry: Release schedule promise",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Margin observation",
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Show open claims for GPW:CDR" }));
+
+    expect(screen.getByLabelText("Notebook claim status filter")).toHaveValue("open");
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Select notebook screen entry: Margin observation",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Release schedule promise",
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Clear filters" }));
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Show follow-ups for GPW:CDR" }));
+
+    expect(screen.getByLabelText("Notebook follow-up filter")).toHaveValue("has_follow_up");
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Select notebook screen entry: Margin observation",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Release schedule promise",
+      }),
+    ).toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Clear filters" }));
+
+    await user.selectOptions(screen.getByLabelText("Notebook kind filter"), "observation");
+
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Margin observation",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Select notebook screen entry: Release schedule promise",
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Clear filters" }));
+    await user.selectOptions(screen.getByLabelText("Notebook claim status filter"), "delivered");
+
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Capex delivery claim",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Select notebook screen entry: Release schedule promise",
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Clear filters" }));
+    await user.type(screen.getByLabelText("Notebook tag filter"), "desk");
+
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Margin observation",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Select notebook screen entry: Capex delivery claim",
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Clear filters" }));
+    await user.selectOptions(screen.getByLabelText("Notebook follow-up filter"), "no_follow_up");
+
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Select notebook screen entry: Margin observation",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Select notebook screen entry: Release schedule promise",
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders notebook Markdown in read mode", async () => {
+    const user = userEvent.setup();
+
+    notebookEntriesResponse = [
+      {
+        ...initialNotebookEntry,
+        body: "# Release checklist\n- **Milestone** shipped\n- `Patch` ready",
+      },
+    ];
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Notebooks" }));
+    const notebookRow = await screen.findByRole("button", {
+      name: "Select notebook screen entry: Release schedule promise",
+    });
+
+    expect(within(notebookRow).queryByText("# Release checklist")).not.toBeInTheDocument();
+
+    await user.click(notebookRow);
+
+    const notebookBody = screen.getByLabelText("Notebook screen selected body");
+
+    expect(within(notebookBody).getByRole("heading", { name: "Release checklist" })).toBeInTheDocument();
+    expect(within(notebookBody).getByText("Milestone")).toHaveProperty("tagName", "STRONG");
+    expect(within(notebookBody).getByText("Patch")).toHaveProperty("tagName", "CODE");
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.clear(screen.getByLabelText("Notebook screen selected follow-up date"));
+    await user.type(screen.getByLabelText("Notebook screen selected follow-up date"), "2026-12-15");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_notebook_entry", {
+        input: {
+          id: "note_company_gpw_cdr_release_schedule",
+          title: "Release schedule promise",
+          body: "# Release checklist\n- **Milestone** shipped\n- `Patch` ready",
+          tags: ["management-guidance", "product"],
+          kind: "claim",
+          claimStatus: "open",
+          eventDate: "2026-05-29",
+          followUpAfter: "2026-Q4",
+          followUpDate: "2026-12-15",
+        },
+      });
+    });
   });
 
   it("updates fixture read and saved state from the detail pane", async () => {
@@ -793,6 +1299,135 @@ describe("App", () => {
     await user.click(within(workspace).getByRole("button", { name: "Metadata" }));
 
     expect(within(screen.getByLabelText("Company metadata")).getByText("PLOPTTC00011")).toBeInTheDocument();
+  });
+
+  it("lists and creates company notebook entries", async () => {
+    const user = userEvent.setup();
+
+    notebookEntriesResponse = [initialNotebookEntry];
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+    await user.click(screen.getByRole("button", { name: "Notebook" }));
+
+    const notebook = await screen.findByLabelText("Company notebook");
+
+    expect(
+      within(notebook).getByRole("button", { name: "Select notebook entry: Release schedule promise" }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Selected notebook body")).toHaveTextContent(
+      "Management promised a release milestone in the next two quarters.",
+    );
+    expect(within(notebook).getAllByText("management-guidance").length).toBeGreaterThan(0);
+    expect(within(notebook).getAllByText("2026-Q4").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.clear(screen.getByLabelText("Selected notebook body"));
+    await user.type(screen.getByLabelText("Selected notebook body"), "Management shifted the release language.");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_notebook_entry", {
+        input: {
+          id: "note_company_gpw_cdr_release_schedule",
+          title: "Release schedule promise",
+          body: "Management shifted the release language.",
+          tags: ["management-guidance", "product"],
+          kind: "claim",
+          claimStatus: "open",
+          eventDate: "2026-05-29",
+          followUpAfter: "2026-Q4",
+          followUpDate: "2026-11-30",
+        },
+      });
+    });
+
+    await user.click(screen.getByRole("button", { name: "New note" }));
+    await user.clear(screen.getByLabelText("Notebook note title"));
+    await user.type(screen.getByLabelText("Notebook note title"), "Conference note");
+    await user.type(screen.getByLabelText("Notebook note body"), "Board mentioned margin pressure.");
+    await user.type(screen.getByLabelText("Notebook note tags"), "conference, margin");
+    await user.selectOptions(screen.getByLabelText("Notebook note kind"), "observation");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_notebook_entry", {
+        input: {
+          companyId: "company_gpw_cdr",
+          title: "Conference note",
+          body: "Board mentioned margin pressure.",
+          bodyFormat: "markdown",
+          tags: ["conference", "margin"],
+          kind: "observation",
+          claimStatus: null,
+          eventDate: null,
+          followUpAfter: null,
+          followUpDate: null,
+          origins: [
+            {
+              sourceType: "manual",
+              sourceId: null,
+              sourceUrl: null,
+              label: "Manual note",
+            },
+          ],
+        },
+      });
+    });
+    const conferenceNoteRow = await within(notebook).findByRole("button", {
+      name: "Select notebook entry: Conference note",
+    });
+    expect(conferenceNoteRow).toBeInTheDocument();
+    await user.click(conferenceNoteRow);
+
+    expect(screen.getByLabelText("Selected notebook body")).toHaveTextContent("Board mentioned margin pressure.");
+  });
+
+  it("lists company claims and updates claim status", async () => {
+    const user = userEvent.setup();
+
+    notebookEntriesResponse = [initialNotebookEntry];
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+    await user.click(screen.getByRole("button", { name: "Claims" }));
+
+    const claims = await screen.findByLabelText("Company claims");
+    const claimRow = within(claims).getByRole("button", {
+      name: "Open claim: Release schedule promise",
+    });
+
+    expect(claimRow).toBeInTheDocument();
+    expect(within(claims).getByText("1 follow-up item for GPW:CDR")).toBeInTheDocument();
+
+    await user.click(claimRow);
+
+    expect(screen.getByLabelText("Claim detail")).toHaveTextContent(
+      "Management promised a release milestone in the next two quarters.",
+    );
+
+    await user.selectOptions(screen.getByLabelText("Claim status"), "delivered");
+    await user.click(within(screen.getByLabelText("Claim detail")).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_notebook_entry", {
+        input: {
+          id: "note_company_gpw_cdr_release_schedule",
+          title: "Release schedule promise",
+          body: "Management promised a release milestone in the next two quarters.",
+          tags: ["management-guidance", "product"],
+          kind: "claim",
+          claimStatus: "delivered",
+          eventDate: "2026-05-29",
+          followUpAfter: "2026-Q4",
+          followUpDate: "2026-11-30",
+        },
+      });
+    });
   });
 
   it("hides the company workspace when the open company row is clicked again", async () => {
@@ -1096,7 +1731,12 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await user.type(screen.getByLabelText("Watchlist name"), "Main GPW");
     await user.click(screen.getByRole("button", { name: "Create" }));
-    await user.click(await screen.findByRole("button", { name: "Assign" }));
+    await user.click(
+      within(await screen.findByRole("button", { name: "Open GPW:CDR workspace" })).getByRole(
+        "button",
+        { name: "Assign" },
+      ),
+    );
 
     expect(await within(screen.getByLabelText("Watchlist chips")).findByText("Main GPW")).toBeInTheDocument();
     expect(
@@ -1111,7 +1751,12 @@ describe("App", () => {
     render(<App />);
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    await user.click(await screen.findByRole("button", { name: "Remove" }));
+    await user.click(
+      within(await screen.findByRole("button", { name: "Open GPW:CDR workspace" })).getByRole(
+        "button",
+        { name: "Remove" },
+      ),
+    );
 
     expect(await screen.findByRole("status", { name: "Removed from Main GPW" })).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("remove_company_from_watchlist", {

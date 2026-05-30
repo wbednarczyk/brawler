@@ -11,6 +11,8 @@ pub enum StorageError {
     Sqlite(#[from] rusqlite::Error),
     #[error("invalid setting value for {key}: {value}")]
     InvalidSettingValue { key: &'static str, value: String },
+    #[error("invalid notebook value for {key}: {value}")]
+    InvalidNotebookValue { key: &'static str, value: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -97,6 +99,27 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         update_feed_item_state(&connection, input)
+    }
+
+    pub fn list_notebook_entries(&self, company_id: &str) -> StorageResult<Vec<NotebookEntry>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_notebook_entries(&connection, company_id)
+    }
+
+    pub fn create_notebook_entry(&self, input: NewNotebookEntry) -> StorageResult<NotebookEntry> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_notebook_entry(&connection, input)
+    }
+
+    pub fn update_notebook_entry(
+        &self,
+        input: NotebookEntryUpdate,
+    ) -> StorageResult<NotebookEntry> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        update_notebook_entry(&connection, input)
     }
 
     pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {
@@ -208,6 +231,75 @@ pub struct FeedItemStateInput {
     pub id: String,
     pub read: Option<bool>,
     pub saved: Option<bool>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookEntry {
+    pub id: String,
+    pub company_id: String,
+    pub title: String,
+    pub body: String,
+    pub body_format: String,
+    pub tags: Vec<String>,
+    pub kind: String,
+    pub claim_status: Option<String>,
+    pub event_date: Option<String>,
+    pub follow_up_after: Option<String>,
+    pub follow_up_date: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+    pub origins: Vec<NotebookOrigin>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookOrigin {
+    pub id: String,
+    pub source_type: String,
+    pub source_id: Option<String>,
+    pub source_url: Option<String>,
+    pub label: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNotebookEntry {
+    pub company_id: String,
+    pub title: String,
+    pub body: String,
+    pub body_format: Option<String>,
+    pub tags: Vec<String>,
+    pub kind: String,
+    pub claim_status: Option<String>,
+    pub event_date: Option<String>,
+    pub follow_up_after: Option<String>,
+    pub follow_up_date: Option<String>,
+    pub origins: Vec<NewNotebookOrigin>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotebookEntryUpdate {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub kind: String,
+    pub claim_status: Option<String>,
+    pub event_date: Option<String>,
+    pub follow_up_after: Option<String>,
+    pub follow_up_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewNotebookOrigin {
+    pub source_type: String,
+    pub source_id: Option<String>,
+    pub source_url: Option<String>,
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -332,6 +424,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 2,
         name: "feed_item_display_company",
         sql: include_str!("../migrations/0002_feed_item_display_company.sql"),
+    },
+    Migration {
+        version: 3,
+        name: "notebook_entry_origins",
+        sql: include_str!("../migrations/0003_notebook_entry_origins.sql"),
+    },
+    Migration {
+        version: 4,
+        name: "notebook_follow_ups",
+        sql: include_str!("../migrations/0004_notebook_follow_ups.sql"),
     },
 ];
 
@@ -622,6 +724,9 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
             COALESCE(attribution, source_name) AS attribution,
             COALESCE(summary, '') AS summary
         FROM feed_items
+        WHERE display_company IN (
+            SELECT qualified_ticker FROM companies
+        )
         ORDER BY COALESCE(published_at, fetched_at) DESC, fetched_at DESC, id
         ",
     )?;
@@ -630,6 +735,234 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
     let feed_items = rows.collect::<Result<Vec<_>, _>>()?;
 
     Ok(feed_items)
+}
+
+fn list_notebook_entries(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Vec<NotebookEntry>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            company_id,
+            title,
+            body,
+            body_format,
+            kind,
+            claim_status,
+            event_date,
+            follow_up_after,
+            follow_up_date,
+            created_at,
+            updated_at
+        FROM notebook_entries
+        WHERE company_id = ?1
+        ORDER BY updated_at DESC, created_at DESC, id
+        ",
+    )?;
+
+    let rows = statement.query_map([company_id], |row| notebook_entry_from_row(connection, row))?;
+    let entries = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(entries)
+}
+
+fn create_notebook_entry(
+    connection: &Connection,
+    input: NewNotebookEntry,
+) -> StorageResult<NotebookEntry> {
+    let title = input.title.trim().to_owned();
+    let body = input.body.trim().to_owned();
+    let body_format = input
+        .body_format
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("markdown")
+        .to_owned();
+    let kind = input.kind.trim().to_owned();
+    let claim_status = empty_string_to_none(input.claim_status);
+    let tags = normalize_tags(input.tags);
+    let id = notebook_entry_id(connection, &input.company_id, &title)?;
+
+    validate_allowed_notebook_value("body_format", &body_format, &["markdown"])?;
+    validate_allowed_notebook_value(
+        "kind",
+        &kind,
+        &["manual", "observation", "claim", "question", "follow_up"],
+    )?;
+
+    if let Some(status) = claim_status.as_deref() {
+        validate_allowed_notebook_value(
+            "claim_status",
+            status,
+            &[
+                "open",
+                "delivered",
+                "partially_delivered",
+                "missed",
+                "unknown",
+                "not_applicable",
+            ],
+        )?;
+    }
+
+    for origins in &input.origins {
+        validate_allowed_notebook_value(
+            "origins.source_type",
+            origins.source_type.trim(),
+            &[
+                "feed_item",
+                "transcript_segment",
+                "ai_analysis",
+                "manual",
+                "external_url",
+            ],
+        )?;
+    }
+
+    connection.execute(
+        "
+        INSERT INTO notebook_entries (
+            id,
+            company_id,
+            title,
+            body,
+            body_format,
+            kind,
+            claim_status,
+            event_date,
+            follow_up_after,
+            follow_up_date
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+        ",
+        params![
+            id,
+            input.company_id,
+            title,
+            body,
+            body_format,
+            kind,
+            claim_status,
+            empty_string_to_none(input.event_date),
+            empty_string_to_none(input.follow_up_after),
+            empty_string_to_none(input.follow_up_date),
+        ],
+    )?;
+
+    for tag in tags {
+        connection.execute(
+            "
+            INSERT OR IGNORE INTO notebook_entry_tags (notebook_entry_id, tag)
+            VALUES (?1, ?2)
+            ",
+            params![&id, tag],
+        )?;
+    }
+
+    for (index, origins) in input.origins.into_iter().enumerate() {
+        let source_type = origins.source_type.trim().to_owned();
+
+        connection.execute(
+            "
+            INSERT INTO notebook_entry_origins (
+                id,
+                notebook_entry_id,
+                source_type,
+                source_id,
+                source_url,
+                label
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            ",
+            params![
+                notebook_origin_id(&id, &source_type, index),
+                id,
+                source_type,
+                empty_string_to_none(origins.source_id),
+                empty_string_to_none(origins.source_url),
+                empty_string_to_none(origins.label),
+            ],
+        )?;
+    }
+
+    get_notebook_entry(connection, &id)
+}
+
+fn update_notebook_entry(
+    connection: &Connection,
+    input: NotebookEntryUpdate,
+) -> StorageResult<NotebookEntry> {
+    let id = input.id;
+    let title = input.title.trim().to_owned();
+    let body = input.body.trim().to_owned();
+    let kind = input.kind.trim().to_owned();
+    let claim_status = empty_string_to_none(input.claim_status);
+    let tags = normalize_tags(input.tags);
+
+    validate_allowed_notebook_value(
+        "kind",
+        &kind,
+        &["manual", "observation", "claim", "question", "follow_up"],
+    )?;
+
+    if let Some(status) = claim_status.as_deref() {
+        validate_allowed_notebook_value(
+            "claim_status",
+            status,
+            &[
+                "open",
+                "delivered",
+                "partially_delivered",
+                "missed",
+                "unknown",
+                "not_applicable",
+            ],
+        )?;
+    }
+
+    connection.execute(
+        "
+        UPDATE notebook_entries
+        SET
+            title = ?2,
+            body = ?3,
+            kind = ?4,
+            claim_status = ?5,
+            event_date = ?6,
+            follow_up_after = ?7,
+            follow_up_date = ?8,
+            updated_at = datetime('now')
+        WHERE id = ?1
+        ",
+        params![
+            &id,
+            title,
+            body,
+            kind,
+            claim_status,
+            empty_string_to_none(input.event_date),
+            empty_string_to_none(input.follow_up_after),
+            empty_string_to_none(input.follow_up_date),
+        ],
+    )?;
+
+    connection.execute(
+        "DELETE FROM notebook_entry_tags WHERE notebook_entry_id = ?1",
+        [&id],
+    )?;
+
+    for tag in tags {
+        connection.execute(
+            "
+            INSERT OR IGNORE INTO notebook_entry_tags (notebook_entry_id, tag)
+            VALUES (?1, ?2)
+            ",
+            params![&id, tag],
+        )?;
+    }
+
+    get_notebook_entry(connection, &id)
 }
 
 fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdapter>> {
@@ -882,6 +1215,157 @@ fn feed_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FeedItem> {
     })
 }
 
+fn get_notebook_entry(
+    connection: &Connection,
+    notebook_entry_id: &str,
+) -> StorageResult<NotebookEntry> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                company_id,
+                title,
+                body,
+                body_format,
+                kind,
+                claim_status,
+                event_date,
+                follow_up_after,
+                follow_up_date,
+                created_at,
+                updated_at
+            FROM notebook_entries
+            WHERE id = ?1
+            ",
+            [notebook_entry_id],
+            |row| notebook_entry_from_row(connection, row),
+        )
+        .map_err(StorageError::from)
+}
+
+fn notebook_entry_from_row(
+    connection: &Connection,
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<NotebookEntry> {
+    let id: String = row.get(0)?;
+
+    Ok(NotebookEntry {
+        tags: notebook_entry_tags(connection, &id)?,
+        origins: notebook_entry_origins(connection, &id)?,
+        id,
+        company_id: row.get(1)?,
+        title: row.get(2)?,
+        body: row.get(3)?,
+        body_format: row.get(4)?,
+        kind: row.get(5)?,
+        claim_status: row.get(6)?,
+        event_date: row.get(7)?,
+        follow_up_after: row.get(8)?,
+        follow_up_date: row.get(9)?,
+        created_at: row.get(10)?,
+        updated_at: row.get(11)?,
+    })
+}
+
+fn notebook_entry_tags(
+    connection: &Connection,
+    notebook_entry_id: &str,
+) -> rusqlite::Result<Vec<String>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT tag
+        FROM notebook_entry_tags
+        WHERE notebook_entry_id = ?1
+        ORDER BY tag
+        ",
+    )?;
+    let rows = statement.query_map([notebook_entry_id], |row| row.get(0))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+}
+
+fn notebook_entry_origins(
+    connection: &Connection,
+    notebook_entry_id: &str,
+) -> rusqlite::Result<Vec<NotebookOrigin>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id, source_type, source_id, source_url, label, created_at
+        FROM notebook_entry_origins
+        WHERE notebook_entry_id = ?1
+        ORDER BY created_at, id
+        ",
+    )?;
+    let rows = statement.query_map([notebook_entry_id], |row| {
+        Ok(NotebookOrigin {
+            id: row.get(0)?,
+            source_type: row.get(1)?,
+            source_id: row.get(2)?,
+            source_url: row.get(3)?,
+            label: row.get(4)?,
+            created_at: row.get(5)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+}
+
+fn notebook_entry_id(
+    connection: &Connection,
+    company_id: &str,
+    title: &str,
+) -> StorageResult<String> {
+    let base_id = format!("note_{}_{}", slug_part(company_id), slug_part(title));
+    let existing_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM notebook_entries WHERE id = ?1 OR id LIKE ?2",
+        params![&base_id, format!("{base_id}_%")],
+        |row| row.get(0),
+    )?;
+
+    if existing_count == 0 {
+        Ok(base_id)
+    } else {
+        Ok(format!("{base_id}_{}", existing_count + 1))
+    }
+}
+
+fn notebook_origin_id(notebook_entry_id: &str, source_type: &str, index: usize) -> String {
+    format!(
+        "note_origin_{}_{}_{}",
+        slug_part(notebook_entry_id),
+        slug_part(source_type),
+        index + 1
+    )
+}
+
+fn normalize_tags(tags: Vec<String>) -> Vec<String> {
+    let mut normalized = tags
+        .into_iter()
+        .map(|tag| tag.trim().to_lowercase())
+        .filter(|tag| !tag.is_empty())
+        .collect::<Vec<_>>();
+
+    normalized.sort();
+    normalized.dedup();
+    normalized
+}
+
+fn validate_allowed_notebook_value(
+    key: &'static str,
+    value: &str,
+    allowed: &[&str],
+) -> StorageResult<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidNotebookValue {
+            key,
+            value: value.to_owned(),
+        })
+    }
+}
+
 fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
     let feed_item_count: i64 =
         connection.query_row("SELECT COUNT(*) FROM feed_items", [], |row| row.get(0))?;
@@ -924,20 +1408,36 @@ fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
             "GPW:PKN",
         ),
         (
-            "feed_fixture_msft_transcript",
+            "feed_fixture_kgh_transcript",
             "Transcript",
             "Local fixture",
-            "https://example.local/fixture/msft-transcript",
+            "https://example.local/fixture/kgh-transcript",
             "Transcript-derived note candidate waits for future provider work",
             "Transcript placeholder for future video and notebook workflows.",
             "en",
             "2026-05-25T10:00:00Z",
             "2026-05-25T10:00:00Z",
-            "fixture:msft-transcript",
+            "fixture:kgh-transcript",
             true,
             false,
             "Fixture",
-            "NASDAQ:MSFT",
+            "GPW:KGH",
+        ),
+        (
+            "feed_fixture_pzu_report",
+            "Official report",
+            "GPW ESPI/EBI",
+            "https://www.gpw.pl/komunikaty",
+            "PZU governance report placeholder",
+            "Fourth fixture item keeps the sample feed aligned with local GPW lookup companies.",
+            "pl",
+            "2026-05-24T12:00:00Z",
+            "2026-05-24T12:05:00Z",
+            "gpw-espi-ebi:fixture:pzu-report",
+            true,
+            false,
+            "GPW",
+            "GPW:PZU",
         ),
     ];
 
@@ -1074,7 +1574,7 @@ mod tests {
             })
             .expect("schema_migrations should exist");
 
-        assert_eq!(migration_count, 2);
+        assert_eq!(migration_count, 4);
 
         let company_table_exists: bool = connection
             .query_row(
@@ -1191,7 +1691,7 @@ mod tests {
         let connection = open_in_memory_database().expect("database should initialize");
         let status = database_status(&connection).expect("status should be available");
 
-        assert_eq!(status.applied_migrations, 2);
+        assert_eq!(status.applied_migrations, 4);
         assert_eq!(status.companies, 0);
         assert_eq!(status.source_adapters, 1);
         assert_eq!(status.settings, 7);
@@ -1201,10 +1701,50 @@ mod tests {
     fn seeds_and_lists_fixture_feed_items() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked fixture company should create");
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "PKN".to_owned(),
+                display_name: "ORLEN S.A.".to_owned(),
+                isin: Some("PLPKN0000018".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked fixture company should create");
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "KGH".to_owned(),
+                display_name: "KGHM POLSKA MIEDZ S.A.".to_owned(),
+                isin: Some("PLKGHM000017".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked fixture company should create");
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "PZU".to_owned(),
+                display_name: "PZU S.A.".to_owned(),
+                isin: Some("PLPZU0000011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked fixture company should create");
 
         let feed_items = state.list_feed_items().expect("feed items should list");
 
-        assert_eq!(feed_items.len(), 3);
+        assert_eq!(feed_items.len(), 4);
         assert_eq!(feed_items[0].id, "feed_fixture_cdr_report");
         assert_eq!(feed_items[0].company, "GPW:CDR");
         assert!(feed_items[0].unread);
@@ -1214,6 +1754,16 @@ mod tests {
     fn persists_feed_item_read_and_saved_state() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked fixture company should create");
 
         let updated = state
             .update_feed_item_state(FeedItemStateInput {
@@ -1234,6 +1784,91 @@ mod tests {
 
         assert!(!cdr.unread);
         assert!(cdr.saved);
+    }
+
+    #[test]
+    fn creates_and_lists_notebook_entries_for_company() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let entry = state
+            .create_notebook_entry(NewNotebookEntry {
+                company_id: company.id.clone(),
+                title: "Management claim about release schedule".to_owned(),
+                body: "Management said the next milestone should happen in two quarters."
+                    .to_owned(),
+                body_format: None,
+                tags: vec!["Product".to_owned(), " management-guidance ".to_owned()],
+                kind: "claim".to_owned(),
+                claim_status: Some("open".to_owned()),
+                event_date: Some("2026-05-29".to_owned()),
+                follow_up_after: Some("2026-Q4".to_owned()),
+                follow_up_date: Some("2026-11-30".to_owned()),
+                origins: vec![NewNotebookOrigin {
+                    source_type: "feed_item".to_owned(),
+                    source_id: Some("feed_fixture_cdr_report".to_owned()),
+                    source_url: Some("https://www.gpw.pl/komunikaty".to_owned()),
+                    label: Some("GPW report".to_owned()),
+                }],
+            })
+            .expect("notebook entry should be created");
+
+        let entries = state
+            .list_notebook_entries(&company.id)
+            .expect("notebook entries should list");
+
+        assert_eq!(entry.body_format, "markdown");
+        assert_eq!(entry.kind, "claim");
+        assert_eq!(entry.claim_status.as_deref(), Some("open"));
+        assert_eq!(entry.tags, vec!["management-guidance", "product"]);
+        assert_eq!(entry.origins.len(), 1);
+        assert_eq!(entry.origins[0].source_type, "feed_item");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].id, entry.id);
+
+        let updated = state
+            .update_notebook_entry(NotebookEntryUpdate {
+                id: entry.id.clone(),
+                title: "Updated release schedule claim".to_owned(),
+                body: "Management clarified the next milestone date.".to_owned(),
+                tags: vec!["product".to_owned(), "clarified".to_owned()],
+                kind: "claim".to_owned(),
+                claim_status: Some("unknown".to_owned()),
+                event_date: Some("2026-05-29".to_owned()),
+                follow_up_after: Some("2026-Q3".to_owned()),
+                follow_up_date: None,
+            })
+            .expect("notebook entry should update");
+
+        assert_eq!(updated.title, "Updated release schedule claim");
+        assert_eq!(
+            updated.body,
+            "Management clarified the next milestone date."
+        );
+        assert_eq!(updated.claim_status.as_deref(), Some("unknown"));
+        assert_eq!(updated.follow_up_after.as_deref(), Some("2026-Q3"));
+        assert_eq!(updated.tags, vec!["clarified", "product"]);
+        assert_eq!(updated.origins.len(), 1);
+        assert_eq!(updated.origins[0].source_type, "feed_item");
+        assert_eq!(
+            updated.origins[0].source_id.as_deref(),
+            Some("feed_fixture_cdr_report")
+        );
+        assert_eq!(
+            updated.origins[0].source_url.as_deref(),
+            Some("https://www.gpw.pl/komunikaty")
+        );
+        assert_eq!(updated.origins[0].label.as_deref(), Some("GPW report"));
     }
 
     #[test]

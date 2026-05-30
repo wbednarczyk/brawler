@@ -8,6 +8,7 @@ The first screen is an investor inbox: a dense chronological feed of company-spe
 
 Early fixture feed implementations should already obey local watchlist, company, unread, and saved filters, even before real source ingestion exists.
 Fixture feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state in SQLite.
+The UI-facing Inbox is scoped to tracked companies. Raw or fixture source items that do not match the local company registry may exist internally, but they should not appear in the normal feed until the company is added.
 Source URLs in item details must be directly actionable so the user can verify the original report or article quickly.
 When filters hide all feed items, the UI must offer a quick way to clear active filters and return to the full feed.
 Inbox empty states should distinguish first-run setup from filter misses. If no companies are tracked, the Inbox should point directly to adding a company. If companies exist but no feed items are stored, the Inbox should make clear that source ingestion or refresh is not wired yet and offer a path to source status. If filters hide existing feed items, the Inbox should offer `Clear filters`.
@@ -38,7 +39,7 @@ The global Notebooks and Transcripts navigation entries may begin as explicit pl
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
 
-Keyboard shortcuts are in v1 scope as late workflow polish. They should speed up repeated inbox and research actions, but every shortcut action must remain available through visible UI controls. Shortcuts must be discoverable in the app and must not interfere with text editing in search fields, note editors, forms, or transcript selection workflows.
+Keyboard shortcuts are in v1 scope as late workflow polish. They should speed up repeated inbox and research actions, but every shortcut action must remain available through visible UI controls. Shortcuts must be discoverable in the app and must not interfere with text editing in search fields, note editors, forms, or transcript selection workflows. Desired notebook shortcuts include `Ctrl+E` to open the editor for the selected note or claim and `Ctrl+S` to save the item currently being edited.
 
 ## Theme And Visual Direction
 
@@ -78,7 +79,7 @@ Company metadata may include:
 
 Company entry should support lookup/enrichment. After the user selects an exchange and enters a ticker, ISIN, or company name, the app should be able to fill the remaining company fields when a confident match exists. Exact ticker and ISIN lookups may auto-fill directly. Name lookup may require suggestions or user confirmation when multiple matches exist.
 
-The first implementation may use local fixtures for GPW metadata. Later implementations should replace or extend fixtures with a source-specific company registry adapter and preserve metadata provenance.
+The first implementation may use local fixtures for GPW metadata. Later implementations should replace or extend fixtures with a source-specific company registry adapter and preserve metadata origin.
 
 ## Company Notebooks
 
@@ -89,13 +90,23 @@ Notebook entries should support:
 - title
 - Markdown body
 - tags
-- source/provenance links
+- source/origin links
 - optional event date
-- optional review date
+- optional follow-up date
 - optional quarter or reporting period
 - status for claims that should be checked later
 
-The first claim-tracking workflow should support management statements such as "the board said X should happen in the near future" and later review whether the company delivered after one or more quarters. Claim review supports both a review quarter and an exact review date, with quarters emphasized in the UI.
+The first claim-tracking workflow should support management statements such as "the board said X should happen in the near future" and later verify whether the company delivered after one or more quarters. Claim follow-up supports both a follow-up quarter and an exact follow-up date, with quarters emphasized in the UI.
+
+Milestone 4 starts by making the company workspace Notebook tab durable. The first implementation supports listing company notes and creating manual Markdown notes with tags, kind, optional claim status, event date, follow-up quarter, follow-up date, and manual origin. Feed item detail views can create editable note drafts in the main Notebooks pane for the matched tracked company. Saving those drafts preserves `feed_item` origin with source URL and feed item identity.
+
+Notebook read mode renders common Markdown locally, including headings, paragraphs, lists, blockquotes, inline code, fenced code, bold, and italics. Edit mode remains a plain Markdown text editor.
+
+The company workspace Claims tab is a follow-up surface over notebook entries, not a separate data model. It lists entries where `kind` is `claim` or a claim status is set, expands claim details in place, and lets the user update the claim status while preserving note body, tags, origin, and company ownership.
+
+Notebook UX must assume a company can accumulate dozens of notes. The company Notebook tab should prefer a compact selectable list plus a selected-note detail/editor area over large stacked cards. The note creation form should stay out of the way when not needed. Notes should be easy to scan, select, read, and edit without losing context.
+
+The current product assumption is that daily note work will happen primarily in the main Notebooks pane, while the company workspace Notebook tab remains the contextual per-company surface. The main Notebooks pane is company-navigable from its first implementation, making it easy to move between companies, create a manual note for the selected company, see each company's loaded note count or follow-up pressure, filter by kind, claim status, tag, and follow-up scheduling presence, and open the selected company's notes without losing cross-company orientation. This assumption may change after hands-on use.
 
 ## Sources
 
@@ -127,6 +138,23 @@ Ingestion should preserve source attribution, publication time, fetch time, orig
 
 Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with AI analysis or explicit user decisions should not be removed by routine cleanup without clear user control.
 
+## Company Events Calendar
+
+V1 should include a company-events calendar view for companies in the user's watchlists. The main default goal is to answer: "what company-specific dates should I pay attention to next?" The same screen should also support historical dates so the user can understand what already happened and compare current notes, reports, dividends, and meetings against prior context.
+
+Initial event types should include:
+
+- periodic report publication dates
+- dividend-related dates when available
+- shareholder meetings, investor conferences, and conference calls when available from accepted sources
+- manual events added by the user when sourced calendars are incomplete
+
+The view should be watchlist-first and date-first. By default it should show upcoming items grouped by date or due-soon period, with compact company ticker, event type, source, and status. It should also provide a historical or date-range mode for past events. It is not a portfolio calendar and should not require positions or holdings.
+
+Events created from official or public sources must retain source URL, attribution, fetched timestamp, publication/update timestamp when available, company match, and origin/source type. Manual events must be clearly marked as manual. If a source event is edited or corrected by the user, the app should preserve the sourced record and store the user's correction separately or mark the event as user-adjusted.
+
+This milestone depends on either fixture-backed events or source adapters capable of producing calendar-like events. It should be implemented after the first GPW ingestion work is stable enough to prove the source model.
+
 ## AI Analysis
 
 The first AI milestone is summarization and classification:
@@ -145,7 +173,7 @@ The first video AI workflow should support:
 - running a transcription or transcript-like extraction job
 - reviewing transcript segments
 - selecting transcript segments, text ranges, or AI-suggested claims to add to a specific company's notebook
-- preserving the YouTube URL, timestamp range when available, provider, and created note provenance
+- preserving the YouTube URL, timestamp range when available, provider, and created note origin
 
 AI output must be presented as decision support. It must not contain direct buy/sell/hold recommendations.
 

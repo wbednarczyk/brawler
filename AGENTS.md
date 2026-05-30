@@ -29,6 +29,8 @@ Before making non-trivial changes, agents must read:
 - Keep runtime dependency additions conservative and explain why they are needed.
 - Local build/test commands are primary. GitHub Actions should mirror local commands, not introduce CI-only build logic.
 - Use Nix from the first scaffold. Local commands should run inside `nix develop`; do not store secrets in Nix files or `.envrc`.
+- For day-to-day agent iteration, prefer direct `rtk` commands with the locally installed toolchain to reduce token usage: `rtk rg`, `rtk sed`, `rtk npm run typecheck`, `rtk npm run test`, `rtk npm run build`, `rtk cargo fmt --check`, `rtk cargo clippy --all-targets -- -D warnings`, and `rtk cargo nextest run` or `rtk cargo test`.
+- Avoid `rtk proxy` for normal work because it bypasses RTK output filtering. Use Nix-wrapped checks when reproducibility or parity matters, but expect lower RTK savings.
 - Prefer Makefile targets for local WSL automation when available; they must remain thin wrappers around documented `nix develop` commands.
 - Treat native Windows hands-on testing as a separate runtime validation path. Do not assume WSL has a GUI or that a WSL Tauri build validates Windows desktop behavior.
 - Prefer `make package-windows-from-linux` for the on-demand packaged Windows sanity path once the cross-build spike is implemented. Treat `make windows-package` as a fallback that requires native Windows tooling.

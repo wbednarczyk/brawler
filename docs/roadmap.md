@@ -150,23 +150,25 @@ Exit criteria:
 
 Goal: make durable company research notes useful before external ingestion is complete.
 
+Status: complete in `0.4.0`.
+
 Included:
 
 - Markdown note editor
 - notebook list/detail
 - create note manually
 - create note from feed item
-- note provenance
+- note origin
 - note tags
 - claim status
-- review quarter and review date
+- follow-up quarter and follow-up date
 - Claims tab
 - cross-company Notebooks screen
 
 Exit criteria:
 
 - note can be created from a feed item and links back to it
-- claim note can be reviewed and status changed
+- claim note can be followed up and status changed
 - notes are searchable or filterable enough for v1 workflows
 - storage and UI workflow tests exist
 
@@ -212,7 +214,35 @@ Exit criteria:
 - parser tests exist if accepted
 - if rejected, listing-level ingestion remains the supported path
 
-## Milestone 7: YouTube Transcription To Notes
+## Milestone 7: Company Events Calendar
+
+Goal: show a cross-watchlist calendar of company events, with upcoming events as the default focus and historical dates available for context.
+
+Included:
+
+- Events screen or panel
+- report publication dates
+- dividend-related dates when available
+- company meetings, conference calls, and other investor-calendar events when available from accepted sources
+- company and watchlist filters
+- upcoming and historical date ranges
+- due-soon grouping
+- historical timeline/search mode
+- source URL, attribution, and fetched timestamp for sourced events
+- manual event entry or correction if official sources are incomplete
+- fixture-backed event data before broad source coverage exists
+
+Exit criteria:
+
+- user can see upcoming dated events for companies in their watchlists by default
+- user can switch to historical events or a combined date range
+- events can be filtered by watchlist, company, event type, and date range
+- event rows show date, company, event type, source, and status
+- sourced events retain origin/source attribution
+- manual events are clearly distinguishable from sourced events
+- storage and UI workflow tests exist
+
+## Milestone 8: YouTube Transcription To Notes
 
 Goal: validate the first video-to-notebook workflow.
 
@@ -224,7 +254,7 @@ Included:
 - transcript segment storage
 - transcript review UI
 - create note from selected transcript segments
-- provenance to segment and YouTube URL
+- origin to segment and YouTube URL
 
 Exit criteria:
 
@@ -234,7 +264,7 @@ Exit criteria:
 - transcript source text remains immutable
 - provider tests use fixtures/mocks
 
-## Milestone 8: General AI Analysis Contract Spike
+## Milestone 9: General AI Analysis Contract Spike
 
 Goal: validate provider-neutral AI analysis without choosing a default provider.
 
@@ -253,7 +283,7 @@ Exit criteria:
 - AI results preserve source references
 - tests cover contract mapping
 
-## Milestone 9: Keyboard Shortcuts And Workflow Polish
+## Milestone 10: Keyboard Shortcuts And Workflow Polish
 
 Goal: make repeated desktop use faster without making shortcuts the only way to operate the app.
 
@@ -262,7 +292,7 @@ Included:
 - app-wide shortcut map
 - discoverable shortcut reference in Settings or Help/About
 - Inbox shortcuts for navigation, read/unread, save/unsave, opening source, search focus, and refresh
-- Company/notebook shortcuts where they reduce repeated work
+- Company/notebook shortcuts where they reduce repeated work, including `Ctrl+E` to open the editor for the selected note or claim and `Ctrl+S` to save the item currently being edited
 - conflict checks with native Windows/browser text-editing shortcuts
 - tests for critical shortcut workflows
 
@@ -274,7 +304,7 @@ Exit criteria:
 - text inputs and editors do not accidentally trigger global shortcuts
 - workflow tests cover the most important shortcuts
 
-## Milestone 10: V1 Packaging Candidate
+## Milestone 11: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 

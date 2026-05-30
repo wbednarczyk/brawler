@@ -1,0 +1,1 @@
+ALTER TABLE notebook_entry_provenance RENAME TO notebook_entry_origins;

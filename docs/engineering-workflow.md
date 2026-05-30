@@ -179,6 +179,39 @@ Once the scaffold exists, the repo should expose a small set of predictable comm
 
 The Makefile is the preferred local command surface from WSL. Targets must remain thin wrappers around documented project commands.
 
+## Agent Day-To-Day Check Loop
+
+Agents should minimize token usage during normal implementation by using direct `rtk` commands and the locally installed WSL toolchain whenever possible.
+
+This is a convenience loop, not a replacement for the canonical Nix workflow. `nix develop` and `make check` remain the reproducible parity path for milestone closure, pre-commit confidence, and CI-equivalent verification.
+
+Preferred agent commands for targeted iteration:
+
+- `rtk rg ...`: search code and docs
+- `rtk sed -n 'start,endp' path`: inspect focused file ranges
+- `rtk npm run typecheck`: TypeScript checks
+- `rtk npm run test`: frontend tests
+- `rtk npm run test -- -t "test name"`: focused frontend test run
+- `rtk npm run build`: frontend production build when UI/build behavior changed
+- `rtk cargo fmt --check`: Rust formatting check
+- `rtk cargo clippy --all-targets -- -D warnings`: Rust linting
+- `rtk cargo nextest run`: preferred Rust test runner when installed
+- `rtk cargo test`: fallback Rust test runner
+
+Avoid for normal agent iteration:
+
+- `rtk proxy ...`, because it bypasses RTK output filtering and saves no tokens
+- large shell-wrapped read commands when a direct `rtk rg`, `rtk sed`, or `rtk git status` command would work
+- full `make check` after every small edit
+
+Use full parity checks when appropriate:
+
+- `make check`: milestone closure, broad behavior changes, or before user commit/merge
+- Nix-wrapped commands: when validating the canonical environment or investigating environment drift
+- `make package-windows-from-linux`: packaged Windows sanity path when desktop behavior needs validation
+
+The local convenience toolchain currently expected in WSL includes Rust through `rustup`, `clippy`, `rustfmt`, `cargo-nextest`, Node/npm, `ripgrep`, `fd`/`fdfind`, `jq`, `sqlite3`, and the native libraries needed by the Rust/Tauri tests. Keep `flake.nix` as the source of truth for reproducible dependency intent even when agents use the direct toolchain for faster feedback.
+
 Recommended WSL commands:
 
 - `make install`: install npm dependencies inside `nix develop`
@@ -257,7 +290,7 @@ Use broader tests only when the risk justifies them:
 
 - source adapter parsing
 - migration safety
-- note provenance
+- note origin
 - transcript-to-note workflow
 - packaging startup
 - local data persistence

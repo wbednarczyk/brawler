@@ -179,6 +179,19 @@ Rules:
 - Do not store secrets in Nix files, `.envrc`, or derivations.
 - Keep Nix packaging outputs minimal until packaging is a roadmap item.
 
+## Agent Command Efficiency
+
+Agents should use direct `rtk` commands with the locally installed WSL toolchain for the normal edit/test loop. This keeps token usage low while preserving `nix develop` and `make check` as the canonical reproducible path.
+
+Rules:
+
+- Prefer direct `rtk` commands for code search, focused file reads, frontend checks, Rust formatting/linting, and Rust tests.
+- Prefer `rtk cargo nextest run` for Rust tests when available; use `rtk cargo test` as fallback.
+- Avoid `rtk proxy` during normal work because it bypasses RTK filtering.
+- Avoid full `make check` after every small change; run targeted checks first.
+- Run `make check` for milestone closure, broad changes, and pre-commit confidence.
+- If direct local tools disagree with the Nix environment, treat the Nix result as authoritative and update the docs/tooling decision if needed.
+
 ## Versioning And Releases
 
 Brawler uses SemVer-style `0.x.y` versions from the first scaffold.

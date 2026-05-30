@@ -11,7 +11,7 @@ Brawler should feel like a personal investor research desk:
 - fast to scan each morning or evening
 - dense enough for repeated professional use
 - calm enough to avoid dashboard noise
-- source-first and provenance-aware
+- source-first and origin-aware
 - easy to turn a report, article, or transcript excerpt into a durable note
 
 The default screen is the investor inbox. The second most important surface is the company notebook.
@@ -72,7 +72,7 @@ Acceptance criteria:
 - Feed list remains dense and scannable.
 - Source and timestamp are visible without opening the original website.
 - Read/unread and saved states are quick actions.
-- Note creation from a feed item preserves provenance.
+- Note creation from a feed item preserves origin.
 
 ## Journey: Create Note From Feed Item
 
@@ -83,8 +83,8 @@ Flow:
 1. User opens a feed item.
 2. User chooses `Create note`.
 3. App opens a note draft for the selected company.
-4. Draft includes source provenance and optionally prefilled title/body from selected item text.
-5. User chooses note kind, tags, event date, and optional review period.
+4. Draft includes source origin and optionally prefilled title/body from selected item text.
+5. User chooses note kind, tags, event date, and optional follow-up period.
 6. User saves the note.
 7. Note appears in the company notebook and links back to the feed item.
 
@@ -92,8 +92,8 @@ Acceptance criteria:
 
 - User can edit all generated or copied text before saving.
 - Notes support Markdown in v1.
-- Claim notes can be marked as open and assigned a future review period.
-- Saved note always keeps source provenance.
+- Claim notes can be marked as open and assigned a future follow-up period.
+- Saved note always keeps source origin.
 
 ## Journey: Company Notebook Review
 
@@ -103,14 +103,14 @@ Flow:
 
 1. User opens a company.
 2. Company workspace is one company page with tabs or segmented views for Feed, Notebook, Claims, Transcripts, and Metadata.
-3. Notebook view lists notes newest first, with filters by tag, kind, claim status, and review period.
+3. Notebook view lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
 4. User opens a note in the detail pane.
 5. User edits note content, changes claim status, or opens linked source material.
 
 Acceptance criteria:
 
 - Company notebook is reachable from both company navigation and feed item context.
-- Open claims and due review periods are visible.
+- Open claims and due follow-up periods are visible.
 - Notes can be traced back to feed items, reports, or transcript segments.
 
 ## Journey: YouTube Conference To Notes
@@ -187,9 +187,9 @@ Considered options:
 
 V1 decision: tabs or segmented views inside one company workspace.
 
-### Claim Review Periods
+### Claim Follow-up Periods
 
-Decision: when you write a note like "management said X should happen soon", the app supports both a review quarter and an exact review date.
+Decision: when you write a note like "management said X should happen soon", the app supports both a follow-up quarter and an exact follow-up date.
 
 Why it matters: company promises are often tied to quarters, but sometimes you may want an exact date reminder.
 
@@ -209,13 +209,13 @@ Why it matters: AI transcripts can contain mistakes. But if we edit the transcri
 
 Considered options:
 
-- Immutable transcript, editable note drafts: transcript segments are stored as source output and cannot be changed; you edit the note before saving. This preserves provenance and is the recommended default.
+- Immutable transcript, editable note drafts: transcript segments are stored as source output and cannot be changed; you edit the note before saving. This preserves origin and is the recommended default.
 - Editable transcript plus editable notes: user can correct transcript text and then create notes from the corrected text. This is convenient but needs audit history.
 - Store original and corrected transcript: preserve provider output and allow a corrected user version. This is best long-term but more complex for v1.
 
 V1 decision: immutable transcript segments with editable note drafts.
 
-Selection behavior does not need to be fully designed before implementation scaffolding, but the v1 UX must support at least one way to choose source material before creating a note. Acceptable interaction patterns include selecting whole transcript segments, selecting text ranges inside a segment, or accepting an AI-suggested note draft. The saved note must keep provenance to the original segment and YouTube URL even if the note text is edited.
+Selection behavior does not need to be fully designed before implementation scaffolding, but the v1 UX must support at least one way to choose source material before creating a note. Acceptable interaction patterns include selecting whole transcript segments, selecting text ranges inside a segment, or accepting an AI-suggested note draft. The saved note must keep origin to the original segment and YouTube URL even if the note text is edited.
 
 ### Source Status Placement
 
@@ -235,6 +235,6 @@ V1 decision: full Source Status screen, with a compact indicator in the top tool
 
 - Notes support Markdown in v1.
 - Company workspace uses one company page with tabs or segmented views.
-- Claim review supports both review quarter and exact review date.
+- Claim follow-up supports both follow-up quarter and exact follow-up date.
 - Transcript segments are immutable source output; notes created from them are editable.
 - Source status has a dedicated screen.

@@ -129,6 +129,36 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn list_notebook_entries(
+        company_id: String,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::NotebookEntry>, String> {
+        state
+            .list_notebook_entries(&company_id)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn create_notebook_entry(
+        input: storage::NewNotebookEntry,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::NotebookEntry, String> {
+        state
+            .create_notebook_entry(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn update_notebook_entry(
+        input: storage::NotebookEntryUpdate,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::NotebookEntry, String> {
+        state
+            .update_notebook_entry(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
     pub fn list_source_adapters(
         state: tauri::State<'_, storage::AppState>,
     ) -> Result<Vec<storage::SourceAdapter>, String> {
@@ -183,6 +213,9 @@ pub fn run() {
             commands::remove_company_from_watchlist,
             commands::list_feed_items,
             commands::update_feed_item_state,
+            commands::list_notebook_entries,
+            commands::create_notebook_entry,
+            commands::update_notebook_entry,
             commands::list_source_adapters,
             commands::get_settings,
             commands::update_settings
@@ -198,6 +231,6 @@ mod tests {
         let response = super::commands::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.3.0");
+        assert_eq!(response.version, "0.4.0");
     }
 }

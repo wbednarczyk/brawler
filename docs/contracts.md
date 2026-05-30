@@ -169,14 +169,14 @@ Rules:
   "kind": "claim",
   "claimStatus": "open",
   "eventDate": "2026-05-28",
-  "reviewAfter": "2026-Q4",
-  "reviewDate": "2026-11-30",
+  "followUpAfter": "2026-Q4",
+  "followUpDate": "2026-11-30",
   "createdAt": "2026-05-28T13:20:00Z",
   "updatedAt": "2026-05-28T13:20:00Z",
-  "provenance": [
+  "origins": [
     {
-      "type": "feed_item",
-      "id": "feed_01",
+      "sourceType": "feed_item",
+      "sourceId": "feed_01",
       "sourceUrl": "https://www.gpw.pl/komunikaty",
       "label": "GPW report"
     }
@@ -205,9 +205,117 @@ Rules:
 
 - Notes belong to exactly one canonical company.
 - Note body format is Markdown in v1.
-- Claim notes may include both `reviewAfter` for quarter/period review and `reviewDate` for exact date review.
-- Notes created from feed items or transcripts must retain provenance.
-- Claim notes should support a future review period, but review automation is not required in the first implementation.
+- Notebook read views may render common Markdown, but stored `body` remains the canonical Markdown source.
+- Claim notes may include both `followUpAfter` for quarter/period follow-up and `followUpDate` for exact date follow-up.
+- Notes created from feed items or transcripts must retain origin links.
+- Notebook UI surfaces should render origin links in note details and make feed-item origins actionable inside the app when the referenced feed item is still available locally.
+- Origin links are immutable through normal note editing. Future workflows may add or detach origins through explicit source-link actions, but inline note editing must not rewrite origin records.
+- Feed-to-note drafts start from UI-facing feed items, which are scoped to tracked companies; `create_notebook_entry` requires the canonical tracked `companyId`.
+- Claim notes should support a future follow-up period, but follow-up automation is not required in the first implementation.
+- The Claims tab uses `list_notebook_entries(companyId)` and filters entries whose `kind` is `claim` or whose `claimStatus` is set.
+- Claim status update uses `update_notebook_entry(input)` and must preserve company ownership, origin links, note body, tags, and follow-up dates unless the user is editing those fields in a notebook editor.
+
+Initial local commands:
+
+- `list_notebook_entries(companyId)`: returns notebook entries for one company, newest updated first.
+- `create_notebook_entry(input)`: creates one Markdown notebook entry for a company.
+- `update_notebook_entry(input)`: updates editable note fields and tags while preserving company ownership and immutable origin links.
+
+Initial create input:
+
+```json
+{
+  "companyId": "company_gpw_cdr",
+  "title": "Management claim about release schedule",
+  "body": "Markdown body",
+  "bodyFormat": "markdown",
+  "tags": ["management-guidance"],
+  "kind": "claim",
+  "claimStatus": "open",
+  "eventDate": "2026-05-28",
+  "followUpAfter": "2026-Q4",
+  "followUpDate": "2026-11-30",
+  "origins": [
+    {
+      "sourceType": "feed_item",
+      "sourceId": "feed_01",
+      "sourceUrl": "https://www.gpw.pl/komunikaty",
+      "label": "GPW report"
+    }
+  ]
+}
+```
+
+Initial update input:
+
+```json
+{
+  "id": "note_company_gpw_cdr_release_schedule",
+  "title": "Updated release schedule claim",
+  "body": "Updated Markdown body",
+  "tags": ["management-guidance", "clarified"],
+  "kind": "claim",
+  "claimStatus": "unknown",
+  "eventDate": "2026-05-28",
+  "followUpAfter": "2026-Q4",
+  "followUpDate": "2026-11-30"
+}
+```
+
+Update rules:
+
+- `companyId`, `bodyFormat`, timestamps, and origin links are not edited by this command.
+- Tags are replaced atomically from the submitted tag list.
+- Empty optional date/status fields are stored as unset values.
+
+## Company Event
+
+Company events represent dated items the user may want to track across watchlists. Upcoming events are the default attention focus, but historical events are retained for context. They are separate from feed items and notebook entries, but may link to source items or notes later.
+
+```json
+{
+  "id": "event_01",
+  "companyId": "company_gpw_cdr",
+  "eventType": "periodic_report",
+  "title": "Quarterly report publication",
+  "eventDate": "2026-08-29",
+  "eventTime": null,
+  "status": "scheduled",
+  "sourceType": "official_calendar",
+  "sourceUrl": "https://www.gpw.pl/komunikaty",
+  "attribution": "GPW",
+  "fetchedAt": "2026-05-30T12:00:00Z",
+  "updatedAtSource": null,
+  "manual": false,
+  "userAdjusted": false
+}
+```
+
+Initial event types:
+
+- `periodic_report`
+- `dividend`
+- `shareholder_meeting`
+- `conference_call`
+- `investor_conference`
+- `custom`
+
+Initial statuses:
+
+- `scheduled`
+- `confirmed`
+- `tentative`
+- `changed`
+- `cancelled`
+- `completed`
+
+Rules:
+
+- Events belong to exactly one canonical company.
+- Event views should be scoped to companies in watchlists by default.
+- Sourced events must preserve source URL, attribution, fetched timestamp, and source type when available.
+- Manual events use `sourceType: "manual"` and `manual: true`.
+- User corrections to sourced events must not erase the original source record; later implementation may store corrections as separate fields or linked audit records.
 
 ## AI Analysis Result
 
@@ -290,7 +398,7 @@ Rules:
     "tags": ["conference", "management-guidance"],
     "kind": "claim",
     "claimStatus": "open",
-    "reviewAfter": "2026-Q4"
+    "followUpAfter": "2026-Q4"
   }
 }
 ```
