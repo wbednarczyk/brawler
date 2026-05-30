@@ -1,7 +1,8 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use rusqlite::{params, Connection};
+use crate::source_adapters::gpw_espi_ebi::{GpwReportListing, ADAPTER_ID, DISPLAY_NAME};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -95,6 +96,24 @@ impl AppState {
         list_feed_items(&connection)
     }
 
+    pub fn list_unmatched_source_items(
+        &self,
+        adapter_id: &str,
+    ) -> StorageResult<Vec<UnmatchedSourceItem>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_unmatched_source_items(&connection, adapter_id)
+    }
+
+    pub fn ingest_gpw_report_listings(
+        &self,
+        listings: &[GpwReportListing],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        ingest_gpw_report_listings(&mut connection, listings)
+    }
+
     pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -126,6 +145,22 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         list_source_adapters(&connection)
+    }
+
+    pub fn record_source_adapter_error(&self, adapter_id: &str, error: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        record_source_adapter_error(&connection, adapter_id, error)
+    }
+
+    pub fn record_source_adapter_attempt(
+        &self,
+        adapter_id: &str,
+        trigger: &str,
+    ) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        record_source_adapter_attempt(&connection, adapter_id, trigger)
     }
 
     pub fn get_settings(&self) -> StorageResult<UserSettings> {
@@ -233,6 +268,29 @@ pub struct FeedItemStateInput {
     pub saved: Option<bool>,
 }
 
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceIngestionResult {
+    pub adapter_id: String,
+    pub items_fetched: usize,
+    pub items_created: usize,
+    pub items_matched: usize,
+    pub items_unmatched: usize,
+    pub fetched_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnmatchedSourceItem {
+    pub id: String,
+    pub adapter_id: String,
+    pub company_name: String,
+    pub title: String,
+    pub source_url: String,
+    pub published_at: String,
+    pub fetched_at: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotebookEntry {
@@ -311,9 +369,18 @@ pub struct SourceAdapter {
     pub fetch_mode: String,
     pub enabled: bool,
     pub default_poll_interval_seconds: i64,
+    pub source_url: String,
+    pub rate_limit_policy: String,
+    pub policy_note: String,
+    pub last_attempt_at: Option<String>,
+    pub last_trigger: Option<String>,
     pub last_success_at: Option<String>,
     pub last_error_at: Option<String>,
     pub last_error: Option<String>,
+    pub last_items_fetched: Option<i64>,
+    pub last_items_created: Option<i64>,
+    pub last_items_matched: Option<i64>,
+    pub last_items_unmatched: Option<i64>,
     pub markets: Vec<String>,
 }
 
@@ -737,6 +804,234 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
     Ok(feed_items)
 }
 
+fn list_unmatched_source_items(
+    connection: &Connection,
+    adapter_id: &str,
+) -> StorageResult<Vec<UnmatchedSourceItem>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            feed_items.id,
+            feed_items.source_adapter_id,
+            COALESCE(feed_items.display_company, 'Unmatched') AS company_name,
+            feed_items.title,
+            feed_items.source_url,
+            COALESCE(feed_items.published_at, '') AS published_at,
+            feed_items.fetched_at
+        FROM feed_items
+        LEFT JOIN feed_item_companies
+            ON feed_item_companies.feed_item_id = feed_items.id
+        WHERE feed_items.source_adapter_id = ?1
+            AND feed_item_companies.feed_item_id IS NULL
+            AND COALESCE(feed_items.display_company, '') NOT IN (
+                SELECT qualified_ticker FROM companies
+            )
+        ORDER BY COALESCE(feed_items.published_at, feed_items.fetched_at) DESC,
+            feed_items.fetched_at DESC,
+            feed_items.id
+        LIMIT 20
+        ",
+    )?;
+
+    let rows = statement.query_map([adapter_id], |row| {
+        Ok(UnmatchedSourceItem {
+            id: row.get(0)?,
+            adapter_id: row.get(1)?,
+            company_name: row.get(2)?,
+            title: row.get(3)?,
+            source_url: row.get(4)?,
+            published_at: row.get(5)?,
+            fetched_at: row.get(6)?,
+        })
+    })?;
+
+    let unmatched_items = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(unmatched_items)
+}
+
+fn ingest_gpw_report_listings(
+    connection: &mut Connection,
+    listings: &[GpwReportListing],
+) -> StorageResult<SourceIngestionResult> {
+    let transaction = connection.transaction()?;
+    let mut items_created = 0;
+    let mut items_matched = 0;
+    let mut items_unmatched = 0;
+    let fetched_at = listings
+        .first()
+        .map(|listing| listing.fetched_at.clone())
+        .map(Ok)
+        .unwrap_or_else(|| current_timestamp(&transaction))?;
+
+    for listing in listings {
+        let feed_item_id = feed_item_id(&listing.dedupe_key);
+        let matched_company = find_company_by_isin(&transaction, &listing.isin)?;
+        let display_company = matched_company
+            .as_ref()
+            .map(|company| company.qualified_ticker.clone())
+            .unwrap_or_else(|| listing.company_name.clone());
+        let existed = feed_item_exists(&transaction, &feed_item_id)?;
+
+        transaction.execute(
+            "
+            INSERT INTO feed_items (
+                id,
+                type,
+                source_adapter_id,
+                source_name,
+                source_url,
+                title,
+                summary,
+                body_text,
+                language,
+                published_at,
+                fetched_at,
+                dedupe_key,
+                attribution,
+                display_company
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, 'pl', ?7, ?8, ?9, 'GPW', ?10)
+            ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
+                type = excluded.type,
+                source_name = excluded.source_name,
+                source_url = excluded.source_url,
+                title = excluded.title,
+                language = excluded.language,
+                published_at = excluded.published_at,
+                fetched_at = excluded.fetched_at,
+                attribution = excluded.attribution,
+                display_company = excluded.display_company,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ",
+            params![
+                feed_item_id,
+                "Official report",
+                ADAPTER_ID,
+                DISPLAY_NAME,
+                listing.detail_url,
+                listing.title,
+                listing.published_at,
+                listing.fetched_at,
+                listing.dedupe_key,
+                display_company,
+            ],
+        )?;
+
+        if !existed {
+            items_created += 1;
+        }
+
+        transaction.execute(
+            "DELETE FROM feed_item_companies WHERE feed_item_id = ?1",
+            [&feed_item_id],
+        )?;
+
+        if let Some(company) = matched_company {
+            transaction.execute(
+                "
+                INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                VALUES (?1, ?2, 'isin')
+                ",
+                params![feed_item_id, company.id],
+            )?;
+            items_matched += 1;
+        } else {
+            items_unmatched += 1;
+        }
+    }
+
+    transaction.execute(
+        "
+        UPDATE source_adapters
+        SET last_success_at = ?1,
+            last_error_at = NULL,
+            last_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![&fetched_at, ADAPTER_ID],
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        ADAPTER_ID,
+        "last_items_fetched",
+        &listings.len().to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        ADAPTER_ID,
+        "last_items_created",
+        &items_created.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        ADAPTER_ID,
+        "last_items_matched",
+        &items_matched.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        ADAPTER_ID,
+        "last_items_unmatched",
+        &items_unmatched.to_string(),
+    )?;
+
+    transaction.commit()?;
+
+    Ok(SourceIngestionResult {
+        adapter_id: ADAPTER_ID.to_owned(),
+        items_fetched: listings.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
+        fetched_at: Some(fetched_at),
+    })
+}
+
+struct MatchedCompany {
+    id: String,
+    qualified_ticker: String,
+}
+
+fn find_company_by_isin(
+    connection: &Connection,
+    isin: &str,
+) -> StorageResult<Option<MatchedCompany>> {
+    if isin.trim().is_empty() {
+        return Ok(None);
+    }
+
+    connection
+        .query_row(
+            "
+            SELECT id, qualified_ticker
+            FROM companies
+            WHERE isin = ?1
+            ORDER BY qualified_ticker
+            LIMIT 1
+            ",
+            [isin.trim()],
+            |row| {
+                Ok(MatchedCompany {
+                    id: row.get(0)?,
+                    qualified_ticker: row.get(1)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn feed_item_exists(connection: &Connection, feed_item_id: &str) -> StorageResult<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM feed_items WHERE id = ?1)",
+            [feed_item_id],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::from)
+}
+
 fn list_notebook_entries(
     connection: &Connection,
     company_id: &str,
@@ -975,11 +1270,46 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             source_adapters.fetch_mode,
             source_adapters.enabled,
             source_adapters.default_poll_interval_seconds,
+            'https://www.gpw.pl/komunikaty' AS source_url,
+            'Serialized requests, default 15 minute poll interval' AS rate_limit_policy,
+            'Uses the public GPW ESPI/EBI listing page. Paid processed GPW data products may be evaluated later.' AS policy_note,
+            source_adapter_attempts.state_value AS last_attempt_at,
+            source_adapter_triggers.state_value AS last_trigger,
             source_adapters.last_success_at,
             source_adapters.last_error_at,
             source_adapters.last_error,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_items_fetched'
+            ) AS INTEGER) AS last_items_fetched,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_items_created'
+            ) AS INTEGER) AS last_items_created,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_items_matched'
+            ) AS INTEGER) AS last_items_matched,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_items_unmatched'
+            ) AS INTEGER) AS last_items_unmatched,
             COALESCE(GROUP_CONCAT(source_adapter_markets.market, ','), '') AS markets
         FROM source_adapters
+        LEFT JOIN source_adapter_state AS source_adapter_attempts
+            ON source_adapter_attempts.source_adapter_id = source_adapters.id
+            AND source_adapter_attempts.state_key = 'last_attempt_at'
+        LEFT JOIN source_adapter_state AS source_adapter_triggers
+            ON source_adapter_triggers.source_adapter_id = source_adapters.id
+            AND source_adapter_triggers.state_key = 'last_trigger'
         LEFT JOIN source_adapter_markets
             ON source_adapter_markets.source_adapter_id = source_adapters.id
         GROUP BY
@@ -989,6 +1319,8 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             source_adapters.fetch_mode,
             source_adapters.enabled,
             source_adapters.default_poll_interval_seconds,
+            source_adapter_attempts.state_value,
+            source_adapter_triggers.state_value,
             source_adapters.last_success_at,
             source_adapters.last_error_at,
             source_adapters.last_error
@@ -997,7 +1329,7 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
     )?;
 
     let rows = statement.query_map([], |row| {
-        let markets: String = row.get(9)?;
+        let markets: String = row.get(18)?;
 
         Ok(SourceAdapter {
             id: row.get(0)?,
@@ -1006,9 +1338,18 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             fetch_mode: row.get(3)?,
             enabled: row.get(4)?,
             default_poll_interval_seconds: row.get(5)?,
-            last_success_at: row.get(6)?,
-            last_error_at: row.get(7)?,
-            last_error: row.get(8)?,
+            source_url: row.get(6)?,
+            rate_limit_policy: row.get(7)?,
+            policy_note: row.get(8)?,
+            last_attempt_at: row.get(9)?,
+            last_trigger: row.get(10)?,
+            last_success_at: row.get(11)?,
+            last_error_at: row.get(12)?,
+            last_error: row.get(13)?,
+            last_items_fetched: row.get(14)?,
+            last_items_created: row.get(15)?,
+            last_items_matched: row.get(16)?,
+            last_items_unmatched: row.get(17)?,
             markets: markets
                 .split(',')
                 .filter(|market| !market.is_empty())
@@ -1020,6 +1361,65 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
     let adapters = rows.collect::<Result<Vec<_>, _>>()?;
 
     Ok(adapters)
+}
+
+fn record_source_adapter_attempt(
+    connection: &Connection,
+    adapter_id: &str,
+    trigger: &str,
+) -> StorageResult<()> {
+    let attempted_at = current_timestamp(connection)?;
+    set_source_adapter_state(connection, adapter_id, "last_attempt_at", &attempted_at)?;
+    set_source_adapter_state(connection, adapter_id, "last_trigger", trigger)?;
+
+    Ok(())
+}
+
+fn set_source_adapter_state(
+    connection: &Connection,
+    adapter_id: &str,
+    key: &str,
+    value: &str,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        INSERT INTO source_adapter_state (source_adapter_id, state_key, state_value)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(source_adapter_id, state_key) DO UPDATE SET
+            state_value = excluded.state_value,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![adapter_id, key, value],
+    )?;
+
+    Ok(())
+}
+
+fn current_timestamp(connection: &Connection) -> StorageResult<String> {
+    connection
+        .query_row("SELECT strftime('%Y-%m-%dT%H:%M:%fZ', 'now')", [], |row| {
+            row.get(0)
+        })
+        .map_err(StorageError::from)
+}
+
+fn record_source_adapter_error(
+    connection: &Connection,
+    adapter_id: &str,
+    error: &str,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        UPDATE source_adapters
+        SET last_error_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            last_error = ?1,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![error, adapter_id],
+    )?;
+
+    Ok(())
 }
 
 fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -1337,6 +1737,10 @@ fn notebook_origin_id(notebook_entry_id: &str, source_type: &str, index: usize) 
         slug_part(source_type),
         index + 1
     )
+}
+
+fn feed_item_id(dedupe_key: &str) -> String {
+    format!("feed_{}", slug_part(dedupe_key))
 }
 
 fn normalize_tags(tags: Vec<String>) -> Vec<String> {
@@ -1787,6 +2191,129 @@ mod tests {
     }
 
     #[test]
+    fn ingests_gpw_listings_and_matches_tracked_company_by_isin() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "NTC".to_owned(),
+                display_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA".to_owned(),
+                isin: Some("PLECMNG00019".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked company should create");
+
+        let result = state
+            .ingest_gpw_report_listings(&[
+                GpwReportListing {
+                    report_type: "Bieżący".to_owned(),
+                    system: "ESPI".to_owned(),
+                    report_number: "7/2026".to_owned(),
+                    company_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA".to_owned(),
+                    isin: "PLECMNG00019".to_owned(),
+                    title: "Oświadczenie w sprawie formy przekazywania raportów kwartalnych."
+                        .to_owned(),
+                    detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=123456".to_owned(),
+                    published_at: "2026-05-30T17:13:31+02:00".to_owned(),
+                    fetched_at: "2026-05-30T17:30:00Z".to_owned(),
+                    dedupe_key: "gpw-espi-ebi:espi:PLECMNG00019:7/2026:2026-05-30T17:13:31+02:00"
+                        .to_owned(),
+                },
+                GpwReportListing {
+                    report_type: "Bieżący".to_owned(),
+                    system: "ESPI".to_owned(),
+                    report_number: "9/2026".to_owned(),
+                    company_name: "UNTRACKED S.A.".to_owned(),
+                    isin: "PLUNTRK00001".to_owned(),
+                    title: "Untracked company report".to_owned(),
+                    detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=999999".to_owned(),
+                    published_at: "2026-05-30T18:13:31+02:00".to_owned(),
+                    fetched_at: "2026-05-30T18:30:00Z".to_owned(),
+                    dedupe_key: "gpw-espi-ebi:espi:PLUNTRK00001:9/2026:2026-05-30T18:13:31+02:00"
+                        .to_owned(),
+                },
+            ])
+            .expect("listings should ingest");
+
+        assert_eq!(result.items_fetched, 2);
+        assert_eq!(result.items_created, 2);
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 1);
+
+        let adapters = state
+            .list_source_adapters()
+            .expect("source adapters should list");
+        let adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == ADAPTER_ID)
+            .expect("GPW adapter should exist");
+
+        assert_eq!(adapter.last_items_fetched, Some(2));
+        assert_eq!(adapter.last_items_created, Some(2));
+        assert_eq!(adapter.last_items_matched, Some(1));
+        assert_eq!(adapter.last_items_unmatched, Some(1));
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        let ntc = visible_items
+            .iter()
+            .find(|item| item.company == "GPW:NTC")
+            .expect("matched GPW listing should be visible");
+
+        assert_eq!(ntc.source, "GPW ESPI/EBI");
+        assert_eq!(ntc.item_type, "Official report");
+        assert_eq!(ntc.attribution, "GPW");
+        assert_eq!(ntc.language, "pl");
+
+        assert!(visible_items
+            .iter()
+            .all(|item| item.title != "Untracked company report"));
+
+        let unmatched_items = state
+            .list_unmatched_source_items(ADAPTER_ID)
+            .expect("unmatched source diagnostics should list");
+        let untracked = unmatched_items
+            .iter()
+            .find(|item| item.title == "Untracked company report")
+            .expect("unmatched ingested listing should be diagnosable");
+
+        assert_eq!(untracked.company_name, "UNTRACKED S.A.");
+    }
+
+    #[test]
+    fn records_successful_zero_item_gpw_refresh() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let result = state
+            .ingest_gpw_report_listings(&[])
+            .expect("zero-item source refresh should record success");
+
+        assert_eq!(result.items_fetched, 0);
+        assert_eq!(result.items_created, 0);
+        assert_eq!(result.items_matched, 0);
+        assert_eq!(result.items_unmatched, 0);
+        assert!(result.fetched_at.is_some());
+
+        let adapters = state
+            .list_source_adapters()
+            .expect("source adapters should list");
+        let adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == ADAPTER_ID)
+            .expect("GPW adapter should exist");
+
+        assert_eq!(adapter.last_success_at, result.fetched_at);
+        assert!(adapter.last_error_at.is_none());
+        assert!(adapter.last_error.is_none());
+        assert_eq!(adapter.last_items_fetched, Some(0));
+        assert_eq!(adapter.last_items_created, Some(0));
+        assert_eq!(adapter.last_items_matched, Some(0));
+        assert_eq!(adapter.last_items_unmatched, Some(0));
+    }
+
+    #[test]
     fn creates_and_lists_notebook_entries_for_company() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
@@ -1885,6 +2412,48 @@ mod tests {
         assert_eq!(adapters[0].display_name, "GPW ESPI/EBI");
         assert_eq!(adapters[0].markets, vec!["GPW".to_owned()]);
         assert!(adapters[0].enabled);
+    }
+
+    #[test]
+    fn records_source_adapter_error_state() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        state
+            .record_source_adapter_error(ADAPTER_ID, "network timeout")
+            .expect("source adapter error should record");
+
+        let adapters = state
+            .list_source_adapters()
+            .expect("source adapters should list");
+        let adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == ADAPTER_ID)
+            .expect("GPW adapter should exist");
+
+        assert_eq!(adapter.last_error.as_deref(), Some("network timeout"));
+        assert!(adapter.last_error_at.is_some());
+    }
+
+    #[test]
+    fn records_source_adapter_attempt_state() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        state
+            .record_source_adapter_attempt(ADAPTER_ID, "scheduler")
+            .expect("source adapter attempt should record");
+
+        let adapters = state
+            .list_source_adapters()
+            .expect("source adapters should list");
+        let adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == ADAPTER_ID)
+            .expect("GPW adapter should exist");
+
+        assert!(adapter.last_attempt_at.is_some());
+        assert_eq!(adapter.last_trigger.as_deref(), Some("scheduler"));
     }
 
     #[test]

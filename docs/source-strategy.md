@@ -44,6 +44,8 @@ The public GPW ESPI/EBI report page currently exposes report listings with:
 
 The adapter should normalize each listing into a `feed_item`.
 
+Milestone 5 starts with fixture-backed listing parsing and SQLite ingestion before wiring an explicit manual live fetch. Automated tests must stay fixture-backed or use injected fetchers so default checks do not depend on GPW availability.
+
 Required normalized fields:
 
 - `type`
@@ -82,7 +84,9 @@ Rules:
 
 - Do not rely on ticker alone for GPW matching.
 - Unmatched items can still be stored, but they should not appear in company-specific views until matched.
-- The Sources screen should expose unmatched item counts after implementation supports them.
+- The Sources screen should expose unmatched counts and recent unmatched item diagnostics after implementation supports them.
+- Matched listing ingestion writes `feed_item_companies.match_type = "isin"`.
+- Re-ingesting the same listing updates source metadata but preserves read/saved user state.
 
 ## Detail Fetching
 
@@ -110,7 +114,8 @@ Default v1 behavior:
 - support manual refresh
 - serialize GPW adapter requests
 - use conditional requests if the source supports them
-- back off after repeated errors
+- back off scheduled refreshes after repeated errors while preserving manual refresh
+- implement live fetch through an injectable fetch boundary so tests can remain offline
 
 The adapter should record:
 
@@ -168,10 +173,13 @@ Current checked references:
 - GPW ESPI/EBI report listing: `https://www.gpw.pl/komunikaty`
 - GPW public page shows report listings under "Raporty Spółek ESPI/EBI" with timestamps, report type, ESPI/EBI label, company name/ISIN, report title, and detail links.
 - GPW also describes processed information products available in CSV or XLS under its information services area; these are future options, not v1 assumptions.
+- No documented public GPW ESPI/EBI API has been accepted for v1 yet. M5 uses the public listing page until a stable documented API or acceptable internal pagination endpoint is confirmed.
+- PAP Biznes exposes ESPI/EBI-related public pages, including `https://biznes.pap.pl/espi` and `https://biznes.pap.pl/ebi/company`, and describes ESPI/EBI communications in its business service offer. Treat PAP as a source candidate only after policy and terms review; do not implement PAP scraping by default.
 
 ## Open Source Questions
 
 - Is there an undocumented network endpoint behind GPW's "Pokaż więcej" pagination that can be used more reliably than parsing HTML?
 - Do GPW detail pages expose stable report body structure and attachments?
 - Are there explicit GPW terms that constrain automated polling of this page?
+- Is PAP Biznes usable under acceptable terms for local personal polling, or is it a commercial/protected source unsuitable for v1 ingestion?
 - Which Polish media/RSS sources should be considered after GPW official reports?

@@ -206,6 +206,8 @@ Initial version mapping:
 
 Rules:
 
+- Every completed milestone bumps the minor version before the milestone branch is handed back for commit/merge.
+- Milestone closure must update the app version consistently in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - Patch versions are for fixes.
 - Git tags mark meaningful build candidates.
 - Public release automation waits until packaging is ready.

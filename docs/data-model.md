@@ -79,9 +79,14 @@ Fields:
 - `fetch_mode`
 - `enabled`
 - `default_poll_interval_seconds`
+- `last_attempt_at` via `source_adapter_state`
 - `last_success_at`
 - `last_error_at`
 - `last_error`
+- `last_items_fetched` via `source_adapter_state`
+- `last_items_created` via `source_adapter_state`
+- `last_items_matched` via `source_adapter_state`
+- `last_items_unmatched` via `source_adapter_state`
 - `created_at`
 - `updated_at`
 

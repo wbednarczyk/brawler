@@ -74,6 +74,9 @@ Each source adapter must expose metadata and a fetch operation.
   "fetchMode": "public_page",
   "enabled": true,
   "defaultPollIntervalSeconds": 900,
+  "sourceUrl": "https://www.gpw.pl/komunikaty",
+  "rateLimitPolicy": "Serialized requests, default 15 minute poll interval",
+  "policyNote": "Uses the public GPW ESPI/EBI listing page. Paid processed GPW data products may be evaluated later.",
   "lastSuccessAt": null,
   "lastErrorAt": null,
   "lastError": null
@@ -107,6 +110,11 @@ Rules:
 - Adapters must declare and respect source-specific rate limits.
 - Restricted scraping is not allowed without a source-specific ADR.
 - The Sources screen reads adapter status from local SQLite before real fetching exists.
+- The Sources screen must expose the adapter source URL, rate-limit policy, and source-policy note once live fetching exists.
+- The first GPW implementation parses listing HTML fixtures before live network fetch is wired.
+- GPW listing ingestion upserts feed items by `(sourceAdapterId, dedupeKey)` and must preserve existing `read` and `saved` user state.
+- GPW listing ingestion matches companies by ISIN first. Matched items populate `feed_item_companies` with `matchType: "isin"` and use the matched exchange-qualified ticker as `displayCompany`.
+- Unmatched GPW listings may be stored locally with source-derived `displayCompany`, but they must not appear in normal Inbox/company feed views until matched to a tracked company.
 
 ## Feed Item
 
@@ -484,6 +492,7 @@ Initial Tauri command groups:
 - `list_feed_items`
 - `update_feed_item`
 - `refresh_sources`
+- `list_unmatched_source_items`
 - `list_jobs`
 - `list_notebook_entries`
 - `create_notebook_entry`
@@ -493,5 +502,32 @@ Initial Tauri command groups:
 - `create_note_from_transcript_selection`
 - `get_settings`
 - `update_settings`
+
+Initial `refresh_sources` behavior:
+
+- Runs the GPW ESPI/EBI adapter path.
+- Performs an explicit manual fetch of the public GPW ESPI/EBI listing page.
+- Manual refresh is available from the topbar, Sources screen, and no-feed Inbox empty state.
+- The desktop runtime schedules refreshes in-app while the UI is open, using the SQLite `pollIntervalSeconds` setting.
+- Scheduled refreshes do not run immediately on startup; the first scheduled run occurs after one full poll interval.
+- Refreshes are guarded against overlap, so a scheduled refresh is skipped while another refresh is already running.
+- Refresh attempts record their trigger as `manual` or `scheduler` in source adapter state.
+- Scheduled refreshes back off after repeated refresh failures; manual refresh remains available during backoff.
+- Sources UI shows the expected next in-app poll based on the active interval.
+- Automated tests continue to use bundled GPW listing fixtures or injected fetchers; default checks must not require live network access.
+- Records `last_attempt_at` in source adapter state before fetching.
+- Returns source ingestion status with adapter ID, fetched count, created count, matched count, unmatched count, and fetched timestamp.
+- A successful fetch with zero parsed listings is recorded as a successful refresh with zero counts and a generated fetched timestamp.
+- Persists the last fetched, created, matched, and unmatched counts in source adapter state for later Sources-screen diagnostics.
+- On fetch failure, records adapter `lastErrorAt` and `lastError` in SQLite before returning the command error.
+- The topbar refresh control exposes the latest refresh failure state until the next successful refresh attempt.
+- Refreshes local SQLite feed/source state only; scheduler and live polling are separate M5 slices.
+
+Initial `list_unmatched_source_items` behavior:
+
+- Returns recent stored feed items for one source adapter that do not have a company match.
+- Supports Sources-screen diagnostics after a refresh reports unmatched items.
+- Must not make unmatched items visible in normal Inbox or company workspace views.
+- Returns source URL, source-derived company name, title, publication timestamp, and fetched timestamp when available.
 
 Feed, job, transcript, and notebook changes should be emitted as Tauri events.

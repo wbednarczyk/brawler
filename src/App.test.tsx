@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
@@ -79,10 +80,31 @@ const sourceAdapters = [
     fetchMode: "public_page",
     enabled: true,
     defaultPollIntervalSeconds: 900,
+    sourceUrl: "https://www.gpw.pl/komunikaty",
+    rateLimitPolicy: "Serialized requests, default 15 minute poll interval",
+    policyNote: "Uses the public GPW ESPI/EBI listing page. Paid processed GPW data products may be evaluated later.",
+    lastAttemptAt: null,
+    lastTrigger: "manual",
     lastSuccessAt: null,
     lastErrorAt: null,
     lastError: null,
+    lastItemsFetched: 2,
+    lastItemsCreated: 1,
+    lastItemsMatched: 1,
+    lastItemsUnmatched: 1,
     markets: ["GPW"],
+  },
+];
+
+const initialUnmatchedSourceItems = [
+  {
+    id: "feed_gpw_espi_ebi_unmatched_lbw",
+    adapterId: "gpw-espi-ebi",
+    companyName: "LUBAWA S.A.",
+    title: "Unmatched GPW report from fixture source",
+    sourceUrl: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=999999",
+    publishedAt: "2026-05-30T17:13:31+02:00",
+    fetchedAt: "2026-05-30T17:30:00Z",
   },
 ];
 
@@ -197,16 +219,23 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(() => Promise.resolve()),
+}));
+
 describe("App", () => {
   let companiesResponse = initialCompanies;
   let feedItemsResponse = initialFeedItems;
   let notebookEntriesResponse: TestNotebookEntry[] = [];
+  let refreshSourcesError: string | null = null;
 
   beforeEach(() => {
     companiesResponse = initialCompanies;
     feedItemsResponse = initialFeedItems;
     notebookEntriesResponse = [];
+    refreshSourcesError = null;
     vi.mocked(invoke).mockClear();
+    vi.mocked(openUrl).mockClear();
     vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
       if (command === "health") {
         return Promise.resolve({ status: "ok", version: "0.3.0" });
@@ -378,6 +407,41 @@ describe("App", () => {
 
       if (command === "list_source_adapters") {
         return Promise.resolve(sourceAdapters);
+      }
+
+      if (command === "list_unmatched_source_items") {
+        return Promise.resolve(initialUnmatchedSourceItems);
+      }
+
+      if (command === "refresh_sources") {
+        if (refreshSourcesError) {
+          return Promise.reject(new Error(refreshSourcesError));
+        }
+
+        feedItemsResponse = [
+          {
+            ...initialFeedItems[0],
+            id: "feed_gpw_espi_ebi_refreshed_ntc",
+            company: "GPW:CDR",
+            title: "Refreshed GPW report from fixture source",
+            summary: "",
+            time: "2026-05-30T17:13:31+02:00",
+            publishedAt: "2026-05-30T17:13:31+02:00",
+            fetchedAt: "2026-05-30T17:30:00Z",
+            unread: true,
+            saved: false,
+          },
+          ...feedItemsResponse,
+        ];
+
+        return Promise.resolve({
+          adapterId: "gpw-espi-ebi",
+          itemsFetched: 2,
+          itemsCreated: 2,
+          itemsMatched: 1,
+          itemsUnmatched: 1,
+          fetchedAt: "2026-05-30T17:30:00Z",
+        });
       }
 
       if (command === "get_settings") {
@@ -793,7 +857,7 @@ describe("App", () => {
     const feedList = screen.getByLabelText("Feed items");
 
     expect(await within(feedList).findByText("No stored feed items yet.")).toBeInTheDocument();
-    expect(within(feedList).getByRole("button", { name: "Refresh pending" })).toBeDisabled();
+    expect(within(feedList).getByRole("button", { name: "Refresh sources" })).toBeEnabled();
 
     await user.click(within(feedList).getByRole("button", { name: "Open Sources" }));
 
@@ -801,16 +865,79 @@ describe("App", () => {
     expect(await screen.findByLabelText("Source adapter details")).toBeInTheDocument();
   });
 
-  it("keeps source refresh as a disabled placeholder", async () => {
+  it("refreshes source-backed feed items from the topbar", async () => {
+    const user = userEvent.setup();
+
     render(<App />);
 
     await within(screen.getByLabelText("Feed items")).findByText(
       "Current report placeholder for watchlist company",
     );
 
-    const sourceRefresh = screen.getByRole("button", { name: "Refresh sources unavailable" });
+    await user.click(screen.getByRole("button", { name: "Refresh sources" }));
 
-    expect(sourceRefresh).toBeDisabled();
+    expect(await screen.findByText("Refreshed GPW report from fixture source")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("refresh_sources", { input: { trigger: "manual" } }),
+    );
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    const refreshSummary = await screen.findByLabelText("Last source refresh summary");
+
+    expect(within(refreshSummary).getByLabelText("Fetched source items")).toHaveTextContent("2");
+    expect(within(refreshSummary).getByLabelText("Matched source items")).toHaveTextContent("1");
+
+    const unmatchedItems = await screen.findByLabelText("Unmatched source item diagnostics");
+    expect(within(unmatchedItems).queryByText("LUBAWA S.A.")).not.toBeInTheDocument();
+
+    await user.click(within(unmatchedItems).getByRole("button", { name: /Unmatched/i }));
+
+    expect(within(unmatchedItems).getByText("LUBAWA S.A.")).toBeInTheDocument();
+    expect(within(unmatchedItems).getByText("Unmatched GPW report from fixture source")).toBeInTheDocument();
+  });
+
+  it("shows source refresh failures in the topbar refresh control", async () => {
+    const user = userEvent.setup();
+    refreshSourcesError = "GPW HTTP request failed";
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Refresh sources" }));
+
+    const failedRefresh = await screen.findByRole("button", { name: "Source refresh failed" });
+    expect(failedRefresh).toHaveAttribute("title", "Source refresh failed: Error: GPW HTTP request failed");
+    expect(failedRefresh).toHaveClass("source-refresh-button-danger");
+  });
+
+  it("backs off scheduled source polling after repeated refresh failures", async () => {
+    const user = userEvent.setup();
+    refreshSourcesError = "GPW HTTP request failed";
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Refresh sources" }));
+    await user.click(await screen.findByRole("button", { name: "Source refresh failed" }));
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    await user.click(await screen.findByRole("button", { name: "Open source adapter: GPW ESPI/EBI" }));
+
+    expect(
+      within(await screen.findByLabelText("Source adapter details")).getByText("In-app · 15 min · backoff 30 min"),
+    ).toBeInTheDocument();
+  });
+
+  it("refreshes source-backed feed items from the Sources screen", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+    const sourcesPanel = screen.getByRole("region", { name: "Sources" });
+    await user.click(within(sourcesPanel).getByRole("button", { name: "Refresh sources" }));
+
+    expect(await screen.findByLabelText("Last source refresh summary")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("refresh_sources", { input: { trigger: "manual" } }),
+    );
   });
 
   it("opens source status from the topbar source pill", async () => {
@@ -902,7 +1029,27 @@ describe("App", () => {
     await user.click(sourceRow);
 
     expect(sourceRow).toHaveClass("source-row-selected");
-    expect(within(await screen.findByLabelText("Source adapter details")).getByText("15 min")).toBeInTheDocument();
+    expect(within(await screen.findByLabelText("Source adapter details")).getByText("In-app · 15 min")).toBeInTheDocument();
+    expect(within(await screen.findByLabelText("Source adapter details")).getByText("In 15 min")).toBeInTheDocument();
+    expect(within(await screen.findByLabelText("Source adapter details")).getByText("Manual")).toBeInTheDocument();
+    expect(
+      within(await screen.findByLabelText("Source adapter details")).getByText(
+        "2 fetched · 1 created · 1 matched · 1 unmatched",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(await screen.findByLabelText("Source adapter details")).getByText(
+        "Serialized requests, default 15 minute poll interval",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(await screen.findByLabelText("Source adapter details")).getByText(/Uses the public GPW ESPI\/EBI/),
+    ).toBeInTheDocument();
+    const sourcePageButton = within(await screen.findByLabelText("Source adapter details")).getByRole("button", {
+      name: "Open source page for GPW ESPI/EBI",
+    });
+    await user.click(sourcePageButton);
+    expect(openUrl).toHaveBeenCalledWith("https://www.gpw.pl/komunikaty");
 
     await user.click(sourceRow);
 

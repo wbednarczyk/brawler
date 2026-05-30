@@ -43,6 +43,7 @@ Recommended workflow:
 
 - Run `make check` in WSL before pushing or opening a pull request.
 - Run `make build` in WSL when validating frontend production output.
+- When closing a milestone, bump the app minor version in all package manifests before handing the branch back for commit/merge.
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.
 - From that Windows checkout, run `scripts/windows/dev.ps1` to start Tauri dev mode.

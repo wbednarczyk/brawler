@@ -1,6 +1,7 @@
 use serde::Serialize;
 use tauri::Manager;
 
+pub mod source_adapters;
 pub mod storage;
 
 #[derive(Debug, Serialize)]
@@ -11,7 +12,14 @@ pub struct HealthResponse {
 }
 
 mod commands {
-    use super::{storage, HealthResponse};
+    use super::{source_adapters, storage, HealthResponse};
+    use serde::Deserialize;
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RefreshSourcesInput {
+        trigger: Option<String>,
+    }
 
     #[tauri::command]
     pub fn health() -> HealthResponse {
@@ -119,6 +127,16 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn list_unmatched_source_items(
+        adapter_id: String,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::UnmatchedSourceItem>, String> {
+        state
+            .list_unmatched_source_items(&adapter_id)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
     pub fn update_feed_item_state(
         input: storage::FeedItemStateInput,
         state: tauri::State<'_, storage::AppState>,
@@ -168,6 +186,37 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn refresh_sources(
+        input: Option<RefreshSourcesInput>,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::SourceIngestionResult, String> {
+        let trigger = input
+            .and_then(|input| input.trigger)
+            .filter(|trigger| trigger == "manual" || trigger == "scheduler")
+            .unwrap_or_else(|| "manual".to_owned());
+        let _ = state
+            .record_source_adapter_attempt(source_adapters::gpw_espi_ebi::ADAPTER_ID, &trigger);
+
+        let fetcher = source_adapters::gpw_espi_ebi::HttpGpwPageFetcher;
+        let listings = match source_adapters::gpw_espi_ebi::fetch_report_listings(&fetcher) {
+            Ok(listings) => listings,
+            Err(error) => {
+                let message = error.to_string();
+                let _ = state.record_source_adapter_error(
+                    source_adapters::gpw_espi_ebi::ADAPTER_ID,
+                    &message,
+                );
+
+                return Err(message);
+            }
+        };
+
+        state
+            .ingest_gpw_report_listings(&listings)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
     pub fn get_settings(
         state: tauri::State<'_, storage::AppState>,
     ) -> Result<storage::UserSettings, String> {
@@ -188,6 +237,7 @@ mod commands {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
@@ -212,11 +262,13 @@ pub fn run() {
             commands::add_company_to_watchlist,
             commands::remove_company_from_watchlist,
             commands::list_feed_items,
+            commands::list_unmatched_source_items,
             commands::update_feed_item_state,
             commands::list_notebook_entries,
             commands::create_notebook_entry,
             commands::update_notebook_entry,
             commands::list_source_adapters,
+            commands::refresh_sources,
             commands::get_settings,
             commands::update_settings
         ])
