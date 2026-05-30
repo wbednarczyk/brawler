@@ -59,6 +59,7 @@ Acceptance criteria:
 - Every shortcut action remains available through visible UI controls.
 - Shortcuts do not fire while typing in inputs, note editors, forms, or transcript selection.
 - Windows-native and browser editing shortcut conflicts are avoided.
+- Notebook shortcuts include `Ctrl+E` to open the editor for the selected item and `Ctrl+S` to save the currently edited item.
 
 Docs/contracts touched: product spec, UI information architecture, roadmap.
 
@@ -95,20 +96,6 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
-### Implement company notebooks
-
-Intent: add per-company notebook support with notes that can be created manually or from feed items.
-
-Acceptance criteria:
-
-- Each company has a notebook view.
-- Notes support title, body, tags, provenance, kind, claim status, event date, and review period.
-- Feed item detail view can create a note draft linked to that feed item.
-
-Docs/contracts touched: product spec, contracts.
-
-Test expectations: Rust notebook storage tests and UI workflow tests.
-
 ### Implement Gemini YouTube transcription spike
 
 Intent: validate Gemini as the first provider only for YouTube press conference transcription and transcript-to-note workflows.
@@ -118,12 +105,32 @@ Acceptance criteria:
 - User can submit a YouTube URL for a selected company.
 - App creates a transcript job using the Gemini provider.
 - Returned transcript segments can be reviewed.
-- User can save selected segments as notebook notes with provenance.
+- User can save selected segments as notebook notes with origin.
 - Settings disclose free-tier limits and provider privacy terms.
 
 Docs/contracts touched: architecture, product spec, contracts, source/AI policy ADR.
 
 Test expectations: provider contract tests with fixtures and transcript-to-note workflow tests.
+
+### Implement company events calendar
+
+Intent: show dated company events for companies in the user's watchlists, with upcoming events as the default focus and historical dates available for context.
+
+Acceptance criteria:
+
+- Events screen or panel lists company events across watchlists.
+- Upcoming events are the default view.
+- Historical events or a combined date range can be selected.
+- Report publication dates and dividend-related dates are supported first when source data is available.
+- Watchlist, company, event-type, due-soon, and date-range filters are available.
+- Event rows show date, company ticker, event type, source/manual marker, and status.
+- Event details show source URL, attribution, fetched timestamp, event date/time, and origin/source type.
+- Manual events can be represented distinctly from sourced events.
+- User corrections do not destroy the original sourced event record.
+
+Docs/contracts touched: roadmap, product spec, UI information architecture, data model, contracts.
+
+Test expectations: storage tests for event records and UI workflow tests for filtering and expanded event details.
 
 ### Implement GPW ESPI/EBI adapter spike
 
@@ -143,7 +150,7 @@ Test expectations: adapter unit tests with fixtures.
 
 ## Ready
 
-Milestone 4 is next after the Milestone 3 branch is committed and merged.
+No cards.
 
 ## In Progress
 
@@ -154,6 +161,45 @@ No cards.
 No cards.
 
 ## Done
+
+### Complete Milestone 4: Notebooks And Claims
+
+Intent: add durable per-company Markdown notes that can later be created manually, from feed items, and from transcript selections.
+
+Acceptance criteria:
+
+- Notebook entries can be created for a company.
+- Notebook entries list by company in the company workspace.
+- Notebook entries can be edited after creation without losing origin.
+- Notes support Markdown body, tags, kind, claim status, event date, follow-up quarter, follow-up date, and origin.
+- Feed item detail view can create a note draft linked to that feed item.
+- Cross-company Notebooks screen lists notes, supports company-first navigation, and includes enough filtering/search for v1.
+- Claims tab lists claim notes and allows status update.
+
+Current slice:
+
+- Rust storage exposes typed `create_notebook_entry` and `list_notebook_entries` commands against the existing SQLite notebook tables.
+- Notebook entry creation supports Markdown body, tags, note kind, claim status, event date, follow-up quarter, follow-up date, and origin.
+- Company workspace Notebook tab lists notebook entries for the selected company.
+- Company workspace Notebook tab can create manual Markdown notes with tags, kind, optional claim status, event date, follow-up quarter, follow-up date, and manual origin.
+- Company workspace Notebook tab uses a compact selectable list, an on-demand creation form, and an editable selected-note detail pane.
+- Notebook and claim rows omit raw Markdown body previews; full Markdown is shown only in expanded/read detail.
+- Rust storage exposes typed `update_notebook_entry` for editable note fields while preserving origin.
+- Main Notebooks screen replaces the placeholder with company-first navigation and company-scoped note rows that expand in place, open read-first, and can switch in place to edit mode.
+- Main Notebooks screen can create a manual Markdown note for the selected company with the same core fields as the company workspace form.
+- Main Notebooks inline edit supports the same core note metadata fields, including event date and exact follow-up date.
+- Main Notebooks company navigator shows note count plus actionable open-claim and follow-up scheduled counts when present.
+- Inbox and company feed detail actions can open an editable note draft in the main Notebooks pane with `feed_item` origin.
+- Note detail surfaces render origin links as compact actions, including opening feed-item origins back in the Inbox and opening URL-backed sources externally.
+- Origin links are immutable through normal note edits and covered by storage tests.
+- UI-facing feed items are scoped to tracked companies, so feed-to-note starts from a matched company and attaches the draft automatically.
+- Company workspace Claims tab lists claim-like notebook entries, expands claim details in place, and supports claim status update through the notebook update contract.
+- Main Notebooks screen filters selected-company notes by kind, claim status, tag, and follow-up scheduling presence while global search continues to match note content.
+- Notebook read mode renders common Markdown while edit mode keeps the raw Markdown body.
+
+Docs/contracts touched: roadmap, kanban, contracts, product spec, UI information architecture, data model.
+
+Test expectations: Rust notebook storage tests and UI workflow tests as UI surfaces are implemented.
 
 ### Complete Milestone 3: Inbox And Company Workspace
 
@@ -333,7 +379,7 @@ Acceptance criteria:
 - Open questions in `docs/ui-flows.md` are answered or converted into ADRs.
 - Company workspace navigation pattern is selected.
 - Note editing format is selected.
-- Claim review date/quarter behavior is selected.
+- Claim follow-up date/quarter behavior is selected.
 - Transcript editability rules are selected.
 - Source status placement is selected.
 

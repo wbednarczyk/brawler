@@ -9,7 +9,7 @@ See also [UI Information Architecture](ui-information-architecture.md), [UI Flow
 - SQLite is the local source of truth in v1.
 - IDs are stable application IDs, not user-visible labels.
 - Tickers are user-facing, but `qualified_ticker` is the uniqueness boundary.
-- Fetched content and notes must preserve provenance.
+- Fetched content and notes must preserve origin links.
 - Transcript source output is immutable in v1.
 - Settings are local and must not require cloud identity.
 - Secrets live in the OS keychain, not in SQLite.
@@ -135,7 +135,7 @@ Rules:
 
 ### Notebook Entries
 
-Supports company notebooks, cross-company Notebooks screen, claims review, and notes from feed/transcripts.
+Supports company notebooks, cross-company Notebooks screen, claims follow-up, and notes from feed/transcripts.
 
 Fields:
 
@@ -147,22 +147,22 @@ Fields:
 - `kind`
 - `claim_status`
 - `event_date`
-- `review_after`
-- `review_date`
+- `follow_up_after`
+- `follow_up_date`
 - `created_at`
 - `updated_at`
 
 Related tables:
 
 - `notebook_entry_tags`
-- `notebook_entry_provenance`
+- `notebook_entry_origins`
 
 Rules:
 
 - `body_format` is `markdown` in v1.
 - Notes belong to exactly one company.
-- Claim notes may use both `review_after` and `review_date`.
-- Provenance is required for notes created from feed items, AI outputs, or transcript segments.
+- Claim notes may use both `follow_up_after` and `follow_up_date`.
+- Origin links are required for notes created from feed items, AI outputs, or transcript segments.
 
 ### Transcript Jobs
 
@@ -207,7 +207,7 @@ Rules:
 
 - Segment text is immutable source output in v1.
 - Timestamps are optional because providers may return different precision.
-- Notes created from transcript segments reference them through provenance.
+- Notes created from transcript segments reference them through origin links.
 
 ### AI Analysis Results
 
@@ -290,11 +290,11 @@ Rules:
 - YAML import/export excludes secrets and is contract-accepted but implementation-deferred until later export/import/backup work.
 - Provider secrets are referenced indirectly and stored in the OS keychain.
 
-## Provenance Model
+## Origin Model
 
-Notebook provenance should be flexible enough to link notes to different source types.
+Notebook origin links should be flexible enough to connect notes to different source types.
 
-Fields for `notebook_entry_provenance`:
+Fields for `notebook_entry_origins`:
 
 - `id`
 - `notebook_entry_id`
@@ -316,7 +316,44 @@ Rules:
 
 - Feed-created notes link to `feed_items`.
 - Transcript-created notes link to `transcript_segments` and retain original YouTube URL.
-- Manual notes may use `manual` provenance or no external source.
+- Manual notes may use a `manual` origin link or no external source.
+- Normal note editing preserves existing origin links. Adding or detaching origins requires a future explicit source-link workflow.
+
+## Company Event Model
+
+Company events represent dated items for companies in watchlists. Upcoming events are the default product focus, but historical events are retained for context and comparison. They are not portfolio-position events and do not require holdings.
+
+Fields for `company_events`:
+
+- `id`
+- `company_id`
+- `event_type`
+- `title`
+- `event_date`
+- `event_time`
+- `status`
+- `source_type`
+- `source_url`
+- `attribution`
+- `fetched_at`
+- `updated_at_source`
+- `manual`
+- `user_adjusted`
+- `created_at`
+- `updated_at`
+
+Likely related tables:
+
+- `company_event_origins` or correction/audit table if sourced events can be manually adjusted
+- future links to feed items or notebook entries when event dates are discovered through reports or notes
+
+Rules:
+
+- Events belong to exactly one company.
+- `event_date` is required.
+- `event_time` is optional because many sources publish only a date.
+- Manual events must be distinguishable from sourced events.
+- User corrections to sourced events must preserve the original sourced date and attribution.
 
 ## Search Inputs
 
@@ -345,7 +382,7 @@ The first migration should create:
 - feed_item_companies
 - notebook_entries
 - notebook_entry_tags
-- notebook_entry_provenance
+- notebook_entry_origins
 - transcript_jobs
 - transcript_segments
 - ai_analysis_results

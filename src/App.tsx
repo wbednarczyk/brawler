@@ -1,4 +1,5 @@
 import {
+  type ReactNode,
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
@@ -13,7 +14,9 @@ import {
   Activity,
   BookOpenText,
   Building2,
+  CalendarDays,
   CheckCircle2,
+  ExternalLink,
   FileText,
   Inbox,
   LocateFixed,
@@ -27,6 +30,7 @@ import {
   Trash2,
   Mail,
   MailOpen,
+  X,
   Video,
 } from "lucide-react";
 
@@ -112,6 +116,50 @@ type WatchlistFeedback = {
   message: string;
 };
 
+type NotebookOrigin = {
+  id: string;
+  sourceType: string;
+  sourceId: string | null;
+  sourceUrl: string | null;
+  label: string | null;
+  createdAt: string;
+};
+
+type NotebookEntry = {
+  id: string;
+  companyId: string;
+  title: string;
+  body: string;
+  bodyFormat: string;
+  tags: string[];
+  kind: string;
+  claimStatus: string | null;
+  eventDate: string | null;
+  followUpAfter: string | null;
+  followUpDate: string | null;
+  createdAt: string;
+  updatedAt: string;
+  origins: NotebookOrigin[];
+};
+
+type NotebookForm = {
+  title: string;
+  body: string;
+  tags: string;
+  kind: string;
+  claimStatus: string;
+  eventDate: string;
+  followUpAfter: string;
+  followUpDate: string;
+};
+
+type NotebookDraftOrigin = {
+  sourceType: string;
+  sourceId: string | null;
+  sourceUrl: string | null;
+  label: string | null;
+};
+
 type SourceAdapter = {
   id: string;
   displayName: string;
@@ -172,6 +220,329 @@ function resolveTheme(theme: Theme) {
   return theme;
 }
 
+function notebookFormFromEntry(entry: NotebookEntry): NotebookForm {
+  return {
+    title: entry.title,
+    body: entry.body,
+    tags: entry.tags.join(", "),
+    kind: entry.kind,
+    claimStatus: entry.claimStatus ?? "",
+    eventDate: entry.eventDate ?? "",
+    followUpAfter: entry.followUpAfter ?? "",
+    followUpDate: entry.followUpDate ?? "",
+  };
+}
+
+function emptyNotebookForm(): NotebookForm {
+  return {
+    title: "",
+    body: "",
+    tags: "",
+    kind: "manual",
+    claimStatus: "",
+    eventDate: "",
+    followUpAfter: "",
+    followUpDate: "",
+  };
+}
+
+function manualNotebookOrigins(): NotebookDraftOrigin[] {
+  return [
+    {
+      sourceType: "manual",
+      sourceId: null,
+      sourceUrl: null,
+      label: "Manual note",
+    },
+  ];
+}
+
+function notebookTagFromFeedValue(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+function renderMarkdownInline(text: string, keyPrefix: string): ReactNode[] {
+  const tokens = text.split(/(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g);
+
+  return tokens
+    .filter((token) => token.length > 0)
+    .map((token, index) => {
+      const key = `${keyPrefix}-${index}`;
+
+      if (token.startsWith("`") && token.endsWith("`")) {
+        return <code key={key}>{token.slice(1, -1)}</code>;
+      }
+
+      if (token.startsWith("**") && token.endsWith("**")) {
+        return <strong key={key}>{token.slice(2, -2)}</strong>;
+      }
+
+      if (token.startsWith("*") && token.endsWith("*")) {
+        return <em key={key}>{token.slice(1, -1)}</em>;
+      }
+
+      return token;
+    });
+}
+
+function renderMarkdownBlocks(markdown: string) {
+  const lines = markdown.split(/\r?\n/);
+  const blocks: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    if (trimmed.startsWith("```")) {
+      const codeLines: string[] = [];
+      index += 1;
+
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+
+      blocks.push(
+        <pre key={`code-${index}`}>
+          <code>{codeLines.join("\n")}</code>
+        </pre>,
+      );
+      index += 1;
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      const content = renderMarkdownInline(heading[2], `heading-${index}`);
+
+      if (level === 1) {
+        blocks.push(<h2 key={`heading-${index}`}>{content}</h2>);
+      } else if (level === 2) {
+        blocks.push(<h3 key={`heading-${index}`}>{content}</h3>);
+      } else {
+        blocks.push(<h4 key={`heading-${index}`}>{content}</h4>);
+      }
+
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items: ReactNode[] = [];
+
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        const item = lines[index].trim().replace(/^[-*]\s+/, "");
+        items.push(<li key={`li-${index}`}>{renderMarkdownInline(item, `li-${index}`)}</li>);
+        index += 1;
+      }
+
+      blocks.push(<ul key={`ul-${index}`}>{items}</ul>);
+      continue;
+    }
+
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items: ReactNode[] = [];
+
+      while (index < lines.length && /^\d+\.\s+/.test(lines[index].trim())) {
+        const item = lines[index].trim().replace(/^\d+\.\s+/, "");
+        items.push(<li key={`li-${index}`}>{renderMarkdownInline(item, `li-${index}`)}</li>);
+        index += 1;
+      }
+
+      blocks.push(<ol key={`ol-${index}`}>{items}</ol>);
+      continue;
+    }
+
+    if (trimmed.startsWith(">")) {
+      const quoteLines: string[] = [];
+
+      while (index < lines.length && lines[index].trim().startsWith(">")) {
+        quoteLines.push(lines[index].trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+
+      blocks.push(
+        <blockquote key={`quote-${index}`}>
+          {quoteLines.map((quoteLine, quoteIndex) => (
+            <p key={`quote-${index}-${quoteIndex}`}>
+              {renderMarkdownInline(quoteLine, `quote-${index}-${quoteIndex}`)}
+            </p>
+          ))}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    const paragraphLines = [trimmed];
+    index += 1;
+
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !/^(#{1,3})\s+/.test(lines[index].trim()) &&
+      !/^[-*]\s+/.test(lines[index].trim()) &&
+      !/^\d+\.\s+/.test(lines[index].trim()) &&
+      !lines[index].trim().startsWith(">") &&
+      !lines[index].trim().startsWith("```")
+    ) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+
+    blocks.push(
+      <p key={`p-${index}`}>
+        {renderMarkdownInline(paragraphLines.join(" "), `p-${index}`)}
+      </p>,
+    );
+  }
+
+  return blocks.length > 0 ? blocks : [<p key="empty">No note body.</p>];
+}
+
+function MarkdownNoteBody({
+  body,
+  ariaLabel,
+}: {
+  body: string;
+  ariaLabel?: string;
+}) {
+  return (
+    <div className="notebook-read-body" aria-label={ariaLabel}>
+      {renderMarkdownBlocks(body)}
+    </div>
+  );
+}
+
+function quarterFromDate(date: Date) {
+  return `${date.getFullYear()}-Q${Math.floor(date.getMonth() / 3) + 1}`;
+}
+
+function shiftQuarter(quarter: string, offset: number) {
+  const [yearPart, quarterPart] = quarter.split("-Q");
+  const year = Number(yearPart);
+  const quarterNumber = Number(quarterPart);
+  const zeroBased = year * 4 + quarterNumber - 1 + offset;
+  const nextYear = Math.floor(zeroBased / 4);
+  const nextQuarter = (zeroBased % 4) + 1;
+
+  return `${nextYear}-Q${nextQuarter}`;
+}
+
+function nearbyQuarters() {
+  const currentQuarter = quarterFromDate(new Date());
+
+  return Array.from({ length: 7 }, (_, index) => shiftQuarter(currentQuarter, index - 2));
+}
+
+function NotebookDateField({
+  label,
+  ariaLabel,
+  value,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="date-picker-field">
+      <span>{label}</span>
+      <input
+        aria-label={ariaLabel}
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
+    </div>
+  );
+}
+
+function NotebookQuarterField({
+  label,
+  ariaLabel,
+  value,
+  onChange,
+}: {
+  label: string;
+  ariaLabel: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setOpen] = useState(false);
+  const currentQuarter = quarterFromDate(new Date());
+  const quarters = nearbyQuarters();
+
+  return (
+    <div className="date-picker-field">
+      <span>{label}</span>
+      <div className="date-picker-input-row">
+        <input
+          aria-label={ariaLabel}
+          placeholder="2026-Q4"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <button
+          aria-label={`${label} picker`}
+          className="icon-button date-picker-toggle"
+          onClick={() => setOpen((current) => !current)}
+          type="button"
+        >
+          <CalendarDays size={15} />
+        </button>
+      </div>
+      {isOpen ? (
+        <div className="date-picker-popover quarter-picker-popover">
+          <button
+            className="secondary-button compact-button"
+            onClick={() => {
+              onChange(currentQuarter);
+              setOpen(false);
+            }}
+            type="button"
+          >
+            <CalendarDays size={15} />
+            Today
+          </button>
+          <div className="quarter-picker-options">
+            {quarters.map((quarter) => (
+              <button
+                className={quarter === value ? "quarter-option quarter-option-active" : "quarter-option"}
+                key={quarter}
+                onClick={() => {
+                  onChange(quarter);
+                  setOpen(false);
+                }}
+                type="button"
+              >
+                {quarter}
+              </button>
+            ))}
+          </div>
+          <button
+            className="minimal-button"
+            onClick={() => {
+              onChange("");
+              setOpen(false);
+            }}
+            type="button"
+          >
+            Clear
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function App() {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const [activeSection, setActiveSection] = useState<Section>("Inbox");
@@ -188,6 +559,8 @@ export function App() {
   const [watchlistName, setWatchlistName] = useState("");
   const [watchlistAssignments, setWatchlistAssignments] = useState<Record<string, string>>({});
   const [watchlistFeedback, setWatchlistFeedback] = useState<WatchlistFeedback | null>(null);
+  const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
+  const [notebookError, setNotebookError] = useState<string | null>(null);
   const [inboxWatchlistFilter, setInboxWatchlistFilter] = useState("all");
   const [inboxCompanyFilter, setInboxCompanyFilter] = useState("all");
   const [inboxTypeFilter, setInboxTypeFilter] = useState("all");
@@ -203,6 +576,23 @@ export function App() {
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
+  const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<string | null>(null);
+  const [isNotebookComposerOpen, setNotebookComposerOpen] = useState(false);
+  const [isNotebookEditMode, setNotebookEditMode] = useState(false);
+  const [selectedClaimEntryId, setSelectedClaimEntryId] = useState<string | null>(null);
+  const [claimStatusDraft, setClaimStatusDraft] = useState("");
+  const [selectedNotebookCompanyId, setSelectedNotebookCompanyId] = useState<string | null>(null);
+  const [selectedNotebookScreenEntryId, setSelectedNotebookScreenEntryId] = useState<string | null>(null);
+  const [isNotebookScreenComposerOpen, setNotebookScreenComposerOpen] = useState(false);
+  const [isNotebookScreenEditMode, setNotebookScreenEditMode] = useState(false);
+  const [notebookScreenKindFilter, setNotebookScreenKindFilter] = useState("all");
+  const [notebookScreenClaimStatusFilter, setNotebookScreenClaimStatusFilter] = useState("all");
+  const [notebookScreenFollowUpFilter, setNotebookScreenFollowUpFilter] = useState("all");
+  const [notebookScreenTagFilter, setNotebookScreenTagFilter] = useState("");
+  const [notebookScreenForm, setNotebookScreenForm] = useState<NotebookForm>(emptyNotebookForm);
+  const [notebookScreenDraftOrigins, setNotebookScreenDraftOrigins] =
+    useState<NotebookDraftOrigin[]>(manualNotebookOrigins);
+  const [notebookScreenEditForm, setNotebookScreenEditForm] = useState<NotebookForm>(emptyNotebookForm);
   const [companyWorkspaceTab, setCompanyWorkspaceTab] = useState<CompanyWorkspaceTab>("Feed");
   const [detailPaneWidth, setDetailPaneWidth] = useState(detailPaneDefaultWidth);
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
@@ -214,6 +604,8 @@ export function App() {
     displayName: "",
     isin: "",
   });
+  const [notebookForm, setNotebookForm] = useState<NotebookForm>(emptyNotebookForm);
+  const [notebookEditForm, setNotebookEditForm] = useState<NotebookForm>(emptyNotebookForm);
 
   const effectiveTheme = useMemo(() => resolveTheme(theme), [theme]);
   const membershipsByCompany = useMemo(() => {
@@ -306,6 +698,88 @@ export function App() {
       : null;
   const selectedCompany =
     companies.find((company) => company.id === selectedCompanyId) ?? null;
+  const selectedCompanyNotebookEntries = useMemo(() => {
+    if (!selectedCompany) {
+      return [];
+    }
+
+    return notebookEntries.filter((entry) => entry.companyId === selectedCompany.id);
+  }, [notebookEntries, selectedCompany]);
+  const selectedNotebookEntry =
+    selectedCompanyNotebookEntries.find((entry) => entry.id === selectedNotebookEntryId) ??
+    selectedCompanyNotebookEntries[0] ??
+    null;
+  const selectedCompanyClaimEntries = useMemo(
+    () =>
+      selectedCompanyNotebookEntries.filter(
+        (entry) => entry.kind === "claim" || Boolean(entry.claimStatus),
+      ),
+    [selectedCompanyNotebookEntries],
+  );
+  const selectedClaimEntry =
+    selectedCompanyClaimEntries.find((entry) => entry.id === selectedClaimEntryId) ?? null;
+  const isNotebookEditDirty = selectedNotebookEntry
+    ? JSON.stringify(notebookEditForm) !== JSON.stringify(notebookFormFromEntry(selectedNotebookEntry))
+    : false;
+  const selectedNotebookScreenCompany =
+    companies.find((company) => company.id === selectedNotebookCompanyId) ?? companies[0] ?? null;
+  const selectedNotebookScreenEntries = useMemo(() => {
+    if (!selectedNotebookScreenCompany) {
+      return [];
+    }
+
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+    const normalizedTagFilter = notebookScreenTagFilter.trim().toLowerCase();
+    const entries = notebookEntries.filter(
+      (entry) => entry.companyId === selectedNotebookScreenCompany.id,
+    );
+
+    return entries.filter((entry) => {
+      const kindMatches =
+        notebookScreenKindFilter === "all" || entry.kind === notebookScreenKindFilter;
+      const statusMatches =
+        notebookScreenClaimStatusFilter === "all" ||
+        entry.claimStatus === notebookScreenClaimStatusFilter;
+      const hasFollowUp = Boolean(entry.followUpAfter || entry.followUpDate);
+      const followUpMatches =
+        notebookScreenFollowUpFilter === "all" ||
+        (notebookScreenFollowUpFilter === "has_follow_up" && hasFollowUp) ||
+        (notebookScreenFollowUpFilter === "no_follow_up" && !hasFollowUp);
+      const tagMatches =
+        normalizedTagFilter.length === 0 ||
+        entry.tags.some((tag) => tag.toLowerCase().includes(normalizedTagFilter));
+      const searchMatches =
+        normalizedSearch.length === 0 ||
+        [
+        entry.title,
+        entry.body,
+        entry.kind,
+        entry.claimStatus ?? "",
+        entry.followUpAfter ?? "",
+        entry.followUpDate ?? "",
+        entry.tags.join(" "),
+      ]
+        .join(" ")
+        .toLowerCase()
+          .includes(normalizedSearch);
+
+      return kindMatches && statusMatches && followUpMatches && tagMatches && searchMatches;
+    });
+  }, [
+    notebookEntries,
+    notebookScreenClaimStatusFilter,
+    notebookScreenKindFilter,
+    notebookScreenFollowUpFilter,
+    notebookScreenTagFilter,
+    searchQuery,
+    selectedNotebookScreenCompany,
+  ]);
+  const selectedNotebookScreenEntry =
+    selectedNotebookScreenEntries.find((entry) => entry.id === selectedNotebookScreenEntryId) ?? null;
+  const isNotebookScreenEditDirty = selectedNotebookScreenEntry
+    ? JSON.stringify(notebookScreenEditForm) !==
+      JSON.stringify(notebookFormFromEntry(selectedNotebookScreenEntry))
+    : false;
   const selectedCompanyFeedItems = useMemo(() => {
     if (!selectedCompany) {
       return [];
@@ -545,6 +1019,65 @@ export function App() {
     refreshSettings();
   }, []);
 
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setSelectedNotebookEntryId(null);
+      setSelectedClaimEntryId(null);
+      setNotebookEditMode(false);
+      return;
+    }
+
+    refreshNotebookEntries(selectedCompanyId);
+  }, [selectedCompanyId]);
+
+  useEffect(() => {
+    if (activeSection !== "Notebooks" || companies.length === 0) {
+      return;
+    }
+
+    const nextCompanyId =
+      selectedNotebookCompanyId && companies.some((company) => company.id === selectedNotebookCompanyId)
+        ? selectedNotebookCompanyId
+        : companies[0].id;
+
+    if (selectedNotebookCompanyId !== nextCompanyId) {
+      setSelectedNotebookCompanyId(nextCompanyId);
+    }
+
+    refreshNotebookEntries(nextCompanyId);
+  }, [activeSection, companies, selectedNotebookCompanyId]);
+
+  useEffect(() => {
+    if (!selectedNotebookEntry) {
+      setNotebookEditMode(false);
+      setNotebookEditForm(emptyNotebookForm());
+      return;
+    }
+
+    setNotebookEditForm(notebookFormFromEntry(selectedNotebookEntry));
+    setNotebookEditMode(false);
+  }, [selectedNotebookEntry]);
+
+  useEffect(() => {
+    if (!selectedNotebookScreenEntry) {
+      setNotebookScreenEditMode(false);
+      setNotebookScreenEditForm(emptyNotebookForm());
+      return;
+    }
+
+    setNotebookScreenEditForm(notebookFormFromEntry(selectedNotebookScreenEntry));
+    setNotebookScreenEditMode(false);
+  }, [selectedNotebookScreenEntry]);
+
+  useEffect(() => {
+    if (!selectedClaimEntry) {
+      setClaimStatusDraft("");
+      return;
+    }
+
+    setClaimStatusDraft(selectedClaimEntry.claimStatus ?? "open");
+  }, [selectedClaimEntry]);
+
   function updateTheme(nextTheme: Theme) {
     setTheme(nextTheme);
 
@@ -568,6 +1101,372 @@ export function App() {
       ...current,
       [field]: value,
     }));
+  }
+
+  function updateNotebookForm(field: keyof NotebookForm, value: string) {
+    setNotebookForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateNotebookEditForm(field: keyof NotebookForm, value: string) {
+    setNotebookEditForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateNotebookScreenForm(field: keyof NotebookForm, value: string) {
+    setNotebookScreenForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateNotebookScreenEditForm(field: keyof NotebookForm, value: string) {
+    setNotebookScreenEditForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function findCompanyForFeedItem(item: FeedItem) {
+    return companies.find((company) => company.qualifiedTicker === item.company) ?? null;
+  }
+
+  function openFeedItemNoteDraft(item: FeedItem) {
+    const company = findCompanyForFeedItem(item);
+
+    if (!company) {
+      return;
+    }
+
+    setSelectedNotebookCompanyId(company.id);
+    setSelectedNotebookScreenEntryId(null);
+    setNotebookScreenEditMode(false);
+    setNotebookScreenComposerOpen(true);
+    setNotebookScreenForm({
+      title: item.title,
+      body: item.summary,
+      tags: ["feed", notebookTagFromFeedValue(item.type), notebookTagFromFeedValue(item.source)]
+        .filter(Boolean)
+        .join(", "),
+      kind: "observation",
+      claimStatus: "",
+      eventDate: "",
+      followUpAfter: "",
+      followUpDate: "",
+    });
+    setNotebookScreenDraftOrigins([
+      {
+        sourceType: "feed_item",
+        sourceId: item.id,
+        sourceUrl: item.sourceUrl,
+        label: `${item.source}: ${item.title}`,
+      },
+    ]);
+    setNotebookError(null);
+    setActiveSection("Notebooks");
+    refreshNotebookEntries(company.id);
+  }
+
+  function refreshNotebookEntries(companyId: string) {
+    return invoke<NotebookEntry[]>("list_notebook_entries", { companyId })
+      .then((response) => {
+        setNotebookEntries((current) => [
+          ...response,
+          ...current.filter((entry) => entry.companyId !== companyId),
+        ]);
+        setSelectedNotebookEntryId((current) => {
+          if (current && response.some((entry) => entry.id === current)) {
+            return current;
+          }
+
+          return response[0]?.id ?? null;
+        });
+        setSelectedNotebookScreenEntryId((current) => {
+          if (selectedNotebookCompanyId !== companyId) {
+            return current;
+          }
+
+          if (current && response.some((entry) => entry.id === current)) {
+            return current;
+          }
+
+          return null;
+        });
+        setNotebookError(null);
+      })
+      .catch((error) => {
+        setNotebookEntries((current) => current.filter((entry) => entry.companyId !== companyId));
+        setNotebookError(String(error));
+      });
+  }
+
+  function createNotebookEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedCompany) {
+      return;
+    }
+
+    invoke<NotebookEntry>("create_notebook_entry", {
+      input: {
+        companyId: selectedCompany.id,
+        title: notebookForm.title,
+        body: notebookForm.body,
+        bodyFormat: "markdown",
+        tags: notebookForm.tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        kind: notebookForm.kind,
+        claimStatus: notebookForm.claimStatus || null,
+        eventDate: notebookForm.eventDate || null,
+        followUpAfter: notebookForm.followUpAfter || null,
+        followUpDate: notebookForm.followUpDate || null,
+        origins: [
+          {
+            sourceType: "manual",
+            sourceId: null,
+            sourceUrl: null,
+            label: "Manual note",
+          },
+        ],
+      },
+    })
+      .then((created) => {
+        setNotebookForm(emptyNotebookForm());
+        setNotebookComposerOpen(false);
+        setSelectedNotebookEntryId(created.id);
+        setNotebookError(null);
+        refreshNotebookEntries(selectedCompany.id);
+      })
+      .catch((error) => {
+        setNotebookError(String(error));
+      });
+  }
+
+  function saveNotebookEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedNotebookEntry || !selectedCompany) {
+      return;
+    }
+
+    invoke<NotebookEntry>("update_notebook_entry", {
+      input: {
+        id: selectedNotebookEntry.id,
+        title: notebookEditForm.title,
+        body: notebookEditForm.body,
+        tags: notebookEditForm.tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        kind: notebookEditForm.kind,
+        claimStatus: notebookEditForm.claimStatus || null,
+        eventDate: notebookEditForm.eventDate || null,
+        followUpAfter: notebookEditForm.followUpAfter || null,
+        followUpDate: notebookEditForm.followUpDate || null,
+      },
+    })
+      .then((updated) => {
+        setNotebookEntries((current) =>
+          current.map((entry) => (entry.id === updated.id ? updated : entry)),
+        );
+        setSelectedNotebookEntryId(updated.id);
+        setNotebookEditMode(false);
+        setNotebookError(null);
+        refreshNotebookEntries(selectedCompany.id);
+      })
+      .catch((error) => {
+        setNotebookError(String(error));
+      });
+  }
+
+  function cancelNotebookEdit() {
+    if (selectedNotebookEntry) {
+      setNotebookEditForm(notebookFormFromEntry(selectedNotebookEntry));
+    }
+
+    setNotebookEditMode(false);
+  }
+
+  function toggleClaimEntry(entry: NotebookEntry) {
+    setSelectedClaimEntryId((current) => (current === entry.id ? null : entry.id));
+  }
+
+  function saveClaimStatus(entry: NotebookEntry) {
+    if (!selectedCompany) {
+      return;
+    }
+
+    invoke<NotebookEntry>("update_notebook_entry", {
+      input: {
+        id: entry.id,
+        title: entry.title,
+        body: entry.body,
+        tags: entry.tags,
+        kind: entry.kind,
+        claimStatus: claimStatusDraft || null,
+        eventDate: entry.eventDate,
+        followUpAfter: entry.followUpAfter,
+        followUpDate: entry.followUpDate,
+      },
+    })
+      .then((updated) => {
+        setNotebookEntries((current) =>
+          current.map((notebookEntry) => (notebookEntry.id === updated.id ? updated : notebookEntry)),
+        );
+        setSelectedClaimEntryId(updated.id);
+        setNotebookError(null);
+        refreshNotebookEntries(selectedCompany.id);
+      })
+      .catch((error) => {
+        setNotebookError(String(error));
+      });
+  }
+
+  function selectNotebookScreenCompany(company: Company) {
+    setSelectedNotebookCompanyId(company.id);
+    setSelectedNotebookScreenEntryId(null);
+    setNotebookScreenEditMode(false);
+    setNotebookScreenComposerOpen(false);
+    setNotebookScreenForm(emptyNotebookForm());
+    setNotebookScreenDraftOrigins(manualNotebookOrigins());
+    refreshNotebookEntries(company.id);
+  }
+
+  function showNotebookCompanyFollowUps(company: Company) {
+    selectNotebookScreenCompany(company);
+    setNotebookScreenKindFilter("all");
+    setNotebookScreenClaimStatusFilter("all");
+    setNotebookScreenFollowUpFilter("has_follow_up");
+    setNotebookScreenTagFilter("");
+  }
+
+  function showNotebookCompanyOpenClaims(company: Company) {
+    selectNotebookScreenCompany(company);
+    setNotebookScreenKindFilter("all");
+    setNotebookScreenClaimStatusFilter("open");
+    setNotebookScreenFollowUpFilter("all");
+    setNotebookScreenTagFilter("");
+  }
+
+  function toggleNotebookScreenComposer() {
+    setNotebookScreenComposerOpen((current) => {
+      const next = !current;
+
+      if (next) {
+        setNotebookScreenForm(emptyNotebookForm());
+        setNotebookScreenDraftOrigins(manualNotebookOrigins());
+      }
+
+      return next;
+    });
+  }
+
+  function discardNotebookScreenDraft() {
+    setNotebookScreenComposerOpen(false);
+    setNotebookScreenForm(emptyNotebookForm());
+    setNotebookScreenDraftOrigins(manualNotebookOrigins());
+  }
+
+  function toggleNotebookScreenEntry(entry: NotebookEntry) {
+    setSelectedNotebookScreenEntryId((current) => {
+      const next = current === entry.id ? null : entry.id;
+
+      if (next === null) {
+        setNotebookScreenEditMode(false);
+      }
+
+      return next;
+    });
+  }
+
+  function createNotebookScreenEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedNotebookScreenCompany) {
+      return;
+    }
+
+    invoke<NotebookEntry>("create_notebook_entry", {
+      input: {
+        companyId: selectedNotebookScreenCompany.id,
+        title: notebookScreenForm.title,
+        body: notebookScreenForm.body,
+        bodyFormat: "markdown",
+        tags: notebookScreenForm.tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        kind: notebookScreenForm.kind,
+        claimStatus: notebookScreenForm.claimStatus || null,
+        eventDate: notebookScreenForm.eventDate || null,
+        followUpAfter: notebookScreenForm.followUpAfter || null,
+        followUpDate: notebookScreenForm.followUpDate || null,
+        origins: notebookScreenDraftOrigins,
+      },
+    })
+      .then((created) => {
+        setNotebookScreenForm(emptyNotebookForm());
+        setNotebookScreenDraftOrigins(manualNotebookOrigins());
+        setNotebookScreenComposerOpen(false);
+        setSelectedNotebookScreenEntryId(created.id);
+        setNotebookScreenEditMode(false);
+        setNotebookError(null);
+        refreshNotebookEntries(selectedNotebookScreenCompany.id);
+      })
+      .catch((error) => {
+        setNotebookError(String(error));
+      });
+  }
+
+  function saveNotebookScreenEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!selectedNotebookScreenEntry || !selectedNotebookScreenCompany) {
+      return;
+    }
+
+    invoke<NotebookEntry>("update_notebook_entry", {
+      input: {
+        id: selectedNotebookScreenEntry.id,
+        title: notebookScreenEditForm.title,
+        body: notebookScreenEditForm.body,
+        tags: notebookScreenEditForm.tags
+          .split(",")
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        kind: notebookScreenEditForm.kind,
+        claimStatus: notebookScreenEditForm.claimStatus || null,
+        eventDate: notebookScreenEditForm.eventDate || null,
+        followUpAfter: notebookScreenEditForm.followUpAfter || null,
+        followUpDate: notebookScreenEditForm.followUpDate || null,
+      },
+    })
+      .then((updated) => {
+        setNotebookEntries((current) =>
+          current.map((entry) => (entry.id === updated.id ? updated : entry)),
+        );
+        setSelectedNotebookScreenEntryId(updated.id);
+        setNotebookScreenEditMode(false);
+        setNotebookError(null);
+        refreshNotebookEntries(selectedNotebookScreenCompany.id);
+      })
+      .catch((error) => {
+        setNotebookError(String(error));
+      });
+  }
+
+  function cancelNotebookScreenEdit() {
+    if (selectedNotebookScreenEntry) {
+      setNotebookScreenEditForm(notebookFormFromEntry(selectedNotebookScreenEntry));
+    }
+
+    setNotebookScreenEditMode(false);
   }
 
   function applyLookupResult(result: CompanyLookupResult) {
@@ -877,6 +1776,75 @@ export function App() {
     setActiveSection("Inbox");
   }
 
+  function openOriginFeedItem(origin: NotebookOrigin, companyId: string) {
+    const company = companiesById[companyId];
+    const originFeedItem = origin.sourceId
+      ? feedState.find((item) => item.id === origin.sourceId)
+      : null;
+
+    setSearchQuery("");
+    setInboxWatchlistFilter("all");
+    setInboxCompanyFilter(company?.qualifiedTicker ?? originFeedItem?.company ?? "all");
+    setInboxTypeFilter("all");
+    setInboxSourceFilter("all");
+    setInboxStatusFilter("all");
+
+    if (origin.sourceId) {
+      setSelectedFeedItemId(origin.sourceId);
+    }
+
+    setActiveSection("Inbox");
+  }
+
+  function renderNotebookOrigins(origins: NotebookOrigin[], companyId: string) {
+    if (origins.length === 0) {
+      return <span className="membership-empty">None</span>;
+    }
+
+    return (
+      <div className="origin-link-list">
+        {origins.map((origin) => {
+          const label = origin.label ?? origin.sourceType.replace("_", " ");
+          const canOpenFeedItem = origin.sourceType === "feed_item" && Boolean(origin.sourceId);
+          const hasOriginActions = canOpenFeedItem || Boolean(origin.sourceUrl);
+
+          return (
+            <div className="origin-link" key={origin.id}>
+              <span>{label}</span>
+              {hasOriginActions ? (
+                <div className="origin-actions">
+                  {canOpenFeedItem ? (
+                    <button
+                      aria-label={`Open origin feed item: ${label}`}
+                      className="secondary-button compact-button"
+                      onClick={() => openOriginFeedItem(origin, companyId)}
+                      type="button"
+                    >
+                      <Inbox size={14} />
+                      Feed item
+                    </button>
+                  ) : null}
+                  {origin.sourceUrl ? (
+                    <a
+                      aria-label={`Open origin source: ${label}`}
+                      className="secondary-button compact-button"
+                      href={origin.sourceUrl}
+                      rel="noreferrer"
+                      target="_blank"
+                    >
+                      <ExternalLink size={14} />
+                      Source
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
   function openCompanyInboxFilter(company: Company) {
     setSelectedFeedItemId(null);
     setInboxCompanyFilter(company.qualifiedTicker);
@@ -1161,6 +2129,7 @@ export function App() {
                     className={inboxStatusFilter === "all" ? "segment-active" : undefined}
                     onClick={() => setInboxStatusFilter("all")}
                   >
+                    <Inbox size={14} />
                     All
                   </button>
                   <button
@@ -1168,6 +2137,7 @@ export function App() {
                     className={inboxStatusFilter === "unread" ? "segment-active" : undefined}
                     onClick={() => setInboxStatusFilter("unread")}
                   >
+                    <Mail size={14} />
                     Unread
                   </button>
                   <button
@@ -1175,6 +2145,7 @@ export function App() {
                     className={inboxStatusFilter === "saved" ? "segment-active" : undefined}
                     onClick={() => setInboxStatusFilter("saved")}
                   >
+                    <Save size={14} />
                     Saved
                   </button>
                 </div>
@@ -1198,6 +2169,7 @@ export function App() {
                   onClick={clearInboxFilters}
                   type="button"
                 >
+                  <X size={15} />
                   Clear filters
                 </button>
               </div>
@@ -1310,6 +2282,7 @@ export function App() {
                           onClick={() => setActiveSection("Companies")}
                           type="button"
                         >
+                          <Plus size={15} />
                           Add company
                         </button>
                       </>
@@ -1325,6 +2298,7 @@ export function App() {
                             title="Source refresh will pull latest remote feeds after source ingestion is wired"
                             type="button"
                           >
+                            <RefreshCw size={15} />
                             Refresh pending
                           </button>
                           <button
@@ -1332,6 +2306,7 @@ export function App() {
                             onClick={openSourceStatus}
                             type="button"
                           >
+                            <Activity size={15} />
                             Open Sources
                           </button>
                         </div>
@@ -1347,6 +2322,7 @@ export function App() {
                             onClick={clearInboxFilters}
                             type="button"
                           >
+                            <X size={15} />
                             Clear filters
                           </button>
                         ) : null}
@@ -1513,6 +2489,7 @@ export function App() {
                             onClick={() => addCompanyToWatchlist(company)}
                             type="button"
                           >
+                            <Plus size={15} />
                             Assign
                           </button>
                           <button
@@ -1521,6 +2498,7 @@ export function App() {
                             onClick={() => removeCompanyFromWatchlist(company)}
                             type="button"
                           >
+                            <X size={15} />
                             Remove
                           </button>
                           {watchlistFeedback?.companyId === company.id ? (
@@ -1566,16 +2544,30 @@ export function App() {
 
                           <div className="segmented-control company-tabs" aria-label="Company workspace tabs">
                             {(["Feed", "Notebook", "Claims", "Transcripts", "Metadata"] as const).map(
-                              (tab) => (
-                                <button
-                                  className={companyWorkspaceTab === tab ? "segment-active" : undefined}
-                                  key={tab}
-                                  onClick={() => setCompanyWorkspaceTab(tab)}
-                                  type="button"
-                                >
-                                  {tab}
-                                </button>
-                              ),
+                              (tab) => {
+                                const TabIcon =
+                                  tab === "Feed"
+                                    ? Inbox
+                                    : tab === "Notebook"
+                                      ? BookOpenText
+                                      : tab === "Claims"
+                                        ? CheckCircle2
+                                        : tab === "Transcripts"
+                                          ? Video
+                                          : FileText;
+
+                                return (
+                                  <button
+                                    className={companyWorkspaceTab === tab ? "segment-active" : undefined}
+                                    key={tab}
+                                    onClick={() => setCompanyWorkspaceTab(tab)}
+                                    type="button"
+                                  >
+                                    <TabIcon size={14} />
+                                    {tab}
+                                  </button>
+                                );
+                              },
                             )}
                           </div>
 
@@ -1662,7 +2654,16 @@ export function App() {
                                           onClick={() => inspectCompanyFeedItem(selectedCompanyFeedItem)}
                                           type="button"
                                         >
+                                          <Inbox size={15} />
                                           Open in Inbox
+                                        </button>
+                                        <button
+                                          className="secondary-button compact-button"
+                                          onClick={() => openFeedItemNoteDraft(selectedCompanyFeedItem)}
+                                          type="button"
+                                        >
+                                          <BookOpenText size={15} />
+                                          Note
                                         </button>
                                         <a
                                           className="secondary-button compact-button"
@@ -1670,6 +2671,7 @@ export function App() {
                                           rel="noreferrer"
                                           target="_blank"
                                         >
+                                          <ExternalLink size={15} />
                                           Open source
                                         </a>
                                       </div>
@@ -1715,24 +2717,454 @@ export function App() {
                                   <button
                                     className="secondary-button compact-button"
                                     onClick={() => openCompanyInboxFilter(selectedCompany)}
-                                    type="button"
-                                  >
-                                    Open filtered Inbox
-                                  </button>
+                                  type="button"
+                                >
+                                  <Inbox size={15} />
+                                  Open filtered Inbox
+                                </button>
                                 </div>
                               ) : null}
                             </div>
                           ) : null}
 
                           {companyWorkspaceTab === "Notebook" ? (
-                            <div className="company-tab-panel empty-state">
-                              Notebook editing starts in Milestone 4.
+                            <div className="company-tab-panel notebook-panel" aria-label="Company notebook">
+                              <div className="notebook-toolbar">
+                                <div>
+                                  <h3>Notebook</h3>
+                                  <p>
+                                    {selectedCompanyNotebookEntries.length} note
+                                    {selectedCompanyNotebookEntries.length === 1 ? "" : "s"} for{" "}
+                                    {selectedCompany.qualifiedTicker}
+                                  </p>
+                                </div>
+                                <button
+                                  className="primary-button compact-button"
+                                  onClick={() => setNotebookComposerOpen((current) => !current)}
+                                  type="button"
+                                >
+                                  {isNotebookComposerOpen ? <X size={15} /> : <Plus size={15} />}
+                                  {isNotebookComposerOpen ? "Hide form" : "New note"}
+                                </button>
+                              </div>
+
+                              {isNotebookComposerOpen ? (
+                                <form className="notebook-form" onSubmit={createNotebookEntry}>
+                                  <div className="notebook-form-grid">
+                                    <label>
+                                      Title
+                                      <input
+                                        aria-label="Notebook note title"
+                                        value={notebookForm.title}
+                                        onChange={(event) => updateNotebookForm("title", event.target.value)}
+                                      />
+                                    </label>
+                                    <label>
+                                      Kind
+                                      <select
+                                        aria-label="Notebook note kind"
+                                        value={notebookForm.kind}
+                                        onChange={(event) => updateNotebookForm("kind", event.target.value)}
+                                      >
+                                        <option value="manual">Manual</option>
+                                        <option value="observation">Observation</option>
+                                        <option value="claim">Claim</option>
+                                        <option value="question">Question</option>
+                                        <option value="follow_up">Follow-up</option>
+                                      </select>
+                                    </label>
+                                    <label>
+                                      Tags
+                                      <input
+                                        aria-label="Notebook note tags"
+                                        placeholder="comma, separated"
+                                        value={notebookForm.tags}
+                                        onChange={(event) => updateNotebookForm("tags", event.target.value)}
+                                      />
+                                    </label>
+                                    <label>
+                                      Claim status
+                                      <select
+                                        aria-label="Notebook claim status"
+                                        value={notebookForm.claimStatus}
+                                        onChange={(event) => updateNotebookForm("claimStatus", event.target.value)}
+                                      >
+                                        <option value="">None</option>
+                                        <option value="open">Open</option>
+                                        <option value="delivered">Delivered</option>
+                                        <option value="partially_delivered">Partially delivered</option>
+                                        <option value="missed">Missed</option>
+                                        <option value="unknown">Unknown</option>
+                                        <option value="not_applicable">Not applicable</option>
+                                      </select>
+                                    </label>
+                                    <NotebookDateField
+                                      ariaLabel="Notebook event date"
+                                      label="Event date"
+                                      value={notebookForm.eventDate}
+                                      onChange={(value) => updateNotebookForm("eventDate", value)}
+                                    />
+                                    <NotebookQuarterField
+                                      ariaLabel="Notebook follow-up quarter"
+                                      label="Follow-up quarter"
+                                      value={notebookForm.followUpAfter}
+                                      onChange={(value) => updateNotebookForm("followUpAfter", value)}
+                                    />
+                                    <NotebookDateField
+                                      ariaLabel="Notebook follow-up date"
+                                      label="Follow-up date"
+                                      value={notebookForm.followUpDate}
+                                      onChange={(value) => updateNotebookForm("followUpDate", value)}
+                                    />
+                                    <button
+                                      className="primary-button compact-button notebook-submit-button"
+                                      disabled={!notebookForm.title.trim() || !notebookForm.body.trim()}
+                                      type="submit"
+                                    >
+                                      <Save size={15} />
+                                      Save
+                                    </button>
+                                  </div>
+                                  <label className="notebook-body-field">
+                                    Body
+                                    <textarea
+                                      aria-label="Notebook note body"
+                                      value={notebookForm.body}
+                                      onChange={(event) => updateNotebookForm("body", event.target.value)}
+                                    />
+                                  </label>
+                                </form>
+                              ) : null}
+
+                              <div className="notebook-workspace">
+                                <div className="notebook-list" aria-label="Notebook entries">
+                                  {selectedCompanyNotebookEntries.map((entry) => (
+                                    <button
+                                      aria-label={`Select notebook entry: ${entry.title}`}
+                                      className={[
+                                        "notebook-row",
+                                        selectedNotebookEntry?.id === entry.id ? "notebook-row-selected" : "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                      key={entry.id}
+                                      onClick={() => setSelectedNotebookEntryId(entry.id)}
+                                      type="button"
+                                    >
+                                      <div>
+                                        <div className="notebook-row-top">
+                                          <h3>{entry.title}</h3>
+                                          <span>{entry.kind.replace("_", " ")}</span>
+                                        </div>
+                                      </div>
+                                      <div className="notebook-row-meta">
+                                        {entry.claimStatus ? <span>{entry.claimStatus.replace("_", " ")}</span> : null}
+                                        {entry.followUpAfter ? <span>{entry.followUpAfter}</span> : null}
+                                        {entry.tags.slice(0, 2).map((tag) => (
+                                          <span key={tag}>{tag}</span>
+                                        ))}
+                                      </div>
+                                    </button>
+                                  ))}
+                                  {selectedCompanyNotebookEntries.length === 0 ? (
+                                    <div className="empty-state">
+                                      <span>No notebook entries for {selectedCompany.qualifiedTicker} yet.</span>
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <form
+                                  className="notebook-detail"
+                                  aria-label="Notebook entry detail"
+                                  onSubmit={saveNotebookEntry}
+                                >
+                                  {selectedNotebookEntry ? (
+                                    isNotebookEditMode ? (
+                                      <>
+                                        <div className="notebook-entry-header">
+                                          <label>
+                                            Title
+                                            <input
+                                              aria-label="Selected notebook title"
+                                              value={notebookEditForm.title}
+                                              onChange={(event) =>
+                                                updateNotebookEditForm("title", event.target.value)
+                                              }
+                                            />
+                                          </label>
+                                          <div className="notebook-detail-actions">
+                                            <button
+                                              className="secondary-button compact-button"
+                                              onClick={cancelNotebookEdit}
+                                              type="button"
+                                            >
+                                              <X size={15} />
+                                              Cancel
+                                            </button>
+                                            <button
+                                              className="primary-button compact-button"
+                                              disabled={
+                                                !isNotebookEditDirty ||
+                                                !notebookEditForm.title.trim() ||
+                                                !notebookEditForm.body.trim()
+                                              }
+                                              type="submit"
+                                            >
+                                              <Save size={15} />
+                                              Save
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <textarea
+                                          aria-label="Selected notebook body"
+                                          value={notebookEditForm.body}
+                                          onChange={(event) => updateNotebookEditForm("body", event.target.value)}
+                                        />
+                                        <div className="notebook-detail-grid">
+                                          <label>
+                                            Kind
+                                            <select
+                                              aria-label="Selected notebook kind"
+                                              value={notebookEditForm.kind}
+                                              onChange={(event) => updateNotebookEditForm("kind", event.target.value)}
+                                            >
+                                              <option value="manual">Manual</option>
+                                              <option value="observation">Observation</option>
+                                              <option value="claim">Claim</option>
+                                              <option value="question">Question</option>
+                                              <option value="follow_up">Follow-up</option>
+                                            </select>
+                                          </label>
+                                          <label>
+                                            Claim status
+                                            <select
+                                              aria-label="Selected notebook claim status"
+                                              value={notebookEditForm.claimStatus}
+                                              onChange={(event) =>
+                                                updateNotebookEditForm("claimStatus", event.target.value)
+                                              }
+                                            >
+                                              <option value="">None</option>
+                                              <option value="open">Open</option>
+                                              <option value="delivered">Delivered</option>
+                                              <option value="partially_delivered">Partially delivered</option>
+                                              <option value="missed">Missed</option>
+                                              <option value="unknown">Unknown</option>
+                                              <option value="not_applicable">Not applicable</option>
+                                            </select>
+                                          </label>
+                                          <label>
+                                            Tags
+                                            <input
+                                              aria-label="Selected notebook tags"
+                                              value={notebookEditForm.tags}
+                                              onChange={(event) => updateNotebookEditForm("tags", event.target.value)}
+                                            />
+                                          </label>
+                                          <NotebookDateField
+                                            ariaLabel="Selected notebook event date"
+                                            label="Event date"
+                                            value={notebookEditForm.eventDate}
+                                            onChange={(value) => updateNotebookEditForm("eventDate", value)}
+                                          />
+                                          <NotebookQuarterField
+                                            ariaLabel="Selected notebook follow-up quarter"
+                                            label="Follow-up quarter"
+                                            value={notebookEditForm.followUpAfter}
+                                            onChange={(value) => updateNotebookEditForm("followUpAfter", value)}
+                                          />
+                                          <NotebookDateField
+                                            ariaLabel="Selected notebook follow-up date"
+                                            label="Follow-up date"
+                                            value={notebookEditForm.followUpDate}
+                                            onChange={(value) => updateNotebookEditForm("followUpDate", value)}
+                                          />
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <div className="notebook-entry-header">
+                                          <div>
+                                            <span className="eyebrow">
+                                              {selectedNotebookEntry.kind.replace("_", " ")}
+                                            </span>
+                                            <h3>{selectedNotebookEntry.title}</h3>
+                                          </div>
+                                          <button
+                                            className="secondary-button compact-button"
+                                            onClick={() => setNotebookEditMode(true)}
+                                            type="button"
+                                          >
+                                            <BookOpenText size={15} />
+                                            Edit
+                                          </button>
+                                        </div>
+                                        <MarkdownNoteBody
+                                          ariaLabel="Selected notebook body"
+                                          body={selectedNotebookEntry.body}
+                                        />
+                                      </>
+                                    )
+                                  ) : (
+                                    <div className="empty-state">
+                                      <span>Select a note to inspect it.</span>
+                                    </div>
+                                  )}
+                                  {selectedNotebookEntry ? (
+                                    <>
+                                      <div
+                                        className="source-chip-list"
+                                        aria-label={`Tags for ${selectedNotebookEntry.title}`}
+                                      >
+                                        {selectedNotebookEntry.tags.map((tag) => (
+                                          <span className="membership-chip" key={tag}>
+                                            {tag}
+                                          </span>
+                                        ))}
+                                        {selectedNotebookEntry.tags.length === 0 ? (
+                                          <span className="membership-empty">No tags</span>
+                                        ) : null}
+                                      </div>
+                                      <dl className="metadata-grid notebook-entry-meta">
+                                        <div>
+                                          <dt>Status</dt>
+                                          <dd>{selectedNotebookEntry.claimStatus ?? "Not set"}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Event</dt>
+                                          <dd>{selectedNotebookEntry.eventDate ?? "Not set"}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Follow-up quarter</dt>
+                                          <dd>{selectedNotebookEntry.followUpAfter ?? "Not set"}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Follow-up date</dt>
+                                          <dd>{selectedNotebookEntry.followUpDate ?? "Not set"}</dd>
+                                        </div>
+                                        <div>
+                                          <dt>Origin</dt>
+                                          <dd>{renderNotebookOrigins(selectedNotebookEntry.origins, selectedNotebookEntry.companyId)}</dd>
+                                        </div>
+                                      </dl>
+                                    </>
+                                  ) : null}
+                                </form>
+                              </div>
+                              {notebookError ? (
+                                <p className="error-text">Notebook command failed: {notebookError}</p>
+                              ) : null}
                             </div>
                           ) : null}
 
                           {companyWorkspaceTab === "Claims" ? (
-                            <div className="company-tab-panel empty-state">
-                              Claim tracking starts in Milestone 4.
+                            <div className="company-tab-panel claims-panel" aria-label="Company claims">
+                              <div className="notebook-toolbar">
+                                <div>
+                                  <h3>Claims</h3>
+                                  <p>
+                                    {selectedCompanyClaimEntries.length} follow-up item
+                                    {selectedCompanyClaimEntries.length === 1 ? "" : "s"} for{" "}
+                                    {selectedCompany.qualifiedTicker}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="claims-list">
+                                {selectedCompanyClaimEntries.map((entry) => (
+                                  <div className="claim-row-block" key={entry.id}>
+                                    <button
+                                      aria-label={`Open claim: ${entry.title}`}
+                                      className={[
+                                        "notebook-row",
+                                        selectedClaimEntry?.id === entry.id ? "notebook-row-selected" : "",
+                                      ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                      onClick={() => toggleClaimEntry(entry)}
+                                      type="button"
+                                    >
+                                      <div>
+                                        <div className="notebook-row-top">
+                                          <h3>{entry.title}</h3>
+                                          <span>{entry.claimStatus?.replace("_", " ") ?? "open"}</span>
+                                        </div>
+                                      </div>
+                                      <div className="notebook-row-meta">
+                                        {entry.followUpAfter ? <span>{entry.followUpAfter}</span> : null}
+                                        {entry.followUpDate ? <span>{entry.followUpDate}</span> : null}
+                                        {entry.tags.slice(0, 2).map((tag) => (
+                                          <span key={tag}>{tag}</span>
+                                        ))}
+                                      </div>
+                                    </button>
+
+                                    {selectedClaimEntry?.id === entry.id ? (
+                                      <div className="claim-detail" aria-label="Claim detail">
+                                        <div className="notebook-entry-header">
+                                          <div>
+                                            <span className="eyebrow">
+                                              {entry.kind.replace("_", " ")}
+                                            </span>
+                                            <h3>{entry.title}</h3>
+                                          </div>
+                                          <div className="claim-status-control">
+                                            <label>
+                                              Status
+                                              <select
+                                                aria-label="Claim status"
+                                                value={claimStatusDraft}
+                                                onChange={(event) => setClaimStatusDraft(event.target.value)}
+                                              >
+                                                <option value="open">Open</option>
+                                                <option value="delivered">Delivered</option>
+                                                <option value="partially_delivered">Partially delivered</option>
+                                                <option value="missed">Missed</option>
+                                                <option value="unknown">Unknown</option>
+                                                <option value="not_applicable">Not applicable</option>
+                                              </select>
+                                            </label>
+                                            <button
+                                              className="primary-button compact-button"
+                                              disabled={(entry.claimStatus ?? "open") === claimStatusDraft}
+                                              onClick={() => saveClaimStatus(entry)}
+                                              type="button"
+                                            >
+                                              <Save size={15} />
+                                              Save
+                                            </button>
+                                          </div>
+                                        </div>
+                                        <MarkdownNoteBody body={entry.body} />
+                                        <dl className="metadata-grid notebook-entry-meta">
+                                          <div>
+                                            <dt>Event</dt>
+                                            <dd>{entry.eventDate ?? "Not set"}</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Follow-up quarter</dt>
+                                            <dd>{entry.followUpAfter ?? "Not set"}</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Follow-up date</dt>
+                                            <dd>{entry.followUpDate ?? "Not set"}</dd>
+                                          </div>
+                                          <div>
+                                            <dt>Origin</dt>
+                                            <dd>{renderNotebookOrigins(entry.origins, entry.companyId)}</dd>
+                                          </div>
+                                        </dl>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                ))}
+                                {selectedCompanyClaimEntries.length === 0 ? (
+                                  <div className="empty-state">
+                                    <span>No claim notes for {selectedCompany.qualifiedTicker} yet.</span>
+                                  </div>
+                                ) : null}
+                              </div>
+                              {notebookError ? (
+                                <p className="error-text">Notebook command failed: {notebookError}</p>
+                              ) : null}
                             </div>
                           ) : null}
 
@@ -1792,25 +3224,506 @@ export function App() {
               <div className="panel-header">
                 <div>
                   <h1 id="notebooks-title">Notebooks</h1>
-                  <p>Cross-company research notes begin in Milestone 4.</p>
+                  <p>Company-first research notes for daily notes work.</p>
                 </div>
               </div>
 
-              <div className="section-placeholder" aria-label="Notebooks placeholder">
-                <div className="empty-state">
-                  <span>Notebook workflows are planned after the company workspace foundation.</span>
+              <div className="notebooks-screen" aria-label="Notebooks workspace">
+                <div className="notebooks-company-nav" aria-label="Notebook companies">
+                  {companies.map((company) => {
+                    const companyNotes = notebookEntries.filter((entry) => entry.companyId === company.id);
+                    const openClaims = companyNotes.filter((entry) => entry.claimStatus === "open").length;
+                    const followUpScheduled = companyNotes.filter(
+                      (entry) => entry.followUpAfter || entry.followUpDate,
+                    ).length;
+
+                    return (
+                      <div
+                        className={[
+                          "notebooks-company-row",
+                          selectedNotebookScreenCompany?.id === company.id
+                            ? "notebooks-company-row-selected"
+                            : "",
+                        ]
+                          .filter(Boolean)
+                          .join(" ")}
+                        key={company.id}
+                      >
+                        <button
+                          aria-label={`Open notebook company: ${company.qualifiedTicker}`}
+                          className="notebooks-company-select"
+                          onClick={() => selectNotebookScreenCompany(company)}
+                          type="button"
+                        >
+                          <span>
+                            <strong>{company.qualifiedTicker}</strong>
+                            <small>{company.displayName}</small>
+                          </span>
+                        </button>
+                        <div className="notebooks-company-cues">
+                          <span
+                            className="notebooks-company-count"
+                            aria-label={`${companyNotes.length} notebook entries for ${company.qualifiedTicker}`}
+                          >
+                            {companyNotes.length}
+                          </span>
+                          {openClaims > 0 ? (
+                            <button
+                              aria-label={`Show open claims for ${company.qualifiedTicker}`}
+                              className="notebooks-company-cue notebooks-company-cue-button"
+                              onClick={() => showNotebookCompanyOpenClaims(company)}
+                              type="button"
+                            >
+                              {openClaims} open
+                            </button>
+                          ) : null}
+                          {followUpScheduled > 0 ? (
+                            <button
+                              aria-label={`Show follow-ups for ${company.qualifiedTicker}`}
+                              className="notebooks-company-cue notebooks-company-cue-button"
+                              onClick={() => showNotebookCompanyFollowUps(company)}
+                              type="button"
+                            >
+                              {followUpScheduled} follow-up
+                            </button>
+                          ) : null}
+                        </div>
+                        <button
+                          aria-label={`Open company workspace: ${company.qualifiedTicker}`}
+                          className="notebooks-company-action"
+                          onClick={() => focusCompanyWorkspace(company.id)}
+                          title={`Open ${company.qualifiedTicker} workspace`}
+                          type="button"
+                        >
+                          <LocateFixed size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {companies.length === 0 ? (
+                    <div className="empty-state">
+                      <span>Add companies before using notebooks.</span>
+                    </div>
+                  ) : null}
                 </div>
-                <dl className="settings-grid">
-                  <div>
-                    <dt>Planned scope</dt>
-                    <dd>Markdown notes, provenance, tags, claims, and review periods</dd>
+
+                <div className="notebooks-main" aria-label="Notebook screen entries">
+                  <div className="notebooks-context-line">
+                    <div>
+                      <strong>{selectedNotebookScreenCompany?.qualifiedTicker ?? "No company selected"}</strong>
+                      <span>
+                        {selectedNotebookScreenEntries.length} visible note
+                        {selectedNotebookScreenEntries.length === 1 ? "" : "s"}
+                      </span>
+                    </div>
+                    <button
+                      className="primary-button compact-button"
+                      disabled={
+                        !selectedNotebookScreenCompany ||
+                        (isNotebookScreenComposerOpen &&
+                          (!notebookScreenForm.title.trim() || !notebookScreenForm.body.trim()))
+                      }
+                      form={isNotebookScreenComposerOpen ? "notebook-screen-create-form" : undefined}
+                      onClick={isNotebookScreenComposerOpen ? undefined : toggleNotebookScreenComposer}
+                      type={isNotebookScreenComposerOpen ? "submit" : "button"}
+                    >
+                      {isNotebookScreenComposerOpen ? <Save size={15} /> : <Plus size={15} />}
+                      {isNotebookScreenComposerOpen ? "Save" : "New note"}
+                    </button>
                   </div>
-                  <div>
-                    <dt>First entry point</dt>
-                    <dd>Create note from a feed item inside a company workspace</dd>
+                  <div className="filter-reset-row" aria-label="Notebook filter reset">
+                    <div className="inbox-review-summary" aria-label="Notebook follow-up summary">
+                      <span>
+                        <strong>{selectedNotebookScreenEntries.length}</strong> visible
+                      </span>
+                    </div>
+                    <button
+                      className="secondary-button compact-button"
+                      disabled={
+                        notebookScreenKindFilter === "all" &&
+                        notebookScreenClaimStatusFilter === "all" &&
+                        notebookScreenFollowUpFilter === "all" &&
+                        notebookScreenTagFilter.trim().length === 0
+                      }
+                      onClick={() => {
+                        setNotebookScreenKindFilter("all");
+                        setNotebookScreenClaimStatusFilter("all");
+                        setNotebookScreenFollowUpFilter("all");
+                        setNotebookScreenTagFilter("");
+                      }}
+                      type="button"
+                    >
+                      <X size={15} />
+                      Clear filters
+                    </button>
                   </div>
-                </dl>
+                  <div className="notebooks-filter-row" aria-label="Notebook filters">
+                    <label>
+                      Kind
+                      <select
+                        aria-label="Notebook kind filter"
+                        value={notebookScreenKindFilter}
+                        onChange={(event) => setNotebookScreenKindFilter(event.target.value)}
+                      >
+                        <option value="all">All</option>
+                        <option value="manual">Manual</option>
+                        <option value="observation">Observation</option>
+                        <option value="claim">Claim</option>
+                        <option value="question">Question</option>
+                        <option value="follow_up">Follow-up</option>
+                      </select>
+                    </label>
+                    <label>
+                      Status
+                      <select
+                        aria-label="Notebook claim status filter"
+                        value={notebookScreenClaimStatusFilter}
+                        onChange={(event) => setNotebookScreenClaimStatusFilter(event.target.value)}
+                      >
+                        <option value="all">All</option>
+                        <option value="open">Open</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="partially_delivered">Partially delivered</option>
+                        <option value="missed">Missed</option>
+                        <option value="unknown">Unknown</option>
+                        <option value="not_applicable">Not applicable</option>
+                      </select>
+                    </label>
+                    <label>
+                      Tag
+                      <input
+                        aria-label="Notebook tag filter"
+                        placeholder="tag"
+                        value={notebookScreenTagFilter}
+                        onChange={(event) => setNotebookScreenTagFilter(event.target.value)}
+                      />
+                    </label>
+                    <label>
+                      Follow-up
+                      <select
+                        aria-label="Notebook follow-up filter"
+                        value={notebookScreenFollowUpFilter}
+                        onChange={(event) => setNotebookScreenFollowUpFilter(event.target.value)}
+                      >
+                        <option value="all">All</option>
+                        <option value="has_follow_up">Has follow-up</option>
+                        <option value="no_follow_up">No follow-up</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="notebooks-notes-list">
+                    {isNotebookScreenComposerOpen ? (
+                      <form
+                        id="notebook-screen-create-form"
+                        className="notebook-form notebooks-create-form"
+                        onSubmit={createNotebookScreenEntry}
+                      >
+                        <div className="notebooks-draft-header">
+                          <button
+                            className="minimal-button"
+                            onClick={discardNotebookScreenDraft}
+                            type="button"
+                          >
+                            <X size={12} />
+                            Discard
+                          </button>
+                        </div>
+                        <div className="notebook-form-grid">
+                          <label>
+                            Title
+                            <input
+                              aria-label="Notebook screen note title"
+                              value={notebookScreenForm.title}
+                              onChange={(event) => updateNotebookScreenForm("title", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Kind
+                            <select
+                              aria-label="Notebook screen note kind"
+                              value={notebookScreenForm.kind}
+                              onChange={(event) => updateNotebookScreenForm("kind", event.target.value)}
+                            >
+                              <option value="manual">Manual</option>
+                              <option value="observation">Observation</option>
+                              <option value="claim">Claim</option>
+                              <option value="question">Question</option>
+                              <option value="follow_up">Follow-up</option>
+                            </select>
+                          </label>
+                          <label>
+                            Tags
+                            <input
+                              aria-label="Notebook screen note tags"
+                              placeholder="comma, separated"
+                              value={notebookScreenForm.tags}
+                              onChange={(event) => updateNotebookScreenForm("tags", event.target.value)}
+                            />
+                          </label>
+                          <label>
+                            Claim status
+                            <select
+                              aria-label="Notebook screen note claim status"
+                              value={notebookScreenForm.claimStatus}
+                              onChange={(event) => updateNotebookScreenForm("claimStatus", event.target.value)}
+                            >
+                              <option value="">None</option>
+                              <option value="open">Open</option>
+                              <option value="delivered">Delivered</option>
+                              <option value="partially_delivered">Partially delivered</option>
+                              <option value="missed">Missed</option>
+                              <option value="unknown">Unknown</option>
+                              <option value="not_applicable">Not applicable</option>
+                            </select>
+                          </label>
+                          <NotebookDateField
+                            ariaLabel="Notebook screen note event date"
+                            label="Event date"
+                            value={notebookScreenForm.eventDate}
+                            onChange={(value) => updateNotebookScreenForm("eventDate", value)}
+                          />
+                          <NotebookQuarterField
+                            ariaLabel="Notebook screen note follow-up quarter"
+                            label="Follow-up quarter"
+                            value={notebookScreenForm.followUpAfter}
+                            onChange={(value) => updateNotebookScreenForm("followUpAfter", value)}
+                          />
+                          <NotebookDateField
+                            ariaLabel="Notebook screen note follow-up date"
+                            label="Follow-up date"
+                            value={notebookScreenForm.followUpDate}
+                            onChange={(value) => updateNotebookScreenForm("followUpDate", value)}
+                          />
+                        </div>
+                        <label className="notebook-body-field">
+                          Body
+                          <textarea
+                            aria-label="Notebook screen note body"
+                            value={notebookScreenForm.body}
+                            onChange={(event) => updateNotebookScreenForm("body", event.target.value)}
+                          />
+                        </label>
+                      </form>
+                    ) : null}
+
+                    {selectedNotebookScreenEntries.map((entry) => (
+                      <div className="notebook-row-block" key={entry.id}>
+                        <button
+                          aria-label={`Select notebook screen entry: ${entry.title}`}
+                          className={[
+                            "notebook-row",
+                            selectedNotebookScreenEntry?.id === entry.id
+                              ? "notebook-row-selected"
+                              : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                          onClick={() => toggleNotebookScreenEntry(entry)}
+                          type="button"
+                        >
+                          <div>
+                            <div className="notebook-row-top">
+                              <h3>{entry.title}</h3>
+                              <span>{entry.kind.replace("_", " ")}</span>
+                            </div>
+                          </div>
+                          <div className="notebook-row-meta">
+                            {entry.claimStatus ? <span>{entry.claimStatus.replace("_", " ")}</span> : null}
+                            {entry.followUpAfter ? <span>{entry.followUpAfter}</span> : null}
+                            {entry.tags.slice(0, 2).map((tag) => (
+                              <span key={tag}>{tag}</span>
+                            ))}
+                          </div>
+                        </button>
+
+                        {selectedNotebookScreenEntry?.id === entry.id ? (
+                          <form
+                            className="notebook-detail notebooks-inline-detail"
+                            aria-label="Notebook screen entry detail"
+                            onSubmit={saveNotebookScreenEntry}
+                          >
+                            {isNotebookScreenEditMode ? (
+                          <>
+                            <div className="notebook-entry-header">
+                              <label>
+                                Title
+                                <input
+                                  aria-label="Notebook screen selected title"
+                                  value={notebookScreenEditForm.title}
+                                  onChange={(event) =>
+                                    updateNotebookScreenEditForm("title", event.target.value)
+                                  }
+                                />
+                              </label>
+                              <div className="notebook-detail-actions">
+                                <button
+                                  className="secondary-button compact-button"
+                                  onClick={cancelNotebookScreenEdit}
+                                  type="button"
+                                >
+                                  <X size={15} />
+                                  Cancel
+                                </button>
+                                <button
+                                  className="primary-button compact-button"
+                                  disabled={
+                                    !isNotebookScreenEditDirty ||
+                                    !notebookScreenEditForm.title.trim() ||
+                                    !notebookScreenEditForm.body.trim()
+                                  }
+                                  type="submit"
+                                >
+                                  <Save size={15} />
+                                  Save
+                                </button>
+                              </div>
+                            </div>
+                            <textarea
+                              aria-label="Notebook screen selected body"
+                              value={notebookScreenEditForm.body}
+                              onChange={(event) =>
+                                updateNotebookScreenEditForm("body", event.target.value)
+                              }
+                            />
+                            <div className="notebook-detail-grid">
+                              <label>
+                                Kind
+                                <select
+                                  aria-label="Notebook screen selected kind"
+                                  value={notebookScreenEditForm.kind}
+                                  onChange={(event) =>
+                                    updateNotebookScreenEditForm("kind", event.target.value)
+                                  }
+                                >
+                                  <option value="manual">Manual</option>
+                                  <option value="observation">Observation</option>
+                                  <option value="claim">Claim</option>
+                                  <option value="question">Question</option>
+                                  <option value="follow_up">Follow-up</option>
+                                </select>
+                              </label>
+                              <label>
+                                Claim status
+                                <select
+                                  aria-label="Notebook screen selected claim status"
+                                  value={notebookScreenEditForm.claimStatus}
+                                  onChange={(event) =>
+                                    updateNotebookScreenEditForm("claimStatus", event.target.value)
+                                  }
+                                >
+                                  <option value="">None</option>
+                                  <option value="open">Open</option>
+                                  <option value="delivered">Delivered</option>
+                                  <option value="partially_delivered">Partially delivered</option>
+                                  <option value="missed">Missed</option>
+                                  <option value="unknown">Unknown</option>
+                                  <option value="not_applicable">Not applicable</option>
+                                </select>
+                              </label>
+                              <label>
+                                Tags
+                                <input
+                                  aria-label="Notebook screen selected tags"
+                                  value={notebookScreenEditForm.tags}
+                                  onChange={(event) =>
+                                    updateNotebookScreenEditForm("tags", event.target.value)
+                                  }
+                                />
+                              </label>
+                              <NotebookDateField
+                                ariaLabel="Notebook screen selected event date"
+                                label="Event date"
+                                value={notebookScreenEditForm.eventDate}
+                                onChange={(value) => updateNotebookScreenEditForm("eventDate", value)}
+                              />
+                              <NotebookQuarterField
+                                ariaLabel="Notebook screen selected follow-up quarter"
+                                label="Follow-up quarter"
+                                value={notebookScreenEditForm.followUpAfter}
+                                onChange={(value) => updateNotebookScreenEditForm("followUpAfter", value)}
+                              />
+                              <NotebookDateField
+                                ariaLabel="Notebook screen selected follow-up date"
+                                label="Follow-up date"
+                                value={notebookScreenEditForm.followUpDate}
+                                onChange={(value) => updateNotebookScreenEditForm("followUpDate", value)}
+                              />
+                            </div>
+                          </>
+                            ) : (
+                          <>
+                            <div className="notebook-entry-header">
+                              <div>
+                                <span className="eyebrow">
+                                  {selectedNotebookScreenEntry.kind.replace("_", " ")}
+                                </span>
+                                <h3>{selectedNotebookScreenEntry.title}</h3>
+                              </div>
+                              <button
+                                className="secondary-button compact-button"
+                                onClick={() => setNotebookScreenEditMode(true)}
+                                type="button"
+                              >
+                                <BookOpenText size={15} />
+                                Edit
+                              </button>
+                            </div>
+                            <MarkdownNoteBody
+                              ariaLabel="Notebook screen selected body"
+                              body={selectedNotebookScreenEntry.body}
+                            />
+                          </>
+                            )}
+                          <div
+                            className="source-chip-list"
+                            aria-label={`Tags for ${selectedNotebookScreenEntry.title}`}
+                          >
+                            {selectedNotebookScreenEntry.tags.map((tag) => (
+                              <span className="membership-chip" key={tag}>
+                                {tag}
+                              </span>
+                            ))}
+                            {selectedNotebookScreenEntry.tags.length === 0 ? (
+                              <span className="membership-empty">No tags</span>
+                            ) : null}
+                          </div>
+                          <dl className="metadata-grid notebook-entry-meta">
+                            <div>
+                              <dt>Status</dt>
+                              <dd>{selectedNotebookScreenEntry.claimStatus ?? "Not set"}</dd>
+                            </div>
+                            <div>
+                              <dt>Follow-up quarter</dt>
+                              <dd>{selectedNotebookScreenEntry.followUpAfter ?? "Not set"}</dd>
+                            </div>
+                            <div>
+                              <dt>Follow-up date</dt>
+                              <dd>{selectedNotebookScreenEntry.followUpDate ?? "Not set"}</dd>
+                            </div>
+                            <div>
+                              <dt>Origin</dt>
+                              <dd>
+                                {renderNotebookOrigins(
+                                  selectedNotebookScreenEntry.origins,
+                                  selectedNotebookScreenEntry.companyId,
+                                )}
+                              </dd>
+                            </div>
+                          </dl>
+                          </form>
+                        ) : null}
+                      </div>
+                    ))}
+                    {selectedNotebookScreenCompany && selectedNotebookScreenEntries.length === 0 ? (
+                      <div className="empty-state">
+                        <span>No notes for {selectedNotebookScreenCompany.qualifiedTicker} yet.</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
               </div>
+              {notebookError ? <p className="error-text">Notebook command failed: {notebookError}</p> : null}
             </section>
           ) : null}
 
@@ -2053,7 +3966,18 @@ export function App() {
                         onClick={() => openCompanyWorkspaceFromFeedItem(selectedFeedItem)}
                         type="button"
                       >
+                        <Building2 size={15} />
                         Open company
+                      </button>
+                    ) : null}
+                    {selectedFeedCompany ? (
+                      <button
+                        className="secondary-button compact-button"
+                        onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
+                        type="button"
+                      >
+                        <BookOpenText size={15} />
+                        Note
                       </button>
                     ) : null}
                     <a
@@ -2062,6 +3986,7 @@ export function App() {
                       rel="noreferrer"
                       target="_blank"
                     >
+                      <ExternalLink size={15} />
                       Open source
                     </a>
                   </div>
@@ -2099,7 +4024,7 @@ export function App() {
               ) : (
                 <>
                   <h2>No item selected</h2>
-                  <p>Select a feed item to inspect source details and provenance.</p>
+                  <p>Select a feed item to inspect source details and origin links.</p>
                 </>
               )}
               {healthError ? <p className="error-text">Health command failed: {healthError}</p> : null}

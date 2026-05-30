@@ -82,6 +82,7 @@
           shellHook = ''
             export RUST_BACKTRACE=1
             export XWIN_CACHE_DIR="$PWD/.xwin-cache"
+            export PATH="$(printf '%s' "$PATH" | tr ':' '\n' | grep -v -x "$HOME/.local/bin" | grep -v -x "$HOME/.cargo/bin" | paste -sd: -)"
             echo "Brawler Windows-from-Linux packaging shell"
             echo "  npm run tauri -- build --runner cargo-xwin --target x86_64-pc-windows-msvc"
           '';

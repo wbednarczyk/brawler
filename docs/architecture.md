@@ -53,7 +53,7 @@ SQLite is the runtime source of truth for non-secret settings. YAML is an import
 
 SQLite data and local logs live in the OS app data directory by default. Development builds may override the data directory through a dev-only setting or environment variable.
 
-Data must include enough provenance to audit a feed item:
+Data must include enough origin to audit a feed item:
 
 - source adapter ID
 - source URL
@@ -63,8 +63,8 @@ Data must include enough provenance to audit a feed item:
 - matched company identity
 - attribution/display source
 - raw source reference or checksum
-- notebook note provenance links
-- transcript segment provenance links
+- notebook note origin links
+- transcript segment origin links
 
 ## Extensibility Boundaries
 

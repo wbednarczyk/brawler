@@ -8,7 +8,7 @@ See also [Product Spec](product-spec.md), [Data Model](data-model.md), [Contract
 
 - Prefer official, public, or RSS-like sources.
 - Preserve source attribution and source URLs.
-- Store enough provenance to audit every feed item.
+- Store enough origin to audit every feed item.
 - Keep adapters modular and source-specific.
 - Avoid restricted or fragile scraping unless a source-specific ADR approves it.
 - Treat paid data products as future options, not v1 assumptions.

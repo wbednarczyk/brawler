@@ -16,7 +16,7 @@ Gemini is preferred only for YouTube transcription and transcript-like extractio
 
 ## Consequences
 
-- Notebook storage, provenance, and note contracts are part of the first schema design.
+- Notebook storage, origin, and note contracts are part of the first schema design.
 - The feed detail UI must include a create-note flow.
 - Video transcript jobs and transcript segments are first-class local records.
 - AI-suggested notes require user confirmation before saving.

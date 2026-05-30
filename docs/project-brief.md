@@ -62,7 +62,7 @@ Initial source priorities:
 - Local-first by default.
 - Source attribution must be visible and durable.
 - Ticker-based UI should stay simple, but storage must avoid ticker collisions.
-- Notes must preserve provenance so future review can trace a claim back to a report, article, or transcript.
+- Notes must preserve origin so future review can trace a claim back to a report, article, or transcript.
 - AI must explain and cite source material, not provide buy/sell recommendations.
 - Dark theme is the default UI mode, with a user-selectable light theme.
 - GitHub Actions should provide fast build and test feedback from the first scaffold.
