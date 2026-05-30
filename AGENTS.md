@@ -17,6 +17,7 @@ Before making non-trivial changes, agents must read:
 
 - Do not implement non-trivial changes without an explicit plan and approval.
 - Keep public behavior, contracts, and docs in sync with code changes.
+- Milestone closure must include the matching app version bump in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - Prefer small, reviewable changes that preserve local-first operation.
 - Do not add cloud services, telemetry, hosted dependencies, or paid APIs unless a new ADR approves them.
 - Treat `Brawler` as a codename only; do not hard-code it as the final product name in user-facing copy unless the spec says so.

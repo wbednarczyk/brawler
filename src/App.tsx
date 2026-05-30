@@ -10,12 +10,14 @@ import {
   useState,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   Activity,
   BookOpenText,
   Building2,
   CalendarDays,
   CheckCircle2,
+  ChevronDown,
   ExternalLink,
   FileText,
   Inbox,
@@ -53,6 +55,8 @@ type CompanyWorkspaceTab = "Feed" | "Notebook" | "Claims" | "Transcripts" | "Met
 
 type InboxStatusFilter = "all" | "unread" | "saved";
 type DbRefreshState = "idle" | "refreshing" | "done";
+type SourceRefreshState = "idle" | "refreshing" | "done";
+type SourceRefreshTrigger = "manual" | "scheduler";
 
 type FeedItem = {
   id: string;
@@ -69,6 +73,25 @@ type FeedItem = {
   fetchedAt: string;
   attribution: string;
   summary: string;
+};
+
+type SourceIngestionResult = {
+  adapterId: string;
+  itemsFetched: number;
+  itemsCreated: number;
+  itemsMatched: number;
+  itemsUnmatched: number;
+  fetchedAt: string | null;
+};
+
+type UnmatchedSourceItem = {
+  id: string;
+  adapterId: string;
+  companyName: string;
+  title: string;
+  sourceUrl: string;
+  publishedAt: string;
+  fetchedAt: string;
 };
 
 type Company = {
@@ -167,9 +190,18 @@ type SourceAdapter = {
   fetchMode: string;
   enabled: boolean;
   defaultPollIntervalSeconds: number;
+  sourceUrl: string;
+  rateLimitPolicy: string;
+  policyNote: string;
+  lastAttemptAt: string | null;
+  lastTrigger: string | null;
   lastSuccessAt: string | null;
   lastErrorAt: string | null;
   lastError: string | null;
+  lastItemsFetched: number | null;
+  lastItemsCreated: number | null;
+  lastItemsMatched: number | null;
+  lastItemsUnmatched: number | null;
   markets: string[];
 };
 
@@ -545,6 +577,7 @@ function NotebookQuarterField({
 
 export function App() {
   const contentGridRef = useRef<HTMLElement | null>(null);
+  const sourceRefreshInFlightRef = useRef(false);
   const [activeSection, setActiveSection] = useState<Section>("Inbox");
   const [theme, setTheme] = useState<Theme>("dark");
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -596,6 +629,14 @@ export function App() {
   const [companyWorkspaceTab, setCompanyWorkspaceTab] = useState<CompanyWorkspaceTab>("Feed");
   const [detailPaneWidth, setDetailPaneWidth] = useState(detailPaneDefaultWidth);
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
+  const [sourceRefreshState, setSourceRefreshState] = useState<SourceRefreshState>("idle");
+  const [sourceRefreshResult, setSourceRefreshResult] = useState<SourceIngestionResult | null>(null);
+  const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
+  const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
+  const [nextSourceRefreshAt, setNextSourceRefreshAt] = useState<number | null>(null);
+  const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<Record<string, UnmatchedSourceItem[]>>({});
+  const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<string | null>(null);
+  const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
@@ -978,6 +1019,24 @@ export function App() {
       });
   }
 
+  function refreshUnmatchedSourceItems(adapterId: string) {
+    return invoke<UnmatchedSourceItem[]>("list_unmatched_source_items", { adapterId })
+      .then((response) => {
+        setUnmatchedSourceItems((current) => ({
+          ...current,
+          [adapterId]: response,
+        }));
+        setUnmatchedSourceItemsError(null);
+      })
+      .catch((error) => {
+        setUnmatchedSourceItems((current) => ({
+          ...current,
+          [adapterId]: [],
+        }));
+        setUnmatchedSourceItemsError(String(error));
+      });
+  }
+
   function refreshSettings() {
     return invoke<UserSettings>("get_settings")
       .then((response) => {
@@ -1010,6 +1069,44 @@ export function App() {
     });
   }
 
+  function refreshSources(trigger: SourceRefreshTrigger = "manual") {
+    if (sourceRefreshInFlightRef.current) {
+      return Promise.resolve();
+    }
+
+    sourceRefreshInFlightRef.current = true;
+    setSourceRefreshState("refreshing");
+    setSourceRefreshError(null);
+
+    return invoke<SourceIngestionResult>("refresh_sources", { input: { trigger } })
+      .then((response) => {
+        setSourceRefreshResult(response);
+        setSourceRefreshFailureCount(0);
+        setSelectedSourceAdapterId(response.adapterId);
+        return Promise.all([
+          refreshFeedItems(),
+          refreshSourceAdapters(),
+          refreshDatabaseStatus(),
+          refreshUnmatchedSourceItems(response.adapterId),
+        ]);
+      })
+      .then(() => {
+        setSourceRefreshState("done");
+        window.setTimeout(() => {
+          setSourceRefreshState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setSourceRefreshError(String(error));
+        setSourceRefreshFailureCount((current) => current + 1);
+        setSourceRefreshState("idle");
+        refreshSourceAdapters();
+      })
+      .finally(() => {
+        sourceRefreshInFlightRef.current = false;
+      });
+  }
+
   useEffect(() => {
     refreshCompanies();
     refreshWatchlists();
@@ -1018,6 +1115,29 @@ export function App() {
     refreshSourceAdapters();
     refreshSettings();
   }, []);
+
+  useEffect(() => {
+    if (!settings || settings.pollIntervalSeconds <= 0) {
+      setNextSourceRefreshAt(null);
+      return undefined;
+    }
+
+    const intervalSeconds = sourceRefreshFailureCount >= 2
+      ? Math.min(settings.pollIntervalSeconds * 2, 3600)
+      : settings.pollIntervalSeconds;
+    const intervalMs = intervalSeconds * 1000;
+    setNextSourceRefreshAt(Date.now() + intervalMs);
+
+    const intervalId = window.setInterval(() => {
+      setNextSourceRefreshAt(Date.now() + intervalMs);
+      void refreshSources("scheduler");
+    }, intervalMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+      setNextSourceRefreshAt(null);
+    };
+  }, [settings?.pollIntervalSeconds, sourceRefreshFailureCount]);
 
   useEffect(() => {
     if (!selectedCompanyId) {
@@ -1886,6 +2006,15 @@ export function App() {
 
   function toggleSourceAdapter(adapterId: string) {
     setSelectedSourceAdapterId((current) => (current === adapterId ? null : adapterId));
+    refreshUnmatchedSourceItems(adapterId);
+  }
+
+  function toggleUnmatchedSourceItems(adapterId: string) {
+    setExpandedUnmatchedAdapters((current) => ({
+      ...current,
+      [adapterId]: !current[adapterId],
+    }));
+    refreshUnmatchedSourceItems(adapterId);
   }
 
   function openSourceStatus() {
@@ -1896,6 +2025,9 @@ export function App() {
       null;
 
     setSelectedSourceAdapterId(relevantAdapter?.id ?? null);
+    if (relevantAdapter) {
+      refreshUnmatchedSourceItems(relevantAdapter.id);
+    }
     setActiveSection("Sources");
   }
 
@@ -1958,11 +2090,97 @@ export function App() {
   }
 
   function formatPollInterval(seconds: number) {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+
     if (seconds % 60 === 0) {
       return `${seconds / 60} min`;
     }
 
-    return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+
+    return `${minutes} min ${remainingSeconds}s`;
+  }
+
+  function formatSourceLastResult(adapter: SourceAdapter) {
+    if (adapter.lastItemsFetched === null) {
+      return "None";
+    }
+
+    return `${adapter.lastItemsFetched} fetched · ${adapter.lastItemsCreated ?? 0} created · ${
+      adapter.lastItemsMatched ?? 0
+    } matched · ${adapter.lastItemsUnmatched ?? 0} unmatched`;
+  }
+
+  function formatSourceScheduler() {
+    if (!settings || settings.pollIntervalSeconds <= 0) {
+      return "Off";
+    }
+
+    if (sourceRefreshFailureCount >= 2) {
+      return `In-app · ${formatPollInterval(settings.pollIntervalSeconds)} · backoff ${formatPollInterval(
+        Math.min(settings.pollIntervalSeconds * 2, 3600),
+      )}`;
+    }
+
+    return `In-app · ${formatPollInterval(settings.pollIntervalSeconds)}`;
+  }
+
+  function formatSourceTrigger(adapter: SourceAdapter) {
+    if (adapter.lastTrigger === "scheduler") {
+      return "Scheduler";
+    }
+
+    if (adapter.lastTrigger === "manual") {
+      return "Manual";
+    }
+
+    return "None";
+  }
+
+  function formatNextSourceRefresh() {
+    if (!nextSourceRefreshAt) {
+      return "Off";
+    }
+
+    const seconds = Math.max(0, Math.ceil((nextSourceRefreshAt - Date.now()) / 1000));
+    return `In ${formatPollInterval(seconds)}`;
+  }
+
+  function sourceRefreshButtonLabel() {
+    if (sourceRefreshState === "refreshing") {
+      return "Refreshing sources";
+    }
+
+    if (sourceRefreshState === "done") {
+      return "Sources refreshed";
+    }
+
+    if (sourceRefreshError) {
+      return "Source refresh failed";
+    }
+
+    return "Refresh sources";
+  }
+
+  function sourceRefreshButtonTitle() {
+    if (sourceRefreshError) {
+      return `Source refresh failed: ${sourceRefreshError}`;
+    }
+
+    if (sourceRefreshResult) {
+      return `Last refresh: ${sourceRefreshResult.itemsMatched}/${sourceRefreshResult.itemsFetched} matched`;
+    }
+
+    return "Fetch GPW ESPI/EBI public listings";
+  }
+
+  function openExternalUrl(url: string) {
+    void openUrl(url).catch((error) => {
+      console.error("Failed to open external URL", error);
+    });
   }
 
   return (
@@ -2088,13 +2306,23 @@ export function App() {
               )}
             </button>
             <button
-              aria-label="Refresh sources unavailable"
-              className="icon-button"
-              disabled
+              aria-label={sourceRefreshButtonLabel()}
+              className={[
+                "icon-button",
+                sourceRefreshState === "refreshing" ? "icon-button-spinning" : "",
+                sourceRefreshState === "done" ? "db-status-pill-success" : "",
+                sourceRefreshError ? "source-refresh-button-danger" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+              disabled={sourceRefreshState === "refreshing"}
+              onClick={() => {
+                void refreshSources("manual");
+              }}
               type="button"
-              title="Source refresh will pull latest remote feeds after source ingestion is wired"
+              title={sourceRefreshButtonTitle()}
             >
-              <RefreshCw size={18} />
+              {sourceRefreshState === "done" ? <CheckCircle2 size={18} /> : <RefreshCw size={18} />}
             </button>
             <label className="theme-control" title="Theme">
               {effectiveTheme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
@@ -2294,12 +2522,15 @@ export function App() {
                         <div className="empty-state-actions">
                           <button
                             className="secondary-button compact-button"
-                            disabled
-                            title="Source refresh will pull latest remote feeds after source ingestion is wired"
+                            disabled={sourceRefreshState === "refreshing"}
+                            onClick={() => {
+                              void refreshSources("manual");
+                            }}
+                            title="Fetch GPW ESPI/EBI public listings"
                             type="button"
                           >
-                            <RefreshCw size={15} />
-                            Refresh pending
+                            {sourceRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
+                            {sourceRefreshState === "refreshing" ? "Refreshing" : "Refresh sources"}
                           </button>
                           <button
                             className="secondary-button compact-button"
@@ -2331,6 +2562,9 @@ export function App() {
                   </div>
                 ) : null}
                 {feedError ? <p className="error-text">Feed command failed: {feedError}</p> : null}
+                {sourceRefreshError ? (
+                  <p className="error-text">Source refresh failed: {sourceRefreshError}</p>
+                ) : null}
               </div>
             </section>
           ) : null}
@@ -3761,9 +3995,40 @@ export function App() {
                   <h1 id="sources-title">Sources</h1>
                   <p>Local source adapter status before remote ingestion is wired.</p>
                 </div>
+                <button
+                  className="secondary-button compact-button"
+                  disabled={sourceRefreshState === "refreshing"}
+                  onClick={() => {
+                    void refreshSources("manual");
+                  }}
+                  type="button"
+                >
+                  {sourceRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
+                  {sourceRefreshState === "refreshing" ? "Refreshing" : "Refresh sources"}
+                </button>
               </div>
 
               <div className="sources-layout" aria-label="Source adapters">
+                {sourceRefreshResult ? (
+                  <dl className="source-status-grid source-refresh-summary" aria-label="Last source refresh summary">
+                    <div>
+                      <dt>Fetched</dt>
+                      <dd aria-label="Fetched source items">{sourceRefreshResult.itemsFetched}</dd>
+                    </div>
+                    <div>
+                      <dt>Created</dt>
+                      <dd aria-label="Created source items">{sourceRefreshResult.itemsCreated}</dd>
+                    </div>
+                    <div>
+                      <dt>Matched</dt>
+                      <dd aria-label="Matched source items">{sourceRefreshResult.itemsMatched}</dd>
+                    </div>
+                    <div>
+                      <dt>Unmatched</dt>
+                      <dd aria-label="Unmatched source items">{sourceRefreshResult.itemsUnmatched}</dd>
+                    </div>
+                  </dl>
+                ) : null}
                 {sourceAdapters.map((adapter) => (
                   <div className="source-row-block" key={adapter.id}>
                     <article
@@ -3808,24 +4073,102 @@ export function App() {
                       </div>
                     </article>
                     {selectedSourceAdapterId === adapter.id ? (
-                      <dl className="source-status-grid source-status-detail" aria-label="Source adapter details">
-                        <div>
-                          <dt>Poll</dt>
-                          <dd>{formatPollInterval(adapter.defaultPollIntervalSeconds)}</dd>
+                      <div className="source-detail-panel" aria-label="Source adapter details">
+                        <dl className="source-status-grid source-status-detail">
+                          <div>
+                            <dt>Scheduler</dt>
+                            <dd>{formatSourceScheduler()}</dd>
+                          </div>
+                          <div>
+                            <dt>Next poll</dt>
+                            <dd>{formatNextSourceRefresh()}</dd>
+                          </div>
+                          <div>
+                            <dt>Last attempt</dt>
+                            <dd>{adapter.lastAttemptAt ?? "Never"}</dd>
+                          </div>
+                          <div>
+                            <dt>Last trigger</dt>
+                            <dd>{formatSourceTrigger(adapter)}</dd>
+                          </div>
+                          <div>
+                            <dt>Last success</dt>
+                            <dd>{adapter.lastSuccessAt ?? "Never"}</dd>
+                          </div>
+                          <div>
+                            <dt>Last error</dt>
+                            <dd>{adapter.lastErrorAt ?? "None"}</dd>
+                          </div>
+                          <div>
+                            <dt>Last result</dt>
+                            <dd>{formatSourceLastResult(adapter)}</dd>
+                          </div>
+                          <div>
+                            <dt>Status</dt>
+                            <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
+                          </div>
+                          <div>
+                            <dt>Rate limit</dt>
+                            <dd>{adapter.rateLimitPolicy}</dd>
+                          </div>
+                          <div>
+                            <dt>Source page</dt>
+                            <dd>
+                              <button
+                                aria-label={`Open source page for ${adapter.displayName}`}
+                                className="source-page-link"
+                                onClick={() => openExternalUrl(adapter.sourceUrl)}
+                                type="button"
+                              >
+                                <ExternalLink size={14} />
+                                Open source page
+                              </button>
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Policy</dt>
+                            <dd>{adapter.policyNote}</dd>
+                          </div>
+                        </dl>
+                        <div className="source-unmatched-panel" aria-label="Unmatched source item diagnostics">
+                          <button
+                            aria-expanded={Boolean(expandedUnmatchedAdapters[adapter.id])}
+                            className="source-unmatched-header"
+                            onClick={() => toggleUnmatchedSourceItems(adapter.id)}
+                            type="button"
+                          >
+                            <span>Unmatched</span>
+                            <span className="source-unmatched-header-meta">
+                              <strong>{unmatchedSourceItems[adapter.id]?.length ?? 0}</strong>
+                              <ChevronDown
+                                className={expandedUnmatchedAdapters[adapter.id] ? "chevron-open" : ""}
+                                size={15}
+                              />
+                            </span>
+                          </button>
+                          {expandedUnmatchedAdapters[adapter.id] ? (
+                            <div className="source-unmatched-list">
+                              {(unmatchedSourceItems[adapter.id] ?? []).map((item) => (
+                                <a
+                                  className="source-unmatched-row"
+                                  href={item.sourceUrl}
+                                  key={item.id}
+                                  rel="noreferrer"
+                                  target="_blank"
+                                  title={item.title}
+                                >
+                                  <span>{item.companyName}</span>
+                                  <strong>{item.title}</strong>
+                                  <small>{item.publishedAt || item.fetchedAt}</small>
+                                </a>
+                              ))}
+                              {(unmatchedSourceItems[adapter.id] ?? []).length === 0 ? (
+                                <span className="membership-empty">No unmatched items stored.</span>
+                              ) : null}
+                            </div>
+                          ) : null}
                         </div>
-                        <div>
-                          <dt>Last success</dt>
-                          <dd>{adapter.lastSuccessAt ?? "Never"}</dd>
-                        </div>
-                        <div>
-                          <dt>Last error</dt>
-                          <dd>{adapter.lastErrorAt ?? "None"}</dd>
-                        </div>
-                        <div>
-                          <dt>Status</dt>
-                          <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
-                        </div>
-                      </dl>
+                      </div>
                     ) : null}
                   </div>
                 ))}
@@ -3834,6 +4177,12 @@ export function App() {
                 ) : null}
                 {sourceAdaptersError ? (
                   <p className="error-text">Source command failed: {sourceAdaptersError}</p>
+                ) : null}
+                {sourceRefreshError ? (
+                  <p className="error-text">Source refresh failed: {sourceRefreshError}</p>
+                ) : null}
+                {unmatchedSourceItemsError ? (
+                  <p className="error-text">Unmatched source diagnostics failed: {unmatchedSourceItemsError}</p>
                 ) : null}
               </div>
             </section>

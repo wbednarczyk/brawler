@@ -33,6 +33,21 @@ Docs/contracts touched: contracts, product spec, project practices.
 
 Test expectations: YAML round-trip, validation, and secret-exclusion tests.
 
+### Make source poll interval editable in Settings
+
+Intent: let the user tune source polling cadence without changing code.
+
+Acceptance criteria:
+
+- Settings screen exposes a compact poll interval control.
+- Accepted values are validated before writing to SQLite.
+- The in-app source scheduler immediately uses the updated interval.
+- The Sources screen continues to show the active scheduler cadence.
+
+Docs/contracts touched: contracts, product spec, settings docs.
+
+Test expectations: settings command validation and UI workflow test for updating poll interval.
+
 ### Refine watchlist membership UX
 
 Intent: replace the early company-row assign/remove controls with a more intuitive watchlist membership workflow.
@@ -132,22 +147,6 @@ Docs/contracts touched: roadmap, product spec, UI information architecture, data
 
 Test expectations: storage tests for event records and UI workflow tests for filtering and expanded event details.
 
-### Implement GPW ESPI/EBI adapter spike
-
-Intent: validate the first official GPW source path.
-
-Acceptance criteria:
-
-- Adapter can fetch and normalize recent public GPW ESPI/EBI report listings.
-- Adapter stores source URL, timestamps, language, company match, and attribution.
-- Adapter primarily matches companies by ISIN.
-- Rate limit and source policy are documented.
-- Detail-page fetching is tested separately from listing ingestion.
-
-Docs/contracts touched: contracts, architecture, source-specific ADR if scraping is required.
-
-Test expectations: adapter unit tests with fixtures.
-
 ## Ready
 
 No cards.
@@ -161,6 +160,42 @@ No cards.
 No cards.
 
 ## Done
+
+### Complete Milestone 5: GPW ESPI/EBI Listing Adapter
+
+Intent: validate the first official GPW source path.
+
+Acceptance criteria:
+
+- Adapter can fetch and normalize recent public GPW ESPI/EBI report listings.
+- Adapter stores source URL, timestamps, language, company match, and attribution.
+- Adapter primarily matches companies by ISIN.
+- Rate limit and source policy are documented.
+- Detail-page fetching remains separate from listing ingestion.
+
+Delivered:
+
+- Rust `gpw-espi-ebi` adapter module parses listing HTML fixtures into normalized report listings.
+- Parser extracts publication timestamp, report type, ESPI/EBI system, report number, company name, ISIN, title, detail URL, fetched timestamp, and dedupe key.
+- Rust storage ingests normalized GPW listings into `feed_items`, upserts by adapter/dedupe key, matches companies by ISIN, and stores unmatched items without showing them in normal feed views.
+- `refresh_sources` Tauri command performs an explicit manual fetch of the public GPW ESPI/EBI listing page and ingests parsed listings.
+- Topbar, Sources screen, and no-feed empty-state source refresh controls trigger manual source refresh and reload feed/source status.
+- Desktop runtime schedules in-app source refreshes while the UI is open, using the configured poll interval and skipping overlapping runs.
+- Scheduled source refreshes back off after repeated refresh failures while preserving manual refresh.
+- Sources screen shows the expected next scheduled in-app source poll.
+- Sources screen shows whether the last source refresh attempt was manual or scheduler-triggered.
+- Sources screen exposes recent unmatched source diagnostics so a successful fetch with no company matches is understandable.
+- Manual refresh records a persisted last-attempt timestamp before fetching.
+- Successful refreshes with zero parsed listings persist a success timestamp and zero-count result instead of looking like no-op failures.
+- Successful refreshes persist last fetched/created/matched/unmatched counts for adapter diagnostics.
+- Failed manual refreshes persist adapter `last_error_at` and `last_error` so source status remains diagnosable after transient UI errors.
+- Topbar refresh control exposes the latest refresh failure state until a later successful refresh attempt.
+- Sources screen shows GPW source URL, rate-limit policy, and source-policy note.
+- Tests use bundled fixtures/injected fetchers; source status and scheduler behavior have UI coverage.
+
+Docs/contracts touched: contracts, architecture, source strategy.
+
+Test expectations: adapter unit tests with fixtures and storage ingestion tests for matched/unmatched listings.
 
 ### Complete Milestone 4: Notebooks And Claims
 

@@ -115,6 +115,7 @@ Exit criteria:
 - runtime settings can be read and updated through Tauri commands
 - theme persistence uses SQLite as the runtime source of truth
 - YAML settings import/export/bootstrap is explicitly deferred with a follow-up card
+- source poll interval editability is tracked as a Settings follow-up, not as GPW adapter closure
 
 ## Milestone 3: Inbox And Company Workspace
 
@@ -176,6 +177,8 @@ Exit criteria:
 
 Goal: ingest real official GPW report listings conservatively.
 
+Status: completed.
+
 Included:
 
 - `gpw-espi-ebi` adapter
@@ -185,6 +188,7 @@ Included:
 - dedupe
 - adapter state
 - manual refresh
+- in-app scheduled refresh while the desktop UI is open
 - source status details
 - fixture-based adapter tests
 
@@ -195,6 +199,14 @@ Exit criteria:
 - unmatched items are tracked or diagnosable
 - source status shows last success/error
 - detail-page fetching remains separate unless explicitly accepted
+
+Completion notes:
+
+- The first GPW ESPI/EBI path fetches the public listing page, parses recent listings, normalizes feed items, deduplicates by source key, and matches tracked companies by ISIN.
+- Manual refresh and in-app scheduled refresh are available while the desktop UI is open.
+- Sources diagnostics show last attempt, last trigger, last success/error, last result counts, next scheduled refresh, source URL, rate-limit policy, and unmatched listing diagnostics.
+- Automated coverage uses fixtures/injected fetchers so default checks do not require live GPW availability.
+- Poll interval editability remains tracked as a Settings follow-up and is not required for M5 closure.
 
 ## Milestone 6: GPW Detail Fetch Spike
 
@@ -373,8 +385,8 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 Recommended next Ready cards:
 
-- Scaffold desktop application
-- Define UI design system tokens
-- Design initial SQLite migrations
+- GPW detail fetch spike
+- Events workspace data model and first screen
+- Source poll interval editability in Settings
 
-Do not start GPW ingestion before the local shell, storage, and fixture feed workflow exist.
+Do not start GPW detail fetching before the M6 source-policy check confirms that detail-page structure and terms are acceptable.
