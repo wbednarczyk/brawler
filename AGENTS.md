@@ -18,6 +18,8 @@ Before making non-trivial changes, agents must read:
 - Do not implement non-trivial changes without an explicit plan and approval.
 - Keep public behavior, contracts, and docs in sync with code changes.
 - Milestone closure must include the matching app version bump in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+- If implementation evidence conflicts with a roadmap item or product requirement, explicitly call out the conflict, explain the tradeoff, and ask before weakening or deferring required scope.
+- It is acceptable to challenge the user's proposed direction when technical, legal, source-policy, UX, cost, or reliability evidence suggests a better path, but the challenge must be communicated clearly before docs or code change the product commitment.
 - Prefer small, reviewable changes that preserve local-first operation.
 - Do not add cloud services, telemetry, hosted dependencies, or paid APIs unless a new ADR approves them.
 - Treat `Brawler` as a codename only; do not hard-code it as the final product name in user-facing copy unless the spec says so.
@@ -42,7 +44,8 @@ Before making non-trivial changes, agents must read:
 - Rust contracts, source adapters, deduplication, scheduler behavior, migrations, notebook workflows, transcription workflows, and AI mapping require automated tests.
 - UI workflows for watchlists, feed filtering, unread state, source detail, and settings require component or workflow tests once UI exists.
 - Desktop packaging changes require smoke tests for Tauri startup, Rust command availability, and local SQLite connectivity.
-- Default CI must not require live external services or secrets. Use fixtures and mocks for GPW, Gemini, SEC, Nasdaq, and media sources.
+- Default CI must not require live external services or secrets. Use test samples and mocks for GPW, Gemini, SEC, Nasdaq, and media sources.
+- Prefer the terms `test sample`, `sample data`, `seed data`, and `mock` in docs, UI text, and comments. Avoid `fixture` in project-facing language; if a conventional test path still uses `fixtures`, treat it as an internal implementation detail only.
 - Keep GitHub Actions usage conservative: avoid larger runners, default macOS CI, scheduled workflows, and packaging on every push unless a later ADR approves them.
 - The GitHub repository is currently private, so treat Actions minutes and artifact storage as constrained.
 - Every default CI check must have a documented local equivalent.

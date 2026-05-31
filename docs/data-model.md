@@ -45,6 +45,7 @@ Related tables:
 
 - `company_aliases`
 - `company_source_ids`
+- `company_registry_entries`
 
 ### Watchlists
 
@@ -100,6 +101,33 @@ Rules:
 - Adapter IDs should be stable, for example `gpw-espi-ebi`.
 - Source-specific cursors or checkpoints live in adapter state.
 
+### Company Registry Entries
+
+Supports company lookup, autocomplete, and ticker-first feed matching.
+
+Fields:
+
+- `id`
+- `exchange`
+- `ticker`
+- `qualified_ticker`
+- `display_name`
+- `isin`
+- `source_adapter_id`
+- `source_url`
+- `fetched_at`
+- `active`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- `exchange + ticker` is the uniqueness boundary.
+- Registry records are cached source data, not user-owned company records.
+- User-created companies are stored in `companies` and must not be overwritten silently by registry refresh.
+- Feed matching should resolve source identifiers to ticker through this cache before using ISIN fallback.
+- Slow refresh cadence is expected, initially daily or weekly.
+
 ### Feed Items
 
 Supports Inbox, company Feed tab, source attribution, notes from feed, and AI analysis.
@@ -128,6 +156,7 @@ Fields:
 Join table:
 
 - `feed_item_companies`
+- `feed_item_attachments`
 
 Rules:
 
@@ -136,6 +165,7 @@ Rules:
 - `published_at` may be null only when the source does not provide it.
 - `display_company` is a UI read-model helper for early feed rows and unmatched/source-derived ticker labels. Canonical company relationships still live in `feed_item_companies`.
 - Read and saved state are stored in SQLite and must survive app restart.
+- Attachments are stored as ordered source links with `label` and `url`, scoped to a feed item.
 - Retention policy must be designed before broad ingestion. Feed item storage should support cleanup without deleting saved items, items linked to notes, items with AI analysis, or items otherwise explicitly preserved by the user.
 
 ### Notebook Entries

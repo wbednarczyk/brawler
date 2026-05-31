@@ -19,7 +19,7 @@ Brawler uses SemVer-style `0.x.y` versioning from the first scaffold.
 Initial version mapping:
 
 - `0.1.0`: desktop shell, theme, health command
-- `0.2.0`: SQLite/storage, companies, watchlists, fixture feed
+- `0.2.0`: SQLite/storage, companies, watchlists, sample feed
 - `0.3.0`: inbox and company workspace
 - `0.4.0`: notebooks and claims
 - `0.5.0`: GPW adapter

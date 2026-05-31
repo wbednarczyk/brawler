@@ -73,6 +73,14 @@ type FeedItem = {
   fetchedAt: string;
   attribution: string;
   summary: string;
+  bodyText: string;
+  attachments: FeedItemAttachment[];
+};
+
+type FeedItemAttachment = {
+  id: string;
+  label: string;
+  url: string;
 };
 
 type SourceIngestionResult = {
@@ -81,7 +89,18 @@ type SourceIngestionResult = {
   itemsCreated: number;
   itemsMatched: number;
   itemsUnmatched: number;
+  detailItemsAttempted: number;
+  detailItemsStored: number;
+  detailItemsFailed: number;
   fetchedAt: string | null;
+};
+
+type CompanyRegistryRefreshResult = {
+  adapterId: string;
+  entriesFetched: number;
+  entriesUpserted: number;
+  entriesDeactivated: number;
+  fetchedAt: string;
 };
 
 type UnmatchedSourceItem = {
@@ -202,7 +221,22 @@ type SourceAdapter = {
   lastItemsCreated: number | null;
   lastItemsMatched: number | null;
   lastItemsUnmatched: number | null;
+  lastDetailItemsAttempted: number | null;
+  lastDetailItemsStored: number | null;
+  lastDetailItemsFailed: number | null;
+  lastDetailWarning: string | null;
   markets: string[];
+};
+
+type CompanyRegistryEntry = {
+  exchange: string;
+  ticker: string;
+  qualifiedTicker: string;
+  displayName: string;
+  isin: string | null;
+  sourceUrl: string;
+  fetchedAt: string;
+  tracked: boolean;
 };
 
 type UserSettings = {
@@ -633,10 +667,17 @@ export function App() {
   const [sourceRefreshResult, setSourceRefreshResult] = useState<SourceIngestionResult | null>(null);
   const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
+  const [registryRefreshState, setRegistryRefreshState] = useState<SourceRefreshState>("idle");
+  const [registryRefreshResult, setRegistryRefreshResult] = useState<CompanyRegistryRefreshResult | null>(null);
+  const [registryRefreshError, setRegistryRefreshError] = useState<string | null>(null);
   const [nextSourceRefreshAt, setNextSourceRefreshAt] = useState<number | null>(null);
   const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<Record<string, UnmatchedSourceItem[]>>({});
   const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<string | null>(null);
   const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<Record<string, boolean>>({});
+  const [companyRegistryEntries, setCompanyRegistryEntries] = useState<CompanyRegistryEntry[]>([]);
+  const [companyRegistryEntriesError, setCompanyRegistryEntriesError] = useState<string | null>(null);
+  const [isCompanyRegistryListExpanded, setCompanyRegistryListExpanded] = useState(false);
+  const [addingRegistryTicker, setAddingRegistryTicker] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
@@ -1037,6 +1078,18 @@ export function App() {
       });
   }
 
+  function refreshCompanyRegistryEntries() {
+    return invoke<CompanyRegistryEntry[]>("list_company_registry_entries")
+      .then((response) => {
+        setCompanyRegistryEntries(response);
+        setCompanyRegistryEntriesError(null);
+      })
+      .catch((error) => {
+        setCompanyRegistryEntries([]);
+        setCompanyRegistryEntriesError(String(error));
+      });
+  }
+
   function refreshSettings() {
     return invoke<UserSettings>("get_settings")
       .then((response) => {
@@ -1104,6 +1157,29 @@ export function App() {
       })
       .finally(() => {
         sourceRefreshInFlightRef.current = false;
+      });
+  }
+
+  function refreshCompanyRegistry(trigger: SourceRefreshTrigger = "manual") {
+    setRegistryRefreshState("refreshing");
+    setRegistryRefreshError(null);
+
+    return invoke<CompanyRegistryRefreshResult>("refresh_gpw_company_registry", { input: { trigger } })
+      .then((response) => {
+        setRegistryRefreshResult(response);
+        setSelectedSourceAdapterId(response.adapterId);
+        return Promise.all([refreshSourceAdapters(), refreshDatabaseStatus(), refreshCompanyRegistryEntries()]);
+      })
+      .then(() => {
+        setRegistryRefreshState("done");
+        window.setTimeout(() => {
+          setRegistryRefreshState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setRegistryRefreshError(String(error));
+        setRegistryRefreshState("idle");
+        refreshSourceAdapters();
       });
   }
 
@@ -1255,6 +1331,10 @@ export function App() {
     return companies.find((company) => company.qualifiedTicker === item.company) ?? null;
   }
 
+  function feedItemSummary(item: FeedItem) {
+    return item.summary.trim() || item.title;
+  }
+
   function openFeedItemNoteDraft(item: FeedItem) {
     const company = findCompanyForFeedItem(item);
 
@@ -1268,7 +1348,7 @@ export function App() {
     setNotebookScreenComposerOpen(true);
     setNotebookScreenForm({
       title: item.title,
-      body: item.summary,
+      body: item.bodyText || feedItemSummary(item),
       tags: ["feed", notebookTagFromFeedValue(item.type), notebookTagFromFeedValue(item.source)]
         .filter(Boolean)
         .join(", "),
@@ -1600,7 +1680,7 @@ export function App() {
   }
 
   function lookupCompany() {
-    setLookupStatus("Looking up local fixtures...");
+    setLookupStatus("Looking up GPW registry...");
 
     invoke<CompanyLookupResult | null>("lookup_company", {
       input: {
@@ -1614,7 +1694,7 @@ export function App() {
         if (result) {
           applyLookupResult(result);
         } else {
-          setLookupStatus("No local fixture match.");
+          setLookupStatus("No GPW registry match.");
         }
         setCompaniesError(null);
       })
@@ -1657,6 +1737,36 @@ export function App() {
       })
       .catch((error) => {
         setCompaniesError(String(error));
+      });
+  }
+
+  function addCompanyFromRegistry(entry: CompanyRegistryEntry) {
+    setAddingRegistryTicker(entry.qualifiedTicker);
+
+    invoke<Company>("create_company", {
+      input: {
+        exchange: entry.exchange,
+        ticker: entry.ticker,
+        displayName: entry.displayName,
+        isin: entry.isin,
+        cik: null,
+        lei: null,
+      },
+    })
+      .then(() => {
+        setCompaniesError(null);
+        return Promise.all([
+          refreshCompanies(),
+          refreshCompanyRegistryEntries(),
+          refreshDatabaseStatus(),
+          refreshWatchlistMemberships(),
+        ]);
+      })
+      .catch((error) => {
+        setCompaniesError(String(error));
+      })
+      .finally(() => {
+        setAddingRegistryTicker(null);
       });
   }
 
@@ -2006,7 +2116,11 @@ export function App() {
 
   function toggleSourceAdapter(adapterId: string) {
     setSelectedSourceAdapterId((current) => (current === adapterId ? null : adapterId));
-    refreshUnmatchedSourceItems(adapterId);
+    if (adapterId === "gpw-company-registry") {
+      refreshCompanyRegistryEntries();
+    } else {
+      refreshUnmatchedSourceItems(adapterId);
+    }
   }
 
   function toggleUnmatchedSourceItems(adapterId: string) {
@@ -2015,6 +2129,11 @@ export function App() {
       [adapterId]: !current[adapterId],
     }));
     refreshUnmatchedSourceItems(adapterId);
+  }
+
+  function toggleCompanyRegistryList() {
+    setCompanyRegistryListExpanded((current) => !current);
+    refreshCompanyRegistryEntries();
   }
 
   function openSourceStatus() {
@@ -2026,7 +2145,11 @@ export function App() {
 
     setSelectedSourceAdapterId(relevantAdapter?.id ?? null);
     if (relevantAdapter) {
-      refreshUnmatchedSourceItems(relevantAdapter.id);
+      if (relevantAdapter.id === "gpw-company-registry") {
+        refreshCompanyRegistryEntries();
+      } else {
+        refreshUnmatchedSourceItems(relevantAdapter.id);
+      }
     }
     setActiveSection("Sources");
   }
@@ -2109,9 +2232,17 @@ export function App() {
       return "None";
     }
 
-    return `${adapter.lastItemsFetched} fetched · ${adapter.lastItemsCreated ?? 0} created · ${
+    const listingResult = `${adapter.lastItemsFetched} fetched · ${adapter.lastItemsCreated ?? 0} created · ${
       adapter.lastItemsMatched ?? 0
     } matched · ${adapter.lastItemsUnmatched ?? 0} unmatched`;
+
+    if (adapter.lastDetailItemsAttempted === null) {
+      return listingResult;
+    }
+
+    return `${listingResult} · details ${adapter.lastDetailItemsStored ?? 0}/${
+      adapter.lastDetailItemsAttempted
+    } stored · ${adapter.lastDetailItemsFailed ?? 0} failed`;
   }
 
   function formatSourceScheduler() {
@@ -2495,6 +2626,7 @@ export function App() {
                         <span>{item.time}</span>
                       </div>
                       <h2>{item.title}</h2>
+                      <p>{feedItemSummary(item)}</p>
                     </div>
                     {item.saved ? <span className="saved-pill">Saved</span> : null}
                     {item.unread ? <span className="unread-dot" title="Unread" /> : null}
@@ -2839,7 +2971,7 @@ export function App() {
                                         <span>{item.time}</span>
                                       </div>
                                       <h3>{item.title}</h3>
-                                      <p>{item.summary}</p>
+                                      <p>{feedItemSummary(item)}</p>
                                     </div>
                                     {item.saved ? <span className="saved-pill">Saved</span> : null}
                                     {item.unread ? <span className="unread-dot" title="Unread" /> : null}
@@ -2850,7 +2982,26 @@ export function App() {
                                       <div>
                                         <span className="eyebrow">Selected item</span>
                                         <h3>{selectedCompanyFeedItem.title}</h3>
-                                        <p>{selectedCompanyFeedItem.summary}</p>
+                                        <section className="feed-body-section" aria-label="Feed summary">
+                                          <div className="feed-body-heading">
+                                            <span>Summary</span>
+                                          </div>
+                                          <p className="feed-detail-body">{feedItemSummary(selectedCompanyFeedItem)}</p>
+                                        </section>
+                                        <details className="feed-body-section feed-body-disclosure" aria-label="Official report body">
+                                          <summary className="feed-body-heading">
+                                            <span>Official report body</span>
+                                            <strong>{selectedCompanyFeedItem.bodyText ? "Stored" : "Not stored"}</strong>
+                                          </summary>
+                                          {selectedCompanyFeedItem.bodyText ? (
+                                            <p className="feed-detail-body">{selectedCompanyFeedItem.bodyText}</p>
+                                          ) : (
+                                            <p className="feed-detail-empty">
+                                              No official report body is stored for this item yet. Refresh sources and
+                                              check Sources for detail warnings if this remains empty.
+                                            </p>
+                                          )}
+                                        </details>
                                       </div>
                                       <div className="detail-actions" aria-label="Company feed item actions">
                                         <button
@@ -2935,6 +3086,22 @@ export function App() {
                                           <dd>{selectedCompanyFeedItem.language}</dd>
                                         </div>
                                       </dl>
+                                      {selectedCompanyFeedItem.attachments.length > 0 ? (
+                                        <div className="feed-attachment-list" aria-label="Company feed attachments">
+                                          {selectedCompanyFeedItem.attachments.map((attachment) => (
+                                            <a
+                                              className="feed-attachment-link"
+                                              href={attachment.url}
+                                              key={attachment.id}
+                                              rel="noreferrer"
+                                              target="_blank"
+                                            >
+                                              <ExternalLink size={14} />
+                                              {attachment.label}
+                                            </a>
+                                          ))}
+                                        </div>
+                                      ) : null}
                                     </aside>
                                   ) : null}
                                 </div>
@@ -2944,7 +3111,7 @@ export function App() {
                                   <div>
                                     <strong>No stored feed items for {selectedCompany.qualifiedTicker} yet.</strong>
                                     <p>
-                                      This company is tracked locally, but no fixture or ingested items are attached to
+                                      This company is tracked locally, but no sample or ingested items are attached to
                                       it yet.
                                     </p>
                                   </div>
@@ -4027,6 +4194,16 @@ export function App() {
                       <dt>Unmatched</dt>
                       <dd aria-label="Unmatched source items">{sourceRefreshResult.itemsUnmatched}</dd>
                     </div>
+                    <div>
+                      <dt>Details</dt>
+                      <dd aria-label="Stored source detail bodies">
+                        {sourceRefreshResult.detailItemsStored}/{sourceRefreshResult.detailItemsAttempted}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Detail failures</dt>
+                      <dd aria-label="Failed source detail bodies">{sourceRefreshResult.detailItemsFailed}</dd>
+                    </div>
                   </dl>
                 ) : null}
                 {sourceAdapters.map((adapter) => (
@@ -4104,6 +4281,10 @@ export function App() {
                             <dd>{formatSourceLastResult(adapter)}</dd>
                           </div>
                           <div>
+                            <dt>Detail warning</dt>
+                            <dd>{adapter.lastDetailWarning ?? "None"}</dd>
+                          </div>
+                          <div>
                             <dt>Status</dt>
                             <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
                           </div>
@@ -4130,44 +4311,118 @@ export function App() {
                             <dd>{adapter.policyNote}</dd>
                           </div>
                         </dl>
-                        <div className="source-unmatched-panel" aria-label="Unmatched source item diagnostics">
-                          <button
-                            aria-expanded={Boolean(expandedUnmatchedAdapters[adapter.id])}
-                            className="source-unmatched-header"
-                            onClick={() => toggleUnmatchedSourceItems(adapter.id)}
-                            type="button"
-                          >
-                            <span>Unmatched</span>
-                            <span className="source-unmatched-header-meta">
-                              <strong>{unmatchedSourceItems[adapter.id]?.length ?? 0}</strong>
-                              <ChevronDown
-                                className={expandedUnmatchedAdapters[adapter.id] ? "chevron-open" : ""}
-                                size={15}
-                              />
-                            </span>
-                          </button>
-                          {expandedUnmatchedAdapters[adapter.id] ? (
-                            <div className="source-unmatched-list">
-                              {(unmatchedSourceItems[adapter.id] ?? []).map((item) => (
-                                <a
-                                  className="source-unmatched-row"
-                                  href={item.sourceUrl}
-                                  key={item.id}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                  title={item.title}
-                                >
-                                  <span>{item.companyName}</span>
-                                  <strong>{item.title}</strong>
-                                  <small>{item.publishedAt || item.fetchedAt}</small>
-                                </a>
-                              ))}
-                              {(unmatchedSourceItems[adapter.id] ?? []).length === 0 ? (
-                                <span className="membership-empty">No unmatched items stored.</span>
+                        {adapter.id === "gpw-company-registry" ? (
+                          <>
+                            <div className="source-registry-actions" aria-label="Company registry refresh">
+                              <button
+                                className="secondary-button compact-button"
+                                disabled={registryRefreshState === "refreshing"}
+                                onClick={() => {
+                                  void refreshCompanyRegistry("manual");
+                                }}
+                                type="button"
+                              >
+                                {registryRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
+                                {registryRefreshState === "refreshing" ? "Refreshing" : "Refresh registry"}
+                              </button>
+                              {registryRefreshResult ? (
+                                <span>
+                                  {registryRefreshResult.entriesUpserted}/{registryRefreshResult.entriesFetched} cached
+                                </span>
+                              ) : null}
+                              {registryRefreshError ? (
+                                <span className="error-text">Registry refresh failed: {registryRefreshError}</span>
                               ) : null}
                             </div>
-                          ) : null}
-                        </div>
+                            <div className="source-collapsible-panel" aria-label="GPW company registry entries">
+                              <button
+                                aria-expanded={isCompanyRegistryListExpanded}
+                                className="source-collapsible-header"
+                                onClick={toggleCompanyRegistryList}
+                                type="button"
+                              >
+                                <span>Companies</span>
+                                <span className="source-collapsible-header-meta">
+                                  <strong>{companyRegistryEntries.length}</strong>
+                                  <ChevronDown
+                                    className={isCompanyRegistryListExpanded ? "chevron-open" : ""}
+                                    size={15}
+                                  />
+                                </span>
+                              </button>
+                              {isCompanyRegistryListExpanded ? (
+                                <div className="source-registry-list">
+                                  {companyRegistryEntries.map((entry) => (
+                                    <div className="source-registry-row" key={entry.qualifiedTicker}>
+                                      <span>{entry.qualifiedTicker}</span>
+                                      <strong title={entry.displayName}>{entry.displayName}</strong>
+                                      <small>{entry.isin ?? "No ISIN"}</small>
+                                      <button
+                                        className="secondary-button compact-button"
+                                        disabled={entry.tracked || addingRegistryTicker === entry.qualifiedTicker}
+                                        onClick={() => addCompanyFromRegistry(entry)}
+                                        title={entry.tracked ? `${entry.qualifiedTicker} already added` : `Add ${entry.qualifiedTicker}`}
+                                        type="button"
+                                      >
+                                        {entry.tracked ? <CheckCircle2 size={14} /> : <Plus size={14} />}
+                                        {entry.tracked ? "Added" : "Add"}
+                                      </button>
+                                    </div>
+                                  ))}
+                                  {companyRegistryEntries.length === 0 ? (
+                                    <span className="membership-empty">
+                                      No cached companies yet. Refresh registry first.
+                                    </span>
+                                  ) : null}
+                                  {companyRegistryEntriesError ? (
+                                    <span className="error-text">
+                                      Company registry list failed: {companyRegistryEntriesError}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
+                          </>
+                        ) : (
+                          <div className="source-collapsible-panel" aria-label="Unmatched source item diagnostics">
+                            <button
+                              aria-expanded={Boolean(expandedUnmatchedAdapters[adapter.id])}
+                              className="source-collapsible-header"
+                              onClick={() => toggleUnmatchedSourceItems(adapter.id)}
+                              type="button"
+                            >
+                              <span>Unmatched</span>
+                              <span className="source-collapsible-header-meta">
+                                <strong>{unmatchedSourceItems[adapter.id]?.length ?? 0}</strong>
+                                <ChevronDown
+                                  className={expandedUnmatchedAdapters[adapter.id] ? "chevron-open" : ""}
+                                  size={15}
+                                />
+                              </span>
+                            </button>
+                            {expandedUnmatchedAdapters[adapter.id] ? (
+                              <div className="source-unmatched-list">
+                                {(unmatchedSourceItems[adapter.id] ?? []).map((item) => (
+                                  <a
+                                    className="source-unmatched-row"
+                                    href={item.sourceUrl}
+                                    key={item.id}
+                                    rel="noreferrer"
+                                    target="_blank"
+                                    title={item.title}
+                                  >
+                                    <span>{item.companyName}</span>
+                                    <strong>{item.title}</strong>
+                                    <small>{item.publishedAt || item.fetchedAt}</small>
+                                  </a>
+                                ))}
+                                {(unmatchedSourceItems[adapter.id] ?? []).length === 0 ? (
+                                  <span className="membership-empty">No unmatched items stored.</span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
                       </div>
                     ) : null}
                   </div>
@@ -4281,7 +4536,26 @@ export function App() {
               {selectedFeedItem ? (
                 <>
                   <h2>{selectedFeedItem.title}</h2>
-                  <p>{selectedFeedItem.summary}</p>
+                  <section className="feed-body-section" aria-label="Feed summary">
+                    <div className="feed-body-heading">
+                      <span>Summary</span>
+                    </div>
+                    <p className="feed-detail-body">{feedItemSummary(selectedFeedItem)}</p>
+                  </section>
+                  <details className="feed-body-section feed-body-disclosure" aria-label="Official report body">
+                    <summary className="feed-body-heading">
+                      <span>Official report body</span>
+                      <strong>{selectedFeedItem.bodyText ? "Stored" : "Not stored"}</strong>
+                    </summary>
+                    {selectedFeedItem.bodyText ? (
+                      <p className="feed-detail-body">{selectedFeedItem.bodyText}</p>
+                    ) : (
+                      <p className="feed-detail-empty">
+                        No official report body is stored for this item yet. Refresh sources and check Sources for
+                        detail warnings if this remains empty.
+                      </p>
+                    )}
+                  </details>
                   <div className="detail-actions" aria-label="Feed item actions">
                     <button
                       className="secondary-button compact-button"
@@ -4369,6 +4643,22 @@ export function App() {
                       <dd>{selectedFeedItem.attribution}</dd>
                     </div>
                   </dl>
+                  {selectedFeedItem.attachments.length > 0 ? (
+                    <div className="feed-attachment-list" aria-label="Feed attachments">
+                      {selectedFeedItem.attachments.map((attachment) => (
+                        <a
+                          className="feed-attachment-link"
+                          href={attachment.url}
+                          key={attachment.id}
+                          rel="noreferrer"
+                          target="_blank"
+                        >
+                          <ExternalLink size={14} />
+                          {attachment.label}
+                        </a>
+                      ))}
+                    </div>
+                  ) : null}
                 </>
               ) : (
                 <>

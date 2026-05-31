@@ -8,7 +8,7 @@ See also [Project Brief](project-brief.md), [UI Information Architecture](ui-inf
 
 - Build from local-first foundations toward source ingestion and AI.
 - Keep every milestone demoable.
-- Prefer fixture-backed workflows before external integrations.
+- Prefer test-sample-backed workflows before external integrations.
 - Do not introduce cloud services in v1.
 - Keep contracts and docs updated with each milestone.
 - Make local build/test commands the primary interface; GitHub Actions mirrors them.
@@ -90,7 +90,7 @@ Status: complete.
 Notes:
 
 - YAML settings import/export/bootstrap is contract-accepted and implementation-deferred to later export/import/backup work.
-- Some early Milestone 3 UI pieces were built during Milestone 2, but Milestone 2 closure is based on local storage, settings, fixture feed, and command-boundary completion.
+- Some early Milestone 3 UI pieces were built during Milestone 2, but Milestone 2 closure is based on local storage, settings, sample feed, and command-boundary completion.
 
 Included:
 
@@ -101,15 +101,15 @@ Included:
 - watchlists
 - settings
 - YAML settings import/export/bootstrap contract, with implementation deferred to later export/import/backup work
-- seed or fixture feed items
-- Tauri commands for companies, watchlists, settings, and fixture feed
+- seed or sample feed items
+- Tauri commands for companies, watchlists, settings, and sample feed
 
 Exit criteria:
 
 - clean database can be created by migration
 - company can be added by exchange-qualified ticker
 - watchlist can be created and assigned companies
-- fixture feed can be shown in Inbox
+- sample feed can be shown in Inbox
 - migration tests exist
 - migration check runs in CI
 - runtime settings can be read and updated through Tauri commands
@@ -119,7 +119,7 @@ Exit criteria:
 
 ## Milestone 3: Inbox And Company Workspace
 
-Goal: make the primary non-AI research workflow usable with local/fixture data.
+Goal: make the primary non-AI research workflow usable with local sample data.
 
 Status: complete.
 
@@ -141,7 +141,7 @@ Included:
 
 Exit criteria:
 
-- user can review fixture feed items
+- user can review sample feed items
 - user can filter by company/watchlist/type/read/saved
 - user can open a company page
 - user can see source status placeholder
@@ -184,13 +184,13 @@ Included:
 - `gpw-espi-ebi` adapter
 - listing-level fetch from public GPW report page
 - normalization to feed items
-- ISIN-based company matching
+- initial ISIN-based company matching, later superseded by ticker-first matching with ISIN fallback
 - dedupe
 - adapter state
 - manual refresh
 - in-app scheduled refresh while the desktop UI is open
 - source status details
-- fixture-based adapter tests
+- test-sample-based adapter tests
 
 Exit criteria:
 
@@ -205,28 +205,99 @@ Completion notes:
 - The first GPW ESPI/EBI path fetches the public listing page, parses recent listings, normalizes feed items, deduplicates by source key, and matches tracked companies by ISIN.
 - Manual refresh and in-app scheduled refresh are available while the desktop UI is open.
 - Sources diagnostics show last attempt, last trigger, last success/error, last result counts, next scheduled refresh, source URL, rate-limit policy, and unmatched listing diagnostics.
-- Automated coverage uses fixtures/injected fetchers so default checks do not require live GPW availability.
+- Automated coverage uses test samples/injected fetchers so default checks do not require live GPW availability.
 - Poll interval editability remains tracked as a Settings follow-up and is not required for M5 closure.
 
 ## Milestone 6: GPW Detail Fetch Spike
 
-Goal: decide whether fetching GPW report detail pages is stable and useful.
+Status: completed in `0.6.0`.
+
+Goal: implement a reliable path for reading official GPW report bodies inside the app.
 
 Included:
 
-- sample detail-page fixtures
+- detail-page test samples
 - parsing spike for report body and attachments
 - source policy check
 - rate-limit behavior
-- decision whether to promote detail fetching into normal adapter behavior
+- decision and implementation path for normal detail-body ingestion
 
 Exit criteria:
 
-- ADR or source-strategy update records the decision
-- parser tests exist if accepted
-- if rejected, listing-level ingestion remains the supported path
+- ADR or source-strategy update records the required body-ingestion policy
+- parser tests exist
+- matched GPW feed items can store and expose report body text from an accepted source path
+- if GPW detail parsing is rejected for a specific item, listing-level ingestion remains a temporary fallback and source diagnostics expose the body-fetch failure
 
-## Milestone 7: Company Events Calendar
+Completion notes:
+
+- [ADR 0013](adr/0013-gpw-detail-fetching-policy.md) makes in-app official report body access required for v1 GPW support.
+- GPW detail fetching is the primary implementation path under strict constraints.
+- Bankier/Parkiet ESPI/EBI RSS feeds may be used as secondary cross-check or fallback signals, but not as replacements for canonical GPW official-source ingestion while GPW remains acceptable.
+- Normal ingestion fetches detail bodies for matched GPW items under conservative limits.
+- Parsed GPW detail attachments are stored and shown in feed details.
+- Source diagnostics expose detail fetch counters and the latest detail warning.
+- If GPW detail parsing proves insufficient, fallback body-source investigation is part of M6 rather than a reason to drop the feature.
+
+## Milestone 7: GPW Company Registry Cache
+
+Goal: make company management and source matching reliable by caching GPW ticker/ISIN/company metadata locally.
+
+Included:
+
+- source review for a reliable GPW company list
+- SQLite-backed registry cache
+- manual registry refresh
+- slow scheduled registry refresh, initially daily or weekly
+- lookup/autocomplete from the local registry cache
+- ticker-first source matching with exact ISIN fallback
+- registry freshness and last-error visibility in Sources or Settings
+
+Exit criteria:
+
+- user can add GPW companies from registry search without manually typing all fields
+- ticker-managed companies match through registry metadata when a report listing exposes ISIN but the user's company record lacks ISIN
+- issuer/company name alone is not used for silent automatic feed matching
+- hard-coded lookup test samples are clearly replaced or reduced to tests
+- tests cover registry parsing, storage, lookup, and feed matching
+
+## Milestone 8: Polish Media And Research Sources
+
+Goal: ingest company-related news, articles, analysis, and private research sources after official GPW report ingestion is stable.
+
+Included:
+
+- selected public Polish media/news sources where usage is allowed
+- RSS or public-feed adapters when available
+- Bankier/Parkiet ESPI/EBI RSS adapters as secondary sources if they are useful for cross-checking or missed-item diagnostics
+- Bankier market/news RSS adapter candidate after source review
+- Investing.com Poland RSS adapter candidate after feed URL and ticker-matching review
+- Stooq-style ticker news pages when technically and policy-wise acceptable
+- XTB market news and analysis pages if a source review accepts them
+- ISBnews or similar providers only after access, paywall, licensing, and attribution rules are understood
+- StockWatch/BiznesRadar research candidates only after scraping/paywall/terms review
+- Portal Analiz private-account adapter as a v1 source, subject to a dedicated source ADR before implementation
+
+Deferred/enrichment candidates:
+
+- Stooq CSV quote/history endpoints for price context around reports and news.
+- Notoria or other structured fundamentals providers as contact-first/commercial options, not scraping assumptions.
+- Issuer investor-relations pages for selected companies, especially where they expose RSS, calendars, English reports, or presentations.
+- per-source policy notes, rate limits, attribution labels, and source status
+- company matching for article/news content using ticker, company name, aliases, and source-specific IDs
+- duplicate handling across reports, PAP-derived copies, media rewrites, and syndicated content
+- test-sample-backed parser/fetcher tests for every accepted source
+
+Exit criteria:
+
+- at least one non-GPW-report article/news source can ingest matched company items into the Inbox
+- source adapters clearly distinguish official reports, public media, analysis, and authenticated private research
+- Portal Analiz has a specific ADR covering authentication, local credential storage, user-account scraping posture, rate limits, and implementation boundaries before any scraper is built
+- private/account-based sources use OS keychain secrets and never export credentials
+- source status makes it clear whether a source is public, RSS-like, authenticated, paywalled, or manually configured
+- tests do not require live external services, credentials, or paid accounts
+
+## Milestone 9: Company Events Calendar
 
 Goal: show a cross-watchlist calendar of company events, with upcoming events as the default focus and historical dates available for context.
 
@@ -242,7 +313,7 @@ Included:
 - historical timeline/search mode
 - source URL, attribution, and fetched timestamp for sourced events
 - manual event entry or correction if official sources are incomplete
-- fixture-backed event data before broad source coverage exists
+- test-sample-backed event data before broad source coverage exists
 
 Exit criteria:
 
@@ -254,7 +325,7 @@ Exit criteria:
 - manual events are clearly distinguishable from sourced events
 - storage and UI workflow tests exist
 
-## Milestone 8: YouTube Transcription To Notes
+## Milestone 10: YouTube Transcription To Notes
 
 Goal: validate the first video-to-notebook workflow.
 
@@ -274,9 +345,9 @@ Exit criteria:
 - transcript job status is visible
 - user can save selected transcript material as an editable Markdown note
 - transcript source text remains immutable
-- provider tests use fixtures/mocks
+- provider tests use test samples/mocks
 
-## Milestone 9: General AI Analysis Contract Spike
+## Milestone 11: General AI Analysis Contract Spike
 
 Goal: validate provider-neutral AI analysis without choosing a default provider.
 
@@ -284,18 +355,18 @@ Included:
 
 - provider interface
 - prompt/result contract for summaries, tags, significance, reasoning, and source references
-- fixture-backed AI result flow
+- test-sample-backed AI result flow
 - UI display in feed detail
 - no buy/sell/hold recommendation guardrails
 
 Exit criteria:
 
-- app can display analysis results from fixtures or a configured provider
+- app can display analysis results from sample data or a configured provider
 - no general provider is hard-coded as preferred
 - AI results preserve source references
 - tests cover contract mapping
 
-## Milestone 10: Keyboard Shortcuts And Workflow Polish
+## Milestone 12: Keyboard Shortcuts And Workflow Polish
 
 Goal: make repeated desktop use faster without making shortcuts the only way to operate the app.
 
@@ -316,7 +387,7 @@ Exit criteria:
 - text inputs and editors do not accidentally trigger global shortcuts
 - workflow tests cover the most important shortcuts
 
-## Milestone 11: V1 Packaging Candidate
+## Milestone 13: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -378,7 +449,7 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 - cloud sync
 - team collaboration
 - hosted ingestion jobs
-- paid source integrations
+- commercial paid data APIs that require redistribution/licensing or product-level billing
 - mobile app
 
 ## Next Ready Candidates
@@ -386,6 +457,7 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 Recommended next Ready cards:
 
 - GPW detail fetch spike
+- Polish media and research source strategy/card breakdown
 - Events workspace data model and first screen
 - Source poll interval editability in Settings
 

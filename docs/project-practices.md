@@ -148,6 +148,19 @@ Rules:
 - Behavior changes must update docs/contracts in the same PR.
 - Important decisions must not live only in GitHub issue or PR comments.
 
+## Product Scope And Tradeoff Communication
+
+Agents are expected to exercise engineering judgment, including pushing back when evidence suggests the current path is unreliable, too costly, legally risky, or poor UX. That pushback must be explicit and collaborative.
+
+Rules:
+
+- Do not silently weaken, defer, or remove a product requirement because implementation is difficult.
+- If a planned implementation path looks unreliable, explain the evidence and propose alternatives.
+- If a user proposal conflicts with roadmap, contracts, ADRs, source policy, privacy, security, or cost posture, call out the conflict before implementing.
+- When a required feature has a risky implementation path, keep the requirement intact and discuss alternate paths rather than making the feature optional.
+- Docs may record uncertainty, fallback options, and technical risk, but they must not downgrade required scope without explicit user confirmation.
+- It is acceptable and expected to disagree with the project owner when the evidence supports it; the disagreement should be specific, sourced when possible, and framed around the product goal.
+
 ## Local And CI Build Parity
 
 Local build and test commands are the primary development interface. GitHub Actions mirrors local commands.
@@ -199,7 +212,7 @@ Brawler uses SemVer-style `0.x.y` versions from the first scaffold.
 Initial version mapping:
 
 - `0.1.0`: desktop shell, theme, health command
-- `0.2.0`: SQLite/storage, companies, watchlists, fixture feed
+- `0.2.0`: SQLite/storage, companies, watchlists, sample feed
 - `0.3.0`: inbox and company workspace
 - `0.4.0`: notebooks and claims
 - `0.5.0`: GPW adapter

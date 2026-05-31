@@ -58,6 +58,15 @@ mod commands {
         input: storage::CompanyLookupInput,
         state: tauri::State<'_, storage::AppState>,
     ) -> Result<Option<storage::CompanyLookupResult>, String> {
+        let first_result = state
+            .lookup_company(input.clone())
+            .map_err(|error| error.to_string())?;
+        if first_result.is_some() || !should_bootstrap_gpw_registry(&input, &state)? {
+            return Ok(first_result);
+        }
+
+        refresh_gpw_company_registry_for_trigger(&state, "lookup")?;
+
         state
             .lookup_company(input)
             .map_err(|error| error.to_string())
@@ -186,6 +195,15 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn list_company_registry_entries(
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::CompanyRegistryEntry>, String> {
+        state
+            .list_company_registry_entries()
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
     pub fn refresh_sources(
         input: Option<RefreshSourcesInput>,
         state: tauri::State<'_, storage::AppState>,
@@ -198,7 +216,7 @@ mod commands {
             .record_source_adapter_attempt(source_adapters::gpw_espi_ebi::ADAPTER_ID, &trigger);
 
         let fetcher = source_adapters::gpw_espi_ebi::HttpGpwPageFetcher;
-        let listings = match source_adapters::gpw_espi_ebi::fetch_report_listings(&fetcher) {
+        let mut listings = match source_adapters::gpw_espi_ebi::fetch_report_listings(&fetcher) {
             Ok(listings) => listings,
             Err(error) => {
                 let message = error.to_string();
@@ -210,9 +228,162 @@ mod commands {
                 return Err(message);
             }
         };
+        let detail_policy = source_adapters::gpw_espi_ebi::detail_fetch_policy();
+        let mut details_fetched = 0usize;
+        let mut details_stored = 0usize;
+        let mut details_failed = 0usize;
+        let mut last_detail_warning: Option<String> = None;
+
+        if detail_policy.enabled_by_default {
+            for listing in &mut listings {
+                if details_fetched >= detail_policy.max_details_per_refresh {
+                    break;
+                }
+
+                if detail_policy.matched_items_only
+                    && !state
+                        .tracks_gpw_listing_company(&listing.company_ticker, &listing.isin)
+                        .map_err(|error| error.to_string())?
+                {
+                    continue;
+                }
+
+                if details_fetched > 0 {
+                    std::thread::sleep(std::time::Duration::from_secs(
+                        detail_policy.min_delay_between_requests_seconds,
+                    ));
+                }
+
+                match source_adapters::gpw_espi_ebi::fetch_report_detail(
+                    &fetcher,
+                    &listing.detail_url,
+                ) {
+                    Ok(detail) => {
+                        let evaluation =
+                            source_adapters::gpw_espi_ebi::evaluate_report_detail(&detail);
+                        if evaluation.usable_for_ingestion {
+                            listing.body_text = Some(detail.body_text);
+                            listing.attachments = detail.attachments;
+                            details_stored += 1;
+                        } else {
+                            last_detail_warning = Some(format!(
+                                "{}: {}",
+                                listing.title,
+                                evaluation.warnings.join(", ")
+                            ));
+                            details_failed += 1;
+                        }
+                    }
+                    Err(error) => {
+                        last_detail_warning = Some(format!("{}: {}", listing.title, error));
+                        let _ = state.record_source_adapter_error(
+                            source_adapters::gpw_espi_ebi::ADAPTER_ID,
+                            &error.to_string(),
+                        );
+                        details_failed += 1;
+                    }
+                }
+
+                details_fetched += 1;
+            }
+        }
+
+        let _ = state.record_source_adapter_state(
+            source_adapters::gpw_espi_ebi::ADAPTER_ID,
+            "last_detail_items_attempted",
+            &details_fetched.to_string(),
+        );
+        let _ = state.record_source_adapter_state(
+            source_adapters::gpw_espi_ebi::ADAPTER_ID,
+            "last_detail_items_stored",
+            &details_stored.to_string(),
+        );
+        let _ = state.record_source_adapter_state(
+            source_adapters::gpw_espi_ebi::ADAPTER_ID,
+            "last_detail_items_failed",
+            &details_failed.to_string(),
+        );
+        let _ = state.record_source_adapter_state(
+            source_adapters::gpw_espi_ebi::ADAPTER_ID,
+            "last_detail_warning",
+            last_detail_warning.as_deref().unwrap_or(""),
+        );
+
+        let mut result = state
+            .ingest_gpw_report_listings(&listings)
+            .map_err(|error| error.to_string())?;
+        result.detail_items_attempted = details_fetched;
+        result.detail_items_stored = details_stored;
+        result.detail_items_failed = details_failed;
+
+        Ok(result)
+    }
+
+    #[tauri::command]
+    pub fn refresh_gpw_company_registry(
+        input: Option<RefreshSourcesInput>,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::CompanyRegistryRefreshResult, String> {
+        let trigger = input
+            .and_then(|input| input.trigger)
+            .filter(|trigger| trigger == "manual" || trigger == "scheduler" || trigger == "lookup")
+            .unwrap_or_else(|| "manual".to_owned());
+
+        refresh_gpw_company_registry_for_trigger(&state, &trigger)
+    }
+
+    fn should_bootstrap_gpw_registry(
+        input: &storage::CompanyLookupInput,
+        state: &storage::AppState,
+    ) -> Result<bool, String> {
+        let has_lookup_value = input
+            .ticker
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+            || input
+                .isin
+                .as_deref()
+                .is_some_and(|value| !value.trim().is_empty())
+            || input
+                .display_name
+                .as_deref()
+                .is_some_and(|value| value.trim().chars().count() >= 3);
+
+        if input.exchange.trim().to_uppercase() != "GPW" || !has_lookup_value {
+            return Ok(false);
+        }
 
         state
-            .ingest_gpw_report_listings(&listings)
+            .gpw_company_registry_needs_bootstrap_refresh()
+            .map_err(|error| error.to_string())
+    }
+
+    fn refresh_gpw_company_registry_for_trigger(
+        state: &storage::AppState,
+        trigger: &str,
+    ) -> Result<storage::CompanyRegistryRefreshResult, String> {
+        let _ = state.record_source_adapter_attempt(
+            source_adapters::gpw_company_registry::ADAPTER_ID,
+            trigger,
+        );
+
+        let fetcher = source_adapters::gpw_company_registry::HttpGpwCompanyRegistryFetcher;
+        let (entries, fetched_at) =
+            match source_adapters::gpw_company_registry::fetch_company_registry_entries(&fetcher) {
+                Ok(result) => result,
+                Err(error) => {
+                    let message = error.to_string();
+                    let _ = state.record_source_adapter_error(
+                        source_adapters::gpw_company_registry::ADAPTER_ID,
+                        &message,
+                    );
+
+                    return Err(message);
+                }
+            };
+
+        state
+            .refresh_gpw_company_registry(&entries, &fetched_at)
             .map_err(|error| error.to_string())
     }
 
@@ -268,7 +439,9 @@ pub fn run() {
             commands::create_notebook_entry,
             commands::update_notebook_entry,
             commands::list_source_adapters,
+            commands::list_company_registry_entries,
             commands::refresh_sources,
+            commands::refresh_gpw_company_registry,
             commands::get_settings,
             commands::update_settings
         ])
@@ -283,6 +456,6 @@ mod tests {
         let response = super::commands::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.4.0");
+        assert_eq!(response.version, "0.6.0");
     }
 }

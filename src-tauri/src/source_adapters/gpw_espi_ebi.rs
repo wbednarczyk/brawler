@@ -8,12 +8,19 @@ use time::{
 pub const ADAPTER_ID: &str = "gpw-espi-ebi";
 pub const DISPLAY_NAME: &str = "GPW ESPI/EBI";
 pub const SOURCE_URL: &str = "https://www.gpw.pl/komunikaty";
+const LISTING_AJAX_URL: &str = "https://www.gpw.pl/ajaxindex.php";
+const USER_AGENT: &str = concat!(
+    "Brawler/",
+    env!("CARGO_PKG_VERSION"),
+    " local-first investor research app"
+);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpwReportListing {
     pub report_type: String,
     pub system: String,
     pub report_number: String,
+    pub company_ticker: String,
     pub company_name: String,
     pub isin: String,
     pub title: String,
@@ -21,6 +28,44 @@ pub struct GpwReportListing {
     pub published_at: String,
     pub fetched_at: String,
     pub dedupe_key: String,
+    pub body_text: Option<String>,
+    pub attachments: Vec<GpwReportAttachment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpwReportAttachment {
+    pub label: String,
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpwReportDetail {
+    pub title: String,
+    pub body_text: String,
+    pub attachments: Vec<GpwReportAttachment>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpwDetailEvaluation {
+    pub usable_for_ingestion: bool,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpwDetailSpikeReport {
+    pub samples_checked: usize,
+    pub usable_samples: usize,
+    pub rejected_samples: usize,
+    pub warnings: Vec<String>,
+    pub promote_to_ingestion: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpwDetailFetchPolicy {
+    pub enabled_by_default: bool,
+    pub max_details_per_refresh: usize,
+    pub min_delay_between_requests_seconds: u64,
+    pub matched_items_only: bool,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -45,16 +90,31 @@ pub trait GpwPageFetcher {
     fn fetch_report_page(&self) -> Result<String, GpwFetchError>;
 }
 
+pub trait GpwDetailPageFetcher {
+    fn fetch_report_detail_page(&self, detail_url: &str) -> Result<String, GpwFetchError>;
+}
+
 pub struct HttpGpwPageFetcher;
 
 impl GpwPageFetcher for HttpGpwPageFetcher {
     fn fetch_report_page(&self) -> Result<String, GpwFetchError> {
-        let client = reqwest::blocking::Client::builder()
-            .user_agent("Brawler/0.4 local-first investor research app")
-            .timeout(std::time::Duration::from_secs(15))
-            .build()?;
+        let client = gpw_http_client()?;
+        let form = gpw_listing_ajax_form();
 
-        Ok(client.get(SOURCE_URL).send()?.error_for_status()?.text()?)
+        Ok(client
+            .post(LISTING_AJAX_URL)
+            .form(&form)
+            .send()?
+            .error_for_status()?
+            .text()?)
+    }
+}
+
+impl GpwDetailPageFetcher for HttpGpwPageFetcher {
+    fn fetch_report_detail_page(&self, detail_url: &str) -> Result<String, GpwFetchError> {
+        let client = gpw_http_client()?;
+
+        Ok(client.get(detail_url).send()?.error_for_status()?.text()?)
     }
 }
 
@@ -65,6 +125,24 @@ pub fn fetch_report_listings(
     let fetched_at = OffsetDateTime::now_utc().format(&Rfc3339)?;
 
     Ok(parse_report_listings(&html, &fetched_at)?)
+}
+
+pub fn fetch_report_detail(
+    fetcher: &impl GpwDetailPageFetcher,
+    detail_url: &str,
+) -> Result<GpwReportDetail, GpwFetchError> {
+    let html = fetcher.fetch_report_detail_page(detail_url)?;
+
+    Ok(parse_report_detail(&html)?)
+}
+
+pub fn detail_fetch_policy() -> GpwDetailFetchPolicy {
+    GpwDetailFetchPolicy {
+        enabled_by_default: true,
+        max_details_per_refresh: 5,
+        min_delay_between_requests_seconds: 2,
+        matched_items_only: true,
+    }
 }
 
 pub fn parse_report_listings(
@@ -101,6 +179,137 @@ pub fn parse_report_listings(
             ))
         })
         .collect()
+}
+
+fn gpw_http_client() -> Result<reqwest::blocking::Client, reqwest::Error> {
+    reqwest::blocking::Client::builder()
+        .user_agent(USER_AGENT)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+}
+
+fn gpw_listing_ajax_form() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("action", "GPWEspiReportUnion"),
+        ("start", "ajaxSearch"),
+        ("page", "komunikaty"),
+        ("format", "html"),
+        ("lang", "PL"),
+        ("letter", ""),
+        ("offset", "0"),
+        ("limit", "15"),
+        ("categoryRaports[]", "EBI"),
+        ("categoryRaports[]", "ESPI"),
+        ("typeRaports[]", "RB"),
+        ("typeRaports[]", "P"),
+        ("typeRaports[]", "Q"),
+        ("typeRaports[]", "R"),
+        ("typeRaports[]", "S"),
+        ("typeRaports[]", "Y"),
+        ("searchText", ""),
+        ("date", ""),
+    ]
+}
+
+pub fn parse_report_detail(html: &str) -> Result<GpwReportDetail, GpwParseError> {
+    let document = Html::parse_document(html);
+    let title_selector = selector("h1")?;
+    let body_selector = selector(
+        "[data-field='body'], .report-content, .report-body, .komunikat-tresc, .report-data, article",
+    )?;
+    let attachment_scope_selector =
+        selector("[data-field='attachments'], .report-attachments, .attachments, .zalaczniki")?;
+    let anchor_selector = selector("a")?;
+
+    let title = document
+        .select(&title_selector)
+        .map(|element| normalized_lines(element.text()).join(" "))
+        .filter(|candidate| !candidate.eq_ignore_ascii_case("Raporty Spółek ESPI/EBI"))
+        .max_by_key(|candidate| candidate.len())
+        .unwrap_or_default();
+
+    let body_text = document
+        .select(&body_selector)
+        .find_map(|element| {
+            let text = normalized_lines(element.text()).join("\n");
+            if text.is_empty() || text == title {
+                None
+            } else {
+                let body_text = extract_report_body_text(&text);
+                if body_text.is_empty() {
+                    None
+                } else {
+                    Some(body_text)
+                }
+            }
+        })
+        .unwrap_or_default();
+
+    let attachments = document
+        .select(&attachment_scope_selector)
+        .flat_map(|scope| {
+            scope
+                .select(&anchor_selector)
+                .filter_map(parse_attachment_anchor)
+        })
+        .collect();
+
+    Ok(GpwReportDetail {
+        title,
+        body_text,
+        attachments,
+    })
+}
+
+pub fn evaluate_report_detail(detail: &GpwReportDetail) -> GpwDetailEvaluation {
+    let mut warnings = Vec::new();
+
+    if detail.title.trim().is_empty() {
+        warnings.push("missing title".to_owned());
+    }
+
+    if detail.body_text.trim().len() < 80 {
+        warnings.push("missing or very short report body".to_owned());
+    }
+
+    let usable_for_ingestion = warnings.is_empty();
+
+    GpwDetailEvaluation {
+        usable_for_ingestion,
+        warnings,
+    }
+}
+
+pub fn evaluate_report_detail_samples(details: &[GpwReportDetail]) -> GpwDetailSpikeReport {
+    let evaluations = details
+        .iter()
+        .map(evaluate_report_detail)
+        .collect::<Vec<_>>();
+    let usable_samples = evaluations
+        .iter()
+        .filter(|evaluation| evaluation.usable_for_ingestion)
+        .count();
+    let warnings = evaluations
+        .iter()
+        .enumerate()
+        .flat_map(|(index, evaluation)| {
+            evaluation
+                .warnings
+                .iter()
+                .map(move |warning| format!("sample {}: {warning}", index + 1))
+        })
+        .collect::<Vec<_>>();
+    let samples_checked = details.len();
+    let rejected_samples = samples_checked.saturating_sub(usable_samples);
+    let promote_to_ingestion = samples_checked > 0 && rejected_samples == 0;
+
+    GpwDetailSpikeReport {
+        samples_checked,
+        usable_samples,
+        rejected_samples,
+        warnings,
+        promote_to_ingestion,
+    }
 }
 
 fn parse_listing_element(
@@ -159,6 +368,7 @@ fn parse_listing_element(
         report_type,
         system,
         report_number,
+        company_ticker: String::new(),
         company_name,
         isin,
         title,
@@ -166,6 +376,79 @@ fn parse_listing_element(
         published_at,
         fetched_at: fetched_at.to_owned(),
         dedupe_key,
+        body_text: None,
+        attachments: Vec::new(),
+    })
+}
+
+fn extract_report_body_text(text: &str) -> String {
+    let mut in_body = false;
+    let body_lines = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| {
+            if is_report_body_marker(line) {
+                in_body = true;
+                return false;
+            }
+
+            if in_body && is_report_section_boundary(line) {
+                in_body = false;
+            }
+
+            in_body
+        })
+        .collect::<Vec<_>>();
+
+    if body_lines.is_empty() {
+        strip_detail_boilerplate(text)
+    } else {
+        body_lines.join("\n")
+    }
+}
+
+fn strip_detail_boilerplate(text: &str) -> String {
+    text.lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .filter(|line| !is_report_body_marker(line))
+        .filter(|line| !is_report_section_boundary(line))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn is_report_body_marker(line: &str) -> bool {
+    line.trim()
+        .trim_start_matches(|character: char| character.is_ascii_digit() || character == '.')
+        .trim()
+        .eq_ignore_ascii_case("treść raportu:")
+}
+
+fn is_report_section_boundary(line: &str) -> bool {
+    let normalized = line.to_lowercase();
+    normalized.starts_with("nazwa arkusza:")
+        || normalized == "załączniki"
+        || normalized == "zalaczniki"
+        || normalized == "message _english version_"
+}
+
+fn parse_attachment_anchor(anchor: scraper::ElementRef<'_>) -> Option<GpwReportAttachment> {
+    let label = normalized_lines(anchor.text()).join(" ");
+    let href = anchor.value().attr("href")?;
+    let href_lower = href.to_lowercase();
+    let looks_like_attachment = [".pdf", ".doc", ".docx", ".xls", ".xlsx", ".zip"]
+        .iter()
+        .any(|extension| href_lower.contains(extension))
+        || href_lower.contains("/pub/");
+
+    if label.is_empty() || !looks_like_attachment {
+        return None;
+    }
+
+    Some(GpwReportAttachment {
+        label,
+        url: absolute_gpw_url(href),
     })
 }
 
@@ -317,12 +600,25 @@ mod tests {
     use super::*;
 
     const FIXTURE: &str = include_str!("../../fixtures/gpw_espi_ebi_listing.html");
+    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/gpw_espi_ebi_detail.html");
+    const DETAIL_NO_ATTACHMENTS_FIXTURE: &str =
+        include_str!("../../fixtures/gpw_espi_ebi_detail_no_attachments.html");
 
     struct FixtureFetcher;
 
     impl GpwPageFetcher for FixtureFetcher {
         fn fetch_report_page(&self) -> Result<String, GpwFetchError> {
             Ok(FIXTURE.to_owned())
+        }
+    }
+
+    struct FixtureDetailFetcher;
+
+    impl GpwDetailPageFetcher for FixtureDetailFetcher {
+        fn fetch_report_detail_page(&self, detail_url: &str) -> Result<String, GpwFetchError> {
+            assert_eq!(detail_url, "https://www.gpw.pl/komunikaty?fixture=detail");
+
+            Ok(DETAIL_FIXTURE.to_owned())
         }
     }
 
@@ -373,5 +669,150 @@ mod tests {
         assert_eq!(listings.len(), 2);
         assert!(listings[0].detail_url.starts_with(SOURCE_URL));
         assert!(listings[0].fetched_at.ends_with('Z'));
+    }
+
+    #[test]
+    fn gpw_listing_ajax_form_requests_espi_and_ebi_reports() {
+        let form = gpw_listing_ajax_form();
+
+        assert!(form.contains(&("action", "GPWEspiReportUnion")));
+        assert!(form.contains(&("start", "ajaxSearch")));
+        assert!(form.contains(&("page", "komunikaty")));
+        assert!(form.contains(&("format", "html")));
+        assert!(form.contains(&("categoryRaports[]", "ESPI")));
+        assert!(form.contains(&("categoryRaports[]", "EBI")));
+        assert!(form.contains(&("limit", "15")));
+    }
+
+    #[test]
+    fn parses_gpw_report_detail_fixture() {
+        let detail = parse_report_detail(DETAIL_FIXTURE).expect("fixture should parse");
+
+        assert_eq!(
+            detail.title,
+            "Oświadczenie w sprawie formy przekazywania raportów kwartalnych. NEW TECH CAPITAL SPÓŁKA AKCYJNA (PLECMNG00019)"
+        );
+        assert!(detail
+            .body_text
+            .contains("Zarząd NEW TECH CAPITAL S.A. informuje, że raporty kwartalne"));
+        assert!(detail.body_text.contains("Podstawa prawna"));
+        assert_eq!(detail.attachments.len(), 1);
+        assert_eq!(detail.attachments[0].label, "7_2026_oswiadczenie.pdf");
+        assert_eq!(
+            detail.attachments[0].url,
+            "https://www.gpw.pl/pub/GPW/ESPI/2026/7_2026_oswiadczenie.pdf"
+        );
+    }
+
+    #[test]
+    fn parses_gpw_report_detail_without_attachments() {
+        let detail =
+            parse_report_detail(DETAIL_NO_ATTACHMENTS_FIXTURE).expect("fixture should parse");
+
+        assert!(detail.title.contains("LUBAWA SPÓŁKA AKCYJNA"));
+        assert!(detail.body_text.contains("wysokim prawdopodobieństwie"));
+        assert!(detail.body_text.contains("odrębnym komunikacie bieżącym"));
+        assert!(!detail.body_text.contains("MESSAGE _ENGLISH VERSION_"));
+        assert!(!detail.body_text.contains("PODPISY OSÓB"));
+        assert!(detail.attachments.is_empty());
+    }
+
+    #[test]
+    fn fetches_and_parses_detail_with_injected_fetcher() {
+        let detail = fetch_report_detail(
+            &FixtureDetailFetcher,
+            "https://www.gpw.pl/komunikaty?fixture=detail",
+        )
+        .expect("fixture detail fetch should parse");
+
+        assert!(detail.title.contains("NEW TECH CAPITAL"));
+        assert!(detail.body_text.contains("raporty kwartalne"));
+        assert_eq!(detail.attachments.len(), 1);
+    }
+
+    #[test]
+    fn evaluates_detail_as_usable_when_title_and_body_exist() {
+        let detail = parse_report_detail(DETAIL_FIXTURE).expect("fixture should parse");
+        let evaluation = evaluate_report_detail(&detail);
+
+        assert!(evaluation.usable_for_ingestion);
+        assert!(evaluation.warnings.is_empty());
+    }
+
+    #[test]
+    fn evaluates_detail_as_unusable_when_body_is_missing() {
+        let detail = GpwReportDetail {
+            title: "Short report".to_owned(),
+            body_text: String::new(),
+            attachments: Vec::new(),
+        };
+        let evaluation = evaluate_report_detail(&detail);
+
+        assert!(!evaluation.usable_for_ingestion);
+        assert_eq!(
+            evaluation.warnings,
+            vec!["missing or very short report body".to_owned()]
+        );
+    }
+
+    #[test]
+    fn evaluates_detail_as_unusable_when_title_is_missing() {
+        let detail = GpwReportDetail {
+            title: String::new(),
+            body_text: "Long enough report body that should otherwise be usable for ingestion."
+                .repeat(2),
+            attachments: Vec::new(),
+        };
+        let evaluation = evaluate_report_detail(&detail);
+
+        assert!(!evaluation.usable_for_ingestion);
+        assert_eq!(evaluation.warnings, vec!["missing title".to_owned()]);
+    }
+
+    #[test]
+    fn evaluates_detail_sample_set_as_promotable_when_all_samples_are_usable() {
+        let details = vec![
+            parse_report_detail(DETAIL_FIXTURE).expect("fixture should parse"),
+            parse_report_detail(DETAIL_NO_ATTACHMENTS_FIXTURE).expect("fixture should parse"),
+        ];
+        let report = evaluate_report_detail_samples(&details);
+
+        assert_eq!(report.samples_checked, 2);
+        assert_eq!(report.usable_samples, 2);
+        assert_eq!(report.rejected_samples, 0);
+        assert!(report.warnings.is_empty());
+        assert!(report.promote_to_ingestion);
+    }
+
+    #[test]
+    fn evaluates_detail_sample_set_as_not_promotable_when_any_sample_is_rejected() {
+        let details = vec![
+            parse_report_detail(DETAIL_FIXTURE).expect("fixture should parse"),
+            GpwReportDetail {
+                title: "Broken detail".to_owned(),
+                body_text: String::new(),
+                attachments: Vec::new(),
+            },
+        ];
+        let report = evaluate_report_detail_samples(&details);
+
+        assert_eq!(report.samples_checked, 2);
+        assert_eq!(report.usable_samples, 1);
+        assert_eq!(report.rejected_samples, 1);
+        assert_eq!(
+            report.warnings,
+            vec!["sample 2: missing or very short report body".to_owned()]
+        );
+        assert!(!report.promote_to_ingestion);
+    }
+
+    #[test]
+    fn exposes_conservative_detail_fetch_policy() {
+        let policy = detail_fetch_policy();
+
+        assert!(policy.enabled_by_default);
+        assert_eq!(policy.max_details_per_refresh, 5);
+        assert_eq!(policy.min_delay_between_requests_seconds, 2);
+        assert!(policy.matched_items_only);
     }
 }

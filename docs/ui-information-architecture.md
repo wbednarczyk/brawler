@@ -233,7 +233,7 @@ Main regions:
 
 Event rows should follow the app-wide row interaction pattern: the row is the primary click target, and details expand inline under the selected event row. The collapsed row should be compact enough to scan many dates and should show date, company ticker, event type, source/manual marker, and status. Upcoming events should be visually prioritized by default, while historical rows should remain readable but less attention-grabbing. The expanded detail should show source URL, attribution, fetched timestamp, event timestamp/date, related company, and notes about manual corrections if present.
 
-The first implementation may use fixture-backed events. The UX should still assume future official-source events can coexist with manual events and user corrections without hiding where the date came from.
+The first implementation may use test-sample-backed events. The UX should still assume future official-source events can coexist with manual events and user corrections without hiding where the date came from.
 
 ## Sources Screen
 

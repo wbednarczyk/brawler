@@ -1,7 +1,13 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use crate::source_adapters::gpw_espi_ebi::{GpwReportListing, ADAPTER_ID, DISPLAY_NAME};
+use crate::source_adapters::gpw_company_registry::{
+    GpwCompanyRegistryEntry, ADAPTER_ID as GPW_REGISTRY_ADAPTER_ID,
+    SOURCE_URL as GPW_REGISTRY_SOURCE_URL,
+};
+use crate::source_adapters::gpw_espi_ebi::{
+    GpwReportAttachment, GpwReportListing, ADAPTER_ID, DISPLAY_NAME,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -51,7 +57,25 @@ impl AppState {
         &self,
         input: CompanyLookupInput,
     ) -> StorageResult<Option<CompanyLookupResult>> {
-        Ok(lookup_company(input))
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        lookup_company(&connection, input)
+    }
+
+    pub fn gpw_company_registry_needs_bootstrap_refresh(&self) -> StorageResult<bool> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        gpw_company_registry_needs_bootstrap_refresh(&connection)
+    }
+
+    pub fn refresh_gpw_company_registry(
+        &self,
+        entries: &[GpwCompanyRegistryEntry],
+        fetched_at: &str,
+    ) -> StorageResult<CompanyRegistryRefreshResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        refresh_gpw_company_registry(&mut connection, entries, fetched_at)
     }
 
     pub fn delete_company(&self, company_id: &str) -> StorageResult<()> {
@@ -114,6 +138,12 @@ impl AppState {
         ingest_gpw_report_listings(&mut connection, listings)
     }
 
+    pub fn tracks_gpw_listing_company(&self, ticker: &str, isin: &str) -> StorageResult<bool> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        Ok(find_company_for_gpw_listing(&connection, ticker, isin)?.is_some())
+    }
+
     pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -147,6 +177,12 @@ impl AppState {
         list_source_adapters(&connection)
     }
 
+    pub fn list_company_registry_entries(&self) -> StorageResult<Vec<CompanyRegistryEntry>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_company_registry_entries(&connection)
+    }
+
     pub fn record_source_adapter_error(&self, adapter_id: &str, error: &str) -> StorageResult<()> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -161,6 +197,17 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         record_source_adapter_attempt(&connection, adapter_id, trigger)
+    }
+
+    pub fn record_source_adapter_state(
+        &self,
+        adapter_id: &str,
+        key: &str,
+        value: &str,
+    ) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        set_source_adapter_state(&connection, adapter_id, key, value)
     }
 
     pub fn get_settings(&self) -> StorageResult<UserSettings> {
@@ -258,6 +305,16 @@ pub struct FeedItem {
     pub fetched_at: String,
     pub attribution: String,
     pub summary: String,
+    pub body_text: String,
+    pub attachments: Vec<FeedItemAttachment>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedItemAttachment {
+    pub id: String,
+    pub label: String,
+    pub url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -276,6 +333,9 @@ pub struct SourceIngestionResult {
     pub items_created: usize,
     pub items_matched: usize,
     pub items_unmatched: usize,
+    pub detail_items_attempted: usize,
+    pub detail_items_stored: usize,
+    pub detail_items_failed: usize,
     pub fetched_at: Option<String>,
 }
 
@@ -381,7 +441,24 @@ pub struct SourceAdapter {
     pub last_items_created: Option<i64>,
     pub last_items_matched: Option<i64>,
     pub last_items_unmatched: Option<i64>,
+    pub last_detail_items_attempted: Option<i64>,
+    pub last_detail_items_stored: Option<i64>,
+    pub last_detail_items_failed: Option<i64>,
+    pub last_detail_warning: Option<String>,
     pub markets: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyRegistryEntry {
+    pub exchange: String,
+    pub ticker: String,
+    pub qualified_ticker: String,
+    pub display_name: String,
+    pub isin: Option<String>,
+    pub source_url: String,
+    pub fetched_at: String,
+    pub tracked: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -414,7 +491,7 @@ pub struct SettingsUpdate {
     pub ai_analysis_mode: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyLookupInput {
     pub exchange: String,
@@ -423,19 +500,29 @@ pub struct CompanyLookupInput {
     pub isin: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone, Copy)]
+#[derive(Debug, Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyLookupResult {
-    pub exchange: &'static str,
-    pub ticker: &'static str,
-    pub qualified_ticker: &'static str,
-    pub display_name: &'static str,
-    pub isin: &'static str,
-    pub source: &'static str,
+    pub exchange: String,
+    pub ticker: String,
+    pub qualified_ticker: String,
+    pub display_name: String,
+    pub isin: String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyRegistryRefreshResult {
+    pub adapter_id: String,
+    pub entries_fetched: usize,
+    pub entries_upserted: usize,
+    pub entries_deactivated: usize,
+    pub fetched_at: String,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CompanyFixture {
+struct CompanySample {
     exchange: &'static str,
     ticker: &'static str,
     qualified_ticker: &'static str,
@@ -443,34 +530,48 @@ struct CompanyFixture {
     isin: &'static str,
 }
 
-const COMPANY_FIXTURES: &[CompanyFixture] = &[
-    CompanyFixture {
+const COMPANY_FIXTURES: &[CompanySample] = &[
+    CompanySample {
+        exchange: "GPW",
+        ticker: "11B",
+        qualified_ticker: "GPW:11B",
+        display_name: "11 BIT STUDIOS S.A.",
+        isin: "PL11BTS00015",
+    },
+    CompanySample {
         exchange: "GPW",
         ticker: "CDR",
         qualified_ticker: "GPW:CDR",
         display_name: "CD PROJEKT S.A.",
         isin: "PLOPTTC00011",
     },
-    CompanyFixture {
+    CompanySample {
         exchange: "GPW",
         ticker: "PKN",
         qualified_ticker: "GPW:PKN",
         display_name: "ORLEN S.A.",
         isin: "PLPKN0000018",
     },
-    CompanyFixture {
+    CompanySample {
         exchange: "GPW",
         ticker: "KGH",
         qualified_ticker: "GPW:KGH",
         display_name: "KGHM POLSKA MIEDZ S.A.",
         isin: "PLKGHM000017",
     },
-    CompanyFixture {
+    CompanySample {
         exchange: "GPW",
         ticker: "PZU",
         qualified_ticker: "GPW:PZU",
         display_name: "PZU S.A.",
         isin: "PLPZU0000011",
+    },
+    CompanySample {
+        exchange: "GPW",
+        ticker: "CLC",
+        qualified_ticker: "GPW:CLC",
+        display_name: "COLUMBUS ENERGY S.A.",
+        isin: "PLSTIGR00012",
     },
 ];
 
@@ -501,6 +602,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 4,
         name: "notebook_follow_ups",
         sql: include_str!("../migrations/0004_notebook_follow_ups.sql"),
+    },
+    Migration {
+        version: 5,
+        name: "feed_item_attachments",
+        sql: include_str!("../migrations/0005_feed_item_attachments.sql"),
+    },
+    Migration {
+        version: 6,
+        name: "company_registry",
+        sql: include_str!("../migrations/0006_company_registry.sql"),
     },
 ];
 
@@ -608,41 +719,254 @@ fn create_company(connection: &Connection, input: NewCompany) -> StorageResult<C
         .map_err(StorageError::from)
 }
 
-fn lookup_company(input: CompanyLookupInput) -> Option<CompanyLookupResult> {
+fn refresh_gpw_company_registry(
+    connection: &mut Connection,
+    entries: &[GpwCompanyRegistryEntry],
+    fetched_at: &str,
+) -> StorageResult<CompanyRegistryRefreshResult> {
+    let transaction = connection.transaction()?;
+    let mut entries_upserted = 0usize;
+
+    transaction.execute(
+        "
+        UPDATE company_registry_entries
+        SET active = 0,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE source_adapter_id = ?1
+        ",
+        [GPW_REGISTRY_ADAPTER_ID],
+    )?;
+
+    for entry in entries {
+        transaction.execute(
+            "
+            INSERT INTO company_registry_entries (
+                id,
+                exchange,
+                ticker,
+                qualified_ticker,
+                display_name,
+                isin,
+                source_adapter_id,
+                source_url,
+                fetched_at,
+                active
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)
+            ON CONFLICT(exchange, ticker) DO UPDATE SET
+                qualified_ticker = excluded.qualified_ticker,
+                display_name = excluded.display_name,
+                isin = excluded.isin,
+                source_adapter_id = excluded.source_adapter_id,
+                source_url = excluded.source_url,
+                fetched_at = excluded.fetched_at,
+                active = 1,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ",
+            params![
+                company_registry_entry_id(&entry.exchange, &entry.ticker),
+                entry.exchange,
+                entry.ticker,
+                entry.qualified_ticker,
+                entry.display_name,
+                empty_string_to_none(Some(entry.isin.clone())),
+                GPW_REGISTRY_ADAPTER_ID,
+                entry.source_url,
+                fetched_at,
+            ],
+        )?;
+        entries_upserted += 1;
+    }
+
+    let entries_deactivated = transaction.execute(
+        "
+        UPDATE company_registry_entries
+        SET active = 0,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE source_adapter_id = ?1
+            AND fetched_at <> ?2
+            AND active = 1
+        ",
+        params![GPW_REGISTRY_ADAPTER_ID, fetched_at],
+    )?;
+
+    transaction.execute(
+        "
+        UPDATE source_adapters
+        SET last_success_at = ?1,
+            last_error_at = NULL,
+            last_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![fetched_at, GPW_REGISTRY_ADAPTER_ID],
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        GPW_REGISTRY_ADAPTER_ID,
+        "last_items_fetched",
+        &entries.len().to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        GPW_REGISTRY_ADAPTER_ID,
+        "last_items_created",
+        &entries_upserted.to_string(),
+    )?;
+
+    transaction.commit()?;
+
+    Ok(CompanyRegistryRefreshResult {
+        adapter_id: GPW_REGISTRY_ADAPTER_ID.to_owned(),
+        entries_fetched: entries.len(),
+        entries_upserted,
+        entries_deactivated,
+        fetched_at: fetched_at.to_owned(),
+    })
+}
+
+fn lookup_company(
+    connection: &Connection,
+    input: CompanyLookupInput,
+) -> StorageResult<Option<CompanyLookupResult>> {
     let exchange = input.exchange.trim().to_uppercase();
     let ticker = input.ticker.as_deref().map(normalize_lookup_value);
     let isin = input.isin.as_deref().map(normalize_lookup_value);
     let display_name = input.display_name.as_deref().map(normalize_name_lookup);
 
-    COMPANY_FIXTURES
+    if let Some(result) =
+        lookup_company_registry(connection, &exchange, &ticker, &isin, &display_name)?
+    {
+        return Ok(Some(result));
+    }
+
+    Ok(COMPANY_FIXTURES
         .iter()
-        .find(|fixture| {
-            if fixture.exchange != exchange {
+        .find(|sample| {
+            if sample.exchange != exchange {
                 return false;
             }
 
             if let Some(ticker) = ticker.as_deref().filter(|value| !value.is_empty()) {
-                return fixture.ticker == ticker;
+                return sample.ticker == ticker;
             }
 
             if let Some(isin) = isin.as_deref().filter(|value| !value.is_empty()) {
-                return fixture.isin == isin;
+                return sample.isin == isin;
             }
 
             if let Some(display_name) = display_name.as_deref().filter(|value| value.len() >= 3) {
-                return normalize_name_lookup(fixture.display_name).contains(display_name);
+                return normalize_name_lookup(sample.display_name).contains(display_name);
             }
 
             false
         })
-        .map(|fixture| CompanyLookupResult {
-            exchange: fixture.exchange,
-            ticker: fixture.ticker,
-            qualified_ticker: fixture.qualified_ticker,
-            display_name: fixture.display_name,
-            isin: fixture.isin,
-            source: "local_fixture",
-        })
+        .map(|sample| CompanyLookupResult {
+            exchange: sample.exchange.to_owned(),
+            ticker: sample.ticker.to_owned(),
+            qualified_ticker: sample.qualified_ticker.to_owned(),
+            display_name: sample.display_name.to_owned(),
+            isin: sample.isin.to_owned(),
+            source: "local_sample".to_owned(),
+        }))
+}
+
+fn lookup_company_registry(
+    connection: &Connection,
+    exchange: &str,
+    ticker: &Option<String>,
+    isin: &Option<String>,
+    display_name: &Option<String>,
+) -> StorageResult<Option<CompanyLookupResult>> {
+    if let Some(ticker) = ticker.as_deref().filter(|value| !value.is_empty()) {
+        return connection
+            .query_row(
+                "
+                SELECT exchange, ticker, qualified_ticker, display_name, COALESCE(isin, '')
+                FROM company_registry_entries
+                WHERE exchange = ?1
+                    AND ticker = ?2
+                    AND active = 1
+                ORDER BY qualified_ticker
+                LIMIT 1
+                ",
+                params![exchange, ticker],
+                |row| registry_lookup_result(row, "gpw_registry"),
+            )
+            .optional()
+            .map_err(StorageError::from);
+    }
+
+    if let Some(isin) = isin.as_deref().filter(|value| !value.is_empty()) {
+        return connection
+            .query_row(
+                "
+                SELECT exchange, ticker, qualified_ticker, display_name, COALESCE(isin, '')
+                FROM company_registry_entries
+                WHERE exchange = ?1
+                    AND isin = ?2
+                    AND active = 1
+                ORDER BY qualified_ticker
+                LIMIT 1
+                ",
+                params![exchange, isin],
+                |row| registry_lookup_result(row, "gpw_registry"),
+            )
+            .optional()
+            .map_err(StorageError::from);
+    }
+
+    if let Some(display_name) = display_name
+        .as_deref()
+        .filter(|value| value.chars().count() >= 3)
+    {
+        return connection
+            .query_row(
+                "
+                SELECT exchange, ticker, qualified_ticker, display_name, COALESCE(isin, '')
+                FROM company_registry_entries
+                WHERE exchange = ?1
+                    AND UPPER(display_name) LIKE '%' || ?2 || '%'
+                    AND active = 1
+                ORDER BY qualified_ticker
+                LIMIT 1
+                ",
+                params![exchange, display_name],
+                |row| registry_lookup_result(row, "gpw_registry"),
+            )
+            .optional()
+            .map_err(StorageError::from);
+    }
+
+    Ok(None)
+}
+
+fn gpw_company_registry_needs_bootstrap_refresh(connection: &Connection) -> StorageResult<bool> {
+    let active_count: i64 = connection.query_row(
+        "
+        SELECT COUNT(*)
+        FROM company_registry_entries
+        WHERE source_adapter_id = ?1
+            AND active = 1
+        ",
+        [GPW_REGISTRY_ADAPTER_ID],
+        |row| row.get(0),
+    )?;
+
+    Ok(active_count <= COMPANY_FIXTURES.len() as i64)
+}
+
+fn registry_lookup_result(
+    row: &rusqlite::Row<'_>,
+    source: &str,
+) -> rusqlite::Result<CompanyLookupResult> {
+    Ok(CompanyLookupResult {
+        exchange: row.get(0)?,
+        ticker: row.get(1)?,
+        qualified_ticker: row.get(2)?,
+        display_name: row.get(3)?,
+        isin: row.get(4)?,
+        source: source.to_owned(),
+    })
 }
 
 fn delete_company(connection: &Connection, company_id: &str) -> StorageResult<()> {
@@ -789,7 +1113,8 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
             COALESCE(published_at, '') AS published_at,
             fetched_at,
             COALESCE(attribution, source_name) AS attribution,
-            COALESCE(summary, '') AS summary
+            COALESCE(summary, '') AS summary,
+            COALESCE(body_text, '') AS body_text
         FROM feed_items
         WHERE display_company IN (
             SELECT qualified_ticker FROM companies
@@ -798,7 +1123,7 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
         ",
     )?;
 
-    let rows = statement.query_map([], feed_item_from_row)?;
+    let rows = statement.query_map([], |row| feed_item_from_row(connection, row))?;
     let feed_items = rows.collect::<Result<Vec<_>, _>>()?;
 
     Ok(feed_items)
@@ -866,7 +1191,8 @@ fn ingest_gpw_report_listings(
 
     for listing in listings {
         let feed_item_id = feed_item_id(&listing.dedupe_key);
-        let matched_company = find_company_by_isin(&transaction, &listing.isin)?;
+        let matched_company =
+            find_company_for_gpw_listing(&transaction, &listing.company_ticker, &listing.isin)?;
         let display_company = matched_company
             .as_ref()
             .map(|company| company.qualified_ticker.clone())
@@ -890,12 +1216,13 @@ fn ingest_gpw_report_listings(
                 dedupe_key,
                 attribution,
                 display_company
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, 'pl', ?7, ?8, ?9, 'GPW', ?10)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'pl', ?8, ?9, ?10, 'GPW', ?11)
             ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
                 type = excluded.type,
                 source_name = excluded.source_name,
                 source_url = excluded.source_url,
                 title = excluded.title,
+                body_text = COALESCE(excluded.body_text, feed_items.body_text),
                 language = excluded.language,
                 published_at = excluded.published_at,
                 fetched_at = excluded.fetched_at,
@@ -910,6 +1237,7 @@ fn ingest_gpw_report_listings(
                 DISPLAY_NAME,
                 listing.detail_url,
                 listing.title,
+                listing.body_text.as_deref(),
                 listing.published_at,
                 listing.fetched_at,
                 listing.dedupe_key,
@@ -930,13 +1258,17 @@ fn ingest_gpw_report_listings(
             transaction.execute(
                 "
                 INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
-                VALUES (?1, ?2, 'isin')
+                VALUES (?1, ?2, ?3)
                 ",
-                params![feed_item_id, company.id],
+                params![feed_item_id, company.id, company.match_type],
             )?;
             items_matched += 1;
         } else {
             items_unmatched += 1;
+        }
+
+        if listing.body_text.is_some() {
+            replace_feed_item_attachments(&transaction, &feed_item_id, &listing.attachments)?;
         }
     }
 
@@ -984,6 +1316,12 @@ fn ingest_gpw_report_listings(
         items_created,
         items_matched,
         items_unmatched,
+        detail_items_attempted: 0,
+        detail_items_stored: listings
+            .iter()
+            .filter(|listing| listing.body_text.is_some())
+            .count(),
+        detail_items_failed: 0,
         fetched_at: Some(fetched_at),
     })
 }
@@ -991,6 +1329,61 @@ fn ingest_gpw_report_listings(
 struct MatchedCompany {
     id: String,
     qualified_ticker: String,
+    match_type: &'static str,
+}
+
+fn find_company_for_gpw_listing(
+    connection: &Connection,
+    ticker: &str,
+    isin: &str,
+) -> StorageResult<Option<MatchedCompany>> {
+    if let Some(company) = find_company_by_ticker(connection, "GPW", ticker)? {
+        return Ok(Some(company));
+    }
+
+    if let Some(mapped_ticker) = gpw_registry_ticker_for_isin(connection, isin)? {
+        if let Some(company) = find_company_by_ticker(connection, "GPW", &mapped_ticker)? {
+            return Ok(Some(company));
+        }
+    }
+
+    if let Some(company) = find_company_by_isin(connection, isin)? {
+        return Ok(Some(company));
+    }
+
+    Ok(None)
+}
+
+fn find_company_by_ticker(
+    connection: &Connection,
+    exchange: &str,
+    ticker: &str,
+) -> StorageResult<Option<MatchedCompany>> {
+    let ticker = ticker.trim();
+    if ticker.is_empty() {
+        return Ok(None);
+    }
+
+    connection
+        .query_row(
+            "
+            SELECT id, qualified_ticker
+            FROM companies
+            WHERE exchange = ?1 AND ticker = ?2
+            ORDER BY qualified_ticker
+            LIMIT 1
+            ",
+            params![exchange.trim().to_uppercase(), ticker.to_uppercase()],
+            |row| {
+                Ok(MatchedCompany {
+                    id: row.get(0)?,
+                    qualified_ticker: row.get(1)?,
+                    match_type: "ticker",
+                })
+            },
+        )
+        .optional()
+        .map_err(StorageError::from)
 }
 
 fn find_company_by_isin(
@@ -1015,11 +1408,71 @@ fn find_company_by_isin(
                 Ok(MatchedCompany {
                     id: row.get(0)?,
                     qualified_ticker: row.get(1)?,
+                    match_type: "isin",
                 })
             },
         )
         .optional()
         .map_err(StorageError::from)
+}
+
+fn gpw_registry_ticker_for_isin(
+    connection: &Connection,
+    isin: &str,
+) -> StorageResult<Option<String>> {
+    let isin = isin.trim();
+    if isin.is_empty() {
+        return Ok(None);
+    }
+
+    connection
+        .query_row(
+            "
+            SELECT ticker
+            FROM company_registry_entries
+            WHERE exchange = 'GPW'
+                AND isin = ?1
+                AND active = 1
+            ORDER BY qualified_ticker
+            LIMIT 1
+            ",
+            [isin.to_uppercase()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn replace_feed_item_attachments(
+    connection: &Connection,
+    feed_item_id: &str,
+    attachments: &[GpwReportAttachment],
+) -> StorageResult<()> {
+    connection.execute(
+        "DELETE FROM feed_item_attachments WHERE feed_item_id = ?1",
+        [feed_item_id],
+    )?;
+
+    for (position, attachment) in attachments.iter().enumerate() {
+        connection.execute(
+            "
+            INSERT INTO feed_item_attachments (id, feed_item_id, label, url, position)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(feed_item_id, url) DO UPDATE SET
+                label = excluded.label,
+                position = excluded.position
+            ",
+            params![
+                feed_item_attachment_id(feed_item_id, &attachment.url),
+                feed_item_id,
+                attachment.label,
+                attachment.url,
+                position as i64,
+            ],
+        )?;
+    }
+
+    Ok(())
 }
 
 fn feed_item_exists(connection: &Connection, feed_item_id: &str) -> StorageResult<bool> {
@@ -1270,9 +1723,18 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             source_adapters.fetch_mode,
             source_adapters.enabled,
             source_adapters.default_poll_interval_seconds,
-            'https://www.gpw.pl/komunikaty' AS source_url,
-            'Serialized requests, default 15 minute poll interval' AS rate_limit_policy,
-            'Uses the public GPW ESPI/EBI listing page. Paid processed GPW data products may be evaluated later.' AS policy_note,
+            CASE source_adapters.id
+                WHEN 'gpw-company-registry' THEN ?1
+                ELSE 'https://www.gpw.pl/komunikaty'
+            END AS source_url,
+            CASE source_adapters.id
+                WHEN 'gpw-company-registry' THEN 'Manual refresh plus later daily or weekly scheduled refresh'
+                ELSE 'Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart'
+            END AS rate_limit_policy,
+            CASE source_adapters.id
+                WHEN 'gpw-company-registry' THEN 'Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.'
+                ELSE 'Uses GPW public-page listing fragments and matched report detail pages for official body text and attachments.'
+            END AS policy_note,
             source_adapter_attempts.state_value AS last_attempt_at,
             source_adapter_triggers.state_value AS last_trigger,
             source_adapters.last_success_at,
@@ -1302,6 +1764,30 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
                 WHERE source_adapter_id = source_adapters.id
                     AND state_key = 'last_items_unmatched'
             ) AS INTEGER) AS last_items_unmatched,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_detail_items_attempted'
+            ) AS INTEGER) AS last_detail_items_attempted,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_detail_items_stored'
+            ) AS INTEGER) AS last_detail_items_stored,
+            CAST((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_detail_items_failed'
+            ) AS INTEGER) AS last_detail_items_failed,
+            NULLIF((
+                SELECT state_value
+                FROM source_adapter_state
+                WHERE source_adapter_id = source_adapters.id
+                    AND state_key = 'last_detail_warning'
+            ), '') AS last_detail_warning,
             COALESCE(GROUP_CONCAT(source_adapter_markets.market, ','), '') AS markets
         FROM source_adapters
         LEFT JOIN source_adapter_state AS source_adapter_attempts
@@ -1328,8 +1814,8 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
         ",
     )?;
 
-    let rows = statement.query_map([], |row| {
-        let markets: String = row.get(18)?;
+    let rows = statement.query_map([GPW_REGISTRY_SOURCE_URL], |row| {
+        let markets: String = row.get(22)?;
 
         Ok(SourceAdapter {
             id: row.get(0)?,
@@ -1350,6 +1836,10 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             last_items_created: row.get(15)?,
             last_items_matched: row.get(16)?,
             last_items_unmatched: row.get(17)?,
+            last_detail_items_attempted: row.get(18)?,
+            last_detail_items_stored: row.get(19)?,
+            last_detail_items_failed: row.get(20)?,
+            last_detail_warning: row.get(21)?,
             markets: markets
                 .split(',')
                 .filter(|market| !market.is_empty())
@@ -1361,6 +1851,49 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
     let adapters = rows.collect::<Result<Vec<_>, _>>()?;
 
     Ok(adapters)
+}
+
+fn list_company_registry_entries(
+    connection: &Connection,
+) -> StorageResult<Vec<CompanyRegistryEntry>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            registry.exchange,
+            registry.ticker,
+            registry.qualified_ticker,
+            registry.display_name,
+            registry.isin,
+            registry.source_url,
+            registry.fetched_at,
+            EXISTS(
+                SELECT 1
+                FROM companies
+                WHERE companies.exchange = registry.exchange
+                    AND companies.ticker = registry.ticker
+            ) AS tracked
+        FROM company_registry_entries AS registry
+        WHERE registry.source_adapter_id = ?1
+            AND registry.active = 1
+        ORDER BY registry.ticker
+        ",
+    )?;
+
+    let rows = statement.query_map([GPW_REGISTRY_ADAPTER_ID], |row| {
+        Ok(CompanyRegistryEntry {
+            exchange: row.get(0)?,
+            ticker: row.get(1)?,
+            qualified_ticker: row.get(2)?,
+            display_name: row.get(3)?,
+            isin: row.get(4)?,
+            source_url: row.get(5)?,
+            fetched_at: row.get(6)?,
+            tracked: row.get(7)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
 }
 
 fn record_source_adapter_attempt(
@@ -1584,21 +2117,27 @@ fn get_feed_item(connection: &Connection, feed_item_id: &str) -> StorageResult<F
                 COALESCE(published_at, '') AS published_at,
                 fetched_at,
                 COALESCE(attribution, source_name) AS attribution,
-                COALESCE(summary, '') AS summary
+                COALESCE(summary, '') AS summary,
+                COALESCE(body_text, '') AS body_text
             FROM feed_items
             WHERE id = ?1
             ",
             [feed_item_id],
-            feed_item_from_row,
+            |row| feed_item_from_row(connection, row),
         )
         .map_err(StorageError::from)
 }
 
-fn feed_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FeedItem> {
+fn feed_item_from_row(
+    connection: &Connection,
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<FeedItem> {
     let read: bool = row.get(6)?;
+    let id: String = row.get(0)?;
 
     Ok(FeedItem {
-        id: row.get(0)?,
+        attachments: feed_item_attachments(connection, &id)?,
+        id,
         company: row.get(1)?,
         item_type: row.get(2)?,
         source: row.get(3)?,
@@ -1612,7 +2151,31 @@ fn feed_item_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<FeedItem> {
         fetched_at: row.get(11)?,
         attribution: row.get(12)?,
         summary: row.get(13)?,
+        body_text: row.get(14)?,
     })
+}
+
+fn feed_item_attachments(
+    connection: &Connection,
+    feed_item_id: &str,
+) -> rusqlite::Result<Vec<FeedItemAttachment>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id, label, url
+        FROM feed_item_attachments
+        WHERE feed_item_id = ?1
+        ORDER BY position, id
+        ",
+    )?;
+    let rows = statement.query_map([feed_item_id], |row| {
+        Ok(FeedItemAttachment {
+            id: row.get(0)?,
+            label: row.get(1)?,
+            url: row.get(2)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
 }
 
 fn get_notebook_entry(
@@ -1743,6 +2306,14 @@ fn feed_item_id(dedupe_key: &str) -> String {
     format!("feed_{}", slug_part(dedupe_key))
 }
 
+fn feed_item_attachment_id(feed_item_id: &str, url: &str) -> String {
+    format!(
+        "feed_attachment_{}_{}",
+        slug_part(feed_item_id),
+        slug_part(url)
+    )
+}
+
 fn normalize_tags(tags: Vec<String>) -> Vec<String> {
     let mut normalized = tags
         .into_iter()
@@ -1770,7 +2341,7 @@ fn validate_allowed_notebook_value(
     }
 }
 
-fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
+fn seed_sample_feed_items(connection: &Connection) -> StorageResult<()> {
     let feed_item_count: i64 =
         connection.query_row("SELECT COUNT(*) FROM feed_items", [], |row| row.get(0))?;
 
@@ -1778,66 +2349,66 @@ fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
         return Ok(());
     }
 
-    let fixtures = [
+    let samples = [
         (
-            "feed_fixture_cdr_report",
+            "feed_sample_cdr_report",
             "Official report",
             "GPW ESPI/EBI",
             "https://www.gpw.pl/komunikaty",
             "Current report placeholder for watchlist company",
-            "Fixture official report used to validate feed filtering and detail rendering.",
+            "Sample official report used to validate feed filtering and detail rendering.",
             "pl",
             "2026-05-29T09:12:00Z",
             "2026-05-29T09:15:00Z",
-            "gpw-espi-ebi:fixture:cdr-report",
+            "gpw-espi-ebi:sample:cdr-report",
             false,
             false,
             "GPW",
             "GPW:CDR",
         ),
         (
-            "feed_fixture_pkn_news",
+            "feed_sample_pkn_news",
             "News",
-            "Fixture feed",
-            "https://example.local/fixture/pkn",
-            "Fixture item proving the inbox layout can scan dense rows",
-            "Saved fixture item used to validate the saved filter before real ingestion exists.",
+            "Sample feed",
+            "https://example.local/sample/pkn",
+            "Sample item proving the inbox layout can scan dense rows",
+            "Saved sample item used to validate the saved filter before real ingestion exists.",
             "en",
             "2026-05-28T16:00:00Z",
             "2026-05-28T16:03:00Z",
-            "fixture:pkn-news",
+            "sample:pkn-news",
             true,
             true,
-            "Fixture",
+            "Sample",
             "GPW:PKN",
         ),
         (
-            "feed_fixture_kgh_transcript",
+            "feed_sample_kgh_transcript",
             "Transcript",
-            "Local fixture",
-            "https://example.local/fixture/kgh-transcript",
+            "Local sample",
+            "https://example.local/sample/kgh-transcript",
             "Transcript-derived note candidate waits for future provider work",
             "Transcript placeholder for future video and notebook workflows.",
             "en",
             "2026-05-25T10:00:00Z",
             "2026-05-25T10:00:00Z",
-            "fixture:kgh-transcript",
+            "sample:kgh-transcript",
             true,
             false,
-            "Fixture",
+            "Sample",
             "GPW:KGH",
         ),
         (
-            "feed_fixture_pzu_report",
+            "feed_sample_pzu_report",
             "Official report",
             "GPW ESPI/EBI",
             "https://www.gpw.pl/komunikaty",
             "PZU governance report placeholder",
-            "Fourth fixture item keeps the sample feed aligned with local GPW lookup companies.",
+            "Fourth sample item keeps the sample feed aligned with local GPW lookup companies.",
             "pl",
             "2026-05-24T12:00:00Z",
             "2026-05-24T12:05:00Z",
-            "gpw-espi-ebi:fixture:pzu-report",
+            "gpw-espi-ebi:sample:pzu-report",
             true,
             false,
             "GPW",
@@ -1845,7 +2416,7 @@ fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
         ),
     ];
 
-    for fixture in fixtures {
+    for sample in samples {
         connection.execute(
             "
             INSERT OR IGNORE INTO feed_items (
@@ -1867,11 +2438,64 @@ fn seed_fixture_feed_items(connection: &Connection) -> StorageResult<()> {
             ) VALUES (?1, ?2, 'gpw-espi-ebi', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
             ",
             params![
-                fixture.0, fixture.1, fixture.2, fixture.3, fixture.4, fixture.5, fixture.6,
-                fixture.7, fixture.8, fixture.9, fixture.10, fixture.11, fixture.12, fixture.13
+                sample.0, sample.1, sample.2, sample.3, sample.4, sample.5, sample.6, sample.7,
+                sample.8, sample.9, sample.10, sample.11, sample.12, sample.13
             ],
         )?;
     }
+
+    Ok(())
+}
+
+fn seed_company_registry_entries(connection: &Connection) -> StorageResult<()> {
+    let registry_count: i64 =
+        connection.query_row("SELECT COUNT(*) FROM company_registry_entries", [], |row| {
+            row.get(0)
+        })?;
+
+    if registry_count > 0 {
+        return Ok(());
+    }
+
+    let fetched_at = current_timestamp(connection)?;
+
+    for sample in COMPANY_FIXTURES {
+        let source_url = format!("https://www.gpw.pl/spolka?isin={}", sample.isin);
+        connection.execute(
+            "
+            INSERT OR IGNORE INTO company_registry_entries (
+                id,
+                exchange,
+                ticker,
+                qualified_ticker,
+                display_name,
+                isin,
+                source_adapter_id,
+                source_url,
+                fetched_at,
+                active
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)
+            ",
+            params![
+                company_registry_entry_id(sample.exchange, sample.ticker),
+                sample.exchange,
+                sample.ticker,
+                sample.qualified_ticker,
+                sample.display_name,
+                sample.isin,
+                GPW_REGISTRY_ADAPTER_ID,
+                source_url,
+                fetched_at,
+            ],
+        )?;
+    }
+
+    set_source_adapter_state(
+        connection,
+        GPW_REGISTRY_ADAPTER_ID,
+        "last_items_fetched",
+        &COMPANY_FIXTURES.len().to_string(),
+    )?;
 
     Ok(())
 }
@@ -1909,7 +2533,8 @@ fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {
     }
 
     transaction.commit()?;
-    seed_fixture_feed_items(connection)?;
+    seed_sample_feed_items(connection)?;
+    seed_company_registry_entries(connection)?;
     Ok(())
 }
 
@@ -1923,6 +2548,14 @@ fn count_rows(connection: &Connection, table_name: &str) -> StorageResult<i64> {
 
 fn company_id(exchange: &str, ticker: &str) -> String {
     format!("company_{}_{}", slug_part(exchange), slug_part(ticker))
+}
+
+fn company_registry_entry_id(exchange: &str, ticker: &str) -> String {
+    format!(
+        "company_registry_{}_{}",
+        slug_part(exchange),
+        slug_part(ticker)
+    )
 }
 
 fn watchlist_id(name: &str) -> String {
@@ -1978,7 +2611,7 @@ mod tests {
             })
             .expect("schema_migrations should exist");
 
-        assert_eq!(migration_count, 4);
+        assert_eq!(migration_count, 6);
 
         let company_table_exists: bool = connection
             .query_row(
@@ -1996,7 +2629,7 @@ mod tests {
     }
 
     #[test]
-    fn seeds_default_settings_and_gpw_adapter() {
+    fn seeds_default_settings_and_gpw_adapters() {
         let connection = open_in_memory_database().expect("database should initialize");
 
         let theme: String = connection
@@ -2014,9 +2647,17 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("GPW adapter should be seeded");
+        let registry_adapter_name: String = connection
+            .query_row(
+                "SELECT display_name FROM source_adapters WHERE id = 'gpw-company-registry'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("GPW registry adapter should be seeded");
 
         assert_eq!(theme, "dark");
         assert_eq!(adapter_name, "GPW ESPI/EBI");
+        assert_eq!(registry_adapter_name, "GPW Company Registry");
     }
 
     #[test]
@@ -2095,14 +2736,14 @@ mod tests {
         let connection = open_in_memory_database().expect("database should initialize");
         let status = database_status(&connection).expect("status should be available");
 
-        assert_eq!(status.applied_migrations, 4);
+        assert_eq!(status.applied_migrations, 6);
         assert_eq!(status.companies, 0);
-        assert_eq!(status.source_adapters, 1);
+        assert_eq!(status.source_adapters, 2);
         assert_eq!(status.settings, 7);
     }
 
     #[test]
-    fn seeds_and_lists_fixture_feed_items() {
+    fn seeds_and_lists_sample_feed_items() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
         state
@@ -2114,7 +2755,7 @@ mod tests {
                 cik: None,
                 lei: None,
             })
-            .expect("tracked fixture company should create");
+            .expect("tracked sample company should create");
         state
             .create_company(NewCompany {
                 exchange: "GPW".to_owned(),
@@ -2124,7 +2765,7 @@ mod tests {
                 cik: None,
                 lei: None,
             })
-            .expect("tracked fixture company should create");
+            .expect("tracked sample company should create");
         state
             .create_company(NewCompany {
                 exchange: "GPW".to_owned(),
@@ -2134,7 +2775,7 @@ mod tests {
                 cik: None,
                 lei: None,
             })
-            .expect("tracked fixture company should create");
+            .expect("tracked sample company should create");
         state
             .create_company(NewCompany {
                 exchange: "GPW".to_owned(),
@@ -2144,12 +2785,12 @@ mod tests {
                 cik: None,
                 lei: None,
             })
-            .expect("tracked fixture company should create");
+            .expect("tracked sample company should create");
 
         let feed_items = state.list_feed_items().expect("feed items should list");
 
         assert_eq!(feed_items.len(), 4);
-        assert_eq!(feed_items[0].id, "feed_fixture_cdr_report");
+        assert_eq!(feed_items[0].id, "feed_sample_cdr_report");
         assert_eq!(feed_items[0].company, "GPW:CDR");
         assert!(feed_items[0].unread);
     }
@@ -2167,11 +2808,11 @@ mod tests {
                 cik: None,
                 lei: None,
             })
-            .expect("tracked fixture company should create");
+            .expect("tracked sample company should create");
 
         let updated = state
             .update_feed_item_state(FeedItemStateInput {
-                id: "feed_fixture_cdr_report".to_owned(),
+                id: "feed_sample_cdr_report".to_owned(),
                 read: Some(true),
                 saved: Some(true),
             })
@@ -2183,8 +2824,8 @@ mod tests {
         let feed_items = state.list_feed_items().expect("feed items should list");
         let cdr = feed_items
             .iter()
-            .find(|item| item.id == "feed_fixture_cdr_report")
-            .expect("CDR fixture should remain present");
+            .find(|item| item.id == "feed_sample_cdr_report")
+            .expect("CDR sample should remain present");
 
         assert!(!cdr.unread);
         assert!(cdr.saved);
@@ -2211,6 +2852,7 @@ mod tests {
                     report_type: "Bieżący".to_owned(),
                     system: "ESPI".to_owned(),
                     report_number: "7/2026".to_owned(),
+                    company_ticker: "NTC".to_owned(),
                     company_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA".to_owned(),
                     isin: "PLECMNG00019".to_owned(),
                     title: "Oświadczenie w sprawie formy przekazywania raportów kwartalnych."
@@ -2220,11 +2862,18 @@ mod tests {
                     fetched_at: "2026-05-30T17:30:00Z".to_owned(),
                     dedupe_key: "gpw-espi-ebi:espi:PLECMNG00019:7/2026:2026-05-30T17:13:31+02:00"
                         .to_owned(),
+                    body_text: Some("Official report body from GPW detail page.".to_owned()),
+                    attachments: vec![GpwReportAttachment {
+                        label: "7_2026_oswiadczenie.pdf".to_owned(),
+                        url: "https://www.gpw.pl/pub/GPW/ESPI/2026/7_2026_oswiadczenie.pdf"
+                            .to_owned(),
+                    }],
                 },
                 GpwReportListing {
                     report_type: "Bieżący".to_owned(),
                     system: "ESPI".to_owned(),
                     report_number: "9/2026".to_owned(),
+                    company_ticker: "UNK".to_owned(),
                     company_name: "UNTRACKED S.A.".to_owned(),
                     isin: "PLUNTRK00001".to_owned(),
                     title: "Untracked company report".to_owned(),
@@ -2233,6 +2882,8 @@ mod tests {
                     fetched_at: "2026-05-30T18:30:00Z".to_owned(),
                     dedupe_key: "gpw-espi-ebi:espi:PLUNTRK00001:9/2026:2026-05-30T18:13:31+02:00"
                         .to_owned(),
+                    body_text: None,
+                    attachments: Vec::new(),
                 },
             ])
             .expect("listings should ingest");
@@ -2265,6 +2916,9 @@ mod tests {
         assert_eq!(ntc.item_type, "Official report");
         assert_eq!(ntc.attribution, "GPW");
         assert_eq!(ntc.language, "pl");
+        assert_eq!(ntc.body_text, "Official report body from GPW detail page.");
+        assert_eq!(ntc.attachments.len(), 1);
+        assert_eq!(ntc.attachments[0].label, "7_2026_oswiadczenie.pdf");
 
         assert!(visible_items
             .iter()
@@ -2279,6 +2933,108 @@ mod tests {
             .expect("unmatched ingested listing should be diagnosable");
 
         assert_eq!(untracked.company_name, "UNTRACKED S.A.");
+    }
+
+    #[test]
+    fn ingests_gpw_listing_by_registry_ticker_when_local_isin_is_missing() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "11B".to_owned(),
+                display_name: "11 BIT STUDIOS S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked company should create");
+
+        let result = state
+            .ingest_gpw_report_listings(&[GpwReportListing {
+                report_type: "Bieżący".to_owned(),
+                system: "ESPI".to_owned(),
+                report_number: "20/2026".to_owned(),
+                company_ticker: String::new(),
+                company_name: "11 BIT STUDIOS SPÓŁKA AKCYJNA".to_owned(),
+                isin: "PL11BTS00015".to_owned(),
+                title: "Informacja o zawarciu znaczącej umowy".to_owned(),
+                detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=777777".to_owned(),
+                published_at: "2026-05-30T17:13:31+02:00".to_owned(),
+                fetched_at: "2026-05-30T17:30:00Z".to_owned(),
+                dedupe_key: "gpw-espi-ebi:espi:PL11BTS00015:20/2026:2026-05-30T17:13:31+02:00"
+                    .to_owned(),
+                body_text: None,
+                attachments: Vec::new(),
+            }])
+            .expect("listing should ingest");
+
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 0);
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        let item = visible_items
+            .iter()
+            .find(|item| item.company == "GPW:11B")
+            .expect("ticker-registry matched listing should be visible");
+
+        assert_eq!(item.title, "Informacja o zawarciu znaczącej umowy");
+    }
+
+    #[test]
+    fn replaces_gpw_detail_attachments_when_accepted_detail_has_none() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "NTC".to_owned(),
+                display_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA".to_owned(),
+                isin: Some("PLECMNG00019".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked company should create");
+
+        let listing = GpwReportListing {
+            report_type: "Bieżący".to_owned(),
+            system: "ESPI".to_owned(),
+            report_number: "7/2026".to_owned(),
+            company_ticker: "NTC".to_owned(),
+            company_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA".to_owned(),
+            isin: "PLECMNG00019".to_owned(),
+            title: "Oświadczenie w sprawie formy przekazywania raportów kwartalnych.".to_owned(),
+            detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=123456".to_owned(),
+            published_at: "2026-05-30T17:13:31+02:00".to_owned(),
+            fetched_at: "2026-05-30T17:30:00Z".to_owned(),
+            dedupe_key: "gpw-espi-ebi:espi:PLECMNG00019:7/2026:2026-05-30T17:13:31+02:00"
+                .to_owned(),
+            body_text: Some("Official report body from GPW detail page.".to_owned()),
+            attachments: vec![GpwReportAttachment {
+                label: "7_2026_oswiadczenie.pdf".to_owned(),
+                url: "https://www.gpw.pl/pub/GPW/ESPI/2026/7_2026_oswiadczenie.pdf".to_owned(),
+            }],
+        };
+
+        state
+            .ingest_gpw_report_listings(std::slice::from_ref(&listing))
+            .expect("listing should ingest");
+
+        let mut replacement = listing;
+        replacement.body_text =
+            Some("Updated official report body from GPW detail page.".to_owned());
+        replacement.attachments = Vec::new();
+        state
+            .ingest_gpw_report_listings(&[replacement])
+            .expect("replacement listing should ingest");
+
+        let feed_items = state.list_feed_items().expect("feed items should list");
+        let ntc = feed_items
+            .iter()
+            .find(|item| item.company == "GPW:NTC")
+            .expect("matched GPW listing should be visible");
+
+        assert!(ntc.attachments.is_empty());
     }
 
     #[test]
@@ -2343,7 +3099,7 @@ mod tests {
                 follow_up_date: Some("2026-11-30".to_owned()),
                 origins: vec![NewNotebookOrigin {
                     source_type: "feed_item".to_owned(),
-                    source_id: Some("feed_fixture_cdr_report".to_owned()),
+                    source_id: Some("feed_sample_cdr_report".to_owned()),
                     source_url: Some("https://www.gpw.pl/komunikaty".to_owned()),
                     label: Some("GPW report".to_owned()),
                 }],
@@ -2389,7 +3145,7 @@ mod tests {
         assert_eq!(updated.origins[0].source_type, "feed_item");
         assert_eq!(
             updated.origins[0].source_id.as_deref(),
-            Some("feed_fixture_cdr_report")
+            Some("feed_sample_cdr_report")
         );
         assert_eq!(
             updated.origins[0].source_url.as_deref(),
@@ -2407,11 +3163,23 @@ mod tests {
             .list_source_adapters()
             .expect("source adapters should list");
 
-        assert_eq!(adapters.len(), 1);
-        assert_eq!(adapters[0].id, "gpw-espi-ebi");
-        assert_eq!(adapters[0].display_name, "GPW ESPI/EBI");
-        assert_eq!(adapters[0].markets, vec!["GPW".to_owned()]);
-        assert!(adapters[0].enabled);
+        assert_eq!(adapters.len(), 2);
+
+        let report_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "gpw-espi-ebi")
+            .expect("GPW report adapter should exist");
+        assert_eq!(report_adapter.display_name, "GPW ESPI/EBI");
+        assert_eq!(report_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(report_adapter.enabled);
+
+        let registry_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "gpw-company-registry")
+            .expect("GPW registry adapter should exist");
+        assert_eq!(registry_adapter.display_name, "GPW Company Registry");
+        assert_eq!(registry_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(registry_adapter.enabled);
     }
 
     #[test]
@@ -2518,32 +3286,77 @@ mod tests {
     }
 
     #[test]
-    fn looks_up_company_fixture_by_ticker() {
-        let result = lookup_company(CompanyLookupInput {
-            exchange: "gpw".to_owned(),
-            ticker: Some("cdr".to_owned()),
-            display_name: None,
-            isin: None,
-        })
-        .expect("fixture should match");
+    fn looks_up_company_sample_by_ticker() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let result = state
+            .lookup_company(CompanyLookupInput {
+                exchange: "gpw".to_owned(),
+                ticker: Some("cdr".to_owned()),
+                display_name: None,
+                isin: None,
+            })
+            .expect("lookup should succeed")
+            .expect("registry should match");
 
         assert_eq!(result.qualified_ticker, "GPW:CDR");
         assert_eq!(result.display_name, "CD PROJEKT S.A.");
         assert_eq!(result.isin, "PLOPTTC00011");
+        assert_eq!(result.source, "gpw_registry");
     }
 
     #[test]
-    fn looks_up_company_fixture_by_isin() {
-        let result = lookup_company(CompanyLookupInput {
-            exchange: "GPW".to_owned(),
-            ticker: None,
-            display_name: None,
-            isin: Some("plpzu0000011".to_owned()),
-        })
-        .expect("fixture should match");
+    fn looks_up_company_sample_by_isin() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let result = state
+            .lookup_company(CompanyLookupInput {
+                exchange: "GPW".to_owned(),
+                ticker: None,
+                display_name: None,
+                isin: Some("plpzu0000011".to_owned()),
+            })
+            .expect("lookup should succeed")
+            .expect("registry should match");
 
         assert_eq!(result.ticker, "PZU");
         assert_eq!(result.display_name, "PZU S.A.");
+        assert_eq!(result.source, "gpw_registry");
+    }
+
+    #[test]
+    fn refreshes_gpw_company_registry_cache() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let entries = vec![GpwCompanyRegistryEntry {
+            exchange: "GPW".to_owned(),
+            ticker: "TST".to_owned(),
+            qualified_ticker: "GPW:TST".to_owned(),
+            display_name: "TEST COMPANY S.A.".to_owned(),
+            isin: "PLTEST000001".to_owned(),
+            source_url: "https://www.gpw.pl/spolka?isin=PLTEST000001".to_owned(),
+        }];
+
+        let result = state
+            .refresh_gpw_company_registry(&entries, "2026-05-31T12:00:00Z")
+            .expect("registry refresh should succeed");
+
+        assert_eq!(result.adapter_id, GPW_REGISTRY_ADAPTER_ID);
+        assert_eq!(result.entries_fetched, 1);
+        assert_eq!(result.entries_upserted, 1);
+
+        let lookup = state
+            .lookup_company(CompanyLookupInput {
+                exchange: "GPW".to_owned(),
+                ticker: Some("tst".to_owned()),
+                display_name: None,
+                isin: None,
+            })
+            .expect("lookup should succeed")
+            .expect("refreshed registry entry should match");
+
+        assert_eq!(lookup.qualified_ticker, "GPW:TST");
+        assert_eq!(lookup.source, "gpw_registry");
     }
 
     #[test]
