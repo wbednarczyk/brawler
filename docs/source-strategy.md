@@ -18,8 +18,9 @@ See also [Product Spec](product-spec.md), [Data Model](data-model.md), [Contract
 
 V1 source priority:
 
-1. GPW ESPI/EBI official reports.
-2. Selected Polish public/RSS media and article/news sources after source policy review.
+1. Bankier Company Komunikaty as the active v1 GPW official-report source.
+2. GPW ESPI/EBI official reports as a disabled fallback candidate until the source-specific fetch path is made reliable enough to beat Bankier coverage.
+3. Selected Polish public/RSS media and article/news sources after source policy review.
 3. Authenticated private research sources explicitly approved by source-specific ADR, starting with Portal Analiz if feasible.
 4. Later official/public adapters for SEC EDGAR, Nasdaq RSS, and major European exchange disclosures.
 
@@ -33,7 +34,9 @@ Observed listing endpoint: `https://www.gpw.pl/ajaxindex.php`
 
 Fetch mode: `public_page`
 
-Default poll interval: 15 minutes.
+Default poll interval: disabled for now.
+
+Current status: registered but disabled. The global GPW listing slice missed tracked-company reports that Bankier per-company komunikaty pages exposed, so v1 uses Bankier Company Komunikaty as the active official-report feed. GPW should only be re-enabled after the adapter uses a reliable tracked-company-scoped fetch path or otherwise proves it can provide equal or better coverage.
 
 The public GPW ESPI/EBI report page currently exposes report listings with:
 
@@ -260,6 +263,54 @@ Each media/RSS source needs:
 
 Do not add broad website scraping as a generic capability in v1.
 
+M8 public-source ranking:
+
+1. Bankier Giełda RSS. Accepted and implemented first because it is public, RSS-native, market-focused, attributable, and low-risk to poll without crawling article pages.
+2. Bankier per-company komunikaty JSON and article pages. Accepted and implemented as the active v1 official-report visibility source because the public company pages expose stable Bankier instrument slugs/tag IDs, the listing endpoint provides ESPI/EBI rows for tracked companies, and article pages expose report body text and attachments.
+3. Bankier Firma RSS. Keep as a reviewed follow-up candidate. It is public and RSS-native, but the current feed is broader business news with weaker listed-company signal than Giełda; do not enable by default until matching quality is proven against tracked GPW companies.
+4. Bankier Wiadomości RSS. Keep as a low-priority follow-up candidate. It is public and RSS-native, but it mixes broad national/world/personal-finance coverage, includes stale backfill in the live feed, and would likely create noisy unmatched diagnostics.
+5. Bankier ESPI RSS and Parkiet ESPI/EBI RSS. Keep as secondary official-report cross-check candidates only. They must not replace canonical GPW ingestion and need reconciliation rules before runtime ingestion.
+6. Investing.com Poland RSS, Stooq ticker news, XTB analysis, BiznesRadar, StockWatch, ISBnews-style providers, and Portal Analiz. Keep behind source-specific review. Do not implement scraping, paywalled access, authenticated access, or commercial-provider assumptions without a later ADR or explicit source-policy decision.
+
+Current implementation posture:
+
+- The Bankier RSS parser/fetcher is channel-aware so accepted RSS channels can reuse the same parsing, entity decoding, timestamp, and dedupe behavior.
+- Runtime ingestion currently enables `bankier-market-rss` and `bankier-company-komunikaty`.
+- Additional Bankier RSS channels require their own adapter IDs, source status rows, matching-quality tests, and a deliberate runtime enablement decision. `bankier-firma-rss` and `bankier-wiadomosci-rss` are present only as disabled reviewed placeholders.
+- Bankier company-komunikaty requests use `LocalInvestorNewsfeed/{version}`, are serialized, are scoped to tracked GPW companies, cache Bankier tag IDs in `company_source_ids`, fetch one listing JSON page per company, and fetch linked article pages only when local report body text is missing.
+- `portal-analiz` is visible only as a disabled late-v1 authenticated research placeholder. It has no fetch path, credential flow, or scheduler behavior in M8.
+
+Accepted first M8 media slice:
+
+- Adapter ID: `bankier-market-rss`.
+- Display name: `Bankier Giełda RSS`.
+- Source URL: `https://www.bankier.pl/rss/gielda.xml`.
+- Human RSS directory: `https://www.bankier.pl/rss`.
+- Source type: `public_media`.
+- Fetch mode/access mode: `rss`.
+- Attribution: `Bankier.pl`.
+- Language: Polish.
+- Rate policy: manual refresh plus the normal in-app source scheduler; fetch only the RSS feed and do not crawl linked article pages in this slice.
+- Matching policy: match only tracked GPW companies by strong ticker/name signals found in the RSS item title or description; keep unmatched items available only for source diagnostics.
+- Dedupe policy: use RSS `guid` when present, otherwise a normalized item link, otherwise title plus publication timestamp. Link normalization strips RSS tracking parameters such as `utm_*` and fragments before storage/dedupe. For cross-source media dedupe, store a nullable duplicate signature based on matched tracked companies plus normalized title so obvious syndicated/copied media items do not create duplicate Inbox rows.
+- Bankier ESPI RSS remains a separate secondary official-report/cross-check candidate and is not part of this media adapter.
+
+Accepted Bankier company-komunikaty slice:
+
+- Adapter ID: `bankier-company-komunikaty`.
+- Display name: `Bankier Company Komunikaty`.
+- Company page URL pattern: `https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty`.
+- JSON listing endpoint pattern: `https://api.bankier.pl/articles/listing/{page}/{limit}` with Bankier `tags_ids` and `pub_id=3,379`.
+- Source type: `official_report`.
+- Fetch mode/access mode: `public_json`.
+- Attribution: `Bankier.pl`.
+- Language: Polish.
+- Scope: tracked GPW companies only.
+- Identifier policy: resolve Bankier canonical instrument slug and tag ID from the company page when missing, then cache them in `company_source_ids`.
+- Rate policy: manual refresh plus the normal in-app source scheduler; serialize company requests, wait between companies, fetch one listing page per company, and fetch article detail pages only for items whose body text is not already stored locally.
+- Dedupe policy: use Bankier article ID for adapter-local dedupe and title/company comparison to avoid creating a second visible item if `gpw-espi-ebi` is later re-enabled.
+- Source-policy note: Bankier Company Komunikaty is the active v1 official-report source while `gpw-espi-ebi` remains registered but disabled until a later reliability pass proves it should be re-enabled.
+
 ## Price And Fundamentals Context Sources
 
 Price/fundamentals enrichment is useful for later context around reports and news, but it is not the same as official-report ingestion.
@@ -280,9 +331,11 @@ Price and fundamentals adapters should be separate from feed/news adapters and s
 
 Authenticated private sources are in v1 scope only as explicitly named adapters with source-specific approval. Portal Analiz is the first desired adapter in this category because the user has a paid personal account and wants company research from that source inside the local Inbox.
 
+Decision: [ADR 0014: Portal Analiz Authenticated Source Policy](adr/0014-portal-analiz-authenticated-source-policy.md) accepts Portal Analiz as a v1 authenticated private research source candidate only under a dedicated adapter with strict local credential, attribution, scope, and rate-limit boundaries. The ADR does not approve generic scraping infrastructure or bypassing access controls.
+
 Portal Analiz requirements before implementation:
 
-- dedicated ADR covering source policy, user-account usage, terms/usage risk, and whether scraping is acceptable for personal local use,
+- source research confirming an acceptable user-account usage path under ADR 0014,
 - OS keychain storage for credentials or session secrets,
 - no credential export through YAML, backup, logs, screenshots, or test samples,
 - conservative rate limits and no background crawling outside user-approved scope,
@@ -315,6 +368,7 @@ Current checked references:
 - No documented public GPW ESPI/EBI API has been accepted for v1 yet. M6 found an internal GPW AJAX listing endpoint used by the public page; this is cleaner than full-page listing parsing, but still must be treated as a public-page implementation detail rather than a contracted API.
 - PAP Biznes exposes ESPI/EBI-related public pages, including `https://biznes.pap.pl/espi` and `https://biznes.pap.pl/ebi/company`, and describes ESPI/EBI communications in its business service offer. Treat PAP as a source candidate only after policy and terms review; do not implement PAP scraping by default.
 - Bankier exposes ESPI/EBI listings and article pages, including a JSON listing endpoint used by its UI. Treat Bankier as a secondary cross-check/fallback candidate, not the primary v1 official source.
+- Bankier per-company komunikaty pages canonicalize short GPW tickers to Bankier instrument slugs such as `CDR -> CDPROJEKT` and `PKN -> PKNORLEN`, expose `data-tag-id` values, and feed the public article listing JSON endpoint with `tags_ids`, `pub_id=3,379`, `sort=time_utc desc`, and article fields.
 - Bankier exposes `https://www.bankier.pl/rss/espi.xml`, which is a convenient secondary ESPI feed. It should not replace GPW canonical ingestion.
 - Bankier's RSS directory also lists general market/news channels, including Giełda and Wiadomości dnia categories. Treat these as media/news candidates, not official-report sources.
 - Parkiet exposes `https://www.parkiet.com/rss/7111-komunikaty`, which is a convenient secondary ESPI/EBI feed. It should not replace GPW canonical ingestion.
@@ -323,7 +377,7 @@ Current checked references:
 - Investing.com Poland exposes an RSS directory with news and analysis categories, including company-news-style categories. Exact feed URLs and GPW ticker matching quality need source review.
 - `wegar-2/pyespiebipapapi` is a community scraping wrapper for PAP ESPI/EBI pages and can inform PAP fallback research, but it is not an official PAP API and should not be depended on directly in the Rust/Tauri app.
 - XTB market news and analysis pages are candidate media/analysis sources, not official-report sources, and need source review before ingestion.
-- Portal Analiz is desired for v1 as an authenticated private research source using the user's own paid account, but requires a dedicated ADR before implementation.
+- Portal Analiz is desired for v1 as an authenticated private research source using the user's own paid account and is governed by ADR 0014 before implementation.
 
 ## Open Source Questions
 

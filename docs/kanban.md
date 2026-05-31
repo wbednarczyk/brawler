@@ -33,21 +33,6 @@ Docs/contracts touched: contracts, product spec, project practices.
 
 Test expectations: YAML round-trip, validation, and secret-exclusion tests.
 
-### Make source poll interval editable in Settings
-
-Intent: let the user tune source polling cadence without changing code.
-
-Acceptance criteria:
-
-- Settings screen exposes a compact poll interval control.
-- Accepted values are validated before writing to SQLite.
-- The in-app source scheduler immediately uses the updated interval.
-- The Sources screen continues to show the active scheduler cadence.
-
-Docs/contracts touched: contracts, product spec, settings docs.
-
-Test expectations: settings command validation and UI workflow test for updating poll interval.
-
 ### Refine watchlist membership UX
 
 Intent: replace the early company-row assign/remove controls with a more intuitive watchlist membership workflow.
@@ -79,6 +64,22 @@ Acceptance criteria:
 Docs/contracts touched: product spec or UI information architecture if this becomes a cross-screen UI standard.
 
 Test expectations: focused UI workflow tests for representative forms and filters.
+
+### Refine feed item metadata bar readability
+
+Intent: make the feed item top metadata line easier to scan across official reports, public media, and future transcript items.
+
+Acceptance criteria:
+
+- Inbox and company feed rows separate company, item type, source, and timestamp into a clearer visual hierarchy.
+- Long source names, localized labels, and compact widths remain readable without crowding the title.
+- Timestamp display follows the app-wide human-readable timestamp standard.
+- Saved and unread indicators do not compete with the title or metadata.
+- The design works for official report rows, public media rows, and items with missing optional metadata.
+
+Docs/contracts touched: UI information architecture and product spec if this becomes a formal cross-screen row pattern.
+
+Test expectations: focused UI workflow or component coverage for representative feed rows after the layout pass.
 
 ### Implement keyboard shortcuts
 
@@ -128,6 +129,26 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
+### Implement v1 friend-test license gate
+
+Intent: prevent casual redistribution of v1 friend-test builds without introducing hosted accounts, telemetry, billing, or activation infrastructure.
+
+Acceptance criteria:
+
+- A licensing ADR records the v1 friend-test posture, threat model, and offline validation approach before implementation.
+- App can validate an offline signed license key using public verification material embedded in the app.
+- Private signing material and key-generation workflow stay outside the repository and build outputs.
+- First-run flow or Settings lets the user enter, inspect, replace, and clear a license.
+- Normal app use is gated when no valid license exists.
+- Expired, invalid, tampered, wrong-version, and missing-license states are clear and recoverable.
+- License validation does not require cloud accounts, telemetry, hosted activation, or billing infrastructure.
+- Logs, settings export, diagnostics, and tests do not leak private signing material or full license secrets.
+- Packaged v1 friend-test artifacts enforce the license gate before distribution.
+
+Docs/contracts touched: licensing ADR, project practices, product spec, UI information architecture, contracts, release docs.
+
+Test expectations: Rust license validation tests and UI workflow tests for entry, invalid states, expiry, and gated app access.
+
 ### Implement Gemini YouTube transcription spike
 
 Intent: validate Gemini as the first provider only for YouTube press conference transcription and transcript-to-note workflows.
@@ -164,6 +185,12 @@ Docs/contracts touched: roadmap, product spec, UI information architecture, data
 
 Test expectations: storage tests for event records and UI workflow tests for filtering and expanded event details.
 
+## Ready
+
+No cards.
+
+## In Progress
+
 ### Implement Polish media and research sources
 
 Intent: extend the Inbox beyond official reports so it also collects company-related news, articles, analysis, and private research for tracked companies.
@@ -179,17 +206,25 @@ Acceptance criteria:
 - Authenticated sources store secrets only in the OS keychain and tests use test samples/mocks.
 - Sources screen shows public/RSS/paywalled/authenticated source status clearly.
 
-Docs/contracts touched: roadmap, product spec, source strategy, contracts, future Portal Analiz ADR.
+Delivered:
 
-Test expectations: parser/fetcher test-sample tests, source adapter contract tests, storage dedupe tests, and UI source-status workflow tests.
+- Bankier Gielda RSS is implemented as the first public media/news adapter and stores matched tracked-company items in the Inbox.
+- Use Bankier per-company komunikaty as the active v1 official-report adapter for tracked GPW companies.
+- Resolve and cache Bankier instrument slugs/tag IDs in `company_source_ids`.
+- Fetch one serialized public JSON listing page per tracked company, then fetch article pages only when local detail body text is missing.
+- Keep `gpw-espi-ebi` registered but disabled until a later reliability pass proves it should be re-enabled.
+- Avoid browser impersonation; use the neutral app user agent and rely on low volume, cached identifiers, and cached details.
+- Portal Analiz is documented by ADR 0014 and visible only as a disabled late-v1 authenticated research placeholder.
+- Bankier Firma RSS and Bankier Wiadomosci RSS are visible only as disabled reviewed public RSS candidates until matching quality is proven.
+- Source statuses distinguish official reports, public RSS, public JSON, authenticated placeholders, disabled sources, and manual/local registry data.
+- Refresh commands reject disabled placeholders without network access.
+- Feed cleanup is visible in Settings with current status, retention window, interval, protected saved items, and current-session last cleanup result.
+- Final local checks passed.
+- Version bumped to `0.8.0`.
 
-## Ready
+Docs/contracts touched: source strategy, contracts, data model if source identifier behavior changes.
 
-No cards.
-
-## In Progress
-
-No cards.
+Test expectations: parser/fetcher test-sample tests, source adapter contract tests, storage dedupe tests, and source-status UI label coverage.
 
 ## Review
 

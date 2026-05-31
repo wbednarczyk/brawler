@@ -13,6 +13,9 @@ Rules:
 - External contribution is not expected while no license exists.
 - Do not accept outside contributions without revisiting license posture.
 - Do not publish public release artifacts without revisiting license posture.
+- Do not distribute friend-test v1 artifacts until a local license-key gate is implemented and documented.
+- The v1 license-key gate should prevent casual redistribution without requiring cloud accounts, telemetry, hosted activation, or billing infrastructure.
+- License private signing material must never be stored in the repository, app database, logs, exported settings, Nix files, `.envrc`, or GitHub Actions secrets unless a future ADR explicitly approves the release process.
 - The future monetization model is undecided. Open core plus paid convenience features is only one candidate.
 
 ## Secrets And Config

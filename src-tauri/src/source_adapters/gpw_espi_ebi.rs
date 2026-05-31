@@ -5,15 +5,12 @@ use time::{
     PrimitiveDateTime, UtcOffset,
 };
 
+use super::USER_AGENT;
+
 pub const ADAPTER_ID: &str = "gpw-espi-ebi";
 pub const DISPLAY_NAME: &str = "GPW ESPI/EBI";
 pub const SOURCE_URL: &str = "https://www.gpw.pl/komunikaty";
 const LISTING_AJAX_URL: &str = "https://www.gpw.pl/ajaxindex.php";
-const USER_AGENT: &str = concat!(
-    "Brawler/",
-    env!("CARGO_PKG_VERSION"),
-    " local-first investor research app"
-);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpwReportListing {

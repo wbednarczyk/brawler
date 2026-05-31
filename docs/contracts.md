@@ -120,8 +120,9 @@ Rules:
 - Restricted scraping is not allowed without a source-specific ADR.
 - `sourceType` must distinguish `official_report`, `public_media`, `analysis`, `authenticated_research`, and future source categories where relevant.
 - `accessMode` must distinguish `public`, `rss`, `paywalled`, `authenticated`, and `manual` sources where relevant.
-- Authenticated private sources, including the planned Portal Analiz adapter, require a source-specific ADR before implementation.
+- Authenticated private sources require a source-specific ADR before implementation. Portal Analiz is governed by [ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md).
 - Authenticated adapters must use OS keychain secrets or session storage and must not export credentials to YAML, backup files, logs, or test samples.
+- `portal-analiz` exists only as a disabled late-v1 placeholder until the authenticated-source implementation is explicitly built. It must not be fetched by normal refresh commands.
 - The Sources screen reads adapter status from local SQLite before real fetching exists.
 - The Sources screen must expose the adapter source URL, rate-limit policy, and source-policy note once live fetching exists.
 - The first GPW implementation parses listing HTML test samples before live network fetch is wired.
@@ -136,6 +137,20 @@ Rules:
 - GPW detail evaluation returns an explicit usability signal plus warnings. Missing title or missing/very short body text makes the parsed detail unusable for normal ingestion.
 - GPW detail spike aggregation is conservative: rejected samples trigger parser hardening or fallback-source investigation.
 - GPW detail fetch policy is conservative: enabled by default for matched items, at most 5 detail pages per refresh, serialized with at least 2 seconds between detail requests.
+- The first M8 public media adapter is `bankier-market-rss`, using `https://www.bankier.pl/rss/gielda.xml` as an RSS feed with `Bankier.pl` attribution.
+- `bankier-market-rss` stores items as `Public media`, preserves the RSS item link as the source URL, and does not crawl linked article pages in the initial slice.
+- `bankier-firma-rss` and `bankier-wiadomosci-rss` are visible as disabled reviewed public RSS candidates; normal refresh commands must not fetch them until matching-quality tests and runtime enablement are explicitly accepted.
+- `bankier-market-rss` normalizes RSS item links before storage and dedupe by stripping tracking query parameters such as `utm_*` and URL fragments.
+- Public media adapters may set a nullable `duplicateSignature` for cross-source article/media dedupe. Bankier uses a normalized tracked-company plus title signature so obvious syndicated/copied media items do not create duplicate Inbox rows if another media adapter has already stored the same item.
+- `bankier-market-rss` matches only tracked GPW companies by strong ticker/name signals found in the RSS item title or description. Unmatched RSS items remain source diagnostics and must not appear in normal Inbox/company feed views.
+- `bankier-company-komunikaty` uses Bankier per-company public komunikaty pages only to resolve Bankier instrument slugs and tag IDs, then fetches one public JSON listing page per tracked GPW company from Bankier's article listing endpoint.
+- `bankier-company-komunikaty` stores Bankier instrument slugs and tag IDs in `company_source_ids` so repeat refreshes do not re-fetch company pages unless the identifiers are missing.
+- `bankier-company-komunikaty` only processes items from the last 7 days relative to the adapter fetch timestamp; older Bankier listing items are ignored.
+- `bankier-company-komunikaty` creates visible Inbox/company feed rows as the active v1 official-report source while `gpw-espi-ebi` is disabled.
+- `bankier-company-komunikaty` skips article-page detail fetches for items that already have body text stored locally; refresh preserves existing body text and attachments unless a newly fetched detail body is available.
+- Refresh commands must not prune Bankier company feed rows. Cleanup/pruning, if needed, is a separate asynchronous maintenance process.
+- `gpw-espi-ebi` remains registered as a disabled candidate for later revisit if Bankier Company Komunikaty proves unreliable.
+- Source HTTP requests use the neutral app user agent `LocalInvestorNewsfeed/{version}` and must not impersonate a browser or Bankier UI. Source protection relies on low request volume, tracked-company scope, cached identifiers, and serialized refreshes.
 
 ## Feed Item
 
@@ -525,7 +540,10 @@ Initial Tauri command groups:
 - `create_watchlist`
 - `list_feed_items`
 - `update_feed_item`
+- `prune_old_feed_items`
+- `delete_unsaved_feed_items`
 - `refresh_sources`
+- `refresh_source`
 - `refresh_gpw_company_registry`
 - `refresh_gpw_company_registry_if_stale`
 - `list_company_registry_entries`
@@ -576,18 +594,54 @@ Initial `lookup_company` behavior:
 
 Initial `refresh_sources` behavior:
 
-- Runs the GPW ESPI/EBI adapter path.
-- Performs an explicit manual fetch of the GPW ESPI/EBI public-page listing fragment.
+- Runs the enabled v1 feed-source adapter paths, currently Bankier Giełda RSS and Bankier Company Komunikaty.
+- `gpw-espi-ebi` remains registered but disabled while Bankier Company Komunikaty is the active v1 official-report source; GPW may be revisited if Bankier proves unreliable.
+- Fetches Bankier Giełda RSS headlines from `https://www.bankier.pl/rss/gielda.xml` as public media items.
+- Fetches Bankier per-company komunikaty JSON only for tracked GPW companies, after resolving and caching Bankier tag IDs.
+- Fetches Bankier per-company article pages for matched komunikaty rows so official-report body text and attachments come from the article/report page, not from listing filter tags.
 - Manual refresh is available from the topbar, Sources screen, and no-feed Inbox empty state.
 - The desktop runtime schedules refreshes in-app while the UI is open, using the SQLite `pollIntervalSeconds` setting.
-- Scheduled refreshes do not run immediately on startup; the first scheduled run occurs after one full poll interval.
+- Scheduled refreshes do not run immediately on startup; each enabled source adapter gets its own first scheduled run after one full poll interval plus randomized startup jitter.
 - Refreshes are guarded against overlap, so a scheduled refresh is skipped while another refresh is already running.
 - Refresh attempts record their trigger as `manual` or `scheduler` in source adapter state.
 - Scheduled refreshes back off after repeated refresh failures; manual refresh remains available during backoff.
+- Settings exposes an editable source poll interval with accepted values of 5 minutes, 15 minutes, 30 minutes, and 1 hour.
 - Sources UI shows the expected next in-app poll based on the active interval.
 - Refresh results and adapter status expose GPW detail-body counters: attempted, stored, and failed.
 - Adapter status exposes the last detail warning when a GPW detail fetch fails or the parser rejects a detail page as unusable.
+- Refresh commands must not prune old feed items from any source.
 - Automated tests continue to use bundled GPW listing test samples or injected fetchers; default checks must not require live network access.
+
+Initial `prune_old_feed_items` behavior:
+
+- Runs as a separate asynchronous maintenance command, not as part of any source refresh path.
+- Deletes unsaved feed items older than the requested retention window, initially scheduled by the desktop runtime once per day with a 30-day retention window.
+- Settings exposes the current cleanup status, retention window, interval, and protected item class. Last-run and enable/configuration controls remain later v1 hardening work.
+- Settings exposes the last cleanup timestamp and deleted item count for the current app session after the background cleanup command runs.
+- Preserves saved feed items regardless of age.
+- Removes dependent feed item company links, attachments, and AI analysis rows before deleting pruned feed items.
+- Returns retention days, deleted item count, and prune timestamp.
+
+Initial `delete_unsaved_feed_items` behavior:
+
+- Runs only from an explicit user action with confirmation copy in the UI.
+- Deletes all unsaved feed items regardless of source or age.
+- Preserves saved feed items.
+- Removes dependent feed item company links, attachments, and AI analysis rows before deleting feed items.
+- Does not fetch, poll, or refresh external sources after deletion; the UI only reloads local SQLite-backed state.
+- Returns deleted item count and deletion timestamp.
+
+Initial `refresh_source` behavior:
+
+- Runs one source adapter by adapter ID through the same ingestion path used by `refresh_sources`.
+- Supports enabled adapters `bankier-market-rss`, `bankier-company-komunikaty`, and `gpw-company-registry`; `gpw-espi-ebi` returns a disabled-source error for now.
+- Maps `gpw-company-registry` to the registry refresh path and returns a source-ingestion-shaped summary for UI consistency.
+- Rejects disabled placeholders such as `portal-analiz`, `bankier-firma-rss`, and `bankier-wiadomosci-rss` without attempting network access.
+- Records adapter attempt/success/error state with the supplied `manual` or `scheduler` trigger.
+- Sources UI exposes a per-source manual refresh action from each source detail panel.
+- Sources UI exposes a per-source access label such as Public RSS, Public JSON, Authenticated, Paywalled, Manual/local, or Disabled.
+- Bankier RSS tests use a bundled RSS test sample or injected fetcher; default checks must not require live Bankier availability.
+- Bankier company-komunikaty tests use bundled HTML/JSON test samples or injected fetchers; default checks must not require live Bankier availability.
 - Records `last_attempt_at` in source adapter state before fetching.
 - Returns source ingestion status with adapter ID, fetched count, created count, matched count, unmatched count, and fetched timestamp.
 - A successful fetch with zero parsed listings is recorded as a successful refresh with zero counts and a generated fetched timestamp.

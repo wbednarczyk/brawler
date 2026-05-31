@@ -18,6 +18,7 @@ See also [Project Brief](project-brief.md), [UI Information Architecture](ui-inf
 - Prefer lean, behavior-focused tests over broad brittle suites.
 - Keep secrets in the OS keychain and non-secret settings in SQLite.
 - Use SemVer-style `0.x.y` versions from the first scaffold.
+- V1 friend-test distribution requires a local license-key gate before artifacts are shared outside the project owner.
 
 ## Milestone 0: Planning Baseline
 
@@ -206,7 +207,7 @@ Completion notes:
 - Manual refresh and in-app scheduled refresh are available while the desktop UI is open.
 - Sources diagnostics show last attempt, last trigger, last success/error, last result counts, next scheduled refresh, source URL, rate-limit policy, and unmatched listing diagnostics.
 - Automated coverage uses test samples/injected fetchers so default checks do not require live GPW availability.
-- Poll interval editability remains tracked as a Settings follow-up and is not required for M5 closure.
+- Source poll interval editability was delivered later in M8 Settings work and was not required for M5 closure.
 
 ## Milestone 6: GPW Detail Fetch Spike
 
@@ -277,6 +278,8 @@ Completion notes:
 
 ## Milestone 8: Polish Media And Research Sources
 
+Status: completed in `0.8.0`.
+
 Goal: ingest company-related news, articles, analysis, and private research sources after official GPW report ingestion is stable.
 
 Included:
@@ -284,13 +287,14 @@ Included:
 - selected public Polish media/news sources where usage is allowed
 - RSS or public-feed adapters when available
 - Bankier/Parkiet ESPI/EBI RSS adapters as secondary sources if they are useful for cross-checking or missed-item diagnostics
+- Bankier Company Komunikaty is currently the active v1 GPW official-report source; `gpw-espi-ebi` remains disabled until a later reliability pass proves it should be re-enabled.
 - Bankier market/news RSS adapter candidate after source review
 - Investing.com Poland RSS adapter candidate after feed URL and ticker-matching review
 - Stooq-style ticker news pages when technically and policy-wise acceptable
 - XTB market news and analysis pages if a source review accepts them
 - ISBnews or similar providers only after access, paywall, licensing, and attribution rules are understood
 - StockWatch/BiznesRadar research candidates only after scraping/paywall/terms review
-- Portal Analiz private-account adapter as a v1 source, subject to a dedicated source ADR before implementation
+- Portal Analiz private-account adapter as a v1 source candidate governed by [ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md) before implementation
 
 Deferred/enrichment candidates:
 
@@ -301,12 +305,13 @@ Deferred/enrichment candidates:
 - company matching for article/news content using ticker, company name, aliases, and source-specific IDs
 - duplicate handling across reports, PAP-derived copies, media rewrites, and syndicated content
 - test-sample-backed parser/fetcher tests for every accepted source
+- feed pruning configuration in Settings or Sources, including last run and whether scheduled cleanup is enabled; Settings currently exposes cleanup status, retention window, interval, and protected saved items
 
 Exit criteria:
 
 - at least one non-GPW-report article/news source can ingest matched company items into the Inbox
 - source adapters clearly distinguish official reports, public media, analysis, and authenticated private research
-- Portal Analiz has a specific ADR covering authentication, local credential storage, user-account scraping posture, rate limits, and implementation boundaries before any scraper is built
+- Portal Analiz has a specific ADR covering authentication, local credential storage, user-account access posture, rate limits, and implementation boundaries before any scraper is built
 - private/account-based sources use OS keychain secrets and never export credentials
 - source status makes it clear whether a source is public, RSS-like, authenticated, paywalled, or manually configured
 - tests do not require live external services, credentials, or paid accounts
@@ -401,7 +406,30 @@ Exit criteria:
 - text inputs and editors do not accidentally trigger global shortcuts
 - workflow tests cover the most important shortcuts
 
-## Milestone 13: V1 Packaging Candidate
+## Milestone 13: V1 Friend-Test License Gate
+
+Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed.
+
+Included:
+
+- ADR for the v1 friend-test licensing posture and threat model
+- offline signed license-key validation
+- license entry and status UI in first-run flow or Settings
+- local storage for accepted license state without storing private signing material
+- app access gate when no valid license exists
+- clear expired, invalid, tampered, and unsupported-version states
+- release-owner workflow for generating friend-test keys outside the app repository
+
+Exit criteria:
+
+- v1 friend-test artifacts cannot be used normally without a valid license key
+- license verification works offline and does not require cloud accounts, telemetry, hosted activation, or billing infrastructure
+- the app embeds only public verification material; private signing material remains outside the repo and build outputs
+- tests cover valid, missing, expired, tampered, and unsupported-version licenses
+- logs, settings export, and diagnostics do not leak license private signing material or full license secrets
+- user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
+
+## Milestone 14: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -411,6 +439,7 @@ Included:
 - GitHub Actions packaging workflow
 - local database location decision
 - app version/about screen
+- license status visible in the packaged app
 - basic backup/export consideration
 - smoke test checklist
 - README quickstart
@@ -420,6 +449,7 @@ Exit criteria:
 
 - app can be installed or run on Windows
 - existing local data survives restart
+- packaged app enforces the v1 friend-test license gate
 - primary workflows pass smoke testing
 - packaging workflow can be run from GitHub
 - packaging workflow is manually triggered unless release automation is explicitly approved
@@ -459,7 +489,8 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 - portfolio position tracking
 - trade journal
-- billing/licensing UI
+- billing/payment infrastructure
+- hosted license activation
 - cloud sync
 - team collaboration
 - hosted ingestion jobs
@@ -473,6 +504,5 @@ Recommended next Ready cards:
 - GPW detail fetch spike
 - Polish media and research source strategy/card breakdown
 - Events workspace data model and first screen
-- Source poll interval editability in Settings
 
 Do not start GPW detail fetching before the M6 source-policy check confirms that detail-page structure and terms are acceptable.

@@ -382,7 +382,7 @@ select:disabled {
   padding: 22px;
   height: 100%;
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
 }
 
 .content-grid-single {
@@ -399,6 +399,9 @@ select:disabled {
 }
 
 .feed-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   min-width: 0;
   overflow: hidden;
 }
@@ -488,6 +491,11 @@ h1 {
 
 .feed-list {
   display: grid;
+  align-content: start;
+  flex: 1;
+  grid-auto-rows: max-content;
+  min-height: 0;
+  overflow: auto;
 }
 
 .filter-reset-row {
@@ -534,11 +542,13 @@ h1 {
 
 .filter-reset-row .secondary-button {
   min-height: 28px;
-  width: min(172px, 100%);
+  width: fit-content;
+  min-width: 106px;
   border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
   color: color-mix(in srgb, var(--text) 88%, var(--muted));
   background: color-mix(in srgb, var(--surface) 72%, transparent);
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .filter-toolbar {
@@ -575,6 +585,12 @@ h1 {
   display: grid;
   gap: 18px;
   padding: 18px;
+}
+
+.sources-layout {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .notebooks-screen {
@@ -1236,6 +1252,13 @@ h1 {
   margin-bottom: 10px;
 }
 
+.source-detail-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 10px;
+}
+
 .source-refresh-summary {
   margin: 0 10px 10px;
 }
@@ -1482,6 +1505,17 @@ h1 {
   align-items: end;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.settings-group {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-group h2 {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 750;
 }
 
 .settings-row label {
@@ -2392,6 +2426,16 @@ summary.feed-body-heading::before {
   white-space: nowrap;
 }
 
+.feed-row p {
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .feed-row.unread h2 {
   color: var(--text);
   font-weight: 700;
@@ -2419,6 +2463,9 @@ summary.feed-body-heading::before {
 }
 
 .detail-pane {
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
   padding: 16px;
 }
 

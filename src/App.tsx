@@ -58,6 +58,9 @@ type DbRefreshState = "idle" | "refreshing" | "done";
 type SourceRefreshState = "idle" | "refreshing" | "done";
 type SourceRefreshTrigger = "manual" | "scheduler";
 const gpwRegistryAdapterId = "gpw-company-registry";
+const feedPruneRetentionDays = 30;
+const feedPruneIntervalMs = 24 * 60 * 60 * 1000;
+const feedPruneInitialDelayMs = 2 * 60 * 1000;
 
 type FeedItem = {
   id: string;
@@ -94,6 +97,17 @@ type SourceIngestionResult = {
   detailItemsStored: number;
   detailItemsFailed: number;
   fetchedAt: string | null;
+};
+
+type FeedDeleteResult = {
+  itemsDeleted: number;
+  deletedAt: string;
+};
+
+type FeedPruneResult = {
+  retentionDays: number;
+  itemsDeleted: number;
+  prunedAt: string;
 };
 
 type CompanyRegistryRefreshResult = {
@@ -322,6 +336,36 @@ function manualNotebookOrigins(): NotebookDraftOrigin[] {
       label: "Manual note",
     },
   ];
+}
+
+function formatTimestamp(value: string | null | undefined, emptyLabel = "Not set") {
+  const trimmed = value?.trim();
+
+  if (!trimmed) {
+    return emptyLabel;
+  }
+
+  const isoTimestamp = trimmed.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/,
+  );
+
+  if (isoTimestamp) {
+    return `${isoTimestamp[1]} ${isoTimestamp[2]}`;
+  }
+
+  return trimmed.replace("T", " ").replace(/\.\d+$/, "");
+}
+
+function schedulerStartJitterMs(intervalMs: number) {
+  const jitterWindowMs = Math.min(Math.max(Math.floor(intervalMs * 0.1), 1000), 60000);
+
+  if (jitterWindowMs < 2000) {
+    return Math.floor(Math.random() * jitterWindowMs);
+  }
+
+  const minimumJitterMs = Math.min(15000, Math.floor(jitterWindowMs / 2));
+
+  return minimumJitterMs + Math.floor(Math.random() * (jitterWindowMs - minimumJitterMs + 1));
 }
 
 function notebookTagFromFeedValue(value: string): string {
@@ -613,6 +657,7 @@ function NotebookQuarterField({
 export function App() {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
+  const sourceAdaptersRef = useRef<SourceAdapter[]>([]);
   const companyLookupVersionRef = useRef(0);
   const skipNextCompanyLookupRef = useRef(false);
   const companyFieldRefs = useRef<Record<keyof CompanyForm, HTMLInputElement | null>>({
@@ -672,14 +717,18 @@ export function App() {
   const [companyWorkspaceTab, setCompanyWorkspaceTab] = useState<CompanyWorkspaceTab>("Feed");
   const [detailPaneWidth, setDetailPaneWidth] = useState(detailPaneDefaultWidth);
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
+  const [deleteUnsavedFeedState, setDeleteUnsavedFeedState] = useState<DbRefreshState>("idle");
+  const [deleteUnsavedFeedError, setDeleteUnsavedFeedError] = useState<string | null>(null);
+  const [feedPruneResult, setFeedPruneResult] = useState<FeedPruneResult | null>(null);
   const [sourceRefreshState, setSourceRefreshState] = useState<SourceRefreshState>("idle");
   const [sourceRefreshResult, setSourceRefreshResult] = useState<SourceIngestionResult | null>(null);
   const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
+  const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] = useState<string | null>(null);
   const [registryRefreshState, setRegistryRefreshState] = useState<SourceRefreshState>("idle");
   const [registryRefreshResult, setRegistryRefreshResult] = useState<CompanyRegistryRefreshResult | null>(null);
   const [registryRefreshError, setRegistryRefreshError] = useState<string | null>(null);
-  const [nextSourceRefreshAt, setNextSourceRefreshAt] = useState<number | null>(null);
+  const [nextSourceRefreshAtByAdapterId, setNextSourceRefreshAtByAdapterId] = useState<Record<string, number>>({});
   const [nextRegistryRefreshAt, setNextRegistryRefreshAt] = useState<number | null>(null);
   const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<Record<string, UnmatchedSourceItem[]>>({});
   const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<string | null>(null);
@@ -887,6 +936,14 @@ export function App() {
   const registryAdapter = useMemo(
     () => sourceAdapters.find((adapter) => adapter.id === gpwRegistryAdapterId) ?? null,
     [sourceAdapters],
+  );
+  const scheduledSourceAdapters = useMemo(
+    () => sourceAdapters.filter((adapter) => adapter.enabled && adapter.id !== gpwRegistryAdapterId),
+    [sourceAdapters],
+  );
+  const scheduledSourceAdapterKey = useMemo(
+    () => scheduledSourceAdapters.map((adapter) => adapter.id).join("|"),
+    [scheduledSourceAdapters],
   );
   const filteredCompanyRegistryEntries = useMemo(() => {
     const normalizedSearch = companyRegistrySearch.trim().toLowerCase();
@@ -1219,9 +1276,43 @@ export function App() {
     });
   }
 
+  function deleteUnsavedFeedItems() {
+    const confirmed = window.confirm("Delete all unsaved feed items? Saved items will stay.");
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeleteUnsavedFeedState("refreshing");
+    setDeleteUnsavedFeedError(null);
+
+    invoke<FeedDeleteResult>("delete_unsaved_feed_items")
+      .then(() => Promise.all([refreshFeedItems(), refreshDatabaseStatus()]))
+      .then(() => {
+        setDeleteUnsavedFeedState("done");
+        window.setTimeout(() => {
+          setDeleteUnsavedFeedState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setDeleteUnsavedFeedError(String(error));
+        setDeleteUnsavedFeedState("idle");
+      });
+  }
+
   function refreshSources(trigger: SourceRefreshTrigger = "manual") {
     if (sourceRefreshInFlightRef.current) {
       return Promise.resolve();
+    }
+
+    if (trigger === "scheduler") {
+      if (!settings || settings.pollIntervalSeconds <= 0) {
+        return Promise.resolve();
+      }
+
+      if (!anySourceAdapterRefreshDue(settings.pollIntervalSeconds * 1000)) {
+        return Promise.resolve();
+      }
     }
 
     sourceRefreshInFlightRef.current = true;
@@ -1233,6 +1324,126 @@ export function App() {
         setSourceRefreshResult(response);
         setSourceRefreshFailureCount(0);
         setSelectedSourceAdapterId(response.adapterId);
+        return Promise.all([
+          refreshFeedItems(),
+          refreshSourceAdapters(),
+          refreshDatabaseStatus(),
+          refreshUnmatchedSourceItems(response.adapterId),
+        ]);
+      })
+      .then(() => {
+        setSourceRefreshState("done");
+        window.setTimeout(() => {
+          setSourceRefreshState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setSourceRefreshError(String(error));
+        setSourceRefreshFailureCount((current) => current + 1);
+        setSourceRefreshState("idle");
+        refreshSourceAdapters();
+      })
+      .finally(() => {
+        sourceRefreshInFlightRef.current = false;
+      });
+  }
+
+  function sourceAdapterRefreshDue(adapter: SourceAdapter, intervalMs: number) {
+    const now = Date.now();
+
+    if (!adapter.lastSuccessAt) {
+      return true;
+    }
+
+    const lastSuccessAt = Date.parse(adapter.lastSuccessAt);
+    if (Number.isNaN(lastSuccessAt)) {
+      return true;
+    }
+
+    return now - lastSuccessAt >= intervalMs;
+  }
+
+  function anySourceAdapterRefreshDue(intervalMs: number) {
+    return scheduledSourceAdapters.some((adapter) => sourceAdapterRefreshDue(adapter, intervalMs));
+  }
+
+  function refreshSingleSource(adapter: SourceAdapter, trigger: SourceRefreshTrigger = "manual") {
+    if (sourceRefreshInFlightRef.current || sourceAdapterRefreshInFlight) {
+      return Promise.resolve();
+    }
+
+    if (!adapter.enabled) {
+      return Promise.resolve();
+    }
+
+    if (adapter.id === gpwRegistryAdapterId) {
+      return refreshCompanyRegistry(trigger);
+    }
+
+    sourceRefreshInFlightRef.current = true;
+    setSourceAdapterRefreshInFlight(adapter.id);
+    setSourceRefreshState("refreshing");
+    setSourceRefreshError(null);
+
+    return invoke<SourceIngestionResult>("refresh_source", {
+      input: {
+        adapterId: adapter.id,
+        trigger,
+      },
+    })
+      .then((response) => {
+        setSourceRefreshResult(response);
+        setSourceRefreshFailureCount(0);
+        setSelectedSourceAdapterId(response.adapterId);
+        return Promise.all([
+          refreshFeedItems(),
+          refreshSourceAdapters(),
+          refreshDatabaseStatus(),
+          refreshUnmatchedSourceItems(response.adapterId),
+        ]);
+      })
+      .then(() => {
+        setSourceRefreshState("done");
+        window.setTimeout(() => {
+          setSourceRefreshState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setSourceRefreshError(String(error));
+        setSourceRefreshFailureCount((current) => current + 1);
+        setSourceRefreshState("idle");
+        refreshSourceAdapters();
+      })
+      .finally(() => {
+        sourceRefreshInFlightRef.current = false;
+        setSourceAdapterRefreshInFlight(null);
+      });
+  }
+
+  function refreshScheduledSource(adapterId: string, intervalMs: number) {
+    const adapter = sourceAdaptersRef.current.find((sourceAdapter) => sourceAdapter.id === adapterId);
+
+    if (!adapter || !adapter.enabled) {
+      return Promise.resolve();
+    }
+
+    if (sourceRefreshInFlightRef.current || !sourceAdapterRefreshDue(adapter, intervalMs)) {
+      return Promise.resolve();
+    }
+
+    sourceRefreshInFlightRef.current = true;
+    setSourceRefreshState("refreshing");
+    setSourceRefreshError(null);
+
+    return invoke<SourceIngestionResult>("refresh_source", {
+      input: {
+        adapterId: adapter.id,
+        trigger: "scheduler",
+      },
+    })
+      .then((response) => {
+        setSourceRefreshResult(response);
+        setSourceRefreshFailureCount(0);
         return Promise.all([
           refreshFeedItems(),
           refreshSourceAdapters(),
@@ -1303,6 +1514,23 @@ export function App() {
       });
   }
 
+  function pruneOldFeedItems() {
+    return invoke<FeedPruneResult>("prune_old_feed_items", {
+      input: {
+        retentionDays: feedPruneRetentionDays,
+      },
+    })
+      .then((response) => {
+        setFeedPruneResult(response);
+        return refreshFeedItems();
+      })
+      .catch(() => undefined);
+  }
+
+  useEffect(() => {
+    sourceAdaptersRef.current = sourceAdapters;
+  }, [sourceAdapters]);
+
   useEffect(() => {
     refreshCompanies();
     refreshWatchlists();
@@ -1313,8 +1541,26 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!settings || settings.pollIntervalSeconds <= 0) {
-      setNextSourceRefreshAt(null);
+    const firstRunDelayMs = feedPruneInitialDelayMs + schedulerStartJitterMs(feedPruneIntervalMs);
+    let intervalId: number | null = null;
+    const timeoutId = window.setTimeout(() => {
+      void pruneOldFeedItems();
+      intervalId = window.setInterval(() => {
+        void pruneOldFeedItems();
+      }, feedPruneIntervalMs);
+    }, firstRunDelayMs);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!settings || settings.pollIntervalSeconds <= 0 || scheduledSourceAdapters.length === 0) {
+      setNextSourceRefreshAtByAdapterId({});
       return undefined;
     }
 
@@ -1322,18 +1568,43 @@ export function App() {
       ? Math.min(settings.pollIntervalSeconds * 2, 3600)
       : settings.pollIntervalSeconds;
     const intervalMs = intervalSeconds * 1000;
-    setNextSourceRefreshAt(Date.now() + intervalMs);
+    const timers = scheduledSourceAdapters.map((adapter) => {
+      const firstRunDelayMs = intervalMs + schedulerStartJitterMs(intervalMs);
+      setNextSourceRefreshAtByAdapterId((current) => ({
+        ...current,
+        [adapter.id]: Date.now() + firstRunDelayMs,
+      }));
 
-    const intervalId = window.setInterval(() => {
-      setNextSourceRefreshAt(Date.now() + intervalMs);
-      void refreshSources("scheduler");
-    }, intervalMs);
+      let intervalId: number | null = null;
+      const timeoutId = window.setTimeout(() => {
+        setNextSourceRefreshAtByAdapterId((current) => ({
+          ...current,
+          [adapter.id]: Date.now() + intervalMs,
+        }));
+        void refreshScheduledSource(adapter.id, intervalMs);
+        intervalId = window.setInterval(() => {
+          setNextSourceRefreshAtByAdapterId((current) => ({
+            ...current,
+            [adapter.id]: Date.now() + intervalMs,
+          }));
+          void refreshScheduledSource(adapter.id, intervalMs);
+        }, intervalMs);
+      }, firstRunDelayMs);
+
+      return { intervalId: () => intervalId, timeoutId };
+    });
 
     return () => {
-      window.clearInterval(intervalId);
-      setNextSourceRefreshAt(null);
+      for (const timer of timers) {
+        window.clearTimeout(timer.timeoutId);
+        const intervalId = timer.intervalId();
+        if (intervalId !== null) {
+          window.clearInterval(intervalId);
+        }
+      }
+      setNextSourceRefreshAtByAdapterId({});
     };
-  }, [settings?.pollIntervalSeconds, sourceRefreshFailureCount]);
+  }, [settings?.pollIntervalSeconds, sourceRefreshFailureCount, scheduledSourceAdapterKey]);
 
   useEffect(() => {
     if (!registryAdapter?.enabled || registryAdapter.defaultPollIntervalSeconds <= 0) {
@@ -1342,15 +1613,24 @@ export function App() {
     }
 
     const intervalMs = registryAdapter.defaultPollIntervalSeconds * 1000;
-    setNextRegistryRefreshAt(Date.now() + intervalMs);
+    const firstRunDelayMs = intervalMs + schedulerStartJitterMs(intervalMs);
+    setNextRegistryRefreshAt(Date.now() + firstRunDelayMs);
 
-    const intervalId = window.setInterval(() => {
+    let intervalId: number | null = null;
+    const timeoutId = window.setTimeout(() => {
       setNextRegistryRefreshAt(Date.now() + intervalMs);
       void refreshCompanyRegistryIfStale(registryAdapter.defaultPollIntervalSeconds);
-    }, intervalMs);
+      intervalId = window.setInterval(() => {
+        setNextRegistryRefreshAt(Date.now() + intervalMs);
+        void refreshCompanyRegistryIfStale(registryAdapter.defaultPollIntervalSeconds);
+      }, intervalMs);
+    }, firstRunDelayMs);
 
     return () => {
-      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
       setNextRegistryRefreshAt(null);
     };
   }, [registryAdapter?.enabled, registryAdapter?.defaultPollIntervalSeconds]);
@@ -1431,6 +1711,21 @@ export function App() {
       .then((response) => {
         setSettings(response);
         setTheme(response.theme);
+        setSettingsError(null);
+      })
+      .catch((error) => {
+        setSettingsError(String(error));
+      });
+  }
+
+  function updatePollInterval(nextPollIntervalSeconds: number) {
+    invoke<UserSettings>("update_settings", {
+      input: {
+        pollIntervalSeconds: nextPollIntervalSeconds,
+      },
+    })
+      .then((response) => {
+        setSettings(response);
         setSettingsError(null);
       })
       .catch((error) => {
@@ -2100,6 +2395,35 @@ export function App() {
     }));
   }
 
+  function markVisibleInboxAsRead() {
+    const unreadItems = filteredFeedItems.filter((item) => item.unread);
+    if (unreadItems.length === 0) {
+      return;
+    }
+
+    Promise.all(
+      unreadItems.map((item) =>
+        invoke<FeedItem>("update_feed_item_state", {
+          input: {
+            id: item.id,
+            read: true,
+            saved: item.saved,
+          },
+        }),
+      ),
+    )
+      .then((responses) => {
+        const updatedById = new Map(responses.map((item) => [item.id, item]));
+        setFeedState((current) =>
+          current.map((item) => updatedById.get(item.id) ?? item),
+        );
+        setFeedError(null);
+      })
+      .catch((error) => {
+        setFeedError(String(error));
+      });
+  }
+
   function selectFeedItemFromKeyboard(event: KeyboardEvent<HTMLElement>, item: FeedItem) {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
@@ -2470,6 +2794,7 @@ export function App() {
   function formatSourceType(value: string) {
     const labels: Record<string, string> = {
       official_report: "Official reports",
+      official_report_secondary: "Secondary official reports",
       public_media: "Public media",
       analysis: "Analysis",
       authenticated_research: "Authenticated research",
@@ -2483,11 +2808,32 @@ export function App() {
     const labels: Record<string, string> = {
       public_page: "Public page",
       rss: "RSS",
+      public_json: "Public JSON",
       api: "API",
       manual: "Manual",
+      authenticated: "Authenticated",
+      paywalled: "Paywalled",
     };
 
     return labels[value] ?? value.split("_").join(" ");
+  }
+
+  function formatSourceAccess(adapter: SourceAdapter) {
+    if (!adapter.enabled) {
+      return "Disabled";
+    }
+
+    const labels: Record<string, string> = {
+      public_page: "Public web page",
+      rss: "Public RSS",
+      public_json: "Public JSON",
+      api: "Public API",
+      manual: "Manual/local",
+      authenticated: "Authenticated",
+      paywalled: "Paywalled",
+    };
+
+    return labels[adapter.fetchMode] ?? formatFetchMode(adapter.fetchMode);
   }
 
   function formatSourceSubtitle(adapter: SourceAdapter) {
@@ -2507,8 +2853,12 @@ export function App() {
   }
 
   function formatSourceScheduler(adapter: SourceAdapter) {
+    if (!adapter.enabled) {
+      return "Off";
+    }
+
     if (adapter.id === gpwRegistryAdapterId) {
-      return adapter.enabled && adapter.defaultPollIntervalSeconds > 0
+      return adapter.defaultPollIntervalSeconds > 0
         ? `In-app · ${formatPollInterval(adapter.defaultPollIntervalSeconds)}`
         : "Off";
     }
@@ -2539,7 +2889,12 @@ export function App() {
   }
 
   function formatNextRefresh(adapter: SourceAdapter) {
-    const nextRefreshAt = adapter.id === gpwRegistryAdapterId ? nextRegistryRefreshAt : nextSourceRefreshAt;
+    if (!adapter.enabled) {
+      return "Off";
+    }
+
+    const nextRefreshAt =
+      adapter.id === gpwRegistryAdapterId ? nextRegistryRefreshAt : nextSourceRefreshAtByAdapterId[adapter.id];
 
     if (!nextRefreshAt) {
       return "Off";
@@ -2793,6 +3148,24 @@ export function App() {
                 </div>
                 <button
                   className="secondary-button compact-button"
+                  disabled={inboxReviewStats.unread === 0}
+                  onClick={markVisibleInboxAsRead}
+                  type="button"
+                >
+                  <MailOpen size={15} />
+                  Mark all read
+                </button>
+                <button
+                  className="secondary-button compact-button"
+                  disabled={deleteUnsavedFeedState === "refreshing"}
+                  onClick={deleteUnsavedFeedItems}
+                  type="button"
+                >
+                  {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
+                  {deleteUnsavedFeedState === "refreshing" ? "Deleting" : "Delete unsaved"}
+                </button>
+                <button
+                  className="secondary-button compact-button"
                   disabled={!hasActiveInboxFilters}
                   onClick={clearInboxFilters}
                   type="button"
@@ -2892,7 +3265,7 @@ export function App() {
                         <span>{item.company}</span>
                         <span>{item.type}</span>
                         <span>{item.source}</span>
-                        <span>{item.time}</span>
+                        <span>{formatTimestamp(item.time, "Unknown")}</span>
                       </div>
                       <h2>{item.title}</h2>
                       <p>{feedItemSummary(item)}</p>
@@ -2963,6 +3336,9 @@ export function App() {
                   </div>
                 ) : null}
                 {feedError ? <p className="error-text">Feed command failed: {feedError}</p> : null}
+                {deleteUnsavedFeedError ? (
+                  <p className="error-text">Delete unsaved failed: {deleteUnsavedFeedError}</p>
+                ) : null}
                 {sourceRefreshError ? (
                   <p className="error-text">Source refresh failed: {sourceRefreshError}</p>
                 ) : null}
@@ -3364,7 +3740,7 @@ export function App() {
                                       <div className="feed-meta">
                                         <span>{item.type}</span>
                                         <span>{item.source}</span>
-                                        <span>{item.time}</span>
+                                        <span>{formatTimestamp(item.time, "Unknown")}</span>
                                       </div>
                                       <h3>{item.title}</h3>
                                       <p>{feedItemSummary(item)}</p>
@@ -3467,11 +3843,11 @@ export function App() {
                                         </div>
                                         <div>
                                           <dt>Published</dt>
-                                          <dd>{selectedCompanyFeedItem.publishedAt}</dd>
+                                          <dd>{formatTimestamp(selectedCompanyFeedItem.publishedAt, "Unknown")}</dd>
                                         </div>
                                         <div>
                                           <dt>Fetched</dt>
-                                          <dd>{selectedCompanyFeedItem.fetchedAt}</dd>
+                                          <dd>{formatTimestamp(selectedCompanyFeedItem.fetchedAt, "Unknown")}</dd>
                                         </div>
                                         <div>
                                           <dt>Attribution</dt>
@@ -4650,6 +5026,43 @@ export function App() {
                     </article>
                     {selectedSourceAdapterId === adapter.id ? (
                       <div className="source-detail-panel" aria-label="Source adapter details">
+                        <div className="source-detail-actions">
+                          <button
+                            className="secondary-button compact-button"
+                            disabled={
+                              !adapter.enabled ||
+                              sourceRefreshState === "refreshing" ||
+                              (adapter.id === gpwRegistryAdapterId
+                                ? registryRefreshState === "refreshing"
+                                : sourceAdapterRefreshInFlight !== null)
+                            }
+                            onClick={() => {
+                              void refreshSingleSource(adapter, "manual");
+                            }}
+                            title={
+                              adapter.enabled
+                                ? `Refresh ${adapter.displayName}`
+                                : `${adapter.displayName} is disabled`
+                            }
+                            type="button"
+                          >
+                            {adapter.id === gpwRegistryAdapterId && registryRefreshState === "done" ? (
+                              <CheckCircle2 size={15} />
+                            ) : (
+                              <RefreshCw size={15} />
+                            )}
+                            {adapter.id === gpwRegistryAdapterId
+                              ? registryRefreshState === "refreshing"
+                                ? "Refreshing"
+                                : "Refresh source"
+                              : sourceAdapterRefreshInFlight === adapter.id
+                                ? "Refreshing"
+                                : "Refresh source"}
+                          </button>
+                          {sourceRefreshError && sourceAdapterRefreshInFlight === null ? (
+                            <span className="error-text">Source refresh failed: {sourceRefreshError}</span>
+                          ) : null}
+                        </div>
                         <dl className="source-status-grid source-status-detail">
                           <div>
                             <dt>Scheduler</dt>
@@ -4661,7 +5074,7 @@ export function App() {
                           </div>
                           <div>
                             <dt>Last attempt</dt>
-                            <dd>{adapter.lastAttemptAt ?? "Never"}</dd>
+                            <dd>{formatTimestamp(adapter.lastAttemptAt, "Never")}</dd>
                           </div>
                           <div>
                             <dt>Last trigger</dt>
@@ -4669,11 +5082,11 @@ export function App() {
                           </div>
                           <div>
                             <dt>Last success</dt>
-                            <dd>{adapter.lastSuccessAt ?? "Never"}</dd>
+                            <dd>{formatTimestamp(adapter.lastSuccessAt, "Never")}</dd>
                           </div>
                           <div>
                             <dt>Last error</dt>
-                            <dd>{adapter.lastErrorAt ?? "None"}</dd>
+                            <dd>{formatTimestamp(adapter.lastErrorAt, "None")}</dd>
                           </div>
                           <div>
                             <dt>{sourceLastResultLabel(adapter)}</dt>
@@ -4688,6 +5101,10 @@ export function App() {
                           <div>
                             <dt>Status</dt>
                             <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
+                          </div>
+                          <div>
+                            <dt>Access</dt>
+                            <dd>{formatSourceAccess(adapter)}</dd>
                           </div>
                           <div>
                             <dt>{sourcePolicyLabel(adapter)}</dt>
@@ -4830,7 +5247,7 @@ export function App() {
                                   >
                                     <span>{item.companyName}</span>
                                     <strong>{item.title}</strong>
-                                    <small>{item.publishedAt || item.fetchedAt}</small>
+                                    <small>{formatTimestamp(item.publishedAt || item.fetchedAt, "Unknown")}</small>
                                   </a>
                                 ))}
                                 {(unmatchedSourceItems[adapter.id] ?? []).length === 0 ? (
@@ -4870,55 +5287,118 @@ export function App() {
               </div>
 
               <div className="settings-layout" aria-label="Application settings">
-                <div className="settings-row">
-                  <label>
-                    Theme
-                    <select
-                      aria-label="Settings theme"
-                      value={theme}
-                      onChange={(event) => updateTheme(event.target.value as Theme)}
-                    >
-                      <option value="dark">Dark</option>
-                      <option value="light">Light</option>
-                      <option value="system">System</option>
-                    </select>
-                  </label>
-                  <div className="settings-summary">
-                    <span>Source</span>
-                    <strong>{settings?.settingsSource ?? "sqlite"}</strong>
+                <section className="settings-group" aria-labelledby="settings-appearance-title">
+                  <h2 id="settings-appearance-title">Appearance</h2>
+                  <div className="settings-row">
+                    <label>
+                      Theme
+                      <select
+                        aria-label="Settings theme"
+                        value={theme}
+                        onChange={(event) => updateTheme(event.target.value as Theme)}
+                      >
+                        <option value="dark">Dark</option>
+                        <option value="light">Light</option>
+                        <option value="system">System</option>
+                      </select>
+                    </label>
+                    <div className="settings-summary">
+                      <span>Palette</span>
+                      <strong>{settings?.accentPalette ?? "night-neon"}</strong>
+                    </div>
                   </div>
-                  <div className="settings-summary">
-                    <span>Palette</span>
-                    <strong>{settings?.accentPalette ?? "night-neon"}</strong>
-                  </div>
-                  <div className="settings-summary">
-                    <span>Poll</span>
-                    <strong>{formatPollInterval(settings?.pollIntervalSeconds ?? 900)}</strong>
-                  </div>
-                </div>
+                </section>
 
-                <dl className="settings-grid">
-                  <div>
-                    <dt>YAML import/export</dt>
-                    <dd>{settings?.yamlImportExportStatus ?? "accepted_deferred"}</dd>
+                <section className="settings-group" aria-labelledby="settings-sources-title">
+                  <h2 id="settings-sources-title">Sources</h2>
+                  <div className="settings-row">
+                    <label>
+                      Poll interval
+                      <select
+                        aria-label="Settings source poll interval"
+                        value={settings?.pollIntervalSeconds ?? 900}
+                        onChange={(event) => updatePollInterval(Number(event.target.value))}
+                      >
+                        <option value={300}>5 min</option>
+                        <option value={900}>15 min</option>
+                        <option value={1800}>30 min</option>
+                        <option value={3600}>1 hour</option>
+                      </select>
+                    </label>
                   </div>
-                  <div>
-                    <dt>Settings format</dt>
-                    <dd>{settings?.settingsImportExportFormat ?? "yaml"}</dd>
-                  </div>
-                  <div>
-                    <dt>YouTube transcription</dt>
-                    <dd>{settings?.aiProviders.youtubeTranscriptionProvider ?? "gemini"}</dd>
-                  </div>
-                  <div>
-                    <dt>General AI provider</dt>
-                    <dd>{settings?.aiProviders.generalAnalysisProvider ?? "Not configured"}</dd>
-                  </div>
-                  <div>
-                    <dt>AI analysis mode</dt>
-                    <dd>{settings?.aiAnalysisMode ?? "source_grounded"}</dd>
-                  </div>
-                </dl>
+                  <dl className="settings-grid">
+                    <div>
+                      <dt>Settings source</dt>
+                      <dd>{settings?.settingsSource ?? "sqlite"}</dd>
+                    </div>
+                    <div>
+                      <dt>Poll interval</dt>
+                      <dd>{formatPollInterval(settings?.pollIntervalSeconds ?? 900)}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="settings-group" aria-labelledby="settings-cleanup-title">
+                  <h2 id="settings-cleanup-title">Feed Cleanup</h2>
+                  <dl className="settings-grid">
+                    <div>
+                      <dt>Feed cleanup</dt>
+                      <dd>On</dd>
+                    </div>
+                    <div>
+                      <dt>Feed retention</dt>
+                      <dd>{feedPruneRetentionDays} days</dd>
+                    </div>
+                    <div>
+                      <dt>Cleanup interval</dt>
+                      <dd>Daily</dd>
+                    </div>
+                    <div>
+                      <dt>Last cleanup</dt>
+                      <dd>{formatTimestamp(feedPruneResult?.prunedAt, "Not run this session")}</dd>
+                    </div>
+                    <div>
+                      <dt>Last cleanup deleted</dt>
+                      <dd>{feedPruneResult ? feedPruneResult.itemsDeleted : "Not run this session"}</dd>
+                    </div>
+                    <div>
+                      <dt>Protected feed items</dt>
+                      <dd>Saved</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="settings-group" aria-labelledby="settings-import-title">
+                  <h2 id="settings-import-title">Import And Export</h2>
+                  <dl className="settings-grid">
+                    <div>
+                      <dt>YAML import/export</dt>
+                      <dd>{settings?.yamlImportExportStatus ?? "accepted_deferred"}</dd>
+                    </div>
+                    <div>
+                      <dt>Settings format</dt>
+                      <dd>{settings?.settingsImportExportFormat ?? "yaml"}</dd>
+                    </div>
+                  </dl>
+                </section>
+
+                <section className="settings-group" aria-labelledby="settings-ai-title">
+                  <h2 id="settings-ai-title">AI</h2>
+                  <dl className="settings-grid">
+                    <div>
+                      <dt>YouTube transcription</dt>
+                      <dd>{settings?.aiProviders.youtubeTranscriptionProvider ?? "gemini"}</dd>
+                    </div>
+                    <div>
+                      <dt>General AI provider</dt>
+                      <dd>{settings?.aiProviders.generalAnalysisProvider ?? "Not configured"}</dd>
+                    </div>
+                    <div>
+                      <dt>AI analysis mode</dt>
+                      <dd>{settings?.aiAnalysisMode ?? "source_grounded"}</dd>
+                    </div>
+                  </dl>
+                </section>
 
                 {settingsError ? (
                   <p className="error-text">Settings command failed: {settingsError}</p>
@@ -5049,11 +5529,11 @@ export function App() {
                     </div>
                     <div>
                       <dt>Published</dt>
-                      <dd>{selectedFeedItem.publishedAt}</dd>
+                      <dd>{formatTimestamp(selectedFeedItem.publishedAt, "Unknown")}</dd>
                     </div>
                     <div>
                       <dt>Fetched</dt>
-                      <dd>{selectedFeedItem.fetchedAt}</dd>
+                      <dd>{formatTimestamp(selectedFeedItem.fetchedAt, "Unknown")}</dd>
                     </div>
                     <div>
                       <dt>Attribution</dt>
