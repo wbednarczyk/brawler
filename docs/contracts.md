@@ -128,7 +128,7 @@ Rules:
 - GPW listing ingestion upserts feed items by `(sourceAdapterId, dedupeKey)` and must preserve existing `read` and `saved` user state.
 - GPW listing ingestion matches companies by ticker first, then exact ISIN fallback. Matched items populate `feed_item_companies` with `matchType: "ticker"` or `"isin"` and use the matched exchange-qualified ticker as `displayCompany`.
 - GPW issuer/company name alone is not an automatic match key. Names may support lookup suggestions and diagnostics, but silent feed matching must use ticker or ISIN.
-- The GPW company registry cache provides ticker, ISIN, company name, source metadata, freshness, and last-error state for the complete public GPW company list returned by the GPW companies page. Runtime lookup and ingestion use the local SQLite cache first; sample seed data is temporary bootstrap/test data only.
+- The GPW company registry cache provides ticker, ISIN, company name, source metadata, freshness, and last-error state for the complete public GPW company list returned by the GPW companies page. Runtime lookup and ingestion use the local SQLite cache populated from accepted source refresh paths; sample data is test-only and must not seed target runtime databases.
 - Unmatched GPW listings may be stored locally with source-derived `displayCompany`, but they must not appear in normal Inbox/company feed views until matched to a tracked company.
 - In-app official report body access is required for v1 GPW support.
 - GPW detail parsing is the primary M6 path for extracting report body text and attachment links for matched GPW feed items.
@@ -527,6 +527,7 @@ Initial Tauri command groups:
 - `update_feed_item`
 - `refresh_sources`
 - `refresh_gpw_company_registry`
+- `refresh_gpw_company_registry_if_stale`
 - `list_company_registry_entries`
 - `list_unmatched_source_items`
 - `list_jobs`
@@ -549,18 +550,28 @@ Initial `refresh_gpw_company_registry` behavior:
 - Records adapter attempt/success/error state under `gpw-company-registry`.
 - Automated tests use test-sample-backed parser/fetch behavior; default checks do not depend on live GPW availability.
 
+Initial `refresh_gpw_company_registry_if_stale` behavior:
+
+- Runs only for scheduler-triggered refreshes.
+- Checks local adapter freshness before making a live request.
+- Uses the registry adapter poll interval, initially one day, as the stale threshold.
+- Returns no refresh result when the cached registry is still fresh.
+- Does not run immediately on app startup; the first scheduled check happens after one full registry poll interval while the app is open.
+
 Initial `list_company_registry_entries` behavior:
 
 - Returns active cached GPW company registry rows from SQLite.
 - Includes exchange, ticker, qualified ticker, display name, ISIN, source URL, fetched timestamp, and whether the company is already tracked locally.
-- Supports the Sources screen registry detail panel, where the list is collapsed by default and each untracked company can be added to the local company list.
+- Supports the Companies form registry suggestions and the Sources screen registry detail panel.
+- The Companies form can use cached registry matches to fill exchange, ticker, display name, and ISIN while preserving manual company entry.
+- The Sources registry list is collapsed by default, searchable by ticker/company/ISIN, and each untracked company can be added to the local company list.
 - Does not fetch live data by itself; refresh is handled by `refresh_gpw_company_registry` or lookup bootstrap behavior.
 
 Initial `lookup_company` behavior:
 
-- Looks up GPW companies from the local `company_registry_entries` cache before bootstrap seed data.
+- Looks up GPW companies from the local `company_registry_entries` cache.
 - Uses exact ticker first, exact ISIN second, and company-name search only for company-form lookup/enrichment.
-- If a GPW lookup misses while the registry still contains only bootstrap seed rows, the command may refresh the full GPW registry once and retry the lookup.
+- If a GPW lookup misses while the registry cache is empty, the command may refresh the full GPW registry once and retry the lookup.
 - Feed/source matching remains stricter than form lookup: ticker first, ISIN-to-ticker registry resolution second, exact ISIN fallback, and no silent company-name matching.
 
 Initial `refresh_sources` behavior:

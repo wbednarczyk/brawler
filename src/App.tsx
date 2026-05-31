@@ -57,6 +57,7 @@ type InboxStatusFilter = "all" | "unread" | "saved";
 type DbRefreshState = "idle" | "refreshing" | "done";
 type SourceRefreshState = "idle" | "refreshing" | "done";
 type SourceRefreshTrigger = "manual" | "scheduler";
+const gpwRegistryAdapterId = "gpw-company-registry";
 
 type FeedItem = {
   id: string;
@@ -612,6 +613,14 @@ function NotebookQuarterField({
 export function App() {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
+  const companyLookupVersionRef = useRef(0);
+  const skipNextCompanyLookupRef = useRef(false);
+  const companyFieldRefs = useRef<Record<keyof CompanyForm, HTMLInputElement | null>>({
+    exchange: null,
+    ticker: null,
+    displayName: null,
+    isin: null,
+  });
   const [activeSection, setActiveSection] = useState<Section>("Inbox");
   const [theme, setTheme] = useState<Theme>("dark");
   const [health, setHealth] = useState<HealthResponse | null>(null);
@@ -671,13 +680,17 @@ export function App() {
   const [registryRefreshResult, setRegistryRefreshResult] = useState<CompanyRegistryRefreshResult | null>(null);
   const [registryRefreshError, setRegistryRefreshError] = useState<string | null>(null);
   const [nextSourceRefreshAt, setNextSourceRefreshAt] = useState<number | null>(null);
+  const [nextRegistryRefreshAt, setNextRegistryRefreshAt] = useState<number | null>(null);
   const [unmatchedSourceItems, setUnmatchedSourceItems] = useState<Record<string, UnmatchedSourceItem[]>>({});
   const [unmatchedSourceItemsError, setUnmatchedSourceItemsError] = useState<string | null>(null);
   const [expandedUnmatchedAdapters, setExpandedUnmatchedAdapters] = useState<Record<string, boolean>>({});
   const [companyRegistryEntries, setCompanyRegistryEntries] = useState<CompanyRegistryEntry[]>([]);
   const [companyRegistryEntriesError, setCompanyRegistryEntriesError] = useState<string | null>(null);
   const [isCompanyRegistryListExpanded, setCompanyRegistryListExpanded] = useState(false);
+  const [companyRegistrySearch, setCompanyRegistrySearch] = useState("");
+  const [selectedCompanyRegistryTicker, setSelectedCompanyRegistryTicker] = useState<string | null>(null);
   const [addingRegistryTicker, setAddingRegistryTicker] = useState<string | null>(null);
+  const [companyListSearch, setCompanyListSearch] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
@@ -871,6 +884,90 @@ export function App() {
   }, [feedState, selectedCompany]);
   const selectedCompanyFeedItem =
     selectedCompanyFeedItems.find((item) => item.id === selectedCompanyFeedItemId) ?? null;
+  const registryAdapter = useMemo(
+    () => sourceAdapters.find((adapter) => adapter.id === gpwRegistryAdapterId) ?? null,
+    [sourceAdapters],
+  );
+  const filteredCompanyRegistryEntries = useMemo(() => {
+    const normalizedSearch = companyRegistrySearch.trim().toLowerCase();
+
+    if (normalizedSearch.length === 0) {
+      return companyRegistryEntries;
+    }
+
+    return companyRegistryEntries.filter((entry) =>
+      [
+        entry.exchange,
+        entry.ticker,
+        entry.qualifiedTicker,
+        entry.displayName,
+        entry.isin ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+      .includes(normalizedSearch),
+    );
+  }, [companyRegistryEntries, companyRegistrySearch]);
+  const companyFormRegistryMatches = useMemo(() => {
+    if (selectedCompanyRegistryTicker) {
+      return [];
+    }
+
+    const searchTerms = [
+      companyForm.ticker,
+      companyForm.displayName,
+      companyForm.isin,
+    ]
+      .map((value) => value.trim().toLowerCase())
+      .filter((value) => value.length >= 2);
+
+    if (companyForm.exchange.trim().toUpperCase() !== "GPW" || searchTerms.length === 0) {
+      return [];
+    }
+
+    return companyRegistryEntries
+      .filter((entry) =>
+        searchTerms.some((term) =>
+          [
+            entry.ticker,
+            entry.qualifiedTicker,
+            entry.displayName,
+            entry.isin ?? "",
+          ]
+            .join(" ")
+            .toLowerCase()
+            .includes(term),
+        ),
+      )
+      .slice(0, 5);
+  }, [
+    companyForm.displayName,
+    companyForm.exchange,
+    companyForm.isin,
+    companyForm.ticker,
+    companyRegistryEntries,
+    selectedCompanyRegistryTicker,
+  ]);
+  const filteredCompanies = useMemo(() => {
+    const normalizedSearch = companyListSearch.trim().toLowerCase();
+
+    if (normalizedSearch.length === 0) {
+      return companies;
+    }
+
+    return companies.filter((company) =>
+      [
+        company.exchange,
+        company.ticker,
+        company.qualifiedTicker,
+        company.displayName,
+        company.isin ?? "",
+      ]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedSearch),
+    );
+  }, [companies, companyListSearch]);
   const selectedCompanyFeedStats = useMemo(
     () => ({
       total: selectedCompanyFeedItems.length,
@@ -1183,6 +1280,29 @@ export function App() {
       });
   }
 
+  function refreshCompanyRegistryIfStale(staleAfterSeconds: number) {
+    return invoke<CompanyRegistryRefreshResult | null>("refresh_gpw_company_registry_if_stale", {
+      input: {
+        trigger: "scheduler",
+        staleAfterSeconds,
+      },
+    })
+      .then((response) => {
+        if (!response) {
+          return Promise.resolve();
+        }
+
+        setRegistryRefreshResult(response);
+        return Promise.all([refreshSourceAdapters(), refreshDatabaseStatus(), refreshCompanyRegistryEntries()]).then(
+          () => undefined,
+        );
+      })
+      .catch((error) => {
+        setRegistryRefreshError(String(error));
+        refreshSourceAdapters();
+      });
+  }
+
   useEffect(() => {
     refreshCompanies();
     refreshWatchlists();
@@ -1216,6 +1336,26 @@ export function App() {
   }, [settings?.pollIntervalSeconds, sourceRefreshFailureCount]);
 
   useEffect(() => {
+    if (!registryAdapter?.enabled || registryAdapter.defaultPollIntervalSeconds <= 0) {
+      setNextRegistryRefreshAt(null);
+      return undefined;
+    }
+
+    const intervalMs = registryAdapter.defaultPollIntervalSeconds * 1000;
+    setNextRegistryRefreshAt(Date.now() + intervalMs);
+
+    const intervalId = window.setInterval(() => {
+      setNextRegistryRefreshAt(Date.now() + intervalMs);
+      void refreshCompanyRegistryIfStale(registryAdapter.defaultPollIntervalSeconds);
+    }, intervalMs);
+
+    return () => {
+      window.clearInterval(intervalId);
+      setNextRegistryRefreshAt(null);
+    };
+  }, [registryAdapter?.enabled, registryAdapter?.defaultPollIntervalSeconds]);
+
+  useEffect(() => {
     if (!selectedCompanyId) {
       setSelectedNotebookEntryId(null);
       setSelectedClaimEntryId(null);
@@ -1242,6 +1382,12 @@ export function App() {
 
     refreshNotebookEntries(nextCompanyId);
   }, [activeSection, companies, selectedNotebookCompanyId]);
+
+  useEffect(() => {
+    if (activeSection === "Companies") {
+      refreshCompanyRegistryEntries();
+    }
+  }, [activeSection, companies.length]);
 
   useEffect(() => {
     if (!selectedNotebookEntry) {
@@ -1293,10 +1439,26 @@ export function App() {
   }
 
   function updateCompanyForm(field: keyof CompanyForm, value: string) {
+    companyLookupVersionRef.current += 1;
+    setSelectedCompanyRegistryTicker(null);
     setCompanyForm((current) => ({
       ...current,
       [field]: value,
     }));
+  }
+
+  function clearCompanyFormField(field: keyof CompanyForm) {
+    companyLookupVersionRef.current += 1;
+    skipNextCompanyLookupRef.current = true;
+    setSelectedCompanyRegistryTicker(null);
+    setLookupStatus(null);
+    setCompanyForm((current) => ({
+      ...current,
+      [field]: field === "exchange" ? "GPW" : "",
+    }));
+    window.setTimeout(() => {
+      companyFieldRefs.current[field]?.focus();
+    }, 0);
   }
 
   function updateNotebookForm(field: keyof NotebookForm, value: string) {
@@ -1670,6 +1832,7 @@ export function App() {
   }
 
   function applyLookupResult(result: CompanyLookupResult) {
+    setSelectedCompanyRegistryTicker(result.qualifiedTicker);
     setCompanyForm({
       exchange: result.exchange,
       ticker: result.ticker,
@@ -1679,7 +1842,20 @@ export function App() {
     setLookupStatus(`Filled from ${result.source}: ${result.qualifiedTicker}`);
   }
 
+  function applyRegistryEntryToCompanyForm(entry: CompanyRegistryEntry) {
+    companyLookupVersionRef.current += 1;
+    setSelectedCompanyRegistryTicker(entry.qualifiedTicker);
+    setCompanyForm({
+      exchange: entry.exchange,
+      ticker: entry.ticker,
+      displayName: entry.displayName,
+      isin: entry.isin ?? "",
+    });
+    setLookupStatus(`Selected from GPW registry: ${entry.qualifiedTicker}`);
+  }
+
   function lookupCompany() {
+    const lookupVersion = companyLookupVersionRef.current;
     setLookupStatus("Looking up GPW registry...");
 
     invoke<CompanyLookupResult | null>("lookup_company", {
@@ -1691,6 +1867,10 @@ export function App() {
       },
     })
       .then((result) => {
+        if (lookupVersion !== companyLookupVersionRef.current) {
+          return;
+        }
+
         if (result) {
           applyLookupResult(result);
         } else {
@@ -1699,12 +1879,21 @@ export function App() {
         setCompaniesError(null);
       })
       .catch((error) => {
+        if (lookupVersion !== companyLookupVersionRef.current) {
+          return;
+        }
+
         setLookupStatus(null);
         setCompaniesError(String(error));
       });
   }
 
   function lookupCompanyIfUseful() {
+    if (skipNextCompanyLookupRef.current) {
+      skipNextCompanyLookupRef.current = false;
+      return;
+    }
+
     if (companyForm.ticker || companyForm.displayName.length >= 3 || companyForm.isin) {
       lookupCompany();
     }
@@ -2213,6 +2402,33 @@ export function App() {
   }
 
   function formatPollInterval(seconds: number) {
+    if (seconds >= 86400 && seconds % 86400 === 0) {
+      const days = seconds / 86400;
+      return days === 1 ? "1 day" : `${days} days`;
+    }
+
+    if (seconds >= 86400) {
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+
+      if (hours === 0) {
+        return days === 1 ? "1 day" : `${days} days`;
+      }
+
+      return `${days}d ${hours}h`;
+    }
+
+    if (seconds >= 3600) {
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+
+      if (minutes === 0) {
+        return `${hours}h`;
+      }
+
+      return `${hours}h ${minutes}m`;
+    }
+
     if (seconds < 60) {
       return `${seconds}s`;
     }
@@ -2232,6 +2448,12 @@ export function App() {
       return "None";
     }
 
+    if (adapter.id === gpwRegistryAdapterId) {
+      return `${adapter.lastItemsFetched} cached entries · ${
+        adapter.lastItemsCreated ?? 0
+      } refreshed or updated`;
+    }
+
     const listingResult = `${adapter.lastItemsFetched} fetched · ${adapter.lastItemsCreated ?? 0} created · ${
       adapter.lastItemsMatched ?? 0
     } matched · ${adapter.lastItemsUnmatched ?? 0} unmatched`;
@@ -2245,7 +2467,52 @@ export function App() {
     } stored · ${adapter.lastDetailItemsFailed ?? 0} failed`;
   }
 
-  function formatSourceScheduler() {
+  function formatSourceType(value: string) {
+    const labels: Record<string, string> = {
+      official_report: "Official reports",
+      public_media: "Public media",
+      analysis: "Analysis",
+      authenticated_research: "Authenticated research",
+      company_registry: "Company registry",
+    };
+
+    return labels[value] ?? value.split("_").join(" ");
+  }
+
+  function formatFetchMode(value: string) {
+    const labels: Record<string, string> = {
+      public_page: "Public page",
+      rss: "RSS",
+      api: "API",
+      manual: "Manual",
+    };
+
+    return labels[value] ?? value.split("_").join(" ");
+  }
+
+  function formatSourceSubtitle(adapter: SourceAdapter) {
+    if (adapter.id === gpwRegistryAdapterId) {
+      return "Company registry · Public GPW company list";
+    }
+
+    return `${formatSourceType(adapter.sourceType)} · ${formatFetchMode(adapter.fetchMode)}`;
+  }
+
+  function sourceLastResultLabel(adapter: SourceAdapter) {
+    return adapter.id === gpwRegistryAdapterId ? "Cache result" : "Last result";
+  }
+
+  function sourcePolicyLabel(adapter: SourceAdapter) {
+    return adapter.id === gpwRegistryAdapterId ? "Refresh policy" : "Rate limit";
+  }
+
+  function formatSourceScheduler(adapter: SourceAdapter) {
+    if (adapter.id === gpwRegistryAdapterId) {
+      return adapter.enabled && adapter.defaultPollIntervalSeconds > 0
+        ? `In-app · ${formatPollInterval(adapter.defaultPollIntervalSeconds)}`
+        : "Off";
+    }
+
     if (!settings || settings.pollIntervalSeconds <= 0) {
       return "Off";
     }
@@ -2271,12 +2538,14 @@ export function App() {
     return "None";
   }
 
-  function formatNextSourceRefresh() {
-    if (!nextSourceRefreshAt) {
+  function formatNextRefresh(adapter: SourceAdapter) {
+    const nextRefreshAt = adapter.id === gpwRegistryAdapterId ? nextRegistryRefreshAt : nextSourceRefreshAt;
+
+    if (!nextRefreshAt) {
       return "Off";
     }
 
-    const seconds = Math.max(0, Math.ceil((nextSourceRefreshAt - Date.now()) / 1000));
+    const seconds = Math.max(0, Math.ceil((nextRefreshAt - Date.now()) / 1000));
     return `In ${formatPollInterval(seconds)}`;
   }
 
@@ -2752,53 +3021,180 @@ export function App() {
                 <form className="company-form" onSubmit={createCompany}>
                   <label>
                     Exchange
-                    <input
-                      required
-                      value={companyForm.exchange}
-                      onChange={(event) => updateCompanyForm("exchange", event.target.value)}
-                    />
+                    <span className="field-with-clear">
+                      <input
+                        ref={(element) => {
+                          companyFieldRefs.current.exchange = element;
+                        }}
+                        required
+                        value={companyForm.exchange}
+                        onChange={(event) => updateCompanyForm("exchange", event.target.value)}
+                      />
+                      {companyForm.exchange.trim().toUpperCase() !== "GPW" ? (
+                        <button
+                          aria-label="Clear exchange"
+                          className="field-clear-button"
+                          onClick={() => clearCompanyFormField("exchange")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          title="Clear exchange"
+                          type="button"
+                        >
+                          <X size={13} />
+                        </button>
+                      ) : null}
+                    </span>
                   </label>
                   <label>
                     Ticker
-                    <input
-                      required
-                      value={companyForm.ticker}
-                      onBlur={lookupCompanyIfUseful}
-                      onChange={(event) => updateCompanyForm("ticker", event.target.value)}
-                      placeholder="CDR"
-                    />
+                    <span className="field-with-clear">
+                      <input
+                        ref={(element) => {
+                          companyFieldRefs.current.ticker = element;
+                        }}
+                        required
+                        value={companyForm.ticker}
+                        onBlur={lookupCompanyIfUseful}
+                        onChange={(event) => updateCompanyForm("ticker", event.target.value)}
+                        placeholder="CDR"
+                      />
+                      {companyForm.ticker.trim().length > 0 ? (
+                        <button
+                          aria-label="Clear ticker"
+                          className="field-clear-button"
+                          onClick={() => clearCompanyFormField("ticker")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          title="Clear ticker"
+                          type="button"
+                        >
+                          <X size={13} />
+                        </button>
+                      ) : null}
+                    </span>
                   </label>
                   <label>
                     Name
-                    <input
-                      required
-                      value={companyForm.displayName}
-                      onBlur={lookupCompanyIfUseful}
-                      onChange={(event) => updateCompanyForm("displayName", event.target.value)}
-                      placeholder="CD PROJEKT S.A."
-                    />
+                    <span className="field-with-clear">
+                      <input
+                        ref={(element) => {
+                          companyFieldRefs.current.displayName = element;
+                        }}
+                        required
+                        value={companyForm.displayName}
+                        onBlur={lookupCompanyIfUseful}
+                        onChange={(event) => updateCompanyForm("displayName", event.target.value)}
+                        placeholder="CD PROJEKT S.A."
+                      />
+                      {companyForm.displayName.trim().length > 0 ? (
+                        <button
+                          aria-label="Clear name"
+                          className="field-clear-button"
+                          onClick={() => clearCompanyFormField("displayName")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          title="Clear name"
+                          type="button"
+                        >
+                          <X size={13} />
+                        </button>
+                      ) : null}
+                    </span>
                   </label>
                   <label>
                     ISIN
-                    <input
-                      value={companyForm.isin}
-                      onBlur={lookupCompanyIfUseful}
-                      onChange={(event) => updateCompanyForm("isin", event.target.value)}
-                      placeholder="PLOPTTC00011"
-                    />
+                    <span className="field-with-clear">
+                      <input
+                        ref={(element) => {
+                          companyFieldRefs.current.isin = element;
+                        }}
+                        value={companyForm.isin}
+                        onBlur={lookupCompanyIfUseful}
+                        onChange={(event) => updateCompanyForm("isin", event.target.value)}
+                        placeholder="PLOPTTC00011"
+                      />
+                      {companyForm.isin.trim().length > 0 ? (
+                        <button
+                          aria-label="Clear ISIN"
+                          className="field-clear-button"
+                          onClick={() => clearCompanyFormField("isin")}
+                          onMouseDown={(event) => event.preventDefault()}
+                          title="Clear ISIN"
+                          type="button"
+                        >
+                          <X size={13} />
+                        </button>
+                      ) : null}
+                    </span>
                   </label>
-                  <button className="secondary-button" onClick={lookupCompany} type="button">
+                  <button
+                    className="secondary-button"
+                    onClick={lookupCompany}
+                    onMouseDown={(event) => event.preventDefault()}
+                    type="button"
+                  >
                     <LocateFixed size={16} />
                     Lookup
                   </button>
-                  <button className="primary-button" type="submit">
+                  <button
+                    className="primary-button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    type="submit"
+                  >
                     <Plus size={16} />
                     Add
                   </button>
+                  {companyFormRegistryMatches.length > 0 ? (
+                    <div className="company-registry-suggestions" aria-label="Company registry suggestions">
+                      <span>Registry matches</span>
+                      <div>
+                        {companyFormRegistryMatches.map((entry) => (
+                          <button
+                            className="company-registry-suggestion"
+                            key={entry.qualifiedTicker}
+                            onClick={() => applyRegistryEntryToCompanyForm(entry)}
+                            onMouseDown={(event) => event.preventDefault()}
+                            title={`Use ${entry.qualifiedTicker}`}
+                            type="button"
+                          >
+                            <strong>{entry.qualifiedTicker}</strong>
+                            <span>{entry.displayName}</span>
+                            <small>{entry.isin ?? "No ISIN"}</small>
+                            {entry.tracked ? <em>Added</em> : null}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </form>
 
+                <div className="company-list-toolbar" aria-label="Company list search">
+                  <label className="registry-search-field">
+                    <Search size={15} />
+                    <input
+                      aria-label="Search tracked companies"
+                      onChange={(event) => setCompanyListSearch(event.target.value)}
+                      placeholder="Search tracked companies"
+                      type="text"
+                      value={companyListSearch}
+                    />
+                    {companyListSearch.trim().length > 0 ? (
+                      <button
+                        aria-label="Clear company search"
+                        className="field-clear-button"
+                        onClick={() => setCompanyListSearch("")}
+                        onMouseDown={(event) => event.preventDefault()}
+                        title="Clear company search"
+                        type="button"
+                      >
+                        <X size={13} />
+                      </button>
+                    ) : null}
+                  </label>
+                  <span>
+                    {filteredCompanies.length}/{companies.length} companies
+                  </span>
+                </div>
+
                 <div className="company-list" aria-label="Companies list" data-company-list="true">
-                  {companies.map((company) => (
+                  {filteredCompanies.map((company) => (
                     <div className="company-row-block" key={company.id}>
                       <article
                         aria-label={`Open ${company.qualifiedTicker} workspace`}
@@ -3610,6 +4006,9 @@ export function App() {
                   {companies.length === 0 ? (
                     <div className="empty-state">No companies yet.</div>
                   ) : null}
+                  {companies.length > 0 && filteredCompanies.length === 0 ? (
+                    <div className="empty-state">No companies match this search.</div>
+                  ) : null}
                 </div>
 
                 {companiesError ? (
@@ -4232,7 +4631,7 @@ export function App() {
                           <span className="source-id">{adapter.id}</span>
                         </div>
                         <p>
-                          {adapter.sourceType} · {adapter.fetchMode}
+                          {formatSourceSubtitle(adapter)}
                         </p>
                         <div className="source-chip-list" aria-label={`Markets for ${adapter.displayName}`}>
                           {adapter.markets.map((market) => (
@@ -4254,11 +4653,11 @@ export function App() {
                         <dl className="source-status-grid source-status-detail">
                           <div>
                             <dt>Scheduler</dt>
-                            <dd>{formatSourceScheduler()}</dd>
+                            <dd>{formatSourceScheduler(adapter)}</dd>
                           </div>
                           <div>
                             <dt>Next poll</dt>
-                            <dd>{formatNextSourceRefresh()}</dd>
+                            <dd>{formatNextRefresh(adapter)}</dd>
                           </div>
                           <div>
                             <dt>Last attempt</dt>
@@ -4277,19 +4676,21 @@ export function App() {
                             <dd>{adapter.lastErrorAt ?? "None"}</dd>
                           </div>
                           <div>
-                            <dt>Last result</dt>
+                            <dt>{sourceLastResultLabel(adapter)}</dt>
                             <dd>{formatSourceLastResult(adapter)}</dd>
                           </div>
-                          <div>
-                            <dt>Detail warning</dt>
-                            <dd>{adapter.lastDetailWarning ?? "None"}</dd>
-                          </div>
+                          {adapter.id === gpwRegistryAdapterId ? null : (
+                            <div>
+                              <dt>Detail warning</dt>
+                              <dd>{adapter.lastDetailWarning ?? "None"}</dd>
+                            </div>
+                          )}
                           <div>
                             <dt>Status</dt>
                             <dd>{adapter.lastError ?? (adapter.enabled ? "Ready" : "Disabled")}</dd>
                           </div>
                           <div>
-                            <dt>Rate limit</dt>
+                            <dt>{sourcePolicyLabel(adapter)}</dt>
                             <dd>{adapter.rateLimitPolicy}</dd>
                           </div>
                           <div>
@@ -4352,7 +4753,20 @@ export function App() {
                               </button>
                               {isCompanyRegistryListExpanded ? (
                                 <div className="source-registry-list">
-                                  {companyRegistryEntries.map((entry) => (
+                                  <label className="registry-search-field">
+                                    <Search size={15} />
+                                    <input
+                                      aria-label="Search GPW company registry"
+                                      onChange={(event) => setCompanyRegistrySearch(event.target.value)}
+                                      placeholder="Search ticker, company, ISIN"
+                                      type="search"
+                                      value={companyRegistrySearch}
+                                    />
+                                  </label>
+                                  <span className="source-registry-count">
+                                    {filteredCompanyRegistryEntries.length}/{companyRegistryEntries.length} companies
+                                  </span>
+                                  {filteredCompanyRegistryEntries.map((entry) => (
                                     <div className="source-registry-row" key={entry.qualifiedTicker}>
                                       <span>{entry.qualifiedTicker}</span>
                                       <strong title={entry.displayName}>{entry.displayName}</strong>
@@ -4373,6 +4787,9 @@ export function App() {
                                     <span className="membership-empty">
                                       No cached companies yet. Refresh registry first.
                                     </span>
+                                  ) : null}
+                                  {companyRegistryEntries.length > 0 && filteredCompanyRegistryEntries.length === 0 ? (
+                                    <span className="membership-empty">No registry companies match this search.</span>
                                   ) : null}
                                   {companyRegistryEntriesError ? (
                                     <span className="error-text">

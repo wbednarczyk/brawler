@@ -188,21 +188,23 @@ This is a convenience loop, not a replacement for the canonical Nix workflow. `n
 
 Preferred agent commands for targeted iteration:
 
-- `rtk rg ...`: search code and docs
-- `rtk sed -n 'start,endp' path`: inspect focused file ranges
-- `rtk npm run typecheck`: TypeScript checks
-- `rtk npm run test`: frontend tests
-- `rtk npm run test -- -t "test name"`: focused frontend test run
-- `rtk npm run build`: frontend production build when UI/build behavior changed
+- `rtk grep "pattern" path`: search code and docs with compact grouped output.
+- `rtk read path --max-lines N --line-numbers`: inspect focused files or short files.
+- `rtk sed -n 'start,endp' path`: inspect tight line ranges only when `rtk read` is not suitable.
+- `rtk npm typecheck`: TypeScript checks.
+- `rtk npm test`: frontend tests.
+- `rtk npm test -- -t "test name"`: focused frontend test run.
+- `rtk npm build`: frontend production build when UI/build behavior changed.
 - `rtk cargo fmt --check`: Rust formatting check
 - `rtk cargo clippy --all-targets -- -D warnings`: Rust linting
 - `rtk cargo nextest run`: preferred Rust test runner when installed
 - `rtk cargo test`: fallback Rust test runner
+- `rtk git diff -- path` or `rtk diff`: compact changed-line review.
 
 Avoid for normal agent iteration:
 
 - `rtk proxy ...`, because it bypasses RTK output filtering and saves no tokens
-- large shell-wrapped read commands when a direct `rtk rg`, `rtk sed`, or `rtk git status` command would work
+- large shell-wrapped read commands when a direct `rtk grep`, `rtk read`, `rtk sed`, or `rtk git status` command would work
 - full `make check` after every small edit
 
 Use full parity checks when appropriate:

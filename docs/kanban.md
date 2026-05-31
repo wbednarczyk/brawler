@@ -63,6 +63,23 @@ Docs/contracts touched: UI information architecture, product spec if behavior ch
 
 Test expectations: UI workflow tests for membership add/remove and confirmation states.
 
+### Add field-level clear controls across typed inputs
+
+Intent: make repeated desktop data entry and filtering faster by giving text-like fields a consistent inline clear affordance.
+
+Acceptance criteria:
+
+- Text, search, URL, and optional metadata inputs expose a compact inline clear control when they have a value.
+- Required fields only expose clear controls when clearing does not create confusing validation feedback, or the validation state remains clear and local.
+- Controls use consistent icon-only styling and accessible labels.
+- Clearing one field must not trigger stale lookup/autocomplete side effects.
+- Native browser search clear controls are avoided when the app renders its own clear control.
+- Existing manual typing, autocomplete, lookup, and form-submit workflows continue to work.
+
+Docs/contracts touched: product spec or UI information architecture if this becomes a cross-screen UI standard.
+
+Test expectations: focused UI workflow tests for representative forms and filters.
+
 ### Implement keyboard shortcuts
 
 Intent: add discoverable keyboard shortcuts for repeated v1 workflows after core screens are stable.
@@ -166,7 +183,21 @@ Docs/contracts touched: roadmap, product spec, source strategy, contracts, futur
 
 Test expectations: parser/fetcher test-sample tests, source adapter contract tests, storage dedupe tests, and UI source-status workflow tests.
 
-### Implement GPW company registry cache
+## Ready
+
+No cards.
+
+## In Progress
+
+No cards.
+
+## Review
+
+No cards.
+
+## Done
+
+### Complete Milestone 7: GPW Company Registry Cache
 
 Intent: replace annoying manual GPW company metadata management with a cached local registry used for lookup, autocomplete, and ticker-first source matching.
 
@@ -181,33 +212,25 @@ Acceptance criteria:
 - GPW source matching uses ticker first, then exact ISIN fallback; issuer/company name alone is not a silent match key.
 - Sources or Settings show registry last refresh and last error.
 
-Delivered so far:
+Delivered:
 
 - SQLite `company_registry_entries` cache exists.
 - GPW registry source adapter fetches the complete public GPW company list from `https://www.gpw.pl/spolki?offset=0&limit=500`.
 - Parser tests use a test-sample-backed GPW company-list fragment so default checks stay offline.
-- Database bootstrap seeds the registry cache from sample seed data.
-- Company lookup reads SQLite registry entries before falling back to temporary seed data.
+- Target runtime databases no longer seed registry rows or feed rows from sample data.
+- Company lookup reads SQLite registry entries and may bootstrap the live GPW registry only when the runtime cache is empty.
 - GPW feed matching resolves ISIN to ticker through the registry and then matches tracked companies by ticker.
-- Sources view shows the registry adapter and can trigger manual registry refresh.
+- Sources view shows the registry adapter, freshness/error status, and manual registry refresh.
+- Sources registry detail exposes a searchable cached-company list with tracked/untracked state and add actions for untracked companies.
+- Companies form shows cached GPW registry suggestions from ticker, company-name, or ISIN input and can fill the creation form from a selected suggestion.
+- Companies view has tracked-company search so registry-assisted additions remain easy to find and inspect.
+- The desktop UI schedules a slow in-app stale-cache registry refresh check using the registry adapter interval, currently one day, without refreshing immediately on startup.
+- Final local checks passed.
+- Version bumped to `0.7.0`.
 
 Docs/contracts touched: source strategy, product spec, contracts, data model, architecture.
 
 Test expectations: registry parser/fetcher test-sample tests, migration tests, lookup tests, source matching tests, and UI autocomplete workflow tests.
-
-## Ready
-
-No cards.
-
-## In Progress
-
-No cards.
-
-## Review
-
-No cards.
-
-## Done
 
 ### Complete Milestone 6: GPW Detail Fetch Spike
 
@@ -347,7 +370,7 @@ Acceptance criteria:
 
 Notes:
 
-- Sample feed rows are development seed data only and are inserted only when the local feed is empty.
+- Sample feed rows were early development seed data and are no longer inserted into target runtime databases as of the M7 registry-cache closure work.
 - Real source ingestion and manual refresh jobs are deferred to later source milestones.
 - Notebook, Claims, and Transcripts tabs remain intentional placeholders until their roadmap milestones.
 

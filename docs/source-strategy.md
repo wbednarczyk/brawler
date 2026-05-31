@@ -108,9 +108,9 @@ Registry requirements:
 - Use the registry to resolve source identifiers into ticker-first matches.
 - Show registry freshness and last error in Sources or Settings.
 
-The implementation stores registry rows in SQLite and exposes a manual registry refresh command from Sources. Runtime refresh fetches `https://www.gpw.pl/spolki?offset=0&limit=500`, which currently covers the full public list shown by GPW. Company-form lookup may auto-bootstrap the registry on a miss when the cache still contains only seed rows, then retry the lookup. Parser tests remain test-sample-backed so default checks do not depend on live GPW availability.
+The implementation stores registry rows in SQLite and exposes a manual registry refresh command from Sources. Runtime refresh fetches `https://www.gpw.pl/spolki?offset=0&limit=500`, which currently covers the full public list shown by GPW. The desktop UI schedules a slow in-app registry refresh check using the registry adapter interval, currently one day; the scheduler does not run immediately on startup and only fetches when the cached registry is stale. Company-form lookup may auto-bootstrap the registry on a miss when the runtime cache is empty, then retry the lookup. Parser tests remain test-sample-backed so default checks do not depend on live GPW availability, but test samples must not seed target runtime databases.
 
-The Sources screen should not show unmatched-feed diagnostics for the company registry adapter because the registry is not a feed source. Its detail panel should instead expose a collapsed cached-companies list with tracked/untracked state and an add action for untracked companies.
+The Sources screen should not show unmatched-feed diagnostics for the company registry adapter because the registry is not a feed source. Its detail panel should instead expose a collapsed searchable cached-companies list with tracked/untracked state and an add action for untracked companies.
 
 Accepted matching priority:
 
