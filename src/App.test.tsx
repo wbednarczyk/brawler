@@ -88,11 +88,12 @@ const sourceAdapters = [
     displayName: "GPW ESPI/EBI",
     sourceType: "official_report",
     fetchMode: "public_page",
-    enabled: true,
-    defaultPollIntervalSeconds: 900,
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
     sourceUrl: "https://www.gpw.pl/komunikaty",
-    rateLimitPolicy: "Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart",
-    policyNote: "Uses GPW public-page listing fragments and matched report detail pages for official body text and attachments.",
+    rateLimitPolicy: "Disabled while Bankier Company Komunikaty is the active official-report source",
+    policyNote:
+      "Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.",
     lastAttemptAt: null,
     lastTrigger: "manual",
     lastSuccessAt: null,
@@ -125,6 +126,139 @@ const sourceAdapters = [
     lastError: null,
     lastItemsFetched: 400,
     lastItemsCreated: 400,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastDetailWarning: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-market-rss",
+    displayName: "Bankier Giełda RSS",
+    sourceType: "public_media",
+    fetchMode: "rss",
+    enabled: true,
+    defaultPollIntervalSeconds: 900,
+    sourceUrl: "https://www.bankier.pl/rss/gielda.xml",
+    rateLimitPolicy: "Manual refresh plus normal in-app source scheduler; RSS feed only, no article crawling",
+    policyNote: "Fetches Bankier.pl public Giełda RSS headlines as public media items; linked article pages are not crawled in this slice.",
+    lastAttemptAt: null,
+    lastTrigger: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    lastItemsFetched: 2,
+    lastItemsCreated: 1,
+    lastItemsMatched: 1,
+    lastItemsUnmatched: 1,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastDetailWarning: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-company-komunikaty",
+    displayName: "Bankier Company Komunikaty",
+    sourceType: "official_report",
+    fetchMode: "public_json",
+    enabled: true,
+    defaultPollIntervalSeconds: 900,
+    sourceUrl: "https://www.bankier.pl/gielda/notowania/akcje/{TICKER}/komunikaty",
+    rateLimitPolicy:
+      "Manual refresh plus normal in-app source scheduler; tracked GPW companies only; cached Bankier tag ids; one listing page plus matched article pages per company",
+    policyNote:
+      "Fetches Bankier.pl per-company public komunikaty JSON and article pages for tracked GPW companies only. Bankier is the active v1 official-report source while GPW ESPI/EBI is disabled.",
+    lastAttemptAt: null,
+    lastTrigger: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    lastItemsFetched: 2,
+    lastItemsCreated: 1,
+    lastItemsMatched: 1,
+    lastItemsUnmatched: 0,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastDetailWarning: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-firma-rss",
+    displayName: "Bankier Firma RSS",
+    sourceType: "public_media",
+    fetchMode: "rss",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://www.bankier.pl/rss/firma.xml",
+    rateLimitPolicy:
+      "Reviewed public RSS candidate; disabled until matching quality is proven against tracked GPW companies",
+    policyNote:
+      "Reviewed M8 follow-up candidate. Public and RSS-native, but broader business coverage needs matching-quality tests before runtime enablement.",
+    lastAttemptAt: null,
+    lastTrigger: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastDetailWarning: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "bankier-wiadomosci-rss",
+    displayName: "Bankier Wiadomosci RSS",
+    sourceType: "public_media",
+    fetchMode: "rss",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://www.bankier.pl/rss/wiadomosci.xml",
+    rateLimitPolicy:
+      "Reviewed public RSS candidate; disabled because expected listed-company signal is broad and noisy",
+    policyNote:
+      "Reviewed M8 follow-up candidate. Public and RSS-native, but broad news coverage and stale backfill risk make it unsuitable for default v1 ingestion.",
+    lastAttemptAt: null,
+    lastTrigger: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    lastItemsFetched: null,
+    lastItemsCreated: null,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastDetailWarning: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "portal-analiz",
+    displayName: "Portal Analiz",
+    sourceType: "authenticated_research",
+    fetchMode: "authenticated",
+    enabled: false,
+    defaultPollIntervalSeconds: 0,
+    sourceUrl: "https://portalanaliz.pl/",
+    rateLimitPolicy:
+      "Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built",
+    policyNote:
+      "Late-v1 planned authenticated private research adapter governed by ADR 0014. Credentials must use the OS keychain and no generic login or scraping subsystem is approved.",
+    lastAttemptAt: null,
+    lastTrigger: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    lastItemsFetched: null,
+    lastItemsCreated: null,
     lastItemsMatched: null,
     lastItemsUnmatched: null,
     lastDetailItemsAttempted: null,
@@ -329,7 +463,7 @@ describe("App", () => {
         return Promise.resolve({
           appliedMigrations: 3,
           companies: 0,
-          sourceAdapters: 1,
+          sourceAdapters: 7,
           settings: 7,
         });
       }
@@ -415,6 +549,24 @@ describe("App", () => {
 
       if (command === "list_feed_items") {
         return Promise.resolve(feedItemsResponse);
+      }
+
+      if (command === "delete_unsaved_feed_items") {
+        const deletedCount = feedItemsResponse.filter((feedItem) => !feedItem.saved).length;
+        feedItemsResponse = feedItemsResponse.filter((feedItem) => feedItem.saved);
+
+        return Promise.resolve({
+          itemsDeleted: deletedCount,
+          deletedAt: "2026-05-31T12:00:00Z",
+        });
+      }
+
+      if (command === "prune_old_feed_items") {
+        return Promise.resolve({
+          retentionDays: 30,
+          itemsDeleted: 0,
+          prunedAt: "2026-05-31T12:00:00Z",
+        });
       }
 
       if (command === "list_notebook_entries") {
@@ -565,6 +717,22 @@ describe("App", () => {
         });
       }
 
+      if (command === "refresh_source") {
+        const input = (args as { input: { adapterId: string } }).input;
+
+        return Promise.resolve({
+          adapterId: input.adapterId,
+          itemsFetched: 2,
+          itemsCreated: 1,
+          itemsMatched: 1,
+          itemsUnmatched: 0,
+          detailItemsAttempted: 0,
+          detailItemsStored: 0,
+          detailItemsFailed: 0,
+          fetchedAt: "2026-05-30T17:30:00Z",
+        });
+      }
+
       if (command === "refresh_gpw_company_registry") {
         return Promise.resolve({
           adapterId: "gpw-company-registry",
@@ -580,11 +748,12 @@ describe("App", () => {
       }
 
       if (command === "update_settings") {
-        const input = (args as { input: { theme?: string } }).input;
+        const input = (args as { input: { theme?: string; pollIntervalSeconds?: number } }).input;
 
         return Promise.resolve({
           ...initialSettings,
           theme: input.theme ?? initialSettings.theme,
+          pollIntervalSeconds: input.pollIntervalSeconds ?? initialSettings.pollIntervalSeconds,
         });
       }
 
@@ -895,6 +1064,80 @@ describe("App", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("marks all visible inbox items as read", async () => {
+    const user = userEvent.setup();
+
+    feedItemsResponse = [
+      initialFeedItems[0],
+      {
+        ...initialFeedItems[0],
+        id: "feed_sample_cdr_second_unread",
+        title: "Second unread report for bulk read flow",
+        summary: "Second unread item should be marked read with the bulk action.",
+        unread: true,
+      },
+    ];
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Inbox review summary")).toHaveTextContent("0 unread");
+    });
+    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+      input: {
+        id: "feed_sample_cdr_report",
+        read: true,
+        saved: false,
+      },
+    });
+    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+      input: {
+        id: "feed_sample_cdr_second_unread",
+        read: true,
+        saved: false,
+      },
+    });
+  });
+
+  it("confirms and deletes unsaved feed items without refreshing sources", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    feedItemsResponse = [
+      {
+        ...initialFeedItems[0],
+        id: "feed_unsaved_delete_candidate",
+        title: "Unsaved report to delete",
+        saved: false,
+      },
+      {
+        ...initialFeedItems[1],
+        id: "feed_saved_to_keep",
+        title: "Saved report to keep",
+        saved: true,
+      },
+    ];
+
+    render(<App />);
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Unsaved report to delete");
+
+    await user.click(screen.getByRole("button", { name: "Delete unsaved" }));
+
+    expect(confirm).toHaveBeenCalledWith("Delete all unsaved feed items? Saved items will stay.");
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_unsaved_feed_items");
+    });
+    await within(feedList).findByText("Saved report to keep");
+    expect(within(feedList).queryByText("Unsaved report to delete")).not.toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalledWith("refresh_sources", expect.anything());
+
+    confirm.mockRestore();
+  });
+
   it("summarizes the current inbox review set", async () => {
     const user = userEvent.setup();
 
@@ -1026,6 +1269,8 @@ describe("App", () => {
     expect(screen.getByLabelText("Feed summary")).toHaveTextContent(
       "Refreshed GPW report from sample source",
     );
+    expect(await screen.findAllByText("2026-05-30 17:13:31")).not.toHaveLength(0);
+    expect(screen.getByText("2026-05-30 17:30:00")).toBeInTheDocument();
     const officialBody = screen.getByLabelText("Official report body");
     expect(officialBody).toHaveTextContent("Stored");
     expect(officialBody).not.toHaveAttribute("open");
@@ -1052,6 +1297,7 @@ describe("App", () => {
 
     expect(within(unmatchedItems).getByText("LUBAWA S.A.")).toBeInTheDocument();
     expect(within(unmatchedItems).getByText("Unmatched GPW report from sample source")).toBeInTheDocument();
+    expect(within(unmatchedItems).getByText("2026-05-30 17:13:31")).toBeInTheDocument();
   });
 
   it("shows source refresh failures in the topbar refresh control", async () => {
@@ -1076,7 +1322,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Refresh sources" }));
     await user.click(await screen.findByRole("button", { name: "Source refresh failed" }));
     await user.click(screen.getByRole("button", { name: "Sources" }));
-    await user.click(await screen.findByRole("button", { name: "Open source adapter: GPW ESPI/EBI" }));
+    await user.click(await screen.findByRole("button", { name: "Open source adapter: Bankier Giełda RSS" }));
 
     expect(
       within(await screen.findByLabelText("Source adapter details")).getByText("In-app · 15 min · backoff 30 min"),
@@ -1098,6 +1344,70 @@ describe("App", () => {
     );
   });
 
+  it("refreshes a single enabled source from source details", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+
+    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
+    await user.click(within(sourceAdaptersRegion).getByRole("button", {
+      name: "Open source adapter: Bankier Giełda RSS",
+    }));
+
+    expect(within(await screen.findByLabelText("Source adapter details")).getByText("Public RSS")).toBeInTheDocument();
+
+    await user.click(within(await screen.findByLabelText("Source adapter details")).getByRole("button", {
+      name: "Refresh source",
+    }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("refresh_source", {
+        input: {
+          adapterId: "bankier-market-rss",
+          trigger: "manual",
+        },
+      }),
+    );
+    expect(await screen.findByLabelText("Last source refresh summary")).toBeInTheDocument();
+  });
+
+  it("shows independently jittered next poll times for enabled feed sources", async () => {
+    const user = userEvent.setup();
+    const randomSpy = vi
+      .spyOn(Math, "random")
+      .mockReturnValueOnce(0)
+      .mockReturnValueOnce(0.5)
+      .mockReturnValueOnce(0.9)
+      .mockReturnValue(0.1);
+
+    try {
+      render(<App />);
+
+      await user.click(screen.getByRole("button", { name: "Sources" }));
+
+      const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
+      await user.click(within(sourceAdaptersRegion).getByRole("button", {
+        name: "Open source adapter: Bankier Company Komunikaty",
+      }));
+      const bankierCompanyNextPoll =
+        within(await screen.findByLabelText("Source adapter details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
+          .textContent;
+
+      await user.click(within(sourceAdaptersRegion).getByRole("button", {
+        name: "Open source adapter: Bankier Giełda RSS",
+      }));
+      const bankierNextPoll =
+        within(await screen.findByLabelText("Source adapter details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
+          .textContent;
+
+      expect(bankierNextPoll).not.toEqual(bankierCompanyNextPoll);
+    } finally {
+      randomSpy.mockRestore();
+    }
+  });
+
   it("opens source status from the topbar source pill", async () => {
     const user = userEvent.setup();
 
@@ -1106,14 +1416,14 @@ describe("App", () => {
     const sourceStatus = await screen.findByRole("button", { name: "Open source status" });
 
     expect(sourceStatus).toHaveTextContent("Sources");
-    expect(sourceStatus).toHaveTextContent("2/2");
+    expect(sourceStatus).toHaveTextContent("3/7");
 
     await user.click(sourceStatus);
 
     expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
     const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
     const sourceRow = within(sourceAdaptersRegion).getByRole("button", {
-      name: "Open source adapter: GPW ESPI/EBI",
+      name: "Open source adapter: GPW Company Registry",
     });
 
     expect(sourceRow).toHaveClass("source-row-selected");
@@ -1153,9 +1463,21 @@ describe("App", () => {
 
     const settingsRegion = await screen.findByLabelText("Application settings");
 
+    expect(within(settingsRegion).getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Feed Cleanup" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Import And Export" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "AI" })).toBeInTheDocument();
     expect(within(settingsRegion).getByText("sqlite")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("night-neon")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("accepted_deferred")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Feed cleanup")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("30 days")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Cleanup interval")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Daily")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Last cleanup")).toBeInTheDocument();
+    expect(within(settingsRegion).getAllByText("Not run this session")).toHaveLength(2);
+    expect(within(settingsRegion).getByText("Saved")).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Settings theme"), "light");
 
@@ -1165,6 +1487,15 @@ describe("App", () => {
       },
     });
     expect(screen.getByLabelText("Settings theme")).toHaveValue("light");
+
+    await user.selectOptions(screen.getByLabelText("Settings source poll interval"), "1800");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        pollIntervalSeconds: 1800,
+      },
+    });
+    expect(screen.getByLabelText("Settings source poll interval")).toHaveValue("1800");
   });
 
   it("shows source adapter status", async () => {
@@ -1182,15 +1513,25 @@ describe("App", () => {
     expect(within(sourceAdaptersRegion).getByText("GPW ESPI/EBI")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("gpw-espi-ebi")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("Official reports · Public page")).toBeInTheDocument();
-    expect(within(sourceRow).getByText("Ready")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Bankier Giełda RSS")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getAllByText("Public media · RSS")).toHaveLength(3);
+    expect(within(sourceAdaptersRegion).getByText("Bankier Company Komunikaty")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Official reports · Public JSON")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Bankier Firma RSS")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Bankier Wiadomosci RSS")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Portal Analiz")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Authenticated research · Authenticated")).toBeInTheDocument();
+    expect(within(sourceRow).getByText("Disabled")).toBeInTheDocument();
 
     await user.click(sourceRow);
 
     expect(sourceRow).toHaveClass("source-row-selected");
     const sourceDetails = await screen.findByLabelText("Source adapter details");
-    expect(within(sourceDetails).getByText("In-app · 15 min")).toBeInTheDocument();
+    expect(within(sourceDetails).getAllByText("Off")).not.toHaveLength(0);
     expect(within(sourceDetails).getByText("Next poll")).toBeInTheDocument();
-    expect(within(sourceDetails).getByText("In 15 min")).toBeInTheDocument();
+    expect(within(sourceDetails).getAllByText("Off")).not.toHaveLength(0);
+    expect(within(sourceDetails).getByText("Access")).toBeInTheDocument();
+    expect(within(sourceDetails).getAllByText("Disabled")).not.toHaveLength(0);
     expect(within(sourceDetails).getByText("Manual")).toBeInTheDocument();
     expect(
       within(await screen.findByLabelText("Source adapter details")).getByText(
@@ -1199,11 +1540,12 @@ describe("App", () => {
     ).toBeInTheDocument();
     expect(
       within(await screen.findByLabelText("Source adapter details")).getByText(
-        "Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart",
+        "Disabled while Bankier Company Komunikaty is the active official-report source",
       ),
     ).toBeInTheDocument();
+
     expect(
-      within(await screen.findByLabelText("Source adapter details")).getByText(/matched report detail pages/),
+      within(await screen.findByLabelText("Source adapter details")).getByText(/Registered for later revisit/),
     ).toBeInTheDocument();
     const sourcePageButton = within(await screen.findByLabelText("Source adapter details")).getByRole("button", {
       name: "Open source page for GPW ESPI/EBI",
@@ -1211,7 +1553,23 @@ describe("App", () => {
     await user.click(sourcePageButton);
     expect(openUrl).toHaveBeenCalledWith("https://www.gpw.pl/komunikaty");
 
-    await user.click(sourceRow);
+    const portalAnalizRow = within(sourceAdaptersRegion).getByRole("button", {
+      name: "Open source adapter: Portal Analiz",
+    });
+    expect(within(portalAnalizRow).getByText("Disabled")).toBeInTheDocument();
+    await user.click(portalAnalizRow);
+    const portalAnalizDetails = await screen.findByLabelText("Source adapter details");
+    expect(within(portalAnalizDetails).getAllByText("Off")).not.toHaveLength(0);
+    expect(within(portalAnalizDetails).getByText("Access")).toBeInTheDocument();
+    expect(within(portalAnalizDetails).getAllByText("Disabled")).not.toHaveLength(0);
+    expect(within(portalAnalizDetails).getByRole("button", { name: "Refresh source" })).toBeDisabled();
+    expect(
+      within(portalAnalizDetails).getByText(
+        "Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(portalAnalizRow);
 
     expect(screen.queryByLabelText("Source adapter details")).not.toBeInTheDocument();
   });

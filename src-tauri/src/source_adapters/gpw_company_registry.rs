@@ -2,14 +2,11 @@ use scraper::{Html, Selector};
 use thiserror::Error;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use super::USER_AGENT;
+
 pub const ADAPTER_ID: &str = "gpw-company-registry";
 pub const DISPLAY_NAME: &str = "GPW Company Registry";
 pub const SOURCE_URL: &str = "https://www.gpw.pl/spolki?offset=0&limit=500";
-const USER_AGENT: &str = concat!(
-    "Brawler/",
-    env!("CARGO_PKG_VERSION"),
-    " local-first investor research app"
-);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GpwCompanyRegistryEntry {

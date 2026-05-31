@@ -47,6 +47,8 @@ Related tables:
 - `company_source_ids`
 - `company_registry_entries`
 
+`company_source_ids` stores source-specific identifiers that cannot be derived reliably from the local ticker. For example, Bankier per-company komunikaty uses Bankier instrument slugs and tag IDs because short GPW tickers such as `CDR` may canonicalize to Bankier slugs such as `CDPROJEKT`.
+
 ### Watchlists
 
 Supports the sidebar, Inbox filters, and first-run setup.
@@ -147,6 +149,7 @@ Fields:
 - `fetched_at`
 - `display_company`
 - `dedupe_key`
+- `duplicate_signature`
 - `read`
 - `saved`
 - `attribution`
@@ -161,6 +164,7 @@ Join table:
 Rules:
 
 - `dedupe_key` should be unique per source adapter.
+- `duplicate_signature` is nullable and may be used for cross-source article/media dedupe when two source adapters publish the same company-related item under different URLs or source-specific IDs.
 - `fetched_at` is required.
 - `published_at` may be null only when the source does not provide it.
 - `display_company` is a UI read-model helper for early feed rows and unmatched/source-derived ticker labels. Canonical company relationships still live in `feed_item_companies`.

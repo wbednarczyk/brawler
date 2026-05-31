@@ -1,6 +1,15 @@
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use crate::source_adapters::bankier_company::{
+    BankierCompanyAttachment, BankierCompanyIdentifiers, BankierCompanyItem, BankierCompanyTarget,
+    ADAPTER_ID as BANKIER_COMPANY_ADAPTER_ID, ATTRIBUTION as BANKIER_COMPANY_ATTRIBUTION,
+    DISPLAY_NAME as BANKIER_COMPANY_DISPLAY_NAME, SOURCE_URL as BANKIER_COMPANY_SOURCE_URL,
+};
+use crate::source_adapters::bankier_rss::{
+    BankierRssItem, ADAPTER_ID as BANKIER_RSS_ADAPTER_ID, ATTRIBUTION as BANKIER_RSS_ATTRIBUTION,
+    DISPLAY_NAME as BANKIER_RSS_DISPLAY_NAME, SOURCE_URL as BANKIER_RSS_SOURCE_URL,
+};
 use crate::source_adapters::gpw_company_registry::{
     GpwCompanyRegistryEntry, ADAPTER_ID as GPW_REGISTRY_ADAPTER_ID,
     SOURCE_URL as GPW_REGISTRY_SOURCE_URL,
@@ -11,6 +20,12 @@ use crate::source_adapters::gpw_espi_ebi::{
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+const PORTAL_ANALIZ_SOURCE_URL: &str = "https://portalanaliz.pl/";
+const BANKIER_FIRMA_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/firma.xml";
+const BANKIER_WIADOMOSCI_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/wiadomosci.xml";
+#[cfg(test)]
+const PORTAL_ANALIZ_ADAPTER_ID: &str = "portal-analiz";
 
 #[derive(Debug, Error)]
 pub enum StorageError {
@@ -24,14 +39,15 @@ pub enum StorageError {
 
 pub type StorageResult<T> = Result<T, StorageError>;
 
+#[derive(Clone)]
 pub struct AppState {
-    connection: Mutex<Connection>,
+    connection: Arc<Mutex<Connection>>,
 }
 
 impl AppState {
     pub fn new(connection: Connection) -> Self {
         Self {
-            connection: Mutex::new(connection),
+            connection: Arc::new(Mutex::new(connection)),
         }
     }
 
@@ -144,6 +160,46 @@ impl AppState {
         ingest_gpw_report_listings(&mut connection, listings)
     }
 
+    pub fn ingest_bankier_rss_items(
+        &self,
+        items: &[BankierRssItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        ingest_bankier_rss_items(&mut connection, items)
+    }
+
+    pub fn list_bankier_company_targets(&self) -> StorageResult<Vec<BankierCompanyTarget>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_bankier_company_targets(&connection)
+    }
+
+    pub fn upsert_bankier_company_identifiers(
+        &self,
+        company_id: &str,
+        identifiers: &BankierCompanyIdentifiers,
+    ) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        upsert_bankier_company_identifiers(&connection, company_id, identifiers)
+    }
+
+    pub fn list_bankier_company_detail_cached_urls(&self) -> StorageResult<Vec<String>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_bankier_company_detail_cached_urls(&connection)
+    }
+
+    pub fn ingest_bankier_company_items(
+        &self,
+        items: &[BankierCompanyItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        ingest_bankier_company_items(&mut connection, items)
+    }
+
     pub fn tracks_gpw_listing_company(&self, ticker: &str, isin: &str) -> StorageResult<bool> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -154,6 +210,18 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         update_feed_item_state(&connection, input)
+    }
+
+    pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        prune_old_feed_items(&mut connection, retention_days)
+    }
+
+    pub fn delete_unsaved_feed_items(&self) -> StorageResult<FeedDeleteResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        delete_unsaved_feed_items(&mut connection)
     }
 
     pub fn list_notebook_entries(&self, company_id: &str) -> StorageResult<Vec<NotebookEntry>> {
@@ -343,6 +411,21 @@ pub struct SourceIngestionResult {
     pub detail_items_stored: usize,
     pub detail_items_failed: usize,
     pub fetched_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedPruneResult {
+    pub retention_days: i64,
+    pub items_deleted: usize,
+    pub pruned_at: String,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedDeleteResult {
+    pub items_deleted: usize,
+    pub deleted_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -564,6 +647,36 @@ const MIGRATIONS: &[Migration] = &[
         version: 6,
         name: "company_registry",
         sql: include_str!("../migrations/0006_company_registry.sql"),
+    },
+    Migration {
+        version: 7,
+        name: "bankier_market_rss",
+        sql: include_str!("../migrations/0007_bankier_market_rss.sql"),
+    },
+    Migration {
+        version: 8,
+        name: "portal_analiz_source_placeholder",
+        sql: include_str!("../migrations/0008_portal_analiz_source_placeholder.sql"),
+    },
+    Migration {
+        version: 9,
+        name: "feed_item_duplicate_signatures",
+        sql: include_str!("../migrations/0009_feed_item_duplicate_signatures.sql"),
+    },
+    Migration {
+        version: 10,
+        name: "bankier_company_komunikaty",
+        sql: include_str!("../migrations/0010_bankier_company_komunikaty.sql"),
+    },
+    Migration {
+        version: 11,
+        name: "disable_gpw_espi_ebi",
+        sql: include_str!("../migrations/0011_disable_gpw_espi_ebi.sql"),
+    },
+    Migration {
+        version: 12,
+        name: "bankier_reviewed_rss_placeholders",
+        sql: include_str!("../migrations/0012_bankier_reviewed_rss_placeholders.sql"),
     },
 ];
 
@@ -1066,7 +1179,8 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
             fetched_at,
             COALESCE(attribution, source_name) AS attribution,
             COALESCE(summary, '') AS summary,
-            COALESCE(body_text, '') AS body_text
+            COALESCE(body_text, '') AS body_text,
+            source_adapter_id
         FROM feed_items
         WHERE display_company IN (
             SELECT qualified_ticker FROM companies
@@ -1075,10 +1189,42 @@ fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
         ",
     )?;
 
-    let rows = statement.query_map([], |row| feed_item_from_row(connection, row))?;
-    let feed_items = rows.collect::<Result<Vec<_>, _>>()?;
+    let rows = statement.query_map([], |row| {
+        Ok((
+            feed_item_from_row(connection, row)?,
+            row.get::<_, String>(15)?,
+        ))
+    })?;
+    let listed_feed_items = rows.collect::<Result<Vec<_>, _>>()?;
+    let feed_items = suppress_duplicate_bankier_company_items(listed_feed_items);
 
     Ok(feed_items)
+}
+
+fn suppress_duplicate_bankier_company_items(
+    listed_feed_items: Vec<(FeedItem, String)>,
+) -> Vec<FeedItem> {
+    let gpw_titles = listed_feed_items
+        .iter()
+        .filter(|(_, adapter_id)| adapter_id == ADAPTER_ID)
+        .map(|(item, _)| (item.company.clone(), comparable_official_title(&item.title)))
+        .collect::<Vec<_>>();
+
+    listed_feed_items
+        .into_iter()
+        .filter_map(|(item, adapter_id)| {
+            let is_duplicate_bankier_company_item = adapter_id == BANKIER_COMPANY_ADAPTER_ID
+                && gpw_titles.iter().any(|(company, title)| {
+                    company == &item.company && title == &comparable_official_title(&item.title)
+                });
+
+            if is_duplicate_bankier_company_item {
+                None
+            } else {
+                Some(item)
+            }
+        })
+        .collect()
 }
 
 fn list_unmatched_source_items(
@@ -1276,6 +1422,925 @@ fn ingest_gpw_report_listings(
         detail_items_failed: 0,
         fetched_at: Some(fetched_at),
     })
+}
+
+fn ingest_bankier_rss_items(
+    connection: &mut Connection,
+    items: &[BankierRssItem],
+) -> StorageResult<SourceIngestionResult> {
+    let transaction = connection.transaction()?;
+    let tracked_companies = list_media_match_companies(&transaction)?;
+    let mut items_created = 0;
+    let mut items_matched = 0;
+    let mut items_unmatched = 0;
+    let fetched_at = items
+        .first()
+        .map(|item| item.fetched_at.clone())
+        .map(Ok)
+        .unwrap_or_else(|| current_timestamp(&transaction))?;
+    for item in items {
+        let matched_companies = find_companies_for_media_item(&tracked_companies, item);
+        let duplicate_signature = media_duplicate_signature(item, &matched_companies);
+        let existing_feed_item_id = find_bankier_feed_item_by_source_url(&transaction, &item.link)?;
+        let existing_duplicate_feed_item_id = if existing_feed_item_id.is_none() {
+            find_media_feed_item_by_duplicate_signature(
+                &transaction,
+                duplicate_signature.as_deref(),
+                BANKIER_RSS_ADAPTER_ID,
+            )?
+        } else {
+            None
+        };
+        let feed_item_id = existing_feed_item_id
+            .clone()
+            .or(existing_duplicate_feed_item_id.clone())
+            .unwrap_or_else(|| feed_item_id(&item.dedupe_key));
+        let display_company = matched_companies
+            .first()
+            .map(|company| company.qualified_ticker.clone())
+            .unwrap_or_else(|| BANKIER_RSS_ATTRIBUTION.to_owned());
+        let existed = existing_feed_item_id.is_some()
+            || existing_duplicate_feed_item_id.is_some()
+            || feed_item_exists(&transaction, &feed_item_id)?;
+
+        if existing_feed_item_id.is_some() {
+            update_bankier_feed_item(
+                &transaction,
+                &feed_item_id,
+                item,
+                &display_company,
+                duplicate_signature.as_deref(),
+            )?;
+        } else if existing_duplicate_feed_item_id.is_none() {
+            insert_bankier_feed_item(
+                &transaction,
+                &feed_item_id,
+                item,
+                &display_company,
+                duplicate_signature.as_deref(),
+            )?;
+        } else {
+            record_media_duplicate_seen(&transaction, &feed_item_id, item)?;
+        }
+
+        if !existed {
+            items_created += 1;
+        }
+
+        if existing_duplicate_feed_item_id.is_none() {
+            transaction.execute(
+                "DELETE FROM feed_item_companies WHERE feed_item_id = ?1",
+                [&feed_item_id],
+            )?;
+        }
+
+        if matched_companies.is_empty() {
+            items_unmatched += 1;
+        } else {
+            items_matched += 1;
+            for company in matched_companies {
+                transaction.execute(
+                    "
+                    INSERT OR IGNORE INTO feed_item_companies (feed_item_id, company_id, match_type)
+                    VALUES (?1, ?2, ?3)
+                    ",
+                    params![
+                        feed_item_id,
+                        company.id,
+                        if existing_duplicate_feed_item_id.is_some() {
+                            "media_duplicate"
+                        } else {
+                            "media_signal"
+                        },
+                    ],
+                )?;
+            }
+        }
+    }
+
+    transaction.execute(
+        "
+        UPDATE source_adapters
+        SET last_success_at = ?1,
+            last_error_at = NULL,
+            last_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![&fetched_at, BANKIER_RSS_ADAPTER_ID],
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_RSS_ADAPTER_ID,
+        "last_items_fetched",
+        &items.len().to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_RSS_ADAPTER_ID,
+        "last_items_created",
+        &items_created.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_RSS_ADAPTER_ID,
+        "last_items_matched",
+        &items_matched.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_RSS_ADAPTER_ID,
+        "last_items_unmatched",
+        &items_unmatched.to_string(),
+    )?;
+
+    transaction.commit()?;
+
+    Ok(SourceIngestionResult {
+        adapter_id: BANKIER_RSS_ADAPTER_ID.to_owned(),
+        items_fetched: items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
+        detail_items_attempted: 0,
+        detail_items_stored: 0,
+        detail_items_failed: 0,
+        fetched_at: Some(fetched_at),
+    })
+}
+
+fn list_bankier_company_targets(
+    connection: &Connection,
+) -> StorageResult<Vec<BankierCompanyTarget>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            companies.id,
+            companies.ticker,
+            companies.qualified_ticker,
+            (
+                SELECT source_value
+                FROM company_source_ids
+                WHERE company_id = companies.id
+                    AND source_adapter_id = ?1
+                    AND source_key = 'instrument_slug'
+                LIMIT 1
+            ) AS bankier_slug,
+            (
+                SELECT source_value
+                FROM company_source_ids
+                WHERE company_id = companies.id
+                    AND source_adapter_id = ?1
+                    AND source_key = 'tag_id'
+                LIMIT 1
+            ) AS bankier_tag_id
+        FROM companies
+        WHERE companies.exchange = 'GPW'
+        ORDER BY companies.qualified_ticker
+        ",
+    )?;
+
+    let rows = statement.query_map([BANKIER_COMPANY_ADAPTER_ID], |row| {
+        Ok(BankierCompanyTarget {
+            company_id: row.get(0)?,
+            ticker: row.get(1)?,
+            qualified_ticker: row.get(2)?,
+            bankier_slug: row.get(3)?,
+            bankier_tag_id: row.get(4)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn upsert_bankier_company_identifiers(
+    connection: &Connection,
+    company_id: &str,
+    identifiers: &BankierCompanyIdentifiers,
+) -> StorageResult<()> {
+    upsert_company_source_id(
+        connection,
+        company_id,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "instrument_slug",
+        &identifiers.slug,
+    )?;
+    upsert_company_source_id(
+        connection,
+        company_id,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "tag_id",
+        &identifiers.tag_id,
+    )?;
+
+    Ok(())
+}
+
+fn upsert_company_source_id(
+    connection: &Connection,
+    company_id: &str,
+    source_adapter_id: &str,
+    source_key: &str,
+    source_value: &str,
+) -> StorageResult<()> {
+    let id = format!(
+        "company_source_{}_{}_{}",
+        slug_part(company_id),
+        slug_part(source_adapter_id),
+        slug_part(source_key)
+    );
+
+    let updated = connection.execute(
+        "
+        UPDATE company_source_ids
+        SET source_value = ?1
+        WHERE company_id = ?2
+            AND source_adapter_id = ?3
+            AND source_key = ?4
+        ",
+        params![source_value, company_id, source_adapter_id, source_key],
+    )?;
+
+    if updated > 0 {
+        return Ok(());
+    }
+
+    connection.execute(
+        "
+        INSERT INTO company_source_ids (
+            id,
+            company_id,
+            source_adapter_id,
+            source_key,
+            source_value
+        ) VALUES (?1, ?2, ?3, ?4, ?5)
+        ON CONFLICT(source_adapter_id, source_key, source_value) DO UPDATE SET
+            company_id = excluded.company_id
+        ",
+        params![id, company_id, source_adapter_id, source_key, source_value],
+    )?;
+
+    Ok(())
+}
+
+fn list_bankier_company_detail_cached_urls(connection: &Connection) -> StorageResult<Vec<String>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT source_url
+        FROM feed_items
+        WHERE source_adapter_id = ?1
+            AND NULLIF(TRIM(COALESCE(body_text, '')), '') IS NOT NULL
+        ",
+    )?;
+    let rows = statement.query_map([BANKIER_COMPANY_ADAPTER_ID], |row| row.get(0))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn ingest_bankier_company_items(
+    connection: &mut Connection,
+    items: &[BankierCompanyItem],
+) -> StorageResult<SourceIngestionResult> {
+    let transaction = connection.transaction()?;
+    let mut items_created = 0;
+    let mut items_matched = 0;
+    let mut items_unmatched = 0;
+    let fetched_at = items
+        .first()
+        .map(|item| item.fetched_at.clone())
+        .map(Ok)
+        .unwrap_or_else(|| current_timestamp(&transaction))?;
+    let detail_items_attempted = items
+        .iter()
+        .filter(|item| item.detail_fetch_attempted)
+        .count();
+    let detail_items_stored = items.iter().filter(|item| item.body_text.is_some()).count();
+    let detail_items_failed = detail_items_attempted.saturating_sub(detail_items_stored);
+
+    for item in items {
+        let existing_feed_item_id =
+            find_bankier_company_feed_item_by_source_url(&transaction, &item.link)?;
+        let existing_gpw_item_id = if existing_feed_item_id.is_none() {
+            find_existing_gpw_report_for_bankier_company_item(&transaction, item)?
+        } else {
+            None
+        };
+
+        if let Some(feed_item_id) = existing_gpw_item_id {
+            record_bankier_company_duplicate_seen(&transaction, &feed_item_id, item)?;
+            items_matched += 1;
+            transaction.execute(
+                "
+                INSERT OR IGNORE INTO feed_item_companies (feed_item_id, company_id, match_type)
+                VALUES (?1, ?2, ?3)
+                ",
+                params![
+                    feed_item_id,
+                    item.company_id,
+                    "secondary_official_duplicate",
+                ],
+            )?;
+        } else {
+            let feed_item_id = existing_feed_item_id
+                .clone()
+                .unwrap_or_else(|| feed_item_id(&item.dedupe_key));
+            let existed =
+                existing_feed_item_id.is_some() || feed_item_exists(&transaction, &feed_item_id)?;
+
+            upsert_bankier_company_feed_item(&transaction, &feed_item_id, item)?;
+            transaction.execute(
+                "DELETE FROM feed_item_companies WHERE feed_item_id = ?1",
+                [&feed_item_id],
+            )?;
+
+            if !existed {
+                items_created += 1;
+            }
+
+            if item.company_id.trim().is_empty() {
+                items_unmatched += 1;
+            } else {
+                items_matched += 1;
+                transaction.execute(
+                    "
+                    INSERT OR IGNORE INTO feed_item_companies (feed_item_id, company_id, match_type)
+                    VALUES (?1, ?2, ?3)
+                    ",
+                    params![feed_item_id, item.company_id, "bankier_tag_id"],
+                )?;
+            }
+        }
+    }
+
+    transaction.execute(
+        "
+        UPDATE source_adapters
+        SET last_success_at = ?1,
+            last_error_at = NULL,
+            last_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![&fetched_at, BANKIER_COMPANY_ADAPTER_ID],
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_items_fetched",
+        &items.len().to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_items_created",
+        &items_created.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_items_matched",
+        &items_matched.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_items_unmatched",
+        &items_unmatched.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_detail_items_attempted",
+        &detail_items_attempted.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_detail_items_stored",
+        &detail_items_stored.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_COMPANY_ADAPTER_ID,
+        "last_detail_items_failed",
+        &detail_items_failed.to_string(),
+    )?;
+
+    transaction.commit()?;
+
+    Ok(SourceIngestionResult {
+        adapter_id: BANKIER_COMPANY_ADAPTER_ID.to_owned(),
+        items_fetched: items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
+        detail_items_attempted,
+        detail_items_stored,
+        detail_items_failed,
+        fetched_at: Some(fetched_at),
+    })
+}
+
+fn find_bankier_company_feed_item_by_source_url(
+    connection: &Connection,
+    source_url: &str,
+) -> StorageResult<Option<String>> {
+    connection
+        .query_row(
+            "
+            SELECT id
+            FROM feed_items
+            WHERE source_adapter_id = ?1
+                AND source_url = ?2
+            ORDER BY updated_at DESC, id
+            LIMIT 1
+            ",
+            params![BANKIER_COMPANY_ADAPTER_ID, source_url],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn find_existing_gpw_report_for_bankier_company_item(
+    connection: &Connection,
+    item: &BankierCompanyItem,
+) -> StorageResult<Option<String>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT feed_items.id, feed_items.title
+        FROM feed_items
+        INNER JOIN feed_item_companies
+            ON feed_item_companies.feed_item_id = feed_items.id
+        WHERE feed_item_companies.company_id = ?1
+            AND feed_items.source_adapter_id = ?2
+            AND feed_items.type = 'Official report'
+        ORDER BY COALESCE(feed_items.published_at, feed_items.fetched_at) DESC,
+            feed_items.updated_at DESC
+        LIMIT 100
+        ",
+    )?;
+    let rows = statement.query_map(params![&item.company_id, ADAPTER_ID], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    let comparable_title = comparable_official_title(&item.title);
+
+    for row in rows {
+        let (feed_item_id, title) = row?;
+        if comparable_official_title(&title) == comparable_title {
+            return Ok(Some(feed_item_id));
+        }
+    }
+
+    Ok(None)
+}
+
+fn upsert_bankier_company_feed_item(
+    connection: &Connection,
+    feed_item_id: &str,
+    item: &BankierCompanyItem,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        INSERT INTO feed_items (
+            id,
+            type,
+            source_adapter_id,
+            source_name,
+            source_url,
+            title,
+            summary,
+            body_text,
+            language,
+            published_at,
+            fetched_at,
+            dedupe_key,
+            attribution,
+            display_company,
+            duplicate_signature
+        ) VALUES (?1, 'Official report', ?2, ?3, ?4, ?5, ?6, ?7, 'pl', ?8, ?9, ?10, ?11, ?12, ?13)
+        ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
+            type = excluded.type,
+            source_name = excluded.source_name,
+            source_url = excluded.source_url,
+            title = excluded.title,
+            summary = excluded.summary,
+            body_text = COALESCE(excluded.body_text, feed_items.body_text),
+            language = excluded.language,
+            published_at = excluded.published_at,
+            fetched_at = excluded.fetched_at,
+            attribution = excluded.attribution,
+            display_company = excluded.display_company,
+            duplicate_signature = excluded.duplicate_signature,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![
+            feed_item_id,
+            BANKIER_COMPANY_ADAPTER_ID,
+            BANKIER_COMPANY_DISPLAY_NAME,
+            &item.link,
+            &item.title,
+            empty_string_to_none(Some(format_bankier_company_summary(item))),
+            item.body_text.as_deref(),
+            item.published_at.as_deref(),
+            &item.fetched_at,
+            &item.dedupe_key,
+            BANKIER_COMPANY_ATTRIBUTION,
+            &item.qualified_ticker,
+            &item.duplicate_signature,
+        ],
+    )?;
+    if item.body_text.is_some() {
+        replace_bankier_company_feed_item_attachments(connection, feed_item_id, &item.attachments)?;
+    }
+
+    Ok(())
+}
+
+fn replace_bankier_company_feed_item_attachments(
+    connection: &Connection,
+    feed_item_id: &str,
+    attachments: &[BankierCompanyAttachment],
+) -> StorageResult<()> {
+    connection.execute(
+        "DELETE FROM feed_item_attachments WHERE feed_item_id = ?1",
+        [feed_item_id],
+    )?;
+
+    for (position, attachment) in attachments.iter().enumerate() {
+        connection.execute(
+            "
+            INSERT INTO feed_item_attachments (id, feed_item_id, label, url, position)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ",
+            params![
+                format!(
+                    "feed_attachment_{}_{}",
+                    slug_part(feed_item_id),
+                    slug_part(&attachment.url)
+                ),
+                feed_item_id,
+                attachment.label,
+                attachment.url,
+                position as i64,
+            ],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn record_bankier_company_duplicate_seen(
+    connection: &Connection,
+    feed_item_id: &str,
+    item: &BankierCompanyItem,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        UPDATE feed_items
+        SET fetched_at = CASE
+                WHEN fetched_at < ?2 THEN ?2
+                ELSE fetched_at
+            END,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![feed_item_id, &item.fetched_at],
+    )?;
+
+    Ok(())
+}
+
+fn format_bankier_company_summary(item: &BankierCompanyItem) -> String {
+    let source_type = match item.pub_id {
+        3 => "ESPI",
+        379 => "EBI",
+        _ => "Bankier komunikat",
+    };
+
+    if item
+        .body_text
+        .as_deref()
+        .unwrap_or_default()
+        .trim()
+        .is_empty()
+    {
+        item.summary.trim().to_owned()
+    } else {
+        source_type.to_owned()
+    }
+}
+
+fn comparable_official_title(value: &str) -> String {
+    let title = value
+        .split_once(':')
+        .map(|(_, title)| title)
+        .unwrap_or(value)
+        .trim();
+
+    normalize_media_match_text(title)
+}
+
+fn find_bankier_feed_item_by_source_url(
+    connection: &Connection,
+    source_url: &str,
+) -> StorageResult<Option<String>> {
+    connection
+        .query_row(
+            "
+            SELECT id
+            FROM feed_items
+            WHERE source_adapter_id = ?1
+                AND source_url = ?2
+            ORDER BY updated_at DESC, id
+            LIMIT 1
+            ",
+            params![BANKIER_RSS_ADAPTER_ID, source_url],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn find_media_feed_item_by_duplicate_signature(
+    connection: &Connection,
+    duplicate_signature: Option<&str>,
+    excluded_source_adapter_id: &str,
+) -> StorageResult<Option<String>> {
+    let Some(duplicate_signature) = duplicate_signature else {
+        return Ok(None);
+    };
+
+    connection
+        .query_row(
+            "
+            SELECT id
+            FROM feed_items
+            WHERE duplicate_signature = ?1
+                AND source_adapter_id <> ?2
+                AND type IN ('Public media', 'Analysis')
+            ORDER BY COALESCE(published_at, fetched_at) DESC, updated_at DESC, id
+            LIMIT 1
+            ",
+            params![duplicate_signature, excluded_source_adapter_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn insert_bankier_feed_item(
+    connection: &Connection,
+    feed_item_id: &str,
+    item: &BankierRssItem,
+    display_company: &str,
+    duplicate_signature: Option<&str>,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        INSERT INTO feed_items (
+            id,
+            type,
+            source_adapter_id,
+            source_name,
+            source_url,
+            title,
+            summary,
+            body_text,
+            language,
+            published_at,
+            fetched_at,
+            dedupe_key,
+            attribution,
+            display_company,
+            duplicate_signature
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 'pl', ?8, ?9, ?10, ?11, ?12, ?13)
+        ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
+            type = excluded.type,
+            source_name = excluded.source_name,
+            source_url = excluded.source_url,
+            title = excluded.title,
+            summary = excluded.summary,
+            language = excluded.language,
+            published_at = excluded.published_at,
+            fetched_at = excluded.fetched_at,
+            attribution = excluded.attribution,
+            display_company = excluded.display_company,
+            duplicate_signature = excluded.duplicate_signature,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![
+            feed_item_id,
+            "Public media",
+            BANKIER_RSS_ADAPTER_ID,
+            BANKIER_RSS_DISPLAY_NAME,
+            &item.link,
+            &item.title,
+            empty_string_to_none(Some(item.summary.clone())),
+            item.published_at.as_deref(),
+            &item.fetched_at,
+            &item.dedupe_key,
+            BANKIER_RSS_ATTRIBUTION,
+            display_company,
+            duplicate_signature,
+        ],
+    )?;
+
+    Ok(())
+}
+
+fn update_bankier_feed_item(
+    connection: &Connection,
+    feed_item_id: &str,
+    item: &BankierRssItem,
+    display_company: &str,
+    duplicate_signature: Option<&str>,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        UPDATE feed_items
+        SET type = ?2,
+            source_adapter_id = ?3,
+            source_name = ?4,
+            source_url = ?5,
+            title = ?6,
+            summary = ?7,
+            body_text = NULL,
+            language = 'pl',
+            published_at = ?8,
+            fetched_at = ?9,
+            dedupe_key = ?10,
+            attribution = ?11,
+            display_company = ?12,
+            duplicate_signature = ?13,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![
+            feed_item_id,
+            "Public media",
+            BANKIER_RSS_ADAPTER_ID,
+            BANKIER_RSS_DISPLAY_NAME,
+            &item.link,
+            &item.title,
+            empty_string_to_none(Some(item.summary.clone())),
+            item.published_at.as_deref(),
+            &item.fetched_at,
+            &item.dedupe_key,
+            BANKIER_RSS_ATTRIBUTION,
+            display_company,
+            duplicate_signature,
+        ],
+    )?;
+
+    Ok(())
+}
+
+fn record_media_duplicate_seen(
+    connection: &Connection,
+    feed_item_id: &str,
+    item: &BankierRssItem,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        UPDATE feed_items
+        SET fetched_at = CASE
+                WHEN fetched_at < ?2 THEN ?2
+                ELSE fetched_at
+            END,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![feed_item_id, &item.fetched_at],
+    )?;
+
+    Ok(())
+}
+
+#[derive(Debug, Clone)]
+struct MediaMatchCompany {
+    id: String,
+    ticker: String,
+    qualified_ticker: String,
+    display_name: String,
+}
+
+fn list_media_match_companies(connection: &Connection) -> StorageResult<Vec<MediaMatchCompany>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id, ticker, qualified_ticker, display_name
+        FROM companies
+        WHERE exchange = 'GPW'
+        ORDER BY qualified_ticker
+        ",
+    )?;
+
+    let rows = statement.query_map([], |row| {
+        Ok(MediaMatchCompany {
+            id: row.get(0)?,
+            ticker: row.get(1)?,
+            qualified_ticker: row.get(2)?,
+            display_name: row.get(3)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn find_companies_for_media_item(
+    companies: &[MediaMatchCompany],
+    item: &BankierRssItem,
+) -> Vec<MediaMatchCompany> {
+    let haystack = normalize_media_match_text(&format!("{} {}", item.title, item.summary));
+    let tokens = haystack.split_whitespace().collect::<Vec<_>>();
+
+    companies
+        .iter()
+        .filter(|company| {
+            let company_name = normalized_company_name_signal(&company.display_name);
+            let ticker = company.ticker.to_uppercase();
+
+            (!company_name.is_empty() && haystack.contains(&company_name))
+                || (ticker.chars().count() >= 3 && tokens.iter().any(|token| *token == ticker))
+        })
+        .cloned()
+        .collect()
+}
+
+fn media_duplicate_signature(
+    item: &BankierRssItem,
+    matched_companies: &[MediaMatchCompany],
+) -> Option<String> {
+    if matched_companies.is_empty() {
+        return None;
+    }
+
+    let normalized_title = normalize_media_match_text(&item.title);
+    if normalized_title.chars().count() < 12 {
+        return None;
+    }
+
+    let mut companies = matched_companies
+        .iter()
+        .map(|company| company.qualified_ticker.as_str())
+        .collect::<Vec<_>>();
+    companies.sort_unstable();
+    companies.dedup();
+
+    Some(format!(
+        "media:{}:{}",
+        companies.join("+"),
+        slug_part(&normalized_title)
+    ))
+}
+
+fn normalized_company_name_signal(value: &str) -> String {
+    let mut normalized = normalize_media_match_text(value);
+    for suffix in [" SPOLKA AKCYJNA", " S A", " SA"] {
+        if let Some(stripped) = normalized.strip_suffix(suffix) {
+            normalized = stripped.trim().to_owned();
+        }
+    }
+
+    if normalized.chars().count() < 4 {
+        String::new()
+    } else {
+        normalized
+    }
+}
+
+fn normalize_media_match_text(value: &str) -> String {
+    value
+        .chars()
+        .map(normalize_media_character)
+        .map(|character| {
+            if character.is_alphanumeric() {
+                character
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn normalize_media_character(character: char) -> char {
+    match character {
+        'ą' | 'Ą' => 'A',
+        'ć' | 'Ć' => 'C',
+        'ę' | 'Ę' => 'E',
+        'ł' | 'Ł' => 'L',
+        'ń' | 'Ń' => 'N',
+        'ó' | 'Ó' => 'O',
+        'ś' | 'Ś' => 'S',
+        'ż' | 'Ż' | 'ź' | 'Ź' => 'Z',
+        other => other.to_uppercase().next().unwrap_or(other),
+    }
 }
 
 struct MatchedCompany {
@@ -1677,15 +2742,30 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             source_adapters.default_poll_interval_seconds,
             CASE source_adapters.id
                 WHEN 'gpw-company-registry' THEN ?1
+                WHEN 'bankier-market-rss' THEN ?2
+                WHEN 'bankier-company-komunikaty' THEN ?3
+                WHEN 'portal-analiz' THEN ?4
+                WHEN 'bankier-firma-rss' THEN ?5
+                WHEN 'bankier-wiadomosci-rss' THEN ?6
                 ELSE 'https://www.gpw.pl/komunikaty'
             END AS source_url,
             CASE source_adapters.id
                 WHEN 'gpw-company-registry' THEN 'Manual refresh plus daily stale-cache scheduled refresh'
-                ELSE 'Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart'
+                WHEN 'bankier-market-rss' THEN 'Manual refresh plus normal in-app source scheduler; RSS feed only, no article crawling'
+                WHEN 'bankier-company-komunikaty' THEN 'Manual refresh plus normal in-app source scheduler; tracked GPW companies only; cached Bankier tag ids; one listing page plus matched article pages per company'
+                WHEN 'portal-analiz' THEN 'Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built'
+                WHEN 'bankier-firma-rss' THEN 'Reviewed public RSS candidate; disabled until matching quality is proven against tracked GPW companies'
+                WHEN 'bankier-wiadomosci-rss' THEN 'Reviewed public RSS candidate; disabled because expected listed-company signal is broad and noisy'
+                ELSE 'Disabled while Bankier Company Komunikaty is the active official-report source'
             END AS rate_limit_policy,
             CASE source_adapters.id
                 WHEN 'gpw-company-registry' THEN 'Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.'
-                ELSE 'Uses GPW public-page listing fragments and matched report detail pages for official body text and attachments.'
+                WHEN 'bankier-market-rss' THEN 'Fetches Bankier.pl public Giełda RSS headlines as public media items; linked article pages are not crawled in this slice.'
+                WHEN 'bankier-company-komunikaty' THEN 'Fetches Bankier.pl per-company public komunikaty JSON and article pages for tracked GPW companies only. Bankier is the active v1 official-report source while GPW ESPI/EBI is disabled.'
+                WHEN 'portal-analiz' THEN 'Late-v1 planned authenticated private research adapter governed by ADR 0014. Credentials must use the OS keychain and no generic login or scraping subsystem is approved.'
+                WHEN 'bankier-firma-rss' THEN 'Reviewed M8 follow-up candidate. Public and RSS-native, but broader business coverage needs matching-quality tests before runtime enablement.'
+                WHEN 'bankier-wiadomosci-rss' THEN 'Reviewed M8 follow-up candidate. Public and RSS-native, but broad news coverage and stale backfill risk make it unsuitable for default v1 ingestion.'
+                ELSE 'Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.'
             END AS policy_note,
             source_adapter_attempts.state_value AS last_attempt_at,
             source_adapter_triggers.state_value AS last_trigger,
@@ -1766,39 +2846,49 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
         ",
     )?;
 
-    let rows = statement.query_map([GPW_REGISTRY_SOURCE_URL], |row| {
-        let markets: String = row.get(22)?;
+    let rows = statement.query_map(
+        [
+            GPW_REGISTRY_SOURCE_URL,
+            BANKIER_RSS_SOURCE_URL,
+            BANKIER_COMPANY_SOURCE_URL,
+            PORTAL_ANALIZ_SOURCE_URL,
+            BANKIER_FIRMA_RSS_SOURCE_URL,
+            BANKIER_WIADOMOSCI_RSS_SOURCE_URL,
+        ],
+        |row| {
+            let markets: String = row.get(22)?;
 
-        Ok(SourceAdapter {
-            id: row.get(0)?,
-            display_name: row.get(1)?,
-            source_type: row.get(2)?,
-            fetch_mode: row.get(3)?,
-            enabled: row.get(4)?,
-            default_poll_interval_seconds: row.get(5)?,
-            source_url: row.get(6)?,
-            rate_limit_policy: row.get(7)?,
-            policy_note: row.get(8)?,
-            last_attempt_at: row.get(9)?,
-            last_trigger: row.get(10)?,
-            last_success_at: row.get(11)?,
-            last_error_at: row.get(12)?,
-            last_error: row.get(13)?,
-            last_items_fetched: row.get(14)?,
-            last_items_created: row.get(15)?,
-            last_items_matched: row.get(16)?,
-            last_items_unmatched: row.get(17)?,
-            last_detail_items_attempted: row.get(18)?,
-            last_detail_items_stored: row.get(19)?,
-            last_detail_items_failed: row.get(20)?,
-            last_detail_warning: row.get(21)?,
-            markets: markets
-                .split(',')
-                .filter(|market| !market.is_empty())
-                .map(str::to_owned)
-                .collect(),
-        })
-    })?;
+            Ok(SourceAdapter {
+                id: row.get(0)?,
+                display_name: row.get(1)?,
+                source_type: row.get(2)?,
+                fetch_mode: row.get(3)?,
+                enabled: row.get(4)?,
+                default_poll_interval_seconds: row.get(5)?,
+                source_url: row.get(6)?,
+                rate_limit_policy: row.get(7)?,
+                policy_note: row.get(8)?,
+                last_attempt_at: row.get(9)?,
+                last_trigger: row.get(10)?,
+                last_success_at: row.get(11)?,
+                last_error_at: row.get(12)?,
+                last_error: row.get(13)?,
+                last_items_fetched: row.get(14)?,
+                last_items_created: row.get(15)?,
+                last_items_matched: row.get(16)?,
+                last_items_unmatched: row.get(17)?,
+                last_detail_items_attempted: row.get(18)?,
+                last_detail_items_stored: row.get(19)?,
+                last_detail_items_failed: row.get(20)?,
+                last_detail_warning: row.get(21)?,
+                markets: markets
+                    .split(',')
+                    .filter(|market| !market.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+            })
+        },
+    )?;
 
     let adapters = rows.collect::<Result<Vec<_>, _>>()?;
 
@@ -1936,6 +3026,11 @@ fn update_settings(connection: &Connection, input: SettingsUpdate) -> StorageRes
     }
 
     if let Some(poll_interval_seconds) = input.poll_interval_seconds {
+        validate_allowed_setting_i64(
+            "poll_interval_seconds",
+            poll_interval_seconds,
+            &[300, 900, 1800, 3600],
+        )?;
         update_setting(
             connection,
             "poll_interval_seconds",
@@ -2012,6 +3107,21 @@ fn validate_allowed_setting(key: &'static str, value: &str, allowed: &[&str]) ->
     }
 }
 
+fn validate_allowed_setting_i64(
+    key: &'static str,
+    value: i64,
+    allowed: &[i64],
+) -> StorageResult<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidSettingValue {
+            key,
+            value: value.to_string(),
+        })
+    }
+}
+
 fn empty_setting_to_none(value: String) -> Option<String> {
     if value.trim().is_empty() {
         None
@@ -2049,6 +3159,119 @@ fn update_feed_item_state(
     }
 
     get_feed_item(connection, &input.id)
+}
+
+fn prune_old_feed_items(
+    connection: &mut Connection,
+    retention_days: i64,
+) -> StorageResult<FeedPruneResult> {
+    let retention_days = retention_days.max(1);
+    let retention_modifier = format!("-{retention_days} days");
+    let transaction = connection.transaction()?;
+    let pruned_at = current_timestamp(&transaction)?;
+
+    let candidate_ids = old_unsaved_feed_item_ids(&transaction, &retention_modifier)?;
+
+    delete_feed_items_by_id(&transaction, &candidate_ids)?;
+
+    transaction.commit()?;
+
+    Ok(FeedPruneResult {
+        retention_days,
+        items_deleted: candidate_ids.len(),
+        pruned_at,
+    })
+}
+
+fn delete_unsaved_feed_items(connection: &mut Connection) -> StorageResult<FeedDeleteResult> {
+    let transaction = connection.transaction()?;
+    let deleted_at = current_timestamp(&transaction)?;
+    let candidate_ids = unsaved_feed_item_ids(&transaction)?;
+
+    delete_feed_items_by_id(&transaction, &candidate_ids)?;
+
+    transaction.commit()?;
+
+    Ok(FeedDeleteResult {
+        items_deleted: candidate_ids.len(),
+        deleted_at,
+    })
+}
+
+fn delete_feed_items_by_id(connection: &Connection, feed_item_ids: &[String]) -> StorageResult<()> {
+    for feed_item_id in feed_item_ids {
+        transaction_delete_feed_item(connection, feed_item_id)?;
+    }
+
+    Ok(())
+}
+
+fn transaction_delete_feed_item(connection: &Connection, feed_item_id: &str) -> StorageResult<()> {
+    connection.execute(
+        "
+        DELETE FROM ai_analysis_source_references
+        WHERE ai_analysis_result_id IN (
+            SELECT id FROM ai_analysis_results WHERE feed_item_id = ?1
+        )
+        ",
+        [feed_item_id],
+    )?;
+    connection.execute(
+        "
+        DELETE FROM ai_analysis_tags
+        WHERE ai_analysis_result_id IN (
+            SELECT id FROM ai_analysis_results WHERE feed_item_id = ?1
+        )
+        ",
+        [feed_item_id],
+    )?;
+    connection.execute(
+        "DELETE FROM ai_analysis_results WHERE feed_item_id = ?1",
+        [feed_item_id],
+    )?;
+    connection.execute(
+        "DELETE FROM feed_item_attachments WHERE feed_item_id = ?1",
+        [feed_item_id],
+    )?;
+    connection.execute(
+        "DELETE FROM feed_item_companies WHERE feed_item_id = ?1",
+        [feed_item_id],
+    )?;
+    connection.execute("DELETE FROM feed_items WHERE id = ?1", [feed_item_id])?;
+
+    Ok(())
+}
+
+fn old_unsaved_feed_item_ids(
+    connection: &Connection,
+    retention_modifier: &str,
+) -> StorageResult<Vec<String>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id
+        FROM feed_items
+        WHERE saved = 0
+            AND datetime(COALESCE(published_at, fetched_at)) < datetime('now', ?1)
+        ",
+    )?;
+    let rows = statement.query_map([retention_modifier], |row| row.get(0))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn unsaved_feed_item_ids(connection: &Connection) -> StorageResult<Vec<String>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT id
+        FROM feed_items
+        WHERE saved = 0
+        ",
+    )?;
+    let rows = statement.query_map([], |row| row.get(0))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
 }
 
 fn get_feed_item(connection: &Connection, feed_item_id: &str) -> StorageResult<FeedItem> {
@@ -2421,6 +3644,52 @@ mod tests {
         }
     }
 
+    fn sample_bankier_items() -> Vec<BankierRssItem> {
+        vec![
+            BankierRssItem {
+                title: "CD Projekt rośnie po komentarzu zarządu".to_owned(),
+                link: "https://www.bankier.pl/wiadomosc/cd-projekt-komentarz-900001.html"
+                    .to_owned(),
+                summary: "Inwestorzy obserwują CD Projekt po nowych informacjach.".to_owned(),
+                published_at: Some("2026-05-31T09:15:00+02:00".to_owned()),
+                fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+                dedupe_key: "bankier-market-rss:bankier-900001".to_owned(),
+            },
+            BankierRssItem {
+                title: "Rynek czeka na decyzje banków centralnych".to_owned(),
+                link: "https://www.bankier.pl/wiadomosc/rynek-czeka-900002.html".to_owned(),
+                summary: "Przegląd tematów na europejskich parkietach.".to_owned(),
+                published_at: Some("2026-05-31T08:45:00+02:00".to_owned()),
+                fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+                dedupe_key: "bankier-market-rss:bankier-900002".to_owned(),
+            },
+        ]
+    }
+
+    fn sample_bankier_company_items(company: &Company) -> Vec<BankierCompanyItem> {
+        vec![BankierCompanyItem {
+            company_id: company.id.clone(),
+            qualified_ticker: company.qualified_ticker.clone(),
+            title: "Wyniki finansowe QSr 1/2026".to_owned(),
+            link: "https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026-9141553.html"
+                .to_owned(),
+            summary: "raporty okresowe: kwartalne, polroczne, roczne".to_owned(),
+            published_at: Some("2026-05-28T17:33:09".to_owned()),
+            fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+            article_id: "9141553".to_owned(),
+            pub_id: 3,
+            dedupe_key: "bankier-company-komunikaty:article:9141553".to_owned(),
+            duplicate_signature:
+                "official-secondary:GPW:CDR:wyniki-finansowe-qsr-1-2026:9141553".to_owned(),
+            body_text: Some("Official Bankier report body from the article page.".to_owned()),
+            attachments: vec![BankierCompanyAttachment {
+                label: "report.xhtml".to_owned(),
+                url: "https://bonnier.pl/report.xhtml".to_owned(),
+            }],
+            detail_fetch_attempted: true,
+        }]
+    }
+
     #[test]
     fn creates_clean_database_with_initial_schema() {
         let connection = open_in_memory_database().expect("database should initialize");
@@ -2431,7 +3700,7 @@ mod tests {
             })
             .expect("schema_migrations should exist");
 
-        assert_eq!(migration_count, 6);
+        assert_eq!(migration_count, 12);
 
         let company_table_exists: bool = connection
             .query_row(
@@ -2449,7 +3718,7 @@ mod tests {
     }
 
     #[test]
-    fn seeds_default_settings_and_gpw_adapters() {
+    fn seeds_default_settings_and_source_adapters() {
         let connection = open_in_memory_database().expect("database should initialize");
 
         let theme: String = connection
@@ -2460,11 +3729,11 @@ mod tests {
             )
             .expect("theme setting should be seeded");
 
-        let adapter_name: String = connection
+        let gpw_adapter: (String, bool) = connection
             .query_row(
-                "SELECT display_name FROM source_adapters WHERE id = 'gpw-espi-ebi'",
+                "SELECT display_name, enabled FROM source_adapters WHERE id = 'gpw-espi-ebi'",
                 [],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("GPW adapter should be seeded");
         let registry_adapter_name: String = connection
@@ -2474,10 +3743,34 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("GPW registry adapter should be seeded");
+        let bankier_adapter_name: String = connection
+            .query_row(
+                "SELECT display_name FROM source_adapters WHERE id = 'bankier-market-rss'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Bankier adapter should be seeded");
+        let bankier_company_adapter_name: String = connection
+            .query_row(
+                "SELECT display_name FROM source_adapters WHERE id = 'bankier-company-komunikaty'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("Bankier company adapter should be seeded");
+        let portal_analiz_adapter: (String, bool) = connection
+            .query_row(
+                "SELECT display_name, enabled FROM source_adapters WHERE id = 'portal-analiz'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("Portal Analiz placeholder should be seeded");
 
         assert_eq!(theme, "dark");
-        assert_eq!(adapter_name, "GPW ESPI/EBI");
+        assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), false));
         assert_eq!(registry_adapter_name, "GPW Company Registry");
+        assert_eq!(bankier_adapter_name, "Bankier Giełda RSS");
+        assert_eq!(bankier_company_adapter_name, "Bankier Company Komunikaty");
+        assert_eq!(portal_analiz_adapter, ("Portal Analiz".to_owned(), false));
     }
 
     #[test]
@@ -2556,9 +3849,9 @@ mod tests {
         let connection = open_in_memory_database().expect("database should initialize");
         let status = database_status(&connection).expect("status should be available");
 
-        assert_eq!(status.applied_migrations, 6);
+        assert_eq!(status.applied_migrations, 12);
         assert_eq!(status.companies, 0);
-        assert_eq!(status.source_adapters, 2);
+        assert_eq!(status.source_adapters, 7);
         assert_eq!(status.settings, 7);
     }
 
@@ -2784,6 +4077,804 @@ mod tests {
     }
 
     #[test]
+    fn ingests_bankier_rss_items_and_matches_tracked_company_by_strong_signal() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        let result = state
+            .ingest_bankier_rss_items(&sample_bankier_items())
+            .expect("RSS items should ingest");
+
+        assert_eq!(result.adapter_id, BANKIER_RSS_ADAPTER_ID);
+        assert_eq!(result.items_fetched, 2);
+        assert_eq!(result.items_created, 2);
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 1);
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+
+        assert_eq!(visible_items.len(), 1);
+        assert_eq!(visible_items[0].company, "GPW:CDR");
+        assert_eq!(visible_items[0].item_type, "Public media");
+        assert_eq!(visible_items[0].source, "Bankier Giełda RSS");
+        assert_eq!(visible_items[0].attribution, "Bankier.pl");
+        assert_eq!(
+            visible_items[0].summary,
+            "Inwestorzy obserwują CD Projekt po nowych informacjach."
+        );
+
+        let unmatched = state
+            .list_unmatched_source_items(BANKIER_RSS_ADAPTER_ID)
+            .expect("unmatched RSS item should be diagnosable");
+
+        assert_eq!(unmatched.len(), 1);
+        assert_eq!(
+            unmatched[0].title,
+            "Rynek czeka na decyzje banków centralnych"
+        );
+    }
+
+    #[test]
+    fn bankier_rss_ingestion_updates_existing_item_by_source_url() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            connection
+                .execute(
+                    "
+                    INSERT INTO feed_items (
+                        id,
+                        type,
+                        source_adapter_id,
+                        source_name,
+                        source_url,
+                        title,
+                        summary,
+                        language,
+                        published_at,
+                        fetched_at,
+                        dedupe_key,
+                        attribution,
+                        display_company
+                    ) VALUES (?1, 'Public media', ?2, ?3, ?4, ?5, '', 'pl', ?6, ?7, ?8, ?9, 'GPW:CDR')
+                    ",
+                    params![
+                        "feed_bankier_old_title",
+                        BANKIER_RSS_ADAPTER_ID,
+                        BANKIER_RSS_DISPLAY_NAME,
+                        "https://www.bankier.pl/wiadomosc/cd-projekt-komentarz-900001.html",
+                        "&quot;Maluchy&quot; z nowym rekordem. CD Projekt rośnie po komentarzu zarządu",
+                        "2026-05-31T09:15:00+02:00",
+                        "2026-05-31T09:30:00Z",
+                        "bankier-market-rss:old-title-derived-key",
+                        BANKIER_RSS_ATTRIBUTION,
+                    ],
+                )
+                .expect("old row should insert");
+        }
+
+        state
+            .ingest_bankier_rss_items(&[BankierRssItem {
+                title: "\"Maluchy\" z nowym rekordem. CD Projekt rośnie po komentarzu zarządu"
+                    .to_owned(),
+                link: "https://www.bankier.pl/wiadomosc/cd-projekt-komentarz-900001.html"
+                    .to_owned(),
+                summary: "Zdekodowany opis.".to_owned(),
+                published_at: Some("2026-05-31T09:15:00+02:00".to_owned()),
+                fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+                dedupe_key: "bankier-market-rss:bankier-900001".to_owned(),
+            }])
+            .expect("RSS item should update existing row");
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+
+        assert_eq!(visible_items.len(), 1);
+        assert_eq!(visible_items[0].id, "feed_bankier_old_title");
+        assert_eq!(
+            visible_items[0].title,
+            "\"Maluchy\" z nowym rekordem. CD Projekt rośnie po komentarzu zarządu"
+        );
+        assert_eq!(visible_items[0].summary, "Zdekodowany opis.");
+    }
+
+    #[test]
+    fn bankier_rss_ingestion_skips_cross_source_media_duplicate() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+        let bankier_item = sample_bankier_items()
+            .into_iter()
+            .next()
+            .expect("sample Bankier item should exist");
+        let duplicate_signature = media_duplicate_signature(
+            &bankier_item,
+            &[MediaMatchCompany {
+                id: company.id.clone(),
+                ticker: "CDR".to_owned(),
+                qualified_ticker: "GPW:CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+            }],
+        )
+        .expect("matched media item should have duplicate signature");
+
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            connection
+                .execute(
+                    "
+                    INSERT INTO source_adapters (
+                        id,
+                        display_name,
+                        source_type,
+                        fetch_mode,
+                        enabled,
+                        default_poll_interval_seconds
+                    ) VALUES ('other-media-rss', 'Other Media RSS', 'public_media', 'rss', 1, 900)
+                    ",
+                    [],
+                )
+                .expect("other media adapter should insert");
+            connection
+                .execute(
+                    "
+                    INSERT INTO feed_items (
+                        id,
+                        type,
+                        source_adapter_id,
+                        source_name,
+                        source_url,
+                        title,
+                        summary,
+                        language,
+                        published_at,
+                        fetched_at,
+                        dedupe_key,
+                        attribution,
+                        display_company,
+                        duplicate_signature
+                    ) VALUES (?1, 'Public media', 'other-media-rss', 'Other Media RSS', ?2, ?3, ?4, 'pl', ?5, ?6, ?7, 'Other Media', 'GPW:CDR', ?8)
+                    ",
+                    params![
+                        "feed_other_media_cdr",
+                        "https://example.test/cd-projekt-komentarz",
+                        &bankier_item.title,
+                        &bankier_item.summary,
+                        bankier_item.published_at.as_deref(),
+                        &bankier_item.fetched_at,
+                        "other-media-rss:cd-projekt-komentarz",
+                        &duplicate_signature,
+                    ],
+                )
+                .expect("other media item should insert");
+            connection
+                .execute(
+                    "
+                    INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                    VALUES ('feed_other_media_cdr', ?1, 'media_signal')
+                    ",
+                    [&company.id],
+                )
+                .expect("other media company match should insert");
+        }
+
+        let result = state
+            .ingest_bankier_rss_items(&[bankier_item])
+            .expect("Bankier duplicate should ingest");
+
+        assert_eq!(result.items_fetched, 1);
+        assert_eq!(result.items_created, 0);
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 0);
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        assert_eq!(visible_items.len(), 1);
+        assert_eq!(visible_items[0].id, "feed_other_media_cdr");
+        assert_eq!(visible_items[0].source, "Other Media RSS");
+    }
+
+    #[test]
+    fn stores_bankier_company_identifiers_for_tracked_companies() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        let targets_before = state
+            .list_bankier_company_targets()
+            .expect("targets should list");
+        assert_eq!(targets_before.len(), 1);
+        assert_eq!(targets_before[0].bankier_slug, None);
+        assert_eq!(targets_before[0].bankier_tag_id, None);
+
+        state
+            .upsert_bankier_company_identifiers(
+                &company.id,
+                &BankierCompanyIdentifiers {
+                    slug: "CDPROJEKT".to_owned(),
+                    tag_id: "722".to_owned(),
+                },
+            )
+            .expect("identifiers should store");
+
+        let targets_after = state
+            .list_bankier_company_targets()
+            .expect("targets should list");
+        assert_eq!(targets_after[0].bankier_slug.as_deref(), Some("CDPROJEKT"));
+        assert_eq!(targets_after[0].bankier_tag_id.as_deref(), Some("722"));
+
+        state
+            .upsert_bankier_company_identifiers(
+                &company.id,
+                &BankierCompanyIdentifiers {
+                    slug: "CDPROJEKT".to_owned(),
+                    tag_id: "999".to_owned(),
+                },
+            )
+            .expect("changed identifiers should update");
+
+        let changed_targets = state
+            .list_bankier_company_targets()
+            .expect("targets should list");
+        assert_eq!(changed_targets[0].bankier_tag_id.as_deref(), Some("999"));
+    }
+
+    #[test]
+    fn ingests_bankier_company_items_for_tracked_company() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        let result = state
+            .ingest_bankier_company_items(&sample_bankier_company_items(&company))
+            .expect("Bankier company items should ingest");
+
+        assert_eq!(result.adapter_id, BANKIER_COMPANY_ADAPTER_ID);
+        assert_eq!(result.items_fetched, 1);
+        assert_eq!(result.items_created, 1);
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 0);
+        assert_eq!(result.detail_items_attempted, 1);
+        assert_eq!(result.detail_items_stored, 1);
+        assert_eq!(result.detail_items_failed, 0);
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        assert_eq!(visible_items.len(), 1);
+        assert_eq!(visible_items[0].company, "GPW:CDR");
+        assert_eq!(visible_items[0].item_type, "Official report");
+        assert_eq!(visible_items[0].source, BANKIER_COMPANY_DISPLAY_NAME);
+        assert_eq!(visible_items[0].attribution, "Bankier.pl");
+        assert_eq!(visible_items[0].summary, "ESPI");
+        assert_eq!(
+            visible_items[0].body_text,
+            "Official Bankier report body from the article page."
+        );
+        assert_eq!(visible_items[0].attachments.len(), 1);
+        assert_eq!(visible_items[0].attachments[0].label, "report.xhtml");
+    }
+
+    #[test]
+    fn lists_bankier_company_detail_cached_urls() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        state
+            .ingest_bankier_company_items(&sample_bankier_company_items(&company))
+            .expect("Bankier company item should ingest");
+
+        let cached_urls = state
+            .list_bankier_company_detail_cached_urls()
+            .expect("cached URLs should list");
+
+        assert_eq!(
+            cached_urls,
+            vec![
+                "https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026-9141553.html"
+                    .to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn does_not_prune_existing_bankier_company_items_during_ingestion() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            connection
+                .execute(
+                    "
+                    INSERT INTO feed_items (
+                        id,
+                        type,
+                        source_adapter_id,
+                        source_name,
+                        source_url,
+                        title,
+                        language,
+                        published_at,
+                        fetched_at,
+                        dedupe_key,
+                        display_company
+                    ) VALUES (?1, 'Official report', ?2, 'Bankier Company Komunikaty', ?3, ?4, 'pl', ?5, ?6, ?7, ?8)
+                    ",
+                    params![
+                        "feed_bankier_company_komunikaty_legacy",
+                        BANKIER_COMPANY_ADAPTER_ID,
+                        "https://www.bankier.pl/wiadomosc/legacy.html",
+                        "Legacy Bankier report",
+                        "2026-05-20T10:00:00",
+                        "2026-05-21T10:00:00Z",
+                        "bankier-company-komunikaty:article:legacy",
+                        company.qualified_ticker,
+                    ],
+                )
+                .expect("legacy Bankier item should insert");
+        }
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            let legacy_count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM feed_items WHERE source_adapter_id = ?1",
+                    [BANKIER_COMPANY_ADAPTER_ID],
+                    |row| row.get(0),
+                )
+                .expect("legacy item count should query");
+            assert_eq!(legacy_count, 1);
+        }
+
+        state
+            .ingest_bankier_company_items(&sample_bankier_company_items(&company))
+            .expect("Bankier company refresh should not prune existing rows");
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        assert_eq!(visible_items.len(), 2);
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            let legacy_count: i64 = connection
+                .query_row(
+                    "SELECT COUNT(*) FROM feed_items WHERE source_adapter_id = ?1",
+                    [BANKIER_COMPANY_ADAPTER_ID],
+                    |row| row.get(0),
+                )
+                .expect("legacy item count should query");
+            assert_eq!(legacy_count, 2);
+        }
+    }
+
+    #[test]
+    fn bankier_company_items_do_not_duplicate_existing_gpw_report() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        state
+            .ingest_gpw_report_listings(&[GpwReportListing {
+                report_type: "Okresowy".to_owned(),
+                system: "ESPI".to_owned(),
+                report_number: "QSr 1/2026".to_owned(),
+                company_ticker: "CDR".to_owned(),
+                company_name: "CD PROJEKT S.A.".to_owned(),
+                isin: "PLOPTTC00011".to_owned(),
+                title: "Wyniki finansowe QSr 1/2026".to_owned(),
+                detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=9141553".to_owned(),
+                published_at: "2026-05-28T17:33:09+02:00".to_owned(),
+                fetched_at: "2026-05-28T17:40:00Z".to_owned(),
+                dedupe_key: "gpw-espi-ebi:espi:PLOPTTC00011:QSr 1/2026:2026-05-28T17:33:09+02:00"
+                    .to_owned(),
+                body_text: None,
+                attachments: Vec::new(),
+            }])
+            .expect("GPW report should ingest");
+
+        let result = state
+            .ingest_bankier_company_items(&sample_bankier_company_items(&company))
+            .expect("Bankier company duplicate should ingest");
+
+        assert_eq!(result.items_fetched, 1);
+        assert_eq!(result.items_created, 0);
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 0);
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        assert_eq!(visible_items.len(), 1);
+        assert_eq!(visible_items[0].source, "GPW ESPI/EBI");
+        assert_eq!(visible_items[0].title, "Wyniki finansowe QSr 1/2026");
+    }
+
+    #[test]
+    fn hides_bankier_company_item_after_matching_gpw_report_arrives() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        state
+            .ingest_bankier_company_items(&sample_bankier_company_items(&company))
+            .expect("Bankier company item should ingest first");
+        assert_eq!(
+            state
+                .list_feed_items()
+                .expect("feed items should list")
+                .len(),
+            1
+        );
+
+        state
+            .ingest_gpw_report_listings(&[GpwReportListing {
+                report_type: "Okresowy".to_owned(),
+                system: "ESPI".to_owned(),
+                report_number: "QSr 1/2026".to_owned(),
+                company_ticker: "CDR".to_owned(),
+                company_name: "CD PROJEKT S.A.".to_owned(),
+                isin: "PLOPTTC00011".to_owned(),
+                title: "Wyniki finansowe QSr 1/2026".to_owned(),
+                detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=9141553".to_owned(),
+                published_at: "2026-05-28T17:33:09+02:00".to_owned(),
+                fetched_at: "2026-05-28T17:40:00Z".to_owned(),
+                dedupe_key: "gpw-espi-ebi:espi:PLOPTTC00011:QSr 1/2026:2026-05-28T17:33:09+02:00"
+                    .to_owned(),
+                body_text: Some("Official GPW body.".to_owned()),
+                attachments: Vec::new(),
+            }])
+            .expect("GPW report should ingest");
+
+        let visible_items = state.list_feed_items().expect("feed items should list");
+        assert_eq!(visible_items.len(), 1);
+        assert_eq!(visible_items[0].source, "GPW ESPI/EBI");
+        assert_eq!(visible_items[0].body_text, "Official GPW body.");
+
+        let stored_bankier_count: i64 = {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            connection
+                .query_row(
+                    "SELECT COUNT(*) FROM feed_items WHERE source_adapter_id = ?1",
+                    [BANKIER_COMPANY_ADAPTER_ID],
+                    |row| row.get(0),
+                )
+                .expect("stored Bankier count should query")
+        };
+        assert_eq!(stored_bankier_count, 1);
+    }
+
+    #[test]
+    fn prunes_old_unsaved_feed_items_only_when_maintenance_runs() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            for (id, published_at, saved) in [
+                ("feed_old_unsaved", "2000-01-01T10:00:00Z", false),
+                ("feed_old_saved", "2000-01-01T11:00:00Z", true),
+                ("feed_recent_unsaved", "2999-05-31T10:00:00Z", false),
+            ] {
+                connection
+                    .execute(
+                        "
+                        INSERT INTO feed_items (
+                            id,
+                            type,
+                            source_adapter_id,
+                            source_name,
+                            source_url,
+                            title,
+                            language,
+                            published_at,
+                            fetched_at,
+                            dedupe_key,
+                            saved,
+                            display_company
+                        ) VALUES (?1, 'Public media', ?2, 'Bankier Giełda RSS', ?3, ?4, 'pl', ?5, ?5, ?6, ?7, ?8)
+                        ",
+                        params![
+                            id,
+                            BANKIER_RSS_ADAPTER_ID,
+                            format!("https://www.bankier.pl/wiadomosc/{id}.html"),
+                            id,
+                            published_at,
+                            id,
+                            saved,
+                            company.qualified_ticker,
+                        ],
+                    )
+                    .expect("feed item should insert");
+                connection
+                    .execute(
+                        "
+                        INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                        VALUES (?1, ?2, 'test')
+                        ",
+                        params![id, company.id],
+                    )
+                    .expect("feed item company should insert");
+            }
+        }
+
+        let result = state
+            .prune_old_feed_items(30)
+            .expect("old feed items should prune");
+
+        assert_eq!(result.retention_days, 30);
+        assert_eq!(result.items_deleted, 1);
+
+        let remaining_ids = {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            let mut statement = connection
+                .prepare("SELECT id FROM feed_items ORDER BY id")
+                .expect("remaining feed query should prepare");
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("remaining feed query should run")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("remaining feed ids should collect")
+        };
+
+        assert_eq!(
+            remaining_ids,
+            vec![
+                "feed_old_saved".to_owned(),
+                "feed_recent_unsaved".to_owned()
+            ]
+        );
+    }
+
+    #[test]
+    fn deletes_all_unsaved_feed_items_when_requested() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            for (id, saved) in [
+                ("feed_old_unsaved", false),
+                ("feed_recent_unsaved", false),
+                ("feed_saved", true),
+            ] {
+                connection
+                    .execute(
+                        "
+                        INSERT INTO feed_items (
+                            id,
+                            type,
+                            source_adapter_id,
+                            source_name,
+                            source_url,
+                            title,
+                            language,
+                            published_at,
+                            fetched_at,
+                            dedupe_key,
+                            saved,
+                            display_company
+                        ) VALUES (?1, 'Public media', ?2, 'Bankier Giełda RSS', ?3, ?4, 'pl', '2026-05-31T10:00:00Z', '2026-05-31T10:00:00Z', ?5, ?6, ?7)
+                        ",
+                        params![
+                            id,
+                            BANKIER_RSS_ADAPTER_ID,
+                            format!("https://www.bankier.pl/wiadomosc/{id}.html"),
+                            id,
+                            id,
+                            saved,
+                            company.qualified_ticker,
+                        ],
+                    )
+                    .expect("feed item should insert");
+                connection
+                    .execute(
+                        "
+                        INSERT INTO feed_item_companies (feed_item_id, company_id, match_type)
+                        VALUES (?1, ?2, 'test')
+                        ",
+                        params![id, company.id],
+                    )
+                    .expect("feed item company should insert");
+                connection
+                    .execute(
+                        "
+                        INSERT INTO feed_item_attachments (id, feed_item_id, label, url, position)
+                        VALUES (?1, ?2, 'report.pdf', ?3, 0)
+                        ",
+                        params![
+                            format!("attachment_{id}"),
+                            id,
+                            format!("https://www.bankier.pl/{id}.pdf")
+                        ],
+                    )
+                    .expect("feed item attachment should insert");
+            }
+
+            connection
+                .execute(
+                    "
+                    INSERT INTO ai_analysis_results (
+                        id,
+                        feed_item_id,
+                        provider_id,
+                        model,
+                        summary,
+                        significance,
+                        reasoning,
+                        language
+                    ) VALUES ('analysis_unsaved', 'feed_old_unsaved', 'local', 'test', 'summary', 'medium', 'reasoning', 'en')
+                    ",
+                    [],
+                )
+                .expect("analysis result should insert");
+            connection
+                .execute(
+                    "
+                    INSERT INTO ai_analysis_tags (ai_analysis_result_id, tag)
+                    VALUES ('analysis_unsaved', 'important')
+                    ",
+                    [],
+                )
+                .expect("analysis tag should insert");
+            connection
+                .execute(
+                    "
+                    INSERT INTO ai_analysis_source_references (id, ai_analysis_result_id, source_url, label)
+                    VALUES ('analysis_reference_unsaved', 'analysis_unsaved', 'https://example.local/report', 'Report')
+                    ",
+                    [],
+                )
+                .expect("analysis source reference should insert");
+        }
+
+        let result = state
+            .delete_unsaved_feed_items()
+            .expect("unsaved feed items should delete");
+
+        assert_eq!(result.items_deleted, 2);
+
+        let (remaining_ids, attachment_count, company_link_count, analysis_count) = {
+            let connection = state.connection.lock().expect("database mutex poisoned");
+            let mut statement = connection
+                .prepare("SELECT id FROM feed_items ORDER BY id")
+                .expect("remaining feed query should prepare");
+            let remaining_ids = statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .expect("remaining feed query should run")
+                .collect::<Result<Vec<_>, _>>()
+                .expect("remaining feed ids should collect");
+            let attachment_count: i64 = connection
+                .query_row("SELECT COUNT(*) FROM feed_item_attachments", [], |row| {
+                    row.get(0)
+                })
+                .expect("attachment count should query");
+            let company_link_count: i64 = connection
+                .query_row("SELECT COUNT(*) FROM feed_item_companies", [], |row| {
+                    row.get(0)
+                })
+                .expect("company link count should query");
+            let analysis_count: i64 = connection
+                .query_row("SELECT COUNT(*) FROM ai_analysis_results", [], |row| {
+                    row.get(0)
+                })
+                .expect("analysis count should query");
+
+            (
+                remaining_ids,
+                attachment_count,
+                company_link_count,
+                analysis_count,
+            )
+        };
+
+        assert_eq!(remaining_ids, vec!["feed_saved".to_owned()]);
+        assert_eq!(attachment_count, 1);
+        assert_eq!(company_link_count, 1);
+        assert_eq!(analysis_count, 0);
+    }
+
+    #[test]
     fn replaces_gpw_detail_attachments_when_accepted_detail_has_none() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
@@ -2965,7 +5056,7 @@ mod tests {
             .list_source_adapters()
             .expect("source adapters should list");
 
-        assert_eq!(adapters.len(), 2);
+        assert_eq!(adapters.len(), 7);
 
         let report_adapter = adapters
             .iter()
@@ -2973,7 +5064,7 @@ mod tests {
             .expect("GPW report adapter should exist");
         assert_eq!(report_adapter.display_name, "GPW ESPI/EBI");
         assert_eq!(report_adapter.markets, vec!["GPW".to_owned()]);
-        assert!(report_adapter.enabled);
+        assert!(!report_adapter.enabled);
 
         let registry_adapter = adapters
             .iter()
@@ -2982,6 +5073,86 @@ mod tests {
         assert_eq!(registry_adapter.display_name, "GPW Company Registry");
         assert_eq!(registry_adapter.markets, vec!["GPW".to_owned()]);
         assert!(registry_adapter.enabled);
+
+        let bankier_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == BANKIER_RSS_ADAPTER_ID)
+            .expect("Bankier RSS adapter should exist");
+        assert_eq!(bankier_adapter.display_name, "Bankier Giełda RSS");
+        assert_eq!(bankier_adapter.source_type, "public_media");
+        assert_eq!(bankier_adapter.fetch_mode, "rss");
+        assert_eq!(bankier_adapter.source_url, BANKIER_RSS_SOURCE_URL);
+        assert_eq!(bankier_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(bankier_adapter.enabled);
+
+        let bankier_company_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == BANKIER_COMPANY_ADAPTER_ID)
+            .expect("Bankier company adapter should exist");
+        assert_eq!(
+            bankier_company_adapter.display_name,
+            "Bankier Company Komunikaty"
+        );
+        assert_eq!(bankier_company_adapter.source_type, "official_report");
+        assert_eq!(bankier_company_adapter.fetch_mode, "public_json");
+        assert_eq!(
+            bankier_company_adapter.source_url,
+            BANKIER_COMPANY_SOURCE_URL
+        );
+        assert_eq!(bankier_company_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(bankier_company_adapter.enabled);
+        assert!(bankier_company_adapter
+            .policy_note
+            .contains("active v1 official-report source"));
+
+        let bankier_firma_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "bankier-firma-rss")
+            .expect("Bankier Firma RSS placeholder should exist");
+        assert_eq!(bankier_firma_adapter.display_name, "Bankier Firma RSS");
+        assert_eq!(bankier_firma_adapter.source_type, "public_media");
+        assert_eq!(bankier_firma_adapter.fetch_mode, "rss");
+        assert_eq!(
+            bankier_firma_adapter.source_url,
+            BANKIER_FIRMA_RSS_SOURCE_URL
+        );
+        assert!(!bankier_firma_adapter.enabled);
+        assert!(bankier_firma_adapter
+            .policy_note
+            .contains("matching-quality tests"));
+
+        let bankier_wiadomosci_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "bankier-wiadomosci-rss")
+            .expect("Bankier Wiadomosci RSS placeholder should exist");
+        assert_eq!(
+            bankier_wiadomosci_adapter.display_name,
+            "Bankier Wiadomosci RSS"
+        );
+        assert_eq!(bankier_wiadomosci_adapter.source_type, "public_media");
+        assert_eq!(bankier_wiadomosci_adapter.fetch_mode, "rss");
+        assert_eq!(
+            bankier_wiadomosci_adapter.source_url,
+            BANKIER_WIADOMOSCI_RSS_SOURCE_URL
+        );
+        assert!(!bankier_wiadomosci_adapter.enabled);
+        assert!(bankier_wiadomosci_adapter
+            .policy_note
+            .contains("unsuitable for default v1 ingestion"));
+
+        let portal_analiz_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == PORTAL_ANALIZ_ADAPTER_ID)
+            .expect("Portal Analiz placeholder should exist");
+        assert_eq!(portal_analiz_adapter.display_name, "Portal Analiz");
+        assert_eq!(portal_analiz_adapter.source_type, "authenticated_research");
+        assert_eq!(portal_analiz_adapter.fetch_mode, "authenticated");
+        assert_eq!(portal_analiz_adapter.source_url, PORTAL_ANALIZ_SOURCE_URL);
+        assert_eq!(portal_analiz_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(!portal_analiz_adapter.enabled);
+        assert!(portal_analiz_adapter
+            .policy_note
+            .contains("Late-v1 planned"));
     }
 
     #[test]
@@ -3055,7 +5226,7 @@ mod tests {
         let settings = state
             .update_settings(SettingsUpdate {
                 theme: Some("light".to_owned()),
-                poll_interval_seconds: Some(600),
+                poll_interval_seconds: Some(1800),
                 youtube_transcription_provider: None,
                 general_analysis_provider: None,
                 ai_analysis_mode: None,
@@ -3063,12 +5234,28 @@ mod tests {
             .expect("settings should update");
 
         assert_eq!(settings.theme, "light");
-        assert_eq!(settings.poll_interval_seconds, 600);
+        assert_eq!(settings.poll_interval_seconds, 1800);
 
         let persisted = state.get_settings().expect("settings should persist");
 
         assert_eq!(persisted.theme, "light");
-        assert_eq!(persisted.poll_interval_seconds, 600);
+        assert_eq!(persisted.poll_interval_seconds, 1800);
+    }
+
+    #[test]
+    fn rejects_invalid_poll_interval_setting() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let result = state.update_settings(SettingsUpdate {
+            theme: None,
+            poll_interval_seconds: Some(42),
+            youtube_transcription_provider: None,
+            general_analysis_provider: None,
+            ai_analysis_mode: None,
+        });
+
+        assert!(result.is_err());
     }
 
     #[test]

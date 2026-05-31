@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Bankier.pl - Giełda</title>
+    <link>https://www.bankier.pl/</link>
+    <description>Wiadomości giełdowe Bankier.pl</description>
+    <item>
+      <title>&quot;Maluchy&quot; z nowym rekordem. CD Projekt rośnie po komentarzu zarządu</title>
+      <link>https://www.bankier.pl/wiadomosc/cd-projekt-komentarz-900001.html?utm_source=RSS&amp;utm_medium=RSS&amp;utm_campaign=Gielda#comments</link>
+      <description><![CDATA[<p>&quot;Kurs&quot; CD Projektu zyskuje po publikacji komentarza zarządu.</p>]]></description>
+      <pubDate>Sun, 31 May 2026 09:15:00 +0200</pubDate>
+      <guid>bankier-900001</guid>
+    </item>
+    <item>
+      <title>Rynek czeka na decyzje banków centralnych</title>
+      <link>https://www.bankier.pl/wiadomosc/rynek-czeka-na-decyzje-900002.html</link>
+      <description>Przegląd najważniejszych tematów na europejskich parkietach.</description>
+      <pubDate>Sun, 31 May 2026 08:45:00 +0200</pubDate>
+      <guid>bankier-900002</guid>
+    </item>
+  </channel>
+</rss>

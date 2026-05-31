@@ -1,0 +1,27 @@
+{
+  "articles": [
+    {
+      "messages_filters": ["raporty okresowe: kwartalne, polroczne, roczne", "finanse"],
+      "main_section_priority": 3,
+      "pub_id": 3,
+      "time": "2026-05-28 17:33:09",
+      "tags": ["cdprojekt"],
+      "slug": "CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026",
+      "title": "CD PROJEKT SA: Wyniki finansowe QSr 1/2026",
+      "article_id": 9141553,
+      "url": "/wiadomosc/CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026-9141553.html"
+    },
+    {
+      "messages_filters": ["statut, prospekt, memorandum, dokument informacyjny", "Walne Zgromadzenie"],
+      "main_section_priority": 1,
+      "pub_id": 3,
+      "time": "2026-05-27 17:08:56",
+      "tags": ["cdprojekt"],
+      "slug": "CD-PROJEKT-SA-Projekty-uchwal-Zwyczajnego-Walnego-Zgromadzenia",
+      "title": "CD PROJEKT SA: Projekty uchwal Zwyczajnego Walnego Zgromadzenia",
+      "article_id": 9140612,
+      "url": "/wiadomosc/CD-PROJEKT-SA-Projekty-uchwal-Zwyczajnego-Walnego-Zgromadzenia-9140612.html"
+    }
+  ],
+  "is_more_items": true
+}

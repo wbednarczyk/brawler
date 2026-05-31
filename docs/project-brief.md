@@ -25,6 +25,8 @@
 - [ADR 0010: Security, Dependencies, and AI Policy](adr/0010-security-dependencies-and-ai-policy.md)
 - [ADR 0011: Export, Backup, Versioning, and Releases](adr/0011-export-backup-versioning-and-releases.md)
 - [ADR 0012: Nix Development Environment](adr/0012-nix-development-environment.md)
+- [ADR 0013: GPW Detail Fetching Policy](adr/0013-gpw-detail-fetching-policy.md)
+- [ADR 0014: Portal Analiz Authenticated Source Policy](adr/0014-portal-analiz-authenticated-source-policy.md)
 
 ## Product Intent
 
@@ -78,4 +80,6 @@ Initial source priorities:
 
 The current GitHub repository is private. The future monetization model is undecided. Open core plus paid convenience features remains one candidate, but other approaches are still possible.
 
-Brawler is all rights reserved for now. The exact future license and monetization model must be decided before public release, accepting external contributions, or publishing release artifacts.
+Brawler is all rights reserved for now. The exact future license and monetization model must be decided before public release, accepting external contributions, or publishing public release artifacts.
+
+V1 friend-testing distribution is allowed only after the functional v1 work is complete and a local license-key gate exists. The intended friend-test gate should prevent casual redistribution without requiring cloud accounts, telemetry, hosted activation, or a billing system.
