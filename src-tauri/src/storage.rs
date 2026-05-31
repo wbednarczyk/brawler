@@ -68,6 +68,12 @@ impl AppState {
         gpw_company_registry_needs_bootstrap_refresh(&connection)
     }
 
+    pub fn gpw_company_registry_is_stale(&self, stale_after_seconds: i64) -> StorageResult<bool> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        gpw_company_registry_is_stale(&connection, stale_after_seconds)
+    }
+
     pub fn refresh_gpw_company_registry(
         &self,
         entries: &[GpwCompanyRegistryEntry],
@@ -522,60 +528,6 @@ pub struct CompanyRegistryRefreshResult {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct CompanySample {
-    exchange: &'static str,
-    ticker: &'static str,
-    qualified_ticker: &'static str,
-    display_name: &'static str,
-    isin: &'static str,
-}
-
-const COMPANY_FIXTURES: &[CompanySample] = &[
-    CompanySample {
-        exchange: "GPW",
-        ticker: "11B",
-        qualified_ticker: "GPW:11B",
-        display_name: "11 BIT STUDIOS S.A.",
-        isin: "PL11BTS00015",
-    },
-    CompanySample {
-        exchange: "GPW",
-        ticker: "CDR",
-        qualified_ticker: "GPW:CDR",
-        display_name: "CD PROJEKT S.A.",
-        isin: "PLOPTTC00011",
-    },
-    CompanySample {
-        exchange: "GPW",
-        ticker: "PKN",
-        qualified_ticker: "GPW:PKN",
-        display_name: "ORLEN S.A.",
-        isin: "PLPKN0000018",
-    },
-    CompanySample {
-        exchange: "GPW",
-        ticker: "KGH",
-        qualified_ticker: "GPW:KGH",
-        display_name: "KGHM POLSKA MIEDZ S.A.",
-        isin: "PLKGHM000017",
-    },
-    CompanySample {
-        exchange: "GPW",
-        ticker: "PZU",
-        qualified_ticker: "GPW:PZU",
-        display_name: "PZU S.A.",
-        isin: "PLPZU0000011",
-    },
-    CompanySample {
-        exchange: "GPW",
-        ticker: "CLC",
-        qualified_ticker: "GPW:CLC",
-        display_name: "COLUMBUS ENERGY S.A.",
-        isin: "PLSTIGR00012",
-    },
-];
-
-#[derive(Debug, Clone, Copy)]
 struct Migration {
     version: i64,
     name: &'static str,
@@ -839,35 +791,7 @@ fn lookup_company(
         return Ok(Some(result));
     }
 
-    Ok(COMPANY_FIXTURES
-        .iter()
-        .find(|sample| {
-            if sample.exchange != exchange {
-                return false;
-            }
-
-            if let Some(ticker) = ticker.as_deref().filter(|value| !value.is_empty()) {
-                return sample.ticker == ticker;
-            }
-
-            if let Some(isin) = isin.as_deref().filter(|value| !value.is_empty()) {
-                return sample.isin == isin;
-            }
-
-            if let Some(display_name) = display_name.as_deref().filter(|value| value.len() >= 3) {
-                return normalize_name_lookup(sample.display_name).contains(display_name);
-            }
-
-            false
-        })
-        .map(|sample| CompanyLookupResult {
-            exchange: sample.exchange.to_owned(),
-            ticker: sample.ticker.to_owned(),
-            qualified_ticker: sample.qualified_ticker.to_owned(),
-            display_name: sample.display_name.to_owned(),
-            isin: sample.isin.to_owned(),
-            source: "local_sample".to_owned(),
-        }))
+    Ok(None)
 }
 
 fn lookup_company_registry(
@@ -952,7 +876,35 @@ fn gpw_company_registry_needs_bootstrap_refresh(connection: &Connection) -> Stor
         |row| row.get(0),
     )?;
 
-    Ok(active_count <= COMPANY_FIXTURES.len() as i64)
+    Ok(active_count == 0)
+}
+
+fn gpw_company_registry_is_stale(
+    connection: &Connection,
+    stale_after_seconds: i64,
+) -> StorageResult<bool> {
+    let stale_after_seconds = stale_after_seconds.max(60);
+    let is_stale: bool = connection.query_row(
+        "
+        SELECT COALESCE(
+            (
+                SELECT
+                    last_success_at IS NULL
+                    OR COALESCE(
+                        ((julianday('now') - julianday(last_success_at)) * 86400.0) >= ?1,
+                        1
+                    )
+                FROM source_adapters
+                WHERE id = ?2
+            ),
+            1
+        )
+        ",
+        params![stale_after_seconds, GPW_REGISTRY_ADAPTER_ID],
+        |row| row.get(0),
+    )?;
+
+    Ok(is_stale)
 }
 
 fn registry_lookup_result(
@@ -1728,7 +1680,7 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
                 ELSE 'https://www.gpw.pl/komunikaty'
             END AS source_url,
             CASE source_adapters.id
-                WHEN 'gpw-company-registry' THEN 'Manual refresh plus later daily or weekly scheduled refresh'
+                WHEN 'gpw-company-registry' THEN 'Manual refresh plus daily stale-cache scheduled refresh'
                 ELSE 'Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart'
             END AS rate_limit_policy,
             CASE source_adapters.id
@@ -2341,165 +2293,6 @@ fn validate_allowed_notebook_value(
     }
 }
 
-fn seed_sample_feed_items(connection: &Connection) -> StorageResult<()> {
-    let feed_item_count: i64 =
-        connection.query_row("SELECT COUNT(*) FROM feed_items", [], |row| row.get(0))?;
-
-    if feed_item_count > 0 {
-        return Ok(());
-    }
-
-    let samples = [
-        (
-            "feed_sample_cdr_report",
-            "Official report",
-            "GPW ESPI/EBI",
-            "https://www.gpw.pl/komunikaty",
-            "Current report placeholder for watchlist company",
-            "Sample official report used to validate feed filtering and detail rendering.",
-            "pl",
-            "2026-05-29T09:12:00Z",
-            "2026-05-29T09:15:00Z",
-            "gpw-espi-ebi:sample:cdr-report",
-            false,
-            false,
-            "GPW",
-            "GPW:CDR",
-        ),
-        (
-            "feed_sample_pkn_news",
-            "News",
-            "Sample feed",
-            "https://example.local/sample/pkn",
-            "Sample item proving the inbox layout can scan dense rows",
-            "Saved sample item used to validate the saved filter before real ingestion exists.",
-            "en",
-            "2026-05-28T16:00:00Z",
-            "2026-05-28T16:03:00Z",
-            "sample:pkn-news",
-            true,
-            true,
-            "Sample",
-            "GPW:PKN",
-        ),
-        (
-            "feed_sample_kgh_transcript",
-            "Transcript",
-            "Local sample",
-            "https://example.local/sample/kgh-transcript",
-            "Transcript-derived note candidate waits for future provider work",
-            "Transcript placeholder for future video and notebook workflows.",
-            "en",
-            "2026-05-25T10:00:00Z",
-            "2026-05-25T10:00:00Z",
-            "sample:kgh-transcript",
-            true,
-            false,
-            "Sample",
-            "GPW:KGH",
-        ),
-        (
-            "feed_sample_pzu_report",
-            "Official report",
-            "GPW ESPI/EBI",
-            "https://www.gpw.pl/komunikaty",
-            "PZU governance report placeholder",
-            "Fourth sample item keeps the sample feed aligned with local GPW lookup companies.",
-            "pl",
-            "2026-05-24T12:00:00Z",
-            "2026-05-24T12:05:00Z",
-            "gpw-espi-ebi:sample:pzu-report",
-            true,
-            false,
-            "GPW",
-            "GPW:PZU",
-        ),
-    ];
-
-    for sample in samples {
-        connection.execute(
-            "
-            INSERT OR IGNORE INTO feed_items (
-                id,
-                type,
-                source_adapter_id,
-                source_name,
-                source_url,
-                title,
-                summary,
-                language,
-                published_at,
-                fetched_at,
-                dedupe_key,
-                read,
-                saved,
-                attribution,
-                display_company
-            ) VALUES (?1, ?2, 'gpw-espi-ebi', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
-            ",
-            params![
-                sample.0, sample.1, sample.2, sample.3, sample.4, sample.5, sample.6, sample.7,
-                sample.8, sample.9, sample.10, sample.11, sample.12, sample.13
-            ],
-        )?;
-    }
-
-    Ok(())
-}
-
-fn seed_company_registry_entries(connection: &Connection) -> StorageResult<()> {
-    let registry_count: i64 =
-        connection.query_row("SELECT COUNT(*) FROM company_registry_entries", [], |row| {
-            row.get(0)
-        })?;
-
-    if registry_count > 0 {
-        return Ok(());
-    }
-
-    let fetched_at = current_timestamp(connection)?;
-
-    for sample in COMPANY_FIXTURES {
-        let source_url = format!("https://www.gpw.pl/spolka?isin={}", sample.isin);
-        connection.execute(
-            "
-            INSERT OR IGNORE INTO company_registry_entries (
-                id,
-                exchange,
-                ticker,
-                qualified_ticker,
-                display_name,
-                isin,
-                source_adapter_id,
-                source_url,
-                fetched_at,
-                active
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)
-            ",
-            params![
-                company_registry_entry_id(sample.exchange, sample.ticker),
-                sample.exchange,
-                sample.ticker,
-                sample.qualified_ticker,
-                sample.display_name,
-                sample.isin,
-                GPW_REGISTRY_ADAPTER_ID,
-                source_url,
-                fetched_at,
-            ],
-        )?;
-    }
-
-    set_source_adapter_state(
-        connection,
-        GPW_REGISTRY_ADAPTER_ID,
-        "last_items_fetched",
-        &COMPANY_FIXTURES.len().to_string(),
-    )?;
-
-    Ok(())
-}
-
 fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.execute_batch(
@@ -2533,8 +2326,6 @@ fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {
     }
 
     transaction.commit()?;
-    seed_sample_feed_items(connection)?;
-    seed_company_registry_entries(connection)?;
     Ok(())
 }
 
@@ -2600,6 +2391,35 @@ fn normalize_name_lookup(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn registry_entry(ticker: &str, display_name: &str, isin: &str) -> GpwCompanyRegistryEntry {
+        GpwCompanyRegistryEntry {
+            exchange: "GPW".to_owned(),
+            ticker: ticker.to_owned(),
+            qualified_ticker: format!("GPW:{ticker}"),
+            display_name: display_name.to_owned(),
+            isin: isin.to_owned(),
+            source_url: format!("https://www.gpw.pl/spolka?isin={isin}"),
+        }
+    }
+
+    fn sample_cdr_listing() -> GpwReportListing {
+        GpwReportListing {
+            report_type: "Bieżący".to_owned(),
+            system: "ESPI".to_owned(),
+            report_number: "1/2026".to_owned(),
+            company_ticker: "CDR".to_owned(),
+            company_name: "CD PROJEKT S.A.".to_owned(),
+            isin: "PLOPTTC00011".to_owned(),
+            title: "Current report placeholder for tracked company".to_owned(),
+            detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=111111".to_owned(),
+            published_at: "2026-05-29T09:12:00Z".to_owned(),
+            fetched_at: "2026-05-29T09:15:00Z".to_owned(),
+            dedupe_key: "gpw-espi-ebi:test:PLOPTTC00011:1/2026:2026-05-29T09:12:00Z".to_owned(),
+            body_text: None,
+            attachments: Vec::new(),
+        }
+    }
 
     #[test]
     fn creates_clean_database_with_initial_schema() {
@@ -2743,56 +2563,17 @@ mod tests {
     }
 
     #[test]
-    fn seeds_and_lists_sample_feed_items() {
+    fn starts_without_seeded_feed_or_registry_rows() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
-        state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "CDR".to_owned(),
-                display_name: "CD PROJEKT S.A.".to_owned(),
-                isin: Some("PLOPTTC00011".to_owned()),
-                cik: None,
-                lei: None,
-            })
-            .expect("tracked sample company should create");
-        state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "PKN".to_owned(),
-                display_name: "ORLEN S.A.".to_owned(),
-                isin: Some("PLPKN0000018".to_owned()),
-                cik: None,
-                lei: None,
-            })
-            .expect("tracked sample company should create");
-        state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "KGH".to_owned(),
-                display_name: "KGHM POLSKA MIEDZ S.A.".to_owned(),
-                isin: Some("PLKGHM000017".to_owned()),
-                cik: None,
-                lei: None,
-            })
-            .expect("tracked sample company should create");
-        state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "PZU".to_owned(),
-                display_name: "PZU S.A.".to_owned(),
-                isin: Some("PLPZU0000011".to_owned()),
-                cik: None,
-                lei: None,
-            })
-            .expect("tracked sample company should create");
 
         let feed_items = state.list_feed_items().expect("feed items should list");
+        let registry_entries = state
+            .list_company_registry_entries()
+            .expect("registry entries should list");
 
-        assert_eq!(feed_items.len(), 4);
-        assert_eq!(feed_items[0].id, "feed_sample_cdr_report");
-        assert_eq!(feed_items[0].company, "GPW:CDR");
-        assert!(feed_items[0].unread);
+        assert!(feed_items.is_empty());
+        assert!(registry_entries.is_empty());
     }
 
     #[test]
@@ -2808,11 +2589,22 @@ mod tests {
                 cik: None,
                 lei: None,
             })
-            .expect("tracked sample company should create");
+            .expect("tracked company should create");
+
+        state
+            .ingest_gpw_report_listings(&[sample_cdr_listing()])
+            .expect("test listing should ingest");
+        let feed_item_id = state
+            .list_feed_items()
+            .expect("feed items should list")
+            .first()
+            .expect("test feed item should exist")
+            .id
+            .clone();
 
         let updated = state
             .update_feed_item_state(FeedItemStateInput {
-                id: "feed_sample_cdr_report".to_owned(),
+                id: feed_item_id.clone(),
                 read: Some(true),
                 saved: Some(true),
             })
@@ -2824,8 +2616,8 @@ mod tests {
         let feed_items = state.list_feed_items().expect("feed items should list");
         let cdr = feed_items
             .iter()
-            .find(|item| item.id == "feed_sample_cdr_report")
-            .expect("CDR sample should remain present");
+            .find(|item| item.id == feed_item_id)
+            .expect("CDR test item should remain present");
 
         assert!(!cdr.unread);
         assert!(cdr.saved);
@@ -2949,6 +2741,16 @@ mod tests {
                 lei: None,
             })
             .expect("tracked company should create");
+        state
+            .refresh_gpw_company_registry(
+                &[registry_entry(
+                    "11B",
+                    "11 BIT STUDIOS SPÓŁKA AKCYJNA",
+                    "PL11BTS00015",
+                )],
+                "2026-05-31T12:00:00Z",
+            )
+            .expect("test registry should refresh");
 
         let result = state
             .ingest_gpw_report_listings(&[GpwReportListing {
@@ -3286,9 +3088,16 @@ mod tests {
     }
 
     #[test]
-    fn looks_up_company_sample_by_ticker() {
+    fn looks_up_registry_company_by_ticker() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
+        state
+            .refresh_gpw_company_registry(
+                &[registry_entry("CDR", "CD PROJEKT S.A.", "PLOPTTC00011")],
+                "2026-05-31T12:00:00Z",
+            )
+            .expect("test registry should refresh");
+
         let result = state
             .lookup_company(CompanyLookupInput {
                 exchange: "gpw".to_owned(),
@@ -3306,9 +3115,16 @@ mod tests {
     }
 
     #[test]
-    fn looks_up_company_sample_by_isin() {
+    fn looks_up_registry_company_by_isin() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
+        state
+            .refresh_gpw_company_registry(
+                &[registry_entry("PZU", "PZU S.A.", "PLPZU0000011")],
+                "2026-05-31T12:00:00Z",
+            )
+            .expect("test registry should refresh");
+
         let result = state
             .lookup_company(CompanyLookupInput {
                 exchange: "GPW".to_owned(),
@@ -3357,6 +3173,42 @@ mod tests {
 
         assert_eq!(lookup.qualified_ticker, "GPW:TST");
         assert_eq!(lookup.source, "gpw_registry");
+    }
+
+    #[test]
+    fn detects_stale_gpw_company_registry_cache() {
+        let connection = open_in_memory_database().expect("database should initialize");
+
+        assert!(gpw_company_registry_is_stale(&connection, 86_400)
+            .expect("registry should report stale when never refreshed"));
+
+        connection
+            .execute(
+                "
+                UPDATE source_adapters
+                SET last_success_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                [GPW_REGISTRY_ADAPTER_ID],
+            )
+            .expect("registry adapter timestamp should update");
+
+        assert!(!gpw_company_registry_is_stale(&connection, 86_400)
+            .expect("fresh registry should not be stale"));
+
+        connection
+            .execute(
+                "
+                UPDATE source_adapters
+                SET last_success_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 days')
+                WHERE id = ?1
+                ",
+                [GPW_REGISTRY_ADAPTER_ID],
+            )
+            .expect("registry adapter timestamp should update");
+
+        assert!(gpw_company_registry_is_stale(&connection, 86_400)
+            .expect("old registry should be stale"));
     }
 
     #[test]

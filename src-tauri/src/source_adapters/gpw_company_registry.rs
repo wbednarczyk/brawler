@@ -56,8 +56,10 @@ impl GpwCompanyRegistryFetcher for HttpGpwCompanyRegistryFetcher {
     }
 }
 
+#[cfg(test)]
 pub struct EmbeddedGpwCompanyRegistryFetcher;
 
+#[cfg(test)]
 impl GpwCompanyRegistryFetcher for EmbeddedGpwCompanyRegistryFetcher {
     fn fetch_company_registry_page(&self) -> Result<String, GpwCompanyRegistryFetchError> {
         Ok(include_str!("../../fixtures/gpw_company_registry.html").to_owned())

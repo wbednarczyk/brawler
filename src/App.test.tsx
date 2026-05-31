@@ -116,7 +116,7 @@ const sourceAdapters = [
     enabled: true,
     defaultPollIntervalSeconds: 86400,
     sourceUrl: "https://www.gpw.pl/spolki?offset=0&limit=500",
-    rateLimitPolicy: "Manual refresh plus later daily or weekly scheduled refresh",
+    rateLimitPolicy: "Manual refresh plus daily stale-cache scheduled refresh",
     policyNote: "Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.",
     lastAttemptAt: null,
     lastTrigger: null,
@@ -1181,15 +1181,17 @@ describe("App", () => {
 
     expect(within(sourceAdaptersRegion).getByText("GPW ESPI/EBI")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("gpw-espi-ebi")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("official_report · public_page")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Official reports · Public page")).toBeInTheDocument();
     expect(within(sourceRow).getByText("Ready")).toBeInTheDocument();
 
     await user.click(sourceRow);
 
     expect(sourceRow).toHaveClass("source-row-selected");
-    expect(within(await screen.findByLabelText("Source adapter details")).getByText("In-app · 15 min")).toBeInTheDocument();
-    expect(within(await screen.findByLabelText("Source adapter details")).getByText("In 15 min")).toBeInTheDocument();
-    expect(within(await screen.findByLabelText("Source adapter details")).getByText("Manual")).toBeInTheDocument();
+    const sourceDetails = await screen.findByLabelText("Source adapter details");
+    expect(within(sourceDetails).getByText("In-app · 15 min")).toBeInTheDocument();
+    expect(within(sourceDetails).getByText("Next poll")).toBeInTheDocument();
+    expect(within(sourceDetails).getByText("In 15 min")).toBeInTheDocument();
+    expect(within(sourceDetails).getByText("Manual")).toBeInTheDocument();
     expect(
       within(await screen.findByLabelText("Source adapter details")).getByText(
         "2 fetched · 1 created · 1 matched · 1 unmatched · details 1/1 stored · 0 failed",
@@ -1226,7 +1228,16 @@ describe("App", () => {
       name: "Open source adapter: GPW Company Registry",
     });
 
+    expect(within(registryRow).getByText("Company registry · Public GPW company list")).toBeInTheDocument();
+
     await user.click(registryRow);
+    const registryDetails = await screen.findByLabelText("Source adapter details");
+    expect(within(registryDetails).getByText("Next poll")).toBeInTheDocument();
+    expect(within(registryDetails).getByText(/In 23h|In 1 day/)).toBeInTheDocument();
+    expect(within(registryDetails).getByText("Cache result")).toBeInTheDocument();
+    expect(within(registryDetails).getByText("400 cached entries · 400 refreshed or updated")).toBeInTheDocument();
+    expect(within(registryDetails).getByText("Refresh policy")).toBeInTheDocument();
+    expect(within(registryDetails).queryByText("Detail warning")).not.toBeInTheDocument();
     await user.click(within(await screen.findByLabelText("Company registry refresh")).getByRole("button", {
       name: "Refresh registry",
     }));
@@ -1256,7 +1267,14 @@ describe("App", () => {
 
     await user.click(within(registryPanel).getByRole("button", { name: /Companies/i }));
 
+    expect(await within(registryPanel).findByText("CD PROJEKT S.A.")).toBeInTheDocument();
     expect(await within(registryPanel).findByText("DINO POLSKA S.A.")).toBeInTheDocument();
+
+    await user.type(within(registryPanel).getByLabelText("Search GPW company registry"), "dnp");
+
+    expect(within(registryPanel).queryByText("CD PROJEKT S.A.")).not.toBeInTheDocument();
+    expect(await within(registryPanel).findByText("DINO POLSKA S.A.")).toBeInTheDocument();
+
     await user.click(within(registryPanel).getByRole("button", { name: "Add" }));
 
     await waitFor(() =>
@@ -1619,6 +1637,73 @@ describe("App", () => {
     expect(await screen.findByDisplayValue("CD PROJEKT S.A.")).toBeInTheDocument();
     expect(screen.getByDisplayValue("PLOPTTC00011")).toBeInTheDocument();
     expect(screen.getByText("Filled from gpw_registry: GPW:CDR")).toBeInTheDocument();
+  });
+
+  it("selects a company from local GPW registry suggestions", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.clear(screen.getByLabelText("Name"));
+    await user.type(screen.getByLabelText("Name"), "DINO");
+
+    const suggestions = await screen.findByLabelText("Company registry suggestions");
+    await user.click(within(suggestions).getByRole("button", { name: /GPW:DNP/ }));
+
+    expect(screen.getByDisplayValue("DNP")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("DINO POLSKA S.A.")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("PLDINPL00011")).toBeInTheDocument();
+    expect(screen.getByText("Selected from GPW registry: GPW:DNP")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Company registry suggestions")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear ticker" }));
+
+    expect(screen.getByLabelText("Exchange")).toHaveValue("GPW");
+    expect(screen.getByLabelText("Ticker")).toHaveValue("");
+    expect(screen.getByLabelText("Name")).toHaveValue("DINO POLSKA S.A.");
+    expect(screen.getByLabelText("ISIN")).toHaveValue("PLDINPL00011");
+    expect(screen.queryByText("Selected from GPW registry: GPW:DNP")).not.toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Ticker"), "DNP");
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("create_company", {
+        input: {
+          exchange: "GPW",
+          ticker: "DNP",
+          displayName: "DINO POLSKA S.A.",
+          isin: "PLDINPL00011",
+          cik: null,
+          lei: null,
+        },
+      }),
+    );
+  });
+
+  it("filters the tracked companies list", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+
+    const companyList = await screen.findByLabelText("Companies list");
+    expect(within(companyList).getByText("GPW:CDR")).toBeInTheDocument();
+    expect(within(companyList).getByText("GPW:PZU")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search tracked companies"), "pzu");
+
+    expect(within(companyList).queryByText("GPW:CDR")).not.toBeInTheDocument();
+    expect(within(companyList).getByText("GPW:PZU")).toBeInTheDocument();
+    expect(screen.getByText("1/4 companies")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear company search" }));
+
+    expect(within(companyList).getByText("GPW:CDR")).toBeInTheDocument();
+    expect(screen.getByText("4/4 companies")).toBeInTheDocument();
   });
 
   it("confirms and deletes a company", async () => {

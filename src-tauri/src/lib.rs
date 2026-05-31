@@ -21,6 +21,13 @@ mod commands {
         trigger: Option<String>,
     }
 
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RefreshRegistryIfStaleInput {
+        trigger: Option<String>,
+        stale_after_seconds: Option<i64>,
+    }
+
     #[tauri::command]
     pub fn health() -> HealthResponse {
         HealthResponse {
@@ -332,6 +339,30 @@ mod commands {
         refresh_gpw_company_registry_for_trigger(&state, &trigger)
     }
 
+    #[tauri::command]
+    pub fn refresh_gpw_company_registry_if_stale(
+        input: Option<RefreshRegistryIfStaleInput>,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Option<storage::CompanyRegistryRefreshResult>, String> {
+        let trigger = input
+            .as_ref()
+            .and_then(|input| input.trigger.clone())
+            .filter(|trigger| trigger == "scheduler")
+            .unwrap_or_else(|| "scheduler".to_owned());
+        let stale_after_seconds = input
+            .and_then(|input| input.stale_after_seconds)
+            .unwrap_or(86_400);
+
+        if !state
+            .gpw_company_registry_is_stale(stale_after_seconds)
+            .map_err(|error| error.to_string())?
+        {
+            return Ok(None);
+        }
+
+        refresh_gpw_company_registry_for_trigger(&state, &trigger).map(Some)
+    }
+
     fn should_bootstrap_gpw_registry(
         input: &storage::CompanyLookupInput,
         state: &storage::AppState,
@@ -442,6 +473,7 @@ pub fn run() {
             commands::list_company_registry_entries,
             commands::refresh_sources,
             commands::refresh_gpw_company_registry,
+            commands::refresh_gpw_company_registry_if_stale,
             commands::get_settings,
             commands::update_settings
         ])
@@ -456,6 +488,6 @@ mod tests {
         let response = super::commands::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.6.0");
+        assert_eq!(response.version, "0.7.0");
     }
 }

@@ -101,15 +101,15 @@ Included:
 - watchlists
 - settings
 - YAML settings import/export/bootstrap contract, with implementation deferred to later export/import/backup work
-- seed or sample feed items
-- Tauri commands for companies, watchlists, settings, and sample feed
+- early seed or sample feed items for development only, later removed from target runtime initialization in M7
+- Tauri commands for companies, watchlists, settings, and feed reads
 
 Exit criteria:
 
 - clean database can be created by migration
 - company can be added by exchange-qualified ticker
 - watchlist can be created and assigned companies
-- sample feed can be shown in Inbox
+- feed reads can be shown in Inbox using development/test sample data before real ingestion exists
 - migration tests exist
 - migration check runs in CI
 - runtime settings can be read and updated through Tauri commands
@@ -125,7 +125,7 @@ Status: complete.
 
 Notes:
 
-- Milestone 3 uses SQLite-backed local feed items and development seed data.
+- Milestone 3 originally used SQLite-backed local feed items and development seed data. M7 removes sample data from target runtime database initialization; sample data remains test-only.
 - Real source ingestion remains deferred to Milestone 5.
 - Notebook, Claims, and Transcripts workspace tabs are present as placeholders and move into their dedicated later milestones.
 - Manual source refresh remains a disabled placeholder until source adapter jobs exist.
@@ -241,6 +241,8 @@ Completion notes:
 
 ## Milestone 7: GPW Company Registry Cache
 
+Status: completed in `0.7.0`.
+
 Goal: make company management and source matching reliable by caching GPW ticker/ISIN/company metadata locally.
 
 Included:
@@ -260,6 +262,18 @@ Exit criteria:
 - issuer/company name alone is not used for silent automatic feed matching
 - hard-coded lookup test samples are clearly replaced or reduced to tests
 - tests cover registry parsing, storage, lookup, and feed matching
+- target runtime databases are not seeded from test samples or hard-coded company metadata
+
+Completion notes:
+
+- GPW company metadata is cached in SQLite from the public GPW company list and survives app restarts.
+- Sources exposes manual registry refresh, registry freshness, last-error/cache result status, refresh policy, and a searchable cached-company list.
+- The desktop UI schedules a slow stale-cache registry refresh check using the registry adapter interval without refreshing immediately on startup.
+- Company creation can autocomplete from cached GPW ticker, name, or ISIN input and fill registry metadata without silently overwriting existing companies.
+- Tracked companies are searchable in Companies.
+- GPW feed matching uses ticker-first matching with exact ISIN-to-registry fallback; issuer/company name alone is not used as a silent match key.
+- Target runtime database initialization no longer seeds feed rows or registry rows from sample data.
+- Test coverage covers registry parsing, storage, lookup, source matching, stale-refresh behavior, and UI registry autocomplete/search workflows.
 
 ## Milestone 8: Polish Media And Research Sources
 
