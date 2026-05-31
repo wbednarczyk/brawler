@@ -68,7 +68,7 @@ Initial source priorities:
 - GitHub Actions should provide fast build and test feedback from the first scaffold.
 - GitHub Actions usage should be conservative to avoid paid usage at the start.
 - Nix is the day-1 development environment, with WSL2 Ubuntu 24.04 as the primary local dev layer.
-- Tests should be lean, behavior-focused, and fixture-backed for external integrations.
+- Tests should be lean, behavior-focused, and test-sample-backed for external integrations.
 - Secrets live in the OS keychain; YAML config is import/export/bootstrap only.
 - The app uses strict Tauri permissions and typed command boundaries from day 1.
 - Versioning starts with SemVer-style `0.x.y` releases.

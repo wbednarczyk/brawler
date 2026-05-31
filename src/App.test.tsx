@@ -5,9 +5,11 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 
+const noFeedAttachments: Array<{ id: string; label: string; url: string }> = [];
+
 const initialFeedItems = [
   {
-    id: "feed_fixture_cdr_report",
+    id: "feed_sample_cdr_report",
     company: "GPW:CDR",
     type: "Official report",
     source: "GPW ESPI/EBI",
@@ -20,42 +22,48 @@ const initialFeedItems = [
     publishedAt: "Today 09:12",
     fetchedAt: "Today 09:15",
     attribution: "GPW",
-    summary: "Fixture official report used to validate feed filtering and detail rendering.",
+    summary: "Sample official report used to validate feed filtering and detail rendering.",
+    bodyText: "",
+    attachments: noFeedAttachments,
   },
   {
-    id: "feed_fixture_pkn_news",
+    id: "feed_sample_pkn_news",
     company: "GPW:PKN",
     type: "News",
-    source: "Fixture feed",
+    source: "Sample feed",
     time: "Yesterday",
-    title: "Fixture item proving the inbox layout can scan dense rows",
+    title: "Sample item proving the inbox layout can scan dense rows",
     unread: false,
     saved: true,
-    sourceUrl: "https://example.local/fixture/pkn",
+    sourceUrl: "https://example.local/sample/pkn",
     language: "en",
     publishedAt: "Yesterday",
     fetchedAt: "Yesterday",
-    attribution: "Fixture",
-    summary: "Saved fixture item used to validate the saved filter before real ingestion exists.",
+    attribution: "Sample",
+    summary: "Saved sample item used to validate the saved filter before real ingestion exists.",
+    bodyText: "",
+    attachments: noFeedAttachments,
   },
   {
-    id: "feed_fixture_kgh_transcript",
+    id: "feed_sample_kgh_transcript",
     company: "GPW:KGH",
     type: "Transcript",
-    source: "Local fixture",
+    source: "Local sample",
     time: "Mon",
     title: "Transcript-derived note candidate waits for future provider work",
     unread: false,
     saved: false,
-    sourceUrl: "https://example.local/fixture/kgh-transcript",
+    sourceUrl: "https://example.local/sample/kgh-transcript",
     language: "en",
     publishedAt: "Mon",
     fetchedAt: "Mon",
-    attribution: "Fixture",
+    attribution: "Sample",
     summary: "Transcript placeholder for future video and notebook workflows.",
+    bodyText: "",
+    attachments: noFeedAttachments,
   },
   {
-    id: "feed_fixture_pzu_report",
+    id: "feed_sample_pzu_report",
     company: "GPW:PZU",
     type: "Official report",
     source: "GPW ESPI/EBI",
@@ -68,7 +76,9 @@ const initialFeedItems = [
     publishedAt: "Fri",
     fetchedAt: "Fri",
     attribution: "GPW",
-    summary: "Fourth fixture item keeps the sample feed aligned with local GPW lookup companies.",
+    summary: "Fourth sample item keeps the sample feed aligned with local GPW lookup companies.",
+    bodyText: "",
+    attachments: noFeedAttachments,
   },
 ];
 
@@ -81,8 +91,8 @@ const sourceAdapters = [
     enabled: true,
     defaultPollIntervalSeconds: 900,
     sourceUrl: "https://www.gpw.pl/komunikaty",
-    rateLimitPolicy: "Serialized requests, default 15 minute poll interval",
-    policyNote: "Uses the public GPW ESPI/EBI listing page. Paid processed GPW data products may be evaluated later.",
+    rateLimitPolicy: "Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart",
+    policyNote: "Uses GPW public-page listing fragments and matched report detail pages for official body text and attachments.",
     lastAttemptAt: null,
     lastTrigger: "manual",
     lastSuccessAt: null,
@@ -92,6 +102,35 @@ const sourceAdapters = [
     lastItemsCreated: 1,
     lastItemsMatched: 1,
     lastItemsUnmatched: 1,
+    lastDetailItemsAttempted: 1,
+    lastDetailItemsStored: 1,
+    lastDetailItemsFailed: 0,
+    lastDetailWarning: null,
+    markets: ["GPW"],
+  },
+  {
+    id: "gpw-company-registry",
+    displayName: "GPW Company Registry",
+    sourceType: "company_registry",
+    fetchMode: "public_page",
+    enabled: true,
+    defaultPollIntervalSeconds: 86400,
+    sourceUrl: "https://www.gpw.pl/spolki?offset=0&limit=500",
+    rateLimitPolicy: "Manual refresh plus later daily or weekly scheduled refresh",
+    policyNote: "Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.",
+    lastAttemptAt: null,
+    lastTrigger: null,
+    lastSuccessAt: null,
+    lastErrorAt: null,
+    lastError: null,
+    lastItemsFetched: 400,
+    lastItemsCreated: 400,
+    lastItemsMatched: null,
+    lastItemsUnmatched: null,
+    lastDetailItemsAttempted: null,
+    lastDetailItemsStored: null,
+    lastDetailItemsFailed: null,
+    lastDetailWarning: null,
     markets: ["GPW"],
   },
 ];
@@ -101,12 +140,55 @@ const initialUnmatchedSourceItems = [
     id: "feed_gpw_espi_ebi_unmatched_lbw",
     adapterId: "gpw-espi-ebi",
     companyName: "LUBAWA S.A.",
-    title: "Unmatched GPW report from fixture source",
+    title: "Unmatched GPW report from sample source",
     sourceUrl: "https://www.gpw.pl/komunikaty?ph_main_01_cmn_id=999999",
     publishedAt: "2026-05-30T17:13:31+02:00",
     fetchedAt: "2026-05-30T17:30:00Z",
   },
 ];
+
+const initialCompanyRegistryEntries = [
+  {
+    exchange: "GPW",
+    ticker: "CDR",
+    qualifiedTicker: "GPW:CDR",
+    displayName: "CD PROJEKT S.A.",
+    isin: "PLOPTTC00011",
+    sourceUrl: "https://www.gpw.pl/spolka?isin=PLOPTTC00011",
+    fetchedAt: "2026-05-31T12:00:00Z",
+    tracked: true,
+  },
+  {
+    exchange: "GPW",
+    ticker: "DNP",
+    qualifiedTicker: "GPW:DNP",
+    displayName: "DINO POLSKA S.A.",
+    isin: "PLDINPL00011",
+    sourceUrl: "https://www.gpw.pl/spolka?isin=PLDINPL00011",
+    fetchedAt: "2026-05-31T12:00:00Z",
+    tracked: false,
+  },
+];
+
+type CreateCompanyArgs = {
+  input: {
+    exchange: string;
+    ticker: string;
+    displayName: string;
+    isin: string | null;
+  };
+};
+
+type TestCompany = {
+  id: string;
+  exchange: string;
+  ticker: string;
+  qualifiedTicker: string;
+  displayName: string;
+  isin: string | null;
+  cik: string | null;
+  lei: string | null;
+};
 
 const initialSettings = {
   theme: "dark",
@@ -122,7 +204,7 @@ const initialSettings = {
   aiAnalysisMode: "source_grounded",
 };
 
-const initialCompanies = [
+const initialCompanies: TestCompany[] = [
   {
     id: "company_gpw_cdr",
     exchange: "GPW",
@@ -226,12 +308,14 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 describe("App", () => {
   let companiesResponse = initialCompanies;
   let feedItemsResponse = initialFeedItems;
+  let companyRegistryEntriesResponse = initialCompanyRegistryEntries;
   let notebookEntriesResponse: TestNotebookEntry[] = [];
   let refreshSourcesError: string | null = null;
 
   beforeEach(() => {
     companiesResponse = initialCompanies;
     feedItemsResponse = initialFeedItems;
+    companyRegistryEntriesResponse = initialCompanyRegistryEntries;
     notebookEntriesResponse = [];
     refreshSourcesError = null;
     vi.mocked(invoke).mockClear();
@@ -261,8 +345,30 @@ describe("App", () => {
           qualifiedTicker: "GPW:CDR",
           displayName: "CD PROJEKT S.A.",
           isin: "PLOPTTC00011",
-          source: "local_fixture",
+          source: "gpw_registry",
         });
+      }
+
+      if (command === "create_company") {
+        const { input } = args as CreateCompanyArgs;
+        const created = {
+          id: `company_${input.exchange.toLowerCase()}_${input.ticker.toLowerCase()}`,
+          exchange: input.exchange,
+          ticker: input.ticker,
+          qualifiedTicker: `${input.exchange}:${input.ticker}`,
+          displayName: input.displayName,
+          isin: input.isin,
+          cik: null,
+          lei: null,
+        };
+        companiesResponse = [...companiesResponse, created];
+        companyRegistryEntriesResponse = companyRegistryEntriesResponse.map((entry) =>
+          entry.exchange === input.exchange && entry.ticker === input.ticker
+            ? { ...entry, tracked: true }
+            : entry,
+        );
+
+        return Promise.resolve(created);
       }
 
       if (command === "delete_company") {
@@ -413,6 +519,10 @@ describe("App", () => {
         return Promise.resolve(initialUnmatchedSourceItems);
       }
 
+      if (command === "list_company_registry_entries") {
+        return Promise.resolve(companyRegistryEntriesResponse);
+      }
+
       if (command === "refresh_sources") {
         if (refreshSourcesError) {
           return Promise.reject(new Error(refreshSourcesError));
@@ -423,13 +533,21 @@ describe("App", () => {
             ...initialFeedItems[0],
             id: "feed_gpw_espi_ebi_refreshed_ntc",
             company: "GPW:CDR",
-            title: "Refreshed GPW report from fixture source",
+            title: "Refreshed GPW report from sample source",
             summary: "",
             time: "2026-05-30T17:13:31+02:00",
             publishedAt: "2026-05-30T17:13:31+02:00",
             fetchedAt: "2026-05-30T17:30:00Z",
             unread: true,
             saved: false,
+            bodyText: "Official GPW body text fetched from the detail page.",
+            attachments: [
+              {
+                id: "feed_attachment_sample_report_pdf",
+                label: "report.pdf",
+                url: "https://www.gpw.pl/pub/GPW/ESPI/2026/report.pdf",
+              },
+            ],
           },
           ...feedItemsResponse,
         ];
@@ -440,7 +558,20 @@ describe("App", () => {
           itemsCreated: 2,
           itemsMatched: 1,
           itemsUnmatched: 1,
+          detailItemsAttempted: 1,
+          detailItemsStored: 1,
+          detailItemsFailed: 0,
           fetchedAt: "2026-05-30T17:30:00Z",
+        });
+      }
+
+      if (command === "refresh_gpw_company_registry") {
+        return Promise.resolve({
+          adapterId: "gpw-company-registry",
+          entriesFetched: 400,
+          entriesUpserted: 400,
+          entriesDeactivated: 0,
+          fetchedAt: "2026-05-31T12:00:00Z",
         });
       }
 
@@ -484,7 +615,9 @@ describe("App", () => {
     ).toBeGreaterThan(0);
     expect(within(screen.getByLabelText("Feed items")).getByText("GPW:CDR")).toBeInTheDocument();
     expect(screen.getAllByText("Current report placeholder for watchlist company").length).toBeGreaterThan(0);
-    expect(screen.getByText("Fixture official report used to validate feed filtering and detail rendering.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Sample official report used to validate feed filtering and detail rendering.").length,
+    ).toBeGreaterThan(0);
     expect(await screen.findByText("ok 0.3.0")).toBeInTheDocument();
     expect(screen.getByText("DB")).toBeInTheDocument();
     expect(screen.getByLabelText("Database connection active")).toBeInTheDocument();
@@ -505,23 +638,25 @@ describe("App", () => {
     render(<App />);
 
     const selectedRow = await screen.findByRole("button", {
-      name: "Select feed item: Fixture item proving the inbox layout can scan dense rows",
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
     });
 
     await user.click(selectedRow);
 
     expect(selectedRow).toHaveClass("feed-row-selected");
     expect(selectedRow).toHaveAttribute("aria-current", "true");
-    expect(screen.getByText("Saved fixture item used to validate the saved filter before real ingestion exists.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
       "href",
-      "https://example.local/fixture/pkn",
+      "https://example.local/sample/pkn",
     );
-    expect(screen.getByRole("link", { name: "https://example.local/fixture/pkn" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toHaveAttribute(
       "href",
-      "https://example.local/fixture/pkn",
+      "https://example.local/sample/pkn",
     );
-    expect(screen.getByText("Fixture")).toBeInTheDocument();
+    expect(screen.getByText("Sample")).toBeInTheDocument();
   });
 
   it("opens the matching company workspace from an inbox feed item", async () => {
@@ -555,7 +690,7 @@ describe("App", () => {
       "Current report placeholder for watchlist company",
     );
     expect(screen.getByLabelText("Notebook screen note body")).toHaveValue(
-      "Fixture official report used to validate feed filtering and detail rendering.",
+      "Sample official report used to validate feed filtering and detail rendering.",
     );
     expect(screen.getByLabelText("Notebook screen note tags")).toHaveValue(
       "feed, official-report, gpw-espi/ebi",
@@ -568,7 +703,7 @@ describe("App", () => {
         input: {
           companyId: "company_gpw_cdr",
           title: "Current report placeholder for watchlist company",
-          body: "Fixture official report used to validate feed filtering and detail rendering.",
+          body: "Sample official report used to validate feed filtering and detail rendering.",
           bodyFormat: "markdown",
           tags: ["feed", "official-report", "gpw-espi/ebi"],
           kind: "observation",
@@ -579,7 +714,7 @@ describe("App", () => {
           origins: [
             {
               sourceType: "feed_item",
-              sourceId: "feed_fixture_cdr_report",
+              sourceId: "feed_sample_cdr_report",
               sourceUrl: "https://www.gpw.pl/komunikaty",
               label: "GPW ESPI/EBI: Current report placeholder for watchlist company",
             },
@@ -613,14 +748,16 @@ describe("App", () => {
     render(<App />);
 
     const feedItem = await screen.findByRole("button", {
-      name: "Select feed item: Fixture item proving the inbox layout can scan dense rows",
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
     });
 
     feedItem.focus();
     await user.keyboard("{Enter}");
 
-    expect(screen.getByText("Saved fixture item used to validate the saved filter before real ingestion exists.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "https://example.local/fixture/pkn" })).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toBeInTheDocument();
   });
 
   it("moves through inbox feed items with arrow keys", async () => {
@@ -637,15 +774,19 @@ describe("App", () => {
 
     expect(
       screen.getByRole("button", {
-        name: "Select feed item: Fixture item proving the inbox layout can scan dense rows",
+        name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
       }),
     ).toHaveFocus();
-    expect(screen.getByText("Saved fixture item used to validate the saved filter before real ingestion exists.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
 
     await user.keyboard("{ArrowUp}");
 
     expect(firstFeedItem).toHaveFocus();
-    expect(screen.getByText("Fixture official report used to validate feed filtering and detail rendering.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Sample official report used to validate feed filtering and detail rendering.").length,
+    ).toBeGreaterThan(0);
   });
 
   it("shows feed details only in the inbox", async () => {
@@ -677,7 +818,7 @@ describe("App", () => {
     expect(resizer).toHaveAttribute("aria-valuenow", "384");
   });
 
-  it("filters inbox fixture items by watchlist", async () => {
+  it("filters inbox sample items by watchlist", async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -685,16 +826,16 @@ describe("App", () => {
     const feedList = screen.getByLabelText("Feed items");
 
     expect(
-      await within(feedList).findByText("Fixture item proving the inbox layout can scan dense rows"),
+      await within(feedList).findByText("Sample item proving the inbox layout can scan dense rows"),
     ).toBeInTheDocument();
 
     await user.selectOptions(await screen.findByLabelText("Inbox watchlist"), "watchlist_main_gpw");
 
     expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
-    expect(within(feedList).queryByText("Fixture item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
+    expect(within(feedList).queryByText("Sample item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
   });
 
-  it("filters inbox fixture items by status", async () => {
+  it("filters inbox sample items by status", async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -705,12 +846,12 @@ describe("App", () => {
     await within(feedList).findByText("Current report placeholder for watchlist company");
 
     expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
-    expect(within(feedList).queryByText("Fixture item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
+    expect(within(feedList).queryByText("Sample item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Saved" }));
 
     expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
-    expect(within(feedList).getByText("Fixture item proving the inbox layout can scan dense rows")).toBeInTheDocument();
+    expect(within(feedList).getByText("Sample item proving the inbox layout can scan dense rows")).toBeInTheDocument();
   });
 
   it("moves selection to the next unread item after marking the current unread item read", async () => {
@@ -720,7 +861,7 @@ describe("App", () => {
       initialFeedItems[0],
       {
         ...initialFeedItems[0],
-        id: "feed_fixture_cdr_second_unread",
+        id: "feed_sample_cdr_second_unread",
         title: "Second unread report for review flow",
         summary: "Second unread item should become selected after the first one is marked read.",
         unread: true,
@@ -749,7 +890,9 @@ describe("App", () => {
     expect(screen.queryByRole("button", {
       name: "Select feed item: Current report placeholder for watchlist company",
     })).not.toBeInTheDocument();
-    expect(screen.getByText("Second unread item should become selected after the first one is marked read.")).toBeInTheDocument();
+    expect(
+      screen.getAllByText("Second unread item should become selected after the first one is marked read.").length,
+    ).toBeGreaterThan(0);
   });
 
   it("summarizes the current inbox review set", async () => {
@@ -777,7 +920,7 @@ describe("App", () => {
     expect(within(summary).getByText("0")).toBeInTheDocument();
   });
 
-  it("filters inbox fixture items by search query", async () => {
+  it("filters inbox sample items by search query", async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -791,7 +934,7 @@ describe("App", () => {
     expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
   });
 
-  it("filters inbox fixture items by type and source", async () => {
+  it("filters inbox sample items by type and source", async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -827,7 +970,7 @@ describe("App", () => {
 
     expect(screen.getByLabelText("Search feed")).toHaveValue("");
     expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
-    expect(within(feedList).getByText("Fixture item proving the inbox layout can scan dense rows")).toBeInTheDocument();
+    expect(within(feedList).getByText("Sample item proving the inbox layout can scan dense rows")).toBeInTheDocument();
   });
 
   it("shows a first-run inbox empty state when no companies are tracked", async () => {
@@ -876,7 +1019,22 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Refresh sources" }));
 
-    expect(await screen.findByText("Refreshed GPW report from fixture source")).toBeInTheDocument();
+    const refreshedFeedItem = await screen.findByRole("button", {
+      name: "Select feed item: Refreshed GPW report from sample source",
+    });
+    await user.click(refreshedFeedItem);
+    expect(screen.getByLabelText("Feed summary")).toHaveTextContent(
+      "Refreshed GPW report from sample source",
+    );
+    const officialBody = screen.getByLabelText("Official report body");
+    expect(officialBody).toHaveTextContent("Stored");
+    expect(officialBody).not.toHaveAttribute("open");
+    await user.click(within(officialBody).getByText("Official report body"));
+    expect(officialBody).toHaveAttribute("open");
+    expect(officialBody).toHaveTextContent(
+      "Official GPW body text fetched from the detail page.",
+    );
+    expect(screen.getByText("report.pdf")).toBeInTheDocument();
     await waitFor(() =>
       expect(invoke).toHaveBeenCalledWith("refresh_sources", { input: { trigger: "manual" } }),
     );
@@ -893,7 +1051,7 @@ describe("App", () => {
     await user.click(within(unmatchedItems).getByRole("button", { name: /Unmatched/i }));
 
     expect(within(unmatchedItems).getByText("LUBAWA S.A.")).toBeInTheDocument();
-    expect(within(unmatchedItems).getByText("Unmatched GPW report from fixture source")).toBeInTheDocument();
+    expect(within(unmatchedItems).getByText("Unmatched GPW report from sample source")).toBeInTheDocument();
   });
 
   it("shows source refresh failures in the topbar refresh control", async () => {
@@ -948,7 +1106,7 @@ describe("App", () => {
     const sourceStatus = await screen.findByRole("button", { name: "Open source status" });
 
     expect(sourceStatus).toHaveTextContent("Sources");
-    expect(sourceStatus).toHaveTextContent("1/1");
+    expect(sourceStatus).toHaveTextContent("2/2");
 
     await user.click(sourceStatus);
 
@@ -1024,7 +1182,7 @@ describe("App", () => {
     expect(within(sourceAdaptersRegion).getByText("GPW ESPI/EBI")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("gpw-espi-ebi")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("official_report · public_page")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Ready")).toBeInTheDocument();
+    expect(within(sourceRow).getByText("Ready")).toBeInTheDocument();
 
     await user.click(sourceRow);
 
@@ -1034,16 +1192,16 @@ describe("App", () => {
     expect(within(await screen.findByLabelText("Source adapter details")).getByText("Manual")).toBeInTheDocument();
     expect(
       within(await screen.findByLabelText("Source adapter details")).getByText(
-        "2 fetched · 1 created · 1 matched · 1 unmatched",
+        "2 fetched · 1 created · 1 matched · 1 unmatched · details 1/1 stored · 0 failed",
       ),
     ).toBeInTheDocument();
     expect(
       within(await screen.findByLabelText("Source adapter details")).getByText(
-        "Serialized requests, default 15 minute poll interval",
+        "Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart",
       ),
     ).toBeInTheDocument();
     expect(
-      within(await screen.findByLabelText("Source adapter details")).getByText(/Uses the public GPW ESPI\/EBI/),
+      within(await screen.findByLabelText("Source adapter details")).getByText(/matched report detail pages/),
     ).toBeInTheDocument();
     const sourcePageButton = within(await screen.findByLabelText("Source adapter details")).getByRole("button", {
       name: "Open source page for GPW ESPI/EBI",
@@ -1054,6 +1212,66 @@ describe("App", () => {
     await user.click(sourceRow);
 
     expect(screen.queryByLabelText("Source adapter details")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the GPW company registry from source details", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+
+    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
+    const registryRow = within(sourceAdaptersRegion).getByRole("button", {
+      name: "Open source adapter: GPW Company Registry",
+    });
+
+    await user.click(registryRow);
+    await user.click(within(await screen.findByLabelText("Company registry refresh")).getByRole("button", {
+      name: "Refresh registry",
+    }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("refresh_gpw_company_registry", {
+        input: { trigger: "manual" },
+      }),
+    );
+    expect(await screen.findByText("400/400 cached")).toBeInTheDocument();
+  });
+
+  it("lists cached GPW registry companies and adds an untracked company", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+
+    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
+    await user.click(within(sourceAdaptersRegion).getByRole("button", {
+      name: "Open source adapter: GPW Company Registry",
+    }));
+
+    const registryPanel = await screen.findByLabelText("GPW company registry entries");
+    expect(within(registryPanel).queryByText("DINO POLSKA S.A.")).not.toBeInTheDocument();
+
+    await user.click(within(registryPanel).getByRole("button", { name: /Companies/i }));
+
+    expect(await within(registryPanel).findByText("DINO POLSKA S.A.")).toBeInTheDocument();
+    await user.click(within(registryPanel).getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("create_company", {
+        input: {
+          exchange: "GPW",
+          ticker: "DNP",
+          displayName: "DINO POLSKA S.A.",
+          isin: "PLDINPL00011",
+          cik: null,
+          lei: null,
+        },
+      }),
+    );
+    expect(await within(registryPanel).findByTitle("GPW:DNP already added")).toBeDisabled();
   });
 
   it("expands and collapses source adapter details with keyboard controls", async () => {
@@ -1344,7 +1562,7 @@ describe("App", () => {
     });
   });
 
-  it("updates fixture read and saved state from the detail pane", async () => {
+  it("updates sample read and saved state from the detail pane", async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -1388,7 +1606,7 @@ describe("App", () => {
     expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
   });
 
-  it("fills company form from lookup fixtures", async () => {
+  it("fills company form from the GPW registry lookup", async () => {
     const user = userEvent.setup();
 
     render(<App />);
@@ -1400,7 +1618,7 @@ describe("App", () => {
 
     expect(await screen.findByDisplayValue("CD PROJEKT S.A.")).toBeInTheDocument();
     expect(screen.getByDisplayValue("PLOPTTC00011")).toBeInTheDocument();
-    expect(screen.getByText("Filled from local_fixture: GPW:CDR")).toBeInTheDocument();
+    expect(screen.getByText("Filled from gpw_registry: GPW:CDR")).toBeInTheDocument();
   });
 
   it("confirms and deletes a company", async () => {
@@ -1441,7 +1659,7 @@ describe("App", () => {
         name: "Open company feed item: Current report placeholder for watchlist company",
       }),
     ).toBeInTheDocument();
-    expect(within(screen.getByLabelText("Company feed")).queryByText("Fixture item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
+    expect(within(screen.getByLabelText("Company feed")).queryByText("Sample item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
 
     await user.click(within(workspace).getByRole("button", { name: "Metadata" }));
 
@@ -1686,7 +1904,7 @@ describe("App", () => {
     expect(within(companyFeed).getByText("No stored feed items for GPW:LPP yet.")).toBeInTheDocument();
     expect(
       within(companyFeed).getByText(
-        "This company is tracked locally, but no fixture or ingested items are attached to it yet.",
+        "This company is tracked locally, but no sample or ingested items are attached to it yet.",
       ),
     ).toBeInTheDocument();
 
@@ -1713,7 +1931,15 @@ describe("App", () => {
     const companyFeedDetail = await screen.findByLabelText("Company feed item details");
 
     expect(companyFeedRow.compareDocumentPosition(companyFeedDetail) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(within(companyFeedDetail).getByText("Fixture official report used to validate feed filtering and detail rendering.")).toBeInTheDocument();
+    expect(within(companyFeedDetail).getByLabelText("Feed summary")).toHaveTextContent(
+      "Sample official report used to validate feed filtering and detail rendering.",
+    );
+    const companyOfficialBody = within(companyFeedDetail).getByLabelText("Official report body");
+    expect(companyOfficialBody).toHaveTextContent("Not stored");
+    expect(companyOfficialBody).not.toHaveAttribute("open");
+    await user.click(within(companyOfficialBody).getByText("Official report body"));
+    expect(companyOfficialBody).toHaveAttribute("open");
+    expect(companyOfficialBody).toHaveTextContent(/No official report body is stored/);
     expect(within(companyFeedDetail).getByText("GPW ESPI/EBI")).toBeInTheDocument();
     expect(within(companyFeedDetail).getByRole("link", { name: "Open source" })).toHaveAttribute(
       "href",
@@ -1769,9 +1995,9 @@ describe("App", () => {
       initialFeedItems[0],
       {
         ...initialFeedItems[0],
-        id: "feed_fixture_cdr_second_report",
+        id: "feed_sample_cdr_second_report",
         title: "Second CDR report for company feed keyboard navigation",
-        summary: "Second company-scoped fixture item.",
+        summary: "Second company-scoped sample item.",
         unread: false,
       },
     ];
@@ -1803,9 +2029,9 @@ describe("App", () => {
       initialFeedItems[0],
       {
         ...initialFeedItems[0],
-        id: "feed_fixture_cdr_second_report",
+        id: "feed_sample_cdr_second_report",
         title: "Second CDR report for company feed keyboard navigation",
-        summary: "Second company-scoped fixture item.",
+        summary: "Second company-scoped sample item.",
         unread: false,
       },
     ];
@@ -1830,7 +2056,7 @@ describe("App", () => {
     expect(secondCompanyFeedRow).toHaveFocus();
     expect(
       within(await screen.findByLabelText("Company feed item details")).getByText(
-        "Second company-scoped fixture item.",
+        "Second company-scoped sample item.",
       ),
     ).toBeInTheDocument();
 
@@ -1856,14 +2082,14 @@ describe("App", () => {
 
     expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
       input: {
-        id: "feed_fixture_cdr_report",
+        id: "feed_sample_cdr_report",
         read: true,
         saved: false,
       },
     });
     expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
       input: {
-        id: "feed_fixture_cdr_report",
+        id: "feed_sample_cdr_report",
         read: true,
         saved: true,
       },

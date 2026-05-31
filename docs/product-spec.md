@@ -6,10 +6,11 @@ See also [Project Brief](project-brief.md), [UI Flows](ui-flows.md), [UI Informa
 
 The first screen is an investor inbox: a dense chronological feed of company-specific reports and news. It should support repeated daily use and fast scanning. Each company also has a notebook for durable research notes.
 
-Early fixture feed implementations should already obey local watchlist, company, unread, and saved filters, even before real source ingestion exists.
-Fixture feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state in SQLite.
-The UI-facing Inbox is scoped to tracked companies. Raw or fixture source items that do not match the local company registry may exist internally, but they should not appear in the normal feed until the company is added.
+Early sample feed implementations should already obey local watchlist, company, unread, and saved filters, even before real source ingestion exists.
+Sample feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state in SQLite.
+The UI-facing Inbox is scoped to tracked companies. Raw or sample source items that do not match the local company registry may exist internally, but they should not appear in the normal feed until the company is added.
 Source URLs in item details must be directly actionable so the user can verify the original report or article quickly.
+Feed details should show a short summary first. `summary` is separate from the report title and full body, but when no source or AI summary is available the UI may use the report title as the summary fallback. Full official report body text should be available in the same detail pane but collapsed by default and expanded on demand.
 When filters hide all feed items, the UI must offer a quick way to clear active filters and return to the full feed.
 Inbox empty states should distinguish first-run setup from filter misses. If no companies are tracked, the Inbox should point directly to adding a company. If companies exist but no feed items are stored, the Inbox should make clear that source ingestion or refresh is not wired yet and offer a path to source status. If filters hide existing feed items, the Inbox should offer `Clear filters`.
 The app shell should expose an Inbox unread count badge when unread feed items exist.
@@ -63,7 +64,7 @@ Users can maintain multiple watchlists. Companies can be assigned to and removed
 
 The Companies screen should let the user open a company workspace by clicking the company row itself, not a separate `Open` button. The workspace expands inline directly under the selected company row and collapses when the same row is clicked again. Up/Down arrows move focus through company rows. If a workspace is already open, arrow movement moves the open workspace to the focused company; if no workspace is open, arrow movement keeps the list collapsed. The workspace Feed tab follows the same pattern: clicking a feed row or pressing Enter/Space on a focused feed row expands source details directly under that row, repeating the action collapses the details, Up/Down arrows move focus between company feed rows, and if detail is already open the detail moves to the focused feed row. An explicit action can open the same item in the Inbox with the company filter applied.
 
-If a tracked company has no stored feed items, the company Feed tab should show an explicit empty state. The empty state should explain that the company is tracked but has no fixture or ingested items yet, and it should offer a quick path to the Inbox with that company filter applied.
+If a tracked company has no stored feed items, the company Feed tab should show an explicit empty state. The empty state should explain that the company is tracked but has no sample or ingested items yet, and it should offer a quick path to the Inbox with that company filter applied.
 The Inbox detail pane should also let the user open the matched company workspace when the feed item maps to a locally tracked company. Opening from Inbox should keep the Company Feed tab active and expand the same feed item inline in the company workspace.
 
 Company metadata may include:
@@ -79,7 +80,7 @@ Company metadata may include:
 
 Company entry should support lookup/enrichment. After the user selects an exchange and enters a ticker, ISIN, or company name, the app should be able to fill the remaining company fields when a confident match exists. Exact ticker and ISIN lookups may auto-fill directly. Name lookup may require suggestions or user confirmation when multiple matches exist.
 
-The first implementation may use local fixtures for GPW metadata. Later implementations should replace or extend fixtures with a source-specific company registry adapter and preserve metadata origin.
+The first implementation may use local test samples for GPW metadata only as tests/bootstrap. V1 includes a local GPW company registry cache for all companies exposed by the public GPW company list so company creation, autocomplete, and source matching are not driven by manual entry long term. The registry is stored in SQLite, refreshed manually at first and later daily or weekly, and may auto-refresh from company lookup when the cache still only has seed rows. The registry is used for ticker-first matching with ISIN fallback. Company names remain useful for display and suggestions, but should not silently match feed items by themselves.
 
 ## Company Notebooks
 
@@ -114,6 +115,8 @@ V1 focuses on GPW:
 
 - GPW ESPI/EBI official reports
 - selected public or RSS media sources where usage is allowed
+- selected company-related articles, analysis, and news sources after source-specific review
+- authenticated private research sources when explicitly approved by source-specific ADR
 
 Later sources should be possible through adapters:
 
@@ -122,6 +125,10 @@ Later sources should be possible through adapters:
 - major European exchange disclosures and RSS feeds
 
 The app should prefer official/public/RSS sources and avoid restricted scraping by default.
+
+Official reports are not the whole v1 feed. The user also wants a company-specific article/news layer so the Inbox can collect media coverage, analysis, and research about tracked companies. Candidate public or semi-public sources include Stooq-style ticker news, XTB market news/analysis, ISBnews-like providers, Bankier article pages, and other Polish market-analysis pages after each source is reviewed. These sources should be represented as adapters with explicit source type, attribution, fetch mode, and matching rules instead of being folded into the GPW official-report adapter.
+
+Portal Analiz is a desired v1 source using the user's own paid personal account. Because it is authenticated, private, and likely lacks a public API, it must not be implemented as a generic scraper or hidden browser automation shortcut. It requires a dedicated ADR before implementation that covers terms/usage risk, local-only credential storage through the OS keychain, session handling, rate limits, test samples/mocks for tests, source attribution, and what content may be stored locally. If the source proves technically or policy-wise too troublesome, that must be raised explicitly before changing v1 scope.
 
 The Sources screen shows locally configured source adapters, supported markets, fetch mode, enabled state, poll interval, and last success or error status. Before real ingestion exists, this screen still reads the seeded adapter registry from SQLite so source monitoring has a stable UI home.
 Source adapter rows should follow the app-wide row interaction rule: the row is the primary click target, and adapter operational details expand inline under the selected source row. Enter or Space on a focused source row should expand or collapse the same inline detail.
@@ -153,7 +160,7 @@ The view should be watchlist-first and date-first. By default it should show upc
 
 Events created from official or public sources must retain source URL, attribution, fetched timestamp, publication/update timestamp when available, company match, and origin/source type. Manual events must be clearly marked as manual. If a source event is edited or corrected by the user, the app should preserve the sourced record and store the user's correction separately or mark the event as user-adjusted.
 
-This milestone depends on either fixture-backed events or source adapters capable of producing calendar-like events. It should be implemented after the first GPW ingestion work is stable enough to prove the source model.
+This milestone depends on either test-sample-backed events or source adapters capable of producing calendar-like events. It should be implemented after the first GPW ingestion work is stable enough to prove the source model.
 
 ## AI Analysis
 

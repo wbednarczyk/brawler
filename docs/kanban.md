@@ -125,7 +125,7 @@ Acceptance criteria:
 
 Docs/contracts touched: architecture, product spec, contracts, source/AI policy ADR.
 
-Test expectations: provider contract tests with fixtures and transcript-to-note workflow tests.
+Test expectations: provider contract tests with test samples and transcript-to-note workflow tests.
 
 ### Implement company events calendar
 
@@ -147,6 +147,54 @@ Docs/contracts touched: roadmap, product spec, UI information architecture, data
 
 Test expectations: storage tests for event records and UI workflow tests for filtering and expanded event details.
 
+### Implement Polish media and research sources
+
+Intent: extend the Inbox beyond official reports so it also collects company-related news, articles, analysis, and private research for tracked companies.
+
+Acceptance criteria:
+
+- Candidate public sources are reviewed and ranked before implementation.
+- At least one public article/news/analysis source is implemented as a source adapter.
+- Source type distinguishes public media, analysis, and official reports.
+- Company matching supports ticker, company name, aliases, and source-specific IDs where appropriate.
+- Dedupe handles syndicated or copied content across sources.
+- Portal Analiz is tracked as a v1 authenticated private source but is not implemented until a dedicated ADR approves the source policy, credentials/session handling, and rate limits.
+- Authenticated sources store secrets only in the OS keychain and tests use test samples/mocks.
+- Sources screen shows public/RSS/paywalled/authenticated source status clearly.
+
+Docs/contracts touched: roadmap, product spec, source strategy, contracts, future Portal Analiz ADR.
+
+Test expectations: parser/fetcher test-sample tests, source adapter contract tests, storage dedupe tests, and UI source-status workflow tests.
+
+### Implement GPW company registry cache
+
+Intent: replace annoying manual GPW company metadata management with a cached local registry used for lookup, autocomplete, and ticker-first source matching.
+
+Acceptance criteria:
+
+- A reliable GPW company metadata source is selected and documented.
+- Registry records include exchange, ticker, exchange-qualified ticker, company name, ISIN, aliases when available, source URL/source name, fetched timestamp, and registry freshness.
+- Registry data is stored in SQLite and survives app restarts.
+- Registry refresh runs manually and on a slow cadence, initially daily or weekly.
+- Company creation can search/autocomplete from the local registry cache.
+- Existing manually created companies are preserved and not overwritten silently.
+- GPW source matching uses ticker first, then exact ISIN fallback; issuer/company name alone is not a silent match key.
+- Sources or Settings show registry last refresh and last error.
+
+Delivered so far:
+
+- SQLite `company_registry_entries` cache exists.
+- GPW registry source adapter fetches the complete public GPW company list from `https://www.gpw.pl/spolki?offset=0&limit=500`.
+- Parser tests use a test-sample-backed GPW company-list fragment so default checks stay offline.
+- Database bootstrap seeds the registry cache from sample seed data.
+- Company lookup reads SQLite registry entries before falling back to temporary seed data.
+- GPW feed matching resolves ISIN to ticker through the registry and then matches tracked companies by ticker.
+- Sources view shows the registry adapter and can trigger manual registry refresh.
+
+Docs/contracts touched: source strategy, product spec, contracts, data model, architecture.
+
+Test expectations: registry parser/fetcher test-sample tests, migration tests, lookup tests, source matching tests, and UI autocomplete workflow tests.
+
 ## Ready
 
 No cards.
@@ -160,6 +208,45 @@ No cards.
 No cards.
 
 ## Done
+
+### Complete Milestone 6: GPW Detail Fetch Spike
+
+Intent: implement a reliable path for reading official GPW ESPI/EBI report bodies inside the app.
+
+Acceptance criteria:
+
+- GPW detail-page test samples exist.
+- Parser spike extracts useful report body or excerpt text when technically stable.
+- Parser spike extracts visible attachment links when present.
+- Detail-page source policy and rate-limit behavior are documented.
+- Matched GPW feed items can store and expose official report body text from an accepted source path.
+- If GPW detail pages are not reliable enough for some items, fallback body-source investigation is required.
+- Secondary Bankier/Parkiet RSS is documented as cross-check/fallback signal, not canonical replacement.
+
+Delivered so far:
+
+- Test-sample-backed detail parser tests exist.
+- Parser assumptions were compared against real GPW detail-page structure before promotion.
+- GPW was compared with PAP, Bankier, Parkiet, and Stooq before changing any report-body requirement.
+- Injectable detail-page fetch boundary exists with test-sample-backed fetch-and-parse coverage.
+- No-attachment detail pages are covered, and later English/entity/signature sections do not leak into the main report body.
+- Detail usability evaluation emits warnings for missing title or missing/very short body text.
+- Aggregate spike report flags rejected samples for parser hardening or fallback-source investigation.
+- Conservative detail fetch policy defaults are documented and implemented for matched-item ingestion.
+- ADR 0013 records that in-app official report body access is required and GPW detail fetching is the primary implementation path.
+- Source strategy records that GPW remains the primary path, the GPW AJAX listing endpoint is the live listing transport, PAP/Bankier/Parkiet are fallback or cross-check candidates, and Stooq is not a primary ESPI/EBI report-body candidate.
+- Bankier/Parkiet RSS are documented as diagnostics/fallback visibility signals, not GPW official report replacements.
+- Additional source candidates discovered during M6 research are recorded: Bankier market/news RSS, Investing.com Poland RSS, Stooq price CSV, BiznesRadar/StockWatch analysis pages, Notoria commercial data, and issuer IR pages.
+- Accepted detail-body fetching is wired into normal matched-item ingestion.
+- Detail fetch counters and last detail warning are exposed in refresh results and source adapter status.
+- Parsed GPW detail attachments are stored as feed item attachment links and shown in feed details.
+- Source adapter status text describes the current M6 listing/detail behavior.
+- Final local checks passed.
+- Version bumped to `0.6.0`.
+
+Docs/contracts touched: source strategy, contracts, roadmap if the decision changes scope.
+
+Test expectations: Rust parser tests with local test samples; no live GPW network dependency.
 
 ### Complete Milestone 5: GPW ESPI/EBI Listing Adapter
 
@@ -175,10 +262,13 @@ Acceptance criteria:
 
 Delivered:
 
-- Rust `gpw-espi-ebi` adapter module parses listing HTML fixtures into normalized report listings.
+- Rust `gpw-espi-ebi` adapter module parses listing HTML test samples into normalized report listings.
 - Parser extracts publication timestamp, report type, ESPI/EBI system, report number, company name, ISIN, title, detail URL, fetched timestamp, and dedupe key.
 - Rust storage ingests normalized GPW listings into `feed_items`, upserts by adapter/dedupe key, matches companies by ISIN, and stores unmatched items without showing them in normal feed views.
-- `refresh_sources` Tauri command performs an explicit manual fetch of the public GPW ESPI/EBI listing page and ingests parsed listings.
+- `refresh_sources` Tauri command performs an explicit manual fetch of the GPW ESPI/EBI public-page listing fragment and ingests parsed listings.
+- `refresh_sources` returns detail-body counters for attempted, stored, and failed GPW detail fetches.
+- Source adapter status exposes the last GPW detail warning when body fetching or parsing fails.
+- Accepted GPW detail attachments are stored as feed item attachment links and shown in feed details.
 - Topbar, Sources screen, and no-feed empty-state source refresh controls trigger manual source refresh and reload feed/source status.
 - Desktop runtime schedules in-app source refreshes while the UI is open, using the configured poll interval and skipping overlapping runs.
 - Scheduled source refreshes back off after repeated refresh failures while preserving manual refresh.
@@ -191,11 +281,11 @@ Delivered:
 - Failed manual refreshes persist adapter `last_error_at` and `last_error` so source status remains diagnosable after transient UI errors.
 - Topbar refresh control exposes the latest refresh failure state until a later successful refresh attempt.
 - Sources screen shows GPW source URL, rate-limit policy, and source-policy note.
-- Tests use bundled fixtures/injected fetchers; source status and scheduler behavior have UI coverage.
+- Tests use bundled test samples/injected fetchers; source status and scheduler behavior have UI coverage.
 
 Docs/contracts touched: contracts, architecture, source strategy.
 
-Test expectations: adapter unit tests with fixtures and storage ingestion tests for matched/unmatched listings.
+Test expectations: adapter unit tests with test samples and storage ingestion tests for matched/unmatched listings.
 
 ### Complete Milestone 4: Notebooks And Claims
 
@@ -238,7 +328,7 @@ Test expectations: Rust notebook storage tests and UI workflow tests as UI surfa
 
 ### Complete Milestone 3: Inbox And Company Workspace
 
-Intent: make the primary non-AI research workflow usable with local/fixture data.
+Intent: make the primary non-AI research workflow usable with local sample data.
 
 Acceptance criteria:
 
@@ -257,7 +347,7 @@ Acceptance criteria:
 
 Notes:
 
-- Fixture feed rows are development seed data only and are inserted only when the local feed is empty.
+- Sample feed rows are development seed data only and are inserted only when the local feed is empty.
 - Real source ingestion and manual refresh jobs are deferred to later source milestones.
 - Notebook, Claims, and Transcripts tabs remain intentional placeholders until their roadmap milestones.
 
@@ -327,17 +417,17 @@ Docs/contracts touched: contracts, architecture.
 
 Test expectations: migration tests.
 
-### Add fixture-backed company lookup
+### Add test-sample-backed company lookup
 
 Intent: make company creation less manual by filling ticker, name, and ISIN from an exchange-scoped lookup.
 
 Acceptance criteria:
 
 - User can request lookup from the Companies form.
-- Exact ticker or ISIN lookup fills missing company fields when a fixture match exists.
-- Name lookup can find a fixture match when the entered name is specific enough.
+- Exact ticker or ISIN lookup fills missing company fields when a test sample match exists.
+- Name lookup can find a test sample match when the entered name is specific enough.
 - Manual company entry remains possible.
-- Lookup source is clearly fixture/local for now and replaceable by a future registry adapter.
+- Lookup source is clearly sample/local for now and replaceable by a future registry adapter.
 
 Docs/contracts touched: product spec.
 

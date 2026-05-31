@@ -16,7 +16,7 @@ Testing will follow a lean layered strategy:
 
 - Rust unit tests for domain logic, contracts, parsing, dedupe, migrations, and provider mapping.
 - Frontend unit/component tests for critical UI behavior.
-- Fixture-based adapter tests for external sources.
+- Test-sample-based adapter tests for external sources.
 - A small number of desktop smoke tests for startup, command availability, and local SQLite connectivity.
 
 Live network tests and provider/API-key tests are excluded from default CI. They may be added later as manual jobs.
@@ -25,7 +25,7 @@ Default workflows should use standard GitHub-hosted Linux runners only. Larger r
 
 ## Consequences
 
-- Source adapters must be designed around fixtures.
+- Source adapters must be designed around test samples.
 - AI providers must be mockable.
 - CI workflows are part of the scaffold milestone, but they may be manual-only while the repository is private.
 - Every default CI check must have an equivalent local command.

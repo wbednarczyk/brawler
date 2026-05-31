@@ -72,14 +72,23 @@ Each source adapter must expose metadata and a fetch operation.
   "sourceType": "official_report",
   "supportedMarkets": ["GPW"],
   "fetchMode": "public_page",
+  "accessMode": "public",
   "enabled": true,
   "defaultPollIntervalSeconds": 900,
   "sourceUrl": "https://www.gpw.pl/komunikaty",
-  "rateLimitPolicy": "Serialized requests, default 15 minute poll interval",
-  "policyNote": "Uses the public GPW ESPI/EBI listing page. Paid processed GPW data products may be evaluated later.",
+  "rateLimitPolicy": "Serialized listing request plus up to 5 matched detail requests per refresh, 2 seconds apart",
+  "policyNote": "Uses GPW public-page listing fragments and matched report detail pages for official body text and attachments.",
   "lastSuccessAt": null,
   "lastErrorAt": null,
-  "lastError": null
+  "lastError": null,
+  "lastItemsFetched": null,
+  "lastItemsCreated": null,
+  "lastItemsMatched": null,
+  "lastItemsUnmatched": null,
+  "lastDetailItemsAttempted": null,
+  "lastDetailItemsStored": null,
+  "lastDetailItemsFailed": null,
+  "lastDetailWarning": null
 }
 ```
 
@@ -109,12 +118,24 @@ Rules:
 - Adapters must preserve source URLs and attribution.
 - Adapters must declare and respect source-specific rate limits.
 - Restricted scraping is not allowed without a source-specific ADR.
+- `sourceType` must distinguish `official_report`, `public_media`, `analysis`, `authenticated_research`, and future source categories where relevant.
+- `accessMode` must distinguish `public`, `rss`, `paywalled`, `authenticated`, and `manual` sources where relevant.
+- Authenticated private sources, including the planned Portal Analiz adapter, require a source-specific ADR before implementation.
+- Authenticated adapters must use OS keychain secrets or session storage and must not export credentials to YAML, backup files, logs, or test samples.
 - The Sources screen reads adapter status from local SQLite before real fetching exists.
 - The Sources screen must expose the adapter source URL, rate-limit policy, and source-policy note once live fetching exists.
-- The first GPW implementation parses listing HTML fixtures before live network fetch is wired.
+- The first GPW implementation parses listing HTML test samples before live network fetch is wired.
 - GPW listing ingestion upserts feed items by `(sourceAdapterId, dedupeKey)` and must preserve existing `read` and `saved` user state.
-- GPW listing ingestion matches companies by ISIN first. Matched items populate `feed_item_companies` with `matchType: "isin"` and use the matched exchange-qualified ticker as `displayCompany`.
+- GPW listing ingestion matches companies by ticker first, then exact ISIN fallback. Matched items populate `feed_item_companies` with `matchType: "ticker"` or `"isin"` and use the matched exchange-qualified ticker as `displayCompany`.
+- GPW issuer/company name alone is not an automatic match key. Names may support lookup suggestions and diagnostics, but silent feed matching must use ticker or ISIN.
+- The GPW company registry cache provides ticker, ISIN, company name, source metadata, freshness, and last-error state for the complete public GPW company list returned by the GPW companies page. Runtime lookup and ingestion use the local SQLite cache first; sample seed data is temporary bootstrap/test data only.
 - Unmatched GPW listings may be stored locally with source-derived `displayCompany`, but they must not appear in normal Inbox/company feed views until matched to a tracked company.
+- In-app official report body access is required for v1 GPW support.
+- GPW detail parsing is the primary M6 path for extracting report body text and attachment links for matched GPW feed items.
+- GPW detail fetch-and-parse behavior must use an injectable fetch boundary so tests stay offline and default checks do not depend on live GPW detail pages.
+- GPW detail evaluation returns an explicit usability signal plus warnings. Missing title or missing/very short body text makes the parsed detail unusable for normal ingestion.
+- GPW detail spike aggregation is conservative: rejected samples trigger parser hardening or fallback-source investigation.
+- GPW detail fetch policy is conservative: enabled by default for matched items, at most 5 detail pages per refresh, serialized with at least 2 seconds between detail requests.
 
 ## Feed Item
 
@@ -136,7 +157,14 @@ Rules:
   "dedupeKey": "gpw-espi-ebi:report:example",
   "read": false,
   "saved": false,
-  "attribution": "GPW"
+  "attribution": "GPW",
+  "attachments": [
+    {
+      "id": "feed_attachment_01",
+      "label": "report.pdf",
+      "url": "https://www.gpw.pl/pub/GPW/ESPI/example/report.pdf"
+    }
+  ]
 }
 ```
 
@@ -148,6 +176,9 @@ Rules:
 - `displayCompany` is allowed in UI-facing read models so the Inbox can show a ticker label even before a full canonical company relationship is available. Canonical storage still uses `companies`/`feed_item_companies`.
 - `read` and `saved` are user state and must persist locally.
 - Original source text should be retained when legally and technically allowed.
+- `summary` is a separate field from `title` and `bodyText`. If a source or AI-generated summary is not available, UI read models may display `title` as the summary fallback.
+- Feed details should show the summary/fallback first and keep the full official report body collapsed until the user expands it.
+- Attachments are source links parsed from detail pages and stored separately from body text. Attachment URLs must preserve original source attribution.
 
 UI-facing state mutation input:
 
@@ -430,6 +461,9 @@ Rules:
   "finishedAt": null,
   "itemsFetched": 0,
   "itemsCreated": 0,
+  "detailItemsAttempted": 0,
+  "detailItemsStored": 0,
+  "detailItemsFailed": 0,
   "warnings": [],
   "error": null
 }
@@ -492,6 +526,8 @@ Initial Tauri command groups:
 - `list_feed_items`
 - `update_feed_item`
 - `refresh_sources`
+- `refresh_gpw_company_registry`
+- `list_company_registry_entries`
 - `list_unmatched_source_items`
 - `list_jobs`
 - `list_notebook_entries`
@@ -503,10 +539,34 @@ Initial Tauri command groups:
 - `get_settings`
 - `update_settings`
 
+Initial `refresh_gpw_company_registry` behavior:
+
+- Runs the GPW company registry adapter path.
+- Fetches the public GPW companies page with a high limit, currently `https://www.gpw.pl/spolki?offset=0&limit=500`, so the cache represents all currently listed GPW companies exposed by that page.
+- Stores registry rows in SQLite under `company_registry_entries`.
+- Upserts by `exchange + ticker`.
+- Preserves user-managed `companies` records and does not overwrite them silently.
+- Records adapter attempt/success/error state under `gpw-company-registry`.
+- Automated tests use test-sample-backed parser/fetch behavior; default checks do not depend on live GPW availability.
+
+Initial `list_company_registry_entries` behavior:
+
+- Returns active cached GPW company registry rows from SQLite.
+- Includes exchange, ticker, qualified ticker, display name, ISIN, source URL, fetched timestamp, and whether the company is already tracked locally.
+- Supports the Sources screen registry detail panel, where the list is collapsed by default and each untracked company can be added to the local company list.
+- Does not fetch live data by itself; refresh is handled by `refresh_gpw_company_registry` or lookup bootstrap behavior.
+
+Initial `lookup_company` behavior:
+
+- Looks up GPW companies from the local `company_registry_entries` cache before bootstrap seed data.
+- Uses exact ticker first, exact ISIN second, and company-name search only for company-form lookup/enrichment.
+- If a GPW lookup misses while the registry still contains only bootstrap seed rows, the command may refresh the full GPW registry once and retry the lookup.
+- Feed/source matching remains stricter than form lookup: ticker first, ISIN-to-ticker registry resolution second, exact ISIN fallback, and no silent company-name matching.
+
 Initial `refresh_sources` behavior:
 
 - Runs the GPW ESPI/EBI adapter path.
-- Performs an explicit manual fetch of the public GPW ESPI/EBI listing page.
+- Performs an explicit manual fetch of the GPW ESPI/EBI public-page listing fragment.
 - Manual refresh is available from the topbar, Sources screen, and no-feed Inbox empty state.
 - The desktop runtime schedules refreshes in-app while the UI is open, using the SQLite `pollIntervalSeconds` setting.
 - Scheduled refreshes do not run immediately on startup; the first scheduled run occurs after one full poll interval.
@@ -514,7 +574,9 @@ Initial `refresh_sources` behavior:
 - Refresh attempts record their trigger as `manual` or `scheduler` in source adapter state.
 - Scheduled refreshes back off after repeated refresh failures; manual refresh remains available during backoff.
 - Sources UI shows the expected next in-app poll based on the active interval.
-- Automated tests continue to use bundled GPW listing fixtures or injected fetchers; default checks must not require live network access.
+- Refresh results and adapter status expose GPW detail-body counters: attempted, stored, and failed.
+- Adapter status exposes the last detail warning when a GPW detail fetch fails or the parser rejects a detail page as unusable.
+- Automated tests continue to use bundled GPW listing test samples or injected fetchers; default checks must not require live network access.
 - Records `last_attempt_at` in source adapter state before fetching.
 - Returns source ingestion status with adapter ID, fetched count, created count, matched count, unmatched count, and fetched timestamp.
 - A successful fetch with zero parsed listings is recorded as a successful refresh with zero counts and a generated fetched timestamp.

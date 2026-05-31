@@ -86,7 +86,7 @@ Testing should be lean and behavior-focused:
 
 - Rust unit tests for domain logic, migrations, adapters, and provider mapping.
 - Frontend component tests for critical UI workflows.
-- Fixture-based tests for source adapters and AI provider contracts.
+- Test-sample-based tests for source adapters and AI provider contracts.
 - A small number of smoke tests for desktop startup and command availability.
 
 ## Security And Observability Posture

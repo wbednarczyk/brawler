@@ -277,7 +277,7 @@ Default test layers:
 
 - Rust unit tests for domain logic, contracts, parsing, dedupe, migrations, and provider mapping.
 - Frontend unit/component tests for UI state and critical workflow components.
-- Fixture-based adapter tests for external sources.
+- Test-sample-based adapter tests for external sources.
 - Smoke tests for app startup and command availability.
 
 Avoid by default:
@@ -302,20 +302,20 @@ Preferred distribution:
 
 - many small Rust unit tests
 - some frontend component tests
-- fixture-backed integration tests for adapters and migrations
+- test-sample-backed integration tests for adapters and migrations
 - a few desktop smoke tests
 
 The app does not need exhaustive full-stack end-to-end tests in early v1.
 
 ## External Source Testing
 
-Source adapters must be tested with saved fixtures.
+Source adapters must be tested with saved test samples.
 
 Rules:
 
 - Normal CI must not depend on GPW, Gemini, SEC, Nasdaq, or media sites being reachable.
 - Live source checks may exist as manual jobs later.
-- Fixture refresh should be deliberate and reviewable.
+- Test sample refresh should be deliberate and reviewable.
 - Adapter tests should cover parsing, dedupe keys, company matching, and error handling.
 
 ## AI Provider Testing
@@ -325,7 +325,7 @@ AI provider integrations must be mockable.
 Rules:
 
 - Normal CI must not require API keys.
-- Provider contract mapping should be tested with fixtures.
+- Provider contract mapping should be tested with test samples.
 - Prompt/result shape should be tested without making live calls.
 - Live provider checks should be manual or local-only.
 
@@ -341,7 +341,7 @@ Minimum gate for ordinary changes:
 
 Minimum gate for source adapters:
 
-- fixture tests pass
+- test-sample tests pass
 - dedupe and matching tests pass
 - source policy documented
 
