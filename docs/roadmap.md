@@ -318,26 +318,30 @@ Exit criteria:
 
 ## Milestone 9: Company Events Calendar
 
+Status: completed in `0.9.0`.
+
 Goal: show a cross-watchlist calendar of company events, with upcoming events as the default focus and historical dates available for context.
 
 Included:
 
-- Events screen or panel
+- Events screen or panel with a current-week default view
+- working-day columns in the default week view
+- previous/next/current week navigation
 - report publication dates
 - dividend-related dates when available
 - company meetings, conference calls, and other investor-calendar events when available from accepted sources
 - company and watchlist filters
-- upcoming and historical date ranges
+- secondary list view with upcoming, historical, combined, and custom date ranges
 - due-soon grouping
 - historical timeline/search mode
 - source URL, attribution, and fetched timestamp for sourced events
-- manual event entry or correction if official sources are incomplete
+- manual event entry if official sources are incomplete
 - test-sample-backed event data before broad source coverage exists
 
 Exit criteria:
 
-- user can see upcoming dated events for companies in their watchlists by default
-- user can switch to historical events or a combined date range
+- user can see current-week dated events for companies in their watchlists by default
+- user can switch to the list view for upcoming events, historical events, combined date ranges, or custom date ranges
 - events can be filtered by watchlist, company, event type, and date range
 - event rows show date, company, event type, source, and status
 - sourced events retain origin/source attribution

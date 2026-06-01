@@ -203,6 +203,42 @@ Rules:
 - Claim notes may use both `follow_up_after` and `follow_up_date`.
 - Origin links are required for notes created from feed items, AI outputs, or transcript segments.
 
+### Company Events
+
+Supports the Events screen, upcoming-company-event review, historical context, and future source-derived calendar ingestion.
+
+Fields:
+
+- `id`
+- `company_id`
+- `event_type`
+- `title`
+- `event_date`
+- `event_time`
+- `status`
+- `source_type`
+- `source_adapter_id`
+- `source_event_key`
+- `source_url`
+- `attribution`
+- `fetched_at`
+- `manual`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Events belong to exactly one canonical company.
+- `event_date` is required and stored as `YYYY-MM-DD`.
+- `event_time` is optional and stored as local source-provided text until a source-specific time zone policy is required.
+- Manual events use `source_type = manual` and `manual = 1`.
+- Sourced events must preserve source URL, attribution, fetched timestamp, and source event key when available.
+- `(source_adapter_id, source_event_key)` deduplicates sourced events when both values are present.
+- `gpw-market-events-rss` is a source-backed event adapter and matches only tracked companies by exact ticker.
+- `bankier-kalendarium-html` is the active broader public calendar adapter and matches only tracked companies by exact ticker.
+- Bankier calendar source keys are based on ticker, event category, and event description so source-side date changes update the existing sourced event row.
+- Source-keyed refresh updates sourced event rows when the accepted source changes the event.
+
 ### Transcript Jobs
 
 Supports Transcripts screen and company Transcripts tab.
@@ -372,19 +408,18 @@ Fields for `company_events`:
 - `event_time`
 - `status`
 - `source_type`
+- `source_adapter_id`
+- `source_event_key`
 - `source_url`
 - `attribution`
 - `fetched_at`
-- `updated_at_source`
 - `manual`
-- `user_adjusted`
 - `created_at`
 - `updated_at`
 
 Likely related tables:
 
-- `company_event_origins` or correction/audit table if sourced events can be manually adjusted
-- future links to feed items or notebook entries when event dates are discovered through reports or notes
+- future `company_event_origins` if event dates are discovered through feed items, notebook entries, or transcript segments
 
 Rules:
 
@@ -392,7 +427,10 @@ Rules:
 - `event_date` is required.
 - `event_time` is optional because many sources publish only a date.
 - Manual events must be distinguishable from sourced events.
-- User corrections to sourced events must preserve the original sourced date and attribution.
+- Sourced events must preserve source URL, attribution, fetched timestamp, and source event key when available.
+- Sourced event identity uses `(source_adapter_id, source_event_key)` when both values are present.
+- Sourced event refreshes update the existing source-keyed row when event date, title, status, source URL, attribution, or fetched timestamp changes.
+- Manual events are for missing or user-known dates, not normal corrections to changed sourced events.
 
 ## Search Inputs
 

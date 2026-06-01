@@ -7,6 +7,24 @@ import { App } from "./App";
 
 const noFeedAttachments: Array<{ id: string; label: string; url: string }> = [];
 
+function formatTestDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function currentWeekTestDate(dayOffset: number) {
+  const today = new Date();
+  const weekday = today.getDay();
+  const mondayOffset = weekday === 0 ? -6 : 1 - weekday;
+  const date = new Date(today);
+  date.setDate(today.getDate() + mondayOffset + dayOffset);
+
+  return formatTestDate(date);
+}
+
 const initialFeedItems = [
   {
     id: "feed_sample_cdr_report",
@@ -381,6 +399,70 @@ const initialCompanies: TestCompany[] = [
   },
 ];
 
+type TestCompanyEvent = {
+  id: string;
+  companyId: string;
+  company: string;
+  companyName: string;
+  eventType: string;
+  title: string;
+  eventDate: string;
+  eventTime: string | null;
+  status: string;
+  sourceType: string;
+  sourceAdapterId: string | null;
+  sourceEventKey: string | null;
+  sourceUrl: string | null;
+  attribution: string | null;
+  fetchedAt: string | null;
+  manual: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+const initialCompanyEvents: TestCompanyEvent[] = [
+  {
+    id: "event_gpw_market_events_cdr",
+    companyId: "company_gpw_cdr",
+    company: "GPW:CDR",
+    companyName: "CD PROJEKT S.A.",
+    eventType: "corporate_action",
+    title: "Main Market - Corporate actions - Equity - CDR",
+    eventDate: currentWeekTestDate(0),
+    eventTime: null,
+    status: "scheduled",
+    sourceType: "official_calendar",
+    sourceAdapterId: "gpw-market-events-rss",
+    sourceEventKey: "gpw-market-events-rss:2099-06-01:corporate-actions:equity:cdr",
+    sourceUrl: "https://www.gpw.pl/market-events-calendar?date=2099-06-01",
+    attribution: "GPW",
+    fetchedAt: "2026-06-01T08:00:00Z",
+    manual: false,
+    createdAt: "2026-06-01T08:00:00Z",
+    updatedAt: "2026-06-01T08:00:00Z",
+  },
+  {
+    id: "event_gpw_market_events_pzu",
+    companyId: "company_gpw_pzu",
+    company: "GPW:PZU",
+    companyName: "PZU S.A.",
+    eventType: "market_making",
+    title: "Main Market - End of market making activities - Equity - PZU",
+    eventDate: currentWeekTestDate(2),
+    eventTime: null,
+    status: "confirmed",
+    sourceType: "official_calendar",
+    sourceAdapterId: "gpw-market-events-rss",
+    sourceEventKey: "gpw-market-events-rss:2099-06-03:end-of-market-making:equity:pzu",
+    sourceUrl: "https://www.gpw.pl/market-events-calendar?date=2099-06-03",
+    attribution: "GPW",
+    fetchedAt: "2026-06-01T08:00:00Z",
+    manual: false,
+    createdAt: "2026-06-01T08:00:00Z",
+    updatedAt: "2026-06-01T08:00:00Z",
+  },
+];
+
 type TestNotebookEntry = {
   id: string;
   companyId: string;
@@ -442,6 +524,7 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 describe("App", () => {
   let companiesResponse = initialCompanies;
   let feedItemsResponse = initialFeedItems;
+  let companyEventsResponse = initialCompanyEvents;
   let companyRegistryEntriesResponse = initialCompanyRegistryEntries;
   let notebookEntriesResponse: TestNotebookEntry[] = [];
   let refreshSourcesError: string | null = null;
@@ -449,6 +532,7 @@ describe("App", () => {
   beforeEach(() => {
     companiesResponse = initialCompanies;
     feedItemsResponse = initialFeedItems;
+    companyEventsResponse = initialCompanyEvents;
     companyRegistryEntriesResponse = initialCompanyRegistryEntries;
     notebookEntriesResponse = [];
     refreshSourcesError = null;
@@ -549,6 +633,86 @@ describe("App", () => {
 
       if (command === "list_feed_items") {
         return Promise.resolve(feedItemsResponse);
+      }
+
+      if (command === "list_company_events") {
+        const input = (args as {
+          input: {
+            mode: string;
+            companyId: string | null;
+            watchlistId: string | null;
+            eventType: string | null;
+            status: string | null;
+            dateFrom: string | null;
+            dateTo: string | null;
+          };
+        }).input;
+
+        return Promise.resolve(
+          companyEventsResponse.filter((event) => {
+            const companyMatches = !input.companyId || event.companyId === input.companyId;
+            const typeMatches = !input.eventType || event.eventType === input.eventType;
+            const statusMatches = !input.status || event.status === input.status;
+            const dateFromMatches = !input.dateFrom || event.eventDate >= input.dateFrom;
+            const dateToMatches = !input.dateTo || event.eventDate <= input.dateTo;
+            const watchlistMatches =
+              !input.watchlistId ||
+              (input.watchlistId === "watchlist_main_gpw" && event.companyId === "company_gpw_cdr");
+
+            return (
+              companyMatches &&
+              typeMatches &&
+              statusMatches &&
+              dateFromMatches &&
+              dateToMatches &&
+              watchlistMatches
+            );
+          }),
+        );
+      }
+
+      if (command === "create_company_event") {
+        const input = (args as {
+          input: {
+            companyId: string;
+            eventType: string;
+            title: string;
+            eventDate: string;
+            eventTime: string | null;
+            status: string;
+            sourceType: string;
+            sourceAdapterId: string | null;
+            sourceEventKey: string | null;
+            sourceUrl: string | null;
+            attribution: string | null;
+            fetchedAt: string | null;
+          };
+        }).input;
+        const company = companiesResponse.find((entry) => entry.id === input.companyId);
+        const created = {
+          id: "manual_event_created",
+          companyId: input.companyId,
+          company: company?.qualifiedTicker ?? "GPW:UNK",
+          companyName: company?.displayName ?? "Unknown company",
+          eventType: input.eventType,
+          title: input.title,
+          eventDate: input.eventDate,
+          eventTime: input.eventTime,
+          status: input.status,
+          sourceType: input.sourceType,
+          sourceAdapterId: input.sourceAdapterId,
+          sourceEventKey: input.sourceEventKey,
+          sourceUrl: input.sourceUrl,
+          attribution: input.attribution,
+          fetchedAt: input.fetchedAt,
+          manual: true,
+          createdAt: "2026-06-01T08:00:00Z",
+          updatedAt: "2026-06-01T08:00:00Z",
+        };
+
+        companyEventsResponse = [...companyEventsResponse, created];
+
+        return Promise.resolve(created);
       }
 
       if (command === "delete_unsaved_feed_items") {
@@ -799,6 +963,101 @@ describe("App", () => {
 
     expect(within(inboxNav).getByText("1")).toHaveClass("nav-badge");
     expect(within(inboxNav).getByLabelText("1 unread feed item")).toBeInTheDocument();
+  });
+
+  it("shows upcoming company events from real source-backed event data", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Events" }));
+
+    expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Week" })).toHaveClass("segment-active");
+    expect(screen.getByText("Main Market - Corporate actions - Equity - CDR")).toBeInTheDocument();
+    const cdrEventRow = screen.getByRole("button", {
+      name: "Open event: Main Market - Corporate actions - Equity - CDR",
+    });
+    expect(within(cdrEventRow).getByText("Corporate Action")).toBeInTheDocument();
+    expect(within(cdrEventRow).getByText("GPW:CDR")).toBeInTheDocument();
+    expect(within(cdrEventRow).getByText("Today")).toBeInTheDocument();
+
+    await user.click(cdrEventRow);
+
+    const eventDetails = screen.getByLabelText("Event details");
+    expect(eventDetails).toBeInTheDocument();
+    expect(within(eventDetails).getByText("Official Calendar")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open source" })).toBeInTheDocument();
+  });
+
+  it("filters company events by company and type", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Events" }));
+    await user.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.getByText("Main Market - Corporate actions - Equity - CDR")).toBeInTheDocument();
+    expect(
+      screen.getByText("Main Market - End of market making activities - Equity - PZU"),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Event company filter"), "company_gpw_pzu");
+
+    await waitFor(() => {
+      expect(screen.queryByText("Main Market - Corporate actions - Equity - CDR")).not.toBeInTheDocument();
+    });
+    expect(
+      screen.getByText("Main Market - End of market making activities - Equity - PZU"),
+    ).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("list_company_events", {
+      input: expect.objectContaining({
+        companyId: "company_gpw_pzu",
+        eventType: null,
+        mode: "upcoming",
+      }),
+    });
+
+    await user.selectOptions(screen.getByLabelText("Event type filter"), "market_making");
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("list_company_events", {
+        input: expect.objectContaining({
+          companyId: "company_gpw_pzu",
+          eventType: "market_making",
+          mode: "upcoming",
+        }),
+      });
+    });
+  });
+
+  it("creates a manual company event from the Events screen", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(await screen.findByRole("button", { name: "Events" }));
+    await user.click(screen.getByRole("button", { name: "Add event" }));
+
+    await user.selectOptions(screen.getByLabelText("Manual event company"), "company_gpw_pzu");
+    await user.selectOptions(screen.getByLabelText("Manual event type"), "dividend");
+    await user.clear(screen.getByLabelText("Manual event date"));
+    await user.type(screen.getByLabelText("Manual event date"), currentWeekTestDate(3));
+    await user.type(screen.getByLabelText("Manual event title"), "Dividend decision expected");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_company_event", {
+        input: expect.objectContaining({
+          companyId: "company_gpw_pzu",
+          eventType: "dividend",
+          title: "Dividend decision expected",
+          sourceType: "manual",
+        }),
+      });
+    });
+    expect((await screen.findAllByText("Dividend decision expected")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Manual").length).toBeGreaterThan(0);
   });
 
   it("shows selected feed item details", async () => {
@@ -1512,15 +1771,15 @@ describe("App", () => {
 
     expect(within(sourceAdaptersRegion).getByText("GPW ESPI/EBI")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("gpw-espi-ebi")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Official reports · Public page")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Official Reports · Public Page")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("Bankier Giełda RSS")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getAllByText("Public media · RSS")).toHaveLength(3);
+    expect(within(sourceAdaptersRegion).getAllByText("Public Media · RSS")).toHaveLength(3);
     expect(within(sourceAdaptersRegion).getByText("Bankier Company Komunikaty")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Official reports · Public JSON")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Official Reports · Public JSON")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("Bankier Firma RSS")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("Bankier Wiadomosci RSS")).toBeInTheDocument();
     expect(within(sourceAdaptersRegion).getByText("Portal Analiz")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Authenticated research · Authenticated")).toBeInTheDocument();
+    expect(within(sourceAdaptersRegion).getByText("Authenticated Research · Authenticated")).toBeInTheDocument();
     expect(within(sourceRow).getByText("Disabled")).toBeInTheDocument();
 
     await user.click(sourceRow);
