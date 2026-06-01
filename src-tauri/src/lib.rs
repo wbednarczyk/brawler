@@ -26,6 +26,7 @@ mod commands {
     pub struct RefreshSourceInput {
         adapter_id: String,
         trigger: Option<String>,
+        date: Option<String>,
     }
 
     #[derive(Debug, Deserialize)]
@@ -236,6 +237,26 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn list_company_events(
+        input: storage::CompanyEventListInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::CompanyEvent>, String> {
+        state
+            .list_company_events(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn create_company_event(
+        input: storage::NewCompanyEvent,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::CompanyEvent, String> {
+        state
+            .create_company_event(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
     pub fn list_source_adapters(
         state: tauri::State<'_, storage::AppState>,
     ) -> Result<Vec<storage::SourceAdapter>, String> {
@@ -272,19 +293,34 @@ mod commands {
     ) -> Result<storage::SourceIngestionResult, String> {
         let bankier_result = refresh_bankier_rss_for_trigger(state, trigger)?;
         let bankier_company_result = refresh_bankier_company_for_trigger(state, trigger)?;
+        let gpw_market_events_result = refresh_gpw_market_events_for_trigger(state, trigger)?;
+        let bankier_calendar_result = refresh_bankier_calendar_for_trigger(state, trigger)?;
 
         Ok(storage::SourceIngestionResult {
             adapter_id: bankier_company_result.adapter_id,
-            items_fetched: bankier_result.items_fetched + bankier_company_result.items_fetched,
-            items_created: bankier_result.items_created + bankier_company_result.items_created,
-            items_matched: bankier_result.items_matched + bankier_company_result.items_matched,
+            items_fetched: bankier_result.items_fetched
+                + bankier_company_result.items_fetched
+                + gpw_market_events_result.items_fetched
+                + bankier_calendar_result.items_fetched,
+            items_created: bankier_result.items_created
+                + bankier_company_result.items_created
+                + gpw_market_events_result.items_created
+                + bankier_calendar_result.items_created,
+            items_matched: bankier_result.items_matched
+                + bankier_company_result.items_matched
+                + gpw_market_events_result.items_matched
+                + bankier_calendar_result.items_matched,
             items_unmatched: bankier_result.items_unmatched
-                + bankier_company_result.items_unmatched,
+                + bankier_company_result.items_unmatched
+                + gpw_market_events_result.items_unmatched
+                + bankier_calendar_result.items_unmatched,
             detail_items_attempted: bankier_company_result.detail_items_attempted,
             detail_items_stored: bankier_company_result.detail_items_stored,
             detail_items_failed: bankier_company_result.detail_items_failed,
             fetched_at: bankier_company_result
                 .fetched_at
+                .or(bankier_calendar_result.fetched_at)
+                .or(gpw_market_events_result.fetched_at)
                 .or(bankier_result.fetched_at),
         })
     }
@@ -298,10 +334,11 @@ mod commands {
         let RefreshSourceInput {
             adapter_id,
             trigger,
+            date,
         } = input;
         run_blocking_task(move || {
             let trigger = refresh_trigger(trigger);
-            refresh_source_for_trigger(&state, &adapter_id, &trigger)
+            refresh_source_for_trigger(&state, &adapter_id, &trigger, date.as_deref())
         })
         .await
     }
@@ -310,6 +347,7 @@ mod commands {
         state: &storage::AppState,
         adapter_id: &str,
         trigger: &str,
+        date: Option<&str>,
     ) -> Result<storage::SourceIngestionResult, String> {
         match adapter_id {
             source_adapters::gpw_espi_ebi::ADAPTER_ID => Err(
@@ -321,6 +359,12 @@ mod commands {
             }
             source_adapters::bankier_company::ADAPTER_ID => {
                 refresh_bankier_company_for_trigger(state, trigger)
+            }
+            source_adapters::gpw_market_events::ADAPTER_ID => {
+                refresh_gpw_market_events_for_trigger(state, trigger)
+            }
+            source_adapters::bankier_calendar::ADAPTER_ID => {
+                refresh_bankier_calendar_for_trigger_and_date(state, trigger, date)
             }
             source_adapters::gpw_company_registry::ADAPTER_ID => {
                 let registry_result = refresh_gpw_company_registry_for_trigger(state, trigger)?;
@@ -564,6 +608,66 @@ mod commands {
         Ok(result)
     }
 
+    fn refresh_gpw_market_events_for_trigger(
+        state: &storage::AppState,
+        trigger: &str,
+    ) -> Result<storage::SourceIngestionResult, String> {
+        let _ = state
+            .record_source_adapter_attempt(source_adapters::gpw_market_events::ADAPTER_ID, trigger);
+        let fetcher = source_adapters::gpw_market_events::HttpGpwMarketEventsFetcher;
+        let event_items = match source_adapters::gpw_market_events::fetch_market_events(&fetcher) {
+            Ok(items) => items,
+            Err(error) => {
+                let message = error.to_string();
+                let _ = state.record_source_adapter_error(
+                    source_adapters::gpw_market_events::ADAPTER_ID,
+                    &message,
+                );
+
+                return Err(message);
+            }
+        };
+
+        state
+            .ingest_gpw_market_event_items(&event_items)
+            .map_err(|error| error.to_string())
+    }
+
+    fn refresh_bankier_calendar_for_trigger(
+        state: &storage::AppState,
+        trigger: &str,
+    ) -> Result<storage::SourceIngestionResult, String> {
+        refresh_bankier_calendar_for_trigger_and_date(state, trigger, None)
+    }
+
+    fn refresh_bankier_calendar_for_trigger_and_date(
+        state: &storage::AppState,
+        trigger: &str,
+        date: Option<&str>,
+    ) -> Result<storage::SourceIngestionResult, String> {
+        let _ = state
+            .record_source_adapter_attempt(source_adapters::bankier_calendar::ADAPTER_ID, trigger);
+        let fetcher = source_adapters::bankier_calendar::HttpBankierCalendarFetcher;
+        let event_items =
+            match source_adapters::bankier_calendar::fetch_calendar_events_for_date(&fetcher, date)
+            {
+                Ok(items) => items,
+                Err(error) => {
+                    let message = error.to_string();
+                    let _ = state.record_source_adapter_error(
+                        source_adapters::bankier_calendar::ADAPTER_ID,
+                        &message,
+                    );
+
+                    return Err(message);
+                }
+            };
+
+        state
+            .ingest_bankier_calendar_event_items(&event_items)
+            .map_err(|error| error.to_string())
+    }
+
     #[tauri::command]
     pub fn refresh_gpw_company_registry(
         input: Option<RefreshSourcesInput>,
@@ -709,6 +813,8 @@ pub fn run() {
             commands::list_notebook_entries,
             commands::create_notebook_entry,
             commands::update_notebook_entry,
+            commands::list_company_events,
+            commands::create_company_event,
             commands::list_source_adapters,
             commands::list_company_registry_entries,
             commands::refresh_sources,
@@ -729,6 +835,6 @@ mod tests {
         let response = super::commands::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.8.0");
+        assert_eq!(response.version, "0.9.0");
     }
 }

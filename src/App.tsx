@@ -18,6 +18,8 @@ import {
   CalendarDays,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileText,
   Inbox,
@@ -50,7 +52,7 @@ type DatabaseStatus = {
   settings: number;
 };
 
-type Section = "Inbox" | "Companies" | "Notebooks" | "Transcripts" | "Sources" | "Settings";
+type Section = "Inbox" | "Companies" | "Notebooks" | "Events" | "Transcripts" | "Sources" | "Settings";
 type CompanyWorkspaceTab = "Feed" | "Notebook" | "Claims" | "Transcripts" | "Metadata";
 
 type InboxStatusFilter = "all" | "unread" | "saved";
@@ -58,9 +60,30 @@ type DbRefreshState = "idle" | "refreshing" | "done";
 type SourceRefreshState = "idle" | "refreshing" | "done";
 type SourceRefreshTrigger = "manual" | "scheduler";
 const gpwRegistryAdapterId = "gpw-company-registry";
+const eventSourceAdapterIds = ["gpw-market-events-rss", "bankier-kalendarium-html"];
 const feedPruneRetentionDays = 30;
 const feedPruneIntervalMs = 24 * 60 * 60 * 1000;
 const feedPruneInitialDelayMs = 2 * 60 * 1000;
+const companyEventTypeOptions = [
+  "periodic_report",
+  "corporate_action",
+  "dividend",
+  "shareholder_meeting",
+  "conference_call",
+  "investor_conference",
+  "market_making",
+  "listing_change",
+  "other_market_event",
+  "custom",
+];
+const companyEventStatusOptions = [
+  "scheduled",
+  "confirmed",
+  "tentative",
+  "changed",
+  "cancelled",
+  "completed",
+];
 
 type FeedItem = {
   id: string;
@@ -254,6 +277,38 @@ type CompanyRegistryEntry = {
   tracked: boolean;
 };
 
+type CompanyEvent = {
+  id: string;
+  companyId: string;
+  company: string;
+  companyName: string;
+  eventType: string;
+  title: string;
+  eventDate: string;
+  eventTime: string | null;
+  status: string;
+  sourceType: string;
+  sourceAdapterId: string | null;
+  sourceEventKey: string | null;
+  sourceUrl: string | null;
+  attribution: string | null;
+  fetchedAt: string | null;
+  manual: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type CompanyEventMode = "upcoming" | "historical" | "all";
+type CompanyEventViewMode = "week" | "list";
+type CompanyEventForm = {
+  companyId: string;
+  eventType: string;
+  title: string;
+  eventDate: string;
+  eventTime: string;
+  status: string;
+};
+
 type UserSettings = {
   theme: Theme;
   accentPalette: string;
@@ -284,6 +339,7 @@ const sections = [
   { label: "Inbox" as const, icon: Inbox },
   { label: "Companies" as const, icon: Building2 },
   { label: "Notebooks" as const, icon: BookOpenText },
+  { label: "Events" as const, icon: CalendarDays },
   { label: "Transcripts" as const, icon: Video },
   { label: "Sources" as const, icon: Activity },
   { label: "Settings" as const, icon: Settings },
@@ -327,6 +383,17 @@ function emptyNotebookForm(): NotebookForm {
   };
 }
 
+function emptyCompanyEventForm(): CompanyEventForm {
+  return {
+    companyId: "",
+    eventType: "custom",
+    title: "",
+    eventDate: formatLocalDate(new Date()),
+    eventTime: "",
+    status: "scheduled",
+  };
+}
+
 function manualNotebookOrigins(): NotebookDraftOrigin[] {
   return [
     {
@@ -354,6 +421,135 @@ function formatTimestamp(value: string | null | undefined, emptyLabel = "Not set
   }
 
   return trimmed.replace("T", " ").replace(/\.\d+$/, "");
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+
+  if (!year || !month || !day) {
+    return new Date();
+  }
+
+  return new Date(year, month - 1, day);
+}
+
+function addLocalDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setDate(nextDate.getDate() + days);
+
+  return nextDate;
+}
+
+function daysBetweenLocalDates(fromDate: string, toDate: string) {
+  const millisecondsPerDay = 24 * 60 * 60 * 1000;
+  const from = parseLocalDate(fromDate).getTime();
+  const to = parseLocalDate(toDate).getTime();
+
+  return Math.round((to - from) / millisecondsPerDay);
+}
+
+function startOfIsoWeek(date: Date) {
+  const startDate = new Date(date);
+  const day = startDate.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  startDate.setDate(startDate.getDate() + mondayOffset);
+
+  return startDate;
+}
+
+function formatWeekRange(startDate: string, endDate: string) {
+  return `${startDate} - ${endDate}`;
+}
+
+function companyEventDueLabel(eventDate: string) {
+  const daysUntil = daysBetweenLocalDates(formatLocalDate(new Date()), eventDate);
+
+  if (daysUntil < 0) {
+    return "Past";
+  }
+
+  if (daysUntil === 0) {
+    return "Today";
+  }
+
+  if (daysUntil === 1) {
+    return "Tomorrow";
+  }
+
+  if (daysUntil <= 3) {
+    return `In ${daysUntil} days`;
+  }
+
+  return null;
+}
+
+function companyEventDueClass(eventDate: string) {
+  const daysUntil = daysBetweenLocalDates(formatLocalDate(new Date()), eventDate);
+
+  if (daysUntil < 0) {
+    return "event-due-past";
+  }
+
+  if (daysUntil === 0) {
+    return "event-due-today";
+  }
+
+  if (daysUntil <= 3) {
+    return "event-due-soon";
+  }
+
+  return "";
+}
+
+function formatEnumLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+function formatCompanyEventType(value: string) {
+  const labels: Record<string, string> = {
+    periodic_report: "Periodic Report",
+    corporate_action: "Corporate Action",
+    dividend: "Dividend",
+    shareholder_meeting: "Shareholder Meeting",
+    conference_call: "Conference Call",
+    investor_conference: "Investor Conference",
+    market_making: "Market Making",
+    listing_change: "Listing Change",
+    other_market_event: "Market Event",
+    custom: "Custom",
+  };
+
+  return labels[value] ?? formatEnumLabel(value);
+}
+
+function formatCompanyEventStatus(value: string) {
+  return formatEnumLabel(value);
+}
+
+function formatCompanyEventSourceType(value: string) {
+  const labels: Record<string, string> = {
+    manual: "Manual",
+    official_calendar: "Official Calendar",
+    official_report: "Official Report",
+    public_calendar: "Public Calendar",
+    public_media: "Public Media",
+    notebook_entry: "Notebook",
+    feed_item: "Feed Item",
+  };
+
+  return labels[value] ?? formatEnumLabel(value);
 }
 
 function schedulerStartJitterMs(intervalMs: number) {
@@ -658,6 +854,7 @@ export function App() {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
   const sourceAdaptersRef = useRef<SourceAdapter[]>([]);
+  const eventWeekFetchAttemptedRef = useRef<Set<string>>(new Set());
   const companyLookupVersionRef = useRef(0);
   const skipNextCompanyLookupRef = useRef(false);
   const companyFieldRefs = useRef<Record<keyof CompanyForm, HTMLInputElement | null>>({
@@ -689,6 +886,23 @@ export function App() {
   const [inboxStatusFilter, setInboxStatusFilter] = useState<InboxStatusFilter>("all");
   const [feedState, setFeedState] = useState<FeedItem[]>([]);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [companyEvents, setCompanyEvents] = useState<CompanyEvent[]>([]);
+  const [companyEventsError, setCompanyEventsError] = useState<string | null>(null);
+  const [companyEventViewMode, setCompanyEventViewMode] = useState<CompanyEventViewMode>("week");
+  const [companyEventMode, setCompanyEventMode] = useState<CompanyEventMode>("upcoming");
+  const [companyEventWeekAnchorDate, setCompanyEventWeekAnchorDate] = useState(() =>
+    formatLocalDate(new Date()),
+  );
+  const [companyEventWatchlistFilter, setCompanyEventWatchlistFilter] = useState("all");
+  const [companyEventCompanyFilter, setCompanyEventCompanyFilter] = useState("all");
+  const [companyEventTypeFilter, setCompanyEventTypeFilter] = useState("all");
+  const [companyEventStatusFilter, setCompanyEventStatusFilter] = useState("all");
+  const [companyEventDateFrom, setCompanyEventDateFrom] = useState("");
+  const [companyEventDateTo, setCompanyEventDateTo] = useState("");
+  const [selectedCompanyEventId, setSelectedCompanyEventId] = useState<string | null>(null);
+  const [isCompanyEventComposerOpen, setCompanyEventComposerOpen] = useState(false);
+  const [companyEventForm, setCompanyEventForm] = useState<CompanyEventForm>(emptyCompanyEventForm);
+  const [companyEventCreateError, setCompanyEventCreateError] = useState<string | null>(null);
   const [sourceAdapters, setSourceAdapters] = useState<SourceAdapter[]>([]);
   const [sourceAdaptersError, setSourceAdaptersError] = useState<string | null>(null);
   const [selectedSourceAdapterId, setSelectedSourceAdapterId] = useState<string | null>(null);
@@ -778,6 +992,54 @@ export function App() {
   const feedSources = useMemo(() => {
     return Array.from(new Set(feedState.map((item) => item.source))).sort();
   }, [feedState]);
+  const selectedCompanyEvent =
+    companyEvents.find((event) => event.id === selectedCompanyEventId) ?? null;
+  const companyEventTypes = useMemo(() => {
+    return Array.from(new Set(companyEvents.map((event) => event.eventType))).sort();
+  }, [companyEvents]);
+  const companyEventStatuses = useMemo(() => {
+    return Array.from(new Set(companyEvents.map((event) => event.status))).sort();
+  }, [companyEvents]);
+  const companyEventWeekRange = useMemo(() => {
+    const weekStart = startOfIsoWeek(parseLocalDate(companyEventWeekAnchorDate));
+    const weekEnd = addLocalDays(weekStart, 6);
+
+    return {
+      start: formatLocalDate(weekStart),
+      end: formatLocalDate(weekEnd),
+    };
+  }, [companyEventWeekAnchorDate]);
+  const companyEventWeekDays = useMemo(() => {
+    const weekStart = parseLocalDate(companyEventWeekRange.start);
+
+    return Array.from({ length: 7 }, (_, dayOffset) => {
+      const date = addLocalDays(weekStart, dayOffset);
+
+      return {
+        date: formatLocalDate(date),
+        label: date.toLocaleDateString(undefined, { weekday: "long" }),
+      };
+    });
+  }, [companyEventWeekRange.start]);
+  const companyEventsByDate = useMemo(() => {
+    return companyEvents.reduce<Record<string, CompanyEvent[]>>((grouped, event) => {
+      grouped[event.eventDate] = grouped[event.eventDate] ?? [];
+      grouped[event.eventDate].push(event);
+
+      return grouped;
+    }, {});
+  }, [companyEvents]);
+  const companyEventWorkingWeekDays = useMemo(
+    () => companyEventWeekDays.slice(0, 5),
+    [companyEventWeekDays],
+  );
+  const companyEventWeekendDays = useMemo(
+    () => companyEventWeekDays.slice(5),
+    [companyEventWeekDays],
+  );
+  const companyEventWeekendEvents = useMemo(() => {
+    return companyEventWeekendDays.flatMap((day) => companyEventsByDate[day.date] ?? []);
+  }, [companyEventWeekendDays, companyEventsByDate]);
   const filteredFeedItems = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLowerCase();
     const allowedTickers =
@@ -1202,6 +1464,97 @@ export function App() {
       });
   }
 
+  function refreshCompanyEvents(mode: CompanyEventMode = companyEventMode) {
+    const isWeekView = companyEventViewMode === "week";
+
+    return invoke<CompanyEvent[]>("list_company_events", {
+      input: {
+        mode: isWeekView ? "all" : mode,
+        companyId: companyEventCompanyFilter === "all" ? null : companyEventCompanyFilter,
+        watchlistId: companyEventWatchlistFilter === "all" ? null : companyEventWatchlistFilter,
+        eventType: companyEventTypeFilter === "all" ? null : companyEventTypeFilter,
+        status: companyEventStatusFilter === "all" ? null : companyEventStatusFilter,
+        dateFrom: isWeekView ? companyEventWeekRange.start : companyEventDateFrom.trim() || null,
+        dateTo: isWeekView ? companyEventWeekRange.end : companyEventDateTo.trim() || null,
+      },
+    })
+      .then((response) => {
+        setCompanyEvents(response);
+        setCompanyEventsError(null);
+        setSelectedCompanyEventId((current) => {
+          if (current && response.some((event) => event.id === current)) {
+            return current;
+          }
+
+          return null;
+        });
+      })
+      .catch((error) => {
+        setCompanyEvents([]);
+        setCompanyEventsError(String(error));
+      });
+  }
+
+  function clearCompanyEventFilters() {
+    setCompanyEventWatchlistFilter("all");
+    setCompanyEventCompanyFilter("all");
+    setCompanyEventTypeFilter("all");
+    setCompanyEventStatusFilter("all");
+    setCompanyEventDateFrom("");
+    setCompanyEventDateTo("");
+    setSelectedCompanyEventId(null);
+  }
+
+  function openCompanyEventComposer() {
+    setCompanyEventForm({
+      ...emptyCompanyEventForm(),
+      companyId:
+        companyEventCompanyFilter !== "all"
+          ? companyEventCompanyFilter
+          : companies[0]?.id ?? "",
+      eventDate:
+        companyEventViewMode === "week" ? companyEventWeekAnchorDate : formatLocalDate(new Date()),
+    });
+    setCompanyEventCreateError(null);
+    setCompanyEventComposerOpen(true);
+  }
+
+  function createCompanyEvent() {
+    const trimmedTitle = companyEventForm.title.trim();
+
+    if (!companyEventForm.companyId || !trimmedTitle || !companyEventForm.eventDate) {
+      setCompanyEventCreateError("Company, title, and date are required.");
+      return;
+    }
+
+    void invoke<CompanyEvent>("create_company_event", {
+      input: {
+        companyId: companyEventForm.companyId,
+        eventType: companyEventForm.eventType,
+        title: trimmedTitle,
+        eventDate: companyEventForm.eventDate,
+        eventTime: companyEventForm.eventTime.trim() || null,
+        status: companyEventForm.status,
+        sourceType: "manual",
+        sourceAdapterId: null,
+        sourceEventKey: null,
+        sourceUrl: null,
+        attribution: "Manual",
+        fetchedAt: null,
+      },
+    })
+      .then((createdEvent) => {
+        setCompanyEventCreateError(null);
+        setCompanyEventComposerOpen(false);
+        setCompanyEventForm(emptyCompanyEventForm());
+        setSelectedCompanyEventId(createdEvent.id);
+        return refreshCompanyEvents();
+      })
+      .catch((error) => {
+        setCompanyEventCreateError(String(error));
+      });
+  }
+
   function refreshSourceAdapters() {
     return invoke<SourceAdapter[]>("list_source_adapters")
       .then((response) => {
@@ -1266,6 +1619,7 @@ export function App() {
       refreshWatchlists(),
       refreshWatchlistMemberships(),
       refreshFeedItems(),
+      refreshCompanyEvents(),
       refreshSourceAdapters(),
       refreshSettings(),
     ]).then(() => {
@@ -1326,6 +1680,7 @@ export function App() {
         setSelectedSourceAdapterId(response.adapterId);
         return Promise.all([
           refreshFeedItems(),
+          refreshCompanyEvents(),
           refreshSourceAdapters(),
           refreshDatabaseStatus(),
           refreshUnmatchedSourceItems(response.adapterId),
@@ -1397,6 +1752,134 @@ export function App() {
         setSelectedSourceAdapterId(response.adapterId);
         return Promise.all([
           refreshFeedItems(),
+          refreshCompanyEvents(),
+          refreshSourceAdapters(),
+          refreshDatabaseStatus(),
+          refreshUnmatchedSourceItems(response.adapterId),
+        ]);
+      })
+      .then(() => {
+        setSourceRefreshState("done");
+        window.setTimeout(() => {
+          setSourceRefreshState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setSourceRefreshError(String(error));
+        setSourceRefreshFailureCount((current) => current + 1);
+        setSourceRefreshState("idle");
+        refreshSourceAdapters();
+      })
+      .finally(() => {
+        sourceRefreshInFlightRef.current = false;
+        setSourceAdapterRefreshInFlight(null);
+      });
+  }
+
+  function combineSourceResults(results: SourceIngestionResult[], adapterId: string): SourceIngestionResult {
+    return results.reduce<SourceIngestionResult>(
+      (combined, result) => ({
+        adapterId,
+        itemsFetched: combined.itemsFetched + result.itemsFetched,
+        itemsCreated: combined.itemsCreated + result.itemsCreated,
+        itemsMatched: combined.itemsMatched + result.itemsMatched,
+        itemsUnmatched: combined.itemsUnmatched + result.itemsUnmatched,
+        detailItemsAttempted: combined.detailItemsAttempted + result.detailItemsAttempted,
+        detailItemsStored: combined.detailItemsStored + result.detailItemsStored,
+        detailItemsFailed: combined.detailItemsFailed + result.detailItemsFailed,
+        fetchedAt: result.fetchedAt ?? combined.fetchedAt,
+      }),
+      {
+        adapterId,
+        itemsFetched: 0,
+        itemsCreated: 0,
+        itemsMatched: 0,
+        itemsUnmatched: 0,
+        detailItemsAttempted: 0,
+        detailItemsStored: 0,
+        detailItemsFailed: 0,
+        fetchedAt: null,
+      },
+    );
+  }
+
+  function refreshEventSources(trigger: SourceRefreshTrigger = "manual", date: string | null = null) {
+    if (sourceRefreshInFlightRef.current || sourceAdapterRefreshInFlight) {
+      return Promise.resolve();
+    }
+
+    sourceRefreshInFlightRef.current = true;
+    setSourceAdapterRefreshInFlight("events");
+    setSourceRefreshState("refreshing");
+    setSourceRefreshError(null);
+
+    return eventSourceAdapterIds
+      .reduce<Promise<SourceIngestionResult[]>>(
+        (chain, adapterId) =>
+          chain.then((results) =>
+            invoke<SourceIngestionResult>("refresh_source", {
+              input: {
+                adapterId,
+                trigger,
+                date: adapterId === "bankier-kalendarium-html" ? date : null,
+              },
+            }).then((result) => [...results, result]),
+          ),
+        Promise.resolve([]),
+      )
+      .then((results) => {
+        const summary = combineSourceResults(results, "bankier-kalendarium-html");
+        setSourceRefreshResult(summary);
+        setSourceRefreshFailureCount(0);
+        setSelectedSourceAdapterId("bankier-kalendarium-html");
+        return Promise.all([
+          refreshCompanyEvents(),
+          refreshSourceAdapters(),
+          refreshDatabaseStatus(),
+          refreshUnmatchedSourceItems("bankier-kalendarium-html"),
+        ]);
+      })
+      .then(() => {
+        setSourceRefreshState("done");
+        window.setTimeout(() => {
+          setSourceRefreshState("idle");
+        }, 900);
+      })
+      .catch((error) => {
+        setSourceRefreshError(String(error));
+        setSourceRefreshFailureCount((current) => current + 1);
+        setSourceRefreshState("idle");
+        refreshSourceAdapters();
+      })
+      .finally(() => {
+        sourceRefreshInFlightRef.current = false;
+        setSourceAdapterRefreshInFlight(null);
+      });
+  }
+
+  function refreshBankierCalendarWeek(date: string, trigger: SourceRefreshTrigger = "manual") {
+    if (sourceRefreshInFlightRef.current || sourceAdapterRefreshInFlight) {
+      return Promise.resolve();
+    }
+
+    sourceRefreshInFlightRef.current = true;
+    setSourceAdapterRefreshInFlight("bankier-kalendarium-html");
+    setSourceRefreshState("refreshing");
+    setSourceRefreshError(null);
+
+    return invoke<SourceIngestionResult>("refresh_source", {
+      input: {
+        adapterId: "bankier-kalendarium-html",
+        trigger,
+        date,
+      },
+    })
+      .then((response) => {
+        setSourceRefreshResult(response);
+        setSourceRefreshFailureCount(0);
+        setSelectedSourceAdapterId(response.adapterId);
+        return Promise.all([
+          refreshCompanyEvents(),
           refreshSourceAdapters(),
           refreshDatabaseStatus(),
           refreshUnmatchedSourceItems(response.adapterId),
@@ -1446,6 +1929,7 @@ export function App() {
         setSourceRefreshFailureCount(0);
         return Promise.all([
           refreshFeedItems(),
+          refreshCompanyEvents(),
           refreshSourceAdapters(),
           refreshDatabaseStatus(),
           refreshUnmatchedSourceItems(response.adapterId),
@@ -1536,9 +2020,39 @@ export function App() {
     refreshWatchlists();
     refreshWatchlistMemberships();
     refreshFeedItems();
+    refreshCompanyEvents();
     refreshSourceAdapters();
     refreshSettings();
   }, []);
+
+  useEffect(() => {
+    void refreshCompanyEvents(companyEventMode);
+  }, [
+    companyEventCompanyFilter,
+    companyEventDateFrom,
+    companyEventDateTo,
+    companyEventMode,
+    companyEventStatusFilter,
+    companyEventTypeFilter,
+    companyEventViewMode,
+    companyEventWeekRange.end,
+    companyEventWeekRange.start,
+    companyEventWatchlistFilter,
+  ]);
+
+  useEffect(() => {
+    if (activeSection !== "Events" || companyEventViewMode !== "week") {
+      return;
+    }
+
+    const weekStart = companyEventWeekRange.start;
+    if (eventWeekFetchAttemptedRef.current.has(weekStart)) {
+      return;
+    }
+
+    eventWeekFetchAttemptedRef.current.add(weekStart);
+    void refreshBankierCalendarWeek(weekStart, "manual");
+  }, [activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
   useEffect(() => {
     const firstRunDelayMs = feedPruneInitialDelayMs + schedulerStartJitterMs(feedPruneIntervalMs);
@@ -2539,6 +3053,182 @@ export function App() {
     setActiveSection("Inbox");
   }
 
+  function renderCompanyEventRow(event: CompanyEvent) {
+    const dueLabel = companyEventDueLabel(event.eventDate);
+    const dueClass = companyEventDueClass(event.eventDate);
+
+    return (
+      <div className="event-row-block" key={event.id}>
+        <article
+          aria-label={`Open event: ${event.title}`}
+          className={[
+            "event-row",
+            event.manual ? "event-manual" : "",
+            dueClass,
+            selectedCompanyEventId === event.id ? "event-row-selected" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => setSelectedCompanyEventId((current) => (current === event.id ? null : event.id))}
+          onKeyDown={(keyboardEvent) => {
+            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+              keyboardEvent.preventDefault();
+              setSelectedCompanyEventId((current) => (current === event.id ? null : event.id));
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="event-date-box">
+            <CalendarDays size={16} aria-hidden="true" />
+            <strong>{event.eventDate}</strong>
+            {event.eventTime ? <span>{event.eventTime}</span> : null}
+            {dueLabel ? <em>{dueLabel}</em> : null}
+          </div>
+          <div className="event-row-main">
+            <div className="event-title-line">
+              <h2>{event.title}</h2>
+              <span>{formatCompanyEventType(event.eventType)}</span>
+            </div>
+            <p>
+              <strong>{event.company}</strong> · {event.companyName}
+            </p>
+          </div>
+          <div className="event-row-status">
+            <span>{formatCompanyEventStatus(event.status)}</span>
+            <small>{event.manual ? "Manual" : formatCompanyEventSourceType(event.sourceType)}</small>
+          </div>
+        </article>
+
+        {selectedCompanyEvent?.id === event.id ? (
+          <div className="event-detail-panel" aria-label="Event details">
+            <dl className="metadata-grid">
+              <div>
+                <dt>Company</dt>
+                <dd>{event.company}</dd>
+              </div>
+              <div>
+                <dt>Type</dt>
+                <dd>{formatCompanyEventType(event.eventType)}</dd>
+              </div>
+              <div>
+                <dt>Status</dt>
+                <dd>{formatCompanyEventStatus(event.status)}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{formatCompanyEventSourceType(event.sourceType)}</dd>
+              </div>
+              <div>
+                <dt>Attribution</dt>
+                <dd>{event.attribution ?? "Not set"}</dd>
+              </div>
+              <div>
+                <dt>Fetched</dt>
+                <dd>{formatTimestamp(event.fetchedAt, "Not fetched")}</dd>
+              </div>
+            </dl>
+            {event.sourceUrl ? (
+              <button
+                className="secondary-button compact-button"
+                onClick={() => {
+                  void openUrl(event.sourceUrl as string);
+                }}
+                type="button"
+              >
+                <ExternalLink size={15} />
+                Open source
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderCompanyEventWeekCard(event: CompanyEvent) {
+    const isSelected = selectedCompanyEventId === event.id;
+    const dueLabel = companyEventDueLabel(event.eventDate);
+    const dueClass = companyEventDueClass(event.eventDate);
+
+    return (
+      <div className="event-week-card-block" key={event.id}>
+        <article
+          aria-label={`Open event: ${event.title}`}
+          className={[
+            "event-week-card",
+            event.manual ? "event-manual" : "",
+            dueClass,
+            isSelected ? "event-week-card-selected" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          onClick={() => setSelectedCompanyEventId((current) => (current === event.id ? null : event.id))}
+          onKeyDown={(keyboardEvent) => {
+            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
+              keyboardEvent.preventDefault();
+              setSelectedCompanyEventId((current) => (current === event.id ? null : event.id));
+            }
+          }}
+          role="button"
+          tabIndex={0}
+        >
+          <div className="event-week-card-topline">
+            <strong>{event.company}</strong>
+            <div>
+              {dueLabel ? <em>{dueLabel}</em> : null}
+              <span>{formatCompanyEventStatus(event.status)}</span>
+            </div>
+          </div>
+          <h2>{event.title}</h2>
+          <div className="event-week-card-meta">
+            <span>{formatCompanyEventType(event.eventType)}</span>
+            <span>{event.manual ? "Manual" : formatCompanyEventSourceType(event.sourceType)}</span>
+          </div>
+        </article>
+
+        {isSelected ? (
+          <div className="event-week-card-detail" aria-label="Event details">
+            <div className="event-week-card-full-title">
+              <span>Title</span>
+              <strong>{event.title}</strong>
+            </div>
+            <dl>
+              <div>
+                <dt>Company</dt>
+                <dd>{event.companyName}</dd>
+              </div>
+              <div>
+                <dt>Date</dt>
+                <dd>{event.eventTime ? `${event.eventDate} ${event.eventTime}` : event.eventDate}</dd>
+              </div>
+              <div>
+                <dt>Source</dt>
+                <dd>{formatCompanyEventSourceType(event.sourceType)}</dd>
+              </div>
+              <div>
+                <dt>Attribution</dt>
+                <dd>{event.attribution ?? "Not set"}</dd>
+              </div>
+            </dl>
+            {event.sourceUrl ? (
+              <button
+                className="secondary-button compact-button"
+                onClick={() => {
+                  void openUrl(event.sourceUrl as string);
+                }}
+                type="button"
+              >
+                <ExternalLink size={15} />
+                Open source
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function renderNotebookOrigins(origins: NotebookOrigin[], companyId: string) {
     if (origins.length === 0) {
       return <span className="membership-empty">None</span>;
@@ -2793,20 +3483,22 @@ export function App() {
 
   function formatSourceType(value: string) {
     const labels: Record<string, string> = {
-      official_report: "Official reports",
-      official_report_secondary: "Secondary official reports",
-      public_media: "Public media",
+      official_report: "Official Reports",
+      official_report_secondary: "Secondary Official Reports",
+      official_calendar: "Official Calendar",
+      public_calendar: "Public Calendar",
+      public_media: "Public Media",
       analysis: "Analysis",
-      authenticated_research: "Authenticated research",
-      company_registry: "Company registry",
+      authenticated_research: "Authenticated Research",
+      company_registry: "Company Registry",
     };
 
-    return labels[value] ?? value.split("_").join(" ");
+    return labels[value] ?? formatEnumLabel(value);
   }
 
   function formatFetchMode(value: string) {
     const labels: Record<string, string> = {
-      public_page: "Public page",
+      public_page: "Public Page",
       rss: "RSS",
       public_json: "Public JSON",
       api: "API",
@@ -2815,7 +3507,7 @@ export function App() {
       paywalled: "Paywalled",
     };
 
-    return labels[value] ?? value.split("_").join(" ");
+    return labels[value] ?? formatEnumLabel(value);
   }
 
   function formatSourceAccess(adapter: SourceAdapter) {
@@ -2824,11 +3516,11 @@ export function App() {
     }
 
     const labels: Record<string, string> = {
-      public_page: "Public web page",
+      public_page: "Public Web Page",
       rss: "Public RSS",
       public_json: "Public JSON",
       api: "Public API",
-      manual: "Manual/local",
+      manual: "Manual/Local",
       authenticated: "Authenticated",
       paywalled: "Paywalled",
     };
@@ -4900,6 +5592,385 @@ export function App() {
                 </div>
               </div>
               {notebookError ? <p className="error-text">Notebook command failed: {notebookError}</p> : null}
+            </section>
+          ) : null}
+
+          {activeSection === "Events" ? (
+            <section className="feed-panel" aria-labelledby="events-title">
+              <div className="panel-header">
+                <div>
+                  <h1 id="events-title">Events</h1>
+                  <p>Company calendar events across tracked companies.</p>
+                </div>
+                <button
+                  className="secondary-button compact-button"
+                  disabled={sourceRefreshState === "refreshing"}
+                  onClick={() => {
+                    void refreshEventSources("manual", companyEventWeekRange.start);
+                  }}
+                  type="button"
+                >
+                  {sourceRefreshState === "done" && selectedSourceAdapterId === "bankier-kalendarium-html" ? (
+                    <CheckCircle2 size={15} />
+                  ) : (
+                    <RefreshCw size={15} />
+                  )}
+                  {sourceRefreshState === "refreshing" && sourceAdapterRefreshInFlight === "events"
+                    ? "Refreshing"
+                    : "Refresh event sources"}
+                </button>
+                <button className="primary-button compact-button" onClick={openCompanyEventComposer} type="button">
+                  <Plus size={15} />
+                  Add event
+                </button>
+              </div>
+
+              <div className="filter-toolbar events-filter-toolbar" aria-label="Event view mode">
+                <div className="segmented-control" role="group" aria-label="Event layout">
+                  {(["week", "list"] as const).map((viewMode) => (
+                    <button
+                      className={companyEventViewMode === viewMode ? "segment-active" : ""}
+                      key={viewMode}
+                      onClick={() => {
+                        setCompanyEventViewMode(viewMode);
+                      }}
+                      type="button"
+                    >
+                      {viewMode === "week" ? "Week" : "List"}
+                    </button>
+                  ))}
+                </div>
+                {companyEventViewMode === "week" ? (
+                  <div className="week-toolbar" aria-label="Week navigation">
+                    <button
+                      className="secondary-button compact-button icon-only-button"
+                      onClick={() => {
+                        setCompanyEventWeekAnchorDate((current) =>
+                          formatLocalDate(addLocalDays(parseLocalDate(current), -7)),
+                        );
+                      }}
+                      type="button"
+                      aria-label="Previous week"
+                    >
+                      <ChevronLeft size={15} />
+                    </button>
+                    <span>{formatWeekRange(companyEventWeekRange.start, companyEventWeekRange.end)}</span>
+                    <button
+                      className="secondary-button compact-button icon-only-button"
+                      onClick={() => {
+                        setCompanyEventWeekAnchorDate((current) =>
+                          formatLocalDate(addLocalDays(parseLocalDate(current), 7)),
+                        );
+                      }}
+                      type="button"
+                      aria-label="Next week"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                    <button
+                      className="secondary-button compact-button"
+                      onClick={() => setCompanyEventWeekAnchorDate(formatLocalDate(new Date()))}
+                      type="button"
+                    >
+                      <LocateFixed size={15} />
+                      Current week
+                    </button>
+                  </div>
+                ) : (
+                  <div className="segmented-control" role="group" aria-label="Event date range">
+                    {(["upcoming", "historical", "all"] as const).map((mode) => (
+                      <button
+                        className={companyEventMode === mode ? "segment-active" : ""}
+                        key={mode}
+                        onClick={() => {
+                          setCompanyEventMode(mode);
+                        }}
+                        type="button"
+                      >
+                        {mode === "upcoming" ? "Upcoming" : mode === "historical" ? "History" : "All"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <label>
+                  Watchlist
+                  <select
+                    aria-label="Event watchlist filter"
+                    value={companyEventWatchlistFilter}
+                    onChange={(event) => setCompanyEventWatchlistFilter(event.target.value)}
+                  >
+                    <option value="all">All watchlists</option>
+                    {watchlists.map((watchlist) => (
+                      <option key={watchlist.id} value={watchlist.id}>
+                        {watchlist.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Company
+                  <select
+                    aria-label="Event company filter"
+                    value={companyEventCompanyFilter}
+                    onChange={(event) => setCompanyEventCompanyFilter(event.target.value)}
+                  >
+                    <option value="all">All companies</option>
+                    {companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.qualifiedTicker}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Type
+                  <select
+                    aria-label="Event type filter"
+                    value={companyEventTypeFilter}
+                    onChange={(event) => setCompanyEventTypeFilter(event.target.value)}
+                  >
+                    <option value="all">All types</option>
+                    {companyEventTypes.map((eventType) => (
+                      <option key={eventType} value={eventType}>
+                        {formatCompanyEventType(eventType)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select
+                    aria-label="Event status filter"
+                    value={companyEventStatusFilter}
+                    onChange={(event) => setCompanyEventStatusFilter(event.target.value)}
+                  >
+                    <option value="all">All statuses</option>
+                    {companyEventStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {formatCompanyEventStatus(status)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {companyEventViewMode === "list" ? (
+                  <>
+                    <NotebookDateField
+                      ariaLabel="Event date from filter"
+                      label="From"
+                      value={companyEventDateFrom}
+                      onChange={setCompanyEventDateFrom}
+                    />
+                    <NotebookDateField
+                      ariaLabel="Event date to filter"
+                      label="To"
+                      value={companyEventDateTo}
+                      onChange={setCompanyEventDateTo}
+                    />
+                  </>
+                ) : null}
+                <button
+                  className="secondary-button compact-button"
+                  disabled={
+                    companyEventWatchlistFilter === "all" &&
+                    companyEventCompanyFilter === "all" &&
+                    companyEventTypeFilter === "all" &&
+                    companyEventStatusFilter === "all" &&
+                    companyEventDateFrom.trim().length === 0 &&
+                    companyEventDateTo.trim().length === 0
+                  }
+                  onClick={clearCompanyEventFilters}
+                  type="button"
+                >
+                  <X size={15} />
+                  Clear filters
+                </button>
+              </div>
+
+              {isCompanyEventComposerOpen ? (
+                <div className="event-composer" aria-label="Create manual event">
+                  <div className="event-composer-header">
+                    <div>
+                      <h2>Manual event</h2>
+                      <p>Add a missing date for one tracked company.</p>
+                    </div>
+                    <button
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setCompanyEventComposerOpen(false);
+                        setCompanyEventCreateError(null);
+                      }}
+                      type="button"
+                    >
+                      <X size={15} />
+                      Discard
+                    </button>
+                  </div>
+                  <div className="event-composer-grid">
+                    <label>
+                      Company
+                      <select
+                        aria-label="Manual event company"
+                        value={companyEventForm.companyId}
+                        onChange={(event) =>
+                          setCompanyEventForm((current) => ({
+                            ...current,
+                            companyId: event.target.value,
+                          }))
+                        }
+                      >
+                        <option value="">Select company</option>
+                        {companies.map((company) => (
+                          <option key={company.id} value={company.id}>
+                            {company.qualifiedTicker}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Type
+                      <select
+                        aria-label="Manual event type"
+                        value={companyEventForm.eventType}
+                        onChange={(event) =>
+                          setCompanyEventForm((current) => ({
+                            ...current,
+                            eventType: event.target.value,
+                          }))
+                        }
+                      >
+                        {companyEventTypeOptions.map((eventType) => (
+                          <option key={eventType} value={eventType}>
+                            {formatCompanyEventType(eventType)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Status
+                      <select
+                        aria-label="Manual event status"
+                        value={companyEventForm.status}
+                        onChange={(event) =>
+                          setCompanyEventForm((current) => ({
+                            ...current,
+                            status: event.target.value,
+                          }))
+                        }
+                      >
+                        {companyEventStatusOptions.map((status) => (
+                          <option key={status} value={status}>
+                            {formatCompanyEventStatus(status)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <NotebookDateField
+                      ariaLabel="Manual event date"
+                      label="Date"
+                      value={companyEventForm.eventDate}
+                      onChange={(value) =>
+                        setCompanyEventForm((current) => ({
+                          ...current,
+                          eventDate: value,
+                        }))
+                      }
+                    />
+                    <label>
+                      Time
+                      <input
+                        aria-label="Manual event time"
+                        type="time"
+                        value={companyEventForm.eventTime}
+                        onChange={(event) =>
+                          setCompanyEventForm((current) => ({
+                            ...current,
+                            eventTime: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="event-composer-title">
+                      Title
+                      <input
+                        aria-label="Manual event title"
+                        value={companyEventForm.title}
+                        onChange={(event) =>
+                          setCompanyEventForm((current) => ({
+                            ...current,
+                            title: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
+                  <div className="event-composer-actions">
+                    {companyEventCreateError ? (
+                      <p className="error-text">{companyEventCreateError}</p>
+                    ) : null}
+                    <button className="primary-button compact-button" onClick={createCompanyEvent} type="button">
+                      <Save size={15} />
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="events-layout" aria-label="Company events">
+                {companyEventViewMode === "week" ? (
+                  <div className="event-week-grid" aria-label="Working week events">
+                    {companyEventWorkingWeekDays.map((day) => {
+                        const dayEvents = companyEventsByDate[day.date] ?? [];
+
+                        return (
+                          <section
+                            className="event-week-day"
+                            key={day.date}
+                            aria-label={`${day.label} ${day.date}`}
+                          >
+                            <div className="event-week-day-header">
+                              <strong>{day.label}</strong>
+                              <span>{day.date}</span>
+                            </div>
+                            <div className="event-week-day-body">
+                              {dayEvents.length > 0 ? (
+                                dayEvents.map(renderCompanyEventWeekCard)
+                              ) : (
+                                <div className="event-week-empty">No events</div>
+                              )}
+                            </div>
+                          </section>
+                        );
+                      })}
+                    {companyEventWeekendEvents.length > 0 ? (
+                      <section className="event-weekend-row" aria-label="Weekend events">
+                        <div className="event-week-day-header">
+                          <strong>Weekend</strong>
+                          <span>
+                            {companyEventWeekendDays[0]?.date} - {companyEventWeekendDays[1]?.date}
+                          </span>
+                        </div>
+                        <div className="event-weekend-list">
+                          {companyEventWeekendEvents.map(renderCompanyEventWeekCard)}
+                        </div>
+                      </section>
+                    ) : null}
+                  </div>
+                ) : (
+                  companyEvents.map(renderCompanyEventRow)
+                )}
+                {companyEvents.length === 0 && companyEventViewMode === "list" ? (
+                  <div className="empty-state">
+                    <span>
+                      No{" "}
+                      {companyEventMode === "upcoming" ? "upcoming events" : "events"}
+                      .
+                    </span>
+                  </div>
+                ) : null}
+                {companyEventsError ? (
+                  <p className="error-text">Events command failed: {companyEventsError}</p>
+                ) : null}
+              </div>
             </section>
           ) : null}
 

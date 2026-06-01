@@ -336,22 +336,28 @@ Company events represent dated items the user may want to track across watchlist
   "eventTime": null,
   "status": "scheduled",
   "sourceType": "official_calendar",
-  "sourceUrl": "https://www.gpw.pl/komunikaty",
+  "sourceAdapterId": "gpw-market-events-rss",
+  "sourceEventKey": "gpw-market-events-rss:2026-06-01:corporate-actions:DIAG",
+  "sourceUrl": "https://www.gpw.pl/market-events-calendar?market_section=RGL&market_category=64&date=2026-06-01",
   "attribution": "GPW",
   "fetchedAt": "2026-05-30T12:00:00Z",
-  "updatedAtSource": null,
   "manual": false,
-  "userAdjusted": false
+  "createdAt": "2026-05-30T12:00:00Z",
+  "updatedAt": "2026-05-30T12:00:00Z"
 }
 ```
 
 Initial event types:
 
 - `periodic_report`
+- `corporate_action`
 - `dividend`
 - `shareholder_meeting`
 - `conference_call`
 - `investor_conference`
+- `market_making`
+- `listing_change`
+- `other_market_event`
 - `custom`
 
 Initial statuses:
@@ -368,8 +374,60 @@ Rules:
 - Events belong to exactly one canonical company.
 - Event views should be scoped to companies in watchlists by default.
 - Sourced events must preserve source URL, attribution, fetched timestamp, and source type when available.
+- Sourced event identity uses `(sourceAdapterId, sourceEventKey)` when both are present.
+- If an accepted source publishes a changed event under the same source identity, ingestion updates the existing sourced event instead of creating a second correction row.
+- `gpw-market-events-rss` consumes GPW's official market-events RSS feed at `https://www.gpw.pl/rss-calendar-of-market-events` and creates events only for tracked companies matched by exact ticker.
+- `bankier-kalendarium-html` consumes the public Bankier Kalendarium page at `https://www.bankier.pl/gielda/kalendarium` and creates `public_calendar` events for tracked companies matched by exact ticker.
+- The Bankier adapter may fetch week-specific calendar pages using Bankier's `navigation_type=week&navigation_start=<unix timestamp>` query parameters when the Events week view needs a week that is not cached locally.
+- Bankier event identity is based on ticker, event category, and event description so a date changed by the source updates the existing event instead of creating a correction row.
+- Hidden/empty Bankier calendar RSS endpoints are not accepted as reliable until direct checks prove stable populated content.
 - Manual events use `sourceType: "manual"` and `manual: true`.
-- User corrections to sourced events must not erase the original source record; later implementation may store corrections as separate fields or linked audit records.
+- Manual events are for missing or user-known dates, not corrections to normal source updates.
+
+Initial local commands:
+
+- `list_company_events(input)`: returns events ordered by `eventDate`, with optional date-range, company, watchlist, event-type, status, and mode filters.
+- `create_company_event(input)`: creates one manual event or a source-backed event record from an accepted adapter boundary.
+
+Initial list input:
+
+```json
+{
+  "mode": "upcoming",
+  "companyId": null,
+  "watchlistId": null,
+  "eventType": null,
+  "status": null,
+  "dateFrom": null,
+  "dateTo": null
+}
+```
+
+Initial create input:
+
+```json
+{
+  "companyId": "company_gpw_cdr",
+  "eventType": "periodic_report",
+  "title": "Quarterly report publication",
+  "eventDate": "2026-08-29",
+  "eventTime": null,
+  "status": "scheduled",
+  "sourceType": "manual",
+  "sourceAdapterId": null,
+  "sourceEventKey": null,
+  "sourceUrl": null,
+  "attribution": null,
+  "fetchedAt": null
+}
+```
+
+List rules:
+
+- `mode: "upcoming"` returns events from today onward unless explicit dates are supplied.
+- `mode: "historical"` returns events before today unless explicit dates are supplied.
+- `mode: "all"` allows combined/historical timeline views.
+- Initial source ingestion may use this same create contract through storage internals, but UI manual creation must set `sourceType: "manual"`.
 
 ## AI Analysis Result
 

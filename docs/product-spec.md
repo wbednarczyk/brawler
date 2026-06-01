@@ -156,9 +156,9 @@ Initial event types should include:
 - shareholder meetings, investor conferences, and conference calls when available from accepted sources
 - manual events added by the user when sourced calendars are incomplete
 
-The view should be watchlist-first and date-first. By default it should show upcoming items grouped by date or due-soon period, with compact company ticker, event type, source, and status. It should also provide a historical or date-range mode for past events. It is not a portfolio calendar and should not require positions or holdings.
+The view should be watchlist-first and date-first. By default it should show the current week as working-day columns, with previous/next week navigation and compact company ticker, event type, source, and status. Weekend events may be shown separately only when present. A secondary list view should provide upcoming, historical, all, and custom date-range modes for broader search and review. It is not a portfolio calendar and should not require positions or holdings.
 
-Events created from official or public sources must retain source URL, attribution, fetched timestamp, publication/update timestamp when available, company match, and origin/source type. Manual events must be clearly marked as manual. If a source event is edited or corrected by the user, the app should preserve the sourced record and store the user's correction separately or mark the event as user-adjusted.
+Events created from official or public sources must retain source URL, attribution, fetched timestamp, publication/update timestamp when available, company match, and origin/source type. Manual events must be clearly marked as manual. If an accepted source changes a source-keyed event, source refresh should update the existing sourced event. Manual events are for missing or user-known dates, not normal corrections to source-backed rows.
 
 This milestone depends on either test-sample-backed events or source adapters capable of producing calendar-like events. It should be implemented after the first GPW ingestion work is stable enough to prove the source model.
 

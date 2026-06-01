@@ -327,6 +327,49 @@ Potential fundamentals sources:
 
 Price and fundamentals adapters should be separate from feed/news adapters and should not delay M6 GPW report-body work.
 
+## Company Event Sources
+
+M9 event ingestion starts with source-neutral local storage and then adds real sources in conservative order.
+
+Accepted event sources:
+
+- Adapter ID: `gpw-market-events-rss`.
+- Display name: `GPW Market Events RSS`.
+- Source URL: `https://www.gpw.pl/rss-calendar-of-market-events`.
+- Source type: `official_calendar`.
+- Fetch mode/access mode: `rss`.
+- Attribution: `GPW`.
+- Scope: tracked GPW companies only.
+- Matching policy: exact ticker from the RSS item title/description. Issuer name alone is not enough.
+- Initial event coverage: GPW market/corporate-action events such as corporate actions, listing changes, and market-making activity.
+- Rate policy: manual refresh plus normal in-app source scheduler; the feed is low-volume and should be fetched at low frequency.
+- Dedupe policy: stable source event key built from event date, event label, instrument type, and ticker.
+
+- Adapter ID: `bankier-kalendarium-html`.
+- Display name: `Bankier Kalendarium`.
+- Source URL: `https://www.bankier.pl/gielda/kalendarium`.
+- Source type: `public_calendar`.
+- Fetch mode/access mode: `public_page`.
+- Attribution: `Bankier.pl`.
+- Scope: tracked GPW companies only.
+- Matching policy: exact ticker from the calendar company symbol. Issuer name alone is not enough.
+- Initial event coverage: broader company calendar events such as report dates, dividends, shareholder meetings, tender offers, and primary-market events.
+- Rate policy: manual refresh plus normal in-app source scheduler; fetch the current public calendar page at low frequency and fetch dated week pages on demand from the Events week view.
+- Dedupe policy: stable source event key built from ticker, category, and event description so a changed source date updates the existing event row instead of creating a correction row.
+- Week navigation policy: Events view is cache-first. Changing weeks updates the local date filter immediately, then fetches the Bankier dated calendar URL for that week in the background and reloads local events when ingestion finishes.
+
+Fallback candidate order:
+
+1. Strefa Inwestorów report calendar for periodic-report dates. Registered as disabled adapter candidate `strefa-report-calendar`.
+2. Money.pl report/calendar pages as cross-checks. Registered as disabled adapter candidate `money-calendar`.
+3. Per-company investor-relations calendars for selected issuers when a company-specific source review accepts them.
+
+Disabled candidates are visible in Sources so the event-source roadmap is explicit, but they must stay disabled until source-specific parser tests, attribution rules, and ticker/ISIN matching quality are accepted.
+
+Rejected or unproven for now:
+
+- Bankier hidden calendar-like RSS endpoints such as `rss/kalendarium.xml`, `rss/dywidendy.xml`, and `rss/raporty.xml` returned RSS content types but empty bodies during direct checks. They must not be treated as reliable until stable populated content is proven.
+
 ## Authenticated Private Sources
 
 Authenticated private sources are in v1 scope only as explicitly named adapters with source-specific approval. Portal Analiz is the first desired adapter in this category because the user has a paid personal account and wants company research from that source inside the local Inbox.

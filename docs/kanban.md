@@ -81,6 +81,23 @@ Docs/contracts touched: UI information architecture and product spec if this bec
 
 Test expectations: focused UI workflow or component coverage for representative feed rows after the layout pass.
 
+### Refine Sources grouping and status hierarchy
+
+Intent: make Sources scale beyond a flat diagnostics list as official reports, calendars, media, registry, and private research adapters accumulate.
+
+Acceptance criteria:
+
+- Sources are grouped by purpose: official reports, official calendar/events, public media/news, company registry, private/authenticated research, and disabled/review candidates.
+- Enabled sources appear before disabled sources inside each group.
+- Disabled placeholders are collapsed by default or visually de-emphasized.
+- Source rows remain compact and expandable for details.
+- Source health/status is visually separated from source configuration.
+- Per-source refresh actions remain clear; group-level refresh can be considered later.
+
+Docs/contracts touched: UI information architecture, product spec if grouping becomes a formal UI standard.
+
+Test expectations: UI workflow/component coverage for grouped Sources once implemented.
+
 ### Implement keyboard shortcuts
 
 Intent: add discoverable keyboard shortcuts for repeated v1 workflows after core screens are stable.
@@ -165,29 +182,7 @@ Docs/contracts touched: architecture, product spec, contracts, source/AI policy 
 
 Test expectations: provider contract tests with test samples and transcript-to-note workflow tests.
 
-### Implement company events calendar
-
-Intent: show dated company events for companies in the user's watchlists, with upcoming events as the default focus and historical dates available for context.
-
-Acceptance criteria:
-
-- Events screen or panel lists company events across watchlists.
-- Upcoming events are the default view.
-- Historical events or a combined date range can be selected.
-- Report publication dates and dividend-related dates are supported first when source data is available.
-- Watchlist, company, event-type, due-soon, and date-range filters are available.
-- Event rows show date, company ticker, event type, source/manual marker, and status.
-- Event details show source URL, attribution, fetched timestamp, event date/time, and origin/source type.
-- Manual events can be represented distinctly from sourced events.
-- User corrections do not destroy the original sourced event record.
-
-Docs/contracts touched: roadmap, product spec, UI information architecture, data model, contracts.
-
-Test expectations: storage tests for event records and UI workflow tests for filtering and expanded event details.
-
 ## Ready
-
-No cards.
 
 ## In Progress
 
@@ -231,6 +226,192 @@ Test expectations: parser/fetcher test-sample tests, source adapter contract tes
 No cards.
 
 ## Done
+
+### M9.7 Close M9
+
+Intent: finish milestone documentation and versioning after implementation is complete.
+
+Acceptance criteria:
+
+- Roadmap M9 is marked completed.
+- Kanban M9 cards are moved to Done.
+- Version is bumped to `0.9.0` in all required files.
+- Required automated checks pass.
+
+Delivered:
+
+- Roadmap M9 is marked completed.
+- M9 implementation cards are in Done.
+- Version bumped to `0.9.0` in package, Rust, lock, and Tauri config files.
+
+Docs/contracts touched: roadmap, kanban.
+
+Test expectations: normal local check set.
+
+### M9.1 Implement event storage contract and SQLite foundation
+
+Intent: define the canonical local event record and create the SQLite storage foundation for M9.
+
+Acceptance criteria:
+
+- `docs/contracts.md` defines the Company Event read model and create input.
+- `docs/data-model.md` defines `company_events`.
+- A migration creates the `company_events` table and indexes.
+- Rust storage can create and list events.
+- Event records preserve source URL, attribution, fetched timestamp, and manual/source distinction.
+- Storage tests cover create/list behavior and source-event dedupe.
+
+Delivered:
+
+- `company_events` SQLite table and indexes were added.
+- Rust storage can create and list company events.
+- Tauri command boundary exists for listing and creating events.
+- Storage tests cover manual event creation/listing and sourced-event dedupe.
+
+Docs/contracts touched: contracts, data model, kanban.
+
+Test expectations: Rust storage and migration tests.
+
+### M9.1a Implement GPW Market Events RSS adapter foundation
+
+Intent: use the official GPW market-events RSS feed as the first real event source for M9.
+
+Acceptance criteria:
+
+- `gpw-market-events-rss` source adapter is registered as an enabled official calendar RSS source.
+- Parser extracts event date, market section, event label, instrument type, ticker, title, source URL, and stable source key.
+- Storage ingestion creates `company_events` only for tracked companies matched by exact ticker.
+- Unmatched RSS items are counted as diagnostics and do not create visible events.
+- Repeated refreshes dedupe by source adapter and source event key.
+- Tests use RSS test samples and do not require live GPW access.
+
+Delivered:
+
+- `gpw-market-events-rss` is registered as an enabled official-calendar RSS adapter.
+- Parser converts GPW market-events RSS items into event candidates.
+- Refresh path ingests GPW market events into `company_events` for tracked exact-ticker matches.
+- Repeated ingestion dedupes by source event key.
+
+Docs/contracts touched: source strategy, contracts, data model, kanban.
+
+Test expectations: parser and storage ingestion tests.
+
+### M9.2 Add event command boundary and frontend types
+
+Intent: expose the event storage model through typed Tauri commands and frontend TypeScript types before building UI.
+
+Acceptance criteria:
+
+- Frontend can list company events through a typed command.
+- Frontend can create a manual event through a typed command.
+- Command names and payloads match `docs/contracts.md`.
+- No external source fetching is introduced in this slice.
+
+Delivered:
+
+- `list_company_events` and `create_company_event` are exposed through Tauri.
+- Frontend `CompanyEvent` types and command calls are wired into the app.
+- Rust storage tests and UI command mocks cover the boundary.
+
+Docs/contracts touched: contracts.
+
+Test expectations: Rust command/storage tests and UI command mocks.
+
+### M9.3 Build Events screen shell with upcoming default view
+
+Intent: add the first visible Events screen using local event data.
+
+Acceptance criteria:
+
+- Primary navigation includes Events.
+- Events screen shows upcoming events by default.
+- Empty state is clear when no events exist.
+- Event rows show date, company ticker, event type, source/manual marker, and status.
+- Rows use the app-wide expandable-detail pattern.
+
+Delivered:
+
+- Events is a primary navigation section.
+- Event rows/cards use the app-wide click-to-expand pattern.
+- Event details show company, type, status, source, attribution, fetched timestamp, and source link where available.
+
+Docs/contracts touched: product spec, roadmap, kanban.
+
+Test expectations: UI workflow test for opening Events and viewing event rows.
+
+### M9.4 Add event filtering and history mode
+
+Intent: make the Events screen useful across many watchlists and companies.
+
+Acceptance criteria:
+
+- User can switch between upcoming, historical, and combined date ranges.
+- Events opens in a current-week view by default, with working-day columns and previous/next/current week controls.
+- The existing broader date-range workflow remains available as a secondary list view.
+- User can filter by watchlist, company, event type, and status.
+- Due-soon grouping or highlighting is visible for upcoming events.
+- Filters remain compact and consistent with Inbox/Notebooks behavior.
+
+Delivered:
+
+- Events defaults to a working-day week view with previous, next, and current-week navigation.
+- List view provides upcoming, historical, all, and custom date-range modes.
+- Watchlist, company, event type, and status filters are implemented.
+- Today/soon/past event highlighting is visible in week and list rows.
+
+Docs/contracts touched: product spec, roadmap, kanban.
+
+Test expectations: UI workflow tests for filters and event highlighting.
+
+### M9.5 Add manual event creation and source update workflow
+
+Intent: allow the user to add missing events while sourced data changes are handled by source refresh.
+
+Acceptance criteria:
+
+- User can create manual events for a selected company.
+- Manual events are visually distinct from sourced events.
+- Source-keyed event refresh updates the existing sourced row when the source changes the event.
+- Event editor uses the existing compact date picker behavior.
+
+Delivered:
+
+- Manual event creation is implemented in the Events screen.
+- Manual events are visibly marked and styled separately from sourced events.
+- Source-keyed upsert updates existing sourced events instead of creating correction rows.
+- Sourced event correction UI was removed; source refresh owns source-backed updates.
+
+Docs/contracts touched: contracts, data model, product spec, kanban.
+
+Test expectations: storage tests for source-keyed updates and UI workflow tests for manual events.
+
+### M9.6 Add active sourced event ingestion
+
+Intent: populate events from accepted real-world source adapters after the storage and UI workflow are stable.
+
+Acceptance criteria:
+
+- GPW Market Events RSS is implemented as an official calendar event source.
+- Bankier Kalendarium HTML is implemented as an active public calendar source for broader company-calendar coverage.
+- Hidden/empty Bankier calendar RSS endpoints are not treated as reliable until direct checks prove stable populated content.
+- Report publication dates can create sourced events where the source data supports it.
+- Dividend-related dates are added only from accepted reliable sources.
+- Source URL, attribution, fetched timestamp, and source event key are preserved.
+- Source-keyed upsert prevents duplicate sourced events on repeated refreshes and updates changed sourced event fields.
+
+Delivered:
+
+- GPW Market Events RSS is active and creates sourced events for tracked exact-ticker matches.
+- Bankier Kalendarium is active and creates public-calendar sourced events for tracked exact-ticker matches.
+- Events week navigation fetches Bankier dated calendar pages on demand in the background after showing cached local data.
+- Strefa report calendar and Money calendar remain disabled public-calendar candidates.
+- Hidden/empty Bankier calendar RSS endpoints remain rejected/unproven in source strategy.
+- Source URL, attribution, fetched timestamp, and source event key are preserved for accepted event sources.
+- Source-keyed upsert behavior has regression tests.
+
+Docs/contracts touched: source strategy, contracts, data model, kanban.
+
+Test expectations: adapter/storage tests using test samples only.
 
 ### Complete Milestone 7: GPW Company Registry Cache
 

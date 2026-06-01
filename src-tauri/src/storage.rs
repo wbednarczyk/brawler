@@ -1,6 +1,10 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use crate::source_adapters::bankier_calendar::{
+    BankierCalendarEventItem, ADAPTER_ID as BANKIER_CALENDAR_ADAPTER_ID,
+    ATTRIBUTION as BANKIER_CALENDAR_ATTRIBUTION, SOURCE_URL as BANKIER_CALENDAR_SOURCE_URL,
+};
 use crate::source_adapters::bankier_company::{
     BankierCompanyAttachment, BankierCompanyIdentifiers, BankierCompanyItem, BankierCompanyTarget,
     ADAPTER_ID as BANKIER_COMPANY_ADAPTER_ID, ATTRIBUTION as BANKIER_COMPANY_ATTRIBUTION,
@@ -17,6 +21,10 @@ use crate::source_adapters::gpw_company_registry::{
 use crate::source_adapters::gpw_espi_ebi::{
     GpwReportAttachment, GpwReportListing, ADAPTER_ID, DISPLAY_NAME,
 };
+use crate::source_adapters::gpw_market_events::{
+    GpwMarketEventItem, ADAPTER_ID as GPW_MARKET_EVENTS_ADAPTER_ID,
+    ATTRIBUTION as GPW_MARKET_EVENTS_ATTRIBUTION, SOURCE_URL as GPW_MARKET_EVENTS_SOURCE_URL,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -24,6 +32,8 @@ use thiserror::Error;
 const PORTAL_ANALIZ_SOURCE_URL: &str = "https://portalanaliz.pl/";
 const BANKIER_FIRMA_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/firma.xml";
 const BANKIER_WIADOMOSCI_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/wiadomosci.xml";
+const STREFA_REPORT_CALENDAR_SOURCE_URL: &str = "https://strefainwestorow.pl/dane/raporty";
+const MONEY_CALENDAR_SOURCE_URL: &str = "https://www.money.pl/gielda/raporty/";
 #[cfg(test)]
 const PORTAL_ANALIZ_ADAPTER_ID: &str = "portal-analiz";
 
@@ -35,6 +45,8 @@ pub enum StorageError {
     InvalidSettingValue { key: &'static str, value: String },
     #[error("invalid notebook value for {key}: {value}")]
     InvalidNotebookValue { key: &'static str, value: String },
+    #[error("invalid company event value for {key}: {value}")]
+    InvalidCompanyEventValue { key: &'static str, value: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -200,6 +212,24 @@ impl AppState {
         ingest_bankier_company_items(&mut connection, items)
     }
 
+    pub fn ingest_gpw_market_event_items(
+        &self,
+        items: &[GpwMarketEventItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        ingest_gpw_market_event_items(&mut connection, items)
+    }
+
+    pub fn ingest_bankier_calendar_event_items(
+        &self,
+        items: &[BankierCalendarEventItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        ingest_bankier_calendar_event_items(&mut connection, items)
+    }
+
     pub fn tracks_gpw_listing_company(&self, ticker: &str, isin: &str) -> StorageResult<bool> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -243,6 +273,21 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         update_notebook_entry(&connection, input)
+    }
+
+    pub fn list_company_events(
+        &self,
+        input: CompanyEventListInput,
+    ) -> StorageResult<Vec<CompanyEvent>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_company_events(&connection, input)
+    }
+
+    pub fn create_company_event(&self, input: NewCompanyEvent) -> StorageResult<CompanyEvent> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_company_event(&connection, input)
     }
 
     pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {
@@ -297,7 +342,7 @@ impl AppState {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseStatus {
     pub applied_migrations: i64,
@@ -306,7 +351,7 @@ pub struct DatabaseStatus {
     pub settings: i64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Company {
     pub id: String,
@@ -610,6 +655,58 @@ pub struct CompanyRegistryRefreshResult {
     pub fetched_at: String,
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyEvent {
+    pub id: String,
+    pub company_id: String,
+    pub company: String,
+    pub company_name: String,
+    pub event_type: String,
+    pub title: String,
+    pub event_date: String,
+    pub event_time: Option<String>,
+    pub status: String,
+    pub source_type: String,
+    pub source_adapter_id: Option<String>,
+    pub source_event_key: Option<String>,
+    pub source_url: Option<String>,
+    pub attribution: Option<String>,
+    pub fetched_at: Option<String>,
+    pub manual: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyEventListInput {
+    pub mode: Option<String>,
+    pub company_id: Option<String>,
+    pub watchlist_id: Option<String>,
+    pub event_type: Option<String>,
+    pub status: Option<String>,
+    pub date_from: Option<String>,
+    pub date_to: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewCompanyEvent {
+    pub company_id: String,
+    pub event_type: String,
+    pub title: String,
+    pub event_date: String,
+    pub event_time: Option<String>,
+    pub status: Option<String>,
+    pub source_type: Option<String>,
+    pub source_adapter_id: Option<String>,
+    pub source_event_key: Option<String>,
+    pub source_url: Option<String>,
+    pub attribution: Option<String>,
+    pub fetched_at: Option<String>,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Migration {
     version: i64,
@@ -677,6 +774,26 @@ const MIGRATIONS: &[Migration] = &[
         version: 12,
         name: "bankier_reviewed_rss_placeholders",
         sql: include_str!("../migrations/0012_bankier_reviewed_rss_placeholders.sql"),
+    },
+    Migration {
+        version: 13,
+        name: "company_events",
+        sql: include_str!("../migrations/0013_company_events.sql"),
+    },
+    Migration {
+        version: 14,
+        name: "gpw_market_events_rss",
+        sql: include_str!("../migrations/0014_gpw_market_events_rss.sql"),
+    },
+    Migration {
+        version: 15,
+        name: "event_source_candidates",
+        sql: include_str!("../migrations/0015_event_source_candidates.sql"),
+    },
+    Migration {
+        version: 16,
+        name: "enable_bankier_kalendarium",
+        sql: include_str!("../migrations/0016_enable_bankier_kalendarium.sql"),
     },
 ];
 
@@ -2730,6 +2847,606 @@ fn update_notebook_entry(
     get_notebook_entry(connection, &id)
 }
 
+fn list_company_events(
+    connection: &Connection,
+    input: CompanyEventListInput,
+) -> StorageResult<Vec<CompanyEvent>> {
+    let today = connection.query_row("SELECT date('now')", [], |row| row.get::<_, String>(0))?;
+    let mode = input
+        .mode
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("upcoming")
+        .to_owned();
+
+    validate_allowed_company_event_value("mode", &mode, &["upcoming", "historical", "all"])?;
+
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            company_events.id,
+            company_events.company_id,
+            companies.qualified_ticker,
+            companies.display_name,
+            company_events.event_type,
+            company_events.title,
+            company_events.event_date,
+            company_events.event_time,
+            company_events.status,
+            company_events.source_type,
+            company_events.source_adapter_id,
+            company_events.source_event_key,
+            company_events.source_url,
+            company_events.attribution,
+            company_events.fetched_at,
+            company_events.manual,
+            company_events.created_at,
+            company_events.updated_at
+        FROM company_events
+        JOIN companies ON companies.id = company_events.company_id
+        ORDER BY company_events.event_date ASC, company_events.event_time ASC, company_events.title ASC
+        ",
+    )?;
+
+    let rows = statement.query_map([], company_event_from_row)?;
+    let events = rows.collect::<Result<Vec<_>, _>>()?;
+
+    let filtered = events
+        .into_iter()
+        .filter(|event| {
+            input
+                .company_id
+                .as_deref()
+                .map(|company_id| event.company_id == company_id)
+                .unwrap_or(true)
+        })
+        .filter(|event| {
+            input
+                .event_type
+                .as_deref()
+                .map(|event_type| event.event_type == event_type)
+                .unwrap_or(true)
+        })
+        .filter(|event| {
+            input
+                .status
+                .as_deref()
+                .map(|status| event.status == status)
+                .unwrap_or(true)
+        })
+        .filter(|event| {
+            input
+                .date_from
+                .as_deref()
+                .map(|date_from| event.event_date.as_str() >= date_from)
+                .unwrap_or(true)
+        })
+        .filter(|event| {
+            input
+                .date_to
+                .as_deref()
+                .map(|date_to| event.event_date.as_str() <= date_to)
+                .unwrap_or(true)
+        })
+        .filter(|event| {
+            if input.date_from.is_some() || input.date_to.is_some() {
+                return true;
+            }
+
+            match mode.as_str() {
+                "upcoming" => event.event_date.as_str() >= today.as_str(),
+                "historical" => event.event_date.as_str() < today.as_str(),
+                _ => true,
+            }
+        })
+        .filter(|event| {
+            if let Some(watchlist_id) = input.watchlist_id.as_deref() {
+                company_is_in_watchlist(connection, watchlist_id, &event.company_id)
+                    .unwrap_or(false)
+            } else {
+                true
+            }
+        })
+        .collect();
+
+    Ok(filtered)
+}
+
+fn create_company_event(
+    connection: &Connection,
+    input: NewCompanyEvent,
+) -> StorageResult<CompanyEvent> {
+    let event_type = input.event_type.trim().to_owned();
+    let title = input.title.trim().to_owned();
+    let event_date = input.event_date.trim().to_owned();
+    let status = input
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("scheduled")
+        .to_owned();
+    let source_type = input
+        .source_type
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("manual")
+        .to_owned();
+    let source_adapter_id = empty_string_to_none(input.source_adapter_id);
+    let source_event_key = empty_string_to_none(input.source_event_key);
+    let manual = source_type == "manual";
+    let id = if let (Some(adapter_id), Some(source_key)) =
+        (source_adapter_id.as_deref(), source_event_key.as_deref())
+    {
+        company_event_source_id(adapter_id, source_key)
+    } else {
+        company_event_id(&input.company_id, &event_type, &event_date, &title)
+    };
+
+    validate_allowed_company_event_value(
+        "event_type",
+        &event_type,
+        &[
+            "periodic_report",
+            "corporate_action",
+            "dividend",
+            "shareholder_meeting",
+            "conference_call",
+            "investor_conference",
+            "market_making",
+            "listing_change",
+            "other_market_event",
+            "custom",
+        ],
+    )?;
+    validate_allowed_company_event_value(
+        "status",
+        &status,
+        &[
+            "scheduled",
+            "confirmed",
+            "tentative",
+            "changed",
+            "cancelled",
+            "completed",
+        ],
+    )?;
+    validate_allowed_company_event_value(
+        "source_type",
+        &source_type,
+        &[
+            "manual",
+            "official_calendar",
+            "official_report",
+            "public_media",
+            "notebook_entry",
+            "feed_item",
+        ],
+    )?;
+    connection.execute(
+        "
+        INSERT INTO company_events (
+            id,
+            company_id,
+            event_type,
+            title,
+            event_date,
+            event_time,
+            status,
+            source_type,
+            source_adapter_id,
+            source_event_key,
+            source_url,
+            attribution,
+            fetched_at,
+            manual
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+        ON CONFLICT(id) DO UPDATE SET
+            company_id = excluded.company_id,
+            event_type = excluded.event_type,
+            title = excluded.title,
+            event_date = excluded.event_date,
+            event_time = excluded.event_time,
+            status = excluded.status,
+            source_type = excluded.source_type,
+            source_adapter_id = excluded.source_adapter_id,
+            source_event_key = excluded.source_event_key,
+            source_url = excluded.source_url,
+            attribution = excluded.attribution,
+            fetched_at = excluded.fetched_at,
+            manual = excluded.manual,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE excluded.source_adapter_id IS NOT NULL
+            AND excluded.source_event_key IS NOT NULL
+        ",
+        params![
+            id,
+            input.company_id,
+            event_type,
+            title,
+            event_date,
+            empty_string_to_none(input.event_time),
+            status,
+            source_type,
+            source_adapter_id,
+            source_event_key,
+            empty_string_to_none(input.source_url),
+            empty_string_to_none(input.attribution),
+            empty_string_to_none(input.fetched_at),
+            manual,
+        ],
+    )?;
+
+    get_company_event(connection, &id)
+}
+
+fn ingest_gpw_market_event_items(
+    connection: &mut Connection,
+    items: &[GpwMarketEventItem],
+) -> StorageResult<SourceIngestionResult> {
+    let transaction = connection.transaction()?;
+    let tracked_companies = list_companies(&transaction)?;
+    let fetched_at = items
+        .first()
+        .map(|item| item.fetched_at.clone())
+        .map(Ok)
+        .unwrap_or_else(|| current_timestamp(&transaction))?;
+    let mut items_created = 0;
+    let mut items_matched = 0;
+    let mut items_unmatched = 0;
+
+    for item in items {
+        let Some(company) = tracked_companies
+            .iter()
+            .find(|company| company.exchange == "GPW" && company.ticker == item.ticker)
+        else {
+            items_unmatched += 1;
+            continue;
+        };
+
+        items_matched += 1;
+        let event_id =
+            company_event_source_id(GPW_MARKET_EVENTS_ADAPTER_ID, &item.source_event_key);
+        let already_exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM company_events WHERE id = ?1)",
+            [&event_id],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
+            "
+            INSERT INTO company_events (
+                id,
+                company_id,
+                event_type,
+                title,
+                event_date,
+                event_time,
+                status,
+                source_type,
+                source_adapter_id,
+                source_event_key,
+                source_url,
+                attribution,
+                fetched_at,
+                manual
+            ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'scheduled', 'official_calendar', ?6, ?7, ?8, ?9, ?10, 0)
+            ON CONFLICT(id) DO UPDATE SET
+                company_id = excluded.company_id,
+                event_type = excluded.event_type,
+                title = excluded.title,
+                event_date = excluded.event_date,
+                event_time = excluded.event_time,
+                status = excluded.status,
+                source_type = excluded.source_type,
+                source_adapter_id = excluded.source_adapter_id,
+                source_event_key = excluded.source_event_key,
+                source_url = excluded.source_url,
+                attribution = excluded.attribution,
+                fetched_at = excluded.fetched_at,
+                manual = excluded.manual,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ",
+            params![
+                event_id,
+                company.id,
+                item.event_type,
+                item.title,
+                item.event_date,
+                GPW_MARKET_EVENTS_ADAPTER_ID,
+                item.source_event_key,
+                item.link,
+                GPW_MARKET_EVENTS_ATTRIBUTION,
+                item.fetched_at,
+            ],
+        )?;
+
+        if !already_exists {
+            items_created += 1;
+        }
+    }
+
+    transaction.execute(
+        "
+        UPDATE source_adapters
+        SET last_success_at = ?1,
+            last_error_at = NULL,
+            last_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![&fetched_at, GPW_MARKET_EVENTS_ADAPTER_ID],
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        GPW_MARKET_EVENTS_ADAPTER_ID,
+        "last_items_fetched",
+        &items.len().to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        GPW_MARKET_EVENTS_ADAPTER_ID,
+        "last_items_created",
+        &items_created.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        GPW_MARKET_EVENTS_ADAPTER_ID,
+        "last_items_matched",
+        &items_matched.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        GPW_MARKET_EVENTS_ADAPTER_ID,
+        "last_items_unmatched",
+        &items_unmatched.to_string(),
+    )?;
+
+    transaction.commit()?;
+
+    Ok(SourceIngestionResult {
+        adapter_id: GPW_MARKET_EVENTS_ADAPTER_ID.to_owned(),
+        items_fetched: items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
+        detail_items_attempted: 0,
+        detail_items_stored: 0,
+        detail_items_failed: 0,
+        fetched_at: Some(fetched_at),
+    })
+}
+
+fn ingest_bankier_calendar_event_items(
+    connection: &mut Connection,
+    items: &[BankierCalendarEventItem],
+) -> StorageResult<SourceIngestionResult> {
+    let transaction = connection.transaction()?;
+    let tracked_companies = list_companies(&transaction)?;
+    let fetched_at = items
+        .first()
+        .map(|item| item.fetched_at.clone())
+        .map(Ok)
+        .unwrap_or_else(|| current_timestamp(&transaction))?;
+    let mut items_created = 0;
+    let mut items_matched = 0;
+    let mut items_unmatched = 0;
+
+    for item in items {
+        let Some(company) = tracked_companies
+            .iter()
+            .find(|company| company.exchange == "GPW" && company.ticker == item.ticker)
+            .cloned()
+            .or_else(|| {
+                find_company_for_bankier_calendar_symbol(&transaction, &item.ticker)
+                    .ok()
+                    .flatten()
+            })
+            .or_else(|| {
+                tracked_companies
+                    .iter()
+                    .find(|company| {
+                        company.exchange == "GPW"
+                            && bankier_calendar_symbol_matches_company_name(
+                                &item.ticker,
+                                &company.display_name,
+                            )
+                    })
+                    .cloned()
+            })
+        else {
+            items_unmatched += 1;
+            continue;
+        };
+
+        items_matched += 1;
+        let event_id = company_event_source_id(BANKIER_CALENDAR_ADAPTER_ID, &item.source_event_key);
+        let already_exists: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM company_events WHERE id = ?1)",
+            [&event_id],
+            |row| row.get(0),
+        )?;
+        transaction.execute(
+            "
+            INSERT INTO company_events (
+                id,
+                company_id,
+                event_type,
+                title,
+                event_date,
+                event_time,
+                status,
+                source_type,
+                source_adapter_id,
+                source_event_key,
+                source_url,
+                attribution,
+                fetched_at,
+                manual
+            ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, 'scheduled', 'public_calendar', ?6, ?7, ?8, ?9, ?10, 0)
+            ON CONFLICT(id) DO UPDATE SET
+                company_id = excluded.company_id,
+                event_type = excluded.event_type,
+                title = excluded.title,
+                event_date = excluded.event_date,
+                event_time = excluded.event_time,
+                status = excluded.status,
+                source_type = excluded.source_type,
+                source_adapter_id = excluded.source_adapter_id,
+                source_event_key = excluded.source_event_key,
+                source_url = excluded.source_url,
+                attribution = excluded.attribution,
+                fetched_at = excluded.fetched_at,
+                manual = excluded.manual,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ",
+            params![
+                event_id,
+                company.id,
+                item.event_type,
+                item.title,
+                item.event_date,
+                BANKIER_CALENDAR_ADAPTER_ID,
+                item.source_event_key,
+                item.link,
+                BANKIER_CALENDAR_ATTRIBUTION,
+                item.fetched_at,
+            ],
+        )?;
+
+        if !already_exists {
+            items_created += 1;
+        }
+    }
+
+    transaction.execute(
+        "
+        UPDATE source_adapters
+        SET last_success_at = ?1,
+            last_error_at = NULL,
+            last_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?2
+        ",
+        params![&fetched_at, BANKIER_CALENDAR_ADAPTER_ID],
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_CALENDAR_ADAPTER_ID,
+        "last_items_fetched",
+        &items.len().to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_CALENDAR_ADAPTER_ID,
+        "last_items_created",
+        &items_created.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_CALENDAR_ADAPTER_ID,
+        "last_items_matched",
+        &items_matched.to_string(),
+    )?;
+    set_source_adapter_state(
+        &transaction,
+        BANKIER_CALENDAR_ADAPTER_ID,
+        "last_items_unmatched",
+        &items_unmatched.to_string(),
+    )?;
+
+    transaction.commit()?;
+
+    Ok(SourceIngestionResult {
+        adapter_id: BANKIER_CALENDAR_ADAPTER_ID.to_owned(),
+        items_fetched: items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
+        detail_items_attempted: 0,
+        detail_items_stored: 0,
+        detail_items_failed: 0,
+        fetched_at: Some(fetched_at),
+    })
+}
+
+fn find_company_for_bankier_calendar_symbol(
+    connection: &Connection,
+    symbol: &str,
+) -> StorageResult<Option<Company>> {
+    let symbol = symbol.trim();
+    if symbol.is_empty() {
+        return Ok(None);
+    }
+
+    connection
+        .query_row(
+            "
+            SELECT
+                companies.id,
+                companies.exchange,
+                companies.ticker,
+                companies.qualified_ticker,
+                companies.display_name,
+                companies.isin,
+                companies.cik,
+                companies.lei
+            FROM companies
+            INNER JOIN company_source_ids
+                ON company_source_ids.company_id = companies.id
+            WHERE companies.exchange = 'GPW'
+                AND company_source_ids.source_adapter_id = ?1
+                AND company_source_ids.source_key = 'instrument_slug'
+                AND UPPER(company_source_ids.source_value) = ?2
+            ORDER BY companies.qualified_ticker
+            LIMIT 1
+            ",
+            params![BANKIER_COMPANY_ADAPTER_ID, symbol.to_uppercase()],
+            |row| {
+                Ok(Company {
+                    id: row.get(0)?,
+                    exchange: row.get(1)?,
+                    ticker: row.get(2)?,
+                    qualified_ticker: row.get(3)?,
+                    display_name: row.get(4)?,
+                    isin: row.get(5)?,
+                    cik: row.get(6)?,
+                    lei: row.get(7)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn bankier_calendar_symbol_matches_company_name(symbol: &str, display_name: &str) -> bool {
+    let symbol = normalize_calendar_match_text(symbol);
+    let display_name = normalize_calendar_match_text(display_name);
+
+    !symbol.is_empty()
+        && symbol.chars().count() >= 3
+        && (display_name == symbol || display_name.starts_with(&format!("{symbol} ")))
+}
+
+fn normalize_calendar_match_text(value: &str) -> String {
+    value
+        .trim()
+        .chars()
+        .map(normalize_media_character)
+        .map(|character| {
+            if character.is_ascii_alphanumeric() {
+                character
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdapter>> {
     let mut statement = connection.prepare(
         "
@@ -2747,6 +3464,10 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
                 WHEN 'portal-analiz' THEN ?4
                 WHEN 'bankier-firma-rss' THEN ?5
                 WHEN 'bankier-wiadomosci-rss' THEN ?6
+                WHEN 'gpw-market-events-rss' THEN ?7
+                WHEN 'bankier-kalendarium-html' THEN ?8
+                WHEN 'strefa-report-calendar' THEN ?9
+                WHEN 'money-calendar' THEN ?10
                 ELSE 'https://www.gpw.pl/komunikaty'
             END AS source_url,
             CASE source_adapters.id
@@ -2756,6 +3477,10 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
                 WHEN 'portal-analiz' THEN 'Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built'
                 WHEN 'bankier-firma-rss' THEN 'Reviewed public RSS candidate; disabled until matching quality is proven against tracked GPW companies'
                 WHEN 'bankier-wiadomosci-rss' THEN 'Reviewed public RSS candidate; disabled because expected listed-company signal is broad and noisy'
+                WHEN 'gpw-market-events-rss' THEN 'Manual refresh plus normal in-app source scheduler; official GPW market-events RSS; exact ticker matching only'
+                WHEN 'bankier-kalendarium-html' THEN 'Manual refresh plus normal in-app source scheduler; one public calendar page; tracked GPW companies only; exact ticker matching'
+                WHEN 'strefa-report-calendar' THEN 'Disabled event-source candidate; report-date extraction requires source-specific tests before runtime enablement'
+                WHEN 'money-calendar' THEN 'Disabled event-source candidate; calendar extraction requires source-specific tests before runtime enablement'
                 ELSE 'Disabled while Bankier Company Komunikaty is the active official-report source'
             END AS rate_limit_policy,
             CASE source_adapters.id
@@ -2765,6 +3490,10 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
                 WHEN 'portal-analiz' THEN 'Late-v1 planned authenticated private research adapter governed by ADR 0014. Credentials must use the OS keychain and no generic login or scraping subsystem is approved.'
                 WHEN 'bankier-firma-rss' THEN 'Reviewed M8 follow-up candidate. Public and RSS-native, but broader business coverage needs matching-quality tests before runtime enablement.'
                 WHEN 'bankier-wiadomosci-rss' THEN 'Reviewed M8 follow-up candidate. Public and RSS-native, but broad news coverage and stale backfill risk make it unsuitable for default v1 ingestion.'
+                WHEN 'gpw-market-events-rss' THEN 'Fetches GPW official market-events RSS for corporate-action and exchange calendar events. Creates company events only for tracked companies matched by exact ticker.'
+                WHEN 'bankier-kalendarium-html' THEN 'Active M9 public calendar source for broader GPW event coverage. Creates company events only for tracked companies matched by exact ticker, while preserving Bankier attribution and source URLs.'
+                WHEN 'strefa-report-calendar' THEN 'Fallback candidate for periodic-report publication dates. Disabled until source-specific sample parsing and attribution rules are accepted.'
+                WHEN 'money-calendar' THEN 'Fallback/cross-check candidate for calendar and report-date coverage. Disabled until source-specific sample parsing and matching quality are accepted.'
                 ELSE 'Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.'
             END AS policy_note,
             source_adapter_attempts.state_value AS last_attempt_at,
@@ -2854,6 +3583,10 @@ fn list_source_adapters(connection: &Connection) -> StorageResult<Vec<SourceAdap
             PORTAL_ANALIZ_SOURCE_URL,
             BANKIER_FIRMA_RSS_SOURCE_URL,
             BANKIER_WIADOMOSCI_RSS_SOURCE_URL,
+            GPW_MARKET_EVENTS_SOURCE_URL,
+            BANKIER_CALENDAR_SOURCE_URL,
+            STREFA_REPORT_CALENDAR_SOURCE_URL,
+            MONEY_CALENDAR_SOURCE_URL,
         ],
         |row| {
             let markets: String = row.get(22)?;
@@ -3516,6 +4249,97 @@ fn validate_allowed_notebook_value(
     }
 }
 
+fn validate_allowed_company_event_value(
+    key: &'static str,
+    value: &str,
+    allowed: &[&str],
+) -> StorageResult<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidCompanyEventValue {
+            key,
+            value: value.to_owned(),
+        })
+    }
+}
+
+fn company_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CompanyEvent> {
+    Ok(CompanyEvent {
+        id: row.get(0)?,
+        company_id: row.get(1)?,
+        company: row.get(2)?,
+        company_name: row.get(3)?,
+        event_type: row.get(4)?,
+        title: row.get(5)?,
+        event_date: row.get(6)?,
+        event_time: row.get(7)?,
+        status: row.get(8)?,
+        source_type: row.get(9)?,
+        source_adapter_id: row.get(10)?,
+        source_event_key: row.get(11)?,
+        source_url: row.get(12)?,
+        attribution: row.get(13)?,
+        fetched_at: row.get(14)?,
+        manual: row.get(15)?,
+        created_at: row.get(16)?,
+        updated_at: row.get(17)?,
+    })
+}
+
+fn get_company_event(connection: &Connection, id: &str) -> StorageResult<CompanyEvent> {
+    connection
+        .query_row(
+            "
+            SELECT
+                company_events.id,
+                company_events.company_id,
+                companies.qualified_ticker,
+                companies.display_name,
+                company_events.event_type,
+                company_events.title,
+                company_events.event_date,
+                company_events.event_time,
+                company_events.status,
+                company_events.source_type,
+                company_events.source_adapter_id,
+                company_events.source_event_key,
+                company_events.source_url,
+                company_events.attribution,
+                company_events.fetched_at,
+                company_events.manual,
+        company_events.created_at,
+        company_events.updated_at
+            FROM company_events
+            JOIN companies ON companies.id = company_events.company_id
+            WHERE company_events.id = ?1
+            ",
+            [id],
+            company_event_from_row,
+        )
+        .map_err(StorageError::from)
+}
+
+fn company_is_in_watchlist(
+    connection: &Connection,
+    watchlist_id: &str,
+    company_id: &str,
+) -> StorageResult<bool> {
+    connection
+        .query_row(
+            "
+            SELECT EXISTS(
+                SELECT 1
+                FROM watchlist_companies
+                WHERE watchlist_id = ?1 AND company_id = ?2
+            )
+            ",
+            params![watchlist_id, company_id],
+            |row| row.get(0),
+        )
+        .map_err(StorageError::from)
+}
+
 fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {
     connection.pragma_update(None, "foreign_keys", "ON")?;
     connection.execute_batch(
@@ -3569,6 +4393,24 @@ fn company_registry_entry_id(exchange: &str, ticker: &str) -> String {
         "company_registry_{}_{}",
         slug_part(exchange),
         slug_part(ticker)
+    )
+}
+
+fn company_event_id(company_id: &str, event_type: &str, event_date: &str, title: &str) -> String {
+    format!(
+        "event_{}_{}_{}_{}",
+        slug_part(company_id),
+        slug_part(event_type),
+        slug_part(event_date),
+        slug_part(title)
+    )
+}
+
+fn company_event_source_id(source_adapter_id: &str, source_event_key: &str) -> String {
+    format!(
+        "event_{}_{}",
+        slug_part(source_adapter_id),
+        slug_part(source_event_key)
     )
 }
 
@@ -3700,7 +4542,7 @@ mod tests {
             })
             .expect("schema_migrations should exist");
 
-        assert_eq!(migration_count, 12);
+        assert_eq!(migration_count, 16);
 
         let company_table_exists: bool = connection
             .query_row(
@@ -3764,6 +4606,20 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("Portal Analiz placeholder should be seeded");
+        let gpw_events_adapter: (String, bool) = connection
+            .query_row(
+                "SELECT display_name, enabled FROM source_adapters WHERE id = 'gpw-market-events-rss'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("GPW market events adapter should be seeded");
+        let bankier_calendar_adapter: (String, bool) = connection
+            .query_row(
+                "SELECT display_name, enabled FROM source_adapters WHERE id = 'bankier-kalendarium-html'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("Bankier calendar adapter should be seeded");
 
         assert_eq!(theme, "dark");
         assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), false));
@@ -3771,6 +4627,14 @@ mod tests {
         assert_eq!(bankier_adapter_name, "Bankier Giełda RSS");
         assert_eq!(bankier_company_adapter_name, "Bankier Company Komunikaty");
         assert_eq!(portal_analiz_adapter, ("Portal Analiz".to_owned(), false));
+        assert_eq!(
+            gpw_events_adapter,
+            ("GPW Market Events RSS".to_owned(), true)
+        );
+        assert_eq!(
+            bankier_calendar_adapter,
+            ("Bankier Kalendarium".to_owned(), true)
+        );
     }
 
     #[test]
@@ -3845,13 +4709,367 @@ mod tests {
     }
 
     #[test]
+    fn creates_and_lists_company_events() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let created = state
+            .create_company_event(NewCompanyEvent {
+                company_id: company.id.clone(),
+                event_type: "periodic_report".to_owned(),
+                title: "Quarterly report publication".to_owned(),
+                event_date: "2099-08-29".to_owned(),
+                event_time: None,
+                status: Some("scheduled".to_owned()),
+                source_type: Some("manual".to_owned()),
+                source_adapter_id: None,
+                source_event_key: None,
+                source_url: None,
+                attribution: None,
+                fetched_at: None,
+            })
+            .expect("event should be created");
+
+        let events = state
+            .list_company_events(CompanyEventListInput {
+                mode: Some("upcoming".to_owned()),
+                company_id: Some(company.id.clone()),
+                watchlist_id: None,
+                event_type: Some("periodic_report".to_owned()),
+                status: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("events should list");
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(created.company, "GPW:CDR");
+        assert_eq!(events[0].title, "Quarterly report publication");
+        assert!(events[0].manual);
+    }
+
+    #[test]
+    fn updates_sourced_company_events_by_source_key() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+
+        let input = NewCompanyEvent {
+            company_id: company.id,
+            event_type: "dividend".to_owned(),
+            title: "Dividend day".to_owned(),
+            event_date: "2099-06-12".to_owned(),
+            event_time: None,
+            status: Some("confirmed".to_owned()),
+            source_type: Some("official_calendar".to_owned()),
+            source_adapter_id: Some("bankier-company-komunikaty".to_owned()),
+            source_event_key: Some(
+                "bankier-company-komunikaty:GPW:CDR:dividend:2099-06-12".to_owned(),
+            ),
+            source_url: Some("https://www.bankier.pl/".to_owned()),
+            attribution: Some("Bankier.pl".to_owned()),
+            fetched_at: Some("2026-06-01T10:00:00Z".to_owned()),
+        };
+
+        let first = state
+            .create_company_event(input)
+            .expect("source event should be created");
+        let second = state
+            .create_company_event(NewCompanyEvent {
+                company_id: first.company_id.clone(),
+                event_type: "dividend".to_owned(),
+                title: "Updated dividend day".to_owned(),
+                event_date: "2099-06-14".to_owned(),
+                event_time: None,
+                status: Some("changed".to_owned()),
+                source_type: Some("official_calendar".to_owned()),
+                source_adapter_id: Some("bankier-company-komunikaty".to_owned()),
+                source_event_key: Some(
+                    "bankier-company-komunikaty:GPW:CDR:dividend:2099-06-12".to_owned(),
+                ),
+                source_url: Some("https://www.bankier.pl/duplicate".to_owned()),
+                attribution: Some("Bankier.pl".to_owned()),
+                fetched_at: Some("2026-06-01T10:05:00Z".to_owned()),
+            })
+            .expect("updated source event should return existing record");
+        let events = state
+            .list_company_events(CompanyEventListInput {
+                mode: Some("all".to_owned()),
+                company_id: Some(first.company_id.clone()),
+                watchlist_id: None,
+                event_type: None,
+                status: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("events should list");
+
+        assert_eq!(first.id, second.id);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].title, "Updated dividend day");
+        assert_eq!(events[0].event_date, "2099-06-14");
+        assert_eq!(events[0].status, "changed");
+        assert!(!events[0].manual);
+    }
+
+    #[test]
+    fn ingests_gpw_market_events_for_tracked_companies_only() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "DIAG".to_owned(),
+                display_name: "DIAGNOSTYKA S.A.".to_owned(),
+                isin: Some("PLDIAG000019".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked company should create");
+        let items = vec![
+            GpwMarketEventItem {
+                market: "Main Market".to_owned(),
+                event_label: "Corporate actions".to_owned(),
+                instrument_type: "Equity".to_owned(),
+                ticker: "DIAG".to_owned(),
+                event_type: "corporate_action".to_owned(),
+                title: "Main Market - Corporate actions - Equity - DIAG".to_owned(),
+                link: "https://www.gpw.pl/market-events-calendar?market_section=RGL&market_category=64&date=2026-06-01".to_owned(),
+                event_date: "2099-06-01".to_owned(),
+                fetched_at: "2026-06-01T08:00:00Z".to_owned(),
+                source_event_key:
+                    "gpw-market-events-rss:2099-06-01:corporate-actions:equity:diag".to_owned(),
+            },
+            GpwMarketEventItem {
+                market: "Main Market".to_owned(),
+                event_label: "Corporate actions".to_owned(),
+                instrument_type: "Equity".to_owned(),
+                ticker: "SNIEZKA".to_owned(),
+                event_type: "corporate_action".to_owned(),
+                title: "Main Market - Corporate actions - Equity - SNIEZKA".to_owned(),
+                link: "https://www.gpw.pl/market-events-calendar?market_section=RGL&market_category=64&date=2026-06-01".to_owned(),
+                event_date: "2099-06-01".to_owned(),
+                fetched_at: "2026-06-01T08:00:00Z".to_owned(),
+                source_event_key:
+                    "gpw-market-events-rss:2099-06-01:corporate-actions:equity:sniezka"
+                        .to_owned(),
+            },
+        ];
+
+        let first_result = state
+            .ingest_gpw_market_event_items(&items)
+            .expect("events should ingest");
+        let mut updated_items = items.clone();
+        updated_items[0].title =
+            "Main Market - Updated corporate actions - Equity - DIAG".to_owned();
+        updated_items[0].event_date = "2099-06-02".to_owned();
+        updated_items[0].link =
+            "https://www.gpw.pl/market-events-calendar?market_section=RGL&market_category=64&date=2026-06-02"
+                .to_owned();
+        let second_result = state
+            .ingest_gpw_market_event_items(&updated_items)
+            .expect("updated source events should ingest harmlessly");
+        let events = state
+            .list_company_events(CompanyEventListInput {
+                mode: Some("all".to_owned()),
+                company_id: Some(company.id),
+                watchlist_id: None,
+                event_type: None,
+                status: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("events should list");
+
+        assert_eq!(first_result.items_fetched, 2);
+        assert_eq!(first_result.items_created, 1);
+        assert_eq!(first_result.items_matched, 1);
+        assert_eq!(first_result.items_unmatched, 1);
+        assert_eq!(second_result.items_created, 0);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].company, "GPW:DIAG");
+        assert_eq!(events[0].event_type, "corporate_action");
+        assert_eq!(
+            events[0].title,
+            "Main Market - Updated corporate actions - Equity - DIAG"
+        );
+        assert_eq!(events[0].event_date, "2099-06-02");
+        assert_eq!(
+            events[0].source_adapter_id.as_deref(),
+            Some("gpw-market-events-rss")
+        );
+    }
+
+    #[test]
+    fn ingests_bankier_calendar_events_for_tracked_companies_only() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "DIAG".to_owned(),
+                display_name: "DIAGNOSTYKA S.A.".to_owned(),
+                isin: Some("PLDIAG000019".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked company should create");
+        let items = vec![
+            BankierCalendarEventItem {
+                ticker: "DIAG".to_owned(),
+                event_type: "dividend".to_owned(),
+                title: "DIAG: Dzień ustalenia prawa do dywidendy 4,40 zł na akcję.".to_owned(),
+                description: "Dzień ustalenia prawa do dywidendy 4,40 zł na akcję.".to_owned(),
+                category: "Dywidendy".to_owned(),
+                link: "https://www.bankier.pl/gielda/notowania/akcje/DIAG/kalendarium".to_owned(),
+                event_date: "2099-06-01".to_owned(),
+                fetched_at: "2026-06-01T08:00:00Z".to_owned(),
+                source_event_key: "bankier-kalendarium-html:diag:dywidendy:dywidenda".to_owned(),
+            },
+            BankierCalendarEventItem {
+                ticker: "SNIEZKA".to_owned(),
+                event_type: "periodic_report".to_owned(),
+                title: "SNIEZKA: Raport kwartalny.".to_owned(),
+                description: "Raport kwartalny.".to_owned(),
+                category: "Wyniki spółek".to_owned(),
+                link: "https://www.bankier.pl/gielda/notowania/akcje/SNIEZKA/kalendarium"
+                    .to_owned(),
+                event_date: "2099-06-02".to_owned(),
+                fetched_at: "2026-06-01T08:00:00Z".to_owned(),
+                source_event_key: "bankier-kalendarium-html:sniezka:wyniki-spolek:raport-kwartalny"
+                    .to_owned(),
+            },
+        ];
+
+        let first_result = state
+            .ingest_bankier_calendar_event_items(&items)
+            .expect("Bankier calendar events should ingest");
+        let mut updated_items = items.clone();
+        updated_items[0].title =
+            "DIAG: Zaktualizowany dzień ustalenia prawa do dywidendy.".to_owned();
+        updated_items[0].event_date = "2099-06-03".to_owned();
+        let second_result = state
+            .ingest_bankier_calendar_event_items(&updated_items)
+            .expect("updated Bankier calendar events should ingest harmlessly");
+        let events = state
+            .list_company_events(CompanyEventListInput {
+                mode: Some("all".to_owned()),
+                company_id: Some(company.id),
+                watchlist_id: None,
+                event_type: None,
+                status: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("events should list");
+
+        assert_eq!(first_result.items_fetched, 2);
+        assert_eq!(first_result.items_created, 1);
+        assert_eq!(first_result.items_matched, 1);
+        assert_eq!(first_result.items_unmatched, 1);
+        assert_eq!(second_result.items_created, 0);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].company, "GPW:DIAG");
+        assert_eq!(events[0].event_type, "dividend");
+        assert_eq!(
+            events[0].title,
+            "DIAG: Zaktualizowany dzień ustalenia prawa do dywidendy."
+        );
+        assert_eq!(events[0].event_date, "2099-06-03");
+        assert_eq!(events[0].source_type, "public_calendar");
+        assert_eq!(
+            events[0].source_adapter_id.as_deref(),
+            Some("bankier-kalendarium-html")
+        );
+    }
+
+    #[test]
+    fn ingests_bankier_calendar_events_by_cached_bankier_slug_when_symbol_is_not_ticker() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "BDX".to_owned(),
+                display_name: "BUDIMEX S.A.".to_owned(),
+                isin: Some("PLBUDMX00013".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("tracked company should create");
+        state
+            .upsert_bankier_company_identifiers(
+                &company.id,
+                &BankierCompanyIdentifiers {
+                    slug: "BUDIMEX".to_owned(),
+                    tag_id: "123".to_owned(),
+                },
+            )
+            .expect("Bankier identifiers should cache");
+        let items = vec![BankierCalendarEventItem {
+            ticker: "BUDIMEX".to_owned(),
+            event_type: "dividend".to_owned(),
+            title: "BUDIMEX: Dzień ustalenia prawa do dywidendy.".to_owned(),
+            description: "Dzień ustalenia prawa do dywidendy.".to_owned(),
+            category: "Dywidendy".to_owned(),
+            link: "https://www.bankier.pl/gielda/notowania/akcje/BUDIMEX/kalendarium".to_owned(),
+            event_date: "2099-06-03".to_owned(),
+            fetched_at: "2026-06-01T08:00:00Z".to_owned(),
+            source_event_key: "bankier-kalendarium-html:budimex:dywidendy:dywidenda".to_owned(),
+        }];
+
+        let result = state
+            .ingest_bankier_calendar_event_items(&items)
+            .expect("Bankier calendar event should match cached slug");
+        let events = state
+            .list_company_events(CompanyEventListInput {
+                mode: Some("all".to_owned()),
+                company_id: None,
+                watchlist_id: None,
+                event_type: None,
+                status: None,
+                date_from: None,
+                date_to: None,
+            })
+            .expect("events should list");
+
+        assert_eq!(result.items_matched, 1);
+        assert_eq!(result.items_unmatched, 0);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].company, "GPW:BDX");
+        assert_eq!(
+            events[0].title,
+            "BUDIMEX: Dzień ustalenia prawa do dywidendy."
+        );
+    }
+
+    #[test]
     fn reports_database_status() {
         let connection = open_in_memory_database().expect("database should initialize");
         let status = database_status(&connection).expect("status should be available");
 
-        assert_eq!(status.applied_migrations, 12);
+        assert_eq!(status.applied_migrations, 16);
         assert_eq!(status.companies, 0);
-        assert_eq!(status.source_adapters, 7);
+        assert_eq!(status.source_adapters, 11);
         assert_eq!(status.settings, 7);
     }
 
@@ -5056,7 +6274,7 @@ mod tests {
             .list_source_adapters()
             .expect("source adapters should list");
 
-        assert_eq!(adapters.len(), 7);
+        assert_eq!(adapters.len(), 11);
 
         let report_adapter = adapters
             .iter()
@@ -5104,6 +6322,69 @@ mod tests {
         assert!(bankier_company_adapter
             .policy_note
             .contains("active v1 official-report source"));
+
+        let gpw_events_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == GPW_MARKET_EVENTS_ADAPTER_ID)
+            .expect("GPW market events adapter should exist");
+        assert_eq!(gpw_events_adapter.display_name, "GPW Market Events RSS");
+        assert_eq!(gpw_events_adapter.source_type, "official_calendar");
+        assert_eq!(gpw_events_adapter.fetch_mode, "rss");
+        assert_eq!(gpw_events_adapter.source_url, GPW_MARKET_EVENTS_SOURCE_URL);
+        assert_eq!(gpw_events_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(gpw_events_adapter.enabled);
+        assert!(gpw_events_adapter.policy_note.contains("exact ticker"));
+
+        let bankier_calendar_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "bankier-kalendarium-html")
+            .expect("Bankier Kalendarium adapter should exist");
+        assert_eq!(bankier_calendar_adapter.display_name, "Bankier Kalendarium");
+        assert_eq!(bankier_calendar_adapter.source_type, "public_calendar");
+        assert_eq!(bankier_calendar_adapter.fetch_mode, "public_page");
+        assert_eq!(
+            bankier_calendar_adapter.source_url,
+            BANKIER_CALENDAR_SOURCE_URL
+        );
+        assert_eq!(bankier_calendar_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(bankier_calendar_adapter.enabled);
+        assert!(bankier_calendar_adapter
+            .policy_note
+            .contains("Active M9 public calendar source"));
+
+        let strefa_calendar_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "strefa-report-calendar")
+            .expect("Strefa report calendar placeholder should exist");
+        assert_eq!(
+            strefa_calendar_adapter.display_name,
+            "Strefa Report Calendar"
+        );
+        assert_eq!(strefa_calendar_adapter.source_type, "public_calendar");
+        assert_eq!(strefa_calendar_adapter.fetch_mode, "public_page");
+        assert_eq!(
+            strefa_calendar_adapter.source_url,
+            STREFA_REPORT_CALENDAR_SOURCE_URL
+        );
+        assert_eq!(strefa_calendar_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(!strefa_calendar_adapter.enabled);
+        assert!(strefa_calendar_adapter
+            .policy_note
+            .contains("periodic-report publication dates"));
+
+        let money_calendar_adapter = adapters
+            .iter()
+            .find(|adapter| adapter.id == "money-calendar")
+            .expect("Money calendar placeholder should exist");
+        assert_eq!(money_calendar_adapter.display_name, "Money Calendar");
+        assert_eq!(money_calendar_adapter.source_type, "public_calendar");
+        assert_eq!(money_calendar_adapter.fetch_mode, "public_page");
+        assert_eq!(money_calendar_adapter.source_url, MONEY_CALENDAR_SOURCE_URL);
+        assert_eq!(money_calendar_adapter.markets, vec!["GPW".to_owned()]);
+        assert!(!money_calendar_adapter.enabled);
+        assert!(money_calendar_adapter
+            .policy_note
+            .contains("Fallback/cross-check candidate"));
 
         let bankier_firma_adapter = adapters
             .iter()

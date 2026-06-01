@@ -568,7 +568,8 @@ h1 {
   font-size: 12px;
 }
 
-.filter-toolbar select {
+.filter-toolbar select,
+.filter-toolbar input {
   min-width: 180px;
   min-height: 36px;
   padding: 0 10px;
@@ -578,7 +579,32 @@ h1 {
   background: var(--surface-raised);
 }
 
+.events-filter-toolbar .date-picker-field {
+  min-width: 180px;
+}
+
+.week-toolbar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.week-toolbar span {
+  min-width: 170px;
+  color: var(--text);
+  text-align: center;
+}
+
+.icon-only-button {
+  width: 34px;
+  padding: 0;
+  justify-content: center;
+}
+
 .companies-layout,
+.events-layout,
 .sources-layout,
 .settings-layout,
 .section-placeholder {
@@ -587,10 +613,321 @@ h1 {
   padding: 18px;
 }
 
+.events-layout,
 .sources-layout {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+}
+
+.events-layout {
+  align-content: start;
+}
+
+.event-week-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: 10px;
+  min-width: 920px;
+}
+
+.event-week-day {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
+}
+
+.event-week-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-week-day-header strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.event-week-day-body {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.event-week-empty {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px dashed color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-composer {
+  display: grid;
+  gap: 12px;
+  margin: 0 18px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface-raised));
+}
+
+.event-composer-header,
+.event-composer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.event-composer-header h2 {
+  font-size: 16px;
+}
+
+.event-composer-header p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.event-composer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.event-composer-grid label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-composer-grid select,
+.event-composer-grid input {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.event-composer-title {
+  grid-column: 1 / -1;
+}
+
+.event-manual {
+  border-color: color-mix(in srgb, var(--success) 42%, var(--border));
+}
+
+.event-week-card-block {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.event-week-card {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.event-week-card:hover,
+.event-week-card:focus-visible,
+.event-week-card-selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.event-week-card-selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.event-due-today {
+  border-color: color-mix(in srgb, var(--primary) 64%, var(--border));
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.event-due-soon {
+  border-color: color-mix(in srgb, var(--warning) 58%, var(--border));
+  box-shadow: inset 3px 0 0 var(--warning);
+}
+
+.event-due-past {
+  opacity: 0.74;
+}
+
+.event-week-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.event-week-card-topline,
+.event-week-card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.event-week-card-topline strong {
+  flex: 1 1 68px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-week-card-topline > div {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.event-week-card h2 {
+  display: -webkit-box;
+  min-height: 34px;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.event-week-card-topline span,
+.event-week-card-topline em,
+.event-week-card-meta span,
+.event-date-box em {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-height: 21px;
+  min-width: 0;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 7px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  font-size: 11px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.event-week-card-topline em,
+.event-date-box em {
+  border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--warning) 12%, var(--surface));
+  font-style: normal;
+}
+
+.event-due-today .event-week-card-topline em,
+.event-due-today .event-date-box em {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 15%, var(--surface));
+}
+
+.event-due-past .event-week-card-topline em,
+.event-due-past .event-date-box em {
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 56%, transparent);
+}
+
+.event-week-card-meta span {
+  flex: 1 1 auto;
+}
+
+.event-week-card-meta span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.event-week-card-detail {
+  display: grid;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.event-week-card-full-title {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.event-week-card-full-title span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.event-week-card-full-title strong {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.event-week-card-detail dl {
+  display: grid;
+  gap: 7px;
+}
+
+.event-week-card-detail dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.event-week-card-detail dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.event-weekend-row {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
+}
+
+.event-weekend-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
 }
 
 .notebooks-screen {
@@ -1156,6 +1493,125 @@ h1 {
 .source-row-block {
   display: grid;
   gap: 0;
+}
+
+.event-row-block {
+  display: grid;
+  gap: 0;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) minmax(130px, 0.24fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.event-row:hover,
+.event-row:focus-visible,
+.event-row-selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.event-row-selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.event-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.event-date-box {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-date-box strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.event-date-box span {
+  grid-column: 2;
+}
+
+.event-date-box em {
+  grid-column: 2;
+  width: fit-content;
+}
+
+.event-row-main {
+  min-width: 0;
+}
+
+.event-title-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.event-title-line h2 {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-title-line span,
+.event-row-status span,
+.event-row-status small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.event-row-main p {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-row-main strong {
+  color: var(--text);
+}
+
+.event-row-status {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.event-detail-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
 
 .source-row {
