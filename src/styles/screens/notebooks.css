@@ -1,0 +1,234 @@
+.notebooks-screen {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.34fr) minmax(0, 1fr);
+  gap: 14px;
+  padding: 18px;
+}
+
+.notebooks-company-nav {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.notebooks-company-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  text-align: left;
+}
+
+.notebooks-company-row:has(.notebooks-company-select:hover),
+.notebooks-company-row:has(.notebooks-company-select:focus-visible),
+.notebooks-company-row-selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.notebooks-company-row-selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.notebooks-company-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+}
+
+.notebooks-company-select:focus-visible,
+.notebooks-company-cue-button:focus-visible,
+.notebooks-company-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.notebooks-company-select span:first-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.notebooks-company-select strong {
+  font-size: 14px;
+}
+
+.notebooks-company-select small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebooks-company-action {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 7px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+}
+
+.notebooks-company-action:hover {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--primary);
+}
+
+.notebooks-company-cues {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.notebooks-company-count {
+  display: grid;
+  justify-items: end;
+  color: var(--primary);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.notebooks-company-cue {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.notebooks-company-cue-button {
+  padding: 0;
+  border: 0;
+  color: color-mix(in srgb, var(--primary) 76%, var(--muted));
+  background: transparent;
+  cursor: pointer;
+}
+
+.notebooks-company-cue-button:hover {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.notebooks-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.notebooks-context-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 30px;
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notebooks-context-line div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notebooks-context-line strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.notebooks-filter-row {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
+}
+
+.notebooks-filter-row label {
+  display: grid;
+  gap: 5px;
+  min-width: 132px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notebooks-filter-row input,
+.notebooks-filter-row select {
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  outline: none;
+}
+
+.notebooks-filter-row input:focus,
+.notebooks-filter-row select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.notebooks-notes-list {
+  display: grid;
+  gap: 6px;
+}
+
+.notebooks-create-form {
+  margin-bottom: 4px;
+}
+
+.notebooks-draft-header {
+  display: flex;
+  justify-content: flex-start;
+  min-height: 20px;
+}
+
+.minimal-button {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 11px;
+}
+
+.minimal-button:hover,
+.minimal-button:focus-visible {
+  color: var(--danger);
+}
+
+.notebook-row-block {
+  display: grid;
+  gap: 0;
+}
+
+.notebooks-inline-detail {
+  margin: 0 8px 8px;
+  border-top-color: color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}

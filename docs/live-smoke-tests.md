@@ -2,7 +2,7 @@
 
 Live smoke tests validate real external providers and sources. They are not part of the default local check set or default CI because they require credentials, network access, and external service availability.
 
-See also [Engineering Workflow](engineering-workflow.md), [Project Practices](project-practices.md), and [Kanban](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Engineering Workflow](engineering-workflow.md), [Project Practices](project-practices.md), and [Kanban](kanban.md).
 
 ## OS Keyring Persistence
 

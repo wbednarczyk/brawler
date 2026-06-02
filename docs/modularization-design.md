@@ -1,8 +1,8 @@
 # Modularization Design
 
-This document defines the target code organization for Brawler. It is a design guide for incremental extraction, not a mandate for a risky all-at-once rewrite.
+This document defines the code organization rules for Brawler after the M13 modularization pass. The broad modularization effort is complete; this document is now an operating guide for keeping future development modular by default.
 
-See also [Architecture](architecture.md), [Project Practices](project-practices.md), [Kanban](kanban.md), and [Contracts](contracts.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Project Practices](project-practices.md), [Kanban](kanban.md), and [Contracts](contracts.md).
 
 ## Goals
 
@@ -12,15 +12,41 @@ See also [Architecture](architecture.md), [Project Practices](project-practices.
 - Keep real runtime behavior separate from tests, samples, and mocks.
 - Support future providers, sources, credentials, models, and screens without turning core files into dumping grounds.
 
-## Current Pain Points
+## Historical Pain Points
 
-Current large files are already architecture debt:
+The M13 modularization pass was started because these files had become mixed-responsibility architecture debt:
 
 - `src/App.tsx`: app shell, routing, data loading, screen rendering, workflow logic, formatting helpers, and mutations are mixed in one file.
 - `src/App.test.tsx`: many unrelated workflows share one mock setup and one large test file.
 - `src/styles.css`: app-wide styling and screen-specific styling are mixed.
 - `src-tauri/src/storage.rs`: migrations, data types, settings, source state, companies, watchlists, feed, notebooks, events, transcripts, and tests are mixed in one module.
 - `src-tauri/src/lib.rs`: Tauri command registration, command handlers, refresh orchestration, transcript runner orchestration, and source adapter dispatch are mixed.
+
+## Current Status
+
+The M13 modularization pass has addressed the original large-file debt by extracting frontend API modules, screens, screen section/row components, company workspace, inbox detail pane, events week/list views, notebook entry editor, transcript job row/detail rendering, transcript segment review, transcript note draft, shared components/hooks/formatting aliases, app-level workflow controllers, app lifecycle effects, app view-model derivations, screen tests, test helper facades, CSS modules, Rust commands, app-state boundary, providers including credential handling, scheduled job helpers, domain storage modules including registry/catalog storage, and domain-split storage tests.
+
+The remaining larger files are intentional state roots, facades, composition points, or cohesive domain views rather than mixed command/API/storage/screen implementations. They should be split only when future feature work reveals a real new responsibility boundary.
+
+Current notable composition points:
+
+- `src/app/App.tsx`: small wrapper for the state root.
+- `src/app/AppStateRoot.tsx`: React state and workflow composition root.
+- `src-tauri/src/lib.rs`: Tauri app setup and command registration facade.
+- `src-tauri/src/storage/mod.rs`: storage facade and shared SQLite state.
+- Large domain modules such as `CompanyWorkspace.tsx`, `SourceAdapterRow.tsx`, `storage/sources.rs`, and `storage/transcripts.rs`: acceptable while they remain cohesive domain implementations.
+
+New behavior should land in the matching API, screen, shared, command, storage, provider, source adapter, or job module instead of rebuilding the original monolithic files.
+
+## Findings From M13
+
+- Broad extraction is useful when a file mixes multiple architectural layers; it is less useful when a file is a cohesive domain view or facade.
+- `src/app/AppStateRoot.tsx` is intentionally large because it coordinates app state. Splitting it should wait for a feature-driven state-domain boundary, not a line-count target.
+- Shared frontend primitives are useful only when they preserve existing class semantics and accessibility. `Button`, `EmptyState`, and `StatusPill` are now adopted for generic controls; segmented controls, row selectors, field clear buttons, collapsible headers, suggestion rows, and anchor links remain native/domain-specific on purpose.
+- Screen tests became easier to reason about after screen extraction, but the shared app workflow harness remains useful for integration-style UI flows.
+- Rust command modules should stay thin. Most complexity belongs in storage, provider, source adapter, or job modules.
+- Storage facades are acceptable when they keep the public boundary clear and delegate domain behavior to focused modules.
+- CSS extraction worked best after screen/component extraction stabilized.
 
 ## Design Principles
 
@@ -32,15 +58,21 @@ Current large files are already architecture debt:
 - Keep provider modules independently testable with injected clients/fetchers.
 - Keep shared helpers boring and small.
 - Avoid one file per tiny component; split when a file has multiple reasons to change.
+- Treat modularity as a continuous maintenance rule, not a one-time milestone.
+- Prefer adopting existing module boundaries during nearby feature work over doing unrelated cleanup churn.
+- Do not split a cohesive file only because it is long; split when it has separate reasons to change, separate owners, or mixed layers.
 
-## Target Frontend Structure
+## Current Frontend Structure
 
 ```text
 src/
   app/
     App.tsx
+    AppStateRoot.tsx
+    AppShell.tsx
+    appTypes.ts
     navigation.ts
-    types.ts
+    workflow/data/view-model controllers
   api/
     tauri.ts
     companies.ts
@@ -52,33 +84,43 @@ src/
     transcripts.ts
     settings.ts
     credentials.ts
+    system.ts
+    types.ts
   screens/
     Inbox/
       InboxScreen.tsx
       InboxDetailPane.tsx
+      InboxScreen.test.tsx
       inboxTypes.ts
     Companies/
       CompaniesScreen.tsx
       CompanyWorkspace.tsx
+      CompaniesScreen.test.tsx
       companyTypes.ts
     Notebooks/
       NotebooksScreen.tsx
       NotebookEntryEditor.tsx
+      NotebooksScreen.test.tsx
       notebookTypes.ts
     Events/
       EventsScreen.tsx
       WeekEventsView.tsx
       EventListView.tsx
+      EventsScreen.test.tsx
       eventTypes.ts
     Transcripts/
       TranscriptsScreen.tsx
       TranscriptJobRow.tsx
       TranscriptSegmentReview.tsx
       TranscriptNoteDraft.tsx
+      TranscriptJobComposer.tsx
+      TranscriptRuntimeStrip.tsx
+      TranscriptsScreen.test.tsx
       transcriptTypes.ts
     Sources/
       SourcesScreen.tsx
       SourceAdapterRow.tsx
+      SourcesScreen.test.tsx
       sourceTypes.ts
     Settings/
       SettingsScreen.tsx
@@ -86,6 +128,7 @@ src/
       SourceSettings.tsx
       AiSettings.tsx
       CredentialSettings.tsx
+      SettingsScreen.test.tsx
       settingsTypes.ts
   shared/
     components/
@@ -101,22 +144,53 @@ src/
       dates.ts
       enums.ts
       timestamps.ts
+      date.ts
+      labels.ts
+    types/
+      events.ts
+      notebook.ts
     styles/
       shared.css
       forms.css
       tables.css
+  styles/
+    tokens.css
+    layout.css
+    controls.css
+    rows.css
+    screens/
+      inbox.css
+      companies.css
+      company-workspace.css
+      notebooks.css
+      events.css
+      transcripts.css
+      sources.css
+      settings.css
+  test/
+    appWorkflowHarness.tsx
+    mockTauri.ts
+    renderApp.tsx
+    setup.ts
+    testData.ts
 ```
 
 ### Frontend Ownership Rules
 
-- `src/app/App.tsx` should become the shell only: navigation, active section, topbar, global status, and screen composition.
+- `src/app/App.tsx` is the app entry wrapper.
+- `src/app/AppStateRoot.tsx` owns app-level state wiring and composes controllers/view models. Keep feature-specific logic in the matching app controller, screen, API module, or shared helper.
+- `src/app/AppShell.tsx` owns shell layout.
 - Screen modules should not call unrelated APIs.
 - API modules should be the only place where frontend code calls `invoke`.
 - Shared components should be generic enough to be reused by at least two domains.
+- When touching an existing screen, adopt existing shared components/hooks for the touched area when they preserve behavior and class semantics. Do not mass-convert unrelated markup during feature work.
+- New reusable UI/control behavior should land in `src/shared/` first when it applies to two or more domains.
 - Domain-specific components stay under their screen directory.
 - Screen tests should live near the screen they verify once the screen is extracted.
+- Segmented controls, row selectors, field-clear buttons, collapsible headers, suggestion rows, and anchor links may remain native/domain-specific when a shared component would obscure semantics.
+- New screen behavior should get a screen-level test or a targeted app workflow test near the owning screen.
 
-## Target Rust Structure
+## Current Rust Structure
 
 ```text
 src-tauri/src/
@@ -136,6 +210,7 @@ src-tauri/src/
     credentials.rs
   storage/
     mod.rs
+    error.rs
     migrations.rs
     settings.rs
     companies.rs
@@ -147,6 +222,10 @@ src-tauri/src/
     transcripts.rs
     registry.rs
     types.rs
+    tests/
+      mod.rs
+      common.rs
+      domain test modules
   providers/
     mod.rs
     credentials.rs
@@ -154,9 +233,11 @@ src-tauri/src/
       mod.rs
       gemini.rs
       test_sample.rs
+      types.rs
   source_adapters/
     existing adapter modules
   jobs/
+    feed_cleanup.rs
     scheduler.rs
     source_refresh.rs
     transcript_runner.rs
@@ -171,15 +252,15 @@ src-tauri/src/
 - `source_adapters/*` owns source fetching/parsing/normalization.
 - `jobs/*` owns orchestration that combines storage, adapters, providers, and scheduler behavior.
 - Tests should live close to the module being tested when possible.
+- New typed Tauri commands should be registered through `commands/mod.rs` and implemented in the matching command module.
+- Command modules should not accumulate storage SQL, provider HTTP details, or source parsing logic.
+- New storage behavior should live in the domain storage module and be exposed through the storage facade only when other domains or commands need it.
+- New source/provider orchestration should go through `jobs/*` when it combines storage with adapters/providers.
+- Secret handling stays under the provider credential boundary; runtime frontend code must never receive secrets.
 
 ## Styling Structure
 
-Short term:
-
-- Keep `src/styles.css` while extracting screens.
-- Add comments or sections only where they help navigation.
-
-Target:
+Current structure:
 
 ```text
 src/styles/
@@ -187,10 +268,15 @@ src/styles/
   layout.css
   controls.css
   rows.css
-  forms.css
+  shell.css
+  membership.css
+  notebook-shared.css
+  responsive.css
+  utilities.css
   screens/
     inbox.css
     companies.css
+    company-workspace.css
     notebooks.css
     events.css
     transcripts.css
@@ -198,57 +284,60 @@ src/styles/
     settings.css
 ```
 
-CSS extraction should follow component/screen extraction. Do not split CSS ahead of the UI module split.
+CSS extraction should follow component/screen extraction. New screen-specific selectors should go under `src/styles/screens/`. New cross-screen control/layout tokens should go under the matching shared style module.
 
 ## Test Structure
 
-Frontend target:
+Frontend structure:
 
 ```text
 src/test/
+  appWorkflowHarness.tsx
   testData.ts
   mockTauri.ts
   renderApp.tsx
-src/screens/Transcripts/TranscriptsScreen.test.tsx
-src/screens/Settings/SettingsScreen.test.tsx
+  setup.ts
+src/screens/*/*.test.tsx
 ```
 
 Rust target:
 
 - Keep unit tests inside the module when small.
-- Move large shared test builders into `src-tauri/src/test_support.rs` or domain-specific `test_support` modules.
+- Move large shared test builders into `src-tauri/src/storage/tests/common.rs`, `src-tauri/src/test_support.rs`, or domain-specific `test_support` modules.
 - External provider/source tests use injected clients/fetchers and test samples, while milestone closure uses real smoke checks where required.
 
-## Extraction Order
+## Continuous Development Checklist
 
-1. Extract frontend API modules.
-   - Move `invoke` wrappers and DTO types out of `App.tsx`.
-   - Keep UI unchanged.
+Every non-trivial code change should consider modularity before implementation:
 
-2. Extract `SettingsScreen`.
-   - Smallest useful screen extraction after credential/model work.
-   - Moves credential/model settings out of the app shell.
+1. Identify the owning domain and layer before editing.
+   - Frontend command calls: `src/api/*`.
+   - App-level workflow/state: `src/app/*`.
+   - Screen UI and screen-local interactions: `src/screens/<Domain>/*`.
+   - Cross-screen UI/helpers/types: `src/shared/*`.
+   - Tauri command handlers: `src-tauri/src/commands/*`.
+   - SQLite persistence: `src-tauri/src/storage/*`.
+   - Provider runtime/client behavior: `src-tauri/src/providers/*`.
+   - Source fetching/parsing/normalization: `src-tauri/src/source_adapters/*`.
+   - Cross-domain orchestration: `src-tauri/src/jobs/*`.
 
-3. Extract `TranscriptsScreen`.
-   - Natural continuation of M10.
-   - Moves transcript job form, job rows, segment review, company linking, and note draft behavior out of `App.tsx`.
+2. Prefer the existing module boundary over adding logic to a nearby large file.
 
-4. Extract Rust transcript provider modules.
-   - Move Gemini/test-sample transcript providers under `providers/transcripts/`.
-   - Keep command behavior unchanged.
+3. If a touched file is gaining a second reason to change, extract a cohesive child module as part of that feature slice.
 
-5. Extract Rust command modules.
-   - Start with `commands/transcripts.rs`, `commands/settings.rs`, and `commands/credentials.rs`.
+4. If a UI control/pattern already exists in `src/shared/`, adopt it for the touched area when behavior, class names, and accessibility remain equivalent.
 
-6. Extract Rust storage modules.
-   - Start with `storage/settings.rs` and `storage/transcripts.rs`.
-   - Leave shared connection/state in `storage/mod.rs`.
+5. If new UI/control behavior applies to two or more domains, add it to `src/shared/` before copying it between screens.
 
-7. Split frontend tests by screen.
-   - Only after screen extraction stabilizes.
+6. If a new provider/source/model/credential setting is introduced, make the provider/source/model/credential boundary explicit instead of hard-coding it into UI or command code.
 
-8. Split CSS by screen and shared controls.
-   - Only after component/screen boundaries are stable.
+7. Keep tests near the owner being changed.
+   - Screen behavior: screen test.
+   - App workflow spanning screens: app workflow harness or focused app test.
+   - Storage behavior: storage domain tests.
+   - Provider/source parsing: provider/source adapter tests with injected clients/fetchers and test samples.
+
+8. Update docs/contracts when a public contract, ownership boundary, or feature workflow changes.
 
 ## Refactor Safety Rules
 
@@ -258,12 +347,27 @@ Rust target:
 - Prefer extracting one domain at a time.
 - Avoid changing database schema during pure module extraction.
 - Use `git diff --stat` or RTK summaries to keep each extraction reviewable.
+- Do not introduce a shared component/hook only to satisfy structure. It should either be used immediately or have a clear near-term reuse case.
+- Do not weaken product requirements or contracts to make extraction easier.
+- Leave domain-specific controls native when shared abstraction would hide important semantics.
+- Do not split cohesive files simply to reduce line count; line count is a signal to inspect, not a standalone requirement.
 
-## Near-Term Recommendation
+## Completion Note
 
-Do not interrupt M10 live Gemini validation with a broad refactor. The next practical extraction after M10.12 is either:
+The broad M13 modularization effort is complete. Future work should treat this document as a standing architecture checklist, not as a backlog of remaining extraction tasks.
 
-- `SettingsScreen`, because credential/model settings just expanded, or
-- `TranscriptsScreen`, because M10 made it a real product workflow.
+Further extraction is still expected during normal feature work when a module gains a new reason to change. Good future extraction triggers include:
 
-If M10.12 needs only a small smoke path, finish M10 first. If M10.12 requires more transcript UI changes, extract `TranscriptsScreen` before adding more transcript-specific UI logic to `App.tsx`.
+- A new app workflow adds state that can be isolated into a controller or view-model helper.
+- A screen adds a second complex panel, editor, or row/detail pattern.
+- A storage domain adds enough independent behavior to justify a focused helper/test module.
+- A provider/source adapter needs separate runtime, parsing, mapping, and test-sample boundaries.
+- A shared UI behavior is needed by at least two domains.
+
+Known acceptable large files after M13:
+
+- `src/app/AppStateRoot.tsx`, because it is the state/composition root.
+- Cohesive screen/domain components such as `CompanyWorkspace.tsx` and `SourceAdapterRow.tsx`.
+- Storage domain modules such as `storage/sources.rs` and `storage/transcripts.rs` while they remain domain-focused.
+
+If any of these start mixing layers or unrelated domains, split the new responsibility during the feature slice that introduces the pressure.

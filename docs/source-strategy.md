@@ -2,7 +2,7 @@
 
 This document defines the first source strategy for Brawler. It focuses on GPW because v1 prioritizes Polish market coverage.
 
-See also [Product Spec](product-spec.md), [Data Model](data-model.md), [Contracts](contracts.md), [Architecture](architecture.md), and [ADR 0004: Source and AI Policy](adr/0004-source-and-ai-policy.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Product Spec](product-spec.md), [Data Model](data-model.md), [Contracts](contracts.md), and source-specific ADRs.
 
 ## Strategy Principles
 

@@ -2,7 +2,7 @@
 
 This document plans Brawler from the user experience inward. It defines the first workflows the app must make feel natural before detailed database schema or implementation scaffolding hardens.
 
-See also [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), [Architecture](architecture.md), [Contracts](contracts.md), and [Kanban](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), and [Contracts](contracts.md).
 
 ## UX North Star
 

@@ -1,0 +1,53 @@
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    display: none;
+  }
+
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-pane dl {
+    grid-template-columns: 1fr;
+  }
+
+  .notebook-workspace,
+  .notebooks-screen,
+  .notebook-form-grid,
+  .notebook-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .topbar,
+  .panel-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: space-between;
+  }
+
+  .company-form {
+    grid-template-columns: 1fr;
+  }
+
+  .subsection-header,
+  .watchlist-form,
+  .company-row,
+  .company-row-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .segmented-control button {
+    min-width: 0;
+    flex: 1;
+  }
+}

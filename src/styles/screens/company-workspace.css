@@ -1,0 +1,77 @@
+.company-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.company-workspace {
+  display: grid;
+  gap: 14px;
+  margin: 0 12px 12px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--primary) 8%, var(--surface-raised)),
+      color-mix(in srgb, var(--secondary) 6%, var(--surface-raised))
+    );
+}
+
+.company-workspace-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.company-workspace-header h2 {
+  margin-top: 3px;
+  color: var(--text);
+  font-size: 22px;
+}
+
+.company-workspace-header p {
+  margin-top: 4px;
+  color: var(--muted);
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.company-workspace-meta {
+  display: flex;
+  justify-content: end;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.company-workspace-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 48%, transparent);
+  font-size: 12px;
+}
+
+.company-tabs {
+  width: fit-content;
+}
+
+.company-tabs button {
+  min-width: 88px;
+}
+
+.company-tab-panel {
+  display: grid;
+  gap: 8px;
+}

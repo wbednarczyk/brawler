@@ -1,108 +1,17 @@
-use crate::storage::{CompanyLookupResult, TranscriptJob};
+use crate::storage::TranscriptJob;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::error::Error as StdError;
 use std::time::Duration;
-use thiserror::Error;
+
+use super::types::{
+    TranscriptProviderError, TranscriptProviderOutput, TranscriptSegmentDraft,
+    VideoTranscriptProvider,
+};
 
 pub const DEFAULT_GEMINI_TRANSCRIPTION_MODEL: &str = "gemini-2.5-flash";
 const GEMINI_REQUEST_TIMEOUT_SECONDS: u64 = 300;
 const GEMINI_REQUEST_TIMEOUT_ENV: &str = "BRAWLER_GEMINI_REQUEST_TIMEOUT_SECONDS";
-
-#[derive(Debug, Clone)]
-pub struct TranscriptSegmentDraft {
-    pub start_seconds: Option<i64>,
-    pub end_seconds: Option<i64>,
-    pub speaker: Option<String>,
-    pub text: String,
-    pub language: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct TranscriptProviderOutput {
-    pub segments: Vec<TranscriptSegmentDraft>,
-    pub recognized_company_candidates: Vec<CompanyLookupResult>,
-}
-
-#[derive(Debug, Error)]
-pub enum TranscriptProviderError {
-    #[error("provider is not configured")]
-    ProviderNotConfigured,
-    #[error("provider limit reached")]
-    ProviderLimit,
-    #[error("provider is temporarily unavailable: {0}")]
-    ProviderUnavailable(String),
-    #[error("provider error: {0}")]
-    ProviderError(String),
-    #[error("network error: {0}")]
-    NetworkError(String),
-    #[error("invalid source URL")]
-    InvalidSourceUrl,
-    #[error("parse error: {0}")]
-    ParseError(String),
-    #[error("unknown provider error: {0}")]
-    Unknown(String),
-}
-
-impl TranscriptProviderError {
-    pub fn code(&self) -> &'static str {
-        match self {
-            Self::ProviderNotConfigured => "provider_not_configured",
-            Self::ProviderLimit => "provider_limit",
-            Self::ProviderUnavailable(_) => "provider_unavailable",
-            Self::ProviderError(_) => "provider_error",
-            Self::NetworkError(_) => "network_error",
-            Self::InvalidSourceUrl => "invalid_source_url",
-            Self::ParseError(_) => "parse_error",
-            Self::Unknown(_) => "unknown",
-        }
-    }
-}
-
-pub trait VideoTranscriptProvider {
-    fn provider_id(&self) -> &'static str;
-    fn transcribe(
-        &self,
-        job: &TranscriptJob,
-    ) -> Result<TranscriptProviderOutput, TranscriptProviderError>;
-}
-
-pub struct TestSampleTranscriptProvider;
-
-impl VideoTranscriptProvider for TestSampleTranscriptProvider {
-    fn provider_id(&self) -> &'static str {
-        "test_sample"
-    }
-
-    fn transcribe(
-        &self,
-        job: &TranscriptJob,
-    ) -> Result<TranscriptProviderOutput, TranscriptProviderError> {
-        if !job.source_url.contains("youtube.com") && !job.source_url.contains("youtu.be") {
-            return Err(TranscriptProviderError::InvalidSourceUrl);
-        }
-
-        Ok(TranscriptProviderOutput {
-            segments: vec![
-                TranscriptSegmentDraft {
-                    start_seconds: Some(0),
-                    end_seconds: Some(42),
-                    speaker: Some("Management".to_owned()),
-                    text: "Welcome to the quarterly conference. We will discuss recent execution and priorities.".to_owned(),
-                    language: Some("en".to_owned()),
-                },
-                TranscriptSegmentDraft {
-                    start_seconds: Some(43),
-                    end_seconds: Some(105),
-                    speaker: Some("Management".to_owned()),
-                    text: "The board expects the next product milestone to be delivered within two quarters.".to_owned(),
-                    language: Some("en".to_owned()),
-                },
-            ],
-            recognized_company_candidates: Vec::new(),
-        })
-    }
-}
 
 pub trait GeminiGenerateContentClient {
     fn generate_content(
@@ -283,13 +192,13 @@ where
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiGenerateContentRequest {
-    contents: Vec<GeminiContent>,
+    pub(crate) contents: Vec<GeminiContent>,
     generation_config: GeminiGenerationConfig,
 }
 
 #[derive(Debug, Serialize)]
 pub struct GeminiContent {
-    parts: Vec<GeminiPart>,
+    pub(crate) parts: Vec<GeminiPart>,
 }
 
 #[derive(Debug, Serialize)]
@@ -301,7 +210,7 @@ pub enum GeminiPart {
 
 #[derive(Debug, Serialize)]
 pub struct GeminiFileData {
-    file_uri: String,
+    pub(crate) file_uri: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -529,6 +438,9 @@ fn summarize_gemini_error_body(body: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::providers::transcripts::VideoTranscriptProvider;
+    use crate::storage::TranscriptJob;
+
     use super::*;
 
     struct MockGeminiClient {
@@ -590,18 +502,6 @@ mod tests {
             finished_at: None,
             error: None,
         }
-    }
-
-    #[test]
-    fn test_sample_provider_returns_segments() {
-        let provider = TestSampleTranscriptProvider;
-        let output = provider
-            .transcribe(&sample_job("https://www.youtube.com/watch?v=sample"))
-            .expect("sample provider should return transcript segments");
-
-        assert_eq!(provider.provider_id(), "test_sample");
-        assert_eq!(output.segments.len(), 2);
-        assert_eq!(output.segments[1].start_seconds, Some(43));
     }
 
     #[test]

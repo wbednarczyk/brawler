@@ -1,0 +1,124 @@
+.source-row-block {
+  display: grid;
+  gap: 0;
+  width: 100%;
+}
+
+.event-row-block {
+  display: grid;
+  gap: 0;
+}
+
+.event-row {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) minmax(130px, 0.24fr);
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.event-row:hover,
+.event-row:focus-visible,
+.event-row-selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.event-row-selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.event-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.event-date-box {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.event-date-box strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.event-date-box span {
+  grid-column: 2;
+}
+
+.event-date-box em {
+  grid-column: 2;
+  width: fit-content;
+}
+
+.event-row-main {
+  min-width: 0;
+}
+
+.event-title-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.event-title-line h2 {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-title-line span,
+.event-row-status span,
+.event-row-status small {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 56%, transparent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.event-row-main p {
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.event-row-main strong {
+  color: var(--text);
+}
+
+.event-row-status {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.event-detail-panel {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}

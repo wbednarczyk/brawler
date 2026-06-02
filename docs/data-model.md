@@ -2,7 +2,7 @@
 
 This document maps the UX and contracts to the first local SQLite data model. It is not a final migration file, but it should be concrete enough to guide the first schema implementation.
 
-See also [UI Information Architecture](ui-information-architecture.md), [UI Flows](ui-flows.md), [Contracts](contracts.md), and [Architecture](architecture.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Contracts](contracts.md), [Architecture](architecture.md), and [UI Information Architecture](ui-information-architecture.md).
 
 ## Model Principles
 
