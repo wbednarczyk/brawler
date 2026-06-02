@@ -1,4 +1,5 @@
 export type Theme = "dark" | "light" | "system";
+export type AppLocale = "en" | "pl";
 
 export type HealthResponse = {
   status: string;
@@ -244,6 +245,7 @@ export type TranscriptSegment = {
 
 export type UserSettings = {
   theme: Theme;
+  locale: AppLocale;
   accentPalette: string;
   pollIntervalSeconds: number;
   settingsSource: string;

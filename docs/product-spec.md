@@ -193,7 +193,9 @@ Default AI analysis mode is source-grounded. A future opinionated mode may be ad
 
 ## Settings, Export, And Local Data
 
-The Settings panel edits runtime settings stored in SQLite. YAML is accepted as the future import/export/bootstrap format for non-secret settings, but YAML implementation is deferred until the later export/import/backup work. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
+The Settings panel edits runtime settings stored in SQLite. English is the default app language, and Settings should let the user switch the app UI to Polish. Locale handling should be an extensible app-locale boundary so future supported languages can be added without rewriting screens. Locale changes affect app-owned UI copy and formatting labels; source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
+
+YAML is accepted as the future import/export/bootstrap format for non-secret settings, but YAML implementation is deferred until the later export/import/backup work. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
 
 App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs only and no telemetry.
 

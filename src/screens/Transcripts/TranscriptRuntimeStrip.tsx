@@ -1,4 +1,5 @@
 import type { CredentialStatus, UserSettings } from "../../api/types";
+import { useLocale } from "../../shared/locale";
 
 type TranscriptRuntimeStripProps = {
   geminiCredentialStatus: CredentialStatus | null;
@@ -15,22 +16,24 @@ export function TranscriptRuntimeStrip({
   formatCredentialConfigured,
   formatCredentialStorage,
 }: TranscriptRuntimeStripProps) {
+  const { text } = useLocale();
+
   return (
-    <dl className="transcript-runtime-strip" aria-label="Transcript runtime settings">
+    <dl className="transcript-runtime-strip" aria-label={text("Transcript runtime settings")}>
       <div>
-        <dt>Provider</dt>
+        <dt>{text("Provider")}</dt>
         <dd>{formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider)}</dd>
       </div>
       <div>
-        <dt>Credentials</dt>
+        <dt>{text("Credentials")}</dt>
         <dd>{formatCredentialConfigured(geminiCredentialStatus)}</dd>
       </div>
       <div>
-        <dt>Storage</dt>
+        <dt>{text("Storage")}</dt>
         <dd>{formatCredentialStorage(geminiCredentialStatus?.storage)}</dd>
       </div>
       <div>
-        <dt>Timeout</dt>
+        <dt>{text("Timeout")}</dt>
         <dd>{settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s</dd>
       </div>
     </dl>

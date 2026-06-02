@@ -322,7 +322,7 @@ Related tables:
 
 Rules:
 
-- General AI analysis has no preferred provider yet.
+- General AI analysis is implemented later through a provider-neutral boundary. Gemini may be the first live provider, but stored analysis records must not assume Gemini is the only provider.
 - AI output must not contain buy/sell/hold recommendations.
 - Source references are required.
 
@@ -379,7 +379,7 @@ Rules:
 - Default YouTube transcription provider is `provider_gemini`.
 - Default YouTube transcription model is `gemini-2.5-flash`.
 - Default YouTube transcription timeout is `300` seconds.
-- General AI provider is null until the user configures one.
+- General AI provider remains unset until the AI analysis framework milestone configures one. The first live implementation may use Gemini, but provider storage must remain extensible.
 - Default AI analysis mode is `source_grounded`.
 - Runtime settings live in SQLite.
 - YAML import/export excludes secrets and is contract-accepted but implementation-deferred until later export/import/backup work.

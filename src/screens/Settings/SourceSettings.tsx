@@ -1,4 +1,5 @@
 import type { FeedPruneResult, UserSettings } from "../../api/types";
+import { useLocale } from "../../shared/locale";
 
 type SourceSettingsProps = {
   feedPruneRetentionDays: number;
@@ -17,15 +18,17 @@ export function SourceSettings({
   formatPollInterval,
   formatTimestamp,
 }: SourceSettingsProps) {
+  const { t, text } = useLocale();
+
   return (
     <>
       <section className="settings-group" aria-labelledby="settings-sources-title">
-        <h2 id="settings-sources-title">Sources</h2>
+        <h2 id="settings-sources-title">{t("settings.sources.title")}</h2>
         <div className="settings-row">
           <label>
-            Poll interval
+            {text("Poll interval")}
             <select
-              aria-label="Settings source poll interval"
+              aria-label={text("Settings source poll interval")}
               value={settings?.pollIntervalSeconds ?? 900}
               onChange={(event) => onPollIntervalChange(Number(event.target.value))}
             >
@@ -38,55 +41,55 @@ export function SourceSettings({
         </div>
         <dl className="settings-grid">
           <div>
-            <dt>Settings source</dt>
+            <dt>{text("Settings source")}</dt>
             <dd>{settings?.settingsSource ?? "sqlite"}</dd>
           </div>
           <div>
-            <dt>Poll interval</dt>
+            <dt>{text("Poll interval")}</dt>
             <dd>{formatPollInterval(settings?.pollIntervalSeconds ?? 900)}</dd>
           </div>
         </dl>
       </section>
 
       <section className="settings-group" aria-labelledby="settings-cleanup-title">
-        <h2 id="settings-cleanup-title">Feed Cleanup</h2>
+        <h2 id="settings-cleanup-title">{t("settings.feedCleanup.title")}</h2>
         <dl className="settings-grid">
           <div>
-            <dt>Feed cleanup</dt>
-            <dd>On</dd>
+            <dt>{text("Feed cleanup")}</dt>
+            <dd>{text("On")}</dd>
           </div>
           <div>
-            <dt>Feed retention</dt>
-            <dd>{feedPruneRetentionDays} days</dd>
+            <dt>{text("Feed retention")}</dt>
+            <dd>{feedPruneRetentionDays} {text("days")}</dd>
           </div>
           <div>
-            <dt>Cleanup interval</dt>
-            <dd>Daily</dd>
+            <dt>{text("Cleanup interval")}</dt>
+            <dd>{text("Daily")}</dd>
           </div>
           <div>
-            <dt>Last cleanup</dt>
-            <dd>{formatTimestamp(feedPruneResult?.prunedAt, "Not run this session")}</dd>
+            <dt>{text("Last cleanup")}</dt>
+            <dd>{formatTimestamp(feedPruneResult?.prunedAt, text("Not run this session"))}</dd>
           </div>
           <div>
-            <dt>Last cleanup deleted</dt>
-            <dd>{feedPruneResult ? feedPruneResult.itemsDeleted : "Not run this session"}</dd>
+            <dt>{text("Last cleanup deleted")}</dt>
+            <dd>{feedPruneResult ? feedPruneResult.itemsDeleted : text("Not run this session")}</dd>
           </div>
           <div>
-            <dt>Protected feed items</dt>
-            <dd>Saved</dd>
+            <dt>{text("Protected feed items")}</dt>
+            <dd>{text("Saved")}</dd>
           </div>
         </dl>
       </section>
 
       <section className="settings-group" aria-labelledby="settings-import-title">
-        <h2 id="settings-import-title">Import And Export</h2>
+        <h2 id="settings-import-title">{t("settings.importExport.title")}</h2>
         <dl className="settings-grid">
           <div>
-            <dt>YAML import/export</dt>
+            <dt>{text("YAML import/export")}</dt>
             <dd>{settings?.yamlImportExportStatus ?? "accepted_deferred"}</dd>
           </div>
           <div>
-            <dt>Settings format</dt>
+            <dt>{text("Settings format")}</dt>
             <dd>{settings?.settingsImportExportFormat ?? "yaml"}</dd>
           </div>
         </dl>

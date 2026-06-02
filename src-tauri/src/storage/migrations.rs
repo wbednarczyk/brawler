@@ -113,6 +113,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "gemini_default_model_to_validated_flash",
         sql: include_str!("../../migrations/0021_gemini_default_model_to_validated_flash.sql"),
     },
+    Migration {
+        version: 22,
+        name: "app_locale",
+        sql: include_str!("../../migrations/0022_app_locale.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

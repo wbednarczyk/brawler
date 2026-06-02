@@ -70,7 +70,7 @@ Data must include enough origin to audit a feed item:
 
 Source adapters should return normalized records through a common interface. Adapters must declare source type, rate limits, supported markets, and allowed fetch mode.
 
-AI providers should implement provider-neutral interfaces. General AI analysis, summarization, significance labeling, and note extraction have no preferred provider yet.
+AI providers should implement provider-neutral interfaces. Gemini is already the first live AI provider for YouTube transcription and may be extended first for general analysis, but summarization, significance labeling, note extraction, and future AI workflows must remain behind provider/model/credential boundaries that can support OpenAI, Anthropic, and other providers later.
 
 Modularity and configurability are core architecture constraints. Provider, source, credential, model, and workflow settings should be represented as explicit boundaries instead of one-off hard-coded behavior when the feature is expected to evolve.
 

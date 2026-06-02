@@ -16,6 +16,7 @@ pub struct AiProviderSettings {
 #[serde(rename_all = "camelCase")]
 pub struct UserSettings {
     pub theme: String,
+    pub locale: String,
     pub accent_palette: String,
     pub poll_interval_seconds: i64,
     pub settings_source: &'static str,
@@ -29,6 +30,7 @@ pub struct UserSettings {
 #[serde(rename_all = "camelCase")]
 pub struct SettingsUpdate {
     pub theme: Option<String>,
+    pub locale: Option<String>,
     pub poll_interval_seconds: Option<i64>,
     pub youtube_transcription_provider: Option<String>,
     pub youtube_transcription_model: Option<String>,
@@ -40,6 +42,7 @@ pub struct SettingsUpdate {
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
     Ok(UserSettings {
         theme: setting_string(connection, "theme")?,
+        locale: setting_string(connection, "locale")?,
         accent_palette: setting_string(connection, "accent_palette")?,
         poll_interval_seconds: setting_i64(connection, "poll_interval_seconds")?,
         settings_source: "sqlite",
@@ -71,6 +74,11 @@ pub(crate) fn update_settings(
     if let Some(theme) = input.theme {
         validate_allowed_setting("theme", &theme, &["dark", "light", "system"])?;
         update_setting(connection, "theme", &theme)?;
+    }
+
+    if let Some(locale) = input.locale {
+        validate_allowed_setting("locale", &locale, &["en", "pl"])?;
+        update_setting(connection, "locale", &locale)?;
     }
 
     if let Some(poll_interval_seconds) = input.poll_interval_seconds {

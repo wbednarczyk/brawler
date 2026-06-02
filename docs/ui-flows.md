@@ -143,7 +143,7 @@ Acceptance criteria:
 - Saved notes link to transcript segment IDs, original YouTube URL, provider/job context, and timestamp ranges when available.
 - Provider limits and privacy implications are visible before sending video data to the provider.
 
-## Journey: Theme Selection
+## Journey: Appearance And Locale Settings
 
 Intent: let the user keep the app comfortable for daily use.
 
@@ -152,13 +152,19 @@ Flow:
 1. User opens Settings.
 2. User selects dark, light, or system theme.
 3. App applies the theme immediately.
-4. App persists the selected setting locally.
+4. User can select English or Polish as the app language.
+5. App applies app-owned UI copy for the selected language.
+6. App persists the selected settings locally.
 
 Acceptance criteria:
 
 - First-run theme is dark.
+- First-run locale is English.
 - Dark theme uses the `night-neon` palette.
 - Light theme preserves the same accent identity.
+- Polish locale is available from Settings.
+- Locale handling is extensible so future supported languages can be added through locale resources/configuration instead of per-screen rewrites.
+- Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
 
 ## Screen Inventory
 

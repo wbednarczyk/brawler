@@ -1,6 +1,7 @@
 import { Save, X } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
 import { Button } from "../../shared/components/Button";
+import { useLocale } from "../../shared/locale";
 import type { TranscriptsScreenProps } from "./transcriptTypes";
 
 type TranscriptNoteDraftProps = Pick<
@@ -26,92 +27,94 @@ export function TranscriptNoteDraft({
   discardTranscriptNoteDraft,
   updateTranscriptNoteForm,
 }: TranscriptNoteDraftProps) {
+  const { text } = useLocale();
+
   return (
     <form
       className="transcript-note-draft"
       onSubmit={(event) => createTranscriptNotebookEntry(job, event)}
-      aria-label="Transcript note draft"
+      aria-label={text("Transcript note draft")}
     >
       <div className="event-composer-header">
         <div>
-          <h2>Notebook note draft</h2>
-          <p>Edit the note before saving it to the company notebook.</p>
+          <h2>{text("Notebook note draft")}</h2>
+          <p>{text("Edit the note before saving it to the company notebook.")}</p>
         </div>
         <Button className="compact-button" onClick={discardTranscriptNoteDraft}>
           <X size={15} />
-          Discard
+          {text("Discard")}
         </Button>
       </div>
       <div className="event-composer-grid">
         <label className="event-composer-title">
-          Title
+          {text("Title")}
           <input
-            aria-label="Transcript note title"
+            aria-label={text("Transcript note title")}
             value={transcriptNoteForm.title}
             onChange={(event) => updateTranscriptNoteForm("title", event.target.value)}
           />
         </label>
         <label>
-          Kind
+          {text("Kind")}
           <select
-            aria-label="Transcript note kind"
+            aria-label={text("Transcript note kind")}
             value={transcriptNoteForm.kind}
             onChange={(event) => updateTranscriptNoteForm("kind", event.target.value)}
           >
-            <option value="manual">Manual</option>
-            <option value="observation">Observation</option>
-            <option value="claim">Claim</option>
-            <option value="question">Question</option>
-            <option value="follow_up">Follow-up</option>
+            <option value="manual">{text("Manual")}</option>
+            <option value="observation">{text("Observation")}</option>
+            <option value="claim">{text("Claim")}</option>
+            <option value="question">{text("Question")}</option>
+            <option value="follow_up">{text("Follow-up")}</option>
           </select>
         </label>
         <label>
-          Status
+          {text("Status")}
           <select
-            aria-label="Transcript note status"
+            aria-label={text("Transcript note status")}
             value={transcriptNoteForm.claimStatus}
             onChange={(event) => updateTranscriptNoteForm("claimStatus", event.target.value)}
           >
-            <option value="">Not set</option>
-            <option value="open">Open</option>
-            <option value="delivered">Delivered</option>
-            <option value="partially_delivered">Partially delivered</option>
-            <option value="missed">Missed</option>
-            <option value="unknown">Unknown</option>
-            <option value="not_applicable">Not applicable</option>
+            <option value="">{text("Not set")}</option>
+            <option value="open">{text("Status open")}</option>
+            <option value="delivered">{text("Delivered")}</option>
+            <option value="partially_delivered">{text("Partially delivered")}</option>
+            <option value="missed">{text("Missed")}</option>
+            <option value="unknown">{text("Unknown")}</option>
+            <option value="not_applicable">{text("Not applicable")}</option>
           </select>
         </label>
         <label>
-          Tags
+          {text("Tags")}
           <input
-            aria-label="Transcript note tags"
+            aria-label={text("Transcript note tags")}
             value={transcriptNoteForm.tags}
             onChange={(event) => updateTranscriptNoteForm("tags", event.target.value)}
           />
         </label>
         <NotebookDateField
-          ariaLabel="Transcript note event date"
-          label="Event date"
+          ariaLabel={text("Transcript note event date")}
+          label={text("Event date")}
           value={transcriptNoteForm.eventDate}
           onChange={(value) => updateTranscriptNoteForm("eventDate", value)}
         />
         <NotebookQuarterField
-          ariaLabel="Transcript note follow-up quarter"
-          label="Follow-up quarter"
+          ariaLabel={text("Transcript note follow-up quarter")}
+          label={text("Follow-up quarter")}
           value={transcriptNoteForm.followUpAfter}
           onChange={(value) => updateTranscriptNoteForm("followUpAfter", value)}
         />
         <NotebookDateField
-          ariaLabel="Transcript note follow-up date"
-          label="Follow-up date"
+          ariaLabel={text("Transcript note follow-up date")}
+          label={text("Follow-up date")}
           value={transcriptNoteForm.followUpDate}
           onChange={(value) => updateTranscriptNoteForm("followUpDate", value)}
         />
       </div>
       <label className="notebook-body-field">
-        Body
+        {text("Body")}
         <textarea
-          aria-label="Transcript note body"
+          aria-label={text("Transcript note body")}
           value={transcriptNoteForm.body}
           onChange={(event) => updateTranscriptNoteForm("body", event.target.value)}
         />
@@ -119,7 +122,7 @@ export function TranscriptNoteDraft({
       <div className="event-composer-actions">
         <Button className="compact-button" disabled={transcriptNoteSaveInFlight === job.id} type="submit" variant="primary">
           <Save size={15} />
-          {transcriptNoteSaveInFlight === job.id ? "Saving" : "Save"}
+          {transcriptNoteSaveInFlight === job.id ? text("Saving") : text("Save")}
         </Button>
       </div>
     </form>

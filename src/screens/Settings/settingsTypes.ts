@@ -1,8 +1,9 @@
 import type { FormEvent } from "react";
-import type { CredentialStatus, FeedPruneResult, Theme, UserSettings } from "../../api/types";
+import type { AppLocale, CredentialStatus, FeedPruneResult, Theme, UserSettings } from "../../api/types";
 
 export type SettingsScreenProps = {
   theme: Theme;
+  locale: AppLocale;
   settings: UserSettings | null;
   settingsError: string | null;
   feedPruneRetentionDays: number;
@@ -12,6 +13,7 @@ export type SettingsScreenProps = {
   geminiCredentialInFlight: boolean;
   geminiApiKeyDraft: string;
   onThemeChange: (theme: Theme) => void;
+  onLocaleChange: (locale: AppLocale) => void;
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onYoutubeTranscriptionModelChange: (model: string) => void;
   onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;

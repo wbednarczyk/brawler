@@ -1,8 +1,9 @@
 import { callCommand } from "./tauri";
-import type { Theme, UserSettings } from "./types";
+import type { AppLocale, Theme, UserSettings } from "./types";
 
 export type UpdateSettingsInput = {
   theme?: Theme;
+  locale?: AppLocale;
   pollIntervalSeconds?: number;
   youtubeTranscriptionModel?: string;
   youtubeTranscriptionTimeoutSeconds?: number;

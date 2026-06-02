@@ -1,6 +1,7 @@
 import { CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { useLocale } from "../../shared/locale";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 import type { SourcesScreenProps } from "./sourceTypes";
 
@@ -39,12 +40,14 @@ export function SourcesScreen({
   formatNextRefresh,
   formatTimestamp,
 }: SourcesScreenProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="feed-panel" aria-labelledby="sources-title">
       <div className="panel-header">
         <div>
-          <h1 id="sources-title">Sources</h1>
-          <p>Local source adapter status before remote ingestion is wired.</p>
+          <h1 id="sources-title">{t("sources.title")}</h1>
+          <p>{t("sources.description")}</p>
         </div>
         <Button
           className="compact-button"
@@ -52,38 +55,38 @@ export function SourcesScreen({
           onClick={() => refreshSources("manual")}
         >
           {sourceRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
-          {sourceRefreshState === "refreshing" ? "Refreshing" : "Refresh sources"}
+          {sourceRefreshState === "refreshing" ? t("action.refreshing") : t("action.refreshSources")}
         </Button>
       </div>
 
-      <div className="sources-layout" aria-label="Source adapters">
+      <div className="sources-layout" aria-label={text("Source adapters")}>
         {sourceRefreshResult ? (
-          <dl className="source-status-grid source-refresh-summary" aria-label="Last source refresh summary">
+          <dl className="source-status-grid source-refresh-summary" aria-label={text("Last source refresh summary")}>
             <div>
-              <dt>Fetched</dt>
-              <dd aria-label="Fetched source items">{sourceRefreshResult.itemsFetched}</dd>
+              <dt>{text("Fetched")}</dt>
+              <dd aria-label={text("Fetched source items")}>{sourceRefreshResult.itemsFetched}</dd>
             </div>
             <div>
-              <dt>Created</dt>
-              <dd aria-label="Created source items">{sourceRefreshResult.itemsCreated}</dd>
+              <dt>{text("Created")}</dt>
+              <dd aria-label={text("Created source items")}>{sourceRefreshResult.itemsCreated}</dd>
             </div>
             <div>
-              <dt>Matched</dt>
-              <dd aria-label="Matched source items">{sourceRefreshResult.itemsMatched}</dd>
+              <dt>{text("Matched")}</dt>
+              <dd aria-label={text("Matched source items")}>{sourceRefreshResult.itemsMatched}</dd>
             </div>
             <div>
-              <dt>Unmatched</dt>
-              <dd aria-label="Unmatched source items">{sourceRefreshResult.itemsUnmatched}</dd>
+              <dt>{text("Unmatched")}</dt>
+              <dd aria-label={text("Unmatched source items")}>{sourceRefreshResult.itemsUnmatched}</dd>
             </div>
             <div>
-              <dt>Details</dt>
-              <dd aria-label="Stored source detail bodies">
+              <dt>{text("Details")}</dt>
+              <dd aria-label={text("Stored source detail bodies")}>
                 {sourceRefreshResult.detailItemsStored}/{sourceRefreshResult.detailItemsAttempted}
               </dd>
             </div>
             <div>
-              <dt>Detail failures</dt>
-              <dd aria-label="Failed source detail bodies">{sourceRefreshResult.detailItemsFailed}</dd>
+              <dt>{text("Detail failures")}</dt>
+              <dd aria-label={text("Failed source detail bodies")}>{sourceRefreshResult.detailItemsFailed}</dd>
             </div>
           </dl>
         ) : null}
@@ -123,11 +126,11 @@ export function SourcesScreen({
             toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
           />
         ))}
-        {sourceAdapters.length === 0 ? <EmptyState>No source adapters configured.</EmptyState> : null}
-        {sourceAdaptersError ? <p className="error-text">Source command failed: {sourceAdaptersError}</p> : null}
-        {sourceRefreshError ? <p className="error-text">Source refresh failed: {sourceRefreshError}</p> : null}
+        {sourceAdapters.length === 0 ? <EmptyState>{t("empty.noSourceAdapters")}</EmptyState> : null}
+        {sourceAdaptersError ? <p className="error-text">{t("error.sourceCommandFailed")}: {sourceAdaptersError}</p> : null}
+        {sourceRefreshError ? <p className="error-text">{t("error.sourceRefreshFailed")}: {sourceRefreshError}</p> : null}
         {unmatchedSourceItemsError ? (
-          <p className="error-text">Unmatched source diagnostics failed: {unmatchedSourceItemsError}</p>
+          <p className="error-text">{t("error.unmatchedSourceDiagnosticsFailed")}: {unmatchedSourceItemsError}</p>
         ) : null}
       </div>
     </section>

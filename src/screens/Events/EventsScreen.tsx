@@ -9,6 +9,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "../../shared/components/Button";
+import { useLocale } from "../../shared/locale";
 import { EventListView } from "./EventListView";
 import type { EventsScreenProps } from "./eventTypes";
 import { WeekEventsView } from "./WeekEventsView";
@@ -72,12 +73,14 @@ export function EventsScreen({
   companyEventDueClass,
   openExternalUrl,
 }: EventsScreenProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="feed-panel" aria-labelledby="events-title">
       <div className="panel-header">
         <div>
-          <h1 id="events-title">Events</h1>
-          <p>Company calendar events across tracked companies.</p>
+          <h1 id="events-title">{t("events.title")}</h1>
+          <p>{t("events.description")}</p>
         </div>
         <Button
           className="compact-button"
@@ -90,17 +93,17 @@ export function EventsScreen({
             <RefreshCw size={15} />
           )}
           {sourceRefreshState === "refreshing" && sourceAdapterRefreshInFlight === "events"
-            ? "Refreshing"
-            : "Refresh event sources"}
+            ? t("events.action.refreshing")
+            : t("events.action.refreshSources")}
         </Button>
         <Button className="compact-button" onClick={openCompanyEventComposer} variant="primary">
           <Plus size={15} />
-          Add event
+          {t("action.addEvent")}
         </Button>
       </div>
 
-      <div className="filter-toolbar events-filter-toolbar" aria-label="Event view mode">
-        <div className="segmented-control" role="group" aria-label="Event layout">
+      <div className="filter-toolbar events-filter-toolbar" aria-label={text("Event view mode")}>
+        <div className="segmented-control" role="group" aria-label={text("Event layout")}>
           {(["week", "list"] as const).map((viewMode) => (
             <button
               className={companyEventViewMode === viewMode ? "segment-active" : ""}
@@ -108,12 +111,12 @@ export function EventsScreen({
               onClick={() => setCompanyEventViewMode(viewMode)}
               type="button"
             >
-              {viewMode === "week" ? "Week" : "List"}
+              {viewMode === "week" ? text("Week") : text("List")}
             </button>
           ))}
         </div>
         {companyEventViewMode === "week" ? (
-          <div className="week-toolbar" aria-label="Week navigation">
+          <div className="week-toolbar" aria-label={text("Week navigation")}>
             <Button
               className="compact-button icon-only-button"
               onClick={() => {
@@ -121,7 +124,7 @@ export function EventsScreen({
                   formatLocalDate(addLocalDays(parseLocalDate(current), -7)),
                 );
               }}
-              aria-label="Previous week"
+              aria-label={text("Previous week")}
             >
               <ChevronLeft size={15} />
             </Button>
@@ -133,7 +136,7 @@ export function EventsScreen({
                   formatLocalDate(addLocalDays(parseLocalDate(current), 7)),
                 );
               }}
-              aria-label="Next week"
+              aria-label={text("Next week")}
             >
               <ChevronRight size={15} />
             </Button>
@@ -142,11 +145,11 @@ export function EventsScreen({
               onClick={() => setCompanyEventWeekAnchorDate(formatLocalDate(new Date()))}
             >
               <LocateFixed size={15} />
-              Current week
+              {text("Current week")}
             </Button>
           </div>
         ) : (
-          <div className="segmented-control" role="group" aria-label="Event date range">
+          <div className="segmented-control" role="group" aria-label={text("Event date range")}>
             {(["upcoming", "historical", "all"] as const).map((mode) => (
               <button
                 className={companyEventMode === mode ? "segment-active" : ""}
@@ -154,19 +157,19 @@ export function EventsScreen({
                 onClick={() => setCompanyEventMode(mode)}
                 type="button"
               >
-                {mode === "upcoming" ? "Upcoming" : mode === "historical" ? "History" : "All"}
+                {mode === "upcoming" ? text("Upcoming") : mode === "historical" ? text("History") : text("All")}
               </button>
             ))}
           </div>
         )}
         <label>
-          Watchlist
+          {text("Watchlist")}
           <select
-            aria-label="Event watchlist filter"
+            aria-label={text("Event watchlist filter")}
             value={companyEventWatchlistFilter}
             onChange={(event) => setCompanyEventWatchlistFilter(event.target.value)}
           >
-            <option value="all">All watchlists</option>
+            <option value="all">{text("All watchlists")}</option>
             {watchlists.map((watchlist) => (
               <option key={watchlist.id} value={watchlist.id}>
                 {watchlist.name}
@@ -175,13 +178,13 @@ export function EventsScreen({
           </select>
         </label>
         <label>
-          Company
+          {text("Company")}
           <select
-            aria-label="Event company filter"
+            aria-label={text("Event company filter")}
             value={companyEventCompanyFilter}
             onChange={(event) => setCompanyEventCompanyFilter(event.target.value)}
           >
-            <option value="all">All companies</option>
+            <option value="all">{text("All companies")}</option>
             {companies.map((company) => (
               <option key={company.id} value={company.id}>
                 {company.qualifiedTicker}
@@ -190,13 +193,13 @@ export function EventsScreen({
           </select>
         </label>
         <label>
-          Type
+          {text("Type")}
           <select
-            aria-label="Event type filter"
+            aria-label={text("Event type filter")}
             value={companyEventTypeFilter}
             onChange={(event) => setCompanyEventTypeFilter(event.target.value)}
           >
-            <option value="all">All types</option>
+            <option value="all">{text("All types")}</option>
             {companyEventTypes.map((eventType) => (
               <option key={eventType} value={eventType}>
                 {formatCompanyEventType(eventType)}
@@ -205,13 +208,13 @@ export function EventsScreen({
           </select>
         </label>
         <label>
-          Status
+          {text("Status")}
           <select
-            aria-label="Event status filter"
+            aria-label={text("Event status filter")}
             value={companyEventStatusFilter}
             onChange={(event) => setCompanyEventStatusFilter(event.target.value)}
           >
-            <option value="all">All statuses</option>
+            <option value="all">{text("All statuses")}</option>
             {companyEventStatuses.map((status) => (
               <option key={status} value={status}>
                 {formatCompanyEventStatus(status)}
@@ -222,14 +225,14 @@ export function EventsScreen({
         {companyEventViewMode === "list" ? (
           <>
             <NotebookDateField
-              ariaLabel="Event date from filter"
-              label="From"
+              ariaLabel={text("Event date from filter")}
+              label={text("From")}
               value={companyEventDateFrom}
               onChange={setCompanyEventDateFrom}
             />
             <NotebookDateField
-              ariaLabel="Event date to filter"
-              label="To"
+              ariaLabel={text("Event date to filter")}
+              label={text("To")}
               value={companyEventDateTo}
               onChange={setCompanyEventDateTo}
             />
@@ -248,16 +251,16 @@ export function EventsScreen({
           onClick={clearCompanyEventFilters}
         >
           <X size={15} />
-          Clear filters
+          {text("Clear filters")}
         </Button>
       </div>
 
       {isCompanyEventComposerOpen ? (
-        <div className="event-composer" aria-label="Create manual event">
+        <div className="event-composer" aria-label={text("Create manual event")}>
           <div className="event-composer-header">
             <div>
-              <h2>Manual event</h2>
-              <p>Add a missing date for one tracked company.</p>
+              <h2>{text("Manual event")}</h2>
+              <p>{text("Add a missing date for one tracked company.")}</p>
             </div>
             <Button
               className="compact-button"
@@ -267,14 +270,14 @@ export function EventsScreen({
               }}
             >
               <X size={15} />
-              Discard
+              {text("Discard")}
             </Button>
           </div>
           <div className="event-composer-grid">
             <label>
-              Company
+              {text("Company")}
               <select
-                aria-label="Manual event company"
+                aria-label={text("Manual event company")}
                 value={companyEventForm.companyId}
                 onChange={(event) =>
                   setCompanyEventForm((current) => ({
@@ -283,7 +286,7 @@ export function EventsScreen({
                   }))
                 }
               >
-                <option value="">Select company</option>
+                <option value="">{text("Select company")}</option>
                 {companies.map((company) => (
                   <option key={company.id} value={company.id}>
                     {company.qualifiedTicker}
@@ -292,9 +295,9 @@ export function EventsScreen({
               </select>
             </label>
             <label>
-              Type
+              {text("Type")}
               <select
-                aria-label="Manual event type"
+                aria-label={text("Manual event type")}
                 value={companyEventForm.eventType}
                 onChange={(event) =>
                   setCompanyEventForm((current) => ({
@@ -311,9 +314,9 @@ export function EventsScreen({
               </select>
             </label>
             <label>
-              Status
+              {text("Status")}
               <select
-                aria-label="Manual event status"
+                aria-label={text("Manual event status")}
                 value={companyEventForm.status}
                 onChange={(event) =>
                   setCompanyEventForm((current) => ({
@@ -330,8 +333,8 @@ export function EventsScreen({
               </select>
             </label>
             <NotebookDateField
-              ariaLabel="Manual event date"
-              label="Date"
+              ariaLabel={text("Manual event date")}
+              label={text("Date")}
               value={companyEventForm.eventDate}
               onChange={(value) =>
                 setCompanyEventForm((current) => ({
@@ -341,9 +344,9 @@ export function EventsScreen({
               }
             />
             <label>
-              Time
+              {text("Time")}
               <input
-                aria-label="Manual event time"
+                aria-label={text("Manual event time")}
                 type="time"
                 value={companyEventForm.eventTime}
                 onChange={(event) =>
@@ -355,9 +358,9 @@ export function EventsScreen({
               />
             </label>
             <label className="event-composer-title">
-              Title
+              {text("Title")}
               <input
-                aria-label="Manual event title"
+                aria-label={text("Manual event title")}
                 value={companyEventForm.title}
                 onChange={(event) =>
                   setCompanyEventForm((current) => ({
@@ -369,16 +372,16 @@ export function EventsScreen({
             </label>
           </div>
           <div className="event-composer-actions">
-            {companyEventCreateError ? <p className="error-text">{companyEventCreateError}</p> : null}
+            {companyEventCreateError ? <p className="error-text">{text(companyEventCreateError)}</p> : null}
             <Button className="compact-button" onClick={createCompanyEvent} variant="primary">
               <Save size={15} />
-              Save
+              {text("Save")}
             </Button>
           </div>
         </div>
       ) : null}
 
-      <div className="events-layout" aria-label="Company events">
+      <div className="events-layout" aria-label={text("Company events")}>
         {companyEventViewMode === "week" ? (
           <WeekEventsView
             companyEventWorkingWeekDays={companyEventWorkingWeekDays}

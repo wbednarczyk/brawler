@@ -32,6 +32,7 @@ type CompanyControllerInput = {
   watchlistAssignments: Record<string, string>;
   watchlistName: string;
   watchlists: Watchlist[];
+  text: (value: string) => string;
 };
 
 export function useCompanyController({
@@ -56,6 +57,7 @@ export function useCompanyController({
   watchlistAssignments,
   watchlistName,
   watchlists,
+  text,
 }: CompanyControllerInput) {
   function updateCompanyForm(field: keyof CompanyForm, value: string) {
     companyLookupVersionRef.current += 1;
@@ -88,7 +90,7 @@ export function useCompanyController({
       displayName: result.displayName,
       isin: result.isin,
     });
-    setLookupStatus(`Filled from ${result.source}: ${result.qualifiedTicker}`);
+    setLookupStatus(`${text("Filled from")} ${result.source}: ${result.qualifiedTicker}`);
   }
 
   function applyRegistryEntryToCompanyForm(entry: CompanyRegistryEntry) {
@@ -100,12 +102,12 @@ export function useCompanyController({
       displayName: entry.displayName,
       isin: entry.isin ?? "",
     });
-    setLookupStatus(`Selected from GPW registry: ${entry.qualifiedTicker}`);
+    setLookupStatus(`${text("Selected from GPW registry")}: ${entry.qualifiedTicker}`);
   }
 
   function lookupCompany() {
     const lookupVersion = companyLookupVersionRef.current;
-    setLookupStatus("Looking up GPW registry...");
+    setLookupStatus(text("Looking up GPW registry..."));
 
     companiesApi.lookupCompany({
       exchange: companyForm.exchange,
@@ -121,7 +123,7 @@ export function useCompanyController({
         if (result) {
           applyLookupResult(result);
         } else {
-          setLookupStatus("No GPW registry match.");
+          setLookupStatus(text("No GPW registry match."));
         }
         setCompaniesError(null);
       })
@@ -203,7 +205,7 @@ export function useCompanyController({
   }
 
   function deleteCompany(company: Company) {
-    const confirmed = window.confirm(`Delete ${company.qualifiedTicker} from your local registry?`);
+    const confirmed = window.confirm(`${text("Delete")} ${company.qualifiedTicker} ${text("from your local registry?")}`);
 
     if (!confirmed) {
       return;
@@ -258,7 +260,7 @@ export function useCompanyController({
     const assignedWatchlistName = watchlists.find((watchlist) => watchlist.id === watchlistId)?.name;
 
     if (!watchlistId) {
-      setWatchlistsError("Create a watchlist before assigning companies.");
+      setWatchlistsError(text("Create a watchlist before assigning companies."));
       return;
     }
 
@@ -268,7 +270,7 @@ export function useCompanyController({
     })
       .then(() => {
         setWatchlistsError(null);
-        showWatchlistFeedback(company.id, `Assigned to ${assignedWatchlistName ?? "watchlist"}`);
+        showWatchlistFeedback(company.id, `${text("Assigned to")} ${assignedWatchlistName ?? text("watchlist")}`);
         refreshWatchlists();
         refreshWatchlistMemberships();
       })
@@ -282,7 +284,7 @@ export function useCompanyController({
     const assignedWatchlistName = watchlists.find((watchlist) => watchlist.id === watchlistId)?.name;
 
     if (!watchlistId) {
-      setWatchlistsError("Select a watchlist before removing companies.");
+      setWatchlistsError(text("Select a watchlist before removing companies."));
       return;
     }
 
@@ -292,7 +294,7 @@ export function useCompanyController({
     })
       .then(() => {
         setWatchlistsError(null);
-        showWatchlistFeedback(company.id, `Removed from ${assignedWatchlistName ?? "watchlist"}`);
+        showWatchlistFeedback(company.id, `${text("Removed from")} ${assignedWatchlistName ?? text("watchlist")}`);
         refreshWatchlists();
         refreshWatchlistMemberships();
       })

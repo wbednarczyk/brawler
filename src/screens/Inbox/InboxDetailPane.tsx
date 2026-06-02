@@ -1,5 +1,6 @@
 import { BookOpenText, Building2, ExternalLink, FileText, Mail, MailOpen, Save } from "lucide-react";
 import { Button } from "../../shared/components/Button";
+import { useLocale } from "../../shared/locale";
 import type { InboxScreenProps } from "./inboxTypes";
 
 type InboxDetailPaneProps = Pick<
@@ -26,35 +27,36 @@ export function InboxDetailPane({
   feedItemSummary,
   formatTimestamp,
 }: InboxDetailPaneProps) {
+  const { text } = useLocale();
+
   return (
-    <aside className="detail-pane" aria-label="Feed item details">
+    <aside className="detail-pane" aria-label={text("Feed item details")}>
       <div className="detail-icon">
         <FileText size={24} />
       </div>
       {selectedFeedItem ? (
         <>
           <h2>{selectedFeedItem.title}</h2>
-          <section className="feed-body-section" aria-label="Feed summary">
+          <section className="feed-body-section" aria-label={text("Feed summary")}>
             <div className="feed-body-heading">
-              <span>Summary</span>
+              <span>{text("Summary")}</span>
             </div>
             <p className="feed-detail-body">{feedItemSummary(selectedFeedItem)}</p>
           </section>
-          <details className="feed-body-section feed-body-disclosure" aria-label="Official report body">
+          <details className="feed-body-section feed-body-disclosure" aria-label={text("Official report body")}>
             <summary className="feed-body-heading">
-              <span>Official report body</span>
-              <strong>{selectedFeedItem.bodyText ? "Stored" : "Not stored"}</strong>
+              <span>{text("Official report body")}</span>
+              <strong>{selectedFeedItem.bodyText ? text("Stored") : text("Not stored")}</strong>
             </summary>
             {selectedFeedItem.bodyText ? (
               <p className="feed-detail-body">{selectedFeedItem.bodyText}</p>
             ) : (
               <p className="feed-detail-empty">
-                No official report body is stored for this item yet. Refresh sources and check Sources for detail
-                warnings if this remains empty.
+                {text("No official report body is stored for this item yet. Refresh sources and check Sources for detail warnings if this remains empty.")}
               </p>
             )}
           </details>
-          <div className="detail-actions" aria-label="Feed item actions">
+          <div className="detail-actions" aria-label={text("Feed item actions")}>
             <Button
               className="compact-button"
               onClick={() =>
@@ -65,7 +67,7 @@ export function InboxDetailPane({
               }
             >
               {selectedFeedItem.unread ? <MailOpen size={15} /> : <Mail size={15} />}
-              {selectedFeedItem.unread ? "Mark read" : "Mark unread"}
+              {selectedFeedItem.unread ? text("Mark read") : text("Mark unread")}
             </Button>
             <Button
               className="compact-button"
@@ -77,7 +79,7 @@ export function InboxDetailPane({
               }
             >
               <Save size={15} />
-              {selectedFeedItem.saved ? "Unsave" : "Save"}
+              {selectedFeedItem.saved ? text("Unsave") : text("Save")}
             </Button>
             {selectedFeedCompany ? (
               <Button
@@ -85,7 +87,7 @@ export function InboxDetailPane({
                 onClick={() => openCompanyWorkspaceFromFeedItem(selectedFeedItem)}
               >
                 <Building2 size={15} />
-                Open company
+                {text("Open company")}
               </Button>
             ) : null}
             {selectedFeedCompany ? (
@@ -94,25 +96,25 @@ export function InboxDetailPane({
                 onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
               >
                 <BookOpenText size={15} />
-                Note
+                {text("Note")}
               </Button>
             ) : null}
             <a className="secondary-button compact-button" href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
               <ExternalLink size={15} />
-              Open source
+              {text("Open source")}
             </a>
           </div>
           <dl>
             <div>
-              <dt>Company</dt>
+              <dt>{text("Company")}</dt>
               <dd>{selectedFeedItem.company}</dd>
             </div>
             <div>
-              <dt>Source</dt>
+              <dt>{text("Source")}</dt>
               <dd>{selectedFeedItem.source}</dd>
             </div>
             <div>
-              <dt>Source URL</dt>
+              <dt>{text("Source URL")}</dt>
               <dd>
                 <a href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
                   {selectedFeedItem.sourceUrl}
@@ -120,20 +122,20 @@ export function InboxDetailPane({
               </dd>
             </div>
             <div>
-              <dt>Published</dt>
-              <dd>{formatTimestamp(selectedFeedItem.publishedAt, "Unknown")}</dd>
+              <dt>{text("Published")}</dt>
+              <dd>{formatTimestamp(selectedFeedItem.publishedAt, text("Unknown"))}</dd>
             </div>
             <div>
-              <dt>Fetched</dt>
-              <dd>{formatTimestamp(selectedFeedItem.fetchedAt, "Unknown")}</dd>
+              <dt>{text("Fetched")}</dt>
+              <dd>{formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown"))}</dd>
             </div>
             <div>
-              <dt>Attribution</dt>
+              <dt>{text("Attribution")}</dt>
               <dd>{selectedFeedItem.attribution}</dd>
             </div>
           </dl>
           {selectedFeedItem.attachments.length > 0 ? (
-            <div className="feed-attachment-list" aria-label="Feed attachments">
+            <div className="feed-attachment-list" aria-label={text("Feed attachments")}>
               {selectedFeedItem.attachments.map((attachment) => (
                 <a
                   className="feed-attachment-link"
@@ -151,12 +153,12 @@ export function InboxDetailPane({
         </>
       ) : (
         <>
-          <h2>No item selected</h2>
-          <p>Select a feed item to inspect source details and origin links.</p>
+          <h2>{text("No item selected")}</h2>
+          <p>{text("Select a feed item to inspect source details and origin links.")}</p>
         </>
       )}
-      {healthError ? <p className="error-text">Health command failed: {healthError}</p> : null}
-      {databaseError ? <p className="error-text">Database command failed: {databaseError}</p> : null}
+      {healthError ? <p className="error-text">{text("Health command failed")}: {healthError}</p> : null}
+      {databaseError ? <p className="error-text">{text("Database command failed")}: {databaseError}</p> : null}
     </aside>
   );
 }

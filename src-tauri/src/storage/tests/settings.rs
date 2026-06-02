@@ -8,6 +8,7 @@ fn reads_default_settings_from_sqlite() {
     let settings = state.get_settings().expect("settings should load");
 
     assert_eq!(settings.theme, "dark");
+    assert_eq!(settings.locale, "en");
     assert_eq!(settings.accent_palette, "night-neon");
     assert_eq!(settings.poll_interval_seconds, 900);
     assert_eq!(settings.settings_source, "sqlite");
@@ -60,6 +61,7 @@ fn updates_settings_through_storage_api() {
     let settings = state
         .update_settings(SettingsUpdate {
             theme: Some("light".to_owned()),
+            locale: Some("pl".to_owned()),
             poll_interval_seconds: Some(1800),
             youtube_transcription_provider: None,
             youtube_transcription_model: None,
@@ -70,6 +72,7 @@ fn updates_settings_through_storage_api() {
         .expect("settings should update");
 
     assert_eq!(settings.theme, "light");
+    assert_eq!(settings.locale, "pl");
     assert_eq!(settings.poll_interval_seconds, 1800);
     assert_eq!(
         settings.ai_providers.youtube_transcription_timeout_seconds,
@@ -79,6 +82,7 @@ fn updates_settings_through_storage_api() {
     let persisted = state.get_settings().expect("settings should persist");
 
     assert_eq!(persisted.theme, "light");
+    assert_eq!(persisted.locale, "pl");
     assert_eq!(persisted.poll_interval_seconds, 1800);
     assert_eq!(
         persisted.ai_providers.youtube_transcription_timeout_seconds,
@@ -93,6 +97,7 @@ fn rejects_invalid_poll_interval_setting() {
 
     let result = state.update_settings(SettingsUpdate {
         theme: None,
+        locale: None,
         poll_interval_seconds: Some(42),
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
@@ -111,6 +116,26 @@ fn rejects_invalid_theme_setting() {
 
     let result = state.update_settings(SettingsUpdate {
         theme: Some("sepia".to_owned()),
+        locale: None,
+        poll_interval_seconds: None,
+        youtube_transcription_provider: None,
+        youtube_transcription_model: None,
+        youtube_transcription_timeout_seconds: None,
+        general_analysis_provider: None,
+        ai_analysis_mode: None,
+    });
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_invalid_locale_setting() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let result = state.update_settings(SettingsUpdate {
+        theme: None,
+        locale: Some("de".to_owned()),
         poll_interval_seconds: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,

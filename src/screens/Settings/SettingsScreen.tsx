@@ -3,9 +3,11 @@ import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
 import { SourceSettings } from "./SourceSettings";
 import type { SettingsScreenProps } from "./settingsTypes";
+import { makeTranslator } from "../../shared/locale";
 
 export function SettingsScreen({
   theme,
+  locale,
   settings,
   settingsError,
   feedPruneRetentionDays,
@@ -15,6 +17,7 @@ export function SettingsScreen({
   geminiCredentialInFlight,
   geminiApiKeyDraft,
   onThemeChange,
+  onLocaleChange,
   onPollIntervalChange,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
@@ -30,20 +33,25 @@ export function SettingsScreen({
   formatCredentialStorage,
   formatCredentialKind,
 }: SettingsScreenProps) {
+  const t = makeTranslator(locale);
+
   return (
     <section className="feed-panel" aria-labelledby="settings-title">
       <div className="panel-header">
         <div>
-          <h1 id="settings-title">Settings</h1>
-          <p>SQLite-backed local runtime settings.</p>
+          <h1 id="settings-title">{t("settings.title")}</h1>
+          <p>{t("settings.description")}</p>
         </div>
       </div>
 
-      <div className="settings-layout" aria-label="Application settings">
+      <div className="settings-layout" aria-label={t("settings.applicationSettings")}>
         <AppearanceSettings
+          locale={locale}
           settings={settings}
           theme={theme}
+          onLocaleChange={onLocaleChange}
           onThemeChange={onThemeChange}
+          t={t}
         />
         <SourceSettings
           feedPruneRetentionDays={feedPruneRetentionDays}

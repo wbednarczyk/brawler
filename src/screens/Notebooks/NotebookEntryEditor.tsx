@@ -2,6 +2,7 @@ import { BookOpenText, Save, X } from "lucide-react";
 import type { NotebookEntry } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { useLocale } from "../../shared/locale";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
 type NotebookEntryEditorProps = Pick<
@@ -35,19 +36,21 @@ export function NotebookEntryEditor({
   MarkdownNoteBody,
   renderNotebookOrigins,
 }: NotebookEntryEditorProps) {
+  const { text } = useLocale();
+
   return (
     <form
       className="notebook-detail notebooks-inline-detail"
-      aria-label="Notebook screen entry detail"
+      aria-label={text("Notebook screen entry detail")}
       onSubmit={saveNotebookScreenEntry}
     >
       {isNotebookScreenEditMode ? (
         <>
           <div className="notebook-entry-header">
             <label>
-              Title
+              {text("Title")}
               <input
-                aria-label="Notebook screen selected title"
+                aria-label={text("Notebook screen selected title")}
                 value={notebookScreenEditForm.title}
                 onChange={(event) =>
                   updateNotebookScreenEditForm("title", event.target.value)
@@ -60,7 +63,7 @@ export function NotebookEntryEditor({
                 onClick={cancelNotebookScreenEdit}
               >
                 <X size={15} />
-                Cancel
+                {text("Cancel")}
               </Button>
               <Button
                 className="compact-button"
@@ -73,12 +76,12 @@ export function NotebookEntryEditor({
                 variant="primary"
               >
                 <Save size={15} />
-                Save
+                {text("Save")}
               </Button>
             </div>
           </div>
           <textarea
-            aria-label="Notebook screen selected body"
+            aria-label={text("Notebook screen selected body")}
             value={notebookScreenEditForm.body}
             onChange={(event) =>
               updateNotebookScreenEditForm("body", event.target.value)
@@ -86,43 +89,43 @@ export function NotebookEntryEditor({
           />
           <div className="notebook-detail-grid">
             <label>
-              Kind
+              {text("Kind")}
               <select
-                aria-label="Notebook screen selected kind"
+                aria-label={text("Notebook screen selected kind")}
                 value={notebookScreenEditForm.kind}
                 onChange={(event) =>
                   updateNotebookScreenEditForm("kind", event.target.value)
                 }
               >
-                <option value="manual">Manual</option>
-                <option value="observation">Observation</option>
-                <option value="claim">Claim</option>
-                <option value="question">Question</option>
-                <option value="follow_up">Follow-up</option>
+                <option value="manual">{text("Manual")}</option>
+                <option value="observation">{text("Observation")}</option>
+                <option value="claim">{text("Claim")}</option>
+                <option value="question">{text("Question")}</option>
+                <option value="follow_up">{text("Follow-up")}</option>
               </select>
             </label>
             <label>
-              Claim status
+              {text("Claim status")}
               <select
-                aria-label="Notebook screen selected claim status"
+                aria-label={text("Notebook screen selected claim status")}
                 value={notebookScreenEditForm.claimStatus}
                 onChange={(event) =>
                   updateNotebookScreenEditForm("claimStatus", event.target.value)
                 }
               >
-                <option value="">None</option>
-                <option value="open">Open</option>
-                <option value="delivered">Delivered</option>
-                <option value="partially_delivered">Partially delivered</option>
-                <option value="missed">Missed</option>
-                <option value="unknown">Unknown</option>
-                <option value="not_applicable">Not applicable</option>
+                <option value="">{text("None")}</option>
+                <option value="open">{text("Status open")}</option>
+                <option value="delivered">{text("Delivered")}</option>
+                <option value="partially_delivered">{text("Partially delivered")}</option>
+                <option value="missed">{text("Missed")}</option>
+                <option value="unknown">{text("Unknown")}</option>
+                <option value="not_applicable">{text("Not applicable")}</option>
               </select>
             </label>
             <label>
-              Tags
+              {text("Tags")}
               <input
-                aria-label="Notebook screen selected tags"
+                aria-label={text("Notebook screen selected tags")}
                 value={notebookScreenEditForm.tags}
                 onChange={(event) =>
                   updateNotebookScreenEditForm("tags", event.target.value)
@@ -130,20 +133,20 @@ export function NotebookEntryEditor({
               />
             </label>
             <NotebookDateField
-              ariaLabel="Notebook screen selected event date"
-              label="Event date"
+              ariaLabel={text("Notebook screen selected event date")}
+              label={text("Event date")}
               value={notebookScreenEditForm.eventDate}
               onChange={(value) => updateNotebookScreenEditForm("eventDate", value)}
             />
             <NotebookQuarterField
-              ariaLabel="Notebook screen selected follow-up quarter"
-              label="Follow-up quarter"
+              ariaLabel={text("Notebook screen selected follow-up quarter")}
+              label={text("Follow-up quarter")}
               value={notebookScreenEditForm.followUpAfter}
               onChange={(value) => updateNotebookScreenEditForm("followUpAfter", value)}
             />
             <NotebookDateField
-              ariaLabel="Notebook screen selected follow-up date"
-              label="Follow-up date"
+              ariaLabel={text("Notebook screen selected follow-up date")}
+              label={text("Follow-up date")}
               value={notebookScreenEditForm.followUpDate}
               onChange={(value) => updateNotebookScreenEditForm("followUpDate", value)}
             />
@@ -154,7 +157,7 @@ export function NotebookEntryEditor({
           <div className="notebook-entry-header">
             <div>
               <span className="eyebrow">
-                {selectedNotebookScreenEntry.kind.replace("_", " ")}
+                {text(selectedNotebookScreenEntry.kind.replace("_", " "))}
               </span>
               <h3>{selectedNotebookScreenEntry.title}</h3>
             </div>
@@ -163,41 +166,41 @@ export function NotebookEntryEditor({
               onClick={() => setNotebookScreenEditMode(true)}
             >
               <BookOpenText size={15} />
-              Edit
+              {text("Edit")}
             </Button>
           </div>
           <MarkdownNoteBody
-            ariaLabel="Notebook screen selected body"
+            ariaLabel={text("Notebook screen selected body")}
             body={selectedNotebookScreenEntry.body}
           />
         </>
       )}
       <div
         className="source-chip-list"
-        aria-label={`Tags for ${selectedNotebookScreenEntry.title}`}
+        aria-label={`${text("Tags for")} ${selectedNotebookScreenEntry.title}`}
       >
         {selectedNotebookScreenEntry.tags.map((tag) => (
           <StatusPill key={tag}>{tag}</StatusPill>
         ))}
         {selectedNotebookScreenEntry.tags.length === 0 ? (
-          <span className="membership-empty">No tags</span>
+          <span className="membership-empty">{text("No tags")}</span>
         ) : null}
       </div>
       <dl className="metadata-grid notebook-entry-meta">
         <div>
-          <dt>Status</dt>
-          <dd>{selectedNotebookScreenEntry.claimStatus ?? "Not set"}</dd>
+          <dt>{text("Status")}</dt>
+          <dd>{selectedNotebookScreenEntry.claimStatus ?? text("Not set")}</dd>
         </div>
         <div>
-          <dt>Follow-up quarter</dt>
-          <dd>{selectedNotebookScreenEntry.followUpAfter ?? "Not set"}</dd>
+          <dt>{text("Follow-up quarter")}</dt>
+          <dd>{selectedNotebookScreenEntry.followUpAfter ?? text("Not set")}</dd>
         </div>
         <div>
-          <dt>Follow-up date</dt>
-          <dd>{selectedNotebookScreenEntry.followUpDate ?? "Not set"}</dd>
+          <dt>{text("Follow-up date")}</dt>
+          <dd>{selectedNotebookScreenEntry.followUpDate ?? text("Not set")}</dd>
         </div>
         <div>
-          <dt>Origin</dt>
+          <dt>{text("Origin")}</dt>
           <dd>
             {renderNotebookOrigins(
               selectedNotebookScreenEntry.origins,

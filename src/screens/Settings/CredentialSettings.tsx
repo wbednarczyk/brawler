@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 import { ExternalLink, Save, Trash2 } from "lucide-react";
 import type { CredentialStatus } from "../../api/types";
 import { Button } from "../../shared/components/Button";
+import { useLocale } from "../../shared/locale";
 
 type CredentialSettingsProps = {
   geminiApiKeyDraft: string;
@@ -24,16 +25,18 @@ export function CredentialSettings({
   onOpenGeminiApiKeyPage,
   onSaveGeminiApiKey,
 }: CredentialSettingsProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="settings-group" aria-labelledby="settings-credentials-title">
-      <h2 id="settings-credentials-title">Credentials</h2>
+      <h2 id="settings-credentials-title">{t("settings.credentials.title")}</h2>
       <form className="credential-form" onSubmit={onSaveGeminiApiKey}>
         <label>
-          Gemini API key
+          {t("settings.credentials.geminiApiKey")}
           <input
-            aria-label="Gemini API key"
+            aria-label={t("settings.credentials.geminiApiKey")}
             autoComplete="off"
-            placeholder={geminiCredentialStatus?.configured ? "Replace configured key" : "Paste API key"}
+            placeholder={geminiCredentialStatus?.configured ? text("Replace configured key") : text("Paste API key")}
             type="password"
             value={geminiApiKeyDraft}
             onChange={(event) => onGeminiApiKeyDraftChange(event.target.value)}
@@ -46,7 +49,7 @@ export function CredentialSettings({
             variant="action"
           >
             <Save size={14} />
-            Save
+            {t("settings.credentials.save")}
           </Button>
           <Button
             disabled={geminiCredentialInFlight}
@@ -54,29 +57,29 @@ export function CredentialSettings({
             variant="ghost"
           >
             <Trash2 size={14} />
-            Clear
+            {t("settings.credentials.clear")}
           </Button>
         </div>
       </form>
       <Button
         className="settings-link-button"
         onClick={onOpenGeminiApiKeyPage}
-        title="Open Google AI Studio API keys page"
+        title={text("Open Google AI Studio API keys page")}
         variant="ghost"
       >
         <ExternalLink size={14} />
-        Get Gemini API key
+        {t("settings.credentials.getGeminiKey")}
       </Button>
       {geminiCredentialStatus?.devFallbackAvailable ? (
         <p className="settings-note">
-          Development fallback is active through environment configuration.
+          {text("Development fallback is active through environment configuration.")}
         </p>
       ) : null}
       {geminiCredentialStatus?.error ? (
-        <p className="error-text">Credential backend: {geminiCredentialStatus.error}</p>
+        <p className="error-text">{text("Credential backend")}: {geminiCredentialStatus.error}</p>
       ) : null}
       {geminiCredentialError ? (
-        <p className="error-text">Credential command failed: {geminiCredentialError}</p>
+        <p className="error-text">{text("Credential command failed")}: {geminiCredentialError}</p>
       ) : null}
     </section>
   );

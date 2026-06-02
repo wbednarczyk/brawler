@@ -2,6 +2,7 @@ import { CalendarDays, ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
 
 type EventListViewProps = Pick<
@@ -34,6 +35,8 @@ export function EventListView({
   companyEventDueClass,
   openExternalUrl,
 }: EventListViewProps) {
+  const { text } = useLocale();
+
   function toggleEvent(event: CompanyEvent) {
     setSelectedCompanyEventId((current) => (current === event.id ? null : event.id));
   }
@@ -48,7 +51,7 @@ export function EventListView({
         return (
           <div className="event-row-block" key={event.id}>
             <article
-              aria-label={`Open event: ${event.title}`}
+              aria-label={`${text("Open event")}: ${event.title}`}
               className={[
                 "event-row",
                 event.manual ? "event-manual" : "",
@@ -84,36 +87,36 @@ export function EventListView({
               </div>
               <div className="event-row-status">
                 <span>{formatCompanyEventStatus(event.status)}</span>
-                <small>{event.manual ? "Manual" : formatCompanyEventSourceType(event.sourceType)}</small>
+                <small>{event.manual ? text("Manual") : formatCompanyEventSourceType(event.sourceType)}</small>
               </div>
             </article>
 
             {isSelected ? (
-              <div className="event-detail-panel" aria-label="Event details">
+              <div className="event-detail-panel" aria-label={text("Event details")}>
                 <dl className="metadata-grid">
                   <div>
-                    <dt>Company</dt>
+                    <dt>{text("Company")}</dt>
                     <dd>{event.company}</dd>
                   </div>
                   <div>
-                    <dt>Type</dt>
+                    <dt>{text("Type")}</dt>
                     <dd>{formatCompanyEventType(event.eventType)}</dd>
                   </div>
                   <div>
-                    <dt>Status</dt>
+                    <dt>{text("Status")}</dt>
                     <dd>{formatCompanyEventStatus(event.status)}</dd>
                   </div>
                   <div>
-                    <dt>Source</dt>
+                    <dt>{text("Source")}</dt>
                     <dd>{formatCompanyEventSourceType(event.sourceType)}</dd>
                   </div>
                   <div>
-                    <dt>Attribution</dt>
-                    <dd>{event.attribution ?? "Not set"}</dd>
+                    <dt>{text("Attribution")}</dt>
+                    <dd>{event.attribution ?? text("Not set")}</dd>
                   </div>
                   <div>
-                    <dt>Fetched</dt>
-                    <dd>{formatTimestamp(event.fetchedAt, "Not fetched")}</dd>
+                    <dt>{text("Fetched")}</dt>
+                    <dd>{formatTimestamp(event.fetchedAt, text("Not fetched"))}</dd>
                   </div>
                 </dl>
                 {event.sourceUrl ? (
@@ -122,7 +125,7 @@ export function EventListView({
                     onClick={() => openExternalUrl(event.sourceUrl as string)}
                   >
                     <ExternalLink size={15} />
-                    Open source
+                    {text("Open source")}
                   </Button>
                 ) : null}
               </div>
@@ -131,9 +134,9 @@ export function EventListView({
         );
       })}
       {companyEvents.length === 0 ? (
-        <EmptyState>No {companyEventMode === "upcoming" ? "upcoming events" : "events"}.</EmptyState>
+        <EmptyState>{companyEventMode === "upcoming" ? text("No upcoming events.") : text("No events.")}</EmptyState>
       ) : null}
-      {companyEventsError ? <p className="error-text">Events command failed: {companyEventsError}</p> : null}
+      {companyEventsError ? <p className="error-text">{text("Events command failed")}: {companyEventsError}</p> : null}
     </>
   );
 }

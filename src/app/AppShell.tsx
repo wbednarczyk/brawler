@@ -5,8 +5,10 @@ import type {
   HealthResponse,
   SourceIngestionResult,
   SourceRefreshTrigger,
+  AppLocale,
   Theme,
 } from "../api/types";
+import { makeTextTranslator, makeTranslator } from "../shared/locale";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { sections, type Section } from "./navigation";
 import { databaseIndicatorClass } from "./theme";
@@ -37,6 +39,7 @@ type AppShellProps = {
   sourceRefreshState: SourceRefreshState;
   sourceStatusSummary: SourceStatusSummary;
   theme: Theme;
+  locale: AppLocale;
   totalUnreadFeedItems: number;
   updateTheme: (theme: Theme) => void;
   openSourceStatus: () => void;
@@ -60,64 +63,69 @@ export function AppShell({
   sourceRefreshState,
   sourceStatusSummary,
   theme,
+  locale,
   totalUnreadFeedItems,
   updateTheme,
   openSourceStatus,
 }: AppShellProps) {
+  const t = makeTranslator(locale);
+  const text = makeTextTranslator(locale);
+
   function sourceRefreshButtonLabel() {
     if (sourceRefreshState === "refreshing") {
-      return "Refreshing sources";
+      return t("app.sources.refreshing");
     }
 
     if (sourceRefreshState === "done") {
-      return "Sources refreshed";
+      return t("app.sources.refreshed");
     }
 
     if (sourceRefreshError) {
-      return "Source refresh failed";
+      return t("app.sources.failed");
     }
 
-    return "Refresh sources";
+    return t("app.sources.refresh");
   }
 
   function sourceRefreshButtonTitle() {
     if (sourceRefreshError) {
-      return `Source refresh failed: ${sourceRefreshError}`;
+      return `${text("Source refresh failed")}: ${sourceRefreshError}`;
     }
 
     if (sourceRefreshResult) {
-      return `Last refresh: ${sourceRefreshResult.itemsMatched}/${sourceRefreshResult.itemsFetched} matched`;
+      return `${text("Last refresh")}: ${sourceRefreshResult.itemsMatched}/${sourceRefreshResult.itemsFetched} ${text("matched")}`;
     }
 
-    return "Fetch GPW ESPI/EBI public listings";
+    return text("Fetch GPW ESPI/EBI public listings");
   }
 
   return (
     <div className="app-shell">
-      <aside className="sidebar" aria-label="Primary navigation">
+      <aside className="sidebar" aria-label={text("Primary navigation")}>
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
             <div className="brand-title">Brawler</div>
-            <div className="brand-subtitle">codename</div>
+            <div className="brand-subtitle">{t("app.brand.codename")}</div>
           </div>
         </div>
 
         <nav className="nav-list">
           {sections.map((section) => {
             const Icon = section.icon;
+            const sectionLabel = t(section.localeKey);
             return (
               <button
                 className={activeSection === section.label ? "nav-item nav-item-active" : "nav-item"}
                 key={section.label}
                 onClick={() => setActiveSection(section.label)}
                 type="button"
-                title={section.label}
+                title={sectionLabel}
               >
                 <Icon size={18} aria-hidden="true" />
-                <span>{section.label}</span>
+                <span>{sectionLabel}</span>
                 {section.label === "Inbox" && totalUnreadFeedItems > 0 ? (
-                  <span className="nav-badge" aria-label={`${totalUnreadFeedItems} unread feed item`}>
+                  <span className="nav-badge" aria-label={`${totalUnreadFeedItems} ${text("unread feed item")}`}>
                     {totalUnreadFeedItems}
                   </span>
                 ) : null}
@@ -127,9 +135,9 @@ export function AppShell({
         </nav>
 
         <div className="sidebar-footer">
-          <div className="status-pill" title="Rust command boundary health">
+          <div className="status-pill" title={text("Rust command boundary health")}>
             <span className={health ? "status-dot status-ok" : "status-dot status-warn"} />
-            {health ? `${health.status} ${health.version}` : "health pending"}
+            {health ? `${health.status} ${health.version}` : t("app.health.pending")}
           </div>
         </div>
       </aside>
@@ -139,19 +147,19 @@ export function AppShell({
           <div className="search-box">
             <Search size={18} aria-hidden="true" />
             <input
-              aria-label="Search feed"
-              placeholder="Search companies, feed, notes"
+              aria-label={t("app.search.ariaLabel")}
+              placeholder={t("app.search.placeholder")}
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
           </div>
           <div className="topbar-actions">
-            <div className="ai-mode-pill" title="AI mode: source-grounded decision support">
-              <span>AI</span>
-              <strong>source</strong>
+            <div className="ai-mode-pill" title={t("app.aiMode.title")}>
+              <span>{t("app.aiMode.label")}</span>
+              <strong>{t("app.aiMode.value")}</strong>
             </div>
             <button
-              aria-label="Open source status"
+              aria-label={t("app.sources.openStatus")}
               className={[
                 "source-status-pill",
                 sourceStatusSummary.tone === "ok" ? "source-status-pill-ok" : "",
@@ -165,14 +173,14 @@ export function AppShell({
               type="button"
             >
               <Activity size={14} aria-hidden="true" />
-              <span>Sources</span>
+              <span>{t("app.sources.label")}</span>
               <strong>{sourceStatusSummary.label}</strong>
             </button>
             <button
               aria-label={
                 dbRefreshState === "refreshing"
-                  ? "Refreshing database-backed views"
-                  : "Refresh database-backed views"
+                  ? t("app.database.refreshing")
+                  : t("app.database.refresh")
               }
               className={[
                 "db-status-pill",
@@ -186,28 +194,28 @@ export function AppShell({
               type="button"
               title={
                 dbRefreshState === "refreshing"
-                  ? "Refreshing database-backed views"
+                  ? t("app.database.refreshing")
                   : dbRefreshState === "done"
-                    ? "Database-backed views refreshed"
+                    ? t("app.database.refreshed")
                     : databaseStatus
-                      ? `Database active: ${databaseStatus.appliedMigrations} migration, ${databaseStatus.sourceAdapters} source, ${databaseStatus.settings} settings`
+                      ? `${t("app.database.active")}: ${databaseStatus.appliedMigrations} ${text("migration")}, ${databaseStatus.sourceAdapters} ${text("source")}, ${databaseStatus.settings} ${text("settings")}`
                       : databaseError
                         ? `Database error: ${databaseError}`
-                        : "Database pending"
+                        : t("app.database.pending")
               }
             >
               <span
                 aria-label={
                   databaseError
-                    ? "Database connection failed"
+                    ? t("app.database.failed")
                     : databaseStatus
-                      ? "Database connection active"
-                      : "Database connection pending"
+                      ? t("app.database.active")
+                      : t("app.database.pending")
                 }
                 className={databaseIndicatorClass(databaseStatus, databaseError)}
                 role="status"
               />
-              <span>DB</span>
+              <span>{t("app.database.label")}</span>
               {dbRefreshState === "done" ? (
                 <CheckCircle2 size={14} aria-hidden="true" />
               ) : (
@@ -233,12 +241,12 @@ export function AppShell({
             >
               {sourceRefreshState === "done" ? <CheckCircle2 size={18} /> : <RefreshCw size={18} />}
             </button>
-            <label className="theme-control" title="Theme">
+            <label className="theme-control" title={t("settings.appearance.theme")}>
               {effectiveTheme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
               <select value={theme} onChange={(event) => updateTheme(event.target.value as Theme)}>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-                <option value="system">System</option>
+                <option value="dark">{t("theme.dark")}</option>
+                <option value="light">{t("theme.light")}</option>
+                <option value="system">{t("theme.system")}</option>
               </select>
             </label>
           </div>
