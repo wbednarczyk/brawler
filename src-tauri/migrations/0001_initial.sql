@@ -246,7 +246,9 @@ INSERT INTO settings (key, value, value_type) VALUES
     ('theme', 'dark', 'string'),
     ('accent_palette', 'night-neon', 'string'),
     ('poll_interval_seconds', '900', 'integer'),
-    ('youtube_transcription_provider', 'gemini', 'string'),
+    ('youtube_transcription_provider', 'provider_gemini', 'string'),
+    ('youtube_transcription_model', 'gemini-2.5-flash', 'string'),
+    ('youtube_transcription_timeout_seconds', '300', 'integer'),
     ('general_analysis_provider', '', 'string'),
     ('ai_analysis_mode', 'source_grounded', 'string'),
     ('settings_import_export_format', 'yaml', 'string');

@@ -350,10 +350,23 @@ const initialSettings = {
   settingsImportExportFormat: "yaml",
   yamlImportExportStatus: "accepted_deferred",
   aiProviders: {
-    youtubeTranscriptionProvider: "gemini",
+    youtubeTranscriptionProvider: "provider_gemini",
+    youtubeTranscriptionModel: "gemini-2.5-flash",
+    youtubeTranscriptionTimeoutSeconds: 300,
     generalAnalysisProvider: null,
   },
   aiAnalysisMode: "source_grounded",
+};
+
+const initialGeminiCredentialStatus = {
+  providerId: "provider_gemini",
+  purpose: "youtube_transcription",
+  secretKind: "api_key",
+  configured: false,
+  storage: "not_configured",
+  label: "Gemini YouTube transcription API key",
+  devFallbackAvailable: false,
+  error: null as string | null,
 };
 
 const initialCompanies: TestCompany[] = [
@@ -428,7 +441,7 @@ const initialCompanyEvents: TestCompanyEvent[] = [
     companyName: "CD PROJEKT S.A.",
     eventType: "corporate_action",
     title: "Main Market - Corporate actions - Equity - CDR",
-    eventDate: currentWeekTestDate(0),
+    eventDate: formatTestDate(new Date()),
     eventTime: null,
     status: "scheduled",
     sourceType: "official_calendar",
@@ -513,6 +526,85 @@ const initialNotebookEntry: TestNotebookEntry = {
   ],
 };
 
+type TestTranscriptJob = {
+  id: string;
+  companyId: string | null;
+  company: string | null;
+  companyName: string | null;
+  providerId: string;
+  sourceType: string;
+  sourceUrl: string;
+  sourceLabel: string | null;
+  companyResolutionStatus: string;
+  recognizedCompanyCandidates: unknown[];
+  status: string;
+  errorCode: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+};
+
+type TestTranscriptSegment = {
+  id: string;
+  transcriptJobId: string;
+  companyId: string | null;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  speaker: string | null;
+  text: string;
+  language: string | null;
+  createdAt: string;
+};
+
+const initialTranscriptJobs: TestTranscriptJob[] = [
+  {
+    id: "transcript_job_unresolved_conference",
+    companyId: null,
+    company: null,
+    companyName: null,
+    providerId: "provider_gemini",
+    sourceType: "youtube_url",
+    sourceUrl: "https://www.youtube.com/watch?v=conference",
+    sourceLabel: "Q2 conference",
+    companyResolutionStatus: "unresolved",
+    recognizedCompanyCandidates: [],
+    status: "queued",
+    errorCode: null,
+    createdAt: "2026-06-01T10:00:00Z",
+    startedAt: null,
+    finishedAt: null,
+    error: null,
+  },
+];
+
+const initialTranscriptSegmentsByJobId: Record<string, TestTranscriptSegment[]> = {
+  transcript_job_unresolved_conference: [
+    {
+      id: "transcript_segment_opening",
+      transcriptJobId: "transcript_job_unresolved_conference",
+      companyId: null,
+      startSeconds: 0,
+      endSeconds: 42,
+      speaker: "CEO",
+      text: "We expect the second half to be stronger after the release window stabilizes.",
+      language: "en",
+      createdAt: "2026-06-01T10:07:00Z",
+    },
+    {
+      id: "transcript_segment_margin",
+      transcriptJobId: "transcript_job_unresolved_conference",
+      companyId: null,
+      startSeconds: 43,
+      endSeconds: 96,
+      speaker: "CFO",
+      text: "Gross margin should normalize over the next two quarters.",
+      language: "en",
+      createdAt: "2026-06-01T10:07:00Z",
+    },
+  ],
+};
+
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
 }));
@@ -525,17 +617,21 @@ describe("App", () => {
   let companiesResponse = initialCompanies;
   let feedItemsResponse = initialFeedItems;
   let companyEventsResponse = initialCompanyEvents;
+  let transcriptJobsResponse = initialTranscriptJobs;
   let companyRegistryEntriesResponse = initialCompanyRegistryEntries;
   let notebookEntriesResponse: TestNotebookEntry[] = [];
   let refreshSourcesError: string | null = null;
+  let geminiCredentialStatusResponse = initialGeminiCredentialStatus;
 
   beforeEach(() => {
     companiesResponse = initialCompanies;
     feedItemsResponse = initialFeedItems;
     companyEventsResponse = initialCompanyEvents;
+    transcriptJobsResponse = initialTranscriptJobs;
     companyRegistryEntriesResponse = initialCompanyRegistryEntries;
     notebookEntriesResponse = [];
     refreshSourcesError = null;
+    geminiCredentialStatusResponse = initialGeminiCredentialStatus;
     vi.mocked(invoke).mockClear();
     vi.mocked(openUrl).mockClear();
     vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
@@ -545,10 +641,10 @@ describe("App", () => {
 
       if (command === "database_status") {
         return Promise.resolve({
-          appliedMigrations: 3,
+          appliedMigrations: 21,
           companies: 0,
-          sourceAdapters: 7,
-          settings: 7,
+          sourceAdapters: 11,
+          settings: 9,
         });
       }
 
@@ -689,6 +785,14 @@ describe("App", () => {
           };
         }).input;
         const company = companiesResponse.find((entry) => entry.id === input.companyId);
+        const existing = transcriptJobsResponse.find(
+          (job) => job.sourceUrl === input.sourceUrl,
+        );
+
+        if (existing) {
+          return Promise.resolve(existing);
+        }
+
         const created = {
           id: "manual_event_created",
           companyId: input.companyId,
@@ -713,6 +817,158 @@ describe("App", () => {
         companyEventsResponse = [...companyEventsResponse, created];
 
         return Promise.resolve(created);
+      }
+
+      if (command === "list_video_transcript_jobs") {
+        const input = (args as { input: { companyId: string | null } }).input;
+
+        return Promise.resolve(
+          transcriptJobsResponse.filter((job) => !input.companyId || job.companyId === input.companyId),
+        );
+      }
+
+      if (command === "create_video_transcript_job") {
+        const input = (args as {
+          input: {
+            sourceUrl: string;
+            companyId: string | null;
+            providerId: string | null;
+            sourceLabel: string | null;
+            recognizedCompanyCandidates: unknown[] | null;
+          };
+        }).input;
+        const existing = transcriptJobsResponse.find(
+          (job) =>
+            job.sourceUrl === input.sourceUrl &&
+            (job.companyId ?? null) === (input.companyId ?? null),
+        );
+
+        if (existing) {
+          return Promise.resolve(existing);
+        }
+
+        const company = companiesResponse.find((entry) => entry.id === input.companyId);
+        const created = {
+          id: "transcript_job_created",
+          companyId: input.companyId,
+          company: company?.qualifiedTicker ?? null,
+          companyName: company?.displayName ?? null,
+          providerId: input.providerId ?? "provider_gemini",
+          sourceType: "youtube_url",
+          sourceUrl: input.sourceUrl,
+          sourceLabel: input.sourceLabel,
+          companyResolutionStatus: input.companyId ? "provided" : "unresolved",
+          recognizedCompanyCandidates: input.recognizedCompanyCandidates ?? [],
+          status: "queued",
+          errorCode: null,
+          createdAt: "2026-06-01T10:05:00Z",
+          startedAt: null,
+          finishedAt: null,
+          error: null,
+        };
+
+        transcriptJobsResponse = [created, ...transcriptJobsResponse];
+
+        return Promise.resolve(created);
+      }
+
+      if (command === "list_transcript_segments") {
+        const { transcriptJobId } = args as { transcriptJobId: string };
+
+        return Promise.resolve(initialTranscriptSegmentsByJobId[transcriptJobId] ?? []);
+      }
+
+      if (command === "delete_video_transcript_job") {
+        const { jobId } = args as { jobId: string };
+        transcriptJobsResponse = transcriptJobsResponse.filter((job) => job.id !== jobId);
+
+        return Promise.resolve();
+      }
+
+      if (command === "update_video_transcript_job") {
+        const input = (args as {
+          input: {
+            jobId: string;
+            sourceLabel: string | null;
+          };
+        }).input;
+        const existing = transcriptJobsResponse.find((job) => job.id === input.jobId);
+
+        if (!existing) {
+          return Promise.reject(new Error("job not found"));
+        }
+
+        const updated = {
+          ...existing,
+          sourceLabel: input.sourceLabel,
+        };
+        transcriptJobsResponse = transcriptJobsResponse.map((job) =>
+          job.id === input.jobId ? updated : job,
+        );
+
+        return Promise.resolve(updated);
+      }
+
+      if (command === "run_video_transcript_job") {
+        const input = (args as { input: { jobId: string; providerMode: string } }).input;
+        const existing = transcriptJobsResponse.find((job) => job.id === input.jobId);
+
+        if (!existing) {
+          return Promise.reject(new Error("job not found"));
+        }
+
+        if (input.providerMode === "provider_gemini" && !geminiCredentialStatusResponse.configured) {
+          const failed = {
+            ...existing,
+            status: "failed",
+            startedAt: "2026-06-01T10:06:00Z",
+            finishedAt: "2026-06-01T10:07:00Z",
+            errorCode: "provider_not_configured",
+            error: "Gemini transcription provider is not configured.",
+          };
+          transcriptJobsResponse = transcriptJobsResponse.map((job) =>
+            job.id === input.jobId ? failed : job,
+          );
+
+          return Promise.resolve(failed);
+        }
+
+        const updated = {
+          ...existing,
+          status: "completed",
+          startedAt: "2026-06-01T10:06:00Z",
+          finishedAt: "2026-06-01T10:07:00Z",
+          errorCode: null,
+          error: null,
+        };
+        transcriptJobsResponse = transcriptJobsResponse.map((job) =>
+          job.id === input.jobId ? updated : job,
+        );
+
+        return Promise.resolve(updated);
+      }
+
+      if (command === "resolve_transcript_job_company") {
+        const input = (args as { input: { jobId: string; companyId: string } }).input;
+        const company = companiesResponse.find((entry) => entry.id === input.companyId);
+        const resolved = transcriptJobsResponse.find((job) => job.id === input.jobId);
+
+        if (!resolved) {
+          return Promise.reject(new Error("job not found"));
+        }
+
+        const updated = {
+          ...resolved,
+          companyId: input.companyId,
+          company: company?.qualifiedTicker ?? null,
+          companyName: company?.displayName ?? null,
+          companyResolutionStatus: "provided",
+        };
+        transcriptJobsResponse = transcriptJobsResponse.map((job) =>
+          job.id === input.jobId ? updated : job,
+        );
+
+        return Promise.resolve(updated);
       }
 
       if (command === "delete_unsaved_feed_items") {
@@ -783,6 +1039,53 @@ describe("App", () => {
             sourceUrl: item.sourceUrl,
             label: item.label,
             createdAt: "2026-05-29T10:00:00Z",
+          })),
+        };
+
+        notebookEntriesResponse = [created, ...notebookEntriesResponse];
+
+        return Promise.resolve(created);
+      }
+
+      if (command === "create_note_from_transcript_selection") {
+        const input = (args as {
+          input: {
+            transcriptJobId: string;
+            transcriptSegmentIds: string[];
+            noteDraft: {
+              title: string;
+              body: string;
+              tags: string[];
+              kind: string;
+              claimStatus: string | null;
+              eventDate: string | null;
+              followUpAfter: string | null;
+              followUpDate: string | null;
+            };
+          };
+        }).input;
+        const job = transcriptJobsResponse.find((entry) => entry.id === input.transcriptJobId);
+        const created = {
+          id: "note_from_transcript_selection",
+          companyId: job?.companyId ?? "company_gpw_cdr",
+          title: input.noteDraft.title,
+          body: input.noteDraft.body,
+          bodyFormat: "markdown",
+          tags: input.noteDraft.tags.map((tag) => tag.toLowerCase()).sort(),
+          kind: input.noteDraft.kind,
+          claimStatus: input.noteDraft.claimStatus,
+          eventDate: input.noteDraft.eventDate,
+          followUpAfter: input.noteDraft.followUpAfter,
+          followUpDate: input.noteDraft.followUpDate,
+          createdAt: "2026-06-01T10:08:00Z",
+          updatedAt: "2026-06-01T10:08:00Z",
+          origins: input.transcriptSegmentIds.map((segmentId, index) => ({
+            id: `note_origin_transcript_${index}`,
+            sourceType: "transcript_segment",
+            sourceId: segmentId,
+            sourceUrl: job?.sourceUrl ?? null,
+            label: `Transcript ${input.transcriptJobId} ${segmentId}`,
+            createdAt: "2026-06-01T10:08:00Z",
           })),
         };
 
@@ -911,13 +1214,55 @@ describe("App", () => {
         return Promise.resolve(initialSettings);
       }
 
+      if (command === "get_gemini_transcription_credential_status") {
+        return Promise.resolve(geminiCredentialStatusResponse);
+      }
+
+      if (command === "set_gemini_transcription_api_key") {
+        const input = (args as { input: { apiKey: string } }).input;
+
+        if (!input.apiKey.trim()) {
+          return Promise.reject(new Error("credential value is required"));
+        }
+
+        geminiCredentialStatusResponse = {
+          ...initialGeminiCredentialStatus,
+          configured: true,
+          storage: "os_keychain",
+        };
+
+        return Promise.resolve(geminiCredentialStatusResponse);
+      }
+
+      if (command === "clear_gemini_transcription_api_key") {
+        geminiCredentialStatusResponse = initialGeminiCredentialStatus;
+
+        return Promise.resolve(geminiCredentialStatusResponse);
+      }
+
       if (command === "update_settings") {
-        const input = (args as { input: { theme?: string; pollIntervalSeconds?: number } }).input;
+        const input = (args as {
+          input: {
+            theme?: string;
+            pollIntervalSeconds?: number;
+            youtubeTranscriptionModel?: string;
+            youtubeTranscriptionTimeoutSeconds?: number;
+          };
+        }).input;
 
         return Promise.resolve({
           ...initialSettings,
           theme: input.theme ?? initialSettings.theme,
           pollIntervalSeconds: input.pollIntervalSeconds ?? initialSettings.pollIntervalSeconds,
+          aiProviders: {
+            ...initialSettings.aiProviders,
+            youtubeTranscriptionModel:
+              input.youtubeTranscriptionModel ??
+              initialSettings.aiProviders.youtubeTranscriptionModel,
+            youtubeTranscriptionTimeoutSeconds:
+              input.youtubeTranscriptionTimeoutSeconds ??
+              initialSettings.aiProviders.youtubeTranscriptionTimeoutSeconds,
+          },
         });
       }
 
@@ -1737,6 +2082,20 @@ describe("App", () => {
     expect(within(settingsRegion).getByText("Last cleanup")).toBeInTheDocument();
     expect(within(settingsRegion).getAllByText("Not run this session")).toHaveLength(2);
     expect(within(settingsRegion).getByText("Saved")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Gemini")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("provider_gemini")).toBeInTheDocument();
+    expect(within(settingsRegion).getAllByText("Gemini 2.5 Flash-Lite").length).toBeGreaterThanOrEqual(1);
+    expect(within(settingsRegion).getByText("Cheapest supported")).toBeInTheDocument();
+    expect(within(settingsRegion).getAllByText("Not configured").length).toBeGreaterThanOrEqual(1);
+    expect(within(settingsRegion).getByText("Credential storage")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("API Key")).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText(
+        "Starting a transcript job sends the YouTube URL and video content to Gemini.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Gemini is used only for YouTube transcription.")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("YouTube transcription timeout")).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Settings theme"), "light");
 
@@ -1755,6 +2114,48 @@ describe("App", () => {
       },
     });
     expect(screen.getByLabelText("Settings source poll interval")).toHaveValue("1800");
+
+    await user.selectOptions(screen.getByLabelText("Gemini transcription model"), "gemini-2.5-flash");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        youtubeTranscriptionModel: "gemini-2.5-flash",
+      },
+    });
+    expect(screen.getByLabelText("Gemini transcription model")).toHaveValue("gemini-2.5-flash");
+
+    await user.selectOptions(screen.getByLabelText("Gemini transcription timeout"), "600");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        youtubeTranscriptionTimeoutSeconds: 600,
+      },
+    });
+    expect(screen.getByLabelText("Gemini transcription timeout")).toHaveValue("600");
+
+    await user.type(screen.getByLabelText("Gemini API key"), "test-gemini-key");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(invoke).toHaveBeenCalledWith("set_gemini_transcription_api_key", {
+      input: {
+        apiKey: "test-gemini-key",
+      },
+    });
+    expect(await within(settingsRegion).findByText("Configured")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("OS keychain")).toBeInTheDocument();
+    expect(screen.getByLabelText("Gemini API key")).toHaveValue("");
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect(invoke).toHaveBeenCalledWith("clear_gemini_transcription_api_key");
+    await waitFor(() => {
+      expect(within(settingsRegion).queryByText("OS keychain")).not.toBeInTheDocument();
+    });
+    expect(within(settingsRegion).getAllByText("Not configured").length).toBeGreaterThanOrEqual(1);
+
+    await user.click(screen.getByRole("button", { name: "Get Gemini API key" }));
+
+    expect(openUrl).toHaveBeenCalledWith("https://aistudio.google.com/app/apikey");
   });
 
   it("shows source adapter status", async () => {
@@ -1930,10 +2331,15 @@ describe("App", () => {
     expect(screen.queryByLabelText("Source adapter details")).not.toBeInTheDocument();
   });
 
-  it("shows the notebooks workspace and planned transcript placeholder screen", async () => {
+  it("shows the notebooks workspace and transcript job shell", async () => {
     const user = userEvent.setup();
 
     notebookEntriesResponse = [initialNotebookEntry];
+    geminiCredentialStatusResponse = {
+      ...initialGeminiCredentialStatus,
+      configured: true,
+      storage: "os_keychain",
+    };
 
     render(<App />);
 
@@ -2009,10 +2415,277 @@ describe("App", () => {
 
     await user.click(screen.getByRole("button", { name: "Transcripts" }));
 
-    const transcriptsPlaceholder = await screen.findByLabelText("Transcripts placeholder");
+    const transcriptJobsRegion = await screen.findByLabelText("Transcript jobs");
 
     expect(screen.getByRole("heading", { name: "Transcripts" })).toBeInTheDocument();
-    expect(within(transcriptsPlaceholder).getByText("Gemini for YouTube transcription only")).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("list_video_transcript_jobs", {
+      input: { companyId: null },
+    });
+    expect(within(transcriptJobsRegion).getByText("Q2 conference")).toBeInTheDocument();
+    expect(within(transcriptJobsRegion).getByText("Queued")).toBeInTheDocument();
+    expect(screen.getByText("Credentials")).toBeInTheDocument();
+    expect(screen.getByText("Configured")).toBeInTheDocument();
+    expect(screen.getByText("OS keychain")).toBeInTheDocument();
+    expect(screen.getByText("300s")).toBeInTheDocument();
+
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Retry" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("run_video_transcript_job", {
+        input: {
+          jobId: "transcript_job_unresolved_conference",
+          providerMode: "provider_gemini",
+        },
+      });
+    });
+    expect(await within(transcriptJobsRegion).findByText("Completed")).toBeInTheDocument();
+
+    await user.click(
+      within(transcriptJobsRegion).getByRole("button", {
+        name: "Open transcript job: https://www.youtube.com/watch?v=conference",
+      }),
+    );
+
+    const transcriptSegments = await screen.findByLabelText("Transcript segments");
+    const transcriptDescriptionEditor = await screen.findByLabelText("Transcript description editor");
+
+    await user.clear(within(transcriptDescriptionEditor).getByLabelText("Edit transcript description"));
+    await user.type(within(transcriptDescriptionEditor).getByLabelText("Edit transcript description"), "CDR strategy call");
+    await user.click(within(transcriptDescriptionEditor).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_video_transcript_job", {
+        input: {
+          jobId: "transcript_job_unresolved_conference",
+          sourceLabel: "CDR strategy call",
+        },
+      });
+    });
+    expect(await within(transcriptJobsRegion).findByText("CDR strategy call")).toBeInTheDocument();
+
+    expect(
+      within(transcriptSegments).getByText(
+        "We expect the second half to be stronger after the release window stabilizes.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      within(transcriptSegments).getByText("Gross margin should normalize over the next two quarters."),
+    ).toBeInTheDocument();
+    expect(within(transcriptSegments).getByText("0:00-0:42")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Search transcript segments"), "margin");
+
+    expect(
+      within(transcriptSegments).queryByText(
+        "We expect the second half to be stronger after the release window stabilizes.",
+      ),
+    ).not.toBeInTheDocument();
+    expect(
+      within(transcriptSegments).getByText((_, element) =>
+        element?.textContent === "Gross margin should normalize over the next two quarters.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(transcriptSegments).getByText("margin").tagName).toBe("MARK");
+    expect(screen.getByText("1/2")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Clear transcript search" }));
+
+    expect(screen.getByLabelText("Search transcript segments")).toHaveValue("");
+    expect(screen.getByText("2/2")).toBeInTheDocument();
+    expect(
+      within(transcriptSegments).getByText(
+        "We expect the second half to be stronger after the release window stabilizes.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(
+      within(transcriptSegments).getByRole("checkbox", {
+        name: "Select transcript segment 0:00-0:42",
+      }),
+    );
+    await user.click(
+      within(transcriptSegments).getByRole("checkbox", {
+        name: "Select transcript segment 0:43-1:36",
+      }),
+    );
+
+    expect(within(transcriptJobsRegion).getByText("2")).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("list_transcript_segments", {
+      transcriptJobId: "transcript_job_unresolved_conference",
+    });
+
+    expect(within(transcriptJobsRegion).getByText("Unlinked")).toBeInTheDocument();
+    expect(within(transcriptJobsRegion).getByRole("button", { name: "Create company note draft" })).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Transcript link company lookup"), "CDR");
+    const transcriptLinkSuggestions = await screen.findByLabelText("Transcript link company suggestions");
+    await user.click(within(transcriptLinkSuggestions).getByRole("button", { name: /GPW:CDR/ }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("resolve_transcript_job_company", {
+        input: {
+          jobId: "transcript_job_unresolved_conference",
+          companyId: "company_gpw_cdr",
+        },
+      });
+    });
+
+    expect(await within(transcriptJobsRegion).findByText("GPW:CDR")).toBeInTheDocument();
+
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Create company note draft" }));
+
+    const transcriptNoteDraft = await screen.findByLabelText("Transcript note draft");
+
+    expect(within(transcriptNoteDraft).getByLabelText("Transcript note body")).toHaveValue(
+      "> We expect the second half to be stronger after the release window stabilizes.\n\n> Gross margin should normalize over the next two quarters.",
+    );
+
+    await user.clear(within(transcriptNoteDraft).getByLabelText("Transcript note title"));
+    await user.type(within(transcriptNoteDraft).getByLabelText("Transcript note title"), "Conference promises");
+    await user.selectOptions(within(transcriptNoteDraft).getByLabelText("Transcript note kind"), "claim");
+    await user.selectOptions(within(transcriptNoteDraft).getByLabelText("Transcript note status"), "open");
+    await user.clear(within(transcriptNoteDraft).getByLabelText("Transcript note tags"));
+    await user.type(within(transcriptNoteDraft).getByLabelText("Transcript note tags"), "conference, management-guidance");
+    await user.click(within(transcriptNoteDraft).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_note_from_transcript_selection", {
+        input: {
+          transcriptJobId: "transcript_job_unresolved_conference",
+          transcriptSegmentIds: ["transcript_segment_opening", "transcript_segment_margin"],
+          noteDraft: {
+            title: "Conference promises",
+            body: "> We expect the second half to be stronger after the release window stabilizes.\n\n> Gross margin should normalize over the next two quarters.",
+            tags: ["conference", "management-guidance"],
+            kind: "claim",
+            claimStatus: "open",
+            eventDate: null,
+            followUpAfter: null,
+            followUpDate: null,
+          },
+        },
+      });
+    });
+
+    await user.type(screen.getByLabelText("Transcript URL"), "https://www.youtube.com/watch?v=newjob");
+    await user.type(screen.getByLabelText("Transcript description"), "New job conference");
+    await user.type(screen.getByLabelText("Transcript company lookup"), "CDR");
+    await user.click(await screen.findByRole("button", { name: /GPW:CDR/ }));
+    await user.click(screen.getByRole("button", { name: "Create job" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_video_transcript_job", {
+        input: {
+          sourceUrl: "https://www.youtube.com/watch?v=newjob",
+          companyId: "company_gpw_cdr",
+          providerId: "provider_gemini",
+          sourceLabel: "New job conference",
+          recognizedCompanyCandidates: null,
+        },
+      });
+    });
+    expect(await within(transcriptJobsRegion).findByText("New job conference")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("run_video_transcript_job", {
+        input: {
+          jobId: "transcript_job_created",
+          providerMode: "provider_gemini",
+        },
+      });
+    });
+
+    await user.type(screen.getByLabelText("Transcript URL"), "https://www.youtube.com/watch?v=newjob");
+    await user.type(screen.getByLabelText("Transcript company lookup"), "CDR");
+    await user.click(await screen.findByRole("button", { name: /GPW:CDR/ }));
+    await user.click(screen.getByRole("button", { name: "Create job" }));
+
+    await waitFor(() => {
+      expect(
+        within(transcriptJobsRegion).getAllByRole("button", {
+          name: "Open transcript job: https://www.youtube.com/watch?v=newjob",
+        }),
+      ).toHaveLength(1);
+    });
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    await user.click(
+      within(transcriptJobsRegion).getByRole("button", {
+        name: "Delete transcript job New job conference",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_video_transcript_job", {
+        jobId: "transcript_job_created",
+      });
+    });
+    expect(
+      within(transcriptJobsRegion).queryByRole("button", {
+        name: "Open transcript job: https://www.youtube.com/watch?v=newjob",
+      }),
+    ).not.toBeInTheDocument();
+
+    confirm.mockRestore();
+  });
+
+  it("shows transcript provider errors in expanded job details", async () => {
+    const user = userEvent.setup();
+
+    transcriptJobsResponse = [
+      {
+        ...initialTranscriptJobs[0],
+        id: "transcript_job_failed_gemini",
+        status: "failed",
+        errorCode: "provider_not_configured",
+        error: "Gemini transcription provider is not configured.",
+      },
+    ];
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Transcripts" }));
+
+    const transcriptJobsRegion = await screen.findByLabelText("Transcript jobs");
+
+    expect(await within(transcriptJobsRegion).findByText("Failed")).toBeInTheDocument();
+
+    await user.click(
+      within(transcriptJobsRegion).getByRole("button", {
+        name: "Open transcript job: https://www.youtube.com/watch?v=conference",
+      }),
+    );
+
+    const errorPanel = await screen.findByLabelText("Transcript job error");
+
+    expect(within(errorPanel).getByText("Provider Not Configured")).toBeInTheDocument();
+    expect(within(errorPanel).getByText("Gemini transcription provider is not configured.")).toBeInTheDocument();
+    const runButton = within(transcriptJobsRegion).getByRole("button", { name: "Retry" });
+    expect(runButton).toBeDisabled();
+    expect(runButton).toHaveAttribute(
+      "title",
+      "Configure Gemini API key in Settings before running transcription",
+    );
+  });
+
+  it("validates transcript URL before creating a job", async () => {
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await user.click(screen.getByRole("button", { name: "Transcripts" }));
+
+    expect(await screen.findByRole("button", { name: "Create job" })).toBeDisabled();
+
+    await user.type(screen.getByLabelText("Transcript URL"), "https://example.com/video");
+    await user.tab();
+
+    expect(screen.getByText("Use a YouTube URL from youtube.com or youtu.be.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create job" })).toBeEnabled();
+
+    await user.click(screen.getByRole("button", { name: "Create job" }));
+
+    expect(invoke).not.toHaveBeenCalledWith("create_video_transcript_job", expect.anything());
   });
 
   it("filters notebook screen entries by kind, status, tag, and follow-up scheduling", async () => {

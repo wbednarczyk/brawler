@@ -18,9 +18,12 @@ Before making non-trivial changes, agents must read:
 - Do not implement non-trivial changes without an explicit plan and approval.
 - Keep public behavior, contracts, and docs in sync with code changes.
 - Milestone closure must include the matching app version bump in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+- Milestone and feature completion require real working application behavior against the real local runtime, real source, real API, or real agent described by the milestone. Samples, mocks, seed data, fake endpoints, and placeholder providers are valid only as intermediate development steps and in automated tests. They are not sufficient to mark a feature or milestone complete unless the roadmap explicitly defines that work item as a mock/sample-only spike.
 - If implementation evidence conflicts with a roadmap item or product requirement, explicitly call out the conflict, explain the tradeoff, and ask before weakening or deferring required scope.
 - It is acceptable to challenge the user's proposed direction when technical, legal, source-policy, UX, cost, or reliability evidence suggests a better path, but the challenge must be communicated clearly before docs or code change the product commitment.
 - Prefer small, reviewable changes that preserve local-first operation.
+- Treat modularity and configurability as first-class design constraints. New features should expose provider/source/model/credential/configuration boundaries that are easy to extend, while avoiding premature complexity that is not tied to a real planned extension.
+- Treat very large source files as architecture debt. When working near a large UI, storage, command, or test file, prefer extracting cohesive modules as part of the feature slice instead of adding more unrelated responsibility to the same file.
 - Do not add cloud services, telemetry, hosted dependencies, or paid APIs unless a new ADR approves them.
 - Treat `Brawler` as a codename only; do not hard-code it as the final product name in user-facing copy unless the spec says so.
 - Preserve user privacy: watchlists, feed data, source history, AI outputs, and settings are local-only in v1.
@@ -42,6 +45,7 @@ Before making non-trivial changes, agents must read:
 ## Testing Expectations
 
 - Keep testing lean and fast. Prefer behavior and contract coverage over testing implementation details.
+- Automated tests may use mocks, injected fetchers, and test samples to stay fast and deterministic, but agents must not present mock/sample success as proof that a user-facing feature or milestone is complete.
 - Rust contracts, source adapters, deduplication, scheduler behavior, migrations, notebook workflows, transcription workflows, and AI mapping require automated tests.
 - UI workflows for watchlists, feed filtering, unread state, source detail, and settings require component or workflow tests once UI exists.
 - Desktop packaging changes require smoke tests for Tauri startup, Rust command availability, and local SQLite connectivity.

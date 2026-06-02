@@ -250,7 +250,11 @@ Fields:
 - `provider_id`
 - `source_type`
 - `source_url`
+- `source_label`
+- `company_resolution_status`
+- `recognized_company_candidates_json`
 - `status`
+- `error_code`
 - `created_at`
 - `started_at`
 - `finished_at`
@@ -260,6 +264,15 @@ Rules:
 
 - Gemini is preferred only for YouTube transcription jobs.
 - Source URL is required.
+- The transcript workflow labels the source URL field as `URL`.
+- `company_id` is nullable at job creation time.
+- When a company/ticker is supplied before transcription, `company_id` is set and `company_resolution_status = provided`.
+- When no company/ticker is supplied, the app may transcribe first, then attempt company recognition from transcript/provider output.
+- If recognition fails, `company_resolution_status = needs_user_selection` and the UI must require company lookup/selection before transcript segments can become notebook notes.
+- Allowed `company_resolution_status` values: `provided`, `recognized`, `unresolved`, `needs_user_selection`.
+- Allowed `status` values: `queued`, `running`, `completed`, `failed`.
+- Allowed `error_code` values: `provider_not_configured`, `provider_limit`, `provider_unavailable`, `provider_error`, `network_error`, `invalid_source_url`, `parse_error`, `unknown`.
+- `error` stores user-readable diagnostic text and must not store provider secrets.
 - Jobs emit status changes to the UI.
 
 ### Transcript Segments
@@ -280,9 +293,11 @@ Fields:
 
 Rules:
 
+- `company_id` is nullable until the parent transcript job is resolved to a company.
 - Segment text is immutable source output in v1.
 - Timestamps are optional because providers may return different precision.
 - Notes created from transcript segments reference them through origin links.
+- Transcript-derived notes are normal notebook entries; each selected segment creates a `transcript_segment` origin containing the segment ID, original video URL, and job/provider/timestamp context in the label.
 
 ### AI Analysis Results
 
@@ -350,6 +365,8 @@ Initial keys:
 - `accent_palette`
 - `poll_interval_seconds`
 - `youtube_transcription_provider`
+- `youtube_transcription_model`
+- `youtube_transcription_timeout_seconds`
 - `general_analysis_provider`
 - `ai_analysis_mode`
 - `settings_import_export_format`
@@ -359,6 +376,9 @@ Rules:
 - Default theme is `dark`.
 - Default accent palette is `night-neon`.
 - Default poll interval is `900`.
+- Default YouTube transcription provider is `provider_gemini`.
+- Default YouTube transcription model is `gemini-2.5-flash`.
+- Default YouTube transcription timeout is `300` seconds.
 - General AI provider is null until the user configures one.
 - Default AI analysis mode is `source_grounded`.
 - Runtime settings live in SQLite.
@@ -390,7 +410,8 @@ Allowed source types:
 Rules:
 
 - Feed-created notes link to `feed_items`.
-- Transcript-created notes link to `transcript_segments` and retain original YouTube URL.
+- Transcript-created notes link to selected `transcript_segments` and retain original YouTube URL through origin rows.
+- Transcript-created notes require a resolved transcript job company before save.
 - Manual notes may use a `manual` origin link or no external source.
 - Normal note editing preserves existing origin links. Adding or detaching origins requires a future explicit source-link workflow.
 

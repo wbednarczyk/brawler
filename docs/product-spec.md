@@ -172,14 +172,19 @@ The first AI milestone is summarization and classification:
 - reasoning
 - source references
 
-Gemini should be preferred only for YouTube press conference transcription because of native vendor support for video/audio and YouTube URL input. Other AI workflows, including summaries, significance labels, and note extraction, have no preferred provider yet. Provider limits and privacy terms must be shown in settings before use.
+Gemini should be preferred only for YouTube press conference transcription because of native vendor support for video/audio and YouTube URL input. M10 must end with real Gemini-backed transcript generation working for at least one supported public YouTube URL; offline sample transcripts are only for tests and development. The Gemini transcription model is selectable in Settings and defaults to the cheapest configured model that passed live smoke validation. The Gemini transcription timeout is also configurable in Settings so short provider checks and longer conference videos can use different tolerances. Other AI workflows, including summaries, significance labels, and note extraction, have no preferred provider yet. Provider limits and privacy terms must be shown in settings before use.
 
 The first video AI workflow should support:
 
-- entering a YouTube press conference URL
+- entering a YouTube press conference URL in a field labeled `URL`
+- optionally providing the ticker/company before transcription
+- reserving space for future company recognition from the video/transcript when the user does not provide one upfront
+- allowing transcripts to remain unlinked to any company, including general market videos
+- offering optional company linking after transcription, using the same local company lookup as Companies
 - running a transcription or transcript-like extraction job
+- surfacing Gemini rejection/error causes when a direct YouTube URL cannot be processed
 - reviewing transcript segments
-- selecting transcript segments, text ranges, or AI-suggested claims to add to a specific company's notebook
+- selecting whole transcript segments to add to a specific company's notebook when the transcript is linked to a company
 - preserving the YouTube URL, timestamp range when available, provider, and created note origin
 
 AI output must be presented as decision support. It must not contain direct buy/sell/hold recommendations.
