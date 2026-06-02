@@ -4,14 +4,23 @@ Brawler is the temporary codename for a local-first investor newsfeed desktop ap
 
 ## Required Reading
 
-Before making non-trivial changes, agents must read:
+Before making non-trivial changes, agents must read enough project context to understand the affected behavior without loading unrelated reference material.
 
-- [docs/project-brief.md](docs/project-brief.md)
-- [docs/architecture.md](docs/architecture.md)
-- [docs/contracts.md](docs/contracts.md)
-- [docs/project-practices.md](docs/project-practices.md)
-- relevant ADRs in [docs/adr/](docs/adr/)
-- the active work item in [docs/kanban.md](docs/kanban.md)
+Always read:
+
+- [docs/project-brief.md](docs/project-brief.md) for product intent and the documentation map.
+- [docs/project-practices.md](docs/project-practices.md) for standing operating rules.
+- The active work item in [docs/kanban.md](docs/kanban.md).
+
+Then read only the relevant canonical references for the work being done:
+
+- Architecture or runtime boundaries: [docs/architecture.md](docs/architecture.md) and relevant ADRs in [docs/adr/](docs/adr/).
+- Public command/data contracts: [docs/contracts.md](docs/contracts.md) and [docs/data-model.md](docs/data-model.md).
+- User-facing behavior or UI flows: [docs/product-spec.md](docs/product-spec.md), [docs/ui-flows.md](docs/ui-flows.md), and [docs/ui-information-architecture.md](docs/ui-information-architecture.md).
+- Source adapters and source policy: [docs/source-strategy.md](docs/source-strategy.md) and source-specific ADRs.
+- Build, test, CI, packaging, or local environment behavior: [docs/engineering-workflow.md](docs/engineering-workflow.md).
+- Module ownership or refactoring: [docs/modularization-design.md](docs/modularization-design.md).
+- Historical completed-card context only when needed: [docs/kanban-archive.md](docs/kanban-archive.md).
 
 ## Working Rules
 

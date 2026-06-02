@@ -2,7 +2,7 @@
 
 This file defines initial contracts for the first implementation. Field names are intentionally stable enough for code scaffolding, but exact serialization may be refined with tests before the first API release.
 
-See also [Project Brief](project-brief.md), [Architecture](architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Project Practices](project-practices.md), and [Product Spec](product-spec.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), and [Product Spec](product-spec.md).
 
 ## Company Identity
 

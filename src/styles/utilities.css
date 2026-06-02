@@ -1,0 +1,15 @@
+.error-text {
+  margin-top: 18px;
+  color: var(--danger);
+}
+
+.helper-text {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

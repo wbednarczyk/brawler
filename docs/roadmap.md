@@ -2,7 +2,7 @@
 
 This roadmap turns the current product and architecture plan into implementation milestones. It is intentionally milestone-based instead of date-based.
 
-See also [Project Brief](project-brief.md), [UI Information Architecture](ui-information-architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Project Practices](project-practices.md), and [Kanban](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Kanban](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
 
 ## Roadmap Principles
 

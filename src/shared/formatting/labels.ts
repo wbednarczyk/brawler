@@ -1,0 +1,107 @@
+export function formatEnumLabel(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}`)
+    .join(" ");
+}
+
+export function formatCompanyEventType(value: string) {
+  const labels: Record<string, string> = {
+    periodic_report: "Periodic Report",
+    corporate_action: "Corporate Action",
+    dividend: "Dividend",
+    shareholder_meeting: "Shareholder Meeting",
+    conference_call: "Conference Call",
+    investor_conference: "Investor Conference",
+    market_making: "Market Making",
+    listing_change: "Listing Change",
+    other_market_event: "Market Event",
+    custom: "Custom",
+  };
+
+  return labels[value] ?? formatEnumLabel(value);
+}
+
+export function formatCompanyEventStatus(value: string) {
+  return formatEnumLabel(value);
+}
+
+export function formatCompanyEventSourceType(value: string) {
+  const labels: Record<string, string> = {
+    manual: "Manual",
+    official_calendar: "Official Calendar",
+    official_report: "Official Report",
+    public_calendar: "Public Calendar",
+    public_media: "Public Media",
+    notebook_entry: "Notebook",
+    feed_item: "Feed Item",
+  };
+
+  return labels[value] ?? formatEnumLabel(value);
+}
+
+export function formatAiProvider(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    provider_gemini: "Gemini",
+  };
+
+  if (!value) {
+    return "Not configured";
+  }
+
+  return labels[value] ?? value;
+}
+
+export function formatGeminiModel(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite",
+    "gemini-3.5-flash": "Gemini 3.5 Flash",
+  };
+
+  if (!value) {
+    return "Gemini 2.5 Flash";
+  }
+
+  return labels[value] ?? value;
+}
+
+export function formatCredentialStorage(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    os_keychain: "OS keychain",
+    development_environment: "Development environment",
+    not_configured: "Not configured",
+    os_keychain_unavailable: "OS keychain unavailable",
+  };
+
+  if (!value) {
+    return "Not configured";
+  }
+
+  return labels[value] ?? formatEnumLabel(value);
+}
+
+export function formatCredentialConfigured(status: { configured: boolean } | null) {
+  if (!status) {
+    return "Unknown";
+  }
+
+  return status.configured ? "Configured" : "Not configured";
+}
+
+export function formatCredentialKind(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    api_key: "API Key",
+    username_password: "Username/password",
+    session_token: "Session token",
+    oauth_token: "OAuth token",
+  };
+
+  if (!value) {
+    return "API Key";
+  }
+
+  return labels[value] ?? formatEnumLabel(value);
+}

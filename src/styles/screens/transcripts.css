@@ -1,0 +1,216 @@
+.source-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.75fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  cursor: pointer;
+}
+
+.transcript-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.transcript-detail-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+.transcript-description-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 8px;
+}
+
+.transcript-description-editor label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transcript-description-editor input {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.transcript-description-editor .error-text {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.transcript-segment-list {
+  display: grid;
+  gap: 6px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.transcript-search-panel {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.transcript-search-panel label {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transcript-search-panel input {
+  min-height: 34px;
+  width: 100%;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.transcript-search-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  gap: 5px;
+}
+
+.transcript-search-clear {
+  width: 28px;
+  min-height: 34px;
+  color: var(--muted);
+  background: var(--surface-raised);
+}
+
+.transcript-search-clear:hover,
+.transcript-search-clear:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--primary);
+}
+
+.transcript-search-count {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+
+.transcript-segment-row {
+  display: grid;
+  grid-template-columns: auto minmax(74px, auto) minmax(0, 1fr);
+  align-items: start;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-raised) 78%, transparent);
+  color: var(--text);
+  font-size: 13px;
+}
+
+.transcript-segment-row input {
+  margin-top: 2px;
+}
+
+.transcript-segment-time {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.transcript-segment-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.transcript-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.transcript-note-actions .error-text {
+  margin: 0;
+}
+
+.transcript-link-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 64%, transparent);
+}
+
+.transcript-link-panel label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.transcript-link-panel .company-registry-suggestions {
+  margin-top: 0;
+}
+
+.transcript-error-panel {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 44%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--surface-raised));
+}
+
+.transcript-error-panel strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.transcript-error-panel p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.transcript-note-draft {
+  display: grid;
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+}
+
+.muted-text {
+  color: var(--muted);
+  font-size: 13px;
+}

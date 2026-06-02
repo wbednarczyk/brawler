@@ -2,7 +2,7 @@
 
 This document defines how Brawler should be built, checked, and tested during development.
 
-See also [Architecture](architecture.md), [Project Practices](project-practices.md), [Roadmap](roadmap.md), [Kanban](kanban.md), [Live Smoke Tests](live-smoke-tests.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Roadmap](roadmap.md), [Kanban](kanban.md), [Live Smoke Tests](live-smoke-tests.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
 
 ## Goals
 

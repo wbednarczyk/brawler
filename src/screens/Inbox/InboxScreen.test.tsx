@@ -1,0 +1,514 @@
+import { describe, it } from "vitest";
+import {
+  appTestState,
+  currentWeekTestDate,
+  expect,
+  initialCompanies,
+  initialFeedItems,
+  initialGeminiCredentialStatus,
+  initialNotebookEntry,
+  invoke,
+  openUrl,
+  renderApp,
+  screen,
+  userEvent,
+  vi,
+  waitFor,
+  within,
+} from "../../test/appWorkflowHarness";
+
+describe("Inbox screen workflows", () => {
+  it("shows selected feed item details", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const selectedRow = await screen.findByRole("button", {
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+    });
+
+    await user.click(selectedRow);
+
+    expect(selectedRow).toHaveClass("feed-row-selected");
+    expect(selectedRow).toHaveAttribute("aria-current", "true");
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
+      "href",
+      "https://example.local/sample/pkn",
+    );
+    expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toHaveAttribute(
+      "href",
+      "https://example.local/sample/pkn",
+    );
+    expect(screen.getByText("Sample")).toBeInTheDocument();
+  });
+
+  it("opens the matching company workspace from an inbox feed item", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await screen.findByLabelText("Feed item details");
+    await user.click(screen.getByRole("button", { name: "Open company" }));
+
+    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Company workspace")).toBeInTheDocument();
+    expect(screen.getByLabelText("Company feed item details")).toBeInTheDocument();
+    expect(screen.getByRole("button", {
+      name: "Open company feed item: Current report placeholder for watchlist company",
+    })).toHaveClass("company-feed-row-selected");
+  });
+
+  it("creates a notebook draft from an inbox feed item with feed origins", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await screen.findByLabelText("Feed item details");
+    await user.click(screen.getByRole("button", { name: "Note" }));
+
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+
+    expect(screen.getByRole("heading", { name: "Notebooks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Notebook screen note title")).toHaveValue(
+      "Current report placeholder for watchlist company",
+    );
+    expect(screen.getByLabelText("Notebook screen note body")).toHaveValue(
+      "Sample official report used to validate feed filtering and detail rendering.",
+    );
+    expect(screen.getByLabelText("Notebook screen note tags")).toHaveValue(
+      "feed, official-report, gpw-espi/ebi",
+    );
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_notebook_entry", {
+        input: {
+          companyId: "company_gpw_cdr",
+          title: "Current report placeholder for watchlist company",
+          body: "Sample official report used to validate feed filtering and detail rendering.",
+          bodyFormat: "markdown",
+          tags: ["feed", "official-report", "gpw-espi/ebi"],
+          kind: "observation",
+          claimStatus: null,
+          eventDate: null,
+          followUpAfter: null,
+          followUpDate: null,
+          origins: [
+            {
+              sourceType: "feed_item",
+              sourceId: "feed_sample_cdr_report",
+              sourceUrl: "https://www.gpw.pl/komunikaty",
+              label: "GPW ESPI/EBI: Current report placeholder for watchlist company",
+            },
+          ],
+        },
+      });
+    });
+
+    const originFeedButton = await within(notebooksWorkspace).findByRole("button", {
+      name: "Open origin feed item: GPW ESPI/EBI: Current report placeholder for watchlist company",
+    });
+    expect(
+      within(notebooksWorkspace).getByRole("link", {
+        name: "Open origin source: GPW ESPI/EBI: Current report placeholder for watchlist company",
+      }),
+    ).toHaveAttribute("href", "https://www.gpw.pl/komunikaty");
+
+    await user.click(originFeedButton);
+
+    expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Feed item details")).getByRole("heading", {
+        name: "Current report placeholder for watchlist company",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("selects inbox feed items with the keyboard", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedItem = await screen.findByRole("button", {
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+    });
+
+    feedItem.focus();
+    await user.keyboard("{Enter}");
+
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toBeInTheDocument();
+  });
+
+  it("moves through inbox feed items with arrow keys", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const firstFeedItem = await screen.findByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    });
+
+    firstFeedItem.focus();
+    await user.keyboard("{ArrowDown}");
+
+    expect(
+      screen.getByRole("button", {
+        name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+      }),
+    ).toHaveFocus();
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
+
+    await user.keyboard("{ArrowUp}");
+
+    expect(firstFeedItem).toHaveFocus();
+    expect(
+      screen.getAllByText("Sample official report used to validate feed filtering and detail rendering.").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("shows feed details only in the inbox", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    expect(await screen.findByLabelText("Feed item details")).toBeInTheDocument();
+    expect(screen.getByRole("separator", { name: "Resize feed details" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+
+    expect(screen.queryByLabelText("Feed item details")).not.toBeInTheDocument();
+    expect(screen.queryByRole("separator", { name: "Resize feed details" })).not.toBeInTheDocument();
+  });
+
+  it("resizes the inbox detail pane with keyboard controls", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const resizer = await screen.findByRole("separator", { name: "Resize feed details" });
+
+    expect(resizer).toHaveAttribute("aria-valuenow", "360");
+
+    resizer.focus();
+    await user.keyboard("{ArrowLeft}");
+
+    expect(resizer).toHaveAttribute("aria-valuenow", "384");
+  });
+
+  it("filters inbox sample items by watchlist", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+
+    expect(
+      await within(feedList).findByText("Sample item proving the inbox layout can scan dense rows"),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(await screen.findByLabelText("Inbox watchlist"), "watchlist_main_gpw");
+
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+    expect(within(feedList).queryByText("Sample item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
+  });
+
+  it("filters inbox sample items by status", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Current report placeholder for watchlist company");
+
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+    expect(within(feedList).queryByText("Sample item proving the inbox layout can scan dense rows")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Saved" }));
+
+    expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
+    expect(within(feedList).getByText("Sample item proving the inbox layout can scan dense rows")).toBeInTheDocument();
+  });
+
+  it("moves selection to the next unread item after marking the current unread item read", async () => {
+    const user = userEvent.setup();
+
+    appTestState.feedItemsResponse = [
+      initialFeedItems[0],
+      {
+        ...initialFeedItems[0],
+        id: "feed_sample_cdr_second_unread",
+        title: "Second unread report for review flow",
+        summary: "Second unread item should become selected after the first one is marked read.",
+        unread: true,
+      },
+    ];
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+
+    const firstUnreadRow = await screen.findByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    });
+
+    expect(firstUnreadRow).toHaveClass("feed-row-selected");
+
+    await user.click(screen.getByRole("button", { name: "Mark read" }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", {
+          name: "Select feed item: Second unread report for review flow",
+        }),
+      ).toHaveClass("feed-row-selected");
+    });
+    expect(screen.queryByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    })).not.toBeInTheDocument();
+    expect(
+      screen.getAllByText("Second unread item should become selected after the first one is marked read.").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("marks all visible inbox items as read", async () => {
+    const user = userEvent.setup();
+
+    appTestState.feedItemsResponse = [
+      initialFeedItems[0],
+      {
+        ...initialFeedItems[0],
+        id: "feed_sample_cdr_second_unread",
+        title: "Second unread report for bulk read flow",
+        summary: "Second unread item should be marked read with the bulk action.",
+        unread: true,
+      },
+    ];
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Mark all read" }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Inbox review summary")).toHaveTextContent("0 unread");
+    });
+    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+      input: {
+        id: "feed_sample_cdr_report",
+        read: true,
+        saved: false,
+      },
+    });
+    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+      input: {
+        id: "feed_sample_cdr_second_unread",
+        read: true,
+        saved: false,
+      },
+    });
+  });
+
+  it("confirms and deletes unsaved feed items without refreshing sources", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    appTestState.feedItemsResponse = [
+      {
+        ...initialFeedItems[0],
+        id: "feed_unsaved_delete_candidate",
+        title: "Unsaved report to delete",
+        saved: false,
+      },
+      {
+        ...initialFeedItems[1],
+        id: "feed_saved_to_keep",
+        title: "Saved report to keep",
+        saved: true,
+      },
+    ];
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Unsaved report to delete");
+
+    await user.click(screen.getByRole("button", { name: "Delete unsaved" }));
+
+    expect(confirm).toHaveBeenCalledWith("Delete all unsaved feed items? Saved items will stay.");
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_unsaved_feed_items");
+    });
+    await within(feedList).findByText("Saved report to keep");
+    expect(within(feedList).queryByText("Unsaved report to delete")).not.toBeInTheDocument();
+    expect(invoke).not.toHaveBeenCalledWith("refresh_sources", expect.anything());
+
+    confirm.mockRestore();
+  });
+
+  it("summarizes the current inbox review set", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await within(screen.getByLabelText("Feed items")).findByText(
+      "Current report placeholder for watchlist company",
+    );
+
+    const summary = screen.getByLabelText("Inbox review summary");
+
+    expect(within(summary).getByText("4")).toBeInTheDocument();
+    expect(within(summary).getByText("visible")).toBeInTheDocument();
+    expect(within(summary).getAllByText("1")).toHaveLength(2);
+    expect(within(summary).getByText("unread")).toBeInTheDocument();
+    expect(within(summary).getByText("saved")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+
+    expect(within(summary).getAllByText("1")).toHaveLength(2);
+    expect(within(summary).getByText("visible")).toBeInTheDocument();
+    expect(within(summary).getByText("unread")).toBeInTheDocument();
+    expect(within(summary).getByText("0")).toBeInTheDocument();
+  });
+
+  it("filters inbox sample items by search query", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Current report placeholder for watchlist company");
+
+    await user.type(screen.getByLabelText("Search feed"), "transcript");
+
+    expect(within(feedList).getByText("Transcript-derived note candidate waits for future provider work")).toBeInTheDocument();
+    expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
+  });
+
+  it("filters inbox sample items by type and source", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Current report placeholder for watchlist company");
+
+    await user.selectOptions(screen.getByLabelText("Inbox type"), "Transcript");
+
+    expect(within(feedList).getByText("Transcript-derived note candidate waits for future provider work")).toBeInTheDocument();
+    expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Inbox type"), "all");
+    await user.selectOptions(screen.getByLabelText("Inbox source"), "GPW ESPI/EBI");
+
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+    expect(within(feedList).queryByText("Transcript-derived note candidate waits for future provider work")).not.toBeInTheDocument();
+  });
+
+  it("clears active inbox filters", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Current report placeholder for watchlist company");
+
+    await user.type(screen.getByLabelText("Search feed"), "does-not-match");
+
+    expect(within(feedList).getByText("No feed items for selected filters.")).toBeInTheDocument();
+
+    await user.click(screen.getAllByRole("button", { name: "Clear filters" })[0]);
+
+    expect(screen.getByLabelText("Search feed")).toHaveValue("");
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+    expect(within(feedList).getByText("Sample item proving the inbox layout can scan dense rows")).toBeInTheDocument();
+  });
+
+  it("shows a first-run inbox empty state when no companies are tracked", async () => {
+    const user = userEvent.setup();
+
+    appTestState.companiesResponse = [];
+    appTestState.feedItemsResponse = [];
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+
+    expect(await within(feedList).findByText("No companies tracked yet.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add company" }));
+
+    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+  });
+
+  it("shows a no-feed inbox empty state with a source status path when companies exist", async () => {
+    const user = userEvent.setup();
+
+    appTestState.feedItemsResponse = [];
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+
+    expect(await within(feedList).findByText("No stored feed items yet.")).toBeInTheDocument();
+    expect(within(feedList).getByRole("button", { name: "Refresh sources" })).toBeEnabled();
+
+    await user.click(within(feedList).getByRole("button", { name: "Open Sources" }));
+
+    expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
+    expect(await screen.findByLabelText("Source adapter details")).toBeInTheDocument();
+  });
+
+  it("updates sample read and saved state from the detail pane", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+    await within(feedList).findByText("Current report placeholder for watchlist company");
+
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Mark read" }));
+    expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
+    expect(within(feedList).getByText("No feed items for selected filters.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All" }));
+    await user.click(within(feedList).getByText("Current report placeholder for watchlist company"));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    await user.click(screen.getByRole("button", { name: "Saved" }));
+
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+  });
+
+  it("toggles feed item read state on double click", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    const feedList = screen.getByLabelText("Feed items");
+    const feedTitle = await within(feedList).findByText("Current report placeholder for watchlist company");
+
+    await user.dblClick(feedTitle);
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+
+    expect(within(feedList).queryByText("Current report placeholder for watchlist company")).not.toBeInTheDocument();
+    expect(within(feedList).getByText("No feed items for selected filters.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All" }));
+    await user.dblClick(within(feedList).getByText("Current report placeholder for watchlist company"));
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+
+    expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+  });
+});

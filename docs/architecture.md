@@ -1,6 +1,6 @@
 # Architecture
 
-See also [Project Brief](project-brief.md), [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Engineering Workflow](engineering-workflow.md), [Project Practices](project-practices.md), [Modularization Design](modularization-design.md), [Contracts](contracts.md), and the accepted ADRs in [docs/adr](adr/).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Contracts](contracts.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Project Practices](project-practices.md), [Modularization Design](modularization-design.md), and relevant ADRs in [docs/adr](adr/).
 
 ## Chosen Stack
 
@@ -74,7 +74,7 @@ AI providers should implement provider-neutral interfaces. General AI analysis, 
 
 Modularity and configurability are core architecture constraints. Provider, source, credential, model, and workflow settings should be represented as explicit boundaries instead of one-off hard-coded behavior when the feature is expected to evolve.
 
-Code organization should follow those boundaries. Large shell files are acceptable during early scaffolding but should not become the stable structure. UI screens, command groups, storage domains, provider clients, and source adapters should move into cohesive modules as they grow. The target structure and extraction order are defined in [Modularization Design](modularization-design.md).
+Code organization should follow those boundaries. Large shell files are architecture debt unless they are intentional state roots, facades, composition points, or cohesive domain views. Current module ownership and future extraction triggers are defined in [Modularization Design](modularization-design.md).
 
 Gemini is preferred only for the YouTube press conference transcription workflow because the Gemini API currently has native video/audio understanding and YouTube URL support. M10 requires a working live `provider_gemini` path for supported public YouTube URLs, while automated tests continue to use mocked responses or offline test samples. The implementation must still keep provider boundaries pluggable.
 

@@ -1,0 +1,402 @@
+.notebook-panel {
+  gap: 10px;
+}
+
+.notebook-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
+}
+
+.notebook-toolbar h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.notebook-toolbar p {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notebook-form,
+.notebook-detail {
+  display: grid;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.notebook-form-grid {
+  display: grid;
+  grid-template-columns: minmax(170px, 1.3fr) repeat(3, minmax(118px, 1fr)) auto;
+  gap: 8px;
+  align-items: end;
+}
+
+.notebook-form label,
+.notebook-body-field,
+.notebook-detail label,
+.date-picker-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.notebook-form input,
+.notebook-form select,
+.notebook-form textarea,
+.notebook-detail input,
+.notebook-detail select,
+.notebook-detail textarea {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  outline: none;
+}
+
+.notebook-form textarea {
+  min-height: 68px;
+  padding: 8px 9px;
+  resize: vertical;
+}
+
+.notebook-form input:focus,
+.notebook-form select:focus,
+.notebook-form textarea:focus,
+.notebook-detail input:focus,
+.notebook-detail select:focus,
+.notebook-detail textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.notebook-submit-button {
+  min-width: 104px;
+}
+
+.date-picker-field {
+  position: relative;
+}
+
+.date-picker-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 32px;
+  gap: 4px;
+  align-items: center;
+}
+
+.date-picker-toggle {
+  width: 32px;
+  min-height: 32px;
+  color: var(--muted);
+  background: var(--surface-raised);
+}
+
+.date-picker-toggle:hover,
+.date-picker-toggle:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--primary);
+}
+
+.date-picker-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  display: grid;
+  gap: 7px;
+  min-width: 180px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow);
+}
+
+.quarter-picker-popover {
+  min-width: 210px;
+}
+
+.quarter-picker-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.quarter-option {
+  min-height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  font-size: 12px;
+}
+
+.quarter-option:hover,
+.quarter-option:focus-visible,
+.quarter-option-active {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.notebook-list {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+}
+
+.notebook-workspace {
+  display: grid;
+  grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.claims-panel,
+.claims-list,
+.claim-row-block {
+  display: grid;
+  gap: 8px;
+}
+
+.claim-detail {
+  display: grid;
+  gap: 10px;
+  margin: 0 8px 4px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.claim-status-control {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+
+.claim-status-control label {
+  display: grid;
+  gap: 5px;
+  min-width: 180px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.claim-status-control select {
+  width: 100%;
+  min-height: 32px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  outline: none;
+}
+
+.claim-status-control select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.notebook-row {
+  display: grid;
+  gap: 5px;
+  width: 100%;
+  min-height: 52px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  text-align: left;
+}
+
+.notebook-row:hover,
+.notebook-row:focus-visible,
+.notebook-row-selected {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.notebook-row-selected {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.notebook-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.notebook-row-top span {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.notebook-row h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.notebook-row-meta span {
+  max-width: 132px;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notebook-entry-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.notebook-detail-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.notebook-detail h3 {
+  margin: 4px 0 0;
+  font-size: 16px;
+}
+
+.notebook-entry-header label {
+  flex: 1 1 auto;
+}
+
+.notebook-detail textarea {
+  min-height: 210px;
+  padding: 9px;
+  font-size: 13px;
+  line-height: 1.45;
+  resize: vertical;
+  white-space: pre-wrap;
+}
+
+.notebook-read-body {
+  min-height: 210px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border-radius: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notebook-read-body > *:first-child {
+  margin-top: 0;
+}
+
+.notebook-read-body > *:last-child {
+  margin-bottom: 0;
+}
+
+.notebook-read-body h2,
+.notebook-read-body h3,
+.notebook-read-body h4 {
+  margin: 10px 0 6px;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.notebook-read-body h2 {
+  font-size: 16px;
+}
+
+.notebook-read-body h3,
+.notebook-read-body h4 {
+  font-size: 14px;
+}
+
+.notebook-read-body p,
+.notebook-read-body ul,
+.notebook-read-body ol,
+.notebook-read-body blockquote,
+.notebook-read-body pre {
+  margin: 0 0 8px;
+}
+
+.notebook-read-body ul,
+.notebook-read-body ol {
+  padding-left: 20px;
+}
+
+.notebook-read-body blockquote {
+  padding-left: 10px;
+  border-left: 3px solid color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--muted);
+}
+
+.notebook-read-body code {
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+
+.notebook-read-body pre {
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.notebook-read-body pre code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.notebook-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.notebook-entry-meta {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

@@ -1,6 +1,6 @@
 # Product Spec
 
-See also [Project Brief](project-brief.md), [UI Flows](ui-flows.md), [UI Information Architecture](ui-information-architecture.md), [Source Strategy](source-strategy.md), [Architecture](architecture.md), [Contracts](contracts.md), and [Kanban](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [UI Flows](ui-flows.md), [UI Information Architecture](ui-information-architecture.md), [Source Strategy](source-strategy.md), and [Contracts](contracts.md).
 
 ## V1 Experience
 

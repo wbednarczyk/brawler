@@ -2,31 +2,37 @@
 
 ## Document Map
 
-- [Architecture](architecture.md)
-- [Product Spec](product-spec.md)
-- [UI Flows](ui-flows.md)
-- [UI Information Architecture](ui-information-architecture.md)
-- [Data Model](data-model.md)
-- [Source Strategy](source-strategy.md)
-- [Roadmap](roadmap.md)
-- [Engineering Workflow](engineering-workflow.md)
-- [Project Practices](project-practices.md)
-- [Contracts](contracts.md)
-- [Kanban](kanban.md)
-- [ADR 0001: Local-First Desktop Application](adr/0001-local-first-desktop.md)
-- [ADR 0002: Tauri, React, and Rust Core](adr/0002-tauri-react-rust-core.md)
-- [ADR 0003: SQLite Local Storage](adr/0003-sqlite-local-storage.md)
-- [ADR 0004: Source and AI Policy](adr/0004-source-and-ai-policy.md)
-- [ADR 0005: Company Notebooks and Transcripts](adr/0005-company-notebooks-and-transcripts.md)
-- [ADR 0006: Theme and Visual Direction](adr/0006-theme-and-visual-direction.md)
-- [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md)
-- [ADR 0008: License and Project Governance](adr/0008-license-and-project-governance.md)
-- [ADR 0009: Local Config, Secrets, Data, and Observability](adr/0009-local-config-secrets-data-and-observability.md)
-- [ADR 0010: Security, Dependencies, and AI Policy](adr/0010-security-dependencies-and-ai-policy.md)
-- [ADR 0011: Export, Backup, Versioning, and Releases](adr/0011-export-backup-versioning-and-releases.md)
-- [ADR 0012: Nix Development Environment](adr/0012-nix-development-environment.md)
-- [ADR 0013: GPW Detail Fetching Policy](adr/0013-gpw-detail-fetching-policy.md)
-- [ADR 0014: Portal Analiz Authenticated Source Policy](adr/0014-portal-analiz-authenticated-source-policy.md)
+Use this map to load only the docs needed for the current task.
+
+Core orientation:
+
+- [Project Practices](project-practices.md): standing rules for feature completion, secrets, dependencies, security, AI, testing, releases, and modularity.
+- [Architecture](architecture.md): stack, runtime ownership, storage posture, command boundaries, and extensibility boundaries.
+- [Modularization Design](modularization-design.md): current module structure and the checklist for keeping future work modular.
+
+Product and UX:
+
+- [Product Spec](product-spec.md): user-facing v1 behavior and deferred scope.
+- [UI Flows](ui-flows.md): task flows and interaction sequences.
+- [UI Information Architecture](ui-information-architecture.md): screens, navigation, layout, and information hierarchy.
+
+Contracts and data:
+
+- [Contracts](contracts.md): stable command payloads and UI-facing read models.
+- [Data Model](data-model.md): local entity model, origin model, migrations, and deferred data areas.
+- [Source Strategy](source-strategy.md): source adapter policy, accepted source paths, source candidates, and rate-limit posture.
+
+Planning and workflow:
+
+- [Roadmap](roadmap.md): milestone intent and exit criteria.
+- [Kanban](kanban.md): active work only.
+- [Kanban Archive](kanban-archive.md): completed-card history.
+- [Engineering Workflow](engineering-workflow.md): local commands, Nix, WSL/Windows split, CI, quality gates, and packaging posture.
+- [Live Smoke Tests](live-smoke-tests.md): opt-in real-provider validation procedures.
+
+Decision records:
+
+- [ADRs](adr/): accepted architecture, source, policy, workflow, and governance decisions. Read only ADRs relevant to the current task.
 
 ## Product Intent
 

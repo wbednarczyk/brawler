@@ -2,7 +2,7 @@
 
 This document captures day-1 operating rules for Brawler. It complements the product, architecture, and roadmap docs by defining how the project should be maintained.
 
-See also [Project Brief](project-brief.md), [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Kanban](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Kanban](kanban.md).
 
 ## Real Feature Completion
 
@@ -92,6 +92,7 @@ Modularity and configurability are first-class design constraints.
 
 Rules:
 
+- Before non-trivial implementation work, identify the owning domain and layer using [Modularization Design](modularization-design.md).
 - New features should define clear boundaries for providers, sources, credentials, models, settings, and user-visible workflow options.
 - Prefer reusable typed configuration surfaces over one-off hard-coded provider/source behavior.
 - Keep defaults practical and conservative, but make likely future provider/source/model changes configurable when doing so is cheap and clear.
@@ -99,6 +100,8 @@ Rules:
 - When a feature introduces a real external dependency, separate the runtime implementation from test-sample/mocked implementations so tests stay deterministic and the real workflow can still be validated.
 - Keep source files split by responsibility before they become hard to reason about. Large files should be treated as architecture debt, especially UI shells, storage modules, command registration, and broad test files.
 - Prefer extracting cohesive modules during nearby feature work instead of doing disruptive repo-wide rewrites. A good extraction has a clear owner boundary, such as transcript UI, settings UI, notebook UI, storage migrations, storage transcript operations, source adapter state, or provider clients.
+- When touching existing UI, adopt shared components/hooks for the touched area when they preserve behavior and class semantics.
+- Do not split cohesive files only to reduce line count; split when a file gains multiple reasons to change or starts mixing layers.
 
 ## UX Quality
 
