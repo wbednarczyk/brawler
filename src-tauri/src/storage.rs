@@ -47,6 +47,8 @@ pub enum StorageError {
     InvalidNotebookValue { key: &'static str, value: String },
     #[error("invalid company event value for {key}: {value}")]
     InvalidCompanyEventValue { key: &'static str, value: String },
+    #[error("invalid transcript value for {key}: {value}")]
+    InvalidTranscriptValue { key: &'static str, value: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;
@@ -266,6 +268,15 @@ impl AppState {
         create_notebook_entry(&connection, input)
     }
 
+    pub fn create_note_from_transcript_selection(
+        &self,
+        input: CreateNoteFromTranscriptSelectionInput,
+    ) -> StorageResult<NotebookEntry> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_note_from_transcript_selection(&connection, input)
+    }
+
     pub fn update_notebook_entry(
         &self,
         input: NotebookEntryUpdate,
@@ -288,6 +299,92 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         create_company_event(&connection, input)
+    }
+
+    pub fn list_transcript_jobs(
+        &self,
+        input: TranscriptJobListInput,
+    ) -> StorageResult<Vec<TranscriptJob>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_transcript_jobs(&connection, input)
+    }
+
+    pub fn delete_transcript_job(&self, job_id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        delete_transcript_job(&connection, job_id)
+    }
+
+    pub fn create_transcript_job(&self, input: NewTranscriptJob) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_transcript_job(&connection, input)
+    }
+
+    pub fn update_transcript_job(
+        &self,
+        input: UpdateTranscriptJobInput,
+    ) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        update_transcript_job(&connection, input)
+    }
+
+    pub fn list_transcript_segments(
+        &self,
+        transcript_job_id: &str,
+    ) -> StorageResult<Vec<TranscriptSegment>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        list_transcript_segments(&connection, transcript_job_id)
+    }
+
+    pub fn create_transcript_segment(
+        &self,
+        input: NewTranscriptSegment,
+    ) -> StorageResult<TranscriptSegment> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        create_transcript_segment(&connection, input)
+    }
+
+    pub fn resolve_transcript_job_company(
+        &self,
+        input: ResolveTranscriptJobCompanyInput,
+    ) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        resolve_transcript_job_company(&connection, input)
+    }
+
+    pub fn get_transcript_job(&self, job_id: &str) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        get_transcript_job(&connection, job_id)
+    }
+
+    pub fn mark_transcript_job_running(&self, job_id: &str) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        mark_transcript_job_running(&connection, job_id)
+    }
+
+    pub fn mark_transcript_job_completed(&self, job_id: &str) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        mark_transcript_job_completed(&connection, job_id)
+    }
+
+    pub fn mark_transcript_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<TranscriptJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        mark_transcript_job_failed(&connection, job_id, error_code, error)
     }
 
     pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {
@@ -554,6 +651,27 @@ pub struct NewNotebookOrigin {
     pub label: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateNoteFromTranscriptSelectionInput {
+    pub transcript_job_id: String,
+    pub transcript_segment_ids: Vec<String>,
+    pub note_draft: TranscriptNoteDraft,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptNoteDraft {
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+    pub kind: String,
+    pub claim_status: Option<String>,
+    pub event_date: Option<String>,
+    pub follow_up_after: Option<String>,
+    pub follow_up_date: Option<String>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceAdapter {
@@ -599,6 +717,8 @@ pub struct CompanyRegistryEntry {
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderSettings {
     pub youtube_transcription_provider: String,
+    pub youtube_transcription_model: String,
+    pub youtube_transcription_timeout_seconds: i64,
     pub general_analysis_provider: Option<String>,
 }
 
@@ -621,6 +741,8 @@ pub struct SettingsUpdate {
     pub theme: Option<String>,
     pub poll_interval_seconds: Option<i64>,
     pub youtube_transcription_provider: Option<String>,
+    pub youtube_transcription_model: Option<String>,
+    pub youtube_transcription_timeout_seconds: Option<i64>,
     pub general_analysis_provider: Option<String>,
     pub ai_analysis_mode: Option<String>,
 }
@@ -634,7 +756,7 @@ pub struct CompanyLookupInput {
     pub isin: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyLookupResult {
     pub exchange: String,
@@ -705,6 +827,83 @@ pub struct NewCompanyEvent {
     pub source_url: Option<String>,
     pub attribution: Option<String>,
     pub fetched_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptJob {
+    pub id: String,
+    pub company_id: Option<String>,
+    pub company: Option<String>,
+    pub company_name: Option<String>,
+    pub provider_id: String,
+    pub source_type: String,
+    pub source_url: String,
+    pub source_label: Option<String>,
+    pub company_resolution_status: String,
+    pub recognized_company_candidates: Vec<CompanyLookupResult>,
+    pub status: String,
+    pub error_code: Option<String>,
+    pub created_at: String,
+    pub started_at: Option<String>,
+    pub finished_at: Option<String>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptJobListInput {
+    pub company_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewTranscriptJob {
+    pub company_id: Option<String>,
+    pub provider_id: Option<String>,
+    pub source_url: String,
+    pub source_label: Option<String>,
+    pub recognized_company_candidates: Option<Vec<CompanyLookupResult>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateTranscriptJobInput {
+    pub job_id: String,
+    pub source_label: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolveTranscriptJobCompanyInput {
+    pub job_id: String,
+    pub company_id: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TranscriptSegment {
+    pub id: String,
+    pub transcript_job_id: String,
+    pub company_id: Option<String>,
+    pub start_seconds: Option<i64>,
+    pub end_seconds: Option<i64>,
+    pub speaker: Option<String>,
+    pub text: String,
+    pub language: Option<String>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewTranscriptSegment {
+    pub transcript_job_id: String,
+    pub company_id: Option<String>,
+    pub start_seconds: Option<i64>,
+    pub end_seconds: Option<i64>,
+    pub speaker: Option<String>,
+    pub text: String,
+    pub language: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -794,6 +993,31 @@ const MIGRATIONS: &[Migration] = &[
         version: 16,
         name: "enable_bankier_kalendarium",
         sql: include_str!("../migrations/0016_enable_bankier_kalendarium.sql"),
+    },
+    Migration {
+        version: 17,
+        name: "transcript_storage_foundation",
+        sql: include_str!("../migrations/0017_transcript_storage_foundation.sql"),
+    },
+    Migration {
+        version: 18,
+        name: "youtube_transcription_provider_id",
+        sql: include_str!("../migrations/0018_youtube_transcription_provider_id.sql"),
+    },
+    Migration {
+        version: 19,
+        name: "youtube_transcription_model",
+        sql: include_str!("../migrations/0019_youtube_transcription_model.sql"),
+    },
+    Migration {
+        version: 20,
+        name: "youtube_transcription_timeout",
+        sql: include_str!("../migrations/0020_youtube_transcription_timeout.sql"),
+    },
+    Migration {
+        version: 21,
+        name: "gemini_default_model_to_validated_flash",
+        sql: include_str!("../migrations/0021_gemini_default_model_to_validated_flash.sql"),
     },
 ];
 
@@ -2771,6 +2995,86 @@ fn create_notebook_entry(
     get_notebook_entry(connection, &id)
 }
 
+fn create_note_from_transcript_selection(
+    connection: &Connection,
+    input: CreateNoteFromTranscriptSelectionInput,
+) -> StorageResult<NotebookEntry> {
+    let transcript_job_id = input.transcript_job_id.trim().to_owned();
+    let selected_segment_ids = input
+        .transcript_segment_ids
+        .into_iter()
+        .map(|segment_id| segment_id.trim().to_owned())
+        .filter(|segment_id| !segment_id.is_empty())
+        .collect::<Vec<_>>();
+
+    if selected_segment_ids.is_empty() {
+        return Err(StorageError::InvalidTranscriptValue {
+            key: "transcript_segment_ids",
+            value: "empty".to_owned(),
+        });
+    }
+
+    let job = get_transcript_job(connection, &transcript_job_id)?;
+    let company_id =
+        job.company_id
+            .clone()
+            .ok_or_else(|| StorageError::InvalidTranscriptValue {
+                key: "company_id",
+                value: "unresolved".to_owned(),
+            })?;
+
+    if job.status != "completed" {
+        return Err(StorageError::InvalidTranscriptValue {
+            key: "status",
+            value: job.status,
+        });
+    }
+
+    let all_segments = list_transcript_segments(connection, &transcript_job_id)?;
+    let selected_id_set = selected_segment_ids
+        .iter()
+        .cloned()
+        .collect::<std::collections::HashSet<_>>();
+    let selected_segments = all_segments
+        .into_iter()
+        .filter(|segment| selected_id_set.contains(&segment.id))
+        .collect::<Vec<_>>();
+
+    if selected_segments.len() != selected_id_set.len() {
+        return Err(StorageError::InvalidTranscriptValue {
+            key: "transcript_segment_ids",
+            value: "unknown segment".to_owned(),
+        });
+    }
+
+    let origins = selected_segments
+        .iter()
+        .map(|segment| NewNotebookOrigin {
+            source_type: "transcript_segment".to_owned(),
+            source_id: Some(segment.id.clone()),
+            source_url: Some(job.source_url.clone()),
+            label: Some(transcript_origin_label(&job, segment)),
+        })
+        .collect::<Vec<_>>();
+
+    create_notebook_entry(
+        connection,
+        NewNotebookEntry {
+            company_id,
+            title: input.note_draft.title,
+            body: input.note_draft.body,
+            body_format: Some("markdown".to_owned()),
+            tags: input.note_draft.tags,
+            kind: input.note_draft.kind,
+            claim_status: input.note_draft.claim_status,
+            event_date: input.note_draft.event_date,
+            follow_up_after: input.note_draft.follow_up_after,
+            follow_up_date: input.note_draft.follow_up_date,
+            origins,
+        },
+    )
+}
+
 fn update_notebook_entry(
     connection: &Connection,
     input: NotebookEntryUpdate,
@@ -3080,6 +3384,389 @@ fn create_company_event(
     )?;
 
     get_company_event(connection, &id)
+}
+
+fn list_transcript_jobs(
+    connection: &Connection,
+    input: TranscriptJobListInput,
+) -> StorageResult<Vec<TranscriptJob>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            transcript_jobs.id,
+            transcript_jobs.company_id,
+            companies.qualified_ticker,
+            companies.display_name,
+            transcript_jobs.provider_id,
+            transcript_jobs.source_type,
+            transcript_jobs.source_url,
+            transcript_jobs.source_label,
+            transcript_jobs.company_resolution_status,
+            transcript_jobs.recognized_company_candidates_json,
+            transcript_jobs.status,
+            transcript_jobs.error_code,
+            transcript_jobs.created_at,
+            transcript_jobs.started_at,
+            transcript_jobs.finished_at,
+            transcript_jobs.error
+        FROM transcript_jobs
+        LEFT JOIN companies ON companies.id = transcript_jobs.company_id
+        WHERE (?1 IS NULL OR transcript_jobs.company_id = ?1)
+        ORDER BY transcript_jobs.created_at DESC, transcript_jobs.id DESC
+        ",
+    )?;
+
+    let rows = statement.query_map([input.company_id], transcript_job_from_row)?;
+    let jobs = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(jobs)
+}
+
+fn delete_transcript_job(connection: &Connection, job_id: &str) -> StorageResult<()> {
+    connection.execute("DELETE FROM transcript_jobs WHERE id = ?1", [job_id])?;
+
+    Ok(())
+}
+
+fn create_transcript_job(
+    connection: &Connection,
+    input: NewTranscriptJob,
+) -> StorageResult<TranscriptJob> {
+    let source_url = input.source_url.trim().to_owned();
+    let provider_id = input
+        .provider_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("provider_gemini")
+        .to_owned();
+    let source_type = "youtube_url".to_owned();
+    let company_resolution_status = if input.company_id.is_some() {
+        "provided"
+    } else {
+        "unresolved"
+    };
+    let status = "queued".to_owned();
+    let recognized_company_candidates = input.recognized_company_candidates.unwrap_or_default();
+    let recognized_company_candidates_json = serde_json::to_string(&recognized_company_candidates)
+        .map_err(|error| StorageError::InvalidTranscriptValue {
+            key: "recognized_company_candidates",
+            value: error.to_string(),
+        })?;
+    let id = transcript_job_id(connection, input.company_id.as_deref(), &source_url)?;
+
+    if source_url.is_empty() {
+        return Err(StorageError::InvalidTranscriptValue {
+            key: "source_url",
+            value: source_url,
+        });
+    }
+
+    if let Some(existing_job) =
+        find_existing_transcript_job(connection, input.company_id.as_deref(), &source_url)?
+    {
+        return Ok(existing_job);
+    }
+
+    validate_allowed_transcript_value("provider_id", &provider_id, &["provider_gemini"])?;
+    validate_allowed_transcript_value("source_type", &source_type, &["youtube_url"])?;
+    validate_allowed_transcript_value(
+        "company_resolution_status",
+        company_resolution_status,
+        &[
+            "provided",
+            "recognized",
+            "unresolved",
+            "needs_user_selection",
+        ],
+    )?;
+    validate_allowed_transcript_value(
+        "status",
+        &status,
+        &["queued", "running", "completed", "failed"],
+    )?;
+
+    connection.execute(
+        "
+        INSERT INTO transcript_jobs (
+            id,
+            company_id,
+            provider_id,
+            source_type,
+            source_url,
+            source_label,
+            company_resolution_status,
+            recognized_company_candidates_json,
+            status
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        ",
+        params![
+            id,
+            input.company_id,
+            provider_id,
+            source_type,
+            source_url,
+            empty_string_to_none(input.source_label),
+            company_resolution_status,
+            recognized_company_candidates_json,
+            status,
+        ],
+    )?;
+
+    get_transcript_job(connection, &id)
+}
+
+fn update_transcript_job(
+    connection: &Connection,
+    input: UpdateTranscriptJobInput,
+) -> StorageResult<TranscriptJob> {
+    connection.execute(
+        "
+        UPDATE transcript_jobs
+        SET source_label = ?2
+        WHERE id = ?1
+        ",
+        params![
+            input.job_id.as_str(),
+            empty_string_to_none(input.source_label)
+        ],
+    )?;
+
+    get_transcript_job(connection, &input.job_id)
+}
+
+fn find_existing_transcript_job(
+    connection: &Connection,
+    company_id: Option<&str>,
+    source_url: &str,
+) -> StorageResult<Option<TranscriptJob>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            transcript_jobs.id,
+            transcript_jobs.company_id,
+            companies.qualified_ticker,
+            companies.display_name,
+            transcript_jobs.provider_id,
+            transcript_jobs.source_type,
+            transcript_jobs.source_url,
+            transcript_jobs.source_label,
+            transcript_jobs.company_resolution_status,
+            transcript_jobs.recognized_company_candidates_json,
+            transcript_jobs.status,
+            transcript_jobs.error_code,
+            transcript_jobs.created_at,
+            transcript_jobs.started_at,
+            transcript_jobs.finished_at,
+            transcript_jobs.error
+        FROM transcript_jobs
+        LEFT JOIN companies ON companies.id = transcript_jobs.company_id
+        WHERE
+            transcript_jobs.source_url = ?1
+            AND (
+                (?2 IS NULL AND transcript_jobs.company_id IS NULL)
+                OR transcript_jobs.company_id = ?2
+            )
+        ORDER BY transcript_jobs.created_at DESC, transcript_jobs.id DESC
+        LIMIT 1
+        ",
+    )?;
+
+    let mut rows = statement.query(params![source_url, company_id])?;
+
+    rows.next()?
+        .map(transcript_job_from_row)
+        .transpose()
+        .map_err(StorageError::from)
+}
+
+fn list_transcript_segments(
+    connection: &Connection,
+    transcript_job_id: &str,
+) -> StorageResult<Vec<TranscriptSegment>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            transcript_job_id,
+            company_id,
+            start_seconds,
+            end_seconds,
+            speaker,
+            text,
+            language,
+            created_at
+        FROM transcript_segments
+        WHERE transcript_job_id = ?1
+        ORDER BY
+            CASE WHEN start_seconds IS NULL THEN 1 ELSE 0 END,
+            start_seconds ASC,
+            id ASC
+        ",
+    )?;
+
+    let rows = statement.query_map([transcript_job_id], transcript_segment_from_row)?;
+    let segments = rows.collect::<Result<Vec<_>, _>>()?;
+
+    Ok(segments)
+}
+
+fn create_transcript_segment(
+    connection: &Connection,
+    input: NewTranscriptSegment,
+) -> StorageResult<TranscriptSegment> {
+    let text = input.text;
+
+    if text.trim().is_empty() {
+        return Err(StorageError::InvalidTranscriptValue {
+            key: "text",
+            value: text,
+        });
+    }
+
+    let parent_company_id = connection.query_row(
+        "SELECT company_id FROM transcript_jobs WHERE id = ?1",
+        [&input.transcript_job_id],
+        |row| row.get::<_, Option<String>>(0),
+    )?;
+    let company_id = input.company_id.or(parent_company_id);
+    let id = transcript_segment_id(connection, &input.transcript_job_id)?;
+
+    connection.execute(
+        "
+        INSERT INTO transcript_segments (
+            id,
+            transcript_job_id,
+            company_id,
+            start_seconds,
+            end_seconds,
+            speaker,
+            text,
+            language
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+        ",
+        params![
+            id,
+            input.transcript_job_id,
+            company_id,
+            input.start_seconds,
+            input.end_seconds,
+            empty_string_to_none(input.speaker),
+            text,
+            empty_string_to_none(input.language),
+        ],
+    )?;
+
+    get_transcript_segment(connection, &id)
+}
+
+fn resolve_transcript_job_company(
+    connection: &Connection,
+    input: ResolveTranscriptJobCompanyInput,
+) -> StorageResult<TranscriptJob> {
+    connection.execute(
+        "
+        UPDATE transcript_jobs
+        SET
+            company_id = ?2,
+            company_resolution_status = 'provided'
+        WHERE id = ?1
+        ",
+        params![input.job_id, input.company_id],
+    )?;
+
+    connection.execute(
+        "
+        UPDATE transcript_segments
+        SET company_id = (
+            SELECT company_id
+            FROM transcript_jobs
+            WHERE transcript_jobs.id = transcript_segments.transcript_job_id
+        )
+        WHERE transcript_job_id = ?1
+        ",
+        [input.job_id.as_str()],
+    )?;
+
+    get_transcript_job(connection, &input.job_id)
+}
+
+fn mark_transcript_job_running(
+    connection: &Connection,
+    job_id: &str,
+) -> StorageResult<TranscriptJob> {
+    connection.execute(
+        "
+        UPDATE transcript_jobs
+        SET
+            status = 'running',
+            started_at = COALESCE(started_at, strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+            finished_at = NULL,
+            error_code = NULL,
+            error = NULL
+        WHERE id = ?1
+        ",
+        [job_id],
+    )?;
+
+    get_transcript_job(connection, job_id)
+}
+
+fn mark_transcript_job_completed(
+    connection: &Connection,
+    job_id: &str,
+) -> StorageResult<TranscriptJob> {
+    connection.execute(
+        "
+        UPDATE transcript_jobs
+        SET
+            status = 'completed',
+            finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            error_code = NULL,
+            error = NULL
+        WHERE id = ?1
+        ",
+        [job_id],
+    )?;
+
+    get_transcript_job(connection, job_id)
+}
+
+fn mark_transcript_job_failed(
+    connection: &Connection,
+    job_id: &str,
+    error_code: &str,
+    error: &str,
+) -> StorageResult<TranscriptJob> {
+    validate_allowed_transcript_value(
+        "error_code",
+        error_code,
+        &[
+            "provider_not_configured",
+            "provider_limit",
+            "provider_unavailable",
+            "provider_error",
+            "network_error",
+            "invalid_source_url",
+            "parse_error",
+            "unknown",
+        ],
+    )?;
+
+    connection.execute(
+        "
+        UPDATE transcript_jobs
+        SET
+            status = 'failed',
+            finished_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            error_code = ?2,
+            error = ?3
+        WHERE id = ?1
+        ",
+        params![job_id, error_code, error],
+    )?;
+
+    get_transcript_job(connection, job_id)
 }
 
 fn ingest_gpw_market_event_items(
@@ -3743,6 +4430,11 @@ fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
                 connection,
                 "youtube_transcription_provider",
             )?,
+            youtube_transcription_model: setting_string(connection, "youtube_transcription_model")?,
+            youtube_transcription_timeout_seconds: setting_i64(
+                connection,
+                "youtube_transcription_timeout_seconds",
+            )?,
             general_analysis_provider: empty_setting_to_none(setting_string(
                 connection,
                 "general_analysis_provider",
@@ -3772,10 +4464,47 @@ fn update_settings(connection: &Connection, input: SettingsUpdate) -> StorageRes
     }
 
     if let Some(youtube_transcription_provider) = input.youtube_transcription_provider {
+        validate_allowed_setting(
+            "youtube_transcription_provider",
+            &youtube_transcription_provider,
+            &["provider_gemini"],
+        )?;
         update_setting(
             connection,
             "youtube_transcription_provider",
             &youtube_transcription_provider,
+        )?;
+    }
+
+    if let Some(youtube_transcription_model) = input.youtube_transcription_model {
+        validate_allowed_setting(
+            "youtube_transcription_model",
+            &youtube_transcription_model,
+            &[
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-3.1-flash-lite",
+                "gemini-3.5-flash",
+            ],
+        )?;
+        update_setting(
+            connection,
+            "youtube_transcription_model",
+            &youtube_transcription_model,
+        )?;
+    }
+
+    if let Some(youtube_transcription_timeout_seconds) = input.youtube_transcription_timeout_seconds
+    {
+        validate_allowed_setting_i64(
+            "youtube_transcription_timeout_seconds",
+            youtube_transcription_timeout_seconds,
+            &[45, 90, 180, 300, 600],
+        )?;
+        update_setting(
+            connection,
+            "youtube_transcription_timeout_seconds",
+            &youtube_transcription_timeout_seconds.to_string(),
         )?;
     }
 
@@ -4264,6 +4993,21 @@ fn validate_allowed_company_event_value(
     }
 }
 
+fn validate_allowed_transcript_value(
+    key: &'static str,
+    value: &str,
+    allowed: &[&str],
+) -> StorageResult<()> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidTranscriptValue {
+            key,
+            value: value.to_owned(),
+        })
+    }
+}
+
 fn company_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CompanyEvent> {
     Ok(CompanyEvent {
         id: row.get(0)?,
@@ -4284,6 +5028,45 @@ fn company_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<CompanyEv
         manual: row.get(15)?,
         created_at: row.get(16)?,
         updated_at: row.get(17)?,
+    })
+}
+
+fn transcript_job_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TranscriptJob> {
+    let candidates_json: String = row.get(9)?;
+    let recognized_company_candidates =
+        serde_json::from_str::<Vec<CompanyLookupResult>>(&candidates_json).unwrap_or_default();
+
+    Ok(TranscriptJob {
+        id: row.get(0)?,
+        company_id: row.get(1)?,
+        company: row.get(2)?,
+        company_name: row.get(3)?,
+        provider_id: row.get(4)?,
+        source_type: row.get(5)?,
+        source_url: row.get(6)?,
+        source_label: row.get(7)?,
+        company_resolution_status: row.get(8)?,
+        recognized_company_candidates,
+        status: row.get(10)?,
+        error_code: row.get(11)?,
+        created_at: row.get(12)?,
+        started_at: row.get(13)?,
+        finished_at: row.get(14)?,
+        error: row.get(15)?,
+    })
+}
+
+fn transcript_segment_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TranscriptSegment> {
+    Ok(TranscriptSegment {
+        id: row.get(0)?,
+        transcript_job_id: row.get(1)?,
+        company_id: row.get(2)?,
+        start_seconds: row.get(3)?,
+        end_seconds: row.get(4)?,
+        speaker: row.get(5)?,
+        text: row.get(6)?,
+        language: row.get(7)?,
+        created_at: row.get(8)?,
     })
 }
 
@@ -4316,6 +5099,60 @@ fn get_company_event(connection: &Connection, id: &str) -> StorageResult<Company
             ",
             [id],
             company_event_from_row,
+        )
+        .map_err(StorageError::from)
+}
+
+fn get_transcript_job(connection: &Connection, id: &str) -> StorageResult<TranscriptJob> {
+    connection
+        .query_row(
+            "
+            SELECT
+                transcript_jobs.id,
+                transcript_jobs.company_id,
+                companies.qualified_ticker,
+                companies.display_name,
+                transcript_jobs.provider_id,
+                transcript_jobs.source_type,
+                transcript_jobs.source_url,
+                transcript_jobs.source_label,
+                transcript_jobs.company_resolution_status,
+                transcript_jobs.recognized_company_candidates_json,
+                transcript_jobs.status,
+                transcript_jobs.error_code,
+                transcript_jobs.created_at,
+                transcript_jobs.started_at,
+                transcript_jobs.finished_at,
+                transcript_jobs.error
+            FROM transcript_jobs
+            LEFT JOIN companies ON companies.id = transcript_jobs.company_id
+            WHERE transcript_jobs.id = ?1
+            ",
+            [id],
+            transcript_job_from_row,
+        )
+        .map_err(StorageError::from)
+}
+
+fn get_transcript_segment(connection: &Connection, id: &str) -> StorageResult<TranscriptSegment> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                transcript_job_id,
+                company_id,
+                start_seconds,
+                end_seconds,
+                speaker,
+                text,
+                language,
+                created_at
+            FROM transcript_segments
+            WHERE id = ?1
+            ",
+            [id],
+            transcript_segment_from_row,
         )
         .map_err(StorageError::from)
 }
@@ -4414,6 +5251,46 @@ fn company_event_source_id(source_adapter_id: &str, source_event_key: &str) -> S
     )
 }
 
+fn transcript_job_id(
+    connection: &Connection,
+    company_id: Option<&str>,
+    source_url: &str,
+) -> StorageResult<String> {
+    let base_id = format!(
+        "transcript_job_{}_{}",
+        slug_part(company_id.unwrap_or("unresolved")),
+        slug_part(source_url)
+    );
+    let existing_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM transcript_jobs WHERE id = ?1 OR id LIKE ?2",
+        params![&base_id, format!("{base_id}_%")],
+        |row| row.get(0),
+    )?;
+
+    if existing_count == 0 {
+        Ok(base_id)
+    } else {
+        Ok(format!("{base_id}_{}", existing_count + 1))
+    }
+}
+
+fn transcript_segment_id(
+    connection: &Connection,
+    transcript_job_id: &str,
+) -> StorageResult<String> {
+    let existing_count: i64 = connection.query_row(
+        "SELECT COUNT(*) FROM transcript_segments WHERE transcript_job_id = ?1",
+        [transcript_job_id],
+        |row| row.get(0),
+    )?;
+
+    Ok(format!(
+        "transcript_segment_{}_{}",
+        slug_part(transcript_job_id),
+        existing_count + 1
+    ))
+}
+
 fn watchlist_id(name: &str) -> String {
     format!("watchlist_{}", slug_part(name))
 }
@@ -4451,6 +5328,25 @@ fn normalize_lookup_value(value: &str) -> String {
 
 fn normalize_name_lookup(value: &str) -> String {
     value.trim().to_uppercase()
+}
+
+fn transcript_origin_label(job: &TranscriptJob, segment: &TranscriptSegment) -> String {
+    let source_label = job.source_label.as_deref().unwrap_or(&job.source_url);
+    let timestamp = transcript_segment_timestamp_label(segment);
+
+    format!(
+        "Transcript {} · job {} · segment {} · {} · {}",
+        job.provider_id, job.id, segment.id, timestamp, source_label
+    )
+}
+
+fn transcript_segment_timestamp_label(segment: &TranscriptSegment) -> String {
+    match (segment.start_seconds, segment.end_seconds) {
+        (Some(start_seconds), Some(end_seconds)) => format!("{start_seconds}s-{end_seconds}s"),
+        (Some(start_seconds), None) => format!("{start_seconds}s"),
+        (None, Some(end_seconds)) => format!("0s-{end_seconds}s"),
+        (None, None) => "no timestamp".to_owned(),
+    }
 }
 
 #[cfg(test)]
@@ -4542,7 +5438,7 @@ mod tests {
             })
             .expect("schema_migrations should exist");
 
-        assert_eq!(migration_count, 16);
+        assert_eq!(migration_count, 21);
 
         let company_table_exists: bool = connection
             .query_row(
@@ -4832,6 +5728,347 @@ mod tests {
     }
 
     #[test]
+    fn creates_and_lists_unresolved_transcript_jobs() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let created = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: None,
+                provider_id: None,
+                source_url: "https://www.youtube.com/watch?v=conference".to_owned(),
+                source_label: Some("Q2 conference".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("transcript job should be created");
+        let jobs = state
+            .list_transcript_jobs(TranscriptJobListInput { company_id: None })
+            .expect("transcript jobs should list");
+
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(created.provider_id, "provider_gemini");
+        assert_eq!(created.source_type, "youtube_url");
+        assert_eq!(created.company_id, None);
+        assert_eq!(created.company_resolution_status, "unresolved");
+        assert_eq!(created.status, "queued");
+        assert_eq!(jobs[0].source_label.as_deref(), Some("Q2 conference"));
+    }
+
+    #[test]
+    fn updates_transcript_job_description() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let created = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: None,
+                provider_id: None,
+                source_url: "https://www.youtube.com/watch?v=conference-description".to_owned(),
+                source_label: Some("Initial description".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("transcript job should be created");
+        let updated = state
+            .update_transcript_job(UpdateTranscriptJobInput {
+                job_id: created.id.clone(),
+                source_label: Some("Updated description".to_owned()),
+            })
+            .expect("transcript description should update");
+        let cleared = state
+            .update_transcript_job(UpdateTranscriptJobInput {
+                job_id: created.id,
+                source_label: Some("   ".to_owned()),
+            })
+            .expect("blank transcript description should clear");
+
+        assert_eq!(updated.source_label.as_deref(), Some("Updated description"));
+        assert_eq!(cleared.source_label, None);
+    }
+
+    #[test]
+    fn reuses_existing_transcript_job_for_duplicate_url_and_company_scope() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let first_unlinked = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: None,
+                provider_id: None,
+                source_url: "https://www.youtube.com/watch?v=conference".to_owned(),
+                source_label: Some("First conference label".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("first unlinked job should be created");
+        let duplicate_unlinked = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: None,
+                provider_id: None,
+                source_url: "https://www.youtube.com/watch?v=conference".to_owned(),
+                source_label: Some("Duplicate conference label".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("duplicate unlinked job should reuse existing row");
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+        let linked = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: Some(company.id),
+                provider_id: None,
+                source_url: "https://www.youtube.com/watch?v=conference".to_owned(),
+                source_label: Some("Company conference".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("linked job should be separate from unlinked scope");
+        let jobs = state
+            .list_transcript_jobs(TranscriptJobListInput { company_id: None })
+            .expect("jobs should list");
+
+        assert_eq!(first_unlinked.id, duplicate_unlinked.id);
+        assert_eq!(
+            duplicate_unlinked.source_label.as_deref(),
+            Some("First conference label")
+        );
+        assert_ne!(first_unlinked.id, linked.id);
+        assert_eq!(jobs.len(), 2);
+    }
+
+    #[test]
+    fn deletes_transcript_job_and_segments() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let job = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: None,
+                provider_id: None,
+                source_url: "https://www.youtube.com/watch?v=conference-delete".to_owned(),
+                source_label: Some("Conference to delete".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("transcript job should be created");
+        state
+            .create_transcript_segment(NewTranscriptSegment {
+                transcript_job_id: job.id.clone(),
+                company_id: None,
+                start_seconds: Some(0),
+                end_seconds: Some(30),
+                speaker: None,
+                text: "Segment to delete with parent job.".to_owned(),
+                language: Some("en".to_owned()),
+            })
+            .expect("segment should be created");
+
+        state
+            .delete_transcript_job(&job.id)
+            .expect("job should delete");
+
+        let jobs = state
+            .list_transcript_jobs(TranscriptJobListInput { company_id: None })
+            .expect("jobs should list");
+        let segments = state
+            .list_transcript_segments(&job.id)
+            .expect("segments should list");
+
+        assert!(jobs.is_empty());
+        assert!(segments.is_empty());
+    }
+
+    #[test]
+    fn creates_transcript_segments_and_keeps_text_immutable() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+        let job = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: Some(company.id.clone()),
+                provider_id: Some("provider_gemini".to_owned()),
+                source_url: "https://www.youtube.com/watch?v=cdr-q2".to_owned(),
+                source_label: None,
+                recognized_company_candidates: None,
+            })
+            .expect("transcript job should be created");
+        let segment = state
+            .create_transcript_segment(NewTranscriptSegment {
+                transcript_job_id: job.id.clone(),
+                company_id: None,
+                start_seconds: Some(120),
+                end_seconds: Some(168),
+                speaker: None,
+                text: "Management expects a milestone within two quarters.".to_owned(),
+                language: Some("en".to_owned()),
+            })
+            .expect("transcript segment should be created");
+        let segments = state
+            .list_transcript_segments(&job.id)
+            .expect("transcript segments should list");
+
+        assert_eq!(segments.len(), 1);
+        assert_eq!(segment.company_id.as_deref(), Some(company.id.as_str()));
+        assert_eq!(segments[0].start_seconds, Some(120));
+        assert_eq!(
+            segments[0].text,
+            "Management expects a milestone within two quarters."
+        );
+
+        let connection = state.connection.lock().expect("database mutex poisoned");
+        let update_result = connection.execute(
+            "UPDATE transcript_segments SET text = ?1 WHERE id = ?2",
+            params!["Changed source text", segment.id],
+        );
+
+        assert!(update_result.is_err());
+    }
+
+    #[test]
+    fn creates_notebook_entry_from_resolved_transcript_segments() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+        let job = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: Some(company.id.clone()),
+                provider_id: Some("provider_gemini".to_owned()),
+                source_url: "https://www.youtube.com/watch?v=cdr-q2".to_owned(),
+                source_label: Some("Q2 conference".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("transcript job should be created");
+        let first_segment = state
+            .create_transcript_segment(NewTranscriptSegment {
+                transcript_job_id: job.id.clone(),
+                company_id: None,
+                start_seconds: Some(120),
+                end_seconds: Some(168),
+                speaker: Some("CEO".to_owned()),
+                text: "Management expects a milestone within two quarters.".to_owned(),
+                language: Some("en".to_owned()),
+            })
+            .expect("first segment should be created");
+        let second_segment = state
+            .create_transcript_segment(NewTranscriptSegment {
+                transcript_job_id: job.id.clone(),
+                company_id: None,
+                start_seconds: Some(169),
+                end_seconds: Some(210),
+                speaker: Some("CFO".to_owned()),
+                text: "Margin should normalize after launch costs fade.".to_owned(),
+                language: Some("en".to_owned()),
+            })
+            .expect("second segment should be created");
+        state
+            .mark_transcript_job_completed(&job.id)
+            .expect("job should complete");
+
+        let note = state
+            .create_note_from_transcript_selection(CreateNoteFromTranscriptSelectionInput {
+                transcript_job_id: job.id.clone(),
+                transcript_segment_ids: vec![first_segment.id.clone(), second_segment.id.clone()],
+                note_draft: TranscriptNoteDraft {
+                    title: "Q2 conference promises".to_owned(),
+                    body: "Management expects the milestone and margin normalization.".to_owned(),
+                    tags: vec!["conference".to_owned(), "management-guidance".to_owned()],
+                    kind: "claim".to_owned(),
+                    claim_status: Some("open".to_owned()),
+                    event_date: None,
+                    follow_up_after: Some("2026-Q4".to_owned()),
+                    follow_up_date: None,
+                },
+            })
+            .expect("transcript selection should create a note");
+
+        assert_eq!(note.company_id, company.id);
+        assert_eq!(note.title, "Q2 conference promises");
+        assert_eq!(note.kind, "claim");
+        assert_eq!(note.claim_status.as_deref(), Some("open"));
+        assert_eq!(note.origins.len(), 2);
+        assert_eq!(note.origins[0].source_type, "transcript_segment");
+        assert_eq!(
+            note.origins[0].source_id.as_deref(),
+            Some(first_segment.id.as_str())
+        );
+        assert_eq!(
+            note.origins[0].source_url.as_deref(),
+            Some("https://www.youtube.com/watch?v=cdr-q2")
+        );
+        assert!(note.origins[0]
+            .label
+            .as_deref()
+            .expect("origin label should exist")
+            .contains(&job.id));
+    }
+
+    #[test]
+    fn rejects_transcript_note_creation_when_company_is_unresolved() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let job = state
+            .create_transcript_job(NewTranscriptJob {
+                company_id: None,
+                provider_id: Some("provider_gemini".to_owned()),
+                source_url: "https://www.youtube.com/watch?v=unknown-q2".to_owned(),
+                source_label: Some("Unknown Q2 conference".to_owned()),
+                recognized_company_candidates: None,
+            })
+            .expect("transcript job should be created");
+        let segment = state
+            .create_transcript_segment(NewTranscriptSegment {
+                transcript_job_id: job.id.clone(),
+                company_id: None,
+                start_seconds: Some(0),
+                end_seconds: Some(42),
+                speaker: None,
+                text: "Unresolved company segment.".to_owned(),
+                language: Some("en".to_owned()),
+            })
+            .expect("segment should be created");
+        state
+            .mark_transcript_job_completed(&job.id)
+            .expect("job should complete");
+
+        let result =
+            state.create_note_from_transcript_selection(CreateNoteFromTranscriptSelectionInput {
+                transcript_job_id: job.id,
+                transcript_segment_ids: vec![segment.id],
+                note_draft: TranscriptNoteDraft {
+                    title: "Unresolved note".to_owned(),
+                    body: "This should not save yet.".to_owned(),
+                    tags: vec!["conference".to_owned()],
+                    kind: "observation".to_owned(),
+                    claim_status: None,
+                    event_date: None,
+                    follow_up_after: None,
+                    follow_up_date: None,
+                },
+            });
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn ingests_gpw_market_events_for_tracked_companies_only() {
         let connection = open_in_memory_database().expect("database should initialize");
         let state = AppState::new(connection);
@@ -5067,10 +6304,10 @@ mod tests {
         let connection = open_in_memory_database().expect("database should initialize");
         let status = database_status(&connection).expect("status should be available");
 
-        assert_eq!(status.applied_migrations, 16);
+        assert_eq!(status.applied_migrations, 21);
         assert_eq!(status.companies, 0);
         assert_eq!(status.source_adapters, 11);
-        assert_eq!(status.settings, 7);
+        assert_eq!(status.settings, 9);
     }
 
     #[test]
@@ -6493,10 +7730,41 @@ mod tests {
         assert_eq!(settings.yaml_import_export_status, "accepted_deferred");
         assert_eq!(
             settings.ai_providers.youtube_transcription_provider,
-            "gemini"
+            "provider_gemini"
+        );
+        assert_eq!(
+            settings.ai_providers.youtube_transcription_model,
+            "gemini-2.5-flash"
+        );
+        assert_eq!(
+            settings.ai_providers.youtube_transcription_timeout_seconds,
+            300
         );
         assert!(settings.ai_providers.general_analysis_provider.is_none());
         assert_eq!(settings.ai_analysis_mode, "source_grounded");
+    }
+
+    #[test]
+    fn migration_updates_old_gemini_default_model_to_validated_default() {
+        let mut connection = open_in_memory_database().expect("database should initialize");
+        connection
+            .execute(
+                "UPDATE settings SET value = 'gemini-2.5-flash-lite' WHERE key = 'youtube_transcription_model'",
+                [],
+            )
+            .expect("old model value should be set");
+        connection
+            .execute("DELETE FROM schema_migrations WHERE version = 21", [])
+            .expect("migration marker should be removable");
+
+        apply_migrations(&mut connection).expect("migration should apply");
+        let state = AppState::new(connection);
+        let settings = state.get_settings().expect("settings should load");
+
+        assert_eq!(
+            settings.ai_providers.youtube_transcription_model,
+            "gemini-2.5-flash"
+        );
     }
 
     #[test]
@@ -6509,6 +7777,8 @@ mod tests {
                 theme: Some("light".to_owned()),
                 poll_interval_seconds: Some(1800),
                 youtube_transcription_provider: None,
+                youtube_transcription_model: None,
+                youtube_transcription_timeout_seconds: Some(600),
                 general_analysis_provider: None,
                 ai_analysis_mode: None,
             })
@@ -6516,11 +7786,19 @@ mod tests {
 
         assert_eq!(settings.theme, "light");
         assert_eq!(settings.poll_interval_seconds, 1800);
+        assert_eq!(
+            settings.ai_providers.youtube_transcription_timeout_seconds,
+            600
+        );
 
         let persisted = state.get_settings().expect("settings should persist");
 
         assert_eq!(persisted.theme, "light");
         assert_eq!(persisted.poll_interval_seconds, 1800);
+        assert_eq!(
+            persisted.ai_providers.youtube_transcription_timeout_seconds,
+            600
+        );
     }
 
     #[test]
@@ -6532,6 +7810,8 @@ mod tests {
             theme: None,
             poll_interval_seconds: Some(42),
             youtube_transcription_provider: None,
+            youtube_transcription_model: None,
+            youtube_transcription_timeout_seconds: None,
             general_analysis_provider: None,
             ai_analysis_mode: None,
         });
@@ -6548,6 +7828,8 @@ mod tests {
             theme: Some("sepia".to_owned()),
             poll_interval_seconds: None,
             youtube_transcription_provider: None,
+            youtube_transcription_model: None,
+            youtube_transcription_timeout_seconds: None,
             general_analysis_provider: None,
             ai_analysis_mode: None,
         });

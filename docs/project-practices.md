@@ -2,7 +2,20 @@
 
 This document captures day-1 operating rules for Brawler. It complements the product, architecture, and roadmap docs by defining how the project should be maintained.
 
-See also [Project Brief](project-brief.md), [Architecture](architecture.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Kanban](kanban.md).
+See also [Project Brief](project-brief.md), [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Kanban](kanban.md).
+
+## Real Feature Completion
+
+Brawler milestones are expected to end with real working product behavior.
+
+Rules:
+
+- Milestone and feature completion require the real application flow to work against the real local runtime, real source, real API, or real agent named by the milestone.
+- Test samples, mocks, seed data, fake endpoints, and placeholder providers are allowed only as intermediate development steps and in automated tests.
+- Test samples, mocks, seed data, fake endpoints, and placeholder providers are not enough to close a user-facing feature or milestone unless the roadmap explicitly says that item is a mock/sample-only spike.
+- When real source/API/agent integration is unsafe, unreliable, unavailable, legally questionable, or too costly, agents must call out the conflict before weakening the scope and ask whether the roadmap should change.
+- Every milestone closure should include real-use validation evidence appropriate to the milestone, such as a manual smoke test, packaged-app check, real source refresh, real API call, or real local workflow verification.
+- Default automated tests should remain deterministic and secret-free; live checks are manual or opt-in when they require credentials or external services.
 
 ## License Posture
 
@@ -25,6 +38,7 @@ Secrets and settings have separate sources of truth.
 Rules:
 
 - API keys and provider secrets live in the OS keychain.
+- Credential handling should use a reusable typed boundary for provider, purpose, and secret kind so future API keys, username/password credentials, session tokens, and other secret forms can be added without changing the UI or storage model from scratch.
 - `.env` files are allowed only for local development and tests.
 - Runtime settings live in SQLite.
 - YAML is allowed as import/export/bootstrap format.
@@ -72,6 +86,20 @@ Rules:
 - Review licenses before adding runtime dependencies.
 - Mention meaningful dependency additions in PR or commit descriptions.
 
+## Modularity And Configurability
+
+Modularity and configurability are first-class design constraints.
+
+Rules:
+
+- New features should define clear boundaries for providers, sources, credentials, models, settings, and user-visible workflow options.
+- Prefer reusable typed configuration surfaces over one-off hard-coded provider/source behavior.
+- Keep defaults practical and conservative, but make likely future provider/source/model changes configurable when doing so is cheap and clear.
+- Avoid abstracting for hypothetical futures that are not connected to the roadmap, contracts, or an explicit user requirement.
+- When a feature introduces a real external dependency, separate the runtime implementation from test-sample/mocked implementations so tests stay deterministic and the real workflow can still be validated.
+- Keep source files split by responsibility before they become hard to reason about. Large files should be treated as architecture debt, especially UI shells, storage modules, command registration, and broad test files.
+- Prefer extracting cohesive modules during nearby feature work instead of doing disruptive repo-wide rewrites. A good extraction has a clear owner boundary, such as transcript UI, settings UI, notebook UI, storage migrations, storage transcript operations, source adapter state, or provider clients.
+
 ## UX Quality
 
 Intuitive UX and responsive UI are first-class project requirements, not polish to add at the end.
@@ -100,6 +128,7 @@ Rules:
 - Source and provider network requests happen in Rust, not direct browser fetch from React.
 - Validate URLs before using them.
 - YouTube transcription input must be a valid supported YouTube URL.
+- Real Gemini YouTube transcription is required for M10 closure, but the live smoke path is manual or opt-in and must not become part of default CI/local checks.
 - Redact sensitive values in errors.
 - Use least-privilege Tauri capabilities and plugins.
 - Broad filesystem, network, or shell permissions require a future ADR.
@@ -176,6 +205,7 @@ Rules:
 - GitHub Actions should run the same commands as local development or thin wrappers around them.
 - Avoid CI-only logic.
 - Default CI must not require secrets or live external services.
+- Live provider smoke checks, including Gemini transcription checks, must be documented and opt-in because they require credentials and external service availability.
 - CI may use Linux for cost reasons, but local Windows development must remain supported.
 - Because the GitHub repository is currently private, be especially conservative with GitHub Actions minutes, artifacts, and packaging jobs.
 

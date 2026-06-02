@@ -309,6 +309,44 @@ type CompanyEventForm = {
   status: string;
 };
 
+type TranscriptJob = {
+  id: string;
+  companyId: string | null;
+  company: string | null;
+  companyName: string | null;
+  providerId: string;
+  sourceType: string;
+  sourceUrl: string;
+  sourceLabel: string | null;
+  companyResolutionStatus: string;
+  recognizedCompanyCandidates: CompanyLookupResult[];
+  status: string;
+  errorCode: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  error: string | null;
+};
+
+type TranscriptSegment = {
+  id: string;
+  transcriptJobId: string;
+  companyId: string | null;
+  startSeconds: number | null;
+  endSeconds: number | null;
+  speaker: string | null;
+  text: string;
+  language: string | null;
+  createdAt: string;
+};
+
+type TranscriptJobForm = {
+  url: string;
+  label: string;
+  companyQuery: string;
+  companyId: string;
+};
+
 type UserSettings = {
   theme: Theme;
   accentPalette: string;
@@ -318,9 +356,22 @@ type UserSettings = {
   yamlImportExportStatus: string;
   aiProviders: {
     youtubeTranscriptionProvider: string;
+    youtubeTranscriptionModel: string;
+    youtubeTranscriptionTimeoutSeconds: number;
     generalAnalysisProvider: string | null;
   };
   aiAnalysisMode: string;
+};
+
+type CredentialStatus = {
+  providerId: string;
+  purpose: string;
+  secretKind: string;
+  configured: boolean;
+  storage: string;
+  label: string;
+  devFallbackAvailable: boolean;
+  error: string | null;
 };
 
 function databaseIndicatorClass(status: DatabaseStatus | null, error: string | null) {
@@ -391,6 +442,15 @@ function emptyCompanyEventForm(): CompanyEventForm {
     eventDate: formatLocalDate(new Date()),
     eventTime: "",
     status: "scheduled",
+  };
+}
+
+function emptyTranscriptJobForm(): TranscriptJobForm {
+  return {
+    url: "",
+    label: "",
+    companyQuery: "",
+    companyId: "",
   };
 }
 
@@ -550,6 +610,189 @@ function formatCompanyEventSourceType(value: string) {
   };
 
   return labels[value] ?? formatEnumLabel(value);
+}
+
+function formatAiProvider(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    provider_gemini: "Gemini",
+  };
+
+  if (!value) {
+    return "Not configured";
+  }
+
+  return labels[value] ?? value;
+}
+
+function formatGeminiModel(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    "gemini-2.5-flash-lite": "Gemini 2.5 Flash-Lite",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
+    "gemini-3.1-flash-lite": "Gemini 3.1 Flash-Lite",
+    "gemini-3.5-flash": "Gemini 3.5 Flash",
+  };
+
+  if (!value) {
+    return "Gemini 2.5 Flash";
+  }
+
+  return labels[value] ?? value;
+}
+
+function formatCredentialStorage(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    os_keychain: "OS keychain",
+    development_environment: "Development environment",
+    not_configured: "Not configured",
+    os_keychain_unavailable: "OS keychain unavailable",
+  };
+
+  if (!value) {
+    return "Not configured";
+  }
+
+  return labels[value] ?? formatEnumLabel(value);
+}
+
+function formatCredentialConfigured(status: CredentialStatus | null) {
+  if (!status) {
+    return "Unknown";
+  }
+
+  return status.configured ? "Configured" : "Not configured";
+}
+
+function formatCredentialKind(value: string | null | undefined) {
+  const labels: Record<string, string> = {
+    api_key: "API Key",
+    username_password: "Username/password",
+    session_token: "Session token",
+    oauth_token: "OAuth token",
+  };
+
+  if (!value) {
+    return "API Key";
+  }
+
+  return labels[value] ?? formatEnumLabel(value);
+}
+
+function formatTranscriptStatus(value: string) {
+  return formatEnumLabel(value);
+}
+
+function isYouTubeUrl(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return false;
+  }
+
+  try {
+    const url = new URL(trimmed);
+    const hostname = url.hostname.toLowerCase();
+
+    return hostname === "youtu.be" || hostname.endsWith(".youtube.com") || hostname === "youtube.com";
+  } catch {
+    return false;
+  }
+}
+
+function transcriptUrlValidationMessage(value: string) {
+  const trimmed = value.trim();
+
+  if (!trimmed) {
+    return "URL is required.";
+  }
+
+  if (!isYouTubeUrl(trimmed)) {
+    return "Use a YouTube URL from youtube.com or youtu.be.";
+  }
+
+  return null;
+}
+
+function transcriptSegmentTimestamp(segment: TranscriptSegment) {
+  if (segment.startSeconds === null && segment.endSeconds === null) {
+    return "No timestamp";
+  }
+
+  if (segment.endSeconds === null) {
+    return formatTranscriptSecond(segment.startSeconds ?? 0);
+  }
+
+  return `${formatTranscriptSecond(segment.startSeconds ?? 0)}-${formatTranscriptSecond(segment.endSeconds)}`;
+}
+
+function transcriptSegmentMatchesQuery(segment: TranscriptSegment, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  return [
+    segment.text,
+    segment.speaker ?? "",
+    segment.language ?? "",
+    transcriptSegmentTimestamp(segment),
+  ]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
+}
+
+function highlightSearchMatch(text: string, query: string): ReactNode {
+  const normalizedQuery = query.trim();
+  if (!normalizedQuery) {
+    return text;
+  }
+
+  const lowerText = text.toLowerCase();
+  const lowerQuery = normalizedQuery.toLowerCase();
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  let matchIndex = lowerText.indexOf(lowerQuery);
+
+  while (matchIndex !== -1) {
+    if (matchIndex > cursor) {
+      parts.push(text.slice(cursor, matchIndex));
+    }
+    const matchEnd = matchIndex + normalizedQuery.length;
+    parts.push(
+      <mark className="search-highlight" key={`${matchIndex}-${matchEnd}`}>
+        {text.slice(matchIndex, matchEnd)}
+      </mark>,
+    );
+    cursor = matchEnd;
+    matchIndex = lowerText.indexOf(lowerQuery, cursor);
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor));
+  }
+
+  return parts;
+}
+
+function formatTranscriptSecond(value: number) {
+  const safeValue = Math.max(0, Math.floor(value));
+  const minutes = Math.floor(safeValue / 60);
+  const seconds = safeValue % 60;
+
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function uniqueTranscriptJobs(jobs: TranscriptJob[]) {
+  const seenJobIds = new Set<string>();
+
+  return jobs.filter((job) => {
+    if (seenJobIds.has(job.id)) {
+      return false;
+    }
+
+    seenJobIds.add(job.id);
+    return true;
+  });
 }
 
 function schedulerStartJitterMs(intervalMs: number) {
@@ -888,6 +1131,28 @@ export function App() {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [companyEvents, setCompanyEvents] = useState<CompanyEvent[]>([]);
   const [companyEventsError, setCompanyEventsError] = useState<string | null>(null);
+  const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
+  const [transcriptJobsError, setTranscriptJobsError] = useState<string | null>(null);
+  const [transcriptJobForm, setTranscriptJobForm] = useState<TranscriptJobForm>(emptyTranscriptJobForm);
+  const [transcriptJobCreateError, setTranscriptJobCreateError] = useState<string | null>(null);
+  const [transcriptJobCreateState, setTranscriptJobCreateState] = useState<DbRefreshState>("idle");
+  const [transcriptJobRunInFlight, setTranscriptJobRunInFlight] = useState<string | null>(null);
+  const [selectedTranscriptJobId, setSelectedTranscriptJobId] = useState<string | null>(null);
+  const [transcriptSegmentsByJobId, setTranscriptSegmentsByJobId] = useState<Record<string, TranscriptSegment[]>>({});
+  const [transcriptSegmentsErrorByJobId, setTranscriptSegmentsErrorByJobId] = useState<Record<string, string | null>>({});
+  const [transcriptSegmentSearchByJobId, setTranscriptSegmentSearchByJobId] = useState<Record<string, string>>({});
+  const [selectedTranscriptSegmentIdsByJobId, setSelectedTranscriptSegmentIdsByJobId] = useState<Record<string, string[]>>({});
+  const [transcriptNoteDraftJobId, setTranscriptNoteDraftJobId] = useState<string | null>(null);
+  const [transcriptNoteForm, setTranscriptNoteForm] = useState<NotebookForm>(emptyNotebookForm);
+  const [transcriptNoteErrorByJobId, setTranscriptNoteErrorByJobId] = useState<Record<string, string | null>>({});
+  const [transcriptNoteSaveInFlight, setTranscriptNoteSaveInFlight] = useState<string | null>(null);
+  const [transcriptLinkQueryByJobId, setTranscriptLinkQueryByJobId] = useState<Record<string, string>>({});
+  const [transcriptLinkErrorByJobId, setTranscriptLinkErrorByJobId] = useState<Record<string, string | null>>({});
+  const [transcriptLinkInFlight, setTranscriptLinkInFlight] = useState<string | null>(null);
+  const [transcriptDeleteInFlight, setTranscriptDeleteInFlight] = useState<string | null>(null);
+  const [transcriptDescriptionDraftByJobId, setTranscriptDescriptionDraftByJobId] = useState<Record<string, string>>({});
+  const [transcriptDescriptionErrorByJobId, setTranscriptDescriptionErrorByJobId] = useState<Record<string, string | null>>({});
+  const [transcriptDescriptionSaveInFlight, setTranscriptDescriptionSaveInFlight] = useState<string | null>(null);
   const [companyEventViewMode, setCompanyEventViewMode] = useState<CompanyEventViewMode>("week");
   const [companyEventMode, setCompanyEventMode] = useState<CompanyEventMode>("upcoming");
   const [companyEventWeekAnchorDate, setCompanyEventWeekAnchorDate] = useState(() =>
@@ -908,6 +1173,10 @@ export function App() {
   const [selectedSourceAdapterId, setSelectedSourceAdapterId] = useState<string | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [geminiCredentialStatus, setGeminiCredentialStatus] = useState<CredentialStatus | null>(null);
+  const [geminiCredentialError, setGeminiCredentialError] = useState<string | null>(null);
+  const [geminiApiKeyDraft, setGeminiApiKeyDraft] = useState("");
+  const [geminiCredentialInFlight, setGeminiCredentialInFlight] = useState(false);
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
@@ -982,6 +1251,26 @@ export function App() {
       return indexed;
     }, {});
   }, [companies]);
+  const transcriptCompanySuggestions = useMemo(() => {
+    const query = transcriptJobForm.companyQuery.trim().toLowerCase();
+
+    if (!query) {
+      return companies.slice(0, 5);
+    }
+
+    return companies
+      .filter((company) => {
+        const values = [
+          company.ticker,
+          company.qualifiedTicker,
+          company.displayName,
+          company.isin ?? "",
+        ].map((value) => value.toLowerCase());
+
+        return values.some((value) => value.includes(query));
+      })
+      .slice(0, 5);
+  }, [companies, transcriptJobForm.companyQuery]);
   const totalUnreadFeedItems = useMemo(
     () => feedState.filter((item) => item.unread).length,
     [feedState],
@@ -1555,6 +1844,447 @@ export function App() {
       });
   }
 
+  function refreshTranscriptJobs(companyId: string | null = null) {
+    return invoke<TranscriptJob[]>("list_video_transcript_jobs", {
+      input: {
+        companyId,
+      },
+    })
+      .then((response) => {
+        setTranscriptJobs(uniqueTranscriptJobs(response));
+        setTranscriptJobsError(null);
+        const jobIds = new Set(response.map((job) => job.id));
+        setTranscriptSegmentsByJobId((current) =>
+          Object.fromEntries(Object.entries(current).filter(([jobId]) => jobIds.has(jobId))),
+        );
+        setSelectedTranscriptSegmentIdsByJobId((current) =>
+          Object.fromEntries(Object.entries(current).filter(([jobId]) => jobIds.has(jobId))),
+        );
+        setTranscriptSegmentsErrorByJobId((current) =>
+          Object.fromEntries(Object.entries(current).filter(([jobId]) => jobIds.has(jobId))),
+        );
+        setSelectedTranscriptJobId((current) => (current && jobIds.has(current) ? current : null));
+      })
+      .catch((error) => {
+        setTranscriptJobs([]);
+        setTranscriptJobsError(String(error));
+      });
+  }
+
+  function refreshTranscriptSegments(jobId: string) {
+    return invoke<TranscriptSegment[]>("list_transcript_segments", {
+      transcriptJobId: jobId,
+    })
+      .then((response) => {
+        setTranscriptSegmentsByJobId((current) => ({
+          ...current,
+          [jobId]: response,
+        }));
+        setTranscriptSegmentsErrorByJobId((current) => ({
+          ...current,
+          [jobId]: null,
+        }));
+        setSelectedTranscriptSegmentIdsByJobId((current) => {
+          const availableIds = new Set(response.map((segment) => segment.id));
+          const selectedIds = current[jobId]?.filter((segmentId) => availableIds.has(segmentId)) ?? [];
+
+          return {
+            ...current,
+            [jobId]: selectedIds,
+          };
+        });
+      })
+      .catch((error) => {
+        setTranscriptSegmentsByJobId((current) => ({
+          ...current,
+          [jobId]: [],
+        }));
+        setTranscriptSegmentsErrorByJobId((current) => ({
+          ...current,
+          [jobId]: String(error),
+        }));
+      });
+  }
+
+  function toggleTranscriptJob(job: TranscriptJob) {
+    setSelectedTranscriptJobId((current) => (current === job.id ? null : job.id));
+
+    if (job.status === "completed") {
+      void refreshTranscriptSegments(job.id);
+    }
+  }
+
+  function toggleTranscriptJobFromKeyboard(
+    event: KeyboardEvent<HTMLElement>,
+    job: TranscriptJob,
+  ) {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleTranscriptJob(job);
+    }
+  }
+
+  function toggleTranscriptSegment(jobId: string, segmentId: string) {
+    setSelectedTranscriptSegmentIdsByJobId((current) => {
+      const selectedIds = current[jobId] ?? [];
+      const nextSelectedIds = selectedIds.includes(segmentId)
+        ? selectedIds.filter((selectedId) => selectedId !== segmentId)
+        : [...selectedIds, segmentId];
+
+      return {
+        ...current,
+        [jobId]: nextSelectedIds,
+      };
+    });
+  }
+
+  function openTranscriptNoteDraft(job: TranscriptJob, selectedSegments: TranscriptSegment[]) {
+    if (!job.companyId) {
+      setTranscriptNoteErrorByJobId((current) => ({
+        ...current,
+        [job.id]: "Choose a company to save this as a company notebook note. The transcript can remain unlinked.",
+      }));
+      return;
+    }
+
+    if (selectedSegments.length === 0) {
+      setTranscriptNoteErrorByJobId((current) => ({
+        ...current,
+        [job.id]: "Select at least one transcript segment.",
+      }));
+      return;
+    }
+
+    setTranscriptNoteDraftJobId(job.id);
+    setTranscriptNoteForm({
+      title: job.sourceLabel ?? "Transcript note",
+      body: selectedSegments.map((segment) => `> ${segment.text}`).join("\n\n"),
+      tags: "transcript",
+      kind: "observation",
+      claimStatus: "",
+      eventDate: "",
+      followUpAfter: "",
+      followUpDate: "",
+    });
+    setTranscriptNoteErrorByJobId((current) => ({
+      ...current,
+      [job.id]: null,
+    }));
+  }
+
+  function discardTranscriptNoteDraft() {
+    setTranscriptNoteDraftJobId(null);
+    setTranscriptNoteForm(emptyNotebookForm());
+  }
+
+  function updateTranscriptLinkQuery(jobId: string, value: string) {
+    setTranscriptLinkQueryByJobId((current) => ({
+      ...current,
+      [jobId]: value,
+    }));
+  }
+
+  function linkTranscriptJobCompany(jobId: string, company: Company) {
+    setTranscriptLinkInFlight(jobId);
+    void invoke<TranscriptJob>("resolve_transcript_job_company", {
+      input: {
+        jobId,
+        companyId: company.id,
+      },
+    })
+      .then((updated) => {
+        setTranscriptJobs((current) => current.map((job) => (job.id === updated.id ? updated : job)));
+        setTranscriptLinkQueryByJobId((current) => ({
+          ...current,
+          [jobId]: "",
+        }));
+        setTranscriptLinkErrorByJobId((current) => ({
+          ...current,
+          [jobId]: null,
+        }));
+        setTranscriptNoteErrorByJobId((current) => ({
+          ...current,
+          [jobId]: null,
+        }));
+        void refreshTranscriptSegments(jobId);
+      })
+      .catch((error) => {
+        setTranscriptLinkErrorByJobId((current) => ({
+          ...current,
+          [jobId]: String(error),
+        }));
+      })
+      .finally(() => {
+        setTranscriptLinkInFlight(null);
+      });
+  }
+
+  function deleteTranscriptJob(job: TranscriptJob) {
+    const label = job.sourceLabel ?? job.sourceUrl;
+    const confirmed = window.confirm(`Delete transcript job "${label}"? Stored transcript segments for this job will also be removed.`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setTranscriptDeleteInFlight(job.id);
+    void invoke<void>("delete_video_transcript_job", {
+      jobId: job.id,
+    })
+      .then(() => {
+        setTranscriptJobs((current) => current.filter((entry) => entry.id !== job.id));
+        setTranscriptSegmentsByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setSelectedTranscriptSegmentIdsByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setTranscriptSegmentsErrorByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setTranscriptNoteErrorByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setTranscriptLinkErrorByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setTranscriptLinkQueryByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setTranscriptDescriptionDraftByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setTranscriptDescriptionErrorByJobId((current) => {
+          const next = { ...current };
+          delete next[job.id];
+          return next;
+        });
+        setSelectedTranscriptJobId((current) => (current === job.id ? null : current));
+        setTranscriptNoteDraftJobId((current) => (current === job.id ? null : current));
+        setTranscriptJobsError(null);
+      })
+      .catch((error) => {
+        setTranscriptJobsError(String(error));
+        void refreshTranscriptJobs();
+      })
+      .finally(() => {
+        setTranscriptDeleteInFlight(null);
+      });
+  }
+
+  function updateTranscriptJobDescription(job: TranscriptJob) {
+    const draft = transcriptDescriptionDraftByJobId[job.id] ?? job.sourceLabel ?? "";
+
+    setTranscriptDescriptionSaveInFlight(job.id);
+    setTranscriptDescriptionErrorByJobId((current) => ({
+      ...current,
+      [job.id]: null,
+    }));
+
+    void invoke<TranscriptJob>("update_video_transcript_job", {
+      input: {
+        jobId: job.id,
+        sourceLabel: draft.trim() || null,
+      },
+    })
+      .then((updated) => {
+        setTranscriptJobs((current) => current.map((entry) => (entry.id === updated.id ? updated : entry)));
+        setTranscriptDescriptionDraftByJobId((current) => ({
+          ...current,
+          [updated.id]: updated.sourceLabel ?? "",
+        }));
+      })
+      .catch((error) => {
+        setTranscriptDescriptionErrorByJobId((current) => ({
+          ...current,
+          [job.id]: String(error),
+        }));
+      })
+      .finally(() => {
+        setTranscriptDescriptionSaveInFlight(null);
+      });
+  }
+
+  function createTranscriptNotebookEntry(job: TranscriptJob, event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const selectedSegmentIds = selectedTranscriptSegmentIdsByJobId[job.id] ?? [];
+
+    if (!job.companyId) {
+      setTranscriptNoteErrorByJobId((current) => ({
+        ...current,
+        [job.id]: "Choose a company to save this as a company notebook note. The transcript can remain unlinked.",
+      }));
+      return;
+    }
+
+    if (selectedSegmentIds.length === 0) {
+      setTranscriptNoteErrorByJobId((current) => ({
+        ...current,
+        [job.id]: "Select at least one transcript segment.",
+      }));
+      return;
+    }
+
+    const companyId = job.companyId;
+    setTranscriptNoteSaveInFlight(job.id);
+    void invoke<NotebookEntry>("create_note_from_transcript_selection", {
+      input: {
+        transcriptJobId: job.id,
+        transcriptSegmentIds: selectedSegmentIds,
+        noteDraft: {
+          title: transcriptNoteForm.title,
+          body: transcriptNoteForm.body,
+          tags: transcriptNoteForm.tags
+            .split(",")
+            .map((tag) => tag.trim())
+            .filter(Boolean),
+          kind: transcriptNoteForm.kind,
+          claimStatus: transcriptNoteForm.claimStatus || null,
+          eventDate: transcriptNoteForm.eventDate || null,
+          followUpAfter: transcriptNoteForm.followUpAfter || null,
+          followUpDate: transcriptNoteForm.followUpDate || null,
+        },
+      },
+    })
+      .then((created) => {
+        setNotebookEntries((current) => [
+          created,
+          ...current.filter((entry) => entry.id !== created.id),
+        ]);
+        setSelectedNotebookCompanyId(companyId);
+        setSelectedNotebookScreenEntryId(created.id);
+        setTranscriptNoteDraftJobId(null);
+        setTranscriptNoteForm(emptyNotebookForm());
+        setTranscriptNoteErrorByJobId((current) => ({
+          ...current,
+          [job.id]: null,
+        }));
+        setSelectedTranscriptSegmentIdsByJobId((current) => ({
+          ...current,
+          [job.id]: [],
+        }));
+        void refreshNotebookEntries(companyId);
+      })
+      .catch((error) => {
+        setTranscriptNoteErrorByJobId((current) => ({
+          ...current,
+          [job.id]: String(error),
+        }));
+      })
+      .finally(() => {
+        setTranscriptNoteSaveInFlight(null);
+      });
+  }
+
+  function selectTranscriptCompany(company: Company) {
+    setTranscriptJobForm((current) => ({
+      ...current,
+      companyId: company.id,
+      companyQuery: company.qualifiedTicker,
+    }));
+  }
+
+  function createTranscriptJob(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const url = transcriptJobForm.url.trim();
+    const validationMessage = transcriptUrlValidationMessage(url);
+
+    if (validationMessage) {
+      setTranscriptJobCreateError(validationMessage);
+      return;
+    }
+
+    setTranscriptJobCreateError(null);
+    setTranscriptJobCreateState("refreshing");
+
+    void invoke<TranscriptJob>("create_video_transcript_job", {
+      input: {
+        sourceUrl: url,
+        companyId: transcriptJobForm.companyId || null,
+        providerId: settings?.aiProviders.youtubeTranscriptionProvider ?? "provider_gemini",
+        sourceLabel: transcriptJobForm.label.trim() || null,
+        recognizedCompanyCandidates: null,
+      },
+    })
+      .then((created) => {
+        setTranscriptJobForm(emptyTranscriptJobForm());
+        setTranscriptJobs((current) => [
+          created,
+          ...current.filter((job) => job.id !== created.id),
+        ]);
+        setTranscriptJobCreateState("done");
+        if (geminiCredentialStatus?.configured) {
+          runTranscriptJob(created.id);
+          return Promise.resolve();
+        } else {
+          setTranscriptJobsError("Gemini transcription credentials are not configured in this app runtime. Save the Gemini API key in Settings before running a transcript job.");
+          return refreshTranscriptJobs();
+        }
+      })
+      .catch((error) => {
+        setTranscriptJobCreateError(String(error));
+        setTranscriptJobCreateState("idle");
+      });
+  }
+
+  function runTranscriptJob(jobId: string) {
+    if (!geminiCredentialStatus?.configured) {
+      setTranscriptJobsError("Gemini transcription credentials are not configured in this app runtime. Save the Gemini API key in Settings before running a transcript job.");
+      return;
+    }
+
+    setTranscriptJobRunInFlight(jobId);
+    setTranscriptJobs((current) =>
+      current.map((job) =>
+        job.id === jobId
+          ? {
+              ...job,
+              status: "running",
+              error: null,
+              errorCode: null,
+            }
+          : job,
+      ),
+    );
+
+    void invoke<TranscriptJob>("run_video_transcript_job", {
+      input: {
+        jobId,
+        providerMode: settings?.aiProviders.youtubeTranscriptionProvider ?? "provider_gemini",
+      },
+    })
+      .then((updated) => {
+        setTranscriptJobs((current) => current.map((job) => (job.id === updated.id ? updated : job)));
+        setTranscriptJobsError(null);
+        if (selectedTranscriptJobId === updated.id && updated.status === "completed") {
+          void refreshTranscriptSegments(updated.id);
+        }
+        return refreshTranscriptJobs();
+      })
+      .catch((error) => {
+        setTranscriptJobsError(String(error));
+      })
+      .finally(() => {
+        setTranscriptJobRunInFlight(null);
+      });
+  }
+
   function refreshSourceAdapters() {
     return invoke<SourceAdapter[]>("list_source_adapters")
       .then((response) => {
@@ -1610,6 +2340,18 @@ export function App() {
       });
   }
 
+  function refreshGeminiCredentialStatus() {
+    return invoke<CredentialStatus>("get_gemini_transcription_credential_status")
+      .then((response) => {
+        setGeminiCredentialStatus(response);
+        setGeminiCredentialError(null);
+      })
+      .catch((error) => {
+        setGeminiCredentialStatus(null);
+        setGeminiCredentialError(String(error));
+      });
+  }
+
   function refreshDatabaseBackedViews() {
     setDbRefreshState("refreshing");
 
@@ -1622,6 +2364,7 @@ export function App() {
       refreshCompanyEvents(),
       refreshSourceAdapters(),
       refreshSettings(),
+      refreshGeminiCredentialStatus(),
     ]).then(() => {
       setDbRefreshState("done");
       window.setTimeout(() => {
@@ -2021,8 +2764,10 @@ export function App() {
     refreshWatchlistMemberships();
     refreshFeedItems();
     refreshCompanyEvents();
+    refreshTranscriptJobs();
     refreshSourceAdapters();
     refreshSettings();
+    refreshGeminiCredentialStatus();
   }, []);
 
   useEffect(() => {
@@ -2247,6 +2992,79 @@ export function App() {
       });
   }
 
+  function updateYoutubeTranscriptionModel(nextModel: string) {
+    invoke<UserSettings>("update_settings", {
+      input: {
+        youtubeTranscriptionModel: nextModel,
+      },
+    })
+      .then((response) => {
+        setSettings(response);
+        setSettingsError(null);
+      })
+      .catch((error) => {
+        setSettingsError(String(error));
+      });
+  }
+
+  function updateYoutubeTranscriptionTimeout(nextTimeoutSeconds: number) {
+    invoke<UserSettings>("update_settings", {
+      input: {
+        youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds,
+      },
+    })
+      .then((response) => {
+        setSettings(response);
+        setSettingsError(null);
+      })
+      .catch((error) => {
+        setSettingsError(String(error));
+      });
+  }
+
+  function saveGeminiApiKey(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const apiKey = geminiApiKeyDraft.trim();
+    if (!apiKey) {
+      setGeminiCredentialError("Gemini API key is required.");
+      return;
+    }
+
+    setGeminiCredentialInFlight(true);
+    invoke<CredentialStatus>("set_gemini_transcription_api_key", {
+      input: {
+        apiKey,
+      },
+    })
+      .then((response) => {
+        setGeminiCredentialStatus(response);
+        setGeminiCredentialError(null);
+        setGeminiApiKeyDraft("");
+      })
+      .catch((error) => {
+        setGeminiCredentialError(String(error));
+      })
+      .finally(() => {
+        setGeminiCredentialInFlight(false);
+      });
+  }
+
+  function clearGeminiApiKey() {
+    setGeminiCredentialInFlight(true);
+    invoke<CredentialStatus>("clear_gemini_transcription_api_key")
+      .then((response) => {
+        setGeminiCredentialStatus(response);
+        setGeminiCredentialError(null);
+        setGeminiApiKeyDraft("");
+      })
+      .catch((error) => {
+        setGeminiCredentialError(String(error));
+      })
+      .finally(() => {
+        setGeminiCredentialInFlight(false);
+      });
+  }
+
   function updateCompanyForm(field: keyof CompanyForm, value: string) {
     companyLookupVersionRef.current += 1;
     setSelectedCompanyRegistryTicker(null);
@@ -2293,6 +3111,13 @@ export function App() {
 
   function updateNotebookScreenEditForm(field: keyof NotebookForm, value: string) {
     setNotebookScreenEditForm((current) => ({
+      ...current,
+      [field]: value,
+    }));
+  }
+
+  function updateTranscriptNoteForm(field: keyof NotebookForm, value: string) {
+    setTranscriptNoteForm((current) => ({
       ...current,
       [field]: value,
     }));
@@ -5975,28 +6800,564 @@ export function App() {
           ) : null}
 
           {activeSection === "Transcripts" ? (
-            <section className="feed-panel" aria-labelledby="transcripts-title">
+            <section className="feed-panel transcripts-panel" aria-labelledby="transcripts-title">
               <div className="panel-header">
                 <div>
                   <h1 id="transcripts-title">Transcripts</h1>
-                  <p>YouTube press conference transcription begins in Milestone 7.</p>
+                  <p>Submit a YouTube URL. Link a company only when selected transcript segments should become company notes.</p>
                 </div>
+                <button
+                  className="secondary-button compact-button"
+                  onClick={() => {
+                    void refreshTranscriptJobs();
+                  }}
+                  type="button"
+                >
+                  <RefreshCw size={15} />
+                  Refresh jobs
+                </button>
               </div>
 
-              <div className="section-placeholder" aria-label="Transcripts placeholder">
-                <div className="empty-state">
-                  <span>Transcript jobs are deferred until provider setup and note workflows exist.</span>
+              <dl className="transcript-runtime-strip" aria-label="Transcript runtime settings">
+                <div>
+                  <dt>Provider</dt>
+                  <dd>{formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider)}</dd>
                 </div>
-                <dl className="settings-grid">
+                <div>
+                  <dt>Credentials</dt>
+                  <dd>{formatCredentialConfigured(geminiCredentialStatus)}</dd>
+                </div>
+                <div>
+                  <dt>Storage</dt>
+                  <dd>{formatCredentialStorage(geminiCredentialStatus?.storage)}</dd>
+                </div>
+                <div>
+                  <dt>Timeout</dt>
+                  <dd>{settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s</dd>
+                </div>
+              </dl>
+
+              <form className="event-composer" onSubmit={createTranscriptJob} aria-label="Create transcript job">
+                <div className="event-composer-header">
                   <div>
-                    <dt>Preferred provider</dt>
-                    <dd>Gemini for YouTube transcription only</dd>
+                    <h2>New transcript job</h2>
+                    <p>URL is required. Description and company are optional.</p>
                   </div>
-                  <div>
-                    <dt>Planned flow</dt>
-                    <dd>Submit URL, review immutable segments, save selected text as editable notes</dd>
+                  <button
+                    className="primary-button compact-button"
+                    disabled={transcriptJobCreateState === "refreshing" || !transcriptJobForm.url.trim()}
+                    title={transcriptJobForm.url.trim() ? "Create transcript job" : "URL is required"}
+                    type="submit"
+                  >
+                    {transcriptJobCreateState === "done" ? <CheckCircle2 size={15} /> : <Plus size={15} />}
+                    {transcriptJobCreateState === "refreshing" ? "Creating" : "Create job"}
+                  </button>
+                </div>
+                <div className="event-composer-grid">
+                  <label className="event-composer-title">
+                    URL
+                    <input
+                      aria-label="Transcript URL"
+                      placeholder="https://www.youtube.com/watch?v=..."
+                      value={transcriptJobForm.url}
+                      onChange={(event) =>
+                        setTranscriptJobForm((current) => ({
+                          ...current,
+                          url: event.target.value,
+                        }))
+                      }
+                      onBlur={() => {
+                        if (transcriptJobForm.url.trim()) {
+                          setTranscriptJobCreateError(transcriptUrlValidationMessage(transcriptJobForm.url));
+                        }
+                      }}
+                    />
+                  </label>
+                  <label className="event-composer-title">
+                    Description
+                    <input
+                      aria-label="Transcript description"
+                      placeholder="Optional, e.g. CDR Q2 investor conference"
+                      value={transcriptJobForm.label}
+                      onChange={(event) =>
+                        setTranscriptJobForm((current) => ({
+                          ...current,
+                          label: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label className="event-composer-title">
+                    Company or ticker
+                    <input
+                      aria-label="Transcript company lookup"
+                      placeholder="Optional, e.g. GPW:CDR, CDR, CD PROJEKT"
+                      value={transcriptJobForm.companyQuery}
+                      onChange={(event) =>
+                        setTranscriptJobForm((current) => ({
+                          ...current,
+                          companyId: "",
+                          companyQuery: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+                {transcriptJobForm.companyQuery || transcriptJobForm.companyId ? (
+                  <div className="company-registry-suggestions" aria-label="Transcript company suggestions">
+                    {transcriptCompanySuggestions.length > 0 ? (
+                      transcriptCompanySuggestions.map((company) => (
+                        <div key={company.id}>
+                          <button
+                            className={
+                              transcriptJobForm.companyId === company.id
+                                ? "company-registry-suggestion company-registry-suggestion-selected"
+                                : "company-registry-suggestion"
+                            }
+                            onClick={() => selectTranscriptCompany(company)}
+                            type="button"
+                          >
+                            <strong>{company.qualifiedTicker}</strong>
+                            <span>{company.displayName}</span>
+                            {company.isin ? <small>{company.isin}</small> : null}
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <span>No tracked company matches. Leave company empty to keep this transcript unlinked.</span>
+                    )}
                   </div>
-                </dl>
+                ) : null}
+                {transcriptJobCreateError ? <p className="error-text">{transcriptJobCreateError}</p> : null}
+              </form>
+
+              <div className="sources-layout" aria-label="Transcript jobs">
+                {transcriptJobsError ? (
+                  <p className="error-text">Transcript jobs unavailable: {transcriptJobsError}</p>
+                ) : null}
+                {transcriptJobs.length === 0 && !transcriptJobsError ? (
+                  <div className="empty-state">
+                    <span>No transcript jobs yet.</span>
+                  </div>
+                ) : null}
+                {transcriptJobs.map((job) => {
+                  const transcriptSegments = transcriptSegmentsByJobId[job.id] ?? [];
+                  const transcriptSegmentSearch = transcriptSegmentSearchByJobId[job.id] ?? "";
+                  const filteredTranscriptSegments = transcriptSegments.filter((segment) =>
+                    transcriptSegmentMatchesQuery(segment, transcriptSegmentSearch),
+                  );
+                  const selectedTranscriptSegmentIds = selectedTranscriptSegmentIdsByJobId[job.id] ?? [];
+                  const selectedTranscriptSegments = transcriptSegments.filter((segment) =>
+                    selectedTranscriptSegmentIds.includes(segment.id),
+                  );
+                  const transcriptSegmentsError = transcriptSegmentsErrorByJobId[job.id];
+                  const transcriptNoteError = transcriptNoteErrorByJobId[job.id];
+                  const transcriptLinkQuery = transcriptLinkQueryByJobId[job.id] ?? "";
+                  const transcriptLinkError = transcriptLinkErrorByJobId[job.id];
+                  const transcriptLinkSuggestions = transcriptLinkQuery.trim()
+                    ? companies
+                        .filter((company) => {
+                          const query = transcriptLinkQuery.trim().toLowerCase();
+
+                          return (
+                            company.qualifiedTicker.toLowerCase().includes(query) ||
+                            company.ticker.toLowerCase().includes(query) ||
+                            company.displayName.toLowerCase().includes(query) ||
+                            (company.isin?.toLowerCase().includes(query) ?? false)
+                          );
+                        })
+                        .slice(0, 6)
+                    : [];
+                  const isTranscriptJobSelected = selectedTranscriptJobId === job.id;
+                  const isTranscriptNoteDraftOpen = transcriptNoteDraftJobId === job.id;
+                  const transcriptDescriptionDraft =
+                    transcriptDescriptionDraftByJobId[job.id] ?? job.sourceLabel ?? "";
+                  const transcriptDescriptionError = transcriptDescriptionErrorByJobId[job.id];
+                  const isTranscriptDescriptionDirty = transcriptDescriptionDraft !== (job.sourceLabel ?? "");
+
+                  return (
+                  <div className="source-row-block" key={job.id}>
+                    <article
+                      className={[
+                        "source-row",
+                        "transcript-row",
+                        isTranscriptJobSelected ? "source-row-selected" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
+                      aria-label={`Open transcript job: ${job.sourceUrl}`}
+                      onClick={() => toggleTranscriptJob(job)}
+                      onKeyDown={(event) => toggleTranscriptJobFromKeyboard(event, job)}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <div className="source-row-main">
+                        <div className="source-title-line">
+                          <span
+                            className={
+                              job.status === "failed"
+                                ? "status-dot status-danger"
+                                : job.status === "completed"
+                                  ? "status-dot status-ok"
+                                  : "status-dot status-warn"
+                            }
+                            title={formatTranscriptStatus(job.status)}
+                          />
+                          <h2>{job.sourceLabel ?? "Untitled transcript"}</h2>
+                        </div>
+                        <p>
+                          {job.sourceUrl} · {job.company ?? "Unlinked transcript"} · {formatAiProvider(job.providerId)} ·{" "}
+                          {formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel)}
+                        </p>
+                        <div className="source-chip-list" aria-label={`Transcript job metadata for ${job.id}`}>
+                          <span className="membership-chip">{formatTranscriptStatus(job.companyResolutionStatus)}</span>
+                          <span className="membership-chip">{job.sourceType}</span>
+                          {job.errorCode ? <span className="membership-chip">{formatEnumLabel(job.errorCode)}</span> : null}
+                        </div>
+                      </div>
+                      <div className="source-row-status">
+                        <span>{formatTranscriptStatus(job.status)}</span>
+                        {job.status === "queued" || job.status === "failed" ? (
+                          <button
+                            className="secondary-button compact-button"
+                            disabled={transcriptJobRunInFlight === job.id || !geminiCredentialStatus?.configured}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              runTranscriptJob(job.id);
+                            }}
+                            title={
+                              geminiCredentialStatus?.configured
+                                ? "Retry Gemini transcription"
+                                : "Configure Gemini API key in Settings before running transcription"
+                            }
+                            type="button"
+                          >
+                            <RefreshCw size={15} />
+                            {transcriptJobRunInFlight === job.id ? "Running" : "Retry"}
+                          </button>
+                        ) : null}
+                        <button
+                          className="icon-button danger-button"
+                          disabled={transcriptDeleteInFlight === job.id}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            deleteTranscriptJob(job);
+                          }}
+                          title={`Delete transcript job ${job.sourceLabel ?? job.sourceUrl}`}
+                          type="button"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </article>
+                      {isTranscriptJobSelected ? (
+                      <div className="transcript-detail-panel" aria-label="Transcript job details">
+                        <div className="transcript-description-editor" aria-label="Transcript description editor">
+                          <label>
+                            Description
+                            <input
+                              aria-label="Edit transcript description"
+                              placeholder="Optional, e.g. CDR Q2 investor conference"
+                              value={transcriptDescriptionDraft}
+                              onChange={(event) =>
+                                setTranscriptDescriptionDraftByJobId((current) => ({
+                                  ...current,
+                                  [job.id]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+                          <button
+                            className="secondary-button compact-button"
+                            disabled={
+                              transcriptDescriptionSaveInFlight === job.id ||
+                              !isTranscriptDescriptionDirty
+                            }
+                            onClick={() => updateTranscriptJobDescription(job)}
+                            type="button"
+                          >
+                            <Save size={15} />
+                            Save
+                          </button>
+                          {transcriptDescriptionError ? (
+                            <p className="error-text">{transcriptDescriptionError}</p>
+                          ) : null}
+                        </div>
+                        <dl className="source-status-grid source-status-detail">
+                          <div>
+                            <dt>Company</dt>
+                            <dd>{job.company ?? "Unlinked"}</dd>
+                          </div>
+                          <div>
+                            <dt>Status</dt>
+                            <dd>{formatTranscriptStatus(job.status)}</dd>
+                          </div>
+                          <div>
+                            <dt>Source</dt>
+                            <dd>{job.sourceUrl}</dd>
+                          </div>
+                          <div>
+                            <dt>Selected</dt>
+                            <dd>{selectedTranscriptSegmentIds.length}</dd>
+                          </div>
+                        </dl>
+                        {job.status === "failed" ? (
+                          <div className="transcript-error-panel" aria-label="Transcript job error">
+                            <strong>{job.errorCode ? formatEnumLabel(job.errorCode) : "Transcript job failed"}</strong>
+                            <p>{job.error ?? "No detailed provider error was stored."}</p>
+                          </div>
+                        ) : null}
+                        {!job.companyId ? (
+                          <div className="transcript-link-panel" aria-label="Link transcript company">
+                            <div>
+                              <strong>Optional company link</strong>
+                              <p className="muted-text">
+                                Keep this transcript unlinked, or link it when selected segments should become a company notebook note.
+                              </p>
+                            </div>
+                            <label>
+                              Company or ticker
+                              <input
+                                aria-label="Transcript link company lookup"
+                                placeholder="GPW:CDR, CDR, CD PROJEKT"
+                                value={transcriptLinkQuery}
+                                onChange={(event) => updateTranscriptLinkQuery(job.id, event.target.value)}
+                              />
+                            </label>
+                            {transcriptLinkQuery ? (
+                              <div
+                                className="company-registry-suggestions"
+                                aria-label="Transcript link company suggestions"
+                              >
+                                {transcriptLinkSuggestions.length > 0 ? (
+                                  transcriptLinkSuggestions.map((company) => (
+                                    <div key={company.id}>
+                                      <button
+                                        className="company-registry-suggestion"
+                                        disabled={transcriptLinkInFlight === job.id}
+                                        onClick={() => linkTranscriptJobCompany(job.id, company)}
+                                        type="button"
+                                      >
+                                        <strong>{company.qualifiedTicker}</strong>
+                                        <span>{company.displayName}</span>
+                                        {company.isin ? <small>{company.isin}</small> : null}
+                                      </button>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <span>No tracked company matches. The transcript can stay unlinked.</span>
+                                )}
+                              </div>
+                            ) : null}
+                            {transcriptLinkError ? <p className="error-text">{transcriptLinkError}</p> : null}
+                          </div>
+                        ) : null}
+                        {job.status !== "completed" ? (
+                          <p className="muted-text">Transcript segments will be available after the job completes.</p>
+                        ) : null}
+                        {transcriptSegmentsError ? (
+                          <p className="error-text">Transcript segments unavailable: {transcriptSegmentsError}</p>
+                        ) : null}
+                        {job.status === "completed" && transcriptSegments.length === 0 && !transcriptSegmentsError ? (
+                          <div className="empty-state">
+                            <span>No transcript segments stored for this job.</span>
+                          </div>
+                        ) : null}
+                        {transcriptSegments.length > 0 ? (
+                          <div className="transcript-search-panel">
+                            <label>
+                              Search transcript
+                              <span className="transcript-search-input-row">
+                                <input
+                                  aria-label="Search transcript segments"
+                                  placeholder="Search text, speaker, language, timestamp"
+                                  value={transcriptSegmentSearch}
+                                  onChange={(event) =>
+                                    setTranscriptSegmentSearchByJobId((current) => ({
+                                      ...current,
+                                      [job.id]: event.target.value,
+                                    }))
+                                  }
+                                />
+                                {transcriptSegmentSearch ? (
+                                  <button
+                                    aria-label="Clear transcript search"
+                                    className="icon-button transcript-search-clear"
+                                    onClick={() =>
+                                      setTranscriptSegmentSearchByJobId((current) => ({
+                                        ...current,
+                                        [job.id]: "",
+                                      }))
+                                    }
+                                    title="Clear transcript search"
+                                    type="button"
+                                  >
+                                    <X size={13} />
+                                  </button>
+                                ) : null}
+                              </span>
+                            </label>
+                            <span className="transcript-search-count">
+                              {filteredTranscriptSegments.length}/{transcriptSegments.length}
+                            </span>
+                          </div>
+                        ) : null}
+                        {transcriptSegments.length > 0 ? (
+                          <div className="transcript-segment-list" aria-label="Transcript segments">
+                            {filteredTranscriptSegments.length > 0 ? (
+                              filteredTranscriptSegments.map((segment) => (
+                                <label className="transcript-segment-row" key={segment.id}>
+                                  <input
+                                    aria-label={`Select transcript segment ${transcriptSegmentTimestamp(segment)}`}
+                                    checked={selectedTranscriptSegmentIds.includes(segment.id)}
+                                    onChange={() => toggleTranscriptSegment(job.id, segment.id)}
+                                    type="checkbox"
+                                  />
+                                  <span className="transcript-segment-time">
+                                    {transcriptSegmentTimestamp(segment)}
+                                  </span>
+                                  <span className="transcript-segment-text">
+                                    {highlightSearchMatch(segment.text, transcriptSegmentSearch)}
+                                  </span>
+                                </label>
+                              ))
+                            ) : (
+                              <div className="empty-state">
+                                <span>No transcript segments match this search.</span>
+                              </div>
+                            )}
+                          </div>
+                        ) : null}
+                        {job.status === "completed" && transcriptSegments.length > 0 ? (
+                          <div className="transcript-note-actions">
+                            <button
+                              className="primary-button compact-button"
+                              disabled={!job.companyId || selectedTranscriptSegmentIds.length === 0}
+                              onClick={() => openTranscriptNoteDraft(job, selectedTranscriptSegments)}
+                              title={
+                                job.companyId
+                                  ? "Create a company notebook draft from selected segments"
+                                  : "Link a company before saving selected segments as a company notebook note"
+                              }
+                              type="button"
+                            >
+                              <Plus size={15} />
+                              Create company note draft
+                            </button>
+                            {transcriptNoteError ? <p className="error-text">{transcriptNoteError}</p> : null}
+                          </div>
+                        ) : null}
+                        {isTranscriptNoteDraftOpen ? (
+                          <form
+                            className="transcript-note-draft"
+                            onSubmit={(event) => createTranscriptNotebookEntry(job, event)}
+                            aria-label="Transcript note draft"
+                          >
+                            <div className="event-composer-header">
+                              <div>
+                                <h2>Notebook note draft</h2>
+                                <p>Edit the note before saving it to the company notebook.</p>
+                              </div>
+                              <button
+                                className="secondary-button compact-button"
+                                onClick={discardTranscriptNoteDraft}
+                                type="button"
+                              >
+                                <X size={15} />
+                                Discard
+                              </button>
+                            </div>
+                            <div className="event-composer-grid">
+                              <label className="event-composer-title">
+                                Title
+                                <input
+                                  aria-label="Transcript note title"
+                                  value={transcriptNoteForm.title}
+                                  onChange={(event) => updateTranscriptNoteForm("title", event.target.value)}
+                                />
+                              </label>
+                              <label>
+                                Kind
+                                <select
+                                  aria-label="Transcript note kind"
+                                  value={transcriptNoteForm.kind}
+                                  onChange={(event) => updateTranscriptNoteForm("kind", event.target.value)}
+                                >
+                                  <option value="manual">Manual</option>
+                                  <option value="observation">Observation</option>
+                                  <option value="claim">Claim</option>
+                                  <option value="question">Question</option>
+                                  <option value="follow_up">Follow-up</option>
+                                </select>
+                              </label>
+                              <label>
+                                Status
+                                <select
+                                  aria-label="Transcript note status"
+                                  value={transcriptNoteForm.claimStatus}
+                                  onChange={(event) => updateTranscriptNoteForm("claimStatus", event.target.value)}
+                                >
+                                  <option value="">Not set</option>
+                                  <option value="open">Open</option>
+                                  <option value="delivered">Delivered</option>
+                                  <option value="partially_delivered">Partially delivered</option>
+                                  <option value="missed">Missed</option>
+                                  <option value="unknown">Unknown</option>
+                                  <option value="not_applicable">Not applicable</option>
+                                </select>
+                              </label>
+                              <label>
+                                Tags
+                                <input
+                                  aria-label="Transcript note tags"
+                                  value={transcriptNoteForm.tags}
+                                  onChange={(event) => updateTranscriptNoteForm("tags", event.target.value)}
+                                />
+                              </label>
+                              <NotebookDateField
+                                ariaLabel="Transcript note event date"
+                                label="Event date"
+                                value={transcriptNoteForm.eventDate}
+                                onChange={(value) => updateTranscriptNoteForm("eventDate", value)}
+                              />
+                              <NotebookQuarterField
+                                ariaLabel="Transcript note follow-up quarter"
+                                label="Follow-up quarter"
+                                value={transcriptNoteForm.followUpAfter}
+                                onChange={(value) => updateTranscriptNoteForm("followUpAfter", value)}
+                              />
+                              <NotebookDateField
+                                ariaLabel="Transcript note follow-up date"
+                                label="Follow-up date"
+                                value={transcriptNoteForm.followUpDate}
+                                onChange={(value) => updateTranscriptNoteForm("followUpDate", value)}
+                              />
+                            </div>
+                            <label className="notebook-body-field">
+                              Body
+                              <textarea
+                                aria-label="Transcript note body"
+                                value={transcriptNoteForm.body}
+                                onChange={(event) => updateTranscriptNoteForm("body", event.target.value)}
+                              />
+                            </label>
+                            <div className="event-composer-actions">
+                              <button
+                                className="primary-button compact-button"
+                                disabled={transcriptNoteSaveInFlight === job.id}
+                                type="submit"
+                              >
+                                <Save size={15} />
+                                {transcriptNoteSaveInFlight === job.id ? "Saving" : "Save"}
+                              </button>
+                            </div>
+                          </form>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+                  );
+                })}
               </div>
             </section>
           ) : null}
@@ -6458,17 +7819,144 @@ export function App() {
                   <dl className="settings-grid">
                     <div>
                       <dt>YouTube transcription</dt>
-                      <dd>{settings?.aiProviders.youtubeTranscriptionProvider ?? "gemini"}</dd>
+                      <dd>{formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider)}</dd>
+                    </div>
+                    <div>
+                      <dt>YouTube transcription provider ID</dt>
+                      <dd>{settings?.aiProviders.youtubeTranscriptionProvider ?? "provider_gemini"}</dd>
+                    </div>
+                    <div>
+                      <dt>YouTube transcription model</dt>
+                      <dd>{formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel)}</dd>
+                    </div>
+                    <div>
+                      <dt>YouTube transcription timeout</dt>
+                      <dd>{settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s</dd>
+                    </div>
+                    <div>
+                      <dt>YouTube transcription credentials</dt>
+                      <dd>{formatCredentialConfigured(geminiCredentialStatus)}</dd>
+                    </div>
+                    <div>
+                      <dt>Credential storage</dt>
+                      <dd>{formatCredentialStorage(geminiCredentialStatus?.storage)}</dd>
+                    </div>
+                    <div>
+                      <dt>Credential kind</dt>
+                      <dd>{formatCredentialKind(geminiCredentialStatus?.secretKind)}</dd>
+                    </div>
+                    <div>
+                      <dt>YouTube transcription disclosure</dt>
+                      <dd>
+                        Starting a transcript job sends the YouTube URL and video content to Gemini.
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>YouTube transcription scope</dt>
+                      <dd>Gemini is used only for YouTube transcription.</dd>
                     </div>
                     <div>
                       <dt>General AI provider</dt>
-                      <dd>{settings?.aiProviders.generalAnalysisProvider ?? "Not configured"}</dd>
+                      <dd>{formatAiProvider(settings?.aiProviders.generalAnalysisProvider)}</dd>
                     </div>
                     <div>
                       <dt>AI analysis mode</dt>
                       <dd>{settings?.aiAnalysisMode ?? "source_grounded"}</dd>
                     </div>
                   </dl>
+                  <div className="settings-row">
+                    <label>
+                      Gemini transcription model
+                      <select
+                        aria-label="Gemini transcription model"
+                        value={settings?.aiProviders.youtubeTranscriptionModel ?? "gemini-2.5-flash"}
+                        onChange={(event) => updateYoutubeTranscriptionModel(event.target.value)}
+                      >
+                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                        <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
+                        <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                      </select>
+                    </label>
+                    <div className="settings-summary">
+                      <span>Default</span>
+                      <strong>Cheapest supported</strong>
+                    </div>
+                  </div>
+                  <div className="settings-row">
+                    <label>
+                      Gemini transcription timeout
+                      <select
+                        aria-label="Gemini transcription timeout"
+                        value={settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}
+                        onChange={(event) => updateYoutubeTranscriptionTimeout(Number(event.target.value))}
+                      >
+                        <option value={45}>45 seconds</option>
+                        <option value={90}>90 seconds</option>
+                        <option value={180}>3 minutes</option>
+                        <option value={300}>5 minutes</option>
+                        <option value={600}>10 minutes</option>
+                      </select>
+                    </label>
+                    <div className="settings-summary">
+                      <span>Default</span>
+                      <strong>5 minutes</strong>
+                    </div>
+                  </div>
+                  <form className="credential-form" onSubmit={saveGeminiApiKey}>
+                    <label>
+                      Gemini API key
+                      <input
+                        aria-label="Gemini API key"
+                        autoComplete="off"
+                        placeholder={geminiCredentialStatus?.configured ? "Replace configured key" : "Paste API key"}
+                        type="password"
+                        value={geminiApiKeyDraft}
+                        onChange={(event) => setGeminiApiKeyDraft(event.target.value)}
+                      />
+                    </label>
+                    <div className="credential-actions">
+                      <button
+                        className="action-button"
+                        disabled={geminiCredentialInFlight || !geminiApiKeyDraft.trim()}
+                        type="submit"
+                      >
+                        <Save size={14} />
+                        Save
+                      </button>
+                      <button
+                        className="ghost-button"
+                        disabled={geminiCredentialInFlight}
+                        onClick={clearGeminiApiKey}
+                        type="button"
+                      >
+                        <Trash2 size={14} />
+                        Clear
+                      </button>
+                    </div>
+                  </form>
+                  <button
+                    className="ghost-button settings-link-button"
+                    onClick={() => {
+                      void openUrl("https://aistudio.google.com/app/apikey");
+                    }}
+                    type="button"
+                    title="Open Google AI Studio API keys page"
+                  >
+                    <ExternalLink size={14} />
+                    Get Gemini API key
+                  </button>
+                  {geminiCredentialStatus?.devFallbackAvailable ? (
+                    <p className="settings-note">
+                      Development fallback is active through environment configuration.
+                    </p>
+                  ) : null}
+                  {geminiCredentialStatus?.error ? (
+                    <p className="error-text">Credential backend: {geminiCredentialStatus.error}</p>
+                  ) : null}
+                  {geminiCredentialError ? (
+                    <p className="error-text">Credential command failed: {geminiCredentialError}</p>
+                  ) : null}
                 </section>
 
                 {settingsError ? (

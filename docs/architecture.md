@@ -1,6 +1,6 @@
 # Architecture
 
-See also [Project Brief](project-brief.md), [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Engineering Workflow](engineering-workflow.md), [Project Practices](project-practices.md), [Contracts](contracts.md), and the accepted ADRs in [docs/adr](adr/).
+See also [Project Brief](project-brief.md), [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), [Engineering Workflow](engineering-workflow.md), [Project Practices](project-practices.md), [Modularization Design](modularization-design.md), [Contracts](contracts.md), and the accepted ADRs in [docs/adr](adr/).
 
 ## Chosen Stack
 
@@ -72,7 +72,15 @@ Source adapters should return normalized records through a common interface. Ada
 
 AI providers should implement provider-neutral interfaces. General AI analysis, summarization, significance labeling, and note extraction have no preferred provider yet.
 
-Gemini is preferred only for the YouTube press conference transcription workflow because the Gemini API currently has native video/audio understanding and YouTube URL support. The implementation must still keep provider boundaries pluggable.
+Modularity and configurability are core architecture constraints. Provider, source, credential, model, and workflow settings should be represented as explicit boundaries instead of one-off hard-coded behavior when the feature is expected to evolve.
+
+Code organization should follow those boundaries. Large shell files are acceptable during early scaffolding but should not become the stable structure. UI screens, command groups, storage domains, provider clients, and source adapters should move into cohesive modules as they grow. The target structure and extraction order are defined in [Modularization Design](modularization-design.md).
+
+Gemini is preferred only for the YouTube press conference transcription workflow because the Gemini API currently has native video/audio understanding and YouTube URL support. M10 requires a working live `provider_gemini` path for supported public YouTube URLs, while automated tests continue to use mocked responses or offline test samples. The implementation must still keep provider boundaries pluggable.
+
+Provider credentials should use a reusable credential boundary rather than provider-specific ad hoc storage. The first credential is the Gemini YouTube transcription API key, but the same boundary must be able to describe future API keys, username/password credentials, session tokens, or other source-specific secret material. Runtime secrets live in the OS keychain and are referenced by provider, purpose, and secret kind; only non-secret status metadata is exposed to the UI.
+
+Provider model choice and request timeout are configurable. Gemini YouTube transcription defaults to the cheapest configured model that passed M10 live smoke validation with direct YouTube/video input. The runtime timeout defaults to 300 seconds, can be changed in Settings, and may be overridden by `BRAWLER_GEMINI_REQUEST_TIMEOUT_SECONDS` for development/live-smoke runs.
 
 Notebook entries should be source-linked. A note can originate from manual entry, a feed item, an AI summary, a transcript segment, or a selected AI-suggested claim.
 

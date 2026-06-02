@@ -8,7 +8,8 @@ See also [Project Brief](project-brief.md), [UI Information Architecture](ui-inf
 
 - Build from local-first foundations toward source ingestion and AI.
 - Keep every milestone demoable.
-- Prefer test-sample-backed workflows before external integrations.
+- Milestones must close on real working behavior against the real local runtime, real source, real API, or real agent named by the milestone.
+- Use test samples, mocks, and seed data only as intermediate development steps and in deterministic automated tests; do not treat them as completion evidence unless a milestone explicitly says it is a mock/sample-only spike.
 - Do not introduce cloud services in v1.
 - Keep contracts and docs updated with each milestone.
 - Make local build/test commands the primary interface; GitHub Actions mirrors them.
@@ -350,25 +351,34 @@ Exit criteria:
 
 ## Milestone 10: YouTube Transcription To Notes
 
-Goal: validate the first video-to-notebook workflow.
+Goal: validate the first video-to-notebook workflow with real Gemini-backed YouTube transcript generation.
+
+Status: completed in `0.10.0`.
 
 Included:
 
-- Gemini provider configuration for YouTube transcription only
+- Gemini provider configuration for YouTube transcription only, including OS-keychain credential storage
 - provider disclosure in settings
 - transcript job creation
 - transcript segment storage
 - transcript review UI
 - create note from selected transcript segments
 - origin to segment and YouTube URL
+- live `provider_gemini` execution against the real Gemini API for supported public YouTube URLs
+- offline test-sample provider for automated tests and development only
 
 Exit criteria:
 
-- user can submit YouTube URL for a company
+- user can submit a YouTube URL with or without a company
+- a configured real Gemini API key can generate transcript segments from a real supported YouTube URL
 - transcript job status is visible
 - user can save selected transcript material as an editable Markdown note
+- unlinked transcripts remain visible and can be linked to a company later when notebook note creation is needed
 - transcript source text remains immutable
-- provider tests use test samples/mocks
+- Gemini use, preview/provider limitations, and privacy implications are disclosed before use
+- missing credentials, provider limits, network errors, and provider errors are visible as recoverable job failures
+- at least one manual live Gemini smoke check passes before M10 is closed
+- default automated tests and CI use test samples/mocks and do not require Gemini credentials or live external services
 
 ## Milestone 11: General AI Analysis Contract Spike
 

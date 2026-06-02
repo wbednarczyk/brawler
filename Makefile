@@ -7,7 +7,7 @@ WINDOWS_TARGET := x86_64-pc-windows-msvc
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
 
-.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check smoke-gemini-transcript smoke-keyring flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -17,6 +17,9 @@ help:
 	@printf "  make build               Build the frontend inside nix develop\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
+	@printf "  make smoke-gemini-transcript\n"
+	@printf "                            Opt-in live Gemini YouTube transcript smoke test\n"
+	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
 	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
 	@printf "  make package-windows-from-linux\n"
 	@printf "                            Experimental: build Windows app from Linux/WSL\n"
@@ -49,6 +52,20 @@ frontend-check:
 
 rust-check:
 	$(NIX) npm run check:rust
+
+smoke-gemini-transcript:
+	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \
+		printf "GEMINI_API_KEY is required for the live Gemini smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_SMOKE_YOUTUBE_URL:-}" ]; then \
+		printf "BRAWLER_GEMINI_SMOKE_YOUTUBE_URL is required for the live Gemini smoke test.\n"; \
+		exit 1; \
+	fi
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_transcribes_youtube_url -- --ignored --nocapture
+
+smoke-keyring:
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture
 
 flake-check:
 	nix flake check --no-build

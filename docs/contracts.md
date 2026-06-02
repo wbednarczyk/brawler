@@ -463,11 +463,15 @@ Rules:
 ```json
 {
   "jobId": "job_video_01",
-  "companyId": "company_gpw_cdr",
+  "companyId": null,
   "providerId": "provider_gemini",
   "sourceType": "youtube_url",
   "sourceUrl": "https://www.youtube.com/watch?v=example",
+  "sourceLabel": null,
+  "companyResolutionStatus": "unresolved",
+  "recognizedCompanyCandidates": [],
   "status": "queued",
+  "errorCode": null,
   "createdAt": "2026-05-28T13:30:00Z",
   "startedAt": null,
   "finishedAt": null,
@@ -475,13 +479,109 @@ Rules:
 }
 ```
 
+Rules:
+
+- The UI input label for `sourceUrl` is `URL`.
+- `companyId` may be null at job creation time.
+- If the user provides a ticker/company before transcription, `companyId` is set immediately.
+- If the user does not provide a ticker/company, the transcript may remain unlinked and visible. The contract reserves `recognizedCompanyCandidates` for future provider-assisted recognition, but M10 does not require automatic company recognition before the transcript can be reviewed.
+- Allowed `companyResolutionStatus` values: `provided`, `recognized`, `unresolved`, `needs_user_selection`.
+- `recognizedCompanyCandidates` uses the same canonical company identity shape as company lookup results when recognition produces candidates.
+- A completed transcript may remain unlinked to any company and must still be viewable on demand.
+- Transcript segments can exist while `companyId` is unresolved.
+- Company selection is required only when the user wants to save selected segments into a company notebook.
+- Allowed `status` values: `queued`, `running`, `completed`, `failed`.
+- Allowed `errorCode` values when `status = failed`: `provider_not_configured`, `provider_limit`, `provider_unavailable`, `provider_error`, `network_error`, `invalid_source_url`, `parse_error`, `unknown`.
+- `error` is user-readable local diagnostic text and must not store provider secrets.
+
+## Create Video Transcript Job Input
+
+```json
+{
+  "sourceUrl": "https://www.youtube.com/watch?v=example",
+  "sourceLabel": "Q2 investor conference",
+  "companyId": null,
+  "companyQuery": "CDR",
+  "providerId": "provider_gemini"
+}
+```
+
+Rules:
+
+- `sourceUrl` is required and is shown in the UI as `URL`.
+- `sourceLabel` is optional and is shown in the UI as the transcript row title/description when present.
+- `sourceLabel` is user-editable after job creation because it is local metadata, not provider transcript source text.
+- The UI must not expose generated transcript job IDs as normal row titles.
+- `companyId` is optional. If present, it must reference an existing local company.
+- `companyQuery` is optional and represents a user-provided ticker/company/ISIN search value. If present without `companyId`, the app should resolve it through the same local lookup used by Companies before creating the job.
+- If neither `companyId` nor `companyQuery` resolves a company, the job is created with `companyId = null` and `companyResolutionStatus = unresolved`.
+- `providerId` defaults to `provider_gemini` for M10 and must not change the general AI analysis provider preference.
+- Duplicate create requests for the same normalized `sourceUrl` and the same company scope must return the existing transcript job instead of creating another row.
+- Unlinked jobs and company-linked jobs are separate duplicate scopes for the same `sourceUrl`.
+- `delete_video_transcript_job(jobId)` removes the transcript job and its stored transcript segments.
+- Deleting a transcript job must not delete notebook entries that were already created from it; saved notebook origins remain historical references.
+
+## Update Video Transcript Job Input
+
+```json
+{
+  "jobId": "job_video_01",
+  "sourceLabel": "Renamed investor conference"
+}
+```
+
+Rules:
+
+- `update_video_transcript_job(input)` updates editable local transcript job metadata.
+- M10 supports `sourceLabel` updates only.
+- Blank `sourceLabel` clears the description and returns the UI title fallback to `Untitled transcript`.
+- Updating transcript job metadata must not mutate transcript segment text, provider output, source URL, status, or notebook origins.
+
+## Resolve Transcript Job Company Input
+
+```json
+{
+  "jobId": "job_video_01",
+  "companyId": "company_gpw_cdr"
+}
+```
+
+Rules:
+
+- Resolving a job company sets the job `companyId`.
+- Existing transcript segments for the job inherit the resolved company for UI/read-model purposes.
+- Resolution is optional for transcript visibility.
+- Resolution is required only before `create_note_from_transcript_selection` can save a company notebook entry.
+
+## Run Video Transcript Job Input
+
+```json
+{
+  "jobId": "job_video_01",
+  "providerMode": "provider_gemini"
+}
+```
+
+Rules:
+
+- Creating a job may auto-start live transcription when Gemini credentials are configured. Failed or queued jobs can be run again through the visible `Retry` action.
+- Allowed `providerMode` values: `provider_gemini`, `test_sample`.
+- `provider_gemini` is the required M10 live provider path and must require configured credentials.
+- `test_sample` uses offline sample transcript output for automated tests and local development only; it cannot satisfy M10 completion.
+- Provider runner success stores immutable transcript segments and marks the job `completed`.
+- Provider runner failure stores `status = failed`, `errorCode`, and user-readable `error`.
+- Live provider calls must happen in Rust-side code, never directly from React.
+- Live provider calls must not log API keys or full transcript text.
+- Default automated tests must mock Gemini responses or use test samples; they must not require a real Gemini API key.
+- M10 uses direct YouTube URL input to Gemini. If Gemini rejects the URL or request, the job fails with a provider error containing the provider cause when available; M10 does not implement hidden audio download/extraction fallback.
+
 ## Transcript Segment
 
 ```json
 {
   "id": "segment_01",
   "transcriptJobId": "job_video_01",
-  "companyId": "company_gpw_cdr",
+  "companyId": null,
   "startSeconds": 120,
   "endSeconds": 168,
   "speaker": null,
@@ -494,6 +594,7 @@ Rules:
 Rules:
 
 - Segment timestamps should be stored when the provider returns enough information.
+- `companyId` follows the parent transcript job and may be null until company resolution is complete.
 - The original YouTube URL must be retained.
 - Transcript segment text is immutable source output in v1.
 - Notes created from transcript segments are editable before saving.
@@ -502,7 +603,7 @@ Rules:
 
 ```json
 {
-  "companyId": "company_gpw_cdr",
+  "transcriptJobId": "job_video_01",
   "transcriptSegmentIds": ["segment_01"],
   "noteDraft": {
     "title": "Claim from Q2 conference",
@@ -518,9 +619,11 @@ Rules:
 Rules:
 
 - The user chooses which transcript segments become notes.
-- Selection can be implemented as whole-segment selection, text-range selection, or accepting an AI-suggested draft.
+- V1 uses whole-segment selection.
+- `create_note_from_transcript_selection(input)` creates a company notebook entry, so it must reject unlinked transcript jobs and non-completed jobs.
 - AI may suggest note drafts, but the user confirms before saving.
-- Saved notes must link back to transcript segments and the original video URL.
+- Saved notes are normal notebook entries with `transcript_segment` origins.
+- Saved note origins must retain selected segment IDs, the original video URL, provider/job context, and timestamp ranges when available.
 
 ## Scheduler Job Status
 
@@ -561,6 +664,8 @@ Allowed statuses:
   "settingsImportExportFormat": "yaml",
   "aiProviders": {
     "youtubeTranscriptionProvider": "provider_gemini",
+    "youtubeTranscriptionModel": "gemini-2.5-flash",
+    "youtubeTranscriptionTimeoutSeconds": 300,
     "generalAnalysisProvider": null
   },
   "aiAnalysisMode": "source_grounded"
@@ -579,13 +684,47 @@ Rules:
 - `system` may be added to the UI as a convenience, but first-run behavior still defaults to `dark` until the user changes it.
 - The initial accent palette is `night-neon`, inspired by deep navy, electric blue/cyan, pink, and purple.
 - General AI analysis has no default provider yet.
+- Settings must show that `provider_gemini` is selected only for YouTube transcription.
+- Settings must let the user choose the Gemini transcription model from supported configured options: `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-3.1-flash-lite`, and `gemini-3.5-flash`.
+- The default YouTube transcription model is the cheapest configured model validated by M10 live smoke, currently `gemini-2.5-flash`.
+- Settings must let the user choose the Gemini transcription timeout from supported configured options: `45`, `90`, `180`, `300`, and `600` seconds.
+- The default YouTube transcription timeout is `300` seconds. Shorter values are useful for smoke testing provider availability; longer values are intended for real conference videos.
+- Settings must show whether YouTube transcription credentials are configured.
+- Settings must let the user save, replace, and clear the Gemini API key used only for YouTube transcription.
+- Settings must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.
 - YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.
 - YAML must not contain secrets.
 - API keys and provider secrets live in the OS keychain.
+- `.env` or environment-variable API key fallback is allowed for local development and tests only.
 - Default AI analysis mode is `source_grounded`.
 - Future `opinionated` mode requires explicit user opt-in and still cannot provide buy/sell/hold or personalized portfolio advice.
+
+## Provider Credential Status
+
+```json
+{
+  "providerId": "provider_gemini",
+  "purpose": "youtube_transcription",
+  "secretKind": "api_key",
+  "configured": true,
+  "storage": "os_keychain",
+  "label": "Gemini YouTube transcription API key",
+  "devFallbackAvailable": false,
+  "error": null
+}
+```
+
+Rules:
+
+- Credential status is non-secret metadata and may be returned to React.
+- Secret values must never be returned to React.
+- Runtime secret storage uses the OS keychain.
+- Development/test fallback may use environment variables, but this must be reported as `storage = "development_environment"` and must not count as exported settings.
+- Supported `secretKind` values begin with `api_key`; future supported kinds may include `username_password`, `session_token`, or `oauth_token` after source-specific design.
+- `set_gemini_transcription_api_key(apiKey)` stores or replaces only the Gemini YouTube transcription API key.
+- `clear_gemini_transcription_api_key()` removes only the OS-keychain Gemini YouTube transcription API key and must not mutate `.env` or process environment values.
 
 ## UI-Facing Command Boundaries
 
@@ -611,8 +750,16 @@ Initial Tauri command groups:
 - `create_notebook_entry`
 - `update_notebook_entry`
 - `create_video_transcript_job`
+- `list_video_transcript_jobs`
+- `delete_video_transcript_job`
+- `update_video_transcript_job`
+- `run_video_transcript_job`
+- `resolve_transcript_job_company`
 - `list_transcript_segments`
 - `create_note_from_transcript_selection`
+- `get_gemini_transcription_credential_status`
+- `set_gemini_transcription_api_key`
+- `clear_gemini_transcription_api_key`
 - `get_settings`
 - `update_settings`
 

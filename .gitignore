@@ -30,3 +30,6 @@ pnpm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# local only env vars with credentials
+.env.local

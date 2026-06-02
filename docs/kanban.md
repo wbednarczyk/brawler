@@ -98,6 +98,24 @@ Docs/contracts touched: UI information architecture, product spec if grouping be
 
 Test expectations: UI workflow/component coverage for grouped Sources once implemented.
 
+### Modularize large UI, storage, and test files
+
+Intent: reduce architecture debt from early milestone scaffolding so future features remain readable, testable, and extensible.
+
+Acceptance criteria:
+
+- `src/App.tsx` is split into screen-level or domain-level modules such as Inbox, Companies, Notebooks, Events, Transcripts, Settings, and shared UI helpers.
+- `src-tauri/src/storage.rs` is split into domain modules such as migrations, settings, companies, feed, notebooks, events, transcripts, source adapter state, and registry operations.
+- Large tests are split by workflow/domain where possible without losing shared mock setup.
+- Public contracts and Tauri command behavior remain unchanged during extraction.
+- Refactors are done in small slices near active feature work, not as a risky all-at-once rewrite.
+
+Docs/contracts touched: architecture, project practices, kanban.
+
+Test expectations: normal local check set after each extraction slice.
+
+Design reference: [Modularization Design](modularization-design.md).
+
 ### Implement keyboard shortcuts
 
 Intent: add discoverable keyboard shortcuts for repeated v1 workflows after core screens are stable.
@@ -166,22 +184,6 @@ Docs/contracts touched: licensing ADR, project practices, product spec, UI infor
 
 Test expectations: Rust license validation tests and UI workflow tests for entry, invalid states, expiry, and gated app access.
 
-### Implement Gemini YouTube transcription spike
-
-Intent: validate Gemini as the first provider only for YouTube press conference transcription and transcript-to-note workflows.
-
-Acceptance criteria:
-
-- User can submit a YouTube URL for a selected company.
-- App creates a transcript job using the Gemini provider.
-- Returned transcript segments can be reviewed.
-- User can save selected segments as notebook notes with origin.
-- Settings disclose free-tier limits and provider privacy terms.
-
-Docs/contracts touched: architecture, product spec, contracts, source/AI policy ADR.
-
-Test expectations: provider contract tests with test samples and transcript-to-note workflow tests.
-
 ## Ready
 
 ## In Progress
@@ -226,6 +228,360 @@ Test expectations: parser/fetcher test-sample tests, source adapter contract tes
 No cards.
 
 ## Done
+
+### M10.13 Close M10
+
+Intent: finish milestone documentation and versioning only after the packaged app workflow works end to end.
+
+Acceptance criteria:
+
+- A Windows packaged app run can create a transcript job from a real YouTube URL using real Gemini credentials configured through the app or an approved local runtime path.
+- The app stores returned transcript segments and shows the completed transcript in the Transcripts view.
+- User can select transcript material and save it as an editable Markdown note.
+- Roadmap M10 is marked completed.
+- Kanban M10 cards are moved to Done.
+- Version is bumped to `0.10.0` in all required files.
+- Required automated checks pass.
+- Live Gemini transcript generation has been manually smoke-tested with a real supported YouTube URL.
+
+Delivered:
+
+- Removed the temporary keyring diagnostic UI and command before closure.
+- Updated transcript contracts and product docs to match auto-start, Retry, editable transcript descriptions, searchable transcript text, and optional company binding.
+- Recorded successful live Gemini smoke validation for `gemini-2.5-flash`.
+- Recorded successful packaged Windows app validation with real Gemini transcription after selecting `gemini-3.5-flash`.
+- Version bumped to `0.10.0` in package, Rust, lock, Tauri config, and Rust health-test files.
+- Final automated checks passed.
+
+Docs/contracts touched: roadmap, kanban, contracts, product spec.
+
+Test expectations: normal local check set plus documented live Gemini smoke evidence and manual Windows packaged-app validation.
+
+### M10.12 Add live Gemini smoke path
+
+Intent: make the real-provider exit criterion repeatable without adding live Gemini to default checks.
+
+Acceptance criteria:
+
+- A documented manual or opt-in smoke procedure runs one real YouTube transcription through `provider_gemini`.
+- The smoke path records whether credentials are configured and whether transcript segments were created.
+- The smoke path is excluded from default CI and normal local checks.
+- M10 cannot be closed until this smoke check has passed at least once on the feature branch.
+
+Delivered:
+
+- Added ignored Rust smoke test `live_gemini_transcribes_youtube_url`.
+- Added `make smoke-gemini-transcript`.
+- Smoke command requires `GEMINI_API_KEY` and `BRAWLER_GEMINI_SMOKE_YOUTUBE_URL`.
+- Optional `BRAWLER_GEMINI_SMOKE_MODEL` can validate alternatives.
+- Smoke output records the model and transcript segment count.
+- Default Rust tests ignore the live smoke test.
+- Added [Live Smoke Tests](live-smoke-tests.md) with command, expected result, failure interpretation, and M10 closure rule.
+
+Docs/contracts touched: engineering workflow, live smoke docs, kanban.
+
+Test expectations: normal automated checks remain mock/sample based; live smoke is manual/opt-in.
+
+### M10.11 Implement live Gemini transcript generation
+
+Intent: make M10 exit with working transcript generation against the real Gemini API, not only offline sample output.
+
+Acceptance criteria:
+
+- `provider_gemini` sends supported public YouTube URLs to Gemini from the Rust side.
+- Gemini transcription model is selectable in Settings and defaults to the cheapest/fastest configured model expected to support YouTube/video transcription.
+- Gemini output is requested as transcript-like structured segments with text, language, and timestamp data when available.
+- Provider success stores immutable transcript segments and marks the job completed.
+- Provider failure maps missing credentials, quota/limit, provider, network, invalid URL, URL rejection, and parse errors to existing job failure fields with useful cause text when the provider returns it.
+- The offline `test_sample` provider remains available for automated tests and development, but cannot satisfy M10 closure.
+- No Gemini API key or full transcript body is written to logs.
+
+Delivered:
+
+- Added real `provider_gemini` HTTP execution through the Rust backend using the Gemini `generateContent` endpoint.
+- Added direct YouTube URL request construction using Gemini file data.
+- Added structured JSON transcript prompt and parser that stores immutable transcript segments.
+- Added provider error mapping for missing credentials, limits, network failures, invalid URLs, URL/request rejection, provider errors, and parse failures.
+- Changed the user-facing transcript run action from `Run sample` to real Gemini execution; created jobs now auto-start when credentials are configured, and failed/queued job action is labeled `Retry`.
+- Changed backend default run mode to `provider_gemini`; `test_sample` remains available only when explicitly requested by tests/development.
+- Added selectable Gemini transcription model in Settings.
+- Default model is `gemini-2.5-flash`, the cheapest configured candidate that passed M10.12 live smoke validation.
+- Added configurable Gemini transcription timeout in Settings. Default is `300` seconds, with `45`, `90`, `180`, `300`, and `600` seconds accepted.
+- Added Settings action linking to Google AI Studio API-key creation.
+- Removed the temporary in-app Gemini keyring diagnostic after Windows Credential Manager validation; normal runtime behavior is credential status, save, replace, clear, and provider execution.
+- Added migration `0019_youtube_transcription_model.sql`.
+- Tests cover mocked Gemini response parsing, invalid URL rejection, HTTP error cause extraction, missing credentials, Settings model selection, and Gemini run invocation.
+- Live smoke validation passed for `gemini-2.5-flash` with 27 transcript segments from a real YouTube URL.
+- Packaged Windows app validation produced a successful real Gemini transcript after selecting `gemini-3.5-flash`.
+
+Docs/contracts touched: contracts, architecture, product spec, UI information architecture, kanban.
+
+Test expectations: Rust provider mapping tests using mocked/sample Gemini responses; no default test requires live Gemini.
+
+### M10.10 Implement Gemini credential settings
+
+Intent: let the app use real Gemini credentials without exposing secrets to React or storing secrets in SQLite/YAML.
+
+Acceptance criteria:
+
+- Settings shows whether YouTube transcription credentials are configured.
+- User can save, replace, and clear the Gemini API key for YouTube transcription.
+- Runtime secret storage uses the OS keychain.
+- `.env` or environment-variable fallback is allowed only for local development and tests.
+- Frontend never receives the API key value.
+- Missing credentials produce a clear recoverable state before live transcription is attempted.
+
+Delivered:
+
+- Added a reusable Rust credential boundary with provider, purpose, secret kind, storage, status, and development-environment fallback metadata.
+- Added Gemini YouTube transcription API-key status, save/replace, clear, and read paths.
+- Runtime credential storage uses the OS keychain through the `keyring` crate.
+- `GEMINI_API_KEY` is accepted only as a development/test fallback and is reported separately from OS-keychain storage.
+- Added typed Tauri commands for Gemini transcription credential status, save, and clear.
+- Settings now shows credential status, storage, secret kind, and save/clear controls without exposing the secret value.
+- Docs now record the broader credential model for future API keys, username/password credentials, session tokens, and other secret forms.
+- Tests cover non-secret credential metadata, empty secret rejection, and Settings save/clear UI command behavior.
+
+Docs/contracts touched: contracts, project practices, architecture, UI information architecture, kanban.
+
+Test expectations: Rust command/storage tests with mock-safe credential behavior; UI tests for configured/not-configured states.
+
+### M10.9 Polish transcript workflow reliability and UX
+
+Intent: make the first video-to-notebook workflow coherent enough for repeated manual testing.
+
+Acceptance criteria:
+
+- Validation errors for invalid/missing YouTube URLs are immediate and clear.
+- Duplicate job behavior for the same company and URL is defined and implemented.
+- Long transcripts remain navigable and do not make the UI sluggish.
+- Job errors and provider limit states are visible without losing saved work.
+- Buttons, icons, labels, and expandable patterns match current app conventions.
+
+Delivered:
+
+- Missing URL keeps the create button disabled.
+- Invalid non-YouTube URLs show immediate, specific validation feedback.
+- Duplicate transcript job creation is defined: same URL and same company scope returns the existing job.
+- Unlinked and company-linked transcript jobs remain separate duplicate scopes.
+- Transcripts UI deduplicates job rows defensively by job ID after create/list refresh.
+- Failed transcript jobs show expanded provider diagnostics with `errorCode` and stored error text.
+- Retry action remains visible for failed jobs.
+- Transcript jobs can be deleted from the Transcripts list, with stored segments removed through cascade delete.
+- Transcript segment lists remain constrained in a scrollable review area.
+- Tests cover URL validation, duplicate create behavior, provider error display, transcript delete behavior, and duplicate URL/company-scope storage behavior.
+
+Docs/contracts touched: contracts, kanban.
+
+Test expectations: focused UI tests for validation/error states and storage tests for duplicate behavior.
+
+### M10.8 Create editable notebook note from selected transcript segments
+
+Intent: complete the transcript-to-note loop with editable Markdown notes linked back to transcript origin.
+
+Acceptance criteria:
+
+- User can create a note draft from selected transcript segments.
+- Note creation is blocked until the transcript job has a resolved company.
+- Draft title/body/tags/kind/follow-up fields are editable before saving.
+- Save creates a normal notebook entry for the company.
+- Saved note origin links include transcript job, selected segment IDs, original YouTube URL, provider, and timestamp ranges when available.
+- The original transcript segment text remains immutable.
+
+Delivered:
+
+- Added `create_note_from_transcript_selection` as a Tauri command and storage operation.
+- Backend validation rejects unlinked transcript jobs for company notebook note creation, non-completed jobs, empty segment selections, and unknown segment IDs.
+- Transcript-derived notes are saved as normal Markdown notebook entries.
+- Each selected segment is stored as a `transcript_segment` origin with segment ID, video URL, and job/provider/timestamp context.
+- Transcripts UI can open an editable note draft from selected segments and save it.
+- Unlinked transcripts remain viewable, and expanded transcript jobs provide optional company linking before company notebook note creation.
+- UI workflow tests cover segment selection to saved note.
+- Rust storage tests cover successful origin creation and unlinked-transcript rejection for company notebook note creation.
+
+Docs/contracts touched: contracts, data model, product spec, UI flows, kanban.
+
+Test expectations: Rust storage tests for note origin links and UI workflow tests for segment selection to saved note.
+
+### M10.7 Add transcript segment review UI
+
+Intent: let the user inspect returned transcript segments without editing source transcript text.
+
+Acceptance criteria:
+
+- Completed jobs show transcript segments in chronological order.
+- Segment text is read-only.
+- Timestamp ranges are shown when available.
+- User can select one or more whole segments for note creation.
+- Selection remains usable for long transcript lists.
+
+Delivered:
+
+- Transcript job rows now use the app-wide expandable-row behavior.
+- Completed jobs load and display transcript segments inline.
+- Segment text is read-only and timestamp ranges are shown in a compact `m:ss-m:ss` format.
+- Users can select multiple whole segments for the upcoming note-creation workflow.
+- Long segment lists are constrained in a scrollable review area.
+- UI workflow tests cover completed-job segment display and multi-segment selection.
+
+Docs/contracts touched: UI information architecture, kanban.
+
+Test expectations: UI workflow tests for completed job segment display and multi-segment selection.
+
+### M10.6 Implement provider runner with test-sample fallback
+
+Intent: connect the job workflow to a provider abstraction while keeping default checks offline.
+
+Acceptance criteria:
+
+- A provider interface exists for YouTube transcript extraction.
+- Gemini implementation is isolated behind that interface.
+- Provider output can return company recognition candidates when available.
+- Automated tests use test samples/mocks and never require live Gemini credentials.
+- Live provider execution runs when the user creates a configured job or retries a queued/failed job.
+- Provider errors are stored on the job and displayed in UI.
+
+Delivered:
+
+- Added a transcript provider interface with provider output and provider error mapping.
+- Added an offline test-sample transcript provider that produces immutable transcript segment drafts.
+- Added an isolated unconfigured Gemini provider implementation that fails with `provider_not_configured` until credential wiring is implemented.
+- Added `run_video_transcript_job` command with explicit `providerMode`.
+- Running a queued job stores sample transcript segments and marks the job completed.
+- Provider failures are persisted on the transcript job with `status = failed`, `errorCode`, and user-readable error.
+- The early sample run action was replaced by live Gemini execution in later M10 slices; `test_sample` remains an internal test/development provider only.
+- Tests cover provider contracts and UI runner command behavior without live credentials or network.
+
+Docs/contracts touched: contracts, kanban.
+
+Test expectations: provider contract tests with test samples and job failure tests.
+
+### M10.5 Build transcript job UI shell
+
+Intent: add the first user-visible workflow for submitting a YouTube URL for a selected company and seeing job status.
+
+Acceptance criteria:
+
+- User can open a transcript workflow from Notebooks or a company workspace.
+- User enters a YouTube link in a field labeled `URL`.
+- User may optionally provide a ticker/company before transcription.
+- If no company is provided, the job remains visible as an unlinked transcript.
+- Company selection through the cached company lookup becomes mandatory only before saving selected transcript segments into a company notebook.
+- Job status is visible and refreshable.
+- Empty, queued, running, completed, and failed states are readable and compact.
+
+Delivered:
+
+- Transcripts screen now has a `URL`-first job creation form.
+- Company/ticker is optional before job creation and uses local tracked-company suggestions.
+- Invalid non-YouTube URLs are rejected before command execution.
+- Created jobs call `create_video_transcript_job` with nullable company ID and configured provider ID.
+- Existing jobs are refreshable and rendered as compact status rows.
+- Queued/completed/failed states have visible status indicators.
+- Unresolved company jobs remain visible and ready for the later company-resolution/provider slices.
+
+Docs/contracts touched: kanban.
+
+Test expectations: UI workflow test for opening the workflow, submitting a URL with a mocked command, and seeing status.
+
+### M10.4 Add Gemini settings and provider disclosure UI
+
+Intent: make the provider configuration explicit and privacy-visible before any live provider call.
+
+Acceptance criteria:
+
+- Settings exposes Gemini YouTube transcription configuration status.
+- Provider disclosure explains that YouTube URL/video content is sent to Gemini when the user starts a transcript job.
+- Secret handling follows the OS keychain contract; `.env` remains development/test-only.
+- Missing provider configuration is a clear recoverable state.
+- General AI analysis remains provider-neutral and separate from this setting.
+
+Delivered:
+
+- Settings shows Gemini as the selected YouTube transcription provider using the canonical `provider_gemini` ID.
+- Settings shows YouTube transcription credentials as `Not configured` until OS-keychain secret storage is implemented.
+- Settings discloses that starting a transcript job sends the YouTube URL and video content to Gemini.
+- General AI provider remains separate and unconfigured.
+- Migration `0018_youtube_transcription_provider_id.sql` upgrades older local settings from `gemini` to `provider_gemini`.
+- Storage validates future YouTube transcription provider updates against accepted provider IDs.
+
+Docs/contracts touched: contracts, kanban.
+
+Test expectations: UI/settings workflow tests for configured and missing-provider states using mocks.
+
+### M10.3 Add transcript command boundary and frontend types
+
+Intent: expose transcript storage through typed Tauri commands before building UI.
+
+Acceptance criteria:
+
+- `create_video_transcript_job` command exists with typed input/output.
+- Command input requires `URL`/YouTube source URL and allows nullable company ID.
+- `list_video_transcript_jobs` or equivalent job listing command exists for company-scoped UI.
+- `list_transcript_segments` command exists for a job.
+- Frontend TypeScript types match the command contracts.
+- Command tests/mocks cover success and validation errors.
+
+Delivered:
+
+- Tauri commands now expose transcript job creation, transcript job listing, transcript segment listing, and transcript job company resolution.
+- Frontend has typed transcript job and segment read models.
+- Transcripts placeholder loads local transcript jobs through `list_video_transcript_jobs` and displays command-backed job count/status.
+- UI command mocks cover transcript job list/create, segment list, and company resolution.
+
+Docs/contracts touched: kanban.
+
+Test expectations: Rust command/storage coverage and UI command mock coverage.
+
+### M10.2 Add transcript storage foundation
+
+Intent: create migration-managed local storage for transcript jobs and immutable transcript segments.
+
+Acceptance criteria:
+
+- SQLite migration creates transcript job and segment tables.
+- Jobs preserve company, provider, YouTube URL, status, timestamps, and error text.
+- Segments preserve company, job, optional timestamp range, optional speaker, language, text, and creation time.
+- Segment text is not updated through normal storage APIs after creation.
+- Storage can create/list jobs and create/list segments.
+
+Delivered:
+
+- Migration `0017_transcript_storage_foundation.sql` upgrades transcript tables to the accepted M10 contract.
+- Transcript jobs now support nullable company identity, company-resolution status, recognition candidates, source label, status, error code, timestamps, and error text.
+- Transcript segments now support nullable company identity and remain linked to their parent job.
+- Storage methods can create/list transcript jobs and create/list transcript segments.
+- Segment text is protected by a SQLite trigger so source transcript text cannot be updated in place.
+- Rust tests cover job creation/listing, segment creation/listing, company inheritance, migration count, and segment immutability.
+
+Docs/contracts touched: kanban.
+
+Test expectations: Rust migration/storage tests for job lifecycle, segment insertion/listing, and immutability.
+
+### M10.1 Finalize transcript contracts and data model
+
+Intent: make the M10 storage and command surface explicit before implementation.
+
+Acceptance criteria:
+
+- `docs/contracts.md` defines transcript job, transcript segment, and transcript-to-note command payloads with the fields needed for v1.
+- `docs/data-model.md` defines `transcript_jobs`, `transcript_segments`, and note-origin links to transcript segments.
+- Provider selection is documented as Gemini-only for YouTube transcription, not a default for general AI analysis.
+- Transcript source text immutability is documented.
+- Transcript jobs support URL-first creation with optional company/ticker.
+- Company resolution statuses cover provided, recognized, unresolved, and needs-user-selection states.
+- Error/status values are named before UI work starts.
+
+Delivered:
+
+- Transcript job and segment contracts now allow URL-first jobs with optional company identity.
+- Create-job and resolve-company command payloads are documented.
+- Job processing statuses, company-resolution statuses, and provider error codes are documented.
+- Data model documents nullable transcript company identity, company-resolution fields, immutable segments, and transcript note-origin requirements.
+
+Docs/contracts touched: contracts, data model, product spec, UI flows, UI information architecture, kanban.
+
+Test expectations: none beyond docs review for this slice.
 
 ### M9.7 Close M9
 

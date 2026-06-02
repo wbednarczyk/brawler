@@ -120,19 +120,27 @@ Intent: capture relevant management statements from a press conference.
 Flow:
 
 1. User opens Transcripts or a company workspace.
-2. User enters a YouTube URL and selects the target company.
-3. App creates a Gemini-backed transcript job.
-4. User sees job status while processing.
-5. Transcript segments appear with timestamps when available.
-6. User reviews transcript segments.
-7. User selects transcript segments, text ranges, or AI-suggested note drafts.
-8. User edits the note draft and saves it to the company notebook.
+2. User enters a YouTube video link in a field labeled `URL`.
+3. User may optionally provide the target company/ticker before transcription.
+4. App creates a Gemini-backed transcript job.
+5. If no company was provided, app attempts to recognize the company from the video/transcript result.
+6. If recognition fails, the transcript remains available as an unlinked transcript.
+7. User can optionally link the transcript to a company through the same local lookup used by Companies.
+8. User sees job status while processing.
+9. Transcript segments appear with timestamps when available.
+10. User reviews transcript segments.
+11. User selects one or more whole transcript segments.
+12. If the transcript is linked to a company, user edits the note draft and saves it to that company notebook.
 
 Acceptance criteria:
 
 - Gemini is used only as the preferred provider for YouTube transcription.
+- M10 completion requires real Gemini transcript generation for a supported public YouTube URL; sample transcript output is only for development and automated tests.
+- URL is the primary required input; company is optional upfront and optional after transcription.
+- Unlinked transcripts remain valid and viewable.
+- Company selection uses the same cached company lookup/autocomplete behavior as Companies when the user wants a company notebook note.
 - User confirms note content before saving.
-- Saved notes link to transcript segments and original YouTube URL.
+- Saved notes link to transcript segment IDs, original YouTube URL, provider/job context, and timestamp ranges when available.
 - Provider limits and privacy implications are visible before sending video data to the provider.
 
 ## Journey: Theme Selection

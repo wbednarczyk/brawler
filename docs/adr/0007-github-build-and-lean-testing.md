@@ -19,7 +19,7 @@ Testing will follow a lean layered strategy:
 - Test-sample-based adapter tests for external sources.
 - A small number of desktop smoke tests for startup, command availability, and local SQLite connectivity.
 
-Live network tests and provider/API-key tests are excluded from default CI. They may be added later as manual jobs.
+Live network tests and provider/API-key tests are excluded from default CI. M10 requires a manual or opt-in live Gemini smoke check before milestone closure, but that check must remain outside the default local/CI check set.
 
 Default workflows should use standard GitHub-hosted Linux runners only. Larger runners, scheduled workflows, macOS runners, and full packaging builds are excluded from default CI unless a later decision accepts the cost and value tradeoff. Because the repository is currently private, GitHub Actions minutes and artifact storage should be treated as constrained resources.
 

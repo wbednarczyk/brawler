@@ -2,7 +2,7 @@
 
 This document defines how Brawler should be built, checked, and tested during development.
 
-See also [Architecture](architecture.md), [Project Practices](project-practices.md), [Roadmap](roadmap.md), [Kanban](kanban.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
+See also [Architecture](architecture.md), [Project Practices](project-practices.md), [Roadmap](roadmap.md), [Kanban](kanban.md), [Live Smoke Tests](live-smoke-tests.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
 
 ## Goals
 
@@ -330,6 +330,7 @@ Rules:
 - Provider contract mapping should be tested with test samples.
 - Prompt/result shape should be tested without making live calls.
 - Live provider checks should be manual or local-only.
+- Required milestone live checks are documented in [Live Smoke Tests](live-smoke-tests.md) and must remain outside default CI/local checks.
 
 ## Quality Gates
 

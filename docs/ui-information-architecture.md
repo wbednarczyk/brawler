@@ -160,9 +160,11 @@ Milestone 4 starts this as a compact claim follow-up list backed by notebook ent
 Transcripts tab:
 
 - transcript jobs for this company
-- submit YouTube URL
+- submit YouTube `URL`
 - review transcript segments
 - create note from selected segments
+
+Global or notebook-level transcript entry starts from a required `URL` field and optional company/ticker field. If the company is omitted, the app should try to recognize it after transcription, but the transcript can remain unlinked for general market videos or any non-company-specific recording. Company selection is required only when saving selected segments into a company notebook.
 
 Metadata tab:
 
@@ -205,7 +207,7 @@ Purpose: manage YouTube transcription jobs across companies.
 
 Main regions:
 
-- submit job form: YouTube URL, target company
+- submit job form: YouTube URL, optional target company
 - job list: queued, running, succeeded, failed
 - transcript segment review
 - note draft pane
@@ -213,9 +215,14 @@ Main regions:
 Rules:
 
 - Gemini is preferred only for YouTube transcription.
+- M10 requires a real Gemini run path for supported public YouTube URLs; offline sample output is not a production user workflow.
+- Transcript jobs use the app-wide expandable-row pattern: click a job row to show or hide inline details.
+- Transcript jobs are standalone records first; company binding is optional.
 - Transcript segment text is immutable source output in v1.
+- Completed jobs show transcript segments in chronological order with timestamp ranges when available.
+- Segment selection works on whole transcript segments; finer text-range selection can be revisited after the first workflow is usable.
 - User edits note drafts, not transcript source text.
-- Saved notes preserve transcript segment and YouTube origin.
+- Saved company notebook notes preserve transcript segment and YouTube origin.
 
 ## Events Screen
 
@@ -269,7 +276,7 @@ Sections:
 
 - Appearance: dark/light/system theme, `night-neon` palette
 - Ingestion: polling interval, manual refresh defaults
-- AI providers: Gemini configuration for YouTube transcription, future general AI provider slots
+- AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls, future general AI provider slots
 - Privacy: local data location, provider data disclosure
 - About: codename, app version, license status
 

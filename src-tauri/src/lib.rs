@@ -1,8 +1,10 @@
 use serde::Serialize;
 use tauri::Manager;
 
+pub mod credentials;
 pub mod source_adapters;
 pub mod storage;
+pub mod transcript_providers;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +14,13 @@ pub struct HealthResponse {
 }
 
 mod commands {
-    use super::{source_adapters, storage, HealthResponse};
+    use super::{
+        credentials, source_adapters, storage,
+        transcript_providers::{
+            GeminiTranscriptProvider, TestSampleTranscriptProvider, VideoTranscriptProvider,
+        },
+        HealthResponse,
+    };
     use serde::Deserialize;
 
     #[derive(Debug, Deserialize)]
@@ -40,6 +48,19 @@ mod commands {
     #[serde(rename_all = "camelCase")]
     pub struct PruneOldFeedItemsInput {
         retention_days: Option<i64>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct RunVideoTranscriptJobInput {
+        job_id: String,
+        provider_mode: Option<String>,
+    }
+
+    #[derive(Debug, Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    pub struct SetGeminiTranscriptionApiKeyInput {
+        api_key: String,
     }
 
     #[tauri::command]
@@ -227,6 +248,16 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn create_note_from_transcript_selection(
+        input: storage::CreateNoteFromTranscriptSelectionInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::NotebookEntry, String> {
+        state
+            .create_note_from_transcript_selection(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
     pub fn update_notebook_entry(
         input: storage::NotebookEntryUpdate,
         state: tauri::State<'_, storage::AppState>,
@@ -254,6 +285,76 @@ mod commands {
         state
             .create_company_event(input)
             .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_video_transcript_jobs(
+        input: storage::TranscriptJobListInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::TranscriptJob>, String> {
+        state
+            .list_transcript_jobs(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn delete_video_transcript_job(
+        job_id: String,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<(), String> {
+        state
+            .delete_transcript_job(&job_id)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn create_video_transcript_job(
+        input: storage::NewTranscriptJob,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::TranscriptJob, String> {
+        state
+            .create_transcript_job(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn update_video_transcript_job(
+        input: storage::UpdateTranscriptJobInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::TranscriptJob, String> {
+        state
+            .update_transcript_job(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn list_transcript_segments(
+        transcript_job_id: String,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<Vec<storage::TranscriptSegment>, String> {
+        state
+            .list_transcript_segments(&transcript_job_id)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn resolve_transcript_job_company(
+        input: storage::ResolveTranscriptJobCompanyInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::TranscriptJob, String> {
+        state
+            .resolve_transcript_job_company(input)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub async fn run_video_transcript_job(
+        input: RunVideoTranscriptJobInput,
+        state: tauri::State<'_, storage::AppState>,
+    ) -> Result<storage::TranscriptJob, String> {
+        let state = state.inner().clone();
+
+        run_blocking_task(move || run_video_transcript_job_inner(&state, input)).await
     }
 
     #[tauri::command]
@@ -392,6 +493,70 @@ mod commands {
                     .to_owned(),
             ),
             _ => Err(format!("Unknown source adapter: {adapter_id}")),
+        }
+    }
+
+    fn run_video_transcript_job_inner(
+        state: &storage::AppState,
+        input: RunVideoTranscriptJobInput,
+    ) -> Result<storage::TranscriptJob, String> {
+        let provider_mode = input
+            .provider_mode
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or("provider_gemini");
+        let settings = state.get_settings().map_err(|error| error.to_string())?;
+        let provider: Box<dyn VideoTranscriptProvider> = match provider_mode {
+            "test_sample" => Box::new(TestSampleTranscriptProvider),
+            "provider_gemini" => {
+                let api_key = credentials::read_gemini_transcription_api_key().unwrap_or(None);
+                Box::new(
+                    GeminiTranscriptProvider::live(
+                        api_key,
+                        settings.ai_providers.youtube_transcription_model.clone(),
+                        settings.ai_providers.youtube_transcription_timeout_seconds,
+                    )
+                    .map_err(|error| error.to_string())?,
+                )
+            }
+            other => return Err(format!("Unknown transcript provider mode: {other}")),
+        };
+        let job = state
+            .get_transcript_job(&input.job_id)
+            .map_err(|error| error.to_string())?;
+
+        if job.status == "completed" {
+            return Ok(job);
+        }
+
+        state
+            .mark_transcript_job_running(&input.job_id)
+            .map_err(|error| error.to_string())?;
+
+        match provider.transcribe(&job) {
+            Ok(output) => {
+                for segment in output.segments {
+                    state
+                        .create_transcript_segment(storage::NewTranscriptSegment {
+                            transcript_job_id: input.job_id.clone(),
+                            company_id: job.company_id.clone(),
+                            start_seconds: segment.start_seconds,
+                            end_seconds: segment.end_seconds,
+                            speaker: segment.speaker,
+                            text: segment.text,
+                            language: segment.language,
+                        })
+                        .map_err(|error| error.to_string())?;
+                }
+
+                state
+                    .mark_transcript_job_completed(&input.job_id)
+                    .map_err(|error| error.to_string())
+            }
+            Err(error) => state
+                .mark_transcript_job_failed(&input.job_id, error.code(), &error.to_string())
+                .map_err(|storage_error| storage_error.to_string()),
         }
     }
 
@@ -776,6 +941,25 @@ mod commands {
             .update_settings(input)
             .map_err(|error| error.to_string())
     }
+
+    #[tauri::command]
+    pub fn get_gemini_transcription_credential_status(
+    ) -> Result<credentials::CredentialStatus, String> {
+        Ok(credentials::get_gemini_transcription_credential_status())
+    }
+
+    #[tauri::command]
+    pub fn set_gemini_transcription_api_key(
+        input: SetGeminiTranscriptionApiKeyInput,
+    ) -> Result<credentials::CredentialStatus, String> {
+        credentials::set_gemini_transcription_api_key(&input.api_key)
+            .map_err(|error| error.to_string())
+    }
+
+    #[tauri::command]
+    pub fn clear_gemini_transcription_api_key() -> Result<credentials::CredentialStatus, String> {
+        credentials::clear_gemini_transcription_api_key().map_err(|error| error.to_string())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -812,9 +996,17 @@ pub fn run() {
             commands::delete_unsaved_feed_items,
             commands::list_notebook_entries,
             commands::create_notebook_entry,
+            commands::create_note_from_transcript_selection,
             commands::update_notebook_entry,
             commands::list_company_events,
             commands::create_company_event,
+            commands::list_video_transcript_jobs,
+            commands::delete_video_transcript_job,
+            commands::create_video_transcript_job,
+            commands::update_video_transcript_job,
+            commands::list_transcript_segments,
+            commands::resolve_transcript_job_company,
+            commands::run_video_transcript_job,
             commands::list_source_adapters,
             commands::list_company_registry_entries,
             commands::refresh_sources,
@@ -822,7 +1014,10 @@ pub fn run() {
             commands::refresh_gpw_company_registry,
             commands::refresh_gpw_company_registry_if_stale,
             commands::get_settings,
-            commands::update_settings
+            commands::update_settings,
+            commands::get_gemini_transcription_credential_status,
+            commands::set_gemini_transcription_api_key,
+            commands::clear_gemini_transcription_api_key
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Brawler application");
@@ -835,6 +1030,6 @@ mod tests {
         let response = super::commands::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.9.0");
+        assert_eq!(response.version, "0.10.0");
     }
 }
