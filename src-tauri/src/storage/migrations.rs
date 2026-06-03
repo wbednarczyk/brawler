@@ -138,6 +138,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "diagnostic_events",
         sql: include_str!("../../migrations/0026_diagnostic_events.sql"),
     },
+    Migration {
+        version: 27,
+        name: "log_settings",
+        sql: include_str!("../../migrations/0027_log_settings.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

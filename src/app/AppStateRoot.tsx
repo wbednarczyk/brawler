@@ -464,6 +464,9 @@ export function AppStateRoot() {
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
     updatePollInterval,
+    updateLogLevel,
+    updateLogMaxFileBytes,
+    updateLogMaxFiles,
     updateShortcutBindings,
     updateTheme,
     updateYoutubeTranscriptionModel,
@@ -1473,6 +1476,9 @@ export function AppStateRoot() {
               onGeneralAnalysisProviderChange={updateGeneralAnalysisProvider}
               onGeneralAnalysisModelChange={updateGeneralAnalysisModel}
               onGeneralAnalysisTimeoutChange={updateGeneralAnalysisTimeout}
+              onLogLevelChange={updateLogLevel}
+              onLogMaxFilesChange={updateLogMaxFiles}
+              onLogMaxFileBytesChange={updateLogMaxFileBytes}
               onGeminiApiKeyDraftChange={setGeminiApiKeyDraft}
               onSaveGeminiApiKey={saveGeminiApiKey}
               onClearGeminiApiKey={clearGeminiApiKey}

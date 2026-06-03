@@ -2,11 +2,12 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
+use crate::observability::redact_metadata;
+
 use super::{StorageError, StorageResult};
 
 const RETENTION_EVENT_LIMIT: i64 = 1_000;
 const RETENTION_DAYS: i64 = 7;
-const REDACTED: &str = "[redacted]";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,8 +60,7 @@ pub(crate) fn record_diagnostic_event(
         validate_identifier("scope_type", &scope.scope_type)?;
     }
 
-    let metadata =
-        redact_diagnostic_metadata(input.metadata.unwrap_or_else(|| Value::Object(Map::new())));
+    let metadata = redact_metadata(input.metadata.unwrap_or_else(|| Value::Object(Map::new())));
     let metadata_json = serde_json::to_string(&metadata)?;
     let scope_type = input.scope.as_ref().map(|scope| scope.scope_type.as_str());
     let scope_id = input
@@ -227,63 +227,6 @@ fn developer_mode_enabled(connection: &Connection) -> StorageResult<bool> {
             key: "developer_mode",
             value: "missing".to_owned(),
         })
-}
-
-fn redact_diagnostic_metadata(value: Value) -> Value {
-    match value {
-        Value::Object(entries) => Value::Object(
-            entries
-                .into_iter()
-                .map(|(key, value)| {
-                    if is_sensitive_metadata_key(&key) {
-                        (key, Value::String(REDACTED.to_owned()))
-                    } else {
-                        (key, redact_diagnostic_metadata(value))
-                    }
-                })
-                .collect(),
-        ),
-        Value::Array(values) => {
-            Value::Array(values.into_iter().map(redact_diagnostic_metadata).collect())
-        }
-        value => value,
-    }
-}
-
-fn is_sensitive_metadata_key(key: &str) -> bool {
-    let normalized = key
-        .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
-        .collect::<String>()
-        .to_ascii_lowercase();
-
-    matches!(
-        normalized.as_str(),
-        "apikey"
-            | "authorization"
-            | "authtoken"
-            | "bearertoken"
-            | "accesstoken"
-            | "refreshtoken"
-            | "password"
-            | "privatekey"
-            | "licensekey"
-            | "licensesecret"
-            | "prompt"
-            | "fullprompt"
-            | "prompttext"
-            | "promptbody"
-            | "systemprompt"
-            | "userprompt"
-            | "sourcebody"
-            | "fullsourcebody"
-            | "bodytext"
-            | "fullbodytext"
-            | "transcripttext"
-            | "fulltranscripttext"
-            | "rawresponse"
-            | "providerrawresponse"
-    ) || normalized.contains("secret")
 }
 
 fn validate_required_value(key: &'static str, value: &str) -> StorageResult<()> {

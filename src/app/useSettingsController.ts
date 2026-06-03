@@ -79,6 +79,18 @@ export function useSettingsController({
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
 
+  function updateLogLevel(nextLevel: string) {
+    updateSettings({ logLevel: nextLevel });
+  }
+
+  function updateLogMaxFiles(nextMaxFiles: number) {
+    updateSettings({ logMaxFiles: nextMaxFiles });
+  }
+
+  function updateLogMaxFileBytes(nextMaxFileBytes: number) {
+    updateSettings({ logMaxFileBytes: nextMaxFileBytes });
+  }
+
   function disableDeveloperMode() {
     settingsApi.disableDeveloperMode()
       .then((response) => {
@@ -153,6 +165,9 @@ export function useSettingsController({
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
     updateLocale,
+    updateLogLevel,
+    updateLogMaxFileBytes,
+    updateLogMaxFiles,
     updatePollInterval,
     updateShortcutBindings,
     updateTheme,

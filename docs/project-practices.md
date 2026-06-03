@@ -17,6 +17,19 @@ Rules:
 - Every milestone closure should include real-use validation evidence appropriate to the milestone, such as a manual smoke test, packaged-app check, real source refresh, real API call, or real local workflow verification.
 - Default automated tests should remain deterministic and secret-free; live checks are manual or opt-in when they require credentials or external services.
 
+## Milestone Planning
+
+Every new milestone starts with explicit task planning and architecture decisions before implementation begins.
+
+Rules:
+
+- At the start of each milestone, break the milestone into the concrete tasks needed to deliver it and record the active task breakdown in [Kanban](kanban.md).
+- Present the important architecture decisions to the user before implementation. Keep each decision short, explain the practical options and tradeoffs, and require explicit user answers.
+- Do not guess on architecture. If ownership boundaries, storage shape, provider model, security posture, UI placement, configuration, persistence, background-job behavior, observability, or release impact are unclear, ask until the decision is clear enough to implement.
+- Architecture decisions must be settled before code changes for that milestone begin, except for small discovery spikes that are explicitly framed as research.
+- If the milestone description is missing something that would materially improve the application, its maintainability, or its user-facing workflow, propose it to the user instead of silently ignoring it.
+- Once decisions are made, update roadmap, kanban, contracts, architecture docs, or ADRs as needed before or alongside implementation so later agents inherit the decision.
+
 ## ADR Hygiene
 
 ADRs record durable architecture and policy decisions. They should stay current as part of normal feature work, not as a separate cleanup project.

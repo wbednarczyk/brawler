@@ -524,15 +524,19 @@ Non-goals:
 
 Goal: add conservative local runtime logs that complement developer diagnostics without introducing telemetry or leaking private material.
 
+Status: completed in `0.15.0`.
+
 Included:
 
 - local log files under the app data directory
+- Rust `log` facade with local JSON Lines file backend
 - append-only runtime logging for startup, command failures, source/provider failures, storage errors, and important background job transitions
 - shared redaction rules with diagnostics
-- log rotation, initially bounded by file count and size
-- conservative default log level with developer override through local configuration or environment
+- configurable log rotation, defaulting to five files of five MiB each
+- `info` default log level with developer override through Settings and environment
 - clear distinction between normal user-facing status, developer diagnostics, and runtime logs
-- Diagnostics panel may expose log status or a redacted log-summary copy action when Developer mode is active
+- Settings exposes always-visible local log configuration
+- Diagnostics panel exposes a Developer-mode full in-app log viewer, log status, redacted copy action, and open-logs-folder action
 - no broad filesystem permissions or arbitrary log-path browsing from React
 
 Exit criteria:
@@ -540,7 +544,9 @@ Exit criteria:
 - app writes bounded local logs in the app data/logs directory
 - logs rotate and do not grow without limit
 - logs do not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default
-- log level can be raised intentionally for development without changing production defaults
+- log level and rotation limits can be raised intentionally for development without changing production defaults
+- Settings can configure local log level and rotation limits
+- Diagnostics can inspect current logs when Developer mode is active
 - tests cover redaction and rotation behavior where practical
 - docs describe how local logs differ from diagnostics and user-facing errors
 

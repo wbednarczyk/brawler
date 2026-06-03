@@ -14,6 +14,144 @@
   align-items: end;
 }
 
+.diagnostics-sections {
+  display: grid;
+  gap: 12px;
+}
+
+.diagnostics-section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.diagnostics-section-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diagnostics-section-header:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.diagnostics-section-header h2 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.diagnostics-section-header small,
+.diagnostics-section-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diagnostics-section-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.section-chevron {
+  flex: 0 0 auto;
+  transition: transform 120ms ease;
+}
+
+.section-chevron-open {
+  transform: rotate(180deg);
+}
+
+.diagnostics-section-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 12px 12px;
+}
+
+.diagnostics-section-toolbar {
+  display: grid;
+  gap: 10px;
+}
+
+.diagnostics-log-status {
+  min-width: 0;
+}
+
+.diagnostics-log-viewer {
+  display: grid;
+  max-height: 420px;
+  gap: 8px;
+  overflow: auto;
+}
+
+.diagnostic-log-entry {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.diagnostic-log-entry-main {
+  display: grid;
+  grid-template-columns: minmax(180px, 260px) minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diagnostic-log-entry-main:hover {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.diagnostic-log-entry-main > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-log-entry-main > span:first-child {
+  display: grid;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diagnostic-log-entry strong {
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.diagnostic-log-entry pre {
+  max-height: 180px;
+  margin: 0 10px 10px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+
 .diagnostics-list {
   display: grid;
   gap: 8px;

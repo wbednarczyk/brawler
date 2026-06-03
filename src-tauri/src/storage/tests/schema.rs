@@ -10,7 +10,7 @@ fn creates_clean_database_with_initial_schema() {
         })
         .expect("schema_migrations should exist");
 
-    assert_eq!(migration_count, 26);
+    assert_eq!(migration_count, 27);
 
     let company_table_exists: bool = connection
         .query_row(
@@ -73,6 +73,13 @@ fn seeds_default_settings_and_source_adapters() {
             |row| row.get(0),
         )
         .expect("developer mode setting should be seeded");
+    let log_level: String = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'log_level'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("log level setting should be seeded");
 
     let gpw_adapter: (String, bool) = connection
         .query_row(
@@ -128,6 +135,7 @@ fn seeds_default_settings_and_source_adapters() {
     assert_eq!(locale, "en");
     assert_eq!(general_analysis_model, "gemini-2.5-flash");
     assert_eq!(developer_mode, "false");
+    assert_eq!(log_level, "info");
     assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), false));
     assert_eq!(registry_adapter_name, "GPW Company Registry");
     assert_eq!(bankier_adapter_name, "Bankier Giełda RSS");
@@ -148,8 +156,8 @@ fn reports_database_status() {
     let connection = open_in_memory_database().expect("database should initialize");
     let status = database_status(&connection).expect("status should be available");
 
-    assert_eq!(status.applied_migrations, 26);
+    assert_eq!(status.applied_migrations, 27);
     assert_eq!(status.companies, 0);
     assert_eq!(status.source_adapters, 11);
-    assert_eq!(status.settings, 14);
+    assert_eq!(status.settings, 17);
 }

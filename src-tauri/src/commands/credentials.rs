@@ -14,6 +14,15 @@ pub fn get_gemini_transcription_credential_status(
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<credentials::CredentialStatus, String> {
     let status = credentials::get_gemini_transcription_credential_status();
+    log::info!(
+        "module=credentials stage=credential_checked providerId={} purpose={} secretKind={} configured={} storage={} devFallbackAvailable={}",
+        status.provider_id,
+        status.purpose,
+        status.secret_kind,
+        status.configured,
+        status.storage,
+        status.dev_fallback_available
+    );
     record_credential_diagnostic(
         &state,
         "credential_checked",
@@ -32,10 +41,22 @@ pub fn set_gemini_transcription_api_key(
 ) -> Result<credentials::CredentialStatus, String> {
     match credentials::set_gemini_transcription_api_key(&input.api_key) {
         Ok(status) => {
+            log::info!(
+                "module=credentials stage=stored providerId={} purpose={} secretKind={} configured={} storage={}",
+                status.provider_id,
+                status.purpose,
+                status.secret_kind,
+                status.configured,
+                status.storage
+            );
             record_credential_diagnostic(&state, "stored", "info", "Credential saved.", &status);
             Ok(status)
         }
         Err(error) => {
+            log::error!(
+                "module=credentials stage=failed providerId=provider_gemini purpose=youtube_transcription secretKind=api_key errorClass=credential_save_error error={}",
+                error
+            );
             record_credential_error_diagnostic(
                 &state,
                 "failed",
@@ -53,10 +74,22 @@ pub fn clear_gemini_transcription_api_key(
 ) -> Result<credentials::CredentialStatus, String> {
     match credentials::clear_gemini_transcription_api_key() {
         Ok(status) => {
+            log::info!(
+                "module=credentials stage=cleared providerId={} purpose={} secretKind={} configured={} storage={}",
+                status.provider_id,
+                status.purpose,
+                status.secret_kind,
+                status.configured,
+                status.storage
+            );
             record_credential_diagnostic(&state, "cleared", "info", "Credential cleared.", &status);
             Ok(status)
         }
         Err(error) => {
+            log::error!(
+                "module=credentials stage=failed providerId=provider_gemini purpose=youtube_transcription secretKind=api_key errorClass=credential_clear_error error={}",
+                error
+            );
             record_credential_error_diagnostic(
                 &state,
                 "failed",

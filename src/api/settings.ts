@@ -10,6 +10,9 @@ export type UpdateSettingsInput = {
   generalAnalysisProvider?: string;
   generalAnalysisModel?: string;
   generalAnalysisTimeoutSeconds?: number;
+  logLevel?: string;
+  logMaxFiles?: number;
+  logMaxFileBytes?: number;
   shortcutBindings?: Record<string, ShortcutBindingSetting>;
 };
 

@@ -1,6 +1,7 @@
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
+import { LogSettings } from "./LogSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import type { SettingsScreenProps } from "./settingsTypes";
@@ -28,6 +29,9 @@ export function SettingsScreen({
   onGeneralAnalysisProviderChange,
   onGeneralAnalysisModelChange,
   onGeneralAnalysisTimeoutChange,
+  onLogLevelChange,
+  onLogMaxFilesChange,
+  onLogMaxFileBytesChange,
   onGeminiApiKeyDraftChange,
   onSaveGeminiApiKey,
   onClearGeminiApiKey,
@@ -97,6 +101,12 @@ export function SettingsScreen({
           shortcutBindings={shortcutBindings}
           shortcutReferences={shortcutReferences}
           onShortcutBindingsChange={onShortcutBindingsChange}
+        />
+        <LogSettings
+          settings={settings}
+          onLogLevelChange={onLogLevelChange}
+          onLogMaxFilesChange={onLogMaxFilesChange}
+          onLogMaxFileBytesChange={onLogMaxFileBytesChange}
         />
 
         {settingsError ? (

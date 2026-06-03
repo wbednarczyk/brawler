@@ -5,6 +5,7 @@ pub fn refresh_sources_for_trigger(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
+    log::info!("module=sources stage=running adapterId=all trigger={trigger}");
     record_source_diagnostic(
         state,
         "all",
@@ -17,6 +18,15 @@ pub fn refresh_sources_for_trigger(
 
     match result {
         Ok(result) => {
+            log::info!(
+                "module=sources stage=succeeded adapterId={} trigger={} itemsFetched={} itemsCreated={} itemsMatched={} itemsUnmatched={}",
+                result.adapter_id,
+                trigger,
+                result.items_fetched,
+                result.items_created,
+                result.items_matched,
+                result.items_unmatched
+            );
             record_source_diagnostic(
                 state,
                 "all",
@@ -28,6 +38,11 @@ pub fn refresh_sources_for_trigger(
             Ok(result)
         }
         Err(error) => {
+            log::error!(
+                "module=sources stage=failed adapterId=all trigger={} errorClass=source_refresh_error error={}",
+                trigger,
+                error
+            );
             record_source_diagnostic(
                 state,
                 "all",
@@ -50,6 +65,12 @@ pub fn refresh_source_for_trigger(
     trigger: &str,
     date: Option<&str>,
 ) -> Result<storage::SourceIngestionResult, String> {
+    log::info!(
+        "module=sources stage=running adapterId={} trigger={} hasDate={}",
+        adapter_id,
+        trigger,
+        date.is_some()
+    );
     record_source_diagnostic(
         state,
         adapter_id,
@@ -66,6 +87,15 @@ pub fn refresh_source_for_trigger(
 
     match result {
         Ok(result) => {
+            log::info!(
+                "module=sources stage=succeeded adapterId={} trigger={} itemsFetched={} itemsCreated={} itemsMatched={} itemsUnmatched={}",
+                result.adapter_id,
+                trigger,
+                result.items_fetched,
+                result.items_created,
+                result.items_matched,
+                result.items_unmatched
+            );
             record_source_diagnostic(
                 state,
                 adapter_id,
@@ -77,6 +107,12 @@ pub fn refresh_source_for_trigger(
             Ok(result)
         }
         Err(error) => {
+            log::error!(
+                "module=sources stage=failed adapterId={} trigger={} errorClass=source_refresh_error error={}",
+                adapter_id,
+                trigger,
+                error
+            );
             record_source_diagnostic(
                 state,
                 adapter_id,

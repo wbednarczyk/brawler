@@ -131,25 +131,6 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
-### Implement local logs framework
-
-Intent: add bounded local runtime logs that complement structured diagnostics without introducing telemetry.
-
-Acceptance criteria:
-
-- Local logs are written under the app data logs directory.
-- Runtime logs cover startup, command failures, source/provider failures, storage errors, and important background job transitions.
-- Logs rotate by bounded file count and size.
-- Log level defaults are conservative and can be raised only through intentional developer configuration.
-- Logs share redaction rules with diagnostics.
-- Logs do not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
-- Developer diagnostics may show log status or copy a redacted log summary when Developer mode is active.
-- Logs remain local-only; no remote shipping, hosted crash reporting, or OpenTelemetry exporter is introduced.
-
-Docs/contracts touched: roadmap, architecture, project practices, engineering workflow if commands are added.
-
-Test expectations: redaction tests and rotation tests where practical.
-
 ### Implement local metrics exposure
 
 Intent: expose modest local operational metrics for app health and performance in Developer mode without product analytics.
@@ -220,6 +201,40 @@ Docs/contracts touched: agent contract, project brief, kanban, kanban archive, a
 Test expectations: docs-only change; link and stale-reference checks are sufficient.
 
 ## Done
+
+### M15: Implement local logs framework
+
+Delivered:
+
+- Added local JSON Lines runtime logging through the Rust `log` facade.
+- Added app data `logs` directory initialization and `brawler.log` file output.
+- Added configurable log settings in SQLite: level, max files, and max file size.
+- Added environment overrides: `BRAWLER_LOG_LEVEL`, `BRAWLER_LOG_MAX_FILES`, and `BRAWLER_LOG_MAX_FILE_MEGABYTES`.
+- Added bounded rotation with defaults of five files and five MiB each.
+- Extracted shared observability redaction for diagnostics and logs.
+- Added Settings controls for local log level and rotation limits.
+- Added Developer-mode Diagnostics log status, full in-app log viewer, redacted copy action, and open-logs-folder action.
+- Added typed log commands and frontend API wrappers.
+- Added operational log producers for startup, source refresh, AI analysis, and credential workflows.
+- Updated ADR 0015, roadmap, architecture, contracts, product spec, UI information architecture, engineering workflow, and Kanban.
+- Bumped app version to `0.15.0`.
+
+Validation:
+
+- `rtk cargo test storage::tests::settings` passed.
+- `rtk cargo test storage::tests::schema` passed.
+- `rtk cargo test observability` passed.
+- `rtk cargo test logging` passed.
+- `rtk cargo test jobs::ai_analysis` passed.
+- `rtk cargo test jobs::source_refresh` passed.
+- `rtk npm typecheck` passed.
+- `rtk npm test -- App.test.tsx` passed.
+- `rtk npm test -- --run` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk npm build` passed.
+- `rtk cargo test` passed.
+- `rtk git diff --check` passed.
 
 ### Implement developer mode diagnostics framework
 

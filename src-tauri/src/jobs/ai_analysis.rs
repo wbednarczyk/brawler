@@ -23,6 +23,14 @@ pub fn run_ai_analysis_job(
         return Ok(job);
     }
 
+    log::info!(
+        "module=ai_analysis stage=running jobId={} feedItemId={} providerId={} model={} hasCustomQuestion={}",
+        job.id,
+        job.feed_item_id,
+        job.provider_id,
+        job.model,
+        job.custom_question.is_some()
+    );
     record_ai_analysis_diagnostic(
         state,
         &job,
@@ -41,6 +49,14 @@ pub fn run_ai_analysis_job(
     let provider = match provider_for_job(state, &job) {
         Ok(provider) => provider,
         Err(error) => {
+            log::error!(
+                "module=ai_analysis stage=failed jobId={} feedItemId={} providerId={} model={} errorClass=provider_error error={}",
+                job.id,
+                job.feed_item_id,
+                job.provider_id,
+                job.model,
+                error
+            );
             let failed = state
                 .mark_ai_analysis_job_failed(job_id, "provider_error", &error)
                 .map_err(|storage_error| storage_error.to_string())?;
@@ -87,6 +103,13 @@ pub fn run_ai_analysis_job(
     state
         .mark_ai_analysis_job_running(job_id)
         .map_err(|error| error.to_string())?;
+    log::info!(
+        "module=ai_analysis stage=request_sent jobId={} providerId={} model={} hasCustomQuestion={}",
+        job.id,
+        provider.provider_id(),
+        provider.model(),
+        request.custom_question.is_some()
+    );
     record_ai_analysis_diagnostic(
         state,
         &job,
@@ -103,6 +126,12 @@ pub fn run_ai_analysis_job(
 
     match provider.analyze(&request) {
         Ok(output) => {
+            log::info!(
+                "module=ai_analysis stage=response_received jobId={} providerId={} model={}",
+                job.id,
+                provider.provider_id(),
+                provider.model()
+            );
             record_ai_analysis_diagnostic(
                 state,
                 &job,
@@ -165,6 +194,14 @@ pub fn run_ai_analysis_job(
         }
         Err(error) => {
             let error_code = error.code();
+            log::error!(
+                "module=ai_analysis stage=failed jobId={} feedItemId={} providerId={} model={} errorCode={}",
+                job.id,
+                job.feed_item_id,
+                job.provider_id,
+                job.model,
+                error_code
+            );
             let failed = state
                 .mark_ai_analysis_job_failed(job_id, error_code, &error.to_string())
                 .map_err(|storage_error| storage_error.to_string())?;

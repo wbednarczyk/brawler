@@ -108,6 +108,21 @@ export type ClearDiagnosticEventsResult = {
   eventsDeleted: number;
 };
 
+export type LogStatus = {
+  logsDir: string;
+  currentFileBytes: number;
+  rotatedFileCount: number;
+  level: string;
+  maxFiles: number;
+  maxFileBytes: number;
+};
+
+export type LogEntry = {
+  fileName: string;
+  lineNumber: number;
+  record: Record<string, unknown>;
+};
+
 export type SourceIngestionResult = {
   adapterId: string;
   itemsFetched: number;
@@ -341,6 +356,11 @@ export type UserSettings = {
     generalAnalysisTimeoutSeconds: number;
   };
   aiAnalysisMode: string;
+  logs: {
+    level: string;
+    maxFiles: number;
+    maxFileBytes: number;
+  };
   shortcutBindings: Record<string, ShortcutBindingSetting>;
 };
 

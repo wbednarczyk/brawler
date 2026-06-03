@@ -49,7 +49,9 @@ pub use ai_analysis::{
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
 pub use migrations::{open_database, open_in_memory_database};
-pub use settings::{AiProviderSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings};
+pub use settings::{
+    AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
+};
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
     ResolveTranscriptJobCompanyInput, TranscriptJob, TranscriptJobListInput, TranscriptNoteDraft,
