@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { act, fireEvent } from "@testing-library/react";
 import {
   appTestState,
   currentWeekTestDate,
@@ -143,6 +144,38 @@ describe("Companies screen workflows", () => {
     await user.click(within(workspace).getByRole("button", { name: "Metadata" }));
 
     expect(within(screen.getByLabelText("Company metadata")).getByText("PLOPTTC00011")).toBeInTheDocument();
+  });
+
+  it("runs company workspace navigation shortcuts", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+
+    expect(await screen.findByLabelText("Company workspace")).toBeInTheDocument();
+    expect(screen.getByLabelText("Company workspace")).toHaveTextContent("CD PROJEKT S.A.");
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "L", code: "KeyL" });
+    });
+    expect(await screen.findByLabelText("Company notebook")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "H", code: "KeyH" });
+    });
+    expect(await screen.findByLabelText("Company feed")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "J", code: "KeyJ", shiftKey: true });
+    });
+    expect(screen.getByLabelText("Company workspace")).toHaveTextContent("ORLEN S.A.");
+
+    await act(async () => {
+      fireEvent.keyDown(document, { key: "K", code: "KeyK", shiftKey: true });
+    });
+    expect(screen.getByLabelText("Company workspace")).toHaveTextContent("CD PROJEKT S.A.");
   });
 
   it("lists and creates company notebook entries", async () => {

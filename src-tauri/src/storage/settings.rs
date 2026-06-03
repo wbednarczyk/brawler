@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +14,17 @@ pub struct AiProviderSettings {
     pub general_analysis_provider: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutBindingSetting {
+    pub key: String,
+    pub alt_key: Option<bool>,
+    pub ctrl_key: Option<bool>,
+    pub meta_key: Option<bool>,
+    pub shift_key: Option<bool>,
+    pub disabled: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UserSettings {
@@ -24,6 +37,7 @@ pub struct UserSettings {
     pub yaml_import_export_status: &'static str,
     pub ai_providers: AiProviderSettings,
     pub ai_analysis_mode: String,
+    pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -37,6 +51,7 @@ pub struct SettingsUpdate {
     pub youtube_transcription_timeout_seconds: Option<i64>,
     pub general_analysis_provider: Option<String>,
     pub ai_analysis_mode: Option<String>,
+    pub shortcut_bindings: Option<HashMap<String, ShortcutBindingSetting>>,
 }
 
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -64,6 +79,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             )?),
         },
         ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
+        shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
     })
 }
 
@@ -156,6 +172,12 @@ pub(crate) fn update_settings(
         update_setting(connection, "ai_analysis_mode", &ai_analysis_mode)?;
     }
 
+    if let Some(shortcut_bindings) = input.shortcut_bindings {
+        validate_shortcut_bindings(&shortcut_bindings)?;
+        let value = serde_json::to_string(&shortcut_bindings).map_err(StorageError::from)?;
+        update_setting(connection, "shortcut_bindings", &value)?;
+    }
+
     get_settings(connection)
 }
 
@@ -173,6 +195,15 @@ fn setting_i64(connection: &Connection, key: &'static str) -> StorageResult<i64>
     value
         .parse::<i64>()
         .map_err(|_| StorageError::InvalidSettingValue { key, value })
+}
+
+fn setting_json<T>(connection: &Connection, key: &'static str) -> StorageResult<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let value = setting_string(connection, key)?;
+
+    serde_json::from_str::<T>(&value).map_err(StorageError::from)
 }
 
 fn update_setting(connection: &Connection, key: &'static str, value: &str) -> StorageResult<()> {
@@ -213,6 +244,32 @@ fn validate_allowed_setting_i64(
             value: value.to_string(),
         })
     }
+}
+
+fn validate_shortcut_bindings(
+    shortcut_bindings: &HashMap<String, ShortcutBindingSetting>,
+) -> StorageResult<()> {
+    for (shortcut_id, binding) in shortcut_bindings {
+        if shortcut_id.trim().is_empty() {
+            return Err(StorageError::InvalidSettingValue {
+                key: "shortcut_bindings",
+                value: "empty shortcut id".to_owned(),
+            });
+        }
+
+        if binding.disabled.unwrap_or(false) {
+            continue;
+        }
+
+        if binding.key.trim().is_empty() {
+            return Err(StorageError::InvalidSettingValue {
+                key: "shortcut_bindings",
+                value: format!("{shortcut_id}: empty key"),
+            });
+        }
+    }
+
+    Ok(())
 }
 
 fn empty_setting_to_none(value: String) -> Option<String> {

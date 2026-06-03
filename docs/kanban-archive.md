@@ -4,6 +4,40 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M12.9 Close M12 workflow polish
+
+Intent: verify M12 end to end and close documentation/versioning once locale and shortcut workflows are stable.
+
+Acceptance criteria:
+
+- English and Polish locale workflows pass focused UI tests.
+- Critical shortcut workflows pass focused UI tests.
+- Project practices record that future feature work must evaluate whether new or changed user actions should be shortcut actions.
+- App build/typecheck/test commands pass.
+- Roadmap records M12 completion status.
+- Kanban M12 cards move out of active context.
+- Version is bumped if this milestone closure is treated as a release boundary.
+
+Delivered:
+
+- Closed M12 locale work with English as the first-run default and Polish as the first additional app locale.
+- Closed M12 shortcut work with configurable app, Inbox, Company, and notebook shortcut actions, plus Settings discoverability, persistence, reset, disable, and conflict warnings.
+- Preserved visible UI controls for shortcut actions and scoped shortcuts to avoid text-entry and browser/WebView conflicts.
+- Recorded the continuous development rule that future feature work must check whether new or changed user actions should be shortcut actions.
+- Moved M12 active cards out of the active Kanban context.
+- Version bumped to `0.12.0` in package, Rust, lock, Tauri config, and Rust health-test files.
+
+Docs/contracts touched: roadmap, kanban, kanban archive, version files.
+
+Test expectations:
+
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed, 76 tests.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed, 92 tests, 2 ignored.
+
 ### M10.13 Close M10
 
 Intent: finish milestone documentation and versioning only after the packaged app workflow works end to end.
@@ -2136,4 +2170,3 @@ Acceptance criteria:
 Docs/contracts touched: product spec, UI information architecture, roadmap.
 
 Test expectations: workflow tests for critical shortcuts.
-

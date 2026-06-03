@@ -1,5 +1,5 @@
 import { callCommand } from "./tauri";
-import type { AppLocale, Theme, UserSettings } from "./types";
+import type { AppLocale, ShortcutBindingSetting, Theme, UserSettings } from "./types";
 
 export type UpdateSettingsInput = {
   theme?: Theme;
@@ -7,6 +7,7 @@ export type UpdateSettingsInput = {
   pollIntervalSeconds?: number;
   youtubeTranscriptionModel?: string;
   youtubeTranscriptionTimeoutSeconds?: number;
+  shortcutBindings?: Record<string, ShortcutBindingSetting>;
 };
 
 export function getSettings() {

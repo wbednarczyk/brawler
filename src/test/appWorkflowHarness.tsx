@@ -367,6 +367,7 @@ aiProviders: {
   generalAnalysisProvider: null,
 },
 aiAnalysisMode: "source_grounded",
+shortcutBindings: {},
 };
 
 const initialGeminiCredentialStatus = {
@@ -658,7 +659,7 @@ beforeEach(() => {
         appliedMigrations: 22,
         companies: 0,
         sourceAdapters: 11,
-settings: 10,
+        settings: 11,
       });
     }
 
@@ -1262,6 +1263,7 @@ settings: 10,
           pollIntervalSeconds?: number;
           youtubeTranscriptionModel?: string;
           youtubeTranscriptionTimeoutSeconds?: number;
+          shortcutBindings?: Record<string, unknown>;
         };
       }).input;
 
@@ -1270,6 +1272,7 @@ settings: 10,
         theme: input.theme ?? appTestState.settingsResponse.theme,
         locale: input.locale ?? appTestState.settingsResponse.locale,
         pollIntervalSeconds: input.pollIntervalSeconds ?? appTestState.settingsResponse.pollIntervalSeconds,
+        shortcutBindings: input.shortcutBindings ?? appTestState.settingsResponse.shortcutBindings,
         aiProviders: {
           ...appTestState.settingsResponse.aiProviders,
           youtubeTranscriptionModel:

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useMemo, useRef, type ReactNode } from "react";
 import { Activity, CheckCircle2, Moon, RefreshCw, Search, Sun } from "lucide-react";
 import type {
   DatabaseStatus,
@@ -6,11 +6,14 @@ import type {
   SourceIngestionResult,
   SourceRefreshTrigger,
   AppLocale,
+  ShortcutBindingSetting,
   Theme,
 } from "../api/types";
 import { makeTextTranslator, makeTranslator } from "../shared/locale";
+import { useKeyboardShortcuts } from "../shared/shortcuts";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { sections, type Section } from "./navigation";
+import { createAppShortcutDefinitions, type AppShortcutActionMap } from "./shortcuts";
 import { databaseIndicatorClass } from "./theme";
 
 type SourceStatusTone = "ok" | "warn" | "danger";
@@ -40,6 +43,8 @@ type AppShellProps = {
   sourceStatusSummary: SourceStatusSummary;
   theme: Theme;
   locale: AppLocale;
+  shortcutBindings: Record<string, ShortcutBindingSetting>;
+  shortcutActions: AppShortcutActionMap;
   totalUnreadFeedItems: number;
   updateTheme: (theme: Theme) => void;
   openSourceStatus: () => void;
@@ -64,12 +69,62 @@ export function AppShell({
   sourceStatusSummary,
   theme,
   locale,
+  shortcutBindings,
+  shortcutActions,
   totalUnreadFeedItems,
   updateTheme,
   openSourceStatus,
 }: AppShellProps) {
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
+  const shortcuts = useMemo(() => createAppShortcutDefinitions(
+    {
+      "app.openInbox": () => setActiveSection("Inbox"),
+      "app.openCompanies": () => setActiveSection("Companies"),
+      "app.openNotebooks": () => setActiveSection("Notebooks"),
+      "app.openEvents": () => setActiveSection("Events"),
+      "app.openTranscripts": () => setActiveSection("Transcripts"),
+      "app.openSources": () => setActiveSection("Sources"),
+      "app.openSettings": () => setActiveSection("Settings"),
+      "app.focusSearch": () => {
+        searchInputRef.current?.focus();
+      },
+      "app.refreshSources": () => {
+        if (sourceRefreshState !== "refreshing") {
+          void refreshSources("manual");
+        }
+      },
+      "app.refreshDatabase": () => {
+        if (dbRefreshState !== "refreshing") {
+          refreshDatabaseBackedViews();
+        }
+      },
+      "inbox.nextItem": shortcutActions["inbox.nextItem"],
+      "inbox.previousItem": shortcutActions["inbox.previousItem"],
+      "inbox.toggleRead": shortcutActions["inbox.toggleRead"],
+      "inbox.toggleSaved": shortcutActions["inbox.toggleSaved"],
+      "inbox.openSource": shortcutActions["inbox.openSource"],
+      "inbox.createNote": shortcutActions["inbox.createNote"],
+      "company.nextCompany": shortcutActions["company.nextCompany"],
+      "company.previousCompany": shortcutActions["company.previousCompany"],
+      "company.nextTab": shortcutActions["company.nextTab"],
+      "company.previousTab": shortcutActions["company.previousTab"],
+      "notebook.editSelected": shortcutActions["notebook.editSelected"],
+      "notebook.saveCurrent": shortcutActions["notebook.saveCurrent"],
+    },
+    shortcutBindings,
+  ), [
+    dbRefreshState,
+    refreshDatabaseBackedViews,
+    refreshSources,
+    setActiveSection,
+    shortcutActions,
+    shortcutBindings,
+    sourceRefreshState,
+  ]);
+
+  useKeyboardShortcuts(shortcuts);
 
   function sourceRefreshButtonLabel() {
     if (sourceRefreshState === "refreshing") {
@@ -149,6 +204,7 @@ export function AppShell({
             <input
               aria-label={t("app.search.ariaLabel")}
               placeholder={t("app.search.placeholder")}
+              ref={searchInputRef}
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />

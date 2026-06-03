@@ -10,7 +10,7 @@ fn creates_clean_database_with_initial_schema() {
         })
         .expect("schema_migrations should exist");
 
-    assert_eq!(migration_count, 22);
+    assert_eq!(migration_count, 23);
 
     let company_table_exists: bool = connection
         .query_row(
@@ -118,8 +118,8 @@ fn reports_database_status() {
     let connection = open_in_memory_database().expect("database should initialize");
     let status = database_status(&connection).expect("status should be available");
 
-    assert_eq!(status.applied_migrations, 22);
+    assert_eq!(status.applied_migrations, 23);
     assert_eq!(status.companies, 0);
     assert_eq!(status.source_adapters, 11);
-    assert_eq!(status.settings, 10);
+    assert_eq!(status.settings, 11);
 }

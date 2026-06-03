@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   currentWeekTestDate,
@@ -56,6 +57,34 @@ describe("Settings screen workflows", () => {
     ).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Gemini is used only for YouTube transcription.")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("YouTube transcription timeout")).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Shortcuts are ignored while typing in fields and editors.")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Open Inbox")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Focus global search")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Ctrl+1")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Ctrl+K")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("F9")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Shift+F9")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Select next inbox item")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Edit selected notebook entry")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Shortcut key Open Inbox"), {
+      target: { value: "I" },
+    });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_settings", {
+        input: {
+          shortcutBindings: expect.objectContaining({
+            "app.openInbox": expect.objectContaining({
+              key: "I",
+              ctrlKey: true,
+            }),
+          }),
+        },
+      });
+    });
+    expect(screen.getByLabelText("Shortcut key Open Inbox")).toHaveValue("I");
 
     await user.selectOptions(screen.getByLabelText("Settings theme"), "light");
 
@@ -79,6 +108,9 @@ describe("Settings screen workflows", () => {
     expect(screen.getByPlaceholderText("Szukaj spółek, informacji, notatek")).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("heading", { name: "Źródła" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("heading", { name: "Czyszczenie kanału" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Skróty klawiaturowe" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Otwórz Inbox")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Ustaw fokus na wyszukiwaniu globalnym")).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Interwał odpytywania źródeł w ustawieniach"), "1800");
 

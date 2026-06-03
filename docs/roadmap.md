@@ -382,7 +382,7 @@ Exit criteria:
 
 ## Milestone 11: Modularization
 
-Status: completed.
+Status: completed as part of the `0.12.0` branch history.
 
 Goal: complete the broad modularization pass and turn modularity into a continuous development rule.
 
@@ -404,12 +404,15 @@ Exit criteria:
 
 ## Milestone 12: Keyboard Shortcuts, Locale, And Workflow Polish
 
+Status: completed in `0.12.0`.
+
 Goal: make repeated desktop use faster and add an extensible app-locale framework while keeping English as the default.
 
 Included:
 
 - app-wide shortcut map
 - discoverable shortcut reference in Settings or Help/About
+- configurable shortcut bindings for all defined shortcut actions
 - Inbox shortcuts for navigation, read/unread, save/unsave, opening source, search focus, and refresh
 - Company/notebook shortcuts where they reduce repeated work, including `Ctrl+E` to open the editor for the selected note or claim and `Ctrl+S` to save the item currently being edited
 - conflict checks with native Windows/browser text-editing shortcuts
@@ -425,6 +428,7 @@ Exit criteria:
 
 - common daily inbox actions can be performed from the keyboard
 - shortcuts are visible/discoverable in the app
+- shortcuts can be configured, disabled, and reset without changing code
 - every shortcut action remains available through visible UI controls
 - text inputs and editors do not accidentally trigger global shortcuts
 - user can switch between English and Polish from Settings
@@ -433,6 +437,15 @@ Exit criteria:
 - the locale implementation can add future supported locales through locale resources/configuration instead of per-screen rewrites
 - source-provided text remains in its original language
 - workflow tests cover the most important shortcuts
+
+Completion notes:
+
+- Added an extensible SQLite-backed locale setting with English default and Polish as the first additional language.
+- Added shared locale resources and wired app-owned static copy across the implemented app shell and screens without translating source, company, transcript, notebook, URL, or attribution content.
+- Added a configurable shortcut framework with Settings discoverability, per-action enablement, reset, persistence, and conflict warnings.
+- Added app, Inbox, Company, and notebook workflow shortcuts while preserving visible UI controls.
+- Recorded the ongoing development rule that future feature work must evaluate whether changed user actions should be shortcut actions.
+- Verified frontend typecheck, full frontend tests, frontend build, Rust format, Rust clippy, and Rust tests during milestone closure.
 
 ## Milestone 13: General AI Analysis Framework
 
@@ -531,6 +544,28 @@ Intent:
 - design sync, encryption, conflict resolution, account model, and privacy guarantees before implementation
 
 Not in scope for v1. Cloud backup/sync remains a separate design discussion.
+
+## Future Study: Google Finance Source Value
+
+Goal: determine whether Google Finance can legally and reliably improve the investor workflow before adding it to source implementation scope.
+
+Questions:
+
+- What user value would Google Finance add beyond existing official reports, public/RSS media sources, company registry data, and future AI analysis?
+- Is there an official, documented, and permitted access path suitable for a desktop app, or would use depend on fragile/restricted scraping?
+- Which data would be useful if permitted: price snapshots, market news, related companies, financial summaries, watchlist enrichment, or company identity matching?
+- Does Google Finance coverage improve GPW support enough to justify adapter complexity, or is it more useful for later US/EU market expansion?
+- How would attribution, refresh cadence, rate limits, data freshness, and source diagnostics appear in the existing source adapter model?
+- Are there better official/public alternatives for the same data with clearer usage terms?
+
+Decision criteria:
+
+- Do not implement unless usage terms and access path are acceptable for local-first desktop use.
+- Prefer source-adapter integration only if the data can be fetched through a stable, allowed mechanism and represented with durable attribution.
+- If useful only for manual links or user-opened research, treat it as an external-link affordance rather than ingestion.
+- If the study recommends implementation, record the source policy and adapter design in Source Strategy or a source-specific ADR before coding.
+
+Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
 
 ## Future: Cloud Backup And Sync
 

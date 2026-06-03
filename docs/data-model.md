@@ -370,6 +370,7 @@ Initial keys:
 - `general_analysis_provider`
 - `ai_analysis_mode`
 - `settings_import_export_format`
+- `shortcut_bindings`
 
 Rules:
 
@@ -379,6 +380,7 @@ Rules:
 - Default YouTube transcription provider is `provider_gemini`.
 - Default YouTube transcription model is `gemini-2.5-flash`.
 - Default YouTube transcription timeout is `300` seconds.
+- Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.
 - General AI provider remains unset until the AI analysis framework milestone configures one. The first live implementation may use Gemini, but provider storage must remain extensible.
 - Default AI analysis mode is `source_grounded`.
 - Runtime settings live in SQLite.

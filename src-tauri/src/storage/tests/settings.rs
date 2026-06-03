@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 #[test]
 fn reads_default_settings_from_sqlite() {
@@ -28,6 +29,7 @@ fn reads_default_settings_from_sqlite() {
     );
     assert!(settings.ai_providers.general_analysis_provider.is_none());
     assert_eq!(settings.ai_analysis_mode, "source_grounded");
+    assert!(settings.shortcut_bindings.is_empty());
 }
 
 #[test]
@@ -68,6 +70,7 @@ fn updates_settings_through_storage_api() {
             youtube_transcription_timeout_seconds: Some(600),
             general_analysis_provider: None,
             ai_analysis_mode: None,
+            shortcut_bindings: None,
         })
         .expect("settings should update");
 
@@ -91,6 +94,68 @@ fn updates_settings_through_storage_api() {
 }
 
 #[test]
+fn updates_shortcut_bindings_through_storage_api() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let mut shortcut_bindings = HashMap::new();
+
+    shortcut_bindings.insert(
+        "app.openInbox".to_owned(),
+        ShortcutBindingSetting {
+            key: "I".to_owned(),
+            alt_key: Some(true),
+            ctrl_key: None,
+            meta_key: None,
+            shift_key: Some(true),
+            disabled: None,
+        },
+    );
+    shortcut_bindings.insert(
+        "app.refreshSources".to_owned(),
+        ShortcutBindingSetting {
+            key: "R".to_owned(),
+            alt_key: None,
+            ctrl_key: None,
+            meta_key: None,
+            shift_key: None,
+            disabled: Some(true),
+        },
+    );
+
+    let settings = state
+        .update_settings(SettingsUpdate {
+            theme: None,
+            locale: None,
+            poll_interval_seconds: None,
+            youtube_transcription_provider: None,
+            youtube_transcription_model: None,
+            youtube_transcription_timeout_seconds: None,
+            general_analysis_provider: None,
+            ai_analysis_mode: None,
+            shortcut_bindings: Some(shortcut_bindings),
+        })
+        .expect("settings should update");
+
+    assert_eq!(settings.shortcut_bindings.len(), 2);
+    assert_eq!(
+        settings
+            .shortcut_bindings
+            .get("app.openInbox")
+            .expect("shortcut binding should persist")
+            .key,
+        "I"
+    );
+    assert_eq!(
+        settings
+            .shortcut_bindings
+            .get("app.refreshSources")
+            .expect("shortcut binding should persist")
+            .disabled,
+        Some(true)
+    );
+}
+
+#[test]
 fn rejects_invalid_poll_interval_setting() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -104,6 +169,7 @@ fn rejects_invalid_poll_interval_setting() {
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
         ai_analysis_mode: None,
+        shortcut_bindings: None,
     });
 
     assert!(result.is_err());
@@ -123,6 +189,7 @@ fn rejects_invalid_theme_setting() {
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
         ai_analysis_mode: None,
+        shortcut_bindings: None,
     });
 
     assert!(result.is_err());
@@ -142,6 +209,7 @@ fn rejects_invalid_locale_setting() {
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
         ai_analysis_mode: None,
+        shortcut_bindings: None,
     });
 
     assert!(result.is_err());

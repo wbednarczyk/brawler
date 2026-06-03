@@ -669,7 +669,8 @@ Allowed statuses:
     "youtubeTranscriptionTimeoutSeconds": 300,
     "generalAnalysisProvider": null
   },
-  "aiAnalysisMode": "source_grounded"
+  "aiAnalysisMode": "source_grounded",
+  "shortcutBindings": {}
 }
 ```
 
@@ -703,6 +704,9 @@ Rules:
 - Settings must show whether YouTube transcription credentials are configured.
 - Settings must let the user save, replace, and clear the Gemini API key used only for YouTube transcription.
 - Settings must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
+- Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs.
+- Shortcut binding overrides are stored as a JSON object keyed by action ID. Missing entries use the current default binding for that action.
+- Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.
 - YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.

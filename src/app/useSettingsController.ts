@@ -1,7 +1,7 @@
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import * as credentialsApi from "../api/credentials";
 import * as settingsApi from "../api/settings";
-import type { AppLocale, CredentialStatus, Theme, UserSettings } from "../api/types";
+import type { AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
 
 type SettingsControllerInput = {
   geminiApiKeyDraft: string;
@@ -63,6 +63,10 @@ export function useSettingsController({
     updateSettings({ youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds });
   }
 
+  function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
+    updateSettings({ shortcutBindings: nextShortcutBindings });
+  }
+
   function saveGeminiApiKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const apiKey = geminiApiKeyDraft.trim();
@@ -107,6 +111,7 @@ export function useSettingsController({
     saveGeminiApiKey,
     updateLocale,
     updatePollInterval,
+    updateShortcutBindings,
     updateTheme,
     updateYoutubeTranscriptionModel,
     updateYoutubeTranscriptionTimeout,

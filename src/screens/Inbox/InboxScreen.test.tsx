@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   currentWeekTestDate,
@@ -173,6 +174,44 @@ describe("Inbox screen workflows", () => {
     expect(
       screen.getAllByText("Sample official report used to validate feed filtering and detail rendering.").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("runs inbox workflow shortcuts for selection, state, source, and notes", async () => {
+    renderApp();
+
+    expect(await screen.findByLabelText("Feed item details")).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "J", code: "KeyJ" });
+    expect(
+      screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
+    ).toBeGreaterThan(0);
+
+    fireEvent.keyDown(document, { key: "M", code: "KeyM" });
+    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+      input: {
+        id: "feed_sample_pkn_news",
+        read: false,
+        saved: true,
+      },
+    });
+
+    fireEvent.keyDown(document, { key: "S", code: "KeyS" });
+    expect(invoke).toHaveBeenCalledWith("update_feed_item_state", {
+      input: {
+        id: "feed_sample_pkn_news",
+        read: true,
+        saved: false,
+      },
+    });
+
+    fireEvent.keyDown(document, { key: "O", code: "KeyO" });
+    expect(openUrl).toHaveBeenCalledWith("https://example.local/sample/pkn");
+
+    fireEvent.keyDown(document, { key: "N", code: "KeyN" });
+    expect(await screen.findByRole("heading", { name: "Notebooks" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Notebook screen note title")).toHaveValue(
+      "Sample item proving the inbox layout can scan dense rows",
+    );
   });
 
   it("shows feed details only in the inbox", async () => {

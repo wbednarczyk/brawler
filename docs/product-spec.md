@@ -40,7 +40,7 @@ The global Notebooks and Transcripts navigation entries may begin as explicit pl
 
 Desktop notifications are out of scope for v1. Portfolio positions, cost basis, and trading workflows are out of scope.
 
-Keyboard shortcuts are in v1 scope as late workflow polish. They should speed up repeated inbox and research actions, but every shortcut action must remain available through visible UI controls. Shortcuts must be discoverable in the app and must not interfere with text editing in search fields, note editors, forms, or transcript selection workflows. Desired notebook shortcuts include `Ctrl+E` to open the editor for the selected note or claim and `Ctrl+S` to save the item currently being edited.
+Keyboard shortcuts are in v1 scope as late workflow polish. They should speed up repeated inbox and research actions, but every shortcut action must remain available through visible UI controls. Shortcuts must be discoverable and configurable in the app, including disabling and resetting defined shortcut actions. Shortcuts must not interfere with text editing in search fields, note editors, forms, or transcript selection workflows. Desired notebook shortcuts include `Ctrl+E` to open the editor for the selected note or claim and `Ctrl+S` to save the item currently being edited.
 
 ## Theme And Visual Direction
 

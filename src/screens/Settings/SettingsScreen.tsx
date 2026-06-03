@@ -1,6 +1,7 @@
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import type { SettingsScreenProps } from "./settingsTypes";
 import { makeTranslator } from "../../shared/locale";
@@ -16,9 +17,12 @@ export function SettingsScreen({
   geminiCredentialError,
   geminiCredentialInFlight,
   geminiApiKeyDraft,
+  shortcutBindings,
+  shortcutReferences,
   onThemeChange,
   onLocaleChange,
   onPollIntervalChange,
+  onShortcutBindingsChange,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
   onGeminiApiKeyDraftChange,
@@ -81,6 +85,12 @@ export function SettingsScreen({
           onGeminiApiKeyDraftChange={onGeminiApiKeyDraftChange}
           onOpenGeminiApiKeyPage={onOpenGeminiApiKeyPage}
           onSaveGeminiApiKey={onSaveGeminiApiKey}
+        />
+        <ShortcutSettings
+          locale={locale}
+          shortcutBindings={shortcutBindings}
+          shortcutReferences={shortcutReferences}
+          onShortcutBindingsChange={onShortcutBindingsChange}
         />
 
         {settingsError ? (

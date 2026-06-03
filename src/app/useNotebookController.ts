@@ -15,6 +15,8 @@ import {
   notebookTagFromFeedValue,
 } from "./notebookForms";
 
+type PreventableFormEvent = Pick<FormEvent<HTMLFormElement>, "preventDefault">;
+
 type NotebookControllerInput = {
   claimStatusDraft: string;
   companies: Company[];
@@ -208,8 +210,8 @@ export function useNotebookController({
     refreshNotebookEntries(company.id);
   }
 
-  function createNotebookEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function createNotebookEntry(event?: PreventableFormEvent) {
+    event?.preventDefault();
 
     if (!selectedCompany) {
       return;
@@ -230,8 +232,8 @@ export function useNotebookController({
       });
   }
 
-  function saveNotebookEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function saveNotebookEntry(event?: PreventableFormEvent) {
+    event?.preventDefault();
 
     if (!selectedNotebookEntry || !selectedCompany) {
       return;
@@ -350,8 +352,8 @@ export function useNotebookController({
     });
   }
 
-  function createNotebookScreenEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function createNotebookScreenEntry(event?: PreventableFormEvent) {
+    event?.preventDefault();
 
     if (!selectedNotebookScreenCompany) {
       return;
@@ -378,8 +380,8 @@ export function useNotebookController({
       });
   }
 
-  function saveNotebookScreenEntry(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function saveNotebookScreenEntry(event?: PreventableFormEvent) {
+    event?.preventDefault();
 
     if (!selectedNotebookScreenEntry || !selectedNotebookScreenCompany) {
       return;
