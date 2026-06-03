@@ -24,6 +24,10 @@ export function InboxScreen({
   filteredFeedItems,
   selectedFeedItem,
   selectedFeedCompany,
+  aiAnalysisJobsByFeedItemId,
+  aiAnalysisErrorByFeedItemId,
+  aiAnalysisRequestInFlightByFeedItemId,
+  aiAnalysisProviderConfigured,
   inboxStatusFilter,
   inboxWatchlistFilter,
   inboxCompanyFilter,
@@ -59,6 +63,9 @@ export function InboxScreen({
   updateSelectedFeedItem,
   openCompanyWorkspaceFromFeedItem,
   openFeedItemNoteDraft,
+  startFeedItemAiAnalysis,
+  refreshFeedItemAiAnalysis,
+  retryFeedItemAiAnalysis,
   resizeDetailPaneWithKeyboard,
   startDetailPaneResize,
   resizeDetailPane,
@@ -324,17 +331,24 @@ export function InboxScreen({
         title={text("Drag to resize feed details")}
       />
 
-      <InboxDetailPane
-        selectedFeedItem={selectedFeedItem}
-        selectedFeedCompany={selectedFeedCompany}
-        healthError={healthError}
-        databaseError={databaseError}
-        updateSelectedFeedItem={updateSelectedFeedItem}
-        openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
-        openFeedItemNoteDraft={openFeedItemNoteDraft}
-        feedItemSummary={feedItemSummary}
-        formatTimestamp={formatTimestamp}
-      />
+        <InboxDetailPane
+          selectedFeedItem={selectedFeedItem}
+          selectedFeedCompany={selectedFeedCompany}
+          aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
+          aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
+          aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
+          aiAnalysisProviderConfigured={aiAnalysisProviderConfigured}
+          healthError={healthError}
+          databaseError={databaseError}
+          updateSelectedFeedItem={updateSelectedFeedItem}
+          openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
+          openFeedItemNoteDraft={openFeedItemNoteDraft}
+          startFeedItemAiAnalysis={startFeedItemAiAnalysis}
+          refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
+          retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
+          feedItemSummary={feedItemSummary}
+          formatTimestamp={formatTimestamp}
+        />
     </>
   );
 }

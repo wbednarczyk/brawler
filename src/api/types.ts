@@ -40,6 +40,46 @@ export type FeedItemAttachment = {
   url: string;
 };
 
+export type AiAnalysisJob = {
+  id: string;
+  feedItemId: string;
+  promptPresetId: string;
+  customQuestion: string | null;
+  providerId: string;
+  model: string;
+  promptVersion: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  errorCode: string | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  result: AiAnalysisResult | null;
+};
+
+export type AiAnalysisResult = {
+  id: string;
+  aiAnalysisJobId: string | null;
+  feedItemId: string;
+  providerId: string;
+  model: string;
+  promptVersion: string;
+  summary: string;
+  significance: "low" | "medium" | "high" | "unknown";
+  reasoning: string;
+  language: string | null;
+  tags: string[];
+  sourceReferences: AiAnalysisSourceReference[];
+  createdAt: string;
+};
+
+export type AiAnalysisSourceReference = {
+  id: string;
+  sourceUrl: string;
+  label: string | null;
+  createdAt: string;
+};
+
 export type SourceIngestionResult = {
   adapterId: string;
   itemsFetched: number;
@@ -268,6 +308,8 @@ export type UserSettings = {
     youtubeTranscriptionModel: string;
     youtubeTranscriptionTimeoutSeconds: number;
     generalAnalysisProvider: string | null;
+    generalAnalysisModel: string;
+    generalAnalysisTimeoutSeconds: number;
   };
   aiAnalysisMode: string;
   shortcutBindings: Record<string, ShortcutBindingSetting>;

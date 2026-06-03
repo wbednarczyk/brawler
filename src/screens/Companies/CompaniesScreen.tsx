@@ -1,6 +1,6 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { CheckCircle2, LocateFixed, Plus, Search, Trash2, X } from "lucide-react";
-import type { Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
+import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
 import type { WatchlistFeedback } from "../../app/appTypes";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
@@ -34,6 +34,10 @@ export type CompaniesScreenProps = {
   companyWorkspaceTab: CompanyWorkspaceTab;
   selectedCompanyFeedItems: FeedItem[];
   selectedCompanyFeedItem: FeedItem | null;
+  aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
+  aiAnalysisErrorByFeedItemId: Record<string, string | null>;
+  aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
+  aiAnalysisProviderConfigured: boolean;
   selectedCompanyNotebookEntries: NotebookEntry[];
   isNotebookComposerOpen: boolean;
   notebookForm: NotebookForm;
@@ -69,6 +73,9 @@ export type CompaniesScreenProps = {
   updateFeedItemState: (item: FeedItem, update: (item: FeedItem) => FeedItem) => void;
   inspectCompanyFeedItem: (item: FeedItem) => void;
   openFeedItemNoteDraft: (item: FeedItem) => void;
+  startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
+  refreshFeedItemAiAnalysis: (itemId: string) => Promise<void>;
+  retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
   openCompanyInboxFilter: (company: Company) => void;
   setNotebookComposerOpen: Dispatch<SetStateAction<boolean>>;
   updateNotebookForm: (field: keyof NotebookForm, value: string) => void;
@@ -107,6 +114,10 @@ export function CompaniesScreen({
   companyWorkspaceTab,
   selectedCompanyFeedItems,
   selectedCompanyFeedItem,
+  aiAnalysisJobsByFeedItemId,
+  aiAnalysisErrorByFeedItemId,
+  aiAnalysisRequestInFlightByFeedItemId,
+  aiAnalysisProviderConfigured,
   selectedCompanyNotebookEntries,
   isNotebookComposerOpen,
   notebookForm,
@@ -142,6 +153,9 @@ export function CompaniesScreen({
   updateFeedItemState,
   inspectCompanyFeedItem,
   openFeedItemNoteDraft,
+  startFeedItemAiAnalysis,
+  refreshFeedItemAiAnalysis,
+  retryFeedItemAiAnalysis,
   openCompanyInboxFilter,
   setNotebookComposerOpen,
   updateNotebookForm,
@@ -478,6 +492,10 @@ export function CompaniesScreen({
                           companyWorkspaceTab={companyWorkspaceTab}
                           selectedCompanyFeedItems={selectedCompanyFeedItems}
                           selectedCompanyFeedItem={selectedCompanyFeedItem}
+                          aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
+                          aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
+                          aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
+                          aiAnalysisProviderConfigured={aiAnalysisProviderConfigured}
                           selectedCompanyNotebookEntries={selectedCompanyNotebookEntries}
                           isNotebookComposerOpen={isNotebookComposerOpen}
                           notebookForm={notebookForm}
@@ -496,6 +514,9 @@ export function CompaniesScreen({
                           updateFeedItemState={updateFeedItemState}
                           inspectCompanyFeedItem={inspectCompanyFeedItem}
                           openFeedItemNoteDraft={openFeedItemNoteDraft}
+                          startFeedItemAiAnalysis={startFeedItemAiAnalysis}
+                          refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
+                          retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
                           openCompanyInboxFilter={openCompanyInboxFilter}
                           setNotebookComposerOpen={setNotebookComposerOpen}
                           updateNotebookForm={updateNotebookForm}

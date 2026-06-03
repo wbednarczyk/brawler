@@ -119,6 +119,146 @@ summary.feed-body-heading::-webkit-details-marker {
   display: none;
 }
 
+.ai-analysis-panel {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
+  border-radius: 8px;
+  background:
+    linear-gradient(var(--surface-raised), var(--surface-raised)) padding-box,
+    linear-gradient(120deg, var(--primary), var(--accent), color-mix(in srgb, var(--primary) 54%, var(--text))) border-box;
+  background-size: auto, 220% 220%;
+  animation: ai-panel-border 9s ease infinite;
+}
+
+.ai-analysis-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-analysis-header h3 {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  font-size: 14px;
+}
+
+.ai-analysis-header p,
+.ai-analysis-empty,
+.ai-analysis-result p,
+.ai-analysis-error p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.ai-analysis-presets,
+.ai-analysis-footer,
+.ai-analysis-tags,
+.ai-analysis-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ai-analysis-question {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-analysis-question label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-analysis-question textarea {
+  width: 100%;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  font: inherit;
+  font-size: 12px;
+}
+
+.ai-analysis-question textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary) 48%, transparent);
+  outline-offset: 1px;
+}
+
+.ai-analysis-result {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+}
+
+.ai-analysis-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.ai-analysis-result p {
+  margin: 0;
+  color: var(--text);
+}
+
+.ai-analysis-reasoning {
+  color: var(--muted) !important;
+}
+
+.ai-analysis-tags span {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  font-size: 11px;
+}
+
+.ai-analysis-sources a {
+  color: var(--primary);
+  font-size: 12px;
+}
+
+.ai-analysis-error {
+  display: grid;
+  gap: 8px;
+}
+
+@keyframes ai-panel-border {
+  0% {
+    background-position: 0 0, 0% 50%;
+  }
+  50% {
+    background-position: 0 0, 100% 50%;
+  }
+  100% {
+    background-position: 0 0, 0% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-analysis-panel {
+    animation: none;
+  }
+}
+
 summary.feed-body-heading::before {
   content: "›";
   margin-right: 2px;

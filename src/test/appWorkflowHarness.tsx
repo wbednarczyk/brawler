@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, vi } from "vitest";
 import { App } from "../App";
+import type { AiAnalysisJob, AppLocale, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
 
 export { screen, waitFor, within } from "@testing-library/react";
 export { default as userEvent } from "@testing-library/user-event";
@@ -352,7 +353,7 @@ cik: string | null;
 lei: string | null;
 };
 
-const initialSettings = {
+const initialSettings: UserSettings = {
 theme: "dark",
 locale: "en",
 accentPalette: "night-neon",
@@ -365,6 +366,8 @@ aiProviders: {
   youtubeTranscriptionModel: "gemini-2.5-flash",
   youtubeTranscriptionTimeoutSeconds: 300,
   generalAnalysisProvider: null,
+  generalAnalysisModel: "gemini-2.5-flash",
+  generalAnalysisTimeoutSeconds: 90,
 },
 aiAnalysisMode: "source_grounded",
 shortcutBindings: {},
@@ -632,6 +635,7 @@ export const appTestState = {
   transcriptJobsResponse: initialTranscriptJobs,
   companyRegistryEntriesResponse: initialCompanyRegistryEntries,
   notebookEntriesResponse: [] as TestNotebookEntry[],
+  aiAnalysisJobsResponse: {} as Record<string, AiAnalysisJob[]>,
   settingsResponse: initialSettings,
   refreshSourcesError: null as string | null,
   geminiCredentialStatusResponse: initialGeminiCredentialStatus,
@@ -644,6 +648,7 @@ beforeEach(() => {
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
   appTestState.companyRegistryEntriesResponse = initialCompanyRegistryEntries;
   appTestState.notebookEntriesResponse = [];
+  appTestState.aiAnalysisJobsResponse = {};
   appTestState.settingsResponse = initialSettings;
   appTestState.refreshSourcesError = null;
   appTestState.geminiCredentialStatusResponse = initialGeminiCredentialStatus;
@@ -1258,12 +1263,15 @@ beforeEach(() => {
     if (command === "update_settings") {
       const input = (args as {
         input: {
-          theme?: string;
-          locale?: string;
+          theme?: Theme;
+          locale?: AppLocale;
           pollIntervalSeconds?: number;
           youtubeTranscriptionModel?: string;
           youtubeTranscriptionTimeoutSeconds?: number;
-          shortcutBindings?: Record<string, unknown>;
+          generalAnalysisProvider?: string;
+          generalAnalysisModel?: string;
+          generalAnalysisTimeoutSeconds?: number;
+          shortcutBindings?: Record<string, ShortcutBindingSetting>;
         };
       }).input;
 
@@ -1281,10 +1289,103 @@ beforeEach(() => {
           youtubeTranscriptionTimeoutSeconds:
             input.youtubeTranscriptionTimeoutSeconds ??
             appTestState.settingsResponse.aiProviders.youtubeTranscriptionTimeoutSeconds,
+          generalAnalysisProvider:
+            input.generalAnalysisProvider ??
+            appTestState.settingsResponse.aiProviders.generalAnalysisProvider,
+          generalAnalysisModel:
+            input.generalAnalysisModel ??
+            appTestState.settingsResponse.aiProviders.generalAnalysisModel,
+          generalAnalysisTimeoutSeconds:
+            input.generalAnalysisTimeoutSeconds ??
+            appTestState.settingsResponse.aiProviders.generalAnalysisTimeoutSeconds,
         },
       };
 
       return Promise.resolve(appTestState.settingsResponse);
+    }
+
+    if (command === "list_ai_analysis") {
+      const input = (args as { input: { feedItemId: string } }).input;
+
+      return Promise.resolve(appTestState.aiAnalysisJobsResponse[input.feedItemId] ?? []);
+    }
+
+    if (command === "start_ai_analysis") {
+      const input = (args as {
+        input: { feedItemId: string; promptPresetId?: string; customQuestion?: string };
+      }).input;
+      const item =
+        appTestState.feedItemsResponse.find((feedItem) => feedItem.id === input.feedItemId) ??
+        initialFeedItems.find((feedItem) => feedItem.id === input.feedItemId) ??
+        initialFeedItems[0];
+      const createdAt = new Date("2026-01-01T10:00:00.000Z").toISOString();
+      const job: AiAnalysisJob = {
+        id: `ai_job_${input.feedItemId}_${appTestState.aiAnalysisJobsResponse[input.feedItemId]?.length ?? 0}`,
+        feedItemId: input.feedItemId,
+        promptPresetId: input.promptPresetId ?? "default_summary",
+        customQuestion: input.customQuestion ?? null,
+        providerId: appTestState.settingsResponse.aiProviders.generalAnalysisProvider ?? "provider_gemini",
+        model: appTestState.settingsResponse.aiProviders.generalAnalysisModel,
+        promptVersion: "analysis_v1",
+        status: "succeeded",
+        errorCode: null,
+        error: null,
+        createdAt,
+        startedAt: createdAt,
+        finishedAt: createdAt,
+        result: {
+          id: `ai_result_${input.feedItemId}`,
+          aiAnalysisJobId: null,
+          feedItemId: input.feedItemId,
+          providerId: appTestState.settingsResponse.aiProviders.generalAnalysisProvider ?? "provider_gemini",
+          model: appTestState.settingsResponse.aiProviders.generalAnalysisModel,
+          promptVersion: "analysis_v1",
+          summary: `AI summary for ${item.title}`,
+          significance: "medium",
+          reasoning: "Grounded in the selected feed item summary and source metadata.",
+          language: item.language,
+          tags: ["analysis", "feed"],
+          sourceReferences: [
+            {
+              id: `ai_source_${input.feedItemId}`,
+              sourceUrl: item.sourceUrl,
+              label: item.source,
+              createdAt,
+            },
+          ],
+          createdAt,
+        },
+      };
+
+      appTestState.aiAnalysisJobsResponse[input.feedItemId] = [
+        job,
+        ...(appTestState.aiAnalysisJobsResponse[input.feedItemId] ?? []),
+      ];
+
+      return Promise.resolve(job);
+    }
+
+    if (command === "retry_ai_analysis") {
+      const { jobId } = args as { jobId: string };
+      const feedItemId =
+        Object.entries(appTestState.aiAnalysisJobsResponse).find(([, jobs]) =>
+          jobs.some((job) => job.id === jobId),
+        )?.[0] ?? initialFeedItems[0].id;
+      const job = appTestState.aiAnalysisJobsResponse[feedItemId]?.find((candidate) => candidate.id === jobId);
+
+      if (!job) {
+        return Promise.reject(new Error("AI analysis job not found"));
+      }
+
+      const retriedJob: AiAnalysisJob = {
+        ...job,
+        status: "succeeded",
+        errorCode: null,
+        error: null,
+      };
+      appTestState.aiAnalysisJobsResponse[feedItemId] = [retriedJob];
+
+      return Promise.resolve(retriedJob);
     }
 
     if (command === "update_feed_item_state") {

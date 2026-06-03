@@ -1,5 +1,5 @@
 import type { KeyboardEvent, PointerEvent } from "react";
-import type { Company, FeedItem, Watchlist } from "../../api/types";
+import type { AiAnalysisJob, Company, FeedItem, Watchlist } from "../../api/types";
 
 export type InboxStatusFilter = "all" | "unread" | "saved";
 
@@ -19,6 +19,10 @@ export type InboxScreenProps = {
   filteredFeedItems: FeedItem[];
   selectedFeedItem: FeedItem | null;
   selectedFeedCompany: Company | null;
+  aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
+  aiAnalysisErrorByFeedItemId: Record<string, string | null>;
+  aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
+  aiAnalysisProviderConfigured: boolean;
   inboxStatusFilter: InboxStatusFilter;
   inboxWatchlistFilter: string;
   inboxCompanyFilter: string;
@@ -54,6 +58,9 @@ export type InboxScreenProps = {
   updateSelectedFeedItem: (update: (item: FeedItem) => FeedItem) => void;
   openCompanyWorkspaceFromFeedItem: (item: FeedItem) => void;
   openFeedItemNoteDraft: (item: FeedItem) => void;
+  startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
+  refreshFeedItemAiAnalysis: (itemId: string) => Promise<void>;
+  retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
   resizeDetailPaneWithKeyboard: (event: KeyboardEvent<HTMLDivElement>) => void;
   startDetailPaneResize: (event: PointerEvent<HTMLDivElement>) => void;
   resizeDetailPane: (event: PointerEvent<HTMLDivElement>) => void;

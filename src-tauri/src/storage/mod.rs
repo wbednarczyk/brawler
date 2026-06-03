@@ -27,6 +27,7 @@ use crate::source_adapters::gpw_market_events::{
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+mod ai_analysis;
 mod companies;
 mod error;
 mod events;
@@ -40,6 +41,10 @@ mod transcripts;
 mod types;
 mod watchlists;
 
+pub use ai_analysis::{
+    AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
+    NewAiAnalysisJob, NewAiAnalysisSourceReference,
+};
 pub use error::{StorageError, StorageResult};
 pub use migrations::{open_database, open_in_memory_database};
 pub use settings::{AiProviderSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings};
@@ -247,6 +252,12 @@ impl AppState {
         feed::update_feed_item_state(&connection, input)
     }
 
+    pub fn get_feed_item(&self, feed_item_id: &str) -> StorageResult<FeedItem> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        feed::get_feed_item(&connection, feed_item_id)
+    }
+
     pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
         let mut connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -439,6 +450,50 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         settings::update_settings(&connection, input)
+    }
+
+    pub fn create_ai_analysis_job(&self, input: NewAiAnalysisJob) -> StorageResult<AiAnalysisJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        ai_analysis::create_ai_analysis_job(&connection, input)
+    }
+
+    pub fn list_ai_analysis_jobs(&self, feed_item_id: &str) -> StorageResult<Vec<AiAnalysisJob>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        ai_analysis::list_ai_analysis_jobs(&connection, feed_item_id)
+    }
+
+    pub fn get_ai_analysis_job(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        ai_analysis::get_ai_analysis_job(&connection, job_id)
+    }
+
+    pub fn mark_ai_analysis_job_running(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        ai_analysis::mark_ai_analysis_job_running(&connection, job_id)
+    }
+
+    pub fn complete_ai_analysis_job(
+        &self,
+        input: CompletedAiAnalysis,
+    ) -> StorageResult<AiAnalysisJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        ai_analysis::complete_ai_analysis_job(&connection, input)
+    }
+
+    pub fn mark_ai_analysis_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<AiAnalysisJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        ai_analysis::mark_ai_analysis_job_failed(&connection, job_id, error_code, error)
     }
 }
 

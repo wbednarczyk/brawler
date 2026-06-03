@@ -7,6 +7,9 @@ export type UpdateSettingsInput = {
   pollIntervalSeconds?: number;
   youtubeTranscriptionModel?: string;
   youtubeTranscriptionTimeoutSeconds?: number;
+  generalAnalysisProvider?: string;
+  generalAnalysisModel?: string;
+  generalAnalysisTimeoutSeconds?: number;
   shortcutBindings?: Record<string, ShortcutBindingSetting>;
 };
 

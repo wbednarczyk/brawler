@@ -7,7 +7,7 @@ WINDOWS_TARGET := x86_64-pc-windows-msvc
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
 
-.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check smoke-gemini-transcript smoke-keyring flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -19,6 +19,8 @@ help:
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
 	@printf "  make smoke-gemini-transcript\n"
 	@printf "                            Opt-in live Gemini YouTube transcript smoke test\n"
+	@printf "  make smoke-gemini-analysis\n"
+	@printf "                            Opt-in live Gemini feed-item analysis smoke test\n"
 	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
 	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
 	@printf "  make package-windows-from-linux\n"
@@ -63,6 +65,25 @@ smoke-gemini-transcript:
 		exit 1; \
 	fi
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_transcribes_youtube_url -- --ignored --nocapture
+
+smoke-gemini-analysis:
+	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \
+		printf "GEMINI_API_KEY is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL:-}" ]; then \
+		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE:-}" ]; then \
+		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY:-}" ]; then \
+		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_analyzes_feed_item -- --ignored --nocapture
 
 smoke-keyring:
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture

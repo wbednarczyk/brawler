@@ -43,6 +43,7 @@ Recommended workflow:
 
 - Run `make check` in WSL before pushing or opening a pull request.
 - Run `make build` in WSL when validating frontend production output.
+- Use `make smoke-gemini-transcript`, `make smoke-gemini-analysis`, and `make smoke-keyring` only as documented opt-in live smoke tests; they require local credentials or OS/runtime state and are not part of default CI.
 - When closing a milestone, bump the app minor version in all package manifests before handing the branch back for commit/merge.
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.

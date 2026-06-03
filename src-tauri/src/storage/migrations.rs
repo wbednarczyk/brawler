@@ -123,6 +123,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "shortcut_bindings",
         sql: include_str!("../../migrations/0023_shortcut_bindings.sql"),
     },
+    Migration {
+        version: 24,
+        name: "ai_analysis_jobs",
+        sql: include_str!("../../migrations/0024_ai_analysis_jobs.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

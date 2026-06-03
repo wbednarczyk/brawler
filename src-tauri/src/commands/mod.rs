@@ -1,3 +1,4 @@
+pub mod ai_analysis;
 pub mod companies;
 pub mod credentials;
 pub mod events;

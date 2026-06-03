@@ -48,6 +48,9 @@ pub fn run() {
             commands::feed::update_feed_item_state,
             commands::feed::prune_old_feed_items,
             commands::feed::delete_unsaved_feed_items,
+            commands::ai_analysis::start_ai_analysis,
+            commands::ai_analysis::list_ai_analysis,
+            commands::ai_analysis::retry_ai_analysis,
             commands::notebooks::list_notebook_entries,
             commands::notebooks::create_notebook_entry,
             commands::notebooks::create_note_from_transcript_selection,
@@ -84,6 +87,6 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.12.0");
+        assert_eq!(response.version, "0.13.0");
     }
 }

@@ -46,6 +46,36 @@ describe("Inbox screen workflows", () => {
     expect(screen.getByText("Sample")).toBeInTheDocument();
   });
 
+  it("starts AI analysis from a selected feed item", async () => {
+    const user = userEvent.setup();
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      aiProviders: {
+        ...appTestState.settingsResponse.aiProviders,
+        generalAnalysisProvider: "provider_gemini",
+      },
+    };
+
+    renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Summarize impact" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("start_ai_analysis", {
+        input: {
+          feedItemId: "feed_sample_cdr_report",
+          promptPresetId: "default_summary",
+          customQuestion: undefined,
+        },
+      });
+    });
+    expect(await screen.findByText("AI summary for Current report placeholder for watchlist company")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "GPW ESPI/EBI" })).toHaveAttribute(
+      "href",
+      "https://www.gpw.pl/komunikaty",
+    );
+  });
+
   it("opens the matching company workspace from an inbox feed item", async () => {
     const user = userEvent.setup();
 

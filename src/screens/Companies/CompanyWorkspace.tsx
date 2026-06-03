@@ -14,6 +14,7 @@ import {
 import type { Company } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { StatusPill } from "../../shared/components/StatusPill";
 import { useLocale } from "../../shared/locale";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
@@ -25,6 +26,10 @@ type CompanyWorkspaceProps = Pick<
   | "companyWorkspaceTab"
   | "selectedCompanyFeedItems"
   | "selectedCompanyFeedItem"
+  | "aiAnalysisJobsByFeedItemId"
+  | "aiAnalysisErrorByFeedItemId"
+  | "aiAnalysisRequestInFlightByFeedItemId"
+  | "aiAnalysisProviderConfigured"
   | "selectedCompanyNotebookEntries"
   | "isNotebookComposerOpen"
   | "notebookForm"
@@ -43,6 +48,9 @@ type CompanyWorkspaceProps = Pick<
   | "updateFeedItemState"
   | "inspectCompanyFeedItem"
   | "openFeedItemNoteDraft"
+  | "startFeedItemAiAnalysis"
+  | "refreshFeedItemAiAnalysis"
+  | "retryFeedItemAiAnalysis"
   | "openCompanyInboxFilter"
   | "setNotebookComposerOpen"
   | "updateNotebookForm"
@@ -72,6 +80,10 @@ export function CompanyWorkspace({
   companyWorkspaceTab,
   selectedCompanyFeedItems,
   selectedCompanyFeedItem,
+  aiAnalysisJobsByFeedItemId,
+  aiAnalysisErrorByFeedItemId,
+  aiAnalysisRequestInFlightByFeedItemId,
+  aiAnalysisProviderConfigured,
   selectedCompanyNotebookEntries,
   isNotebookComposerOpen,
   notebookForm,
@@ -90,6 +102,9 @@ export function CompanyWorkspace({
   updateFeedItemState,
   inspectCompanyFeedItem,
   openFeedItemNoteDraft,
+  startFeedItemAiAnalysis,
+  refreshFeedItemAiAnalysis,
+  retryFeedItemAiAnalysis,
   openCompanyInboxFilter,
   setNotebookComposerOpen,
   updateNotebookForm,
@@ -320,6 +335,16 @@ export function CompanyWorkspace({
                       ))}
                     </div>
                   ) : null}
+                  <FeedAiAnalysisPanel
+                    feedItem={selectedCompanyFeedItem}
+                    jobs={aiAnalysisJobsByFeedItemId[selectedCompanyFeedItem.id] ?? []}
+                    error={aiAnalysisErrorByFeedItemId[selectedCompanyFeedItem.id] ?? null}
+                    providerConfigured={aiAnalysisProviderConfigured}
+                    requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedCompanyFeedItem.id] ?? false}
+                    onStart={startFeedItemAiAnalysis}
+                    onRefresh={refreshFeedItemAiAnalysis}
+                    onRetry={retryFeedItemAiAnalysis}
+                  />
                 </aside>
               ) : null}
             </div>
