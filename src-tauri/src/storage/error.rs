@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum StorageError {
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("invalid setting value for {key}: {value}")]
     InvalidSettingValue { key: &'static str, value: String },
     #[error("invalid notebook value for {key}: {value}")]

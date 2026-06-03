@@ -48,6 +48,7 @@ type TranscriptControllerInput = {
   transcriptDescriptionDraftByJobId: Record<string, string>;
   transcriptJobForm: TranscriptJobForm;
   transcriptNoteForm: NotebookForm;
+  text: (value: string) => string;
 };
 
 const missingGeminiCredentialMessage =
@@ -92,6 +93,7 @@ export function useTranscriptController({
   transcriptDescriptionDraftByJobId,
   transcriptJobForm,
   transcriptNoteForm,
+  text,
 }: TranscriptControllerInput) {
   function refreshTranscriptJobs(companyId: string | null = null) {
     return transcriptsApi.listVideoTranscriptJobs({ companyId })
@@ -269,7 +271,9 @@ export function useTranscriptController({
 
   function deleteTranscriptJob(job: TranscriptJob) {
     const label = job.sourceLabel ?? job.sourceUrl;
-    const confirmed = window.confirm(`Delete transcript job "${label}"? Stored transcript segments for this job will also be removed.`);
+    const confirmed = window.confirm(
+      `${text("Delete transcript job")} "${label}"? ${text("Stored transcript segments for this job will also be removed.")}`,
+    );
 
     if (!confirmed) {
       return;

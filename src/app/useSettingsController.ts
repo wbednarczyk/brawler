@@ -1,7 +1,7 @@
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import * as credentialsApi from "../api/credentials";
 import * as settingsApi from "../api/settings";
-import type { CredentialStatus, Theme, UserSettings } from "../api/types";
+import type { AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
 
 type SettingsControllerInput = {
   geminiApiKeyDraft: string;
@@ -11,7 +11,9 @@ type SettingsControllerInput = {
   setGeminiCredentialStatus: Dispatch<SetStateAction<CredentialStatus | null>>;
   setSettings: Dispatch<SetStateAction<UserSettings | null>>;
   setSettingsError: Dispatch<SetStateAction<string | null>>;
+  setLocale: Dispatch<SetStateAction<AppLocale>>;
   setTheme: Dispatch<SetStateAction<Theme>>;
+  text: (value: string) => string;
 };
 
 export function useSettingsController({
@@ -22,12 +24,15 @@ export function useSettingsController({
   setGeminiCredentialStatus,
   setSettings,
   setSettingsError,
+  setLocale,
   setTheme,
+  text,
 }: SettingsControllerInput) {
   function updateSettings(input: settingsApi.UpdateSettingsInput) {
     settingsApi.updateSettings(input)
       .then((response) => {
         setSettings(response);
+        setLocale(response.locale);
         setTheme(response.theme);
         setSettingsError(null);
       })
@@ -39,6 +44,11 @@ export function useSettingsController({
   function updateTheme(nextTheme: Theme) {
     setTheme(nextTheme);
     updateSettings({ theme: nextTheme });
+  }
+
+  function updateLocale(nextLocale: AppLocale) {
+    setLocale(nextLocale);
+    updateSettings({ locale: nextLocale });
   }
 
   function updatePollInterval(nextPollIntervalSeconds: number) {
@@ -53,11 +63,15 @@ export function useSettingsController({
     updateSettings({ youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds });
   }
 
+  function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
+    updateSettings({ shortcutBindings: nextShortcutBindings });
+  }
+
   function saveGeminiApiKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const apiKey = geminiApiKeyDraft.trim();
     if (!apiKey) {
-      setGeminiCredentialError("Gemini API key is required.");
+      setGeminiCredentialError(text("Gemini API key is required."));
       return;
     }
 
@@ -95,7 +109,9 @@ export function useSettingsController({
   return {
     clearGeminiApiKey,
     saveGeminiApiKey,
+    updateLocale,
     updatePollInterval,
+    updateShortcutBindings,
     updateTheme,
     updateYoutubeTranscriptionModel,
     updateYoutubeTranscriptionTimeout,

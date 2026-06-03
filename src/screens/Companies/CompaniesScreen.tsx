@@ -5,6 +5,7 @@ import type { WatchlistFeedback } from "../../app/appTypes";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { useLocale } from "../../shared/locale";
 import type {
   MarkdownNoteBodyProps,
   NotebookDateLikeFieldProps,
@@ -160,12 +161,14 @@ export function CompaniesScreen({
   formatTimestamp,
   feedItemSummary,
 }: CompaniesScreenProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="feed-panel" aria-labelledby="companies-title">
               <div className="panel-header">
                 <div>
-                  <h1 id="companies-title">Companies</h1>
-                  <p>Local company registry backed by SQLite.</p>
+                  <h1 id="companies-title">{t("companies.title")}</h1>
+                  <p>{t("companies.description")}</p>
                 </div>
               </div>
 
@@ -173,12 +176,12 @@ export function CompaniesScreen({
                 <section className="watchlist-panel" aria-labelledby="watchlists-title">
                   <div className="subsection-header">
                     <div>
-                      <h2 id="watchlists-title">Watchlists</h2>
-                      <p>Local groups for companies.</p>
+                      <h2 id="watchlists-title">{text("Watchlists")}</h2>
+                      <p>{text("Local groups for companies.")}</p>
                     </div>
                     <form className="watchlist-form" onSubmit={createWatchlist}>
                       <input
-                        aria-label="Watchlist name"
+                        aria-label={text("Watchlist name")}
                         placeholder="Main GPW"
                         value={watchlistName}
                         onChange={(event) => setWatchlistName(event.target.value)}
@@ -186,12 +189,12 @@ export function CompaniesScreen({
                       />
                       <Button type="submit" variant="primary">
                         <Plus size={16} />
-                        Create
+                        {text("Create")}
                       </Button>
                     </form>
                   </div>
 
-                  <div className="watchlist-list" aria-label="Watchlist chips">
+                  <div className="watchlist-list" aria-label={text("Watchlist chips")}>
                     {watchlists.map((watchlist) => (
                       <div className="watchlist-chip" key={watchlist.id}>
                         <span>{watchlist.name}</span>
@@ -199,18 +202,18 @@ export function CompaniesScreen({
                       </div>
                     ))}
                     {watchlists.length === 0 ? (
-                      <EmptyState>No watchlists yet.</EmptyState>
+                      <EmptyState>{text("No watchlists yet.")}</EmptyState>
                     ) : null}
                   </div>
 
                   {watchlistsError ? (
-                    <p className="error-text">Watchlist command failed: {watchlistsError}</p>
+                    <p className="error-text">{text("Watchlist command failed")}: {watchlistsError}</p>
                   ) : null}
                 </section>
 
                 <form className="company-form" onSubmit={createCompany}>
                   <label>
-                    Exchange
+                    {text("Exchange")}
                     <span className="field-with-clear">
                       <input
                         ref={(element) => {
@@ -222,11 +225,11 @@ export function CompaniesScreen({
                       />
                       {companyForm.exchange.trim().toUpperCase() !== "GPW" ? (
                         <button
-                          aria-label="Clear exchange"
+                          aria-label={text("Clear exchange")}
                           className="field-clear-button"
                           onClick={() => clearCompanyFormField("exchange")}
                           onMouseDown={(event) => event.preventDefault()}
-                          title="Clear exchange"
+                          title={text("Clear exchange")}
                           type="button"
                         >
                           <X size={13} />
@@ -235,7 +238,7 @@ export function CompaniesScreen({
                     </span>
                   </label>
                   <label>
-                    Ticker
+                    {text("Ticker")}
                     <span className="field-with-clear">
                       <input
                         ref={(element) => {
@@ -249,11 +252,11 @@ export function CompaniesScreen({
                       />
                       {companyForm.ticker.trim().length > 0 ? (
                         <button
-                          aria-label="Clear ticker"
+                          aria-label={text("Clear ticker")}
                           className="field-clear-button"
                           onClick={() => clearCompanyFormField("ticker")}
                           onMouseDown={(event) => event.preventDefault()}
-                          title="Clear ticker"
+                          title={text("Clear ticker")}
                           type="button"
                         >
                           <X size={13} />
@@ -262,7 +265,7 @@ export function CompaniesScreen({
                     </span>
                   </label>
                   <label>
-                    Name
+                    {text("Name")}
                     <span className="field-with-clear">
                       <input
                         ref={(element) => {
@@ -276,11 +279,11 @@ export function CompaniesScreen({
                       />
                       {companyForm.displayName.trim().length > 0 ? (
                         <button
-                          aria-label="Clear name"
+                          aria-label={text("Clear name")}
                           className="field-clear-button"
                           onClick={() => clearCompanyFormField("displayName")}
                           onMouseDown={(event) => event.preventDefault()}
-                          title="Clear name"
+                          title={text("Clear name")}
                           type="button"
                         >
                           <X size={13} />
@@ -302,11 +305,11 @@ export function CompaniesScreen({
                       />
                       {companyForm.isin.trim().length > 0 ? (
                         <button
-                          aria-label="Clear ISIN"
+                          aria-label={text("Clear ISIN")}
                           className="field-clear-button"
                           onClick={() => clearCompanyFormField("isin")}
                           onMouseDown={(event) => event.preventDefault()}
-                          title="Clear ISIN"
+                          title={text("Clear ISIN")}
                           type="button"
                         >
                           <X size={13} />
@@ -319,7 +322,7 @@ export function CompaniesScreen({
                     onMouseDown={(event) => event.preventDefault()}
                   >
                     <LocateFixed size={16} />
-                    Lookup
+                    {text("Lookup")}
                   </Button>
                   <Button
                     onMouseDown={(event) => event.preventDefault()}
@@ -327,11 +330,11 @@ export function CompaniesScreen({
                     variant="primary"
                   >
                     <Plus size={16} />
-                    Add
+                    {text("Add")}
                   </Button>
                   {companyFormRegistryMatches.length > 0 ? (
-                    <div className="company-registry-suggestions" aria-label="Company registry suggestions">
-                      <span>Registry matches</span>
+                    <div className="company-registry-suggestions" aria-label={text("Company registry suggestions")}>
+                      <span>{text("Registry matches")}</span>
                       <div>
                         {companyFormRegistryMatches.map((entry) => (
                           <button
@@ -339,13 +342,13 @@ export function CompaniesScreen({
                             key={entry.qualifiedTicker}
                             onClick={() => applyRegistryEntryToCompanyForm(entry)}
                             onMouseDown={(event) => event.preventDefault()}
-                            title={`Use ${entry.qualifiedTicker}`}
+                            title={`${text("Use")} ${entry.qualifiedTicker}`}
                             type="button"
                           >
                             <strong>{entry.qualifiedTicker}</strong>
                             <span>{entry.displayName}</span>
-                            <small>{entry.isin ?? "No ISIN"}</small>
-                            {entry.tracked ? <em>Added</em> : null}
+                            <small>{entry.isin ?? text("No ISIN")}</small>
+                            {entry.tracked ? <em>{text("Added")}</em> : null}
                           </button>
                         ))}
                       </div>
@@ -353,23 +356,23 @@ export function CompaniesScreen({
                   ) : null}
                 </form>
 
-                <div className="company-list-toolbar" aria-label="Company list search">
+                <div className="company-list-toolbar" aria-label={text("Company list search")}>
                   <label className="registry-search-field">
                     <Search size={15} />
                     <input
-                      aria-label="Search tracked companies"
+                      aria-label={text("Search tracked companies")}
                       onChange={(event) => setCompanyListSearch(event.target.value)}
-                      placeholder="Search tracked companies"
+                      placeholder={text("Search tracked companies")}
                       type="text"
                       value={companyListSearch}
                     />
                     {companyListSearch.trim().length > 0 ? (
                       <button
-                        aria-label="Clear company search"
+                        aria-label={text("Clear company search")}
                         className="field-clear-button"
                         onClick={() => setCompanyListSearch("")}
                         onMouseDown={(event) => event.preventDefault()}
-                        title="Clear company search"
+                        title={text("Clear company search")}
                         type="button"
                       >
                         <X size={13} />
@@ -377,15 +380,15 @@ export function CompaniesScreen({
                     ) : null}
                   </label>
                   <span>
-                    {filteredCompanies.length}/{companies.length} companies
+                    {filteredCompanies.length}/{companies.length} {text("companies")}
                   </span>
                 </div>
 
-                <div className="company-list" aria-label="Companies list" data-company-list="true">
+                <div className="company-list" aria-label={text("Companies list")} data-company-list="true">
                   {filteredCompanies.map((company) => (
                     <div className="company-row-block" key={company.id}>
                       <article
-                        aria-label={`Open ${company.qualifiedTicker} workspace`}
+                        aria-label={`${text("Open")} ${company.qualifiedTicker} ${text("workspace")}`}
                         className={[
                           "company-row",
                           selectedCompany?.id === company.id ? "company-row-selected" : "",
@@ -398,27 +401,27 @@ export function CompaniesScreen({
                         onKeyDown={(event) => openCompanyWorkspaceFromKeyboard(event, company)}
                         role="button"
                         tabIndex={0}
-                        title={`Open ${company.qualifiedTicker} workspace`}
+                        title={`${text("Open")} ${company.qualifiedTicker} ${text("workspace")}`}
                       >
                         <div className="company-row-main">
                           <h2>{company.qualifiedTicker}</h2>
                           <p>{company.displayName}</p>
                           <div
                             className="membership-list"
-                            aria-label={`Watchlist memberships for ${company.qualifiedTicker}`}
+                            aria-label={`${text("Watchlist memberships for")} ${company.qualifiedTicker}`}
                           >
                             {(membershipsByCompany[company.id] ?? []).map((membership) => (
                               <StatusPill key={membership.watchlistId}>{membership.watchlistName}</StatusPill>
                             ))}
                             {(membershipsByCompany[company.id] ?? []).length === 0 ? (
-                              <span className="membership-empty">No watchlist</span>
+                              <span className="membership-empty">{text("No watchlist")}</span>
                             ) : null}
                           </div>
                         </div>
                         <div className="company-row-actions" onClick={(event) => event.stopPropagation()}>
-                          <span>{company.isin ?? "No ISIN"}</span>
+                          <span>{company.isin ?? text("No ISIN")}</span>
                           <select
-                            aria-label={`Watchlist for ${company.qualifiedTicker}`}
+                            aria-label={`${text("Watchlist for")} ${company.qualifiedTicker}`}
                             disabled={watchlists.length === 0}
                             value={watchlistAssignments[company.id] || watchlists[0]?.id || ""}
                             onChange={(event) =>
@@ -437,7 +440,7 @@ export function CompaniesScreen({
                             onClick={() => addCompanyToWatchlist(company)}
                           >
                             <Plus size={15} />
-                            Assign
+                            {text("Assign")}
                           </Button>
                           <Button
                             className="compact-button remove-button"
@@ -445,7 +448,7 @@ export function CompaniesScreen({
                             onClick={() => removeCompanyFromWatchlist(company)}
                           >
                             <X size={15} />
-                            Remove
+                            {text("Remove")}
                           </Button>
                           {watchlistFeedback?.companyId === company.id ? (
                             <span
@@ -459,7 +462,7 @@ export function CompaniesScreen({
                           ) : null}
                           <Button
                             onClick={() => deleteCompany(company)}
-                            title={`Delete ${company.qualifiedTicker}`}
+                            title={`${text("Delete")} ${company.qualifiedTicker}`}
                             variant="danger"
                           >
                             <Trash2 size={16} />
@@ -516,17 +519,17 @@ export function CompaniesScreen({
                     </div>
                   ))}
                   {companies.length === 0 ? (
-                    <EmptyState>No companies yet.</EmptyState>
+                    <EmptyState>{text("No companies yet.")}</EmptyState>
                   ) : null}
                   {companies.length > 0 && filteredCompanies.length === 0 ? (
-                    <EmptyState>No companies match this search.</EmptyState>
+                    <EmptyState>{text("No companies match this search.")}</EmptyState>
                   ) : null}
                 </div>
 
                 {companiesError ? (
-                  <p className="error-text">Companies command failed: {companiesError}</p>
+                  <p className="error-text">{text("Companies command failed")}: {companiesError}</p>
                 ) : null}
-                {lookupStatus ? <p className="helper-text">{lookupStatus}</p> : null}
+                {lookupStatus ? <p className="helper-text">{text(lookupStatus)}</p> : null}
               </div>
             </section>
   );

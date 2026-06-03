@@ -97,6 +97,8 @@ Rules:
 - Prefer reusable typed configuration surfaces over one-off hard-coded provider/source behavior.
 - Keep defaults practical and conservative, but make likely future provider/source/model changes configurable when doing so is cheap and clear.
 - Avoid abstracting for hypothetical futures that are not connected to the roadmap, contracts, or an explicit user requirement.
+- During feature implementation, explicitly check whether any new or changed user action should become a shortcut action. Repeated workflow actions, keyboard-first research actions, and high-frequency commands should be registered in the shortcut framework with a default binding or an explicit decision that no shortcut is needed.
+- Shortcut-capable actions must still remain available through visible UI controls, and shortcut defaults must avoid common browser, OS, and text-editing conflicts. User-configurable shortcut bindings should be used instead of hard-coded key handlers.
 - When a feature introduces a real external dependency, separate the runtime implementation from test-sample/mocked implementations so tests stay deterministic and the real workflow can still be validated.
 - Keep source files split by responsibility before they become hard to reason about. Large files should be treated as architecture debt, especially UI shells, storage modules, command registration, and broad test files.
 - Prefer extracting cohesive modules during nearby feature work instead of doing disruptive repo-wide rewrites. A good extraction has a clear owner boundary, such as transcript UI, settings UI, notebook UI, storage migrations, storage transcript operations, source adapter state, or provider clients.

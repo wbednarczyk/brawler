@@ -45,6 +45,7 @@ type AppDataControllerInput = {
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSettings: Dispatch<SetStateAction<UserSettings | null>>;
   setSettingsError: Dispatch<SetStateAction<string | null>>;
+  setLocale: Dispatch<SetStateAction<UserSettings["locale"]>>;
   setSourceAdapters: Dispatch<SetStateAction<SourceAdapter[]>>;
   setSourceAdaptersError: Dispatch<SetStateAction<string | null>>;
   setTheme: Dispatch<SetStateAction<UserSettings["theme"]>>;
@@ -54,6 +55,7 @@ type AppDataControllerInput = {
   setWatchlistMemberships: Dispatch<SetStateAction<WatchlistMembership[]>>;
   setWatchlists: Dispatch<SetStateAction<Watchlist[]>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
+  text: (value: string) => string;
 };
 
 export function useAppDataController({
@@ -79,6 +81,7 @@ export function useAppDataController({
   setSelectedFeedItemId,
   setSettings,
   setSettingsError,
+  setLocale,
   setSourceAdapters,
   setSourceAdaptersError,
   setTheme,
@@ -88,6 +91,7 @@ export function useAppDataController({
   setWatchlistMemberships,
   setWatchlists,
   setWatchlistsError,
+  text,
 }: AppDataControllerInput) {
   function refreshHealth() {
     return systemApi.getHealth()
@@ -226,6 +230,7 @@ export function useAppDataController({
     return settingsApi.getSettings()
       .then((response) => {
         setSettings(response);
+        setLocale(response.locale);
         setTheme(response.theme);
         setSettingsError(null);
       })
@@ -269,7 +274,7 @@ export function useAppDataController({
   }
 
   function deleteUnsavedFeedItems() {
-    const confirmed = window.confirm("Delete all unsaved feed items? Saved items will stay.");
+    const confirmed = window.confirm(text("Delete all unsaved feed items? Saved items will stay."));
 
     if (!confirmed) {
       return;

@@ -1,4 +1,5 @@
 export type Theme = "dark" | "light" | "system";
+export type AppLocale = "en" | "pl";
 
 export type HealthResponse = {
   status: string;
@@ -242,8 +243,21 @@ export type TranscriptSegment = {
   createdAt: string;
 };
 
+export type ShortcutKeyBinding = {
+  key: string;
+  altKey?: boolean;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+};
+
+export type ShortcutBindingSetting = ShortcutKeyBinding & {
+  disabled?: boolean;
+};
+
 export type UserSettings = {
   theme: Theme;
+  locale: AppLocale;
   accentPalette: string;
   pollIntervalSeconds: number;
   settingsSource: string;
@@ -256,6 +270,7 @@ export type UserSettings = {
     generalAnalysisProvider: string | null;
   };
   aiAnalysisMode: string;
+  shortcutBindings: Record<string, ShortcutBindingSetting>;
 };
 
 export type CredentialStatus = {

@@ -354,6 +354,7 @@ lei: string | null;
 
 const initialSettings = {
 theme: "dark",
+locale: "en",
 accentPalette: "night-neon",
 pollIntervalSeconds: 900,
 settingsSource: "sqlite",
@@ -366,6 +367,7 @@ aiProviders: {
   generalAnalysisProvider: null,
 },
 aiAnalysisMode: "source_grounded",
+shortcutBindings: {},
 };
 
 const initialGeminiCredentialStatus = {
@@ -630,6 +632,7 @@ export const appTestState = {
   transcriptJobsResponse: initialTranscriptJobs,
   companyRegistryEntriesResponse: initialCompanyRegistryEntries,
   notebookEntriesResponse: [] as TestNotebookEntry[],
+  settingsResponse: initialSettings,
   refreshSourcesError: null as string | null,
   geminiCredentialStatusResponse: initialGeminiCredentialStatus,
 };
@@ -641,6 +644,7 @@ beforeEach(() => {
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
   appTestState.companyRegistryEntriesResponse = initialCompanyRegistryEntries;
   appTestState.notebookEntriesResponse = [];
+  appTestState.settingsResponse = initialSettings;
   appTestState.refreshSourcesError = null;
   appTestState.geminiCredentialStatusResponse = initialGeminiCredentialStatus;
   vi.mocked(invoke).mockClear();
@@ -652,10 +656,10 @@ beforeEach(() => {
 
     if (command === "database_status") {
       return Promise.resolve({
-        appliedMigrations: 21,
+        appliedMigrations: 22,
         companies: 0,
         sourceAdapters: 11,
-        settings: 9,
+        settings: 11,
       });
     }
 
@@ -1222,7 +1226,7 @@ beforeEach(() => {
     }
 
     if (command === "get_settings") {
-      return Promise.resolve(initialSettings);
+      return Promise.resolve(appTestState.settingsResponse);
     }
 
     if (command === "get_gemini_transcription_credential_status") {
@@ -1255,26 +1259,32 @@ beforeEach(() => {
       const input = (args as {
         input: {
           theme?: string;
+          locale?: string;
           pollIntervalSeconds?: number;
           youtubeTranscriptionModel?: string;
           youtubeTranscriptionTimeoutSeconds?: number;
+          shortcutBindings?: Record<string, unknown>;
         };
       }).input;
 
-      return Promise.resolve({
-        ...initialSettings,
-        theme: input.theme ?? initialSettings.theme,
-        pollIntervalSeconds: input.pollIntervalSeconds ?? initialSettings.pollIntervalSeconds,
+      appTestState.settingsResponse = {
+        ...appTestState.settingsResponse,
+        theme: input.theme ?? appTestState.settingsResponse.theme,
+        locale: input.locale ?? appTestState.settingsResponse.locale,
+        pollIntervalSeconds: input.pollIntervalSeconds ?? appTestState.settingsResponse.pollIntervalSeconds,
+        shortcutBindings: input.shortcutBindings ?? appTestState.settingsResponse.shortcutBindings,
         aiProviders: {
-          ...initialSettings.aiProviders,
+          ...appTestState.settingsResponse.aiProviders,
           youtubeTranscriptionModel:
             input.youtubeTranscriptionModel ??
-            initialSettings.aiProviders.youtubeTranscriptionModel,
+            appTestState.settingsResponse.aiProviders.youtubeTranscriptionModel,
           youtubeTranscriptionTimeoutSeconds:
             input.youtubeTranscriptionTimeoutSeconds ??
-            initialSettings.aiProviders.youtubeTranscriptionTimeoutSeconds,
+            appTestState.settingsResponse.aiProviders.youtubeTranscriptionTimeoutSeconds,
         },
-      });
+      };
+
+      return Promise.resolve(appTestState.settingsResponse);
     }
 
     if (command === "update_feed_item_state") {

@@ -2,6 +2,7 @@ import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { useLocale } from "../../shared/locale";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
 import { TranscriptSegmentReview } from "./TranscriptSegmentReview";
@@ -94,6 +95,7 @@ export function TranscriptJobRow({
   formatGeminiModel,
   formatEnumLabel,
 }: TranscriptJobRowProps) {
+  const { text } = useLocale();
   const transcriptSegments = transcriptSegmentsByJobId[job.id] ?? [];
   const transcriptSegmentSearch = transcriptSegmentSearchByJobId[job.id] ?? "";
   const selectedTranscriptSegmentIds = selectedTranscriptSegmentIdsByJobId[job.id] ?? [];
@@ -134,7 +136,7 @@ export function TranscriptJobRow({
         ]
           .filter(Boolean)
           .join(" ")}
-        aria-label={`Open transcript job: ${job.sourceUrl}`}
+        aria-label={`${text("Open transcript job")}: ${job.sourceUrl}`}
         onClick={() => toggleTranscriptJob(job)}
         onKeyDown={(event) => toggleTranscriptJobFromKeyboard(event, job)}
         role="button"
@@ -152,13 +154,13 @@ export function TranscriptJobRow({
               }
               title={formatTranscriptStatus(job.status)}
             />
-            <h2>{job.sourceLabel ?? "Untitled transcript"}</h2>
+            <h2>{job.sourceLabel ?? text("Untitled transcript")}</h2>
           </div>
           <p>
-            {job.sourceUrl} · {job.company ?? "Unlinked transcript"} · {formatAiProvider(job.providerId)} ·{" "}
+            {job.sourceUrl} · {job.company ?? text("Unlinked transcript")} · {formatAiProvider(job.providerId)} ·{" "}
             {formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel)}
           </p>
-          <div className="source-chip-list" aria-label={`Transcript job metadata for ${job.id}`}>
+          <div className="source-chip-list" aria-label={`${text("Transcript job metadata for")} ${job.id}`}>
             <StatusPill>{formatTranscriptStatus(job.companyResolutionStatus)}</StatusPill>
             <StatusPill>{job.sourceType}</StatusPill>
             {job.errorCode ? <StatusPill>{formatEnumLabel(job.errorCode)}</StatusPill> : null}
@@ -176,12 +178,12 @@ export function TranscriptJobRow({
               }}
               title={
                 geminiCredentialStatus?.configured
-                  ? "Retry Gemini transcription"
-                  : "Configure Gemini API key in Settings before running transcription"
+                  ? text("Retry Gemini transcription")
+                  : text("Configure Gemini API key in Settings before running transcription")
               }
             >
               <RefreshCw size={15} />
-              {transcriptJobRunInFlight === job.id ? "Running" : "Retry"}
+              {transcriptJobRunInFlight === job.id ? text("Running") : text("Retry")}
             </Button>
           ) : null}
           <Button
@@ -190,7 +192,7 @@ export function TranscriptJobRow({
               event.stopPropagation();
               deleteTranscriptJob(job);
             }}
-            title={`Delete transcript job ${job.sourceLabel ?? job.sourceUrl}`}
+            title={`${text("Delete transcript job")} ${job.sourceLabel ?? job.sourceUrl}`}
             variant="danger"
           >
             <Trash2 size={15} />
@@ -198,13 +200,13 @@ export function TranscriptJobRow({
         </div>
       </article>
       {isTranscriptJobSelected ? (
-        <div className="transcript-detail-panel" aria-label="Transcript job details">
-          <div className="transcript-description-editor" aria-label="Transcript description editor">
+        <div className="transcript-detail-panel" aria-label={text("Transcript job details")}>
+          <div className="transcript-description-editor" aria-label={text("Transcript description editor")}>
             <label>
-              Description
+              {text("Description")}
               <input
-                aria-label="Edit transcript description"
-                placeholder="Optional, e.g. CDR Q2 investor conference"
+                aria-label={text("Edit transcript description")}
+                placeholder={text("Optional, e.g. CDR Q2 investor conference")}
                 value={transcriptDescriptionDraft}
                 onChange={(event) =>
                   setTranscriptDescriptionDraftByJobId((current) => ({
@@ -220,7 +222,7 @@ export function TranscriptJobRow({
               onClick={() => updateTranscriptJobDescription(job)}
             >
               <Save size={15} />
-              Save
+              {text("Save")}
             </Button>
             {transcriptDescriptionError ? (
               <p className="error-text">{transcriptDescriptionError}</p>
@@ -228,47 +230,47 @@ export function TranscriptJobRow({
           </div>
           <dl className="source-status-grid source-status-detail">
             <div>
-              <dt>Company</dt>
-              <dd>{job.company ?? "Unlinked"}</dd>
+              <dt>{text("Company")}</dt>
+              <dd>{job.company ?? text("Unlinked")}</dd>
             </div>
             <div>
-              <dt>Status</dt>
+              <dt>{text("Status")}</dt>
               <dd>{formatTranscriptStatus(job.status)}</dd>
             </div>
             <div>
-              <dt>Source</dt>
+              <dt>{text("Source")}</dt>
               <dd>{job.sourceUrl}</dd>
             </div>
             <div>
-              <dt>Selected</dt>
+              <dt>{text("Selected")}</dt>
               <dd>{selectedTranscriptSegmentIds.length}</dd>
             </div>
           </dl>
           {job.status === "failed" ? (
-            <div className="transcript-error-panel" aria-label="Transcript job error">
-              <strong>{job.errorCode ? formatEnumLabel(job.errorCode) : "Transcript job failed"}</strong>
-              <p>{job.error ?? "No detailed provider error was stored."}</p>
+            <div className="transcript-error-panel" aria-label={text("Transcript job error")}>
+              <strong>{job.errorCode ? formatEnumLabel(job.errorCode) : text("Transcript job failed")}</strong>
+              <p>{job.error ?? text("No detailed provider error was stored.")}</p>
             </div>
           ) : null}
           {!job.companyId ? (
-            <div className="transcript-link-panel" aria-label="Link transcript company">
+            <div className="transcript-link-panel" aria-label={text("Link transcript company")}>
               <div>
-                <strong>Optional company link</strong>
+                <strong>{text("Optional company link")}</strong>
                 <p className="muted-text">
-                  Keep this transcript unlinked, or link it when selected segments should become a company notebook note.
+                  {text("Keep this transcript unlinked, or link it when selected segments should become a company notebook note.")}
                 </p>
               </div>
               <label>
-                Company or ticker
+                {text("Company or ticker")}
                 <input
-                  aria-label="Transcript link company lookup"
+                  aria-label={text("Transcript link company lookup")}
                   placeholder="GPW:CDR, CDR, CD PROJEKT"
                   value={transcriptLinkQuery}
                   onChange={(event) => updateTranscriptLinkQuery(job.id, event.target.value)}
                 />
               </label>
               {transcriptLinkQuery ? (
-                <div className="company-registry-suggestions" aria-label="Transcript link company suggestions">
+                <div className="company-registry-suggestions" aria-label={text("Transcript link company suggestions")}>
                   {transcriptLinkSuggestions.length > 0 ? (
                     transcriptLinkSuggestions.map((company) => (
                       <div key={company.id}>
@@ -285,7 +287,7 @@ export function TranscriptJobRow({
                       </div>
                     ))
                   ) : (
-                    <span>No tracked company matches. The transcript can stay unlinked.</span>
+                    <span>{text("No tracked company matches. The transcript can stay unlinked.")}</span>
                   )}
                 </div>
               ) : null}
@@ -309,13 +311,13 @@ export function TranscriptJobRow({
                 onClick={() => openTranscriptNoteDraft(job, selectedTranscriptSegments)}
                 title={
                   job.companyId
-                    ? "Create a company notebook draft from selected segments"
-                    : "Link a company before saving selected segments as a company notebook note"
+                    ? text("Create a company notebook draft from selected segments")
+                    : text("Link a company before saving selected segments as a company notebook note")
                 }
                 variant="primary"
               >
                 <Plus size={15} />
-                Create company note draft
+                {text("Create company note draft")}
               </Button>
               {transcriptNoteError ? <p className="error-text">{transcriptNoteError}</p> : null}
             </div>

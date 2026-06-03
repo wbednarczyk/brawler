@@ -1,11 +1,14 @@
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
+import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import type { SettingsScreenProps } from "./settingsTypes";
+import { makeTranslator } from "../../shared/locale";
 
 export function SettingsScreen({
   theme,
+  locale,
   settings,
   settingsError,
   feedPruneRetentionDays,
@@ -14,8 +17,12 @@ export function SettingsScreen({
   geminiCredentialError,
   geminiCredentialInFlight,
   geminiApiKeyDraft,
+  shortcutBindings,
+  shortcutReferences,
   onThemeChange,
+  onLocaleChange,
   onPollIntervalChange,
+  onShortcutBindingsChange,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
   onGeminiApiKeyDraftChange,
@@ -30,20 +37,25 @@ export function SettingsScreen({
   formatCredentialStorage,
   formatCredentialKind,
 }: SettingsScreenProps) {
+  const t = makeTranslator(locale);
+
   return (
     <section className="feed-panel" aria-labelledby="settings-title">
       <div className="panel-header">
         <div>
-          <h1 id="settings-title">Settings</h1>
-          <p>SQLite-backed local runtime settings.</p>
+          <h1 id="settings-title">{t("settings.title")}</h1>
+          <p>{t("settings.description")}</p>
         </div>
       </div>
 
-      <div className="settings-layout" aria-label="Application settings">
+      <div className="settings-layout" aria-label={t("settings.applicationSettings")}>
         <AppearanceSettings
+          locale={locale}
           settings={settings}
           theme={theme}
+          onLocaleChange={onLocaleChange}
           onThemeChange={onThemeChange}
+          t={t}
         />
         <SourceSettings
           feedPruneRetentionDays={feedPruneRetentionDays}
@@ -73,6 +85,12 @@ export function SettingsScreen({
           onGeminiApiKeyDraftChange={onGeminiApiKeyDraftChange}
           onOpenGeminiApiKeyPage={onOpenGeminiApiKeyPage}
           onSaveGeminiApiKey={onSaveGeminiApiKey}
+        />
+        <ShortcutSettings
+          locale={locale}
+          shortcutBindings={shortcutBindings}
+          shortcutReferences={shortcutReferences}
+          onShortcutBindingsChange={onShortcutBindingsChange}
         />
 
         {settingsError ? (

@@ -658,6 +658,7 @@ Allowed statuses:
 ```json
 {
   "theme": "dark",
+  "locale": "en",
   "accentPalette": "night-neon",
   "pollIntervalSeconds": 900,
   "settingsSource": "sqlite",
@@ -668,7 +669,8 @@ Allowed statuses:
     "youtubeTranscriptionTimeoutSeconds": 300,
     "generalAnalysisProvider": null
   },
-  "aiAnalysisMode": "source_grounded"
+  "aiAnalysisMode": "source_grounded",
+  "shortcutBindings": {}
 }
 ```
 
@@ -678,12 +680,22 @@ Allowed theme values:
 - `light`
 - `system`
 
+Initial allowed locale values:
+
+- `en`
+- `pl`
+
 Rules:
 
 - The default theme is `dark`.
+- The default locale is `en`.
+- Settings must let the user switch the app locale between English and Polish in M12.
+- Locale handling must be implemented as an extensible app-locale boundary so future supported locales can be added through locale resources/configuration instead of per-screen rewrites.
+- Locale changes affect app-owned UI copy and formatting labels only.
+- Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
 - `system` may be added to the UI as a convenience, but first-run behavior still defaults to `dark` until the user changes it.
 - The initial accent palette is `night-neon`, inspired by deep navy, electric blue/cyan, pink, and purple.
-- General AI analysis has no default provider yet.
+- General AI analysis is deferred until the AI analysis framework milestone. That milestone may enable `provider_gemini` first, but the contract must remain provider-neutral so future OpenAI, Anthropic, and other providers can be added without rewiring the UI.
 - Settings must show that `provider_gemini` is selected only for YouTube transcription.
 - Settings must let the user choose the Gemini transcription model from supported configured options: `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-3.1-flash-lite`, and `gemini-3.5-flash`.
 - The default YouTube transcription model is the cheapest configured model validated by M10 live smoke, currently `gemini-2.5-flash`.
@@ -692,6 +704,9 @@ Rules:
 - Settings must show whether YouTube transcription credentials are configured.
 - Settings must let the user save, replace, and clear the Gemini API key used only for YouTube transcription.
 - Settings must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
+- Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs.
+- Shortcut binding overrides are stored as a JSON object keyed by action ID. Missing entries use the current default binding for that action.
+- Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.
 - YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.

@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashMap;
 
 #[test]
 fn reads_default_settings_from_sqlite() {
@@ -8,6 +9,7 @@ fn reads_default_settings_from_sqlite() {
     let settings = state.get_settings().expect("settings should load");
 
     assert_eq!(settings.theme, "dark");
+    assert_eq!(settings.locale, "en");
     assert_eq!(settings.accent_palette, "night-neon");
     assert_eq!(settings.poll_interval_seconds, 900);
     assert_eq!(settings.settings_source, "sqlite");
@@ -27,6 +29,7 @@ fn reads_default_settings_from_sqlite() {
     );
     assert!(settings.ai_providers.general_analysis_provider.is_none());
     assert_eq!(settings.ai_analysis_mode, "source_grounded");
+    assert!(settings.shortcut_bindings.is_empty());
 }
 
 #[test]
@@ -60,16 +63,19 @@ fn updates_settings_through_storage_api() {
     let settings = state
         .update_settings(SettingsUpdate {
             theme: Some("light".to_owned()),
+            locale: Some("pl".to_owned()),
             poll_interval_seconds: Some(1800),
             youtube_transcription_provider: None,
             youtube_transcription_model: None,
             youtube_transcription_timeout_seconds: Some(600),
             general_analysis_provider: None,
             ai_analysis_mode: None,
+            shortcut_bindings: None,
         })
         .expect("settings should update");
 
     assert_eq!(settings.theme, "light");
+    assert_eq!(settings.locale, "pl");
     assert_eq!(settings.poll_interval_seconds, 1800);
     assert_eq!(
         settings.ai_providers.youtube_transcription_timeout_seconds,
@@ -79,10 +85,73 @@ fn updates_settings_through_storage_api() {
     let persisted = state.get_settings().expect("settings should persist");
 
     assert_eq!(persisted.theme, "light");
+    assert_eq!(persisted.locale, "pl");
     assert_eq!(persisted.poll_interval_seconds, 1800);
     assert_eq!(
         persisted.ai_providers.youtube_transcription_timeout_seconds,
         600
+    );
+}
+
+#[test]
+fn updates_shortcut_bindings_through_storage_api() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let mut shortcut_bindings = HashMap::new();
+
+    shortcut_bindings.insert(
+        "app.openInbox".to_owned(),
+        ShortcutBindingSetting {
+            key: "I".to_owned(),
+            alt_key: Some(true),
+            ctrl_key: None,
+            meta_key: None,
+            shift_key: Some(true),
+            disabled: None,
+        },
+    );
+    shortcut_bindings.insert(
+        "app.refreshSources".to_owned(),
+        ShortcutBindingSetting {
+            key: "R".to_owned(),
+            alt_key: None,
+            ctrl_key: None,
+            meta_key: None,
+            shift_key: None,
+            disabled: Some(true),
+        },
+    );
+
+    let settings = state
+        .update_settings(SettingsUpdate {
+            theme: None,
+            locale: None,
+            poll_interval_seconds: None,
+            youtube_transcription_provider: None,
+            youtube_transcription_model: None,
+            youtube_transcription_timeout_seconds: None,
+            general_analysis_provider: None,
+            ai_analysis_mode: None,
+            shortcut_bindings: Some(shortcut_bindings),
+        })
+        .expect("settings should update");
+
+    assert_eq!(settings.shortcut_bindings.len(), 2);
+    assert_eq!(
+        settings
+            .shortcut_bindings
+            .get("app.openInbox")
+            .expect("shortcut binding should persist")
+            .key,
+        "I"
+    );
+    assert_eq!(
+        settings
+            .shortcut_bindings
+            .get("app.refreshSources")
+            .expect("shortcut binding should persist")
+            .disabled,
+        Some(true)
     );
 }
 
@@ -93,12 +162,14 @@ fn rejects_invalid_poll_interval_setting() {
 
     let result = state.update_settings(SettingsUpdate {
         theme: None,
+        locale: None,
         poll_interval_seconds: Some(42),
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
         ai_analysis_mode: None,
+        shortcut_bindings: None,
     });
 
     assert!(result.is_err());
@@ -111,12 +182,34 @@ fn rejects_invalid_theme_setting() {
 
     let result = state.update_settings(SettingsUpdate {
         theme: Some("sepia".to_owned()),
+        locale: None,
         poll_interval_seconds: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
         ai_analysis_mode: None,
+        shortcut_bindings: None,
+    });
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn rejects_invalid_locale_setting() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let result = state.update_settings(SettingsUpdate {
+        theme: None,
+        locale: Some("de".to_owned()),
+        poll_interval_seconds: None,
+        youtube_transcription_provider: None,
+        youtube_transcription_model: None,
+        youtube_transcription_timeout_seconds: None,
+        general_analysis_provider: None,
+        ai_analysis_mode: None,
+        shortcut_bindings: None,
     });
 
     assert!(result.is_err());

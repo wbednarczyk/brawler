@@ -380,47 +380,97 @@ Exit criteria:
 - at least one manual live Gemini smoke check passes before M10 is closed
 - default automated tests and CI use test samples/mocks and do not require Gemini credentials or live external services
 
-## Milestone 11: General AI Analysis Contract Spike
+## Milestone 11: Modularization
 
-Goal: validate provider-neutral AI analysis without choosing a default provider.
+Status: completed as part of the `0.12.0` branch history.
+
+Goal: complete the broad modularization pass and turn modularity into a continuous development rule.
 
 Included:
 
-- provider interface
-- prompt/result contract for summaries, tags, significance, reasoning, and source references
-- test-sample-backed AI result flow
-- UI display in feed detail
-- no buy/sell/hold recommendation guardrails
+- frontend API, app, screen, shared, style, and test module boundaries
+- Rust command, storage, provider, job, and app-state module boundaries
+- shared frontend primitives adopted where they preserve behavior and class semantics
+- storage tests split by domain
+- completed-card Kanban history moved out of active context
+- modularization design converted from extraction plan to ongoing architecture guide
 
 Exit criteria:
 
-- app can display analysis results from sample data or a configured provider
-- no general provider is hard-coded as preferred
-- AI results preserve source references
-- tests cover contract mapping
+- original monolithic frontend and Rust files no longer carry mixed responsibilities
+- remaining large files are intentional state roots, facades, composition points, or cohesive domain views
+- future feature work has a documented modularity checklist
+- active documentation context is optimized for future agents
 
-## Milestone 12: Keyboard Shortcuts And Workflow Polish
+## Milestone 12: Keyboard Shortcuts, Locale, And Workflow Polish
 
-Goal: make repeated desktop use faster without making shortcuts the only way to operate the app.
+Status: completed in `0.12.0`.
+
+Goal: make repeated desktop use faster and add an extensible app-locale framework while keeping English as the default.
 
 Included:
 
 - app-wide shortcut map
 - discoverable shortcut reference in Settings or Help/About
+- configurable shortcut bindings for all defined shortcut actions
 - Inbox shortcuts for navigation, read/unread, save/unsave, opening source, search focus, and refresh
 - Company/notebook shortcuts where they reduce repeated work, including `Ctrl+E` to open the editor for the selected note or claim and `Ctrl+S` to save the item currently being edited
 - conflict checks with native Windows/browser text-editing shortcuts
+- extensible locale setting in Settings
+- English default locale
+- Polish locale as the first additional language
+- locale resource structure that can add future languages without rewriting screens
+- localized static UI copy for the main app shell and implemented screens
+- localized formatting for app-owned labels where applicable, without changing stored source text, company names, ticker symbols, URLs, or provider/source attribution
 - tests for critical shortcut workflows
 
 Exit criteria:
 
 - common daily inbox actions can be performed from the keyboard
 - shortcuts are visible/discoverable in the app
+- shortcuts can be configured, disabled, and reset without changing code
 - every shortcut action remains available through visible UI controls
 - text inputs and editors do not accidentally trigger global shortcuts
+- user can switch between English and Polish from Settings
+- English remains the first-run default
+- language choice persists in SQLite settings
+- the locale implementation can add future supported locales through locale resources/configuration instead of per-screen rewrites
+- source-provided text remains in its original language
 - workflow tests cover the most important shortcuts
 
-## Milestone 13: V1 Friend-Test License Gate
+Completion notes:
+
+- Added an extensible SQLite-backed locale setting with English default and Polish as the first additional language.
+- Added shared locale resources and wired app-owned static copy across the implemented app shell and screens without translating source, company, transcript, notebook, URL, or attribution content.
+- Added a configurable shortcut framework with Settings discoverability, per-action enablement, reset, persistence, and conflict warnings.
+- Added app, Inbox, Company, and notebook workflow shortcuts while preserving visible UI controls.
+- Recorded the ongoing development rule that future feature work must evaluate whether changed user actions should be shortcut actions.
+- Verified frontend typecheck, full frontend tests, frontend build, Rust format, Rust clippy, and Rust tests during milestone closure.
+
+## Milestone 13: General AI Analysis Framework
+
+Goal: add source-grounded AI analysis using the existing Gemini implementation first while keeping the framework extensible for ChatGPT, Claude, and other future providers.
+
+Included:
+
+- provider-neutral AI analysis interface
+- Gemini-backed general analysis implementation as the first live provider path
+- provider/model/credential boundaries that can support OpenAI, Anthropic, and other future providers without rewiring the UI
+- prompt/result contract for summaries, tags, significance, reasoning, and source references
+- test-sample-backed and mocked AI result flow
+- UI display in feed detail
+- no buy/sell/hold recommendation guardrails
+
+Exit criteria:
+
+- app can display source-grounded AI analysis results from Gemini or deterministic test samples
+- Gemini is the first implementation, but the contract does not hard-code Gemini as the only future provider
+- provider credentials remain under the reusable OS-keychain credential boundary
+- AI results preserve source references
+- tests cover contract mapping, provider mapping, and recommendation guardrails
+- default automated tests do not require live external services or secrets
+
+## Milestone 14: V1 Friend-Test License Gate
 
 Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed.
 
@@ -443,7 +493,7 @@ Exit criteria:
 - logs, settings export, and diagnostics do not leak license private signing material or full license secrets
 - user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
 
-## Milestone 14: V1 Packaging Candidate
+## Milestone 15: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -495,6 +545,28 @@ Intent:
 
 Not in scope for v1. Cloud backup/sync remains a separate design discussion.
 
+## Future Study: Google Finance Source Value
+
+Goal: determine whether Google Finance can legally and reliably improve the investor workflow before adding it to source implementation scope.
+
+Questions:
+
+- What user value would Google Finance add beyond existing official reports, public/RSS media sources, company registry data, and future AI analysis?
+- Is there an official, documented, and permitted access path suitable for a desktop app, or would use depend on fragile/restricted scraping?
+- Which data would be useful if permitted: price snapshots, market news, related companies, financial summaries, watchlist enrichment, or company identity matching?
+- Does Google Finance coverage improve GPW support enough to justify adapter complexity, or is it more useful for later US/EU market expansion?
+- How would attribution, refresh cadence, rate limits, data freshness, and source diagnostics appear in the existing source adapter model?
+- Are there better official/public alternatives for the same data with clearer usage terms?
+
+Decision criteria:
+
+- Do not implement unless usage terms and access path are acceptable for local-first desktop use.
+- Prefer source-adapter integration only if the data can be fetched through a stable, allowed mechanism and represented with durable attribution.
+- If useful only for manual links or user-opened research, treat it as an external-link affordance rather than ingestion.
+- If the study recommends implementation, record the source policy and adapter design in Source Strategy or a source-specific ADR before coding.
+
+Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
+
 ## Future: Cloud Backup And Sync
 
 Cloud backup/sync is not part of core v1 implementation. It is a future roadmap area that requires a separate design discussion and ADR covering identity, encryption, sync conflicts, storage provider, monetization, and cost.
@@ -515,8 +587,9 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 Recommended next Ready cards:
 
-- GPW detail fetch spike
-- Polish media and research source strategy/card breakdown
-- Events workspace data model and first screen
+- Milestone 12 keyboard shortcuts, locale, and workflow polish
+- Milestone 13 general AI analysis framework, using Gemini first while preserving extensibility for OpenAI, Anthropic, and other providers
+- Milestone 14 v1 friend-test license gate
+- Milestone 15 v1 packaging candidate
 
-Do not start GPW detail fetching before the M6 source-policy check confirms that detail-page structure and terms are acceptable.
+M12 should be prepared before implementation starts. M13 is intentionally deferred until the provider-neutral AI framework design is explicit.

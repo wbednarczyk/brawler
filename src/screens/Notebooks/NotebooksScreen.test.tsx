@@ -1,4 +1,5 @@
 import { describe, it } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   currentWeekTestDate,
@@ -315,6 +316,50 @@ describe("Notebook and transcript workflows", () => {
     ).not.toBeInTheDocument();
 
     confirm.mockRestore();
+  });
+
+  it("edits and saves the selected notebook entry with shortcuts", async () => {
+    const user = userEvent.setup();
+
+    appTestState.notebookEntriesResponse = [initialNotebookEntry];
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Notebooks" }));
+
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+    const notebookRow = await within(notebooksWorkspace).findByRole("button", {
+      name: "Select notebook screen entry: Release schedule promise",
+    });
+
+    await user.click(notebookRow);
+    fireEvent.keyDown(document, { key: "E", code: "KeyE", ctrlKey: true });
+
+    expect(screen.getByLabelText("Notebook screen selected title")).toHaveValue("Release schedule promise");
+
+    await user.clear(screen.getByLabelText("Notebook screen selected body"));
+    await user.type(screen.getByLabelText("Notebook screen selected body"), "Shortcut-updated note body.");
+    fireEvent.keyDown(screen.getByLabelText("Notebook screen selected body"), {
+      key: "S",
+      code: "KeyS",
+      ctrlKey: true,
+    });
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_notebook_entry", {
+        input: {
+          id: "note_company_gpw_cdr_release_schedule",
+          title: "Release schedule promise",
+          body: "Shortcut-updated note body.",
+          tags: ["management-guidance", "product"],
+          kind: "claim",
+          claimStatus: "open",
+          eventDate: "2026-05-29",
+          followUpAfter: "2026-Q4",
+          followUpDate: "2026-11-30",
+        },
+      });
+    });
   });
 
   it("shows transcript provider errors in expanded job details", async () => {

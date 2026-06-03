@@ -1,4 +1,5 @@
 import type { CredentialStatus, UserSettings } from "../../api/types";
+import { useLocale } from "../../shared/locale";
 
 type AiSettingsProps = {
   geminiCredentialStatus: CredentialStatus | null;
@@ -23,60 +24,62 @@ export function AiSettings({
   formatCredentialStorage,
   formatCredentialKind,
 }: AiSettingsProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="settings-group" aria-labelledby="settings-ai-title">
-      <h2 id="settings-ai-title">AI</h2>
+      <h2 id="settings-ai-title">{t("settings.ai.title")}</h2>
       <dl className="settings-grid">
         <div>
-          <dt>YouTube transcription</dt>
-          <dd>{formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider)}</dd>
+          <dt>{text("YouTube transcription")}</dt>
+          <dd>{text(formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider))}</dd>
         </div>
         <div>
-          <dt>YouTube transcription provider ID</dt>
+          <dt>{text("YouTube transcription provider ID")}</dt>
           <dd>{settings?.aiProviders.youtubeTranscriptionProvider ?? "provider_gemini"}</dd>
         </div>
         <div>
-          <dt>YouTube transcription model</dt>
-          <dd>{formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel)}</dd>
+          <dt>{text("YouTube transcription model")}</dt>
+          <dd>{text(formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel))}</dd>
         </div>
         <div>
-          <dt>YouTube transcription timeout</dt>
+          <dt>{text("YouTube transcription timeout")}</dt>
           <dd>{settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s</dd>
         </div>
         <div>
-          <dt>YouTube transcription credentials</dt>
-          <dd>{formatCredentialConfigured(geminiCredentialStatus)}</dd>
+          <dt>{text("YouTube transcription credentials")}</dt>
+          <dd>{text(formatCredentialConfigured(geminiCredentialStatus))}</dd>
         </div>
         <div>
-          <dt>Credential storage</dt>
-          <dd>{formatCredentialStorage(geminiCredentialStatus?.storage)}</dd>
+          <dt>{t("settings.credentials.storage")}</dt>
+          <dd>{text(formatCredentialStorage(geminiCredentialStatus?.storage))}</dd>
         </div>
         <div>
-          <dt>Credential kind</dt>
-          <dd>{formatCredentialKind(geminiCredentialStatus?.secretKind)}</dd>
+          <dt>{text("Credential kind")}</dt>
+          <dd>{text(formatCredentialKind(geminiCredentialStatus?.secretKind))}</dd>
         </div>
         <div>
-          <dt>YouTube transcription disclosure</dt>
-          <dd>Starting a transcript job sends the YouTube URL and video content to Gemini.</dd>
+          <dt>{text("YouTube transcription disclosure")}</dt>
+          <dd>{text("Starting a transcript job sends the YouTube URL and video content to Gemini.")}</dd>
         </div>
         <div>
-          <dt>YouTube transcription scope</dt>
-          <dd>Gemini is used only for YouTube transcription.</dd>
+          <dt>{text("YouTube transcription scope")}</dt>
+          <dd>{text("Gemini is used only for YouTube transcription.")}</dd>
         </div>
         <div>
-          <dt>General AI provider</dt>
-          <dd>{formatAiProvider(settings?.aiProviders.generalAnalysisProvider)}</dd>
+          <dt>{text("General AI provider")}</dt>
+          <dd>{text(formatAiProvider(settings?.aiProviders.generalAnalysisProvider))}</dd>
         </div>
         <div>
-          <dt>AI analysis mode</dt>
+          <dt>{text("AI analysis mode")}</dt>
           <dd>{settings?.aiAnalysisMode ?? "source_grounded"}</dd>
         </div>
       </dl>
       <div className="settings-row">
         <label>
-          Gemini transcription model
+          {text("Gemini transcription model")}
           <select
-            aria-label="Gemini transcription model"
+            aria-label={text("Gemini transcription model")}
             value={settings?.aiProviders.youtubeTranscriptionModel ?? "gemini-2.5-flash"}
             onChange={(event) => onYoutubeTranscriptionModelChange(event.target.value)}
           >
@@ -87,28 +90,28 @@ export function AiSettings({
           </select>
         </label>
         <div className="settings-summary">
-          <span>Default</span>
-          <strong>Cheapest supported</strong>
+          <span>{text("Default")}</span>
+          <strong>{text("Cheapest supported")}</strong>
         </div>
       </div>
       <div className="settings-row">
         <label>
-          Gemini transcription timeout
+          {text("Gemini transcription timeout")}
           <select
-            aria-label="Gemini transcription timeout"
+            aria-label={text("Gemini transcription timeout")}
             value={settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}
             onChange={(event) => onYoutubeTranscriptionTimeoutChange(Number(event.target.value))}
           >
-            <option value={45}>45 seconds</option>
-            <option value={90}>90 seconds</option>
-            <option value={180}>3 minutes</option>
-            <option value={300}>5 minutes</option>
-            <option value={600}>10 minutes</option>
+            <option value={45}>45 {text("seconds")}</option>
+            <option value={90}>90 {text("seconds")}</option>
+            <option value={180}>3 {text("minutes")}</option>
+            <option value={300}>5 {text("minutes")}</option>
+            <option value={600}>10 {text("minutes")}</option>
           </select>
         </label>
         <div className="settings-summary">
-          <span>Default</span>
-          <strong>5 minutes</strong>
+          <span>{text("Default")}</span>
+          <strong>5 {text("minutes")}</strong>
         </div>
       </div>
     </section>

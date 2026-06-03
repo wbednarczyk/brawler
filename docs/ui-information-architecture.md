@@ -274,7 +274,8 @@ Purpose: local preferences and provider configuration.
 
 Sections:
 
-- Appearance: dark/light/system theme, `night-neon` palette
+- Appearance: dark/light/system theme, `night-neon` palette, extensible locale setting with English default and Polish as the first additional language
+- Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Ingestion: polling interval, manual refresh defaults
 - AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls, future general AI provider slots
 - Privacy: local data location, provider data disclosure

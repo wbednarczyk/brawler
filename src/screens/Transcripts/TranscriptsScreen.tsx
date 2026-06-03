@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { useLocale } from "../../shared/locale";
 import { TranscriptJobComposer } from "./TranscriptJobComposer";
 import { TranscriptJobRow } from "./TranscriptJobRow";
 import { TranscriptRuntimeStrip } from "./TranscriptRuntimeStrip";
@@ -60,12 +61,14 @@ export function TranscriptsScreen({
   formatCredentialStorage,
   formatEnumLabel,
 }: TranscriptsScreenProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="feed-panel transcripts-panel" aria-labelledby="transcripts-title">
       <div className="panel-header">
         <div>
-          <h1 id="transcripts-title">Transcripts</h1>
-          <p>Submit a YouTube URL. Link a company only when selected transcript segments should become company notes.</p>
+          <h1 id="transcripts-title">{t("transcripts.title")}</h1>
+          <p>{t("transcripts.description")}</p>
         </div>
         <Button
           className="compact-button"
@@ -74,7 +77,7 @@ export function TranscriptsScreen({
           }}
         >
           <RefreshCw size={15} />
-          Refresh jobs
+          {t("action.refreshJobs")}
         </Button>
       </div>
 
@@ -97,12 +100,12 @@ export function TranscriptsScreen({
         transcriptJobForm={transcriptJobForm}
       />
 
-      <div className="sources-layout" aria-label="Transcript jobs">
+      <div className="sources-layout" aria-label={text("Transcript jobs")}>
         {transcriptJobsError ? (
-          <p className="error-text">Transcript jobs unavailable: {transcriptJobsError}</p>
+          <p className="error-text">{t("error.transcriptJobsUnavailable")}: {transcriptJobsError}</p>
         ) : null}
         {transcriptJobs.length === 0 && !transcriptJobsError ? (
-          <EmptyState>No transcript jobs yet.</EmptyState>
+          <EmptyState>{t("empty.noTranscriptJobs")}</EmptyState>
         ) : null}
         {transcriptJobs.map((job) => (
           <TranscriptJobRow

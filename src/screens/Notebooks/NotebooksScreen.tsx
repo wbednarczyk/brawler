@@ -1,6 +1,7 @@
 import { LocateFixed, Plus, Save, X } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { useLocale } from "../../shared/locale";
 import { NotebookEntryEditor } from "./NotebookEntryEditor";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
@@ -42,17 +43,19 @@ export function NotebooksScreen({
   MarkdownNoteBody,
   renderNotebookOrigins,
 }: NotebooksScreenProps) {
+  const { t, text } = useLocale();
+
   return (
     <section className="feed-panel" aria-labelledby="notebooks-title">
       <div className="panel-header">
         <div>
-          <h1 id="notebooks-title">Notebooks</h1>
-          <p>Company-first research notes for daily notes work.</p>
+          <h1 id="notebooks-title">{t("notebooks.title")}</h1>
+          <p>{t("notebooks.description")}</p>
         </div>
       </div>
 
-      <div className="notebooks-screen" aria-label="Notebooks workspace">
-        <div className="notebooks-company-nav" aria-label="Notebook companies">
+      <div className="notebooks-screen" aria-label={text("Notebooks workspace")}>
+        <div className="notebooks-company-nav" aria-label={text("Notebook companies")}>
           {companies.map((company) => {
             const companyNotes = notebookEntries.filter((entry) => entry.companyId === company.id);
             const openClaims = companyNotes.filter((entry) => entry.claimStatus === "open").length;
@@ -73,7 +76,7 @@ export function NotebooksScreen({
                 key={company.id}
               >
                 <button
-                  aria-label={`Open notebook company: ${company.qualifiedTicker}`}
+                  aria-label={`${text("Open notebook company")}: ${company.qualifiedTicker}`}
                   className="notebooks-company-select"
                   onClick={() => selectNotebookScreenCompany(company)}
                   type="button"
@@ -86,36 +89,36 @@ export function NotebooksScreen({
                 <div className="notebooks-company-cues">
                   <span
                     className="notebooks-company-count"
-                    aria-label={`${companyNotes.length} notebook entries for ${company.qualifiedTicker}`}
+                    aria-label={`${companyNotes.length} ${text("notebook entries for")} ${company.qualifiedTicker}`}
                   >
                     {companyNotes.length}
                   </span>
                   {openClaims > 0 ? (
                     <button
-                      aria-label={`Show open claims for ${company.qualifiedTicker}`}
+                      aria-label={`${text("Show open claims for")} ${company.qualifiedTicker}`}
                       className="notebooks-company-cue notebooks-company-cue-button"
                       onClick={() => showNotebookCompanyOpenClaims(company)}
                       type="button"
                     >
-                      {openClaims} open
+                      {openClaims} {text("open")}
                     </button>
                   ) : null}
                   {followUpScheduled > 0 ? (
                     <button
-                      aria-label={`Show follow-ups for ${company.qualifiedTicker}`}
+                      aria-label={`${text("Show follow-ups for")} ${company.qualifiedTicker}`}
                       className="notebooks-company-cue notebooks-company-cue-button"
                       onClick={() => showNotebookCompanyFollowUps(company)}
                       type="button"
                     >
-                      {followUpScheduled} follow-up
+                      {followUpScheduled} {text("Follow-up")}
                     </button>
                   ) : null}
                 </div>
                 <button
-                  aria-label={`Open company workspace: ${company.qualifiedTicker}`}
+                  aria-label={`${text("Open company workspace")}: ${company.qualifiedTicker}`}
                   className="notebooks-company-action"
                   onClick={() => focusCompanyWorkspace(company.id)}
-                  title={`Open ${company.qualifiedTicker} workspace`}
+                  title={`${text("Open")} ${company.qualifiedTicker} ${text("workspace")}`}
                   type="button"
                 >
                   <LocateFixed size={14} />
@@ -124,17 +127,16 @@ export function NotebooksScreen({
             );
           })}
           {companies.length === 0 ? (
-            <EmptyState>Add companies before using notebooks.</EmptyState>
+            <EmptyState>{text("Add companies before using notebooks.")}</EmptyState>
           ) : null}
         </div>
 
-        <div className="notebooks-main" aria-label="Notebook screen entries">
+        <div className="notebooks-main" aria-label={text("Notebook screen entries")}>
           <div className="notebooks-context-line">
             <div>
-              <strong>{selectedNotebookScreenCompany?.qualifiedTicker ?? "No company selected"}</strong>
+              <strong>{selectedNotebookScreenCompany?.qualifiedTicker ?? text("No company selected")}</strong>
               <span>
-                {selectedNotebookScreenEntries.length} visible note
-                {selectedNotebookScreenEntries.length === 1 ? "" : "s"}
+                {selectedNotebookScreenEntries.length} {text(selectedNotebookScreenEntries.length === 1 ? "visible note" : "visible notes")}
               </span>
             </div>
             <Button
@@ -150,13 +152,13 @@ export function NotebooksScreen({
               variant="primary"
             >
               {isNotebookScreenComposerOpen ? <Save size={15} /> : <Plus size={15} />}
-              {isNotebookScreenComposerOpen ? "Save" : "New note"}
+              {isNotebookScreenComposerOpen ? text("Save") : text("New note")}
             </Button>
           </div>
-          <div className="filter-reset-row" aria-label="Notebook filter reset">
-            <div className="inbox-review-summary" aria-label="Notebook follow-up summary">
+          <div className="filter-reset-row" aria-label={text("Notebook filter reset")}>
+            <div className="inbox-review-summary" aria-label={text("Notebook follow-up summary")}>
               <span>
-                <strong>{selectedNotebookScreenEntries.length}</strong> visible
+                <strong>{selectedNotebookScreenEntries.length}</strong> {text("visible")}
               </span>
             </div>
             <Button
@@ -175,60 +177,60 @@ export function NotebooksScreen({
               }}
             >
               <X size={15} />
-              Clear filters
+              {text("Clear filters")}
             </Button>
           </div>
-          <div className="notebooks-filter-row" aria-label="Notebook filters">
+          <div className="notebooks-filter-row" aria-label={text("Notebook filters")}>
             <label>
-              Kind
+              {text("Kind")}
               <select
-                aria-label="Notebook kind filter"
+                aria-label={text("Notebook kind filter")}
                 value={notebookScreenKindFilter}
                 onChange={(event) => setNotebookScreenKindFilter(event.target.value)}
               >
-                <option value="all">All</option>
-                <option value="manual">Manual</option>
-                <option value="observation">Observation</option>
-                <option value="claim">Claim</option>
-                <option value="question">Question</option>
-                <option value="follow_up">Follow-up</option>
+                <option value="all">{text("All")}</option>
+                <option value="manual">{text("Manual")}</option>
+                <option value="observation">{text("Observation")}</option>
+                <option value="claim">{text("Claim")}</option>
+                <option value="question">{text("Question")}</option>
+                <option value="follow_up">{text("Follow-up")}</option>
               </select>
             </label>
             <label>
-              Status
+              {text("Status")}
               <select
-                aria-label="Notebook claim status filter"
+                aria-label={text("Notebook claim status filter")}
                 value={notebookScreenClaimStatusFilter}
                 onChange={(event) => setNotebookScreenClaimStatusFilter(event.target.value)}
               >
-                <option value="all">All</option>
-                <option value="open">Open</option>
-                <option value="delivered">Delivered</option>
-                <option value="partially_delivered">Partially delivered</option>
-                <option value="missed">Missed</option>
-                <option value="unknown">Unknown</option>
-                <option value="not_applicable">Not applicable</option>
+                <option value="all">{text("All")}</option>
+                <option value="open">{text("Status open")}</option>
+                <option value="delivered">{text("Delivered")}</option>
+                <option value="partially_delivered">{text("Partially delivered")}</option>
+                <option value="missed">{text("Missed")}</option>
+                <option value="unknown">{text("Unknown")}</option>
+                <option value="not_applicable">{text("Not applicable")}</option>
               </select>
             </label>
             <label>
-              Tag
+              {text("Tag")}
               <input
-                aria-label="Notebook tag filter"
-                placeholder="tag"
+                aria-label={text("Notebook tag filter")}
+                placeholder={text("tag")}
                 value={notebookScreenTagFilter}
                 onChange={(event) => setNotebookScreenTagFilter(event.target.value)}
               />
             </label>
             <label>
-              Follow-up
+              {text("Follow-up")}
               <select
-                aria-label="Notebook follow-up filter"
+                aria-label={text("Notebook follow-up filter")}
                 value={notebookScreenFollowUpFilter}
                 onChange={(event) => setNotebookScreenFollowUpFilter(event.target.value)}
               >
-                <option value="all">All</option>
-                <option value="has_follow_up">Has follow-up</option>
-                <option value="no_follow_up">No follow-up</option>
+                <option value="all">{text("All")}</option>
+                <option value="has_follow_up">{text("Has follow-up")}</option>
+                <option value="no_follow_up">{text("No follow-up")}</option>
               </select>
             </label>
           </div>
@@ -243,80 +245,80 @@ export function NotebooksScreen({
                 <div className="notebooks-draft-header">
                   <Button onClick={discardNotebookScreenDraft} variant="minimal">
                     <X size={12} />
-                    Discard
+                    {text("Discard")}
                   </Button>
                 </div>
                 <div className="notebook-form-grid">
                   <label>
-                    Title
+                    {text("Title")}
                     <input
-                      aria-label="Notebook screen note title"
+                      aria-label={text("Notebook screen note title")}
                       value={notebookScreenForm.title}
                       onChange={(event) => updateNotebookScreenForm("title", event.target.value)}
                     />
                   </label>
                   <label>
-                    Kind
+                    {text("Kind")}
                     <select
-                      aria-label="Notebook screen note kind"
+                      aria-label={text("Notebook screen note kind")}
                       value={notebookScreenForm.kind}
                       onChange={(event) => updateNotebookScreenForm("kind", event.target.value)}
                     >
-                      <option value="manual">Manual</option>
-                      <option value="observation">Observation</option>
-                      <option value="claim">Claim</option>
-                      <option value="question">Question</option>
-                      <option value="follow_up">Follow-up</option>
+                      <option value="manual">{text("Manual")}</option>
+                      <option value="observation">{text("Observation")}</option>
+                      <option value="claim">{text("Claim")}</option>
+                      <option value="question">{text("Question")}</option>
+                      <option value="follow_up">{text("Follow-up")}</option>
                     </select>
                   </label>
                   <label>
-                    Tags
+                    {text("Tags")}
                     <input
-                      aria-label="Notebook screen note tags"
-                      placeholder="comma, separated"
+                      aria-label={text("Notebook screen note tags")}
+                      placeholder={text("comma, separated")}
                       value={notebookScreenForm.tags}
                       onChange={(event) => updateNotebookScreenForm("tags", event.target.value)}
                     />
                   </label>
                   <label>
-                    Claim status
+                    {text("Claim status")}
                     <select
-                      aria-label="Notebook screen note claim status"
+                      aria-label={text("Notebook screen note claim status")}
                       value={notebookScreenForm.claimStatus}
                       onChange={(event) => updateNotebookScreenForm("claimStatus", event.target.value)}
                     >
-                      <option value="">None</option>
-                      <option value="open">Open</option>
-                      <option value="delivered">Delivered</option>
-                      <option value="partially_delivered">Partially delivered</option>
-                      <option value="missed">Missed</option>
-                      <option value="unknown">Unknown</option>
-                      <option value="not_applicable">Not applicable</option>
+                      <option value="">{text("None")}</option>
+                      <option value="open">{text("Status open")}</option>
+                      <option value="delivered">{text("Delivered")}</option>
+                      <option value="partially_delivered">{text("Partially delivered")}</option>
+                      <option value="missed">{text("Missed")}</option>
+                      <option value="unknown">{text("Unknown")}</option>
+                      <option value="not_applicable">{text("Not applicable")}</option>
                     </select>
                   </label>
                   <NotebookDateField
-                    ariaLabel="Notebook screen note event date"
-                    label="Event date"
+                    ariaLabel={text("Notebook screen note event date")}
+                    label={text("Event date")}
                     value={notebookScreenForm.eventDate}
                     onChange={(value) => updateNotebookScreenForm("eventDate", value)}
                   />
                   <NotebookQuarterField
-                    ariaLabel="Notebook screen note follow-up quarter"
-                    label="Follow-up quarter"
+                    ariaLabel={text("Notebook screen note follow-up quarter")}
+                    label={text("Follow-up quarter")}
                     value={notebookScreenForm.followUpAfter}
                     onChange={(value) => updateNotebookScreenForm("followUpAfter", value)}
                   />
                   <NotebookDateField
-                    ariaLabel="Notebook screen note follow-up date"
-                    label="Follow-up date"
+                    ariaLabel={text("Notebook screen note follow-up date")}
+                    label={text("Follow-up date")}
                     value={notebookScreenForm.followUpDate}
                     onChange={(value) => updateNotebookScreenForm("followUpDate", value)}
                   />
                 </div>
                 <label className="notebook-body-field">
-                  Body
+                  {text("Body")}
                   <textarea
-                    aria-label="Notebook screen note body"
+                    aria-label={text("Notebook screen note body")}
                     value={notebookScreenForm.body}
                     onChange={(event) => updateNotebookScreenForm("body", event.target.value)}
                   />
@@ -327,7 +329,7 @@ export function NotebooksScreen({
             {selectedNotebookScreenEntries.map((entry) => (
               <div className="notebook-row-block" key={entry.id}>
                 <button
-                  aria-label={`Select notebook screen entry: ${entry.title}`}
+                  aria-label={`${text("Select notebook screen entry")}: ${entry.title}`}
                   className={[
                     "notebook-row",
                     selectedNotebookScreenEntry?.id === entry.id ? "notebook-row-selected" : "",
@@ -340,11 +342,11 @@ export function NotebooksScreen({
                   <div>
                     <div className="notebook-row-top">
                       <h3>{entry.title}</h3>
-                      <span>{entry.kind.replace("_", " ")}</span>
+                      <span>{text(entry.kind.replace("_", " "))}</span>
                     </div>
                   </div>
                   <div className="notebook-row-meta">
-                    {entry.claimStatus ? <span>{entry.claimStatus.replace("_", " ")}</span> : null}
+                    {entry.claimStatus ? <span>{text(entry.claimStatus.replace("_", " "))}</span> : null}
                     {entry.followUpAfter ? <span>{entry.followUpAfter}</span> : null}
                     {entry.tags.slice(0, 2).map((tag) => (
                       <span key={tag}>{tag}</span>
@@ -371,12 +373,12 @@ export function NotebooksScreen({
               </div>
             ))}
             {selectedNotebookScreenCompany && selectedNotebookScreenEntries.length === 0 ? (
-              <EmptyState>No notes for {selectedNotebookScreenCompany.qualifiedTicker} yet.</EmptyState>
+                    <EmptyState>{text("No notes for")} {selectedNotebookScreenCompany.qualifiedTicker} {text("yet.")}</EmptyState>
             ) : null}
           </div>
         </div>
       </div>
-      {notebookError ? <p className="error-text">Notebook command failed: {notebookError}</p> : null}
+      {notebookError ? <p className="error-text">{text("Notebook command failed")}: {notebookError}</p> : null}
     </section>
   );
 }

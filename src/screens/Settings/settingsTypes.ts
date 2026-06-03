@@ -1,8 +1,10 @@
 import type { FormEvent } from "react";
-import type { CredentialStatus, FeedPruneResult, Theme, UserSettings } from "../../api/types";
+import type { AppLocale, CredentialStatus, FeedPruneResult, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
+import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 
 export type SettingsScreenProps = {
   theme: Theme;
+  locale: AppLocale;
   settings: UserSettings | null;
   settingsError: string | null;
   feedPruneRetentionDays: number;
@@ -11,8 +13,12 @@ export type SettingsScreenProps = {
   geminiCredentialError: string | null;
   geminiCredentialInFlight: boolean;
   geminiApiKeyDraft: string;
+  shortcutBindings: Record<string, ShortcutBindingSetting>;
+  shortcutReferences: AppShortcutReferenceItem[];
   onThemeChange: (theme: Theme) => void;
+  onLocaleChange: (locale: AppLocale) => void;
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
+  onShortcutBindingsChange: (shortcutBindings: Record<string, ShortcutBindingSetting>) => void;
   onYoutubeTranscriptionModelChange: (model: string) => void;
   onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;
   onGeminiApiKeyDraftChange: (apiKey: string) => void;

@@ -1,3 +1,4 @@
+import { fireEvent } from "@testing-library/react";
 import { describe, it } from "vitest";
 import {
   appTestState,
@@ -42,5 +43,55 @@ describe("App shell", () => {
 
     expect(within(inboxNav).getByText("1")).toHaveClass("nav-badge");
     expect(within(inboxNav).getByLabelText("1 unread feed item")).toBeInTheDocument();
+  });
+
+  it("registers app-level shortcuts and suppresses them while searching", async () => {
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "2", code: "Digit2", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Companies" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
+    const searchInput = screen.getByLabelText("Search feed");
+    expect(searchInput).toHaveFocus();
+
+    fireEvent.keyDown(searchInput, { key: "3", code: "Digit3", ctrlKey: true });
+    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+
+    searchInput.blur();
+    fireEvent.keyDown(document, { key: "7", code: "Digit7", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("uses configured shortcut bindings from settings", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      shortcutBindings: {
+        "app.openCompanies": {
+          key: "C",
+          ctrlKey: true,
+        },
+        "app.openInbox": {
+          key: "1",
+          ctrlKey: true,
+          disabled: true,
+        },
+      },
+    };
+
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("get_settings");
+    });
+
+    fireEvent.keyDown(document, { key: "C", code: "KeyC", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Companies" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "1", code: "Digit1", ctrlKey: true });
+    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
   });
 });

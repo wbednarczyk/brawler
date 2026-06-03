@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -37,6 +38,7 @@ import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
 import { useTranscriptController } from "./useTranscriptController";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
+import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { EventsScreen } from "../screens/Events/EventsScreen";
@@ -71,6 +73,7 @@ import {
   formatEnumLabel,
   formatGeminiModel,
 } from "../shared/formatting/labels";
+import { LocaleContext, makeTextTranslator, makeTranslator } from "../shared/locale";
 import type { CompanyEventForm, CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { NotebookForm } from "../shared/types/notebook";
 import type {
@@ -113,6 +116,7 @@ export function AppStateRoot() {
   });
   const [activeSection, setActiveSection] = useState<Section>("Inbox");
   const [theme, setTheme] = useState<Theme>("dark");
+  const [locale, setLocale] = useState<UserSettings["locale"]>("en");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
   const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(null);
@@ -321,6 +325,10 @@ export function AppStateRoot() {
     watchlistMemberships,
   });
 
+  const text = makeTextTranslator(locale);
+  const shortcutBindings = settings?.shortcutBindings ?? {};
+  const shortcutReferences = resolveAppShortcutReferenceItems(shortcutBindings);
+
   const {
     clearCompanyEventFilters,
     createCompanyEvent,
@@ -391,6 +399,7 @@ export function AppStateRoot() {
     setSelectedFeedItemId,
     setSettings,
     setSettingsError,
+    setLocale,
     setSourceAdapters,
     setSourceAdaptersError,
     setTheme,
@@ -400,6 +409,7 @@ export function AppStateRoot() {
     setWatchlistMemberships,
     setWatchlists,
     setWatchlistsError,
+    text,
   });
 
   const {
@@ -436,7 +446,9 @@ export function AppStateRoot() {
   const {
     clearGeminiApiKey,
     saveGeminiApiKey,
+    updateLocale,
     updatePollInterval,
+    updateShortcutBindings,
     updateTheme,
     updateYoutubeTranscriptionModel,
     updateYoutubeTranscriptionTimeout,
@@ -448,7 +460,9 @@ export function AppStateRoot() {
     setGeminiCredentialStatus,
     setSettings,
     setSettingsError,
+    setLocale,
     setTheme,
+    text,
   });
 
   const {
@@ -486,6 +500,7 @@ export function AppStateRoot() {
     watchlistAssignments,
     watchlistName,
     watchlists,
+    text,
   });
 
   const {
@@ -595,6 +610,7 @@ export function AppStateRoot() {
     transcriptDescriptionDraftByJobId,
     transcriptJobForm,
     transcriptNoteForm,
+    text,
   });
 
   const {
@@ -748,28 +764,193 @@ export function AppStateRoot() {
     });
   }
 
+  function selectAdjacentInboxItem(direction: 1 | -1) {
+    if (activeSection !== "Inbox" || filteredFeedItems.length === 0) {
+      return false;
+    }
+
+    const currentIndex = selectedFeedItem
+      ? filteredFeedItems.findIndex((item) => item.id === selectedFeedItem.id)
+      : -1;
+    const nextIndex = currentIndex === -1
+      ? 0
+      : Math.min(Math.max(currentIndex + direction, 0), filteredFeedItems.length - 1);
+
+    setSelectedFeedItemId(filteredFeedItems[nextIndex]?.id ?? null);
+    return true;
+  }
+
+  function selectAdjacentCompany(direction: 1 | -1) {
+    if (activeSection !== "Companies" || filteredCompanies.length === 0) {
+      return false;
+    }
+
+    const currentIndex = selectedCompany
+      ? filteredCompanies.findIndex((company) => company.id === selectedCompany.id)
+      : -1;
+    const nextIndex = currentIndex === -1
+      ? 0
+      : Math.min(Math.max(currentIndex + direction, 0), filteredCompanies.length - 1);
+    const nextCompany = filteredCompanies[nextIndex];
+
+    if (!nextCompany) {
+      return false;
+    }
+
+    setSelectedCompanyId(nextCompany.id);
+    return true;
+  }
+
+  function switchCompanyWorkspaceTab(direction: 1 | -1) {
+    if (activeSection !== "Companies" || !selectedCompany) {
+      return false;
+    }
+
+    const tabs: CompanyWorkspaceTab[] = ["Feed", "Notebook", "Claims", "Transcripts", "Metadata"];
+    const currentIndex = tabs.indexOf(companyWorkspaceTab);
+    const nextIndex = Math.min(Math.max(currentIndex + direction, 0), tabs.length - 1);
+
+    setCompanyWorkspaceTab(tabs[nextIndex]);
+    return true;
+  }
+
+  const shortcutActions = useMemo<AppShortcutActionMap>(() => ({
+    "app.openInbox": () => undefined,
+    "app.openCompanies": () => undefined,
+    "app.openNotebooks": () => undefined,
+    "app.openEvents": () => undefined,
+    "app.openTranscripts": () => undefined,
+    "app.openSources": () => undefined,
+    "app.openSettings": () => undefined,
+    "app.focusSearch": () => undefined,
+    "app.refreshSources": () => undefined,
+    "app.refreshDatabase": () => undefined,
+    "inbox.nextItem": () => selectAdjacentInboxItem(1),
+    "inbox.previousItem": () => selectAdjacentInboxItem(-1),
+    "inbox.toggleRead": () => {
+      if (activeSection !== "Inbox" || !selectedFeedItem) {
+        return false;
+      }
+
+      updateSelectedFeedItem((item) => ({ ...item, unread: !item.unread }));
+      return true;
+    },
+    "inbox.toggleSaved": () => {
+      if (activeSection !== "Inbox" || !selectedFeedItem) {
+        return false;
+      }
+
+      updateSelectedFeedItem((item) => ({ ...item, saved: !item.saved }));
+      return true;
+    },
+    "inbox.openSource": () => {
+      if (activeSection !== "Inbox" || !selectedFeedItem) {
+        return false;
+      }
+
+      openExternalUrl(selectedFeedItem.sourceUrl);
+      return true;
+    },
+    "inbox.createNote": () => {
+      if (activeSection !== "Inbox" || !selectedFeedItem) {
+        return false;
+      }
+
+      openFeedItemNoteDraft(selectedFeedItem);
+      return true;
+    },
+    "company.nextCompany": () => selectAdjacentCompany(1),
+    "company.previousCompany": () => selectAdjacentCompany(-1),
+    "company.nextTab": () => switchCompanyWorkspaceTab(1),
+    "company.previousTab": () => switchCompanyWorkspaceTab(-1),
+    "notebook.editSelected": () => {
+      if (activeSection === "Companies" && companyWorkspaceTab === "Notebook" && selectedNotebookEntry) {
+        setNotebookEditMode(true);
+        return true;
+      }
+
+      if (activeSection === "Notebooks" && selectedNotebookScreenEntry) {
+        setNotebookScreenEditMode(true);
+        return true;
+      }
+
+      return false;
+    },
+    "notebook.saveCurrent": () => {
+      if (activeSection === "Companies" && companyWorkspaceTab === "Notebook") {
+        if (isNotebookComposerOpen && selectedCompany) {
+          createNotebookEntry();
+          return true;
+        }
+
+        if (isNotebookEditMode && selectedNotebookEntry) {
+          saveNotebookEntry();
+          return true;
+        }
+      }
+
+      if (activeSection === "Notebooks") {
+        if (isNotebookScreenComposerOpen && selectedNotebookScreenCompany) {
+          createNotebookScreenEntry();
+          return true;
+        }
+
+        if (isNotebookScreenEditMode && selectedNotebookScreenEntry) {
+          saveNotebookScreenEntry();
+          return true;
+        }
+      }
+
+      return false;
+    },
+  }), [
+    activeSection,
+    companyWorkspaceTab,
+    createNotebookEntry,
+    createNotebookScreenEntry,
+    filteredCompanies,
+    filteredFeedItems,
+    isNotebookComposerOpen,
+    isNotebookEditMode,
+    isNotebookScreenComposerOpen,
+    isNotebookScreenEditMode,
+    openFeedItemNoteDraft,
+    saveNotebookEntry,
+    saveNotebookScreenEntry,
+    selectedCompany,
+    selectedFeedItem,
+    selectedNotebookEntry,
+    selectedNotebookScreenCompany,
+    selectedNotebookScreenEntry,
+    updateSelectedFeedItem,
+  ]);
+
   return (
-    <AppShell
-      activeSection={activeSection}
-      databaseError={databaseError}
-      databaseStatus={databaseStatus}
-      dbRefreshState={dbRefreshState}
-      effectiveTheme={effectiveTheme}
-      health={health}
-      openSourceStatus={openSourceStatus}
-      refreshDatabaseBackedViews={refreshDatabaseBackedViews}
-      refreshSources={refreshSources}
-      searchQuery={searchQuery}
-      setActiveSection={setActiveSection}
-      setSearchQuery={setSearchQuery}
-      sourceRefreshError={sourceRefreshError}
-      sourceRefreshResult={sourceRefreshResult}
-      sourceRefreshState={sourceRefreshState}
-      sourceStatusSummary={sourceStatusSummary}
-      theme={theme}
-      totalUnreadFeedItems={totalUnreadFeedItems}
-      updateTheme={updateTheme}
-    >
+    <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
+      <AppShell
+        activeSection={activeSection}
+        databaseError={databaseError}
+        databaseStatus={databaseStatus}
+        dbRefreshState={dbRefreshState}
+        effectiveTheme={effectiveTheme}
+        health={health}
+        openSourceStatus={openSourceStatus}
+        refreshDatabaseBackedViews={refreshDatabaseBackedViews}
+        refreshSources={refreshSources}
+        searchQuery={searchQuery}
+        setActiveSection={setActiveSection}
+        setSearchQuery={setSearchQuery}
+        sourceRefreshError={sourceRefreshError}
+        sourceRefreshResult={sourceRefreshResult}
+        sourceRefreshState={sourceRefreshState}
+        sourceStatusSummary={sourceStatusSummary}
+        theme={theme}
+        locale={locale}
+        shortcutBindings={shortcutBindings}
+        shortcutActions={shortcutActions}
+        totalUnreadFeedItems={totalUnreadFeedItems}
+        updateTheme={updateTheme}
+      >
         <section
           className={activeSection === "Inbox" ? "content-grid" : "content-grid content-grid-single"}
           ref={contentGridRef}
@@ -1102,6 +1283,7 @@ export function AppStateRoot() {
           {activeSection === "Settings" ? (
             <SettingsScreen
               theme={theme}
+              locale={locale}
               settings={settings}
               settingsError={settingsError}
               feedPruneRetentionDays={feedPruneRetentionDays}
@@ -1110,8 +1292,12 @@ export function AppStateRoot() {
               geminiCredentialError={geminiCredentialError}
               geminiCredentialInFlight={geminiCredentialInFlight}
               geminiApiKeyDraft={geminiApiKeyDraft}
+              shortcutBindings={shortcutBindings}
+              shortcutReferences={shortcutReferences}
               onThemeChange={updateTheme}
+              onLocaleChange={updateLocale}
               onPollIntervalChange={updatePollInterval}
+              onShortcutBindingsChange={updateShortcutBindings}
               onYoutubeTranscriptionModelChange={updateYoutubeTranscriptionModel}
               onYoutubeTranscriptionTimeoutChange={updateYoutubeTranscriptionTimeout}
               onGeminiApiKeyDraftChange={setGeminiApiKeyDraft}
@@ -1131,6 +1317,7 @@ export function AppStateRoot() {
           ) : null}
 
         </section>
-    </AppShell>
+      </AppShell>
+    </LocaleContext.Provider>
   );
 }

@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
 import { Button } from "../../shared/components/Button";
+import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
 
 type WeekEventsViewProps = Pick<
@@ -35,6 +36,8 @@ export function WeekEventsView({
   companyEventDueClass,
   openExternalUrl,
 }: WeekEventsViewProps) {
+  const { text } = useLocale();
+
   function toggleEvent(event: CompanyEvent) {
     setSelectedCompanyEventId((current) => (current === event.id ? null : event.id));
   }
@@ -47,7 +50,7 @@ export function WeekEventsView({
     return (
       <div className="event-week-card-block" key={event.id}>
         <article
-          aria-label={`Open event: ${event.title}`}
+          aria-label={`${text("Open event")}: ${event.title}`}
           className={[
             "event-week-card",
             event.manual ? "event-manual" : "",
@@ -76,32 +79,32 @@ export function WeekEventsView({
           <h2>{event.title}</h2>
           <div className="event-week-card-meta">
             <span>{formatCompanyEventType(event.eventType)}</span>
-            <span>{event.manual ? "Manual" : formatCompanyEventSourceType(event.sourceType)}</span>
+            <span>{event.manual ? text("Manual") : formatCompanyEventSourceType(event.sourceType)}</span>
           </div>
         </article>
 
         {isSelected ? (
-          <div className="event-week-card-detail" aria-label="Event details">
+          <div className="event-week-card-detail" aria-label={text("Event details")}>
             <div className="event-week-card-full-title">
-              <span>Title</span>
+              <span>{text("Title")}</span>
               <strong>{event.title}</strong>
             </div>
             <dl>
               <div>
-                <dt>Company</dt>
+                <dt>{text("Company")}</dt>
                 <dd>{event.companyName}</dd>
               </div>
               <div>
-                <dt>Date</dt>
+                <dt>{text("Date")}</dt>
                 <dd>{event.eventTime ? `${event.eventDate} ${event.eventTime}` : event.eventDate}</dd>
               </div>
               <div>
-                <dt>Source</dt>
+                <dt>{text("Source")}</dt>
                 <dd>{formatCompanyEventSourceType(event.sourceType)}</dd>
               </div>
               <div>
-                <dt>Attribution</dt>
-                <dd>{event.attribution ?? "Not set"}</dd>
+                <dt>{text("Attribution")}</dt>
+                <dd>{event.attribution ?? text("Not set")}</dd>
               </div>
             </dl>
             {event.sourceUrl ? (
@@ -110,7 +113,7 @@ export function WeekEventsView({
                 onClick={() => openExternalUrl(event.sourceUrl as string)}
               >
                 <ExternalLink size={15} />
-                Open source
+                {text("Open source")}
               </Button>
             ) : null}
           </div>
@@ -121,7 +124,7 @@ export function WeekEventsView({
 
   return (
     <>
-      <div className="event-week-grid" aria-label="Working week events">
+      <div className="event-week-grid" aria-label={text("Working week events")}>
         {companyEventWorkingWeekDays.map((day) => {
           const dayEvents = companyEventsByDate[day.date] ?? [];
 
@@ -132,15 +135,15 @@ export function WeekEventsView({
                 <span>{day.date}</span>
               </div>
               <div className="event-week-day-body">
-                {dayEvents.length > 0 ? dayEvents.map(renderCompanyEventWeekCard) : <div className="event-week-empty">No events</div>}
+                {dayEvents.length > 0 ? dayEvents.map(renderCompanyEventWeekCard) : <div className="event-week-empty">{text("No events.")}</div>}
               </div>
             </section>
           );
         })}
         {companyEventWeekendEvents.length > 0 ? (
-          <section className="event-weekend-row" aria-label="Weekend events">
+          <section className="event-weekend-row" aria-label={text("Weekend events")}>
             <div className="event-week-day-header">
-              <strong>Weekend</strong>
+              <strong>{text("Weekend")}</strong>
               <span>
                 {companyEventWeekendDays[0]?.date} - {companyEventWeekendDays[1]?.date}
               </span>
@@ -149,7 +152,7 @@ export function WeekEventsView({
           </section>
         ) : null}
       </div>
-      {companyEventsError ? <p className="error-text">Events command failed: {companyEventsError}</p> : null}
+      {companyEventsError ? <p className="error-text">{text("Events command failed")}: {companyEventsError}</p> : null}
     </>
   );
 }

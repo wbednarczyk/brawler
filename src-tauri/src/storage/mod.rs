@@ -42,7 +42,7 @@ mod watchlists;
 
 pub use error::{StorageError, StorageResult};
 pub use migrations::{open_database, open_in_memory_database};
-pub use settings::{AiProviderSettings, SettingsUpdate, UserSettings};
+pub use settings::{AiProviderSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings};
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
     ResolveTranscriptJobCompanyInput, TranscriptJob, TranscriptJobListInput, TranscriptNoteDraft,

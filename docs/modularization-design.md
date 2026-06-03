@@ -146,6 +146,9 @@ src/
       timestamps.ts
       date.ts
       labels.ts
+    locale/
+      index.ts
+      locale.test.ts
     types/
       events.ts
       notebook.ts
@@ -189,6 +192,25 @@ src/
 - Screen tests should live near the screen they verify once the screen is extracted.
 - Segmented controls, row selectors, field-clear buttons, collapsible headers, suggestion rows, and anchor links may remain native/domain-specific when a shared component would obscure semantics.
 - New screen behavior should get a screen-level test or a targeted app workflow test near the owning screen.
+
+### M12 Locale And Shortcut Ownership
+
+Locale work should follow the existing settings and shared-helper boundaries:
+
+- Backend persistence belongs in `src-tauri/src/storage/settings.rs`, exposed through `src-tauri/src/commands/settings.rs`.
+- Frontend command calls and DTO changes belong in `src/api/settings.ts` and `src/api/types.ts`.
+- App-level locale state wiring belongs in `src/app/AppStateRoot.tsx`, `src/app/useAppDataController.ts`, `src/app/useSettingsController.ts`, and related app controllers only where they already own settings state.
+- Locale resources and typed lookup helpers belong under `src/shared/locale/` or an equivalently focused shared module.
+- Screen components should receive localized strings or a narrow locale helper; they should not import Tauri settings APIs directly.
+- Source-provided text, company names, ticker symbols, URLs, attribution, transcript text, notebook titles/bodies, and fetched article/report bodies must remain source/user-provided and should not pass through app-locale translation.
+
+Shortcut work should be separate from existing row-navigation helpers:
+
+- `src/shared/hooks/useKeyboardListNavigation.ts` remains for local arrow-key list movement.
+- A new shortcut manager/hook should live under `src/shared/hooks/` or `src/app/` depending on whether it is generic registration logic or app-level command wiring.
+- App-wide shortcut registration and the discoverability shell belong in `src/app/` and Settings/Help UI.
+- Screen-specific shortcut actions belong in the owning screen or screen controller.
+- Shortcut tests should live near the screen for screen-owned actions, with shared hook tests for suppression/registration behavior.
 
 ## Current Rust Structure
 
