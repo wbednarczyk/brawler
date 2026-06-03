@@ -371,6 +371,11 @@ aiProviders: {
   generalAnalysisTimeoutSeconds: 90,
 },
 aiAnalysisMode: "source_grounded",
+logs: {
+  level: "info",
+  maxFiles: 5,
+  maxFileBytes: 5_242_880,
+},
 shortcutBindings: {},
 };
 

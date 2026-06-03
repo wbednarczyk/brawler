@@ -3,6 +3,8 @@ use tauri::Manager;
 
 pub mod app_state;
 pub mod jobs;
+pub mod logging;
+pub mod observability;
 pub mod providers;
 pub mod source_adapters;
 pub mod storage;
@@ -30,6 +32,12 @@ pub fn run() {
             if developer_mode_requested_from_environment() {
                 state.set_developer_mode_enabled(true)?;
             }
+            let log_settings = logging::resolve_log_settings(&state.get_settings()?.logs);
+            let logs_dir =
+                logging::init_file_logger(&app_data_dir, log_settings).map_err(|error| {
+                    std::io::Error::other(format!("failed to initialize local logger: {error:?}"))
+                })?;
+            log::info!("local logging initialized at {}", logs_dir.display());
 
             app.manage(state);
 
@@ -77,6 +85,9 @@ pub fn run() {
             commands::diagnostics::list_diagnostic_events,
             commands::diagnostics::clear_diagnostic_events,
             commands::diagnostics::get_diagnostic_summary,
+            commands::logs::get_log_status,
+            commands::logs::list_log_entries,
+            commands::logs::open_logs_directory,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::disable_developer_mode,
@@ -111,7 +122,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.14.0");
+        assert_eq!(response.version, "0.15.0");
     }
 
     #[test]

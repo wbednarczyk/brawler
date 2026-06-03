@@ -25,6 +25,7 @@ Then read only the relevant canonical references for the work being done:
 ## Working Rules
 
 - Do not implement non-trivial changes without an explicit plan and approval.
+- Start every new milestone by breaking it into tasks and presenting all important architecture decisions to the user. Explain options and tradeoffs briefly, require explicit answers, and ask until the architecture is clear before implementation.
 - Keep public behavior, contracts, and docs in sync with code changes.
 - Before non-trivial implementation and milestone closure, perform an ADR checkpoint: add or update an ADR when the work changes durable architecture or policy decisions, or explicitly confirm that existing ADRs already cover the decision.
 - Milestone closure must include the matching app version bump in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.

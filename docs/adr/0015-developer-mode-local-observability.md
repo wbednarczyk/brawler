@@ -24,7 +24,7 @@ Developer mode is an intentional local mode for trusted users. It is off by defa
 
 Developer diagnostics are structured SQLite-backed events recorded only while Developer mode is enabled. Diagnostic events use a shared typed contract with timestamp, module, scope/entity ID, stage, severity, message, and redacted metadata. They are shown in a dedicated developer-only Diagnostics panel.
 
-Runtime logs are a separate local append-only file framework with conservative defaults, rotation, and shared redaction rules.
+Runtime logs are a separate local append-only file framework with conservative defaults, rotation, and shared redaction rules. Runtime logging uses the Rust `log` facade with a local JSON Lines file backend. Logs are written under the app data logs directory, default to `info`, and can be configured through Settings and local environment overrides. Rotation is configurable and defaults to five files of five MiB each. The Diagnostics panel may expose a developer-only full in-app log viewer and log-folder open action, while Settings may expose always-visible log configuration because those settings affect local files only.
 
 Metrics are separate local operational health signals exposed only in Developer mode. They are not product analytics or user behavior tracking.
 
@@ -33,7 +33,7 @@ OpenTelemetry-compatible naming and structure are acceptable where cheap, but v1
 ## Consequences
 
 - M14 implements Developer mode and structured diagnostics before logs and metrics.
-- M15 implements local runtime logs separately.
+- M15 implements local runtime logs separately using the `log` crate, JSON Lines, configurable rotation, Settings-visible log configuration, and a Developer-mode Diagnostics log viewer.
 - M16 implements modest local metrics separately.
 - Diagnostics, logs, and metrics share redaction rules but remain different surfaces.
 - Events are not recorded while Developer mode is disabled.

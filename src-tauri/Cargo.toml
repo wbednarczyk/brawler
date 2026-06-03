@@ -1,6 +1,6 @@
 [package]
 name = "brawler"
-version = "0.14.0"
+version = "0.15.0"
 description = "Local-first investor research workspace"
 authors = ["Brawler contributors"]
 edition = "2021"
@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
 keyring = { version = "3", features = ["windows-native"] }
+log = "0.4"
 quick-xml = "0.39"
 rusqlite = { version = "0.32", features = ["bundled"] }
 scraper = "0.22"

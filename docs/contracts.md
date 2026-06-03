@@ -811,6 +811,38 @@ Command rules:
 - Summary text must not include raw diagnostic JSON or unredacted metadata.
 - Summary text is intended for manual copy/paste from the developer-only UI, not automatic export.
 
+## Runtime Logs
+
+Runtime logs are bounded local file records for troubleshooting normal app execution. They are separate from user-facing errors, structured diagnostic events, metrics, telemetry, traces, and analytics.
+
+Initial log format: JSON Lines.
+
+```json
+{
+  "timestamp": "2026-06-03T10:15:00Z",
+  "level": "info",
+  "target": "brawler::jobs::source_refresh",
+  "module": "sources",
+  "message": "Source refresh completed.",
+  "fields": {
+    "adapterId": "bankier-company-komunikaty",
+    "itemsCreated": 2
+  }
+}
+```
+
+Rules:
+
+- Logs are written under the OS app data logs directory.
+- Default log level is `info`.
+- Supported log levels are `off`, `error`, `warn`, `info`, `debug`, and `trace`.
+- Log level is configurable in Settings and may be overridden by local environment for development.
+- Rotation limits are configurable in Settings and default to five files of five MiB each.
+- Logs use the shared observability redaction policy before writing fields.
+- Logs must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Diagnostics may expose a full in-app log viewer, copy-redacted-log action, log status, and open-logs-folder action only while Developer mode is active.
+- React may call typed commands for log status, redacted log reads, and opening the app-owned logs directory. It must not receive arbitrary filesystem browsing capability.
+
 ## User Settings
 
 ```json
@@ -851,6 +883,9 @@ Rules:
 - The default theme is `dark`.
 - The default locale is `en`.
 - The default Developer mode setting is `false`.
+- The default runtime log level is `info`.
+- The default runtime log rotation limit is five files of five MiB each.
+- Settings must expose local runtime log level and rotation limits as normal visible settings.
 - Developer mode may be enabled only through intentional local developer mechanisms, not through a normal always-visible Settings toggle.
 - Startup activation uses `BRAWLER_DEVELOPER_MODE=1`, `true`, `yes`, or `on`.
 - Runtime author unlock may enable Developer mode after the app is already running only when `BRAWLER_DEVELOPER_UNLOCK_CODE` is present in the app process environment and the submitted passphrase matches it.

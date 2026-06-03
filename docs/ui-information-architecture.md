@@ -283,6 +283,7 @@ Main regions:
 - timeline list: newest meaningful diagnostic events first
 - event detail pane or inline expansion: redacted metadata, scope/entity ID, stage, timestamp, severity, and message
 - actions: clear diagnostics and copy redacted diagnostic summary
+- logs tab or section: full in-app runtime log viewer, log status, copy redacted log output, and open logs folder
 - developer mode status and disable action
 
 Rules:
@@ -290,6 +291,7 @@ Rules:
 - The Diagnostics navigation item is hidden unless Developer mode is active.
 - Diagnostic events are for troubleshooting only and must not replace normal user-facing status, errors, or progress UI.
 - Event details must clearly show that metadata is redacted and local-only.
+- Runtime log viewing is available only from Diagnostics while Developer mode is active, even though log configuration is visible in Settings.
 - The first rich timeline is AI analysis job progress, including queued, running, context loaded, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
 - Non-AI modules may show lightweight baseline events where useful, but detailed logs and metrics are separate later milestones.
 - Raw diagnostic JSON/file export is outside M14 scope.
@@ -302,6 +304,7 @@ Sections:
 
 - Appearance: dark/light/system theme, `night-neon` palette, extensible locale setting with English default and Polish as the first additional language
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
+- Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
 - Ingestion: polling interval, manual refresh defaults
 - AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls, future general AI provider slots
 - Privacy: local data location, provider data disclosure

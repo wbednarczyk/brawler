@@ -16,6 +16,14 @@ pub struct AiProviderSettings {
     pub general_analysis_timeout_seconds: i64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSettings {
+    pub level: String,
+    pub max_files: i64,
+    pub max_file_bytes: i64,
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutBindingSetting {
@@ -40,10 +48,11 @@ pub struct UserSettings {
     pub yaml_import_export_status: &'static str,
     pub ai_providers: AiProviderSettings,
     pub ai_analysis_mode: String,
+    pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsUpdate {
     pub theme: Option<String>,
@@ -56,6 +65,9 @@ pub struct SettingsUpdate {
     pub general_analysis_model: Option<String>,
     pub general_analysis_timeout_seconds: Option<i64>,
     pub ai_analysis_mode: Option<String>,
+    pub log_level: Option<String>,
+    pub log_max_files: Option<i64>,
+    pub log_max_file_bytes: Option<i64>,
     pub shortcut_bindings: Option<HashMap<String, ShortcutBindingSetting>>,
 }
 
@@ -90,6 +102,11 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             )?,
         },
         ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
+        logs: LogSettings {
+            level: setting_string(connection, "log_level")?,
+            max_files: setting_i64(connection, "log_max_files")?,
+            max_file_bytes: setting_i64(connection, "log_max_file_bytes")?,
+        },
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
     })
 }
@@ -228,6 +245,34 @@ pub(crate) fn update_settings(
         update_setting(connection, "ai_analysis_mode", &ai_analysis_mode)?;
     }
 
+    if let Some(log_level) = input.log_level {
+        validate_allowed_setting(
+            "log_level",
+            &log_level,
+            &["off", "error", "warn", "info", "debug", "trace"],
+        )?;
+        update_setting(connection, "log_level", &log_level)?;
+    }
+
+    if let Some(log_max_files) = input.log_max_files {
+        validate_setting_i64_range("log_max_files", log_max_files, 1, 20)?;
+        update_setting(connection, "log_max_files", &log_max_files.to_string())?;
+    }
+
+    if let Some(log_max_file_bytes) = input.log_max_file_bytes {
+        validate_setting_i64_range(
+            "log_max_file_bytes",
+            log_max_file_bytes,
+            1_048_576,
+            104_857_600,
+        )?;
+        update_setting(
+            connection,
+            "log_max_file_bytes",
+            &log_max_file_bytes.to_string(),
+        )?;
+    }
+
     if let Some(shortcut_bindings) = input.shortcut_bindings {
         validate_shortcut_bindings(&shortcut_bindings)?;
         let value = serde_json::to_string(&shortcut_bindings).map_err(StorageError::from)?;
@@ -303,6 +348,22 @@ fn validate_allowed_setting_i64(
     allowed: &[i64],
 ) -> StorageResult<()> {
     if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidSettingValue {
+            key,
+            value: value.to_string(),
+        })
+    }
+}
+
+fn validate_setting_i64_range(
+    key: &'static str,
+    value: i64,
+    min: i64,
+    max: i64,
+) -> StorageResult<()> {
+    if (min..=max).contains(&value) {
         Ok(())
     } else {
         Err(StorageError::InvalidSettingValue {
