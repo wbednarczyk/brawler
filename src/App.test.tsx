@@ -45,6 +45,26 @@ describe("App shell", () => {
     expect(within(inboxNav).getByLabelText("1 unread feed item")).toBeInTheDocument();
   });
 
+  it("shows Diagnostics navigation only in Developer mode", async () => {
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
+
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      developerMode: true,
+    };
+
+    renderApp();
+
+    expect(await screen.findByRole("button", { name: "Diagnostics" })).toBeInTheDocument();
+    const navContainers = screen.getAllByLabelText("Primary navigation");
+    const currentNav = navContainers[navContainers.length - 1];
+    const navButtons = within(currentNav).getAllByRole("button");
+    expect(navButtons[navButtons.length - 1]).toHaveAccessibleName("Diagnostics");
+  });
+
   it("registers app-level shortcuts and suppresses them while searching", async () => {
     renderApp();
 

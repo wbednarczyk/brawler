@@ -354,6 +354,41 @@ Rules:
 - `transcript_job_id` is used for transcript jobs when represented in the shared job list.
 - Warnings can be JSON in v1 unless they need filtering.
 
+### Diagnostic Events
+
+Supports the Developer mode Diagnostics panel and module-scoped local troubleshooting timelines.
+
+Fields:
+
+- `id`
+- `occurred_at`
+- `module`
+- `scope_type`
+- `scope_id`
+- `stage`
+- `severity`
+- `message`
+- `metadata_json`
+- `created_at`
+
+Recommended indexes:
+
+- `occurred_at`
+- `module, occurred_at`
+- `severity, occurred_at`
+- `scope_type, scope_id, occurred_at`
+
+Rules:
+
+- Diagnostic events are stored only while Developer mode is enabled.
+- Developer mode is stored as a local setting and defaults to disabled.
+- Retention trims diagnostic events to the latest 1,000 events or 7 days, whichever trims first.
+- `module`, `stage`, and `severity` use stable contract values so modules can adopt the framework without schema changes.
+- `metadata_json` stores small structured JSON after redaction.
+- Diagnostic storage must not store API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Diagnostic events are not runtime logs, metrics, traces, or user-facing status records.
+- Clearing diagnostics deletes diagnostic events but must not change user data, settings, source state, jobs, AI analysis results, notes, or transcripts.
+
 ### Settings
 
 Supports theme selection, polling defaults, local privacy choices, and provider configuration.
@@ -367,6 +402,7 @@ Initial keys:
 
 - `theme`
 - `accent_palette`
+- `developer_mode`
 - `poll_interval_seconds`
 - `youtube_transcription_provider`
 - `youtube_transcription_model`

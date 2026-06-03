@@ -479,39 +479,115 @@ Exit criteria:
 
 ## Milestone 14: Developer Mode And Diagnostics Framework
 
+Status: completed in `0.14.0`.
+
 Goal: add an extensible local developer mode that lets trusted users inspect what the app is doing across modules without adding telemetry or exposing secrets.
 
 Included:
 
-- Developer mode setting, default off, visible in Settings
-- developer-only diagnostics panel or screen with module-scoped timelines
+- Developer mode setting, default off, enabled only through an intentional local developer mechanism such as an environment variable or local dev configuration
+- hidden runtime author unlock for enabling Developer mode after the app is already running when a local author passphrase is configured
+- Diagnostics panel may show Developer mode status and a disable action only after Developer mode is already active
+- dedicated developer-only diagnostics panel with module-scoped timelines
 - typed diagnostic event contract shared by app modules
-- local-only diagnostic storage or bounded in-memory history, with retention rules
-- module registry so AI analysis, sources, scheduler, credentials, storage, transcripts, shortcuts, locale, licensing, and packaging checks can report events through one framework
-- AI analysis as the first rich diagnostic producer, including job lifecycle, provider resolution, credential check result, request sent, response received, parse/result storage, and failure stage
+- local-only SQLite diagnostic storage with retention rules, initially latest 1,000 events or 7 days, whichever trims first
+- module registry so AI analysis, other external-AI workflows, sources, scheduler, credentials, storage, transcripts, shortcuts, locale, licensing, packaging checks, and future modules can report events through one framework
+- external-AI workflows as the first rich diagnostic producers, starting with AI analysis job lifecycle, provider resolution, credential check result, request sent, response received, parse/result storage, and failure stage
+- lightweight baseline producers for non-AI modules where useful, without turning M14 into a full observability rewrite
 - privacy and secret redaction rules for diagnostic payloads
-- controls for clearing diagnostics and copying/exporting a redacted diagnostic summary
+- controls for clearing diagnostics and copying a redacted diagnostic summary
 - UI affordance that makes developer mode clearly separate from normal user-facing decision-support UI
+- structured event fields kept compatible with future observability adapters where cheap, without adding OpenTelemetry or remote reporting overhead in M14
 
 Exit criteria:
 
-- Developer mode can be enabled and disabled from Settings
+- Developer mode can be enabled through an intentional local developer mechanism and disabled from the app once active
 - diagnostics are not visible in normal mode
+- diagnostic events are not recorded while Developer mode is disabled
 - modules can report typed diagnostic events without each module inventing its own debug UI
-- diagnostic events include timestamp, module, scope/entity ID, stage, severity, message, and redacted metadata
-- AI analysis reports enough staged progress to explain queued/running/failure states without exposing API keys, raw full prompts, full source bodies, or raw provider responses by default
+- diagnostic events include timestamp, module, scope/entity ID, stage, severity (`debug`, `info`, `warning`, `error`), message, and redacted metadata
+- AI analysis and future external-AI workflows report enough staged progress to explain queued/running/failure states without exposing API keys, raw full prompts, full source bodies, or raw provider responses by default
 - default retention prevents unbounded local database growth
-- tests cover settings persistence, event recording/redaction, bounded retention, and developer-only UI visibility
+- tests cover developer-mode gating, settings persistence, event recording/redaction, bounded retention, and developer-only UI visibility
 - no diagnostic event leaves the local machine
 
 Non-goals:
 
 - remote telemetry, crash reporting, or hosted observability
+- OpenTelemetry implementation or exporter setup
 - streaming token-level Gemini progress
 - storing full provider prompts/responses by default
+- raw JSON/file export of diagnostic events
 - replacing normal user-facing status/error UI
 
-## Milestone 15: V1 Friend-Test License Gate
+## Milestone 15: Local Logs Framework
+
+Goal: add conservative local runtime logs that complement developer diagnostics without introducing telemetry or leaking private material.
+
+Included:
+
+- local log files under the app data directory
+- append-only runtime logging for startup, command failures, source/provider failures, storage errors, and important background job transitions
+- shared redaction rules with diagnostics
+- log rotation, initially bounded by file count and size
+- conservative default log level with developer override through local configuration or environment
+- clear distinction between normal user-facing status, developer diagnostics, and runtime logs
+- Diagnostics panel may expose log status or a redacted log-summary copy action when Developer mode is active
+- no broad filesystem permissions or arbitrary log-path browsing from React
+
+Exit criteria:
+
+- app writes bounded local logs in the app data/logs directory
+- logs rotate and do not grow without limit
+- logs do not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default
+- log level can be raised intentionally for development without changing production defaults
+- tests cover redaction and rotation behavior where practical
+- docs describe how local logs differ from diagnostics and user-facing errors
+
+Non-goals:
+
+- remote log shipping
+- hosted crash reporting
+- OpenTelemetry exporter setup
+- exposing raw logs to normal users
+- replacing structured diagnostics with free-form logs
+
+## Milestone 16: Local Metrics Exposure
+
+Goal: expose modest local operational metrics that help understand app health and performance without product analytics, telemetry, or hosted observability.
+
+Included:
+
+- local metrics model for counters, gauges, and durations where useful
+- metrics view or Diagnostics-panel tab visible only when Developer mode is active
+- source refresh duration and item counts per adapter
+- source refresh failure and scheduler skipped/running counters
+- AI/external-provider job duration, timeout count, failure count, and provider/model labels that do not leak prompts or source bodies
+- transcript job duration and failure count
+- credential check outcome counts without secret values
+- SQLite database size and local row-count summaries for high-growth tables
+- feed item counts by source/type and diagnostic event counts by module/severity
+- cleanup deleted-item count and duration when retention cleanup runs
+- metric names and labels shaped so a future OpenTelemetry adapter could map them cheaply, without adding OpenTelemetry code unless the implementation cost remains low
+
+Exit criteria:
+
+- trusted users can inspect local operational metrics in Developer mode
+- metrics are local-only and do not leave the machine
+- metric labels avoid high-cardinality or private values such as full URLs, titles, prompts, note bodies, transcript text, or company-specific secrets
+- metrics help diagnose source refresh, scheduler, AI provider, transcript, storage, cleanup, and diagnostics health
+- tests cover core aggregation and privacy-safe labeling
+- docs explain that metrics are operational health data, not user analytics
+
+Non-goals:
+
+- user behavior analytics
+- click tracking, screen dwell time, portfolio behavior, or investment-behavior tracking
+- remote metrics export
+- mandatory OpenTelemetry dependency
+- high-cardinality metrics over source URLs, titles, prompts, company names, or note text
+
+## Milestone 17: V1 Friend-Test License Gate
 
 Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed.
 
@@ -534,7 +610,7 @@ Exit criteria:
 - logs, settings export, and diagnostics do not leak license private signing material or full license secrets
 - user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
 
-## Milestone 16: V1 Packaging Candidate
+## Milestone 18: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -636,8 +712,5 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 Recommended next Ready cards:
 
-- Milestone 14 developer mode and diagnostics framework
-- Milestone 15 v1 friend-test license gate
-- Milestone 16 v1 packaging candidate
-
-M14 should be broken down in Kanban before implementation starts.
+- Milestone 15 local logs framework
+- Milestone 16 local metrics exposure

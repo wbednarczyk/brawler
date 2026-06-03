@@ -685,6 +685,132 @@ Allowed statuses:
 - `failed`
 - `cancelled`
 
+## Diagnostic Event
+
+Diagnostic events are local developer-mode records that explain what a module did at a meaningful stage. They are not user-facing errors, runtime logs, metrics, telemetry, traces, or analytics.
+
+```json
+{
+  "id": "diagnostic_event_01",
+  "occurredAt": "2026-06-03T10:15:00Z",
+  "module": "ai_analysis",
+  "scope": {
+    "type": "ai_analysis_job",
+    "id": "analysis_job_01"
+  },
+  "stage": "request_sent",
+  "severity": "info",
+  "message": "Gemini analysis request sent.",
+  "metadata": {
+    "providerId": "provider_gemini",
+    "model": "gemini-2.5-flash",
+    "timeoutSeconds": 90
+  }
+}
+```
+
+Initial module IDs:
+
+- `ai_analysis`
+- `external_ai`
+- `sources`
+- `scheduler`
+- `credentials`
+- `storage`
+- `transcripts`
+- `shortcuts`
+- `locale`
+- `licensing`
+- `packaging`
+
+Initial severity values:
+
+- `debug`
+- `info`
+- `warning`
+- `error`
+
+Stage naming rules:
+
+- Use stable snake-case stage IDs.
+- Use past-tense stage IDs for completed steps, for example `context_loaded`, `provider_resolved`, `credential_checked`, `request_sent`, `response_received`, `result_stored`, and `failed`.
+- Use job lifecycle stage IDs when describing async work, for example `queued`, `running`, `succeeded`, `cancelled`, and `failed`.
+- Reuse stage IDs across modules when the meaning is the same.
+- Do not encode dynamic values into stage IDs.
+
+Scope rules:
+
+- `scope.type` identifies the entity category, such as `ai_analysis_job`, `feed_item`, `source_adapter`, `transcript_job`, `setting`, or `shortcut_action`.
+- `scope.id` is nullable only when the event is truly global to the module.
+- Scope IDs should be stable local IDs, not titles, URLs, prompts, source text, or provider response snippets.
+
+Metadata rules:
+
+- Metadata must be structured JSON and must remain small enough for a timeline row/detail panel.
+- Metadata may include stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeout values, retry counts, error classes, and boolean flags.
+- Metadata must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Redaction must happen before persistence.
+- Redacted values should be omitted when possible; when omission would make the event confusing, use a fixed marker such as `[redacted]`.
+- The event shape should stay cheap to map to future OpenTelemetry-style event/span fields, but M14 does not implement OpenTelemetry exporters or remote reporting.
+
+AI analysis diagnostic stages:
+
+- `queued`
+- `running`
+- `context_loaded`
+- `provider_resolved`
+- `credential_checked`
+- `request_sent`
+- `response_received`
+- `parsed`
+- `stored`
+- `failed`
+
+Rules:
+
+- Diagnostic events are recorded only while Developer mode is enabled.
+- Diagnostic events remain local-only in SQLite.
+- Normal user-facing UI must not depend on diagnostic events for core behavior.
+- Copying a diagnostic summary must produce redacted text.
+- Raw diagnostic JSON/file export is outside M14 scope.
+
+Initial local commands:
+
+- `list_diagnostic_events(input)`: returns recent diagnostic events only when Developer mode is active.
+- `clear_diagnostic_events()`: deletes diagnostic events only when Developer mode is active.
+- `get_diagnostic_summary(input)`: returns redacted plain-text summary text only when Developer mode is active.
+
+Initial list/summary input:
+
+```json
+{
+  "limit": 200
+}
+```
+
+Clear result:
+
+```json
+{
+  "eventsDeleted": 12
+}
+```
+
+Summary result:
+
+```json
+{
+  "summary": "Diagnostic summary\nEvents included: 1\n2026-06-03T10:15:00.000Z | info | ai_analysis | ai_analysis_job:analysis_job_01 | request_sent | Gemini analysis request sent.",
+  "eventCount": 1
+}
+```
+
+Command rules:
+
+- Commands must return an error when Developer mode is not active.
+- Summary text must not include raw diagnostic JSON or unredacted metadata.
+- Summary text is intended for manual copy/paste from the developer-only UI, not automatic export.
+
 ## User Settings
 
 ```json
@@ -692,6 +818,7 @@ Allowed statuses:
   "theme": "dark",
   "locale": "en",
   "accentPalette": "night-neon",
+  "developerMode": false,
   "pollIntervalSeconds": 900,
   "settingsSource": "sqlite",
   "settingsImportExportFormat": "yaml",
@@ -723,6 +850,12 @@ Rules:
 
 - The default theme is `dark`.
 - The default locale is `en`.
+- The default Developer mode setting is `false`.
+- Developer mode may be enabled only through intentional local developer mechanisms, not through a normal always-visible Settings toggle.
+- Startup activation uses `BRAWLER_DEVELOPER_MODE=1`, `true`, `yes`, or `on`.
+- Runtime author unlock may enable Developer mode after the app is already running only when `BRAWLER_DEVELOPER_UNLOCK_CODE` is present in the app process environment and the submitted passphrase matches it.
+- The runtime author unlock entry point is hidden from normal UI and must not be registered as a configurable shortcut.
+- Once Developer mode is active, the Diagnostics panel may show active status and a disable action.
 - Settings must let the user switch the app locale between English and Polish in M12.
 - Locale handling must be implemented as an extensible app-locale boundary so future supported locales can be added through locale resources/configuration instead of per-screen rewrites.
 - Locale changes affect app-owned UI copy and formatting labels only.

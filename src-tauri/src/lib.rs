@@ -26,8 +26,12 @@ pub fn run() {
 
             let database_path = app_data_dir.join("brawler.sqlite3");
             let connection = storage::open_database(database_path)?;
+            let state = app_state::AppState::new(connection);
+            if developer_mode_requested_from_environment() {
+                state.set_developer_mode_enabled(true)?;
+            }
 
-            app.manage(app_state::AppState::new(connection));
+            app.manage(state);
 
             Ok(())
         })
@@ -70,14 +74,34 @@ pub fn run() {
             commands::sources::refresh_source,
             commands::sources::refresh_gpw_company_registry,
             commands::sources::refresh_gpw_company_registry_if_stale,
+            commands::diagnostics::list_diagnostic_events,
+            commands::diagnostics::clear_diagnostic_events,
+            commands::diagnostics::get_diagnostic_summary,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::disable_developer_mode,
+            commands::settings::unlock_developer_mode,
             commands::credentials::get_gemini_transcription_credential_status,
             commands::credentials::set_gemini_transcription_api_key,
             commands::credentials::clear_gemini_transcription_api_key
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Brawler application");
+}
+
+fn developer_mode_requested_from_environment() -> bool {
+    developer_mode_requested_from_value(std::env::var("BRAWLER_DEVELOPER_MODE").ok().as_deref())
+}
+
+fn developer_mode_requested_from_value(value: Option<&str>) -> bool {
+    value
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
@@ -87,6 +111,17 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.13.0");
+        assert_eq!(response.version, "0.14.0");
+    }
+
+    #[test]
+    fn parses_developer_mode_environment_values() {
+        assert!(super::developer_mode_requested_from_value(Some("true")));
+        assert!(super::developer_mode_requested_from_value(Some("1")));
+        assert!(super::developer_mode_requested_from_value(Some("YES")));
+        assert!(super::developer_mode_requested_from_value(Some(" on ")));
+        assert!(!super::developer_mode_requested_from_value(Some("off")));
+        assert!(!super::developer_mode_requested_from_value(Some("false")));
+        assert!(!super::developer_mode_requested_from_value(None));
     }
 }

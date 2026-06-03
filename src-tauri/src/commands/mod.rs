@@ -1,6 +1,7 @@
 pub mod ai_analysis;
 pub mod companies;
 pub mod credentials;
+pub mod diagnostics;
 pub mod events;
 pub mod feed;
 pub mod health;

@@ -80,6 +80,34 @@ export type AiAnalysisSourceReference = {
   createdAt: string;
 };
 
+export type DiagnosticSeverity = "debug" | "info" | "warning" | "error";
+
+export type DiagnosticScope = {
+  type: string;
+  id: string | null;
+};
+
+export type DiagnosticEvent = {
+  id: string;
+  occurredAt: string;
+  module: string;
+  scope: DiagnosticScope | null;
+  stage: string;
+  severity: DiagnosticSeverity;
+  message: string;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type DiagnosticSummary = {
+  summary: string;
+  eventCount: number;
+};
+
+export type ClearDiagnosticEventsResult = {
+  eventsDeleted: number;
+};
+
 export type SourceIngestionResult = {
   adapterId: string;
   itemsFetched: number;
@@ -299,6 +327,7 @@ export type UserSettings = {
   theme: Theme;
   locale: AppLocale;
   accentPalette: string;
+  developerMode: boolean;
   pollIntervalSeconds: number;
   settingsSource: string;
   settingsImportExportFormat: string;

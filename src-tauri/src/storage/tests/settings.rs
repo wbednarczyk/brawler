@@ -11,6 +11,7 @@ fn reads_default_settings_from_sqlite() {
     assert_eq!(settings.theme, "dark");
     assert_eq!(settings.locale, "en");
     assert_eq!(settings.accent_palette, "night-neon");
+    assert!(!settings.developer_mode);
     assert_eq!(settings.poll_interval_seconds, 900);
     assert_eq!(settings.settings_source, "sqlite");
     assert_eq!(settings.settings_import_export_format, "yaml");
@@ -35,6 +36,25 @@ fn reads_default_settings_from_sqlite() {
     assert_eq!(settings.ai_providers.general_analysis_timeout_seconds, 90);
     assert_eq!(settings.ai_analysis_mode, "source_grounded");
     assert!(settings.shortcut_bindings.is_empty());
+}
+
+#[test]
+fn updates_developer_mode_through_dedicated_storage_api() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let enabled = state
+        .set_developer_mode_enabled(true)
+        .expect("developer mode should enable");
+    assert!(enabled.developer_mode);
+
+    let persisted = state.get_settings().expect("settings should persist");
+    assert!(persisted.developer_mode);
+
+    let disabled = state
+        .set_developer_mode_enabled(false)
+        .expect("developer mode should disable");
+    assert!(!disabled.developer_mode);
 }
 
 #[test]

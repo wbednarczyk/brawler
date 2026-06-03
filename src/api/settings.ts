@@ -20,3 +20,11 @@ export function getSettings() {
 export function updateSettings(input: UpdateSettingsInput) {
   return callCommand<UserSettings>("update_settings", { input });
 }
+
+export function disableDeveloperMode() {
+  return callCommand<UserSettings>("disable_developer_mode");
+}
+
+export function unlockDeveloperMode(passphrase: string) {
+  return callCommand<UserSettings>("unlock_developer_mode", { input: { passphrase } });
+}

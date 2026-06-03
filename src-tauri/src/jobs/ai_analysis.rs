@@ -9,6 +9,7 @@ use crate::{
     },
     storage,
 };
+use serde_json::json;
 
 pub fn run_ai_analysis_job(
     state: &app_state::AppState,
@@ -22,10 +23,61 @@ pub fn run_ai_analysis_job(
         return Ok(job);
     }
 
-    let provider = provider_for_job(state, &job)?;
+    record_ai_analysis_diagnostic(
+        state,
+        &job,
+        "running",
+        "info",
+        "AI analysis job started.",
+        json!({
+            "feedItemId": job.feed_item_id,
+            "providerId": job.provider_id,
+            "model": job.model,
+            "promptPresetId": job.prompt_preset_id,
+            "promptVersion": job.prompt_version,
+            "hasCustomQuestion": job.custom_question.is_some()
+        }),
+    );
+    let provider = match provider_for_job(state, &job) {
+        Ok(provider) => provider,
+        Err(error) => {
+            let failed = state
+                .mark_ai_analysis_job_failed(job_id, "provider_error", &error)
+                .map_err(|storage_error| storage_error.to_string())?;
+            record_ai_analysis_diagnostic(
+                state,
+                &failed,
+                "failed",
+                "error",
+                "AI analysis provider resolution failed.",
+                json!({
+                    "feedItemId": failed.feed_item_id,
+                    "providerId": failed.provider_id,
+                    "model": failed.model,
+                    "errorCode": "provider_error"
+                }),
+            );
+
+            return Ok(failed);
+        }
+    };
     let feed_item = state
         .get_feed_item(&job.feed_item_id)
         .map_err(|error| error.to_string())?;
+    record_ai_analysis_diagnostic(
+        state,
+        &job,
+        "context_loaded",
+        "info",
+        "AI analysis context loaded.",
+        json!({
+            "feedItemId": job.feed_item_id,
+            "providerId": job.provider_id,
+            "model": job.model,
+            "hasBodyText": !feed_item.body_text.trim().is_empty(),
+            "attachmentCount": feed_item.attachments.len()
+        }),
+    );
     let request = AnalysisRequest {
         feed_item,
         prompt_preset_id: job.prompt_preset_id.clone(),
@@ -35,29 +87,103 @@ pub fn run_ai_analysis_job(
     state
         .mark_ai_analysis_job_running(job_id)
         .map_err(|error| error.to_string())?;
+    record_ai_analysis_diagnostic(
+        state,
+        &job,
+        "request_sent",
+        "info",
+        "AI analysis provider request sent.",
+        json!({
+            "providerId": provider.provider_id(),
+            "model": provider.model(),
+            "promptPresetId": request.prompt_preset_id.clone(),
+            "hasCustomQuestion": request.custom_question.is_some()
+        }),
+    );
 
     match provider.analyze(&request) {
-        Ok(output) => state
-            .complete_ai_analysis_job(storage::CompletedAiAnalysis {
-                job_id: job_id.to_owned(),
-                summary: output.summary,
-                significance: output.significance,
-                reasoning: output.reasoning,
-                language: output.language,
-                tags: output.tags,
-                source_references: output
-                    .source_references
-                    .into_iter()
-                    .map(|reference| storage::NewAiAnalysisSourceReference {
-                        source_url: reference.source_url,
-                        label: reference.label,
-                    })
-                    .collect(),
-            })
-            .map_err(|error| error.to_string()),
-        Err(error) => state
-            .mark_ai_analysis_job_failed(job_id, error.code(), &error.to_string())
-            .map_err(|storage_error| storage_error.to_string()),
+        Ok(output) => {
+            record_ai_analysis_diagnostic(
+                state,
+                &job,
+                "response_received",
+                "info",
+                "AI analysis provider response received.",
+                json!({
+                    "providerId": provider.provider_id(),
+                    "model": provider.model()
+                }),
+            );
+            record_ai_analysis_diagnostic(
+                state,
+                &job,
+                "parsed",
+                "info",
+                "AI analysis response parsed.",
+                json!({
+                    "tagCount": output.tags.len(),
+                    "sourceReferenceCount": output.source_references.len(),
+                    "significance": output.significance.clone(),
+                    "language": output.language.clone()
+                }),
+            );
+
+            let completed = state
+                .complete_ai_analysis_job(storage::CompletedAiAnalysis {
+                    job_id: job_id.to_owned(),
+                    summary: output.summary,
+                    significance: output.significance,
+                    reasoning: output.reasoning,
+                    language: output.language,
+                    tags: output.tags,
+                    source_references: output
+                        .source_references
+                        .into_iter()
+                        .map(|reference| storage::NewAiAnalysisSourceReference {
+                            source_url: reference.source_url,
+                            label: reference.label,
+                        })
+                        .collect(),
+                })
+                .map_err(|error| error.to_string())?;
+            record_ai_analysis_diagnostic(
+                state,
+                &completed,
+                "stored",
+                "info",
+                "AI analysis result stored.",
+                json!({
+                    "feedItemId": completed.feed_item_id,
+                    "providerId": completed.provider_id,
+                    "model": completed.model,
+                    "status": completed.status,
+                    "hasResult": completed.result.is_some()
+                }),
+            );
+
+            Ok(completed)
+        }
+        Err(error) => {
+            let error_code = error.code();
+            let failed = state
+                .mark_ai_analysis_job_failed(job_id, error_code, &error.to_string())
+                .map_err(|storage_error| storage_error.to_string())?;
+            record_ai_analysis_diagnostic(
+                state,
+                &failed,
+                "failed",
+                "error",
+                "AI analysis job failed.",
+                json!({
+                    "feedItemId": failed.feed_item_id,
+                    "providerId": failed.provider_id,
+                    "model": failed.model,
+                    "errorCode": error_code
+                }),
+            );
+
+            Ok(failed)
+        }
     }
 }
 
@@ -66,10 +192,58 @@ fn provider_for_job(
     job: &storage::AiAnalysisJob,
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
     match job.provider_id.as_str() {
-        TEST_SAMPLE_ANALYSIS_PROVIDER_ID => Ok(Box::new(TestSampleAnalysisProvider)),
+        TEST_SAMPLE_ANALYSIS_PROVIDER_ID => {
+            record_ai_analysis_diagnostic(
+                state,
+                job,
+                "credential_checked",
+                "info",
+                "AI analysis provider credential checked.",
+                json!({
+                    "providerId": job.provider_id,
+                    "credentialRequired": false,
+                    "credentialConfigured": true
+                }),
+            );
+            record_ai_analysis_diagnostic(
+                state,
+                job,
+                "provider_resolved",
+                "info",
+                "AI analysis provider resolved.",
+                json!({
+                    "providerId": job.provider_id,
+                    "model": job.model
+                }),
+            );
+            Ok(Box::new(TestSampleAnalysisProvider))
+        }
         "provider_gemini" => {
             let settings = state.get_settings().map_err(|error| error.to_string())?;
             let api_key = credentials::read_gemini_general_analysis_api_key().unwrap_or(None);
+            record_ai_analysis_diagnostic(
+                state,
+                job,
+                "credential_checked",
+                if api_key.is_some() { "info" } else { "warning" },
+                "AI analysis provider credential checked.",
+                json!({
+                    "providerId": job.provider_id,
+                    "credentialConfigured": api_key.is_some()
+                }),
+            );
+            record_ai_analysis_diagnostic(
+                state,
+                job,
+                "provider_resolved",
+                "info",
+                "AI analysis provider resolved.",
+                json!({
+                    "providerId": job.provider_id,
+                    "model": job.model,
+                    "timeoutSeconds": settings.ai_providers.general_analysis_timeout_seconds
+                }),
+            );
             Ok(Box::new(
                 GeminiAnalysisProvider::live(
                     api_key,
@@ -81,6 +255,28 @@ fn provider_for_job(
         }
         other => Err(format!("Unknown AI analysis provider: {other}")),
     }
+}
+
+fn record_ai_analysis_diagnostic(
+    state: &app_state::AppState,
+    job: &storage::AiAnalysisJob,
+    stage: &str,
+    severity: &str,
+    message: &str,
+    metadata: serde_json::Value,
+) {
+    let _ = state.record_diagnostic_event(storage::NewDiagnosticEvent {
+        occurred_at: None,
+        module: "ai_analysis".to_owned(),
+        scope: Some(storage::DiagnosticScope {
+            scope_type: "ai_analysis_job".to_owned(),
+            id: Some(job.id.clone()),
+        }),
+        stage: stage.to_owned(),
+        severity: severity.to_owned(),
+        message: message.to_owned(),
+        metadata: Some(metadata),
+    });
 }
 
 #[cfg(test)]
@@ -118,6 +314,63 @@ mod tests {
         assert!(completed.started_at.is_some());
         assert!(completed.finished_at.is_some());
         assert!(completed.result.is_some());
+    }
+
+    #[test]
+    fn deterministic_analysis_job_records_diagnostic_lifecycle_when_enabled() {
+        let state = state_with_feed_item();
+        state
+            .set_developer_mode_enabled(true)
+            .expect("developer mode should enable");
+        let feed_item = state
+            .list_feed_items()
+            .expect("feed items should list")
+            .pop()
+            .expect("feed item should exist");
+        let job = state
+            .create_ai_analysis_job(NewAiAnalysisJob {
+                feed_item_id: feed_item.id.clone(),
+                prompt_preset_id: Some("default_summary".to_owned()),
+                custom_question: Some("What changed?".to_owned()),
+                provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
+                prompt_version: Some("m13.source_grounded.v1".to_owned()),
+            })
+            .expect("analysis job should be created");
+
+        run_ai_analysis_job(&state, &job.id).expect("analysis job should complete");
+
+        let events = state
+            .list_diagnostic_events(20)
+            .expect("diagnostic events should list");
+        let stages = events
+            .iter()
+            .map(|event| event.stage.as_str())
+            .collect::<std::collections::HashSet<_>>();
+
+        for expected_stage in [
+            "running",
+            "credential_checked",
+            "provider_resolved",
+            "context_loaded",
+            "request_sent",
+            "response_received",
+            "parsed",
+            "stored",
+        ] {
+            assert!(
+                stages.contains(expected_stage),
+                "missing diagnostic stage {expected_stage}"
+            );
+        }
+        assert!(events.iter().all(|event| event.module == "ai_analysis"));
+        assert!(events.iter().all(|event| event
+            .scope
+            .as_ref()
+            .is_some_and(|scope| scope.scope_type == "ai_analysis_job")));
+        assert!(events
+            .iter()
+            .all(|event| !event.metadata.to_string().contains("What changed?")));
     }
 
     fn state_with_feed_item() -> AppState {

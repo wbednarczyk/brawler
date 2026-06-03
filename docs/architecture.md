@@ -70,7 +70,7 @@ Data must include enough origin to audit a feed item:
 
 Source adapters should return normalized records through a common interface. Adapters must declare source type, rate limits, supported markets, and allowed fetch mode.
 
-AI providers should implement provider-neutral interfaces. Gemini is already the first live AI provider for YouTube transcription and may be extended first for general analysis, but summarization, significance labeling, note extraction, and future AI workflows must remain behind provider/model/credential boundaries that can support OpenAI, Anthropic, and other providers later.
+AI providers should implement provider-neutral interfaces. Gemini is already the first live AI provider for YouTube transcription and may be extended first for general analysis, but summarization, significance labeling, note extraction, and future AI workflows must remain behind provider/model/credential boundaries that can support OpenAI, Anthropic, and other providers later. General AI analysis is governed by [ADR 0016](adr/0016-provider-neutral-ai-analysis-framework.md).
 
 Modularity and configurability are core architecture constraints. Provider, source, credential, model, and workflow settings should be represented as explicit boundaries instead of one-off hard-coded behavior when the feature is expected to evolve.
 
@@ -101,6 +101,8 @@ Testing should be lean and behavior-focused:
 
 The React frontend must call typed Tauri commands only. It must not receive API keys, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
 
-V1 uses local logs only. Telemetry and remote error reporting require a future ADR. Source and job errors surface in the Sources screen.
+V1 uses local-only observability. Telemetry, remote error reporting, remote log shipping, hosted metrics, and hosted tracing require a future ADR. Source and job errors surface in the Sources screen. Developer mode and local observability are governed by [ADR 0015](adr/0015-developer-mode-local-observability.md).
 
-Developer diagnostics are planned as a local-only V1 framework, separate from normal user-facing status UI. Modules should report typed, redacted diagnostic events through a shared boundary when developer mode is enabled instead of building module-specific debug panels. Diagnostic payloads must not include secrets, full prompts, raw provider responses, full source bodies, full transcript text, or license private material by default.
+Developer diagnostics are planned as a local-only V1 framework, separate from normal user-facing status UI and runtime log files. Modules should report typed, redacted diagnostic events through a shared boundary when developer mode is enabled instead of building module-specific debug panels. Diagnostic payloads must not include secrets, full prompts, raw provider responses, full source bodies, full transcript text, or license private material by default. Diagnostic event structure should remain cheap to map to future OpenTelemetry-style concepts, but the app should not add OpenTelemetry dependencies or compatibility-only code unless the implementation cost is clearly low.
+
+Local logs are a later V1 framework for append-only runtime records, rotation, and conservative debugging outside the normal UI. Metrics are a later V1 framework for local operational counters, gauges, and durations in Developer mode. Metrics must be operational health signals, not user behavior analytics.
