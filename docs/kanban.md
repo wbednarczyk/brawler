@@ -131,6 +131,27 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
+### Implement developer mode diagnostics framework
+
+Intent: create a developer-only diagnostics framework that any app module can report into, starting with AI analysis but not limited to AI.
+
+Acceptance criteria:
+
+- Developer mode is a persisted setting and is off by default.
+- Developer-only diagnostics UI is hidden from normal users.
+- Modules report typed diagnostic events through a shared boundary instead of custom one-off debug panels.
+- Event fields include timestamp, module, scope/entity ID, stage, severity, message, and redacted metadata.
+- AI analysis reports job lifecycle stages including queued, running, context loaded, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
+- Sources, scheduler, credentials, storage, transcripts, shortcuts, locale, licensing, and packaging checks can adopt the same event contract later without schema churn.
+- Secrets, API keys, full prompts, full source bodies, full transcript text, raw provider responses, and license private material are not stored by default.
+- Retention or bounded history prevents unbounded local diagnostic growth.
+- User can clear diagnostics and copy/export a redacted diagnostic summary when Developer mode is enabled.
+- Diagnostics remain local-only; no telemetry or hosted reporting is introduced.
+
+Docs/contracts touched: roadmap, architecture, project practices, contracts, data model, UI information architecture.
+
+Test expectations: settings persistence, diagnostic event recording, redaction tests, retention tests, and developer-only UI visibility tests.
+
 ### Implement v1 friend-test license gate
 
 Intent: prevent casual redistribution of v1 friend-test builds without introducing hosted accounts, telemetry, billing, or activation infrastructure.

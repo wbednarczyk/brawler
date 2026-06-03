@@ -12,6 +12,8 @@ pub struct AiProviderSettings {
     pub youtube_transcription_model: String,
     pub youtube_transcription_timeout_seconds: i64,
     pub general_analysis_provider: Option<String>,
+    pub general_analysis_model: String,
+    pub general_analysis_timeout_seconds: i64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -50,6 +52,8 @@ pub struct SettingsUpdate {
     pub youtube_transcription_model: Option<String>,
     pub youtube_transcription_timeout_seconds: Option<i64>,
     pub general_analysis_provider: Option<String>,
+    pub general_analysis_model: Option<String>,
+    pub general_analysis_timeout_seconds: Option<i64>,
     pub ai_analysis_mode: Option<String>,
     pub shortcut_bindings: Option<HashMap<String, ShortcutBindingSetting>>,
 }
@@ -77,6 +81,11 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
                 connection,
                 "general_analysis_provider",
             )?),
+            general_analysis_model: setting_string(connection, "general_analysis_model")?,
+            general_analysis_timeout_seconds: setting_i64(
+                connection,
+                "general_analysis_timeout_seconds",
+            )?,
         },
         ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
@@ -156,6 +165,11 @@ pub(crate) fn update_settings(
     }
 
     if let Some(general_analysis_provider) = input.general_analysis_provider {
+        validate_allowed_setting(
+            "general_analysis_provider",
+            &general_analysis_provider,
+            &["", "provider_gemini"],
+        )?;
         update_setting(
             connection,
             "general_analysis_provider",
@@ -163,12 +177,39 @@ pub(crate) fn update_settings(
         )?;
     }
 
-    if let Some(ai_analysis_mode) = input.ai_analysis_mode {
+    if let Some(general_analysis_model) = input.general_analysis_model {
         validate_allowed_setting(
-            "ai_analysis_mode",
-            &ai_analysis_mode,
-            &["source_grounded", "opinionated"],
+            "general_analysis_model",
+            &general_analysis_model,
+            &[
+                "gemini-2.5-flash-lite",
+                "gemini-2.5-flash",
+                "gemini-3.1-flash-lite",
+                "gemini-3.5-flash",
+            ],
         )?;
+        update_setting(
+            connection,
+            "general_analysis_model",
+            &general_analysis_model,
+        )?;
+    }
+
+    if let Some(general_analysis_timeout_seconds) = input.general_analysis_timeout_seconds {
+        validate_allowed_setting_i64(
+            "general_analysis_timeout_seconds",
+            general_analysis_timeout_seconds,
+            &[45, 90, 180, 300, 600],
+        )?;
+        update_setting(
+            connection,
+            "general_analysis_timeout_seconds",
+            &general_analysis_timeout_seconds.to_string(),
+        )?;
+    }
+
+    if let Some(ai_analysis_mode) = input.ai_analysis_mode {
+        validate_allowed_setting("ai_analysis_mode", &ai_analysis_mode, &["source_grounded"])?;
         update_setting(connection, "ai_analysis_mode", &ai_analysis_mode)?;
     }
 

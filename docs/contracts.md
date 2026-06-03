@@ -434,9 +434,11 @@ List rules:
 ```json
 {
   "id": "analysis_01",
+  "aiAnalysisJobId": "analysis_job_01",
   "feedItemId": "feed_01",
   "providerId": "provider_openai_compatible",
   "model": "configured-model-name",
+  "promptVersion": "m13.source_grounded.v1",
   "summary": "Short neutral summary.",
   "significance": "medium",
   "tags": ["earnings", "guidance"],
@@ -457,6 +459,36 @@ Rules:
 - Allowed significance values: `low`, `medium`, `high`, `unknown`.
 - AI output must not include buy/sell/hold recommendations.
 - AI output must reference source material used for analysis.
+
+## AI Analysis Job
+
+```json
+{
+  "id": "analysis_job_01",
+  "feedItemId": "feed_01",
+  "promptPresetId": "default_summary",
+  "customQuestion": null,
+  "providerId": "provider_gemini",
+  "model": "gemini-2.5-flash",
+  "promptVersion": "m13.source_grounded.v1",
+  "status": "queued",
+  "errorCode": null,
+  "error": null,
+  "createdAt": "2026-06-03T10:00:00Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "result": null
+}
+```
+
+Rules:
+
+- General AI analysis jobs are local async state for user-triggered feed-item analysis.
+- `promptPresetId` is stable and may represent a built-in prompt preset.
+- `customQuestion` is optional and stores the user's local question text for the selected feed item.
+- Allowed statuses begin with `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
+- `errorCode` and `error` are recoverable local diagnostics and must not contain provider secrets or full source text.
+- Successful jobs may include the current `AI Analysis Result` read model.
 
 ## Video Transcript Job
 
@@ -667,7 +699,9 @@ Allowed statuses:
     "youtubeTranscriptionProvider": "provider_gemini",
     "youtubeTranscriptionModel": "gemini-2.5-flash",
     "youtubeTranscriptionTimeoutSeconds": 300,
-    "generalAnalysisProvider": null
+    "generalAnalysisProvider": null,
+    "generalAnalysisModel": "gemini-2.5-flash",
+    "generalAnalysisTimeoutSeconds": 90
   },
   "aiAnalysisMode": "source_grounded",
   "shortcutBindings": {}
@@ -696,6 +730,10 @@ Rules:
 - `system` may be added to the UI as a convenience, but first-run behavior still defaults to `dark` until the user changes it.
 - The initial accent palette is `night-neon`, inspired by deep navy, electric blue/cyan, pink, and purple.
 - General AI analysis is deferred until the AI analysis framework milestone. That milestone may enable `provider_gemini` first, but the contract must remain provider-neutral so future OpenAI, Anthropic, and other providers can be added without rewiring the UI.
+- General AI analysis runs through asynchronous local job state so provider calls do not block the UI.
+- Settings must let the user choose the general analysis provider and model from supported configured options once M13 is implemented.
+- Settings must let the user choose the general analysis timeout from supported configured options: `45`, `90`, `180`, `300`, and `600` seconds.
+- The default general analysis timeout is `90` seconds.
 - Settings must show that `provider_gemini` is selected only for YouTube transcription.
 - Settings must let the user choose the Gemini transcription model from supported configured options: `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-3.1-flash-lite`, and `gemini-3.5-flash`.
 - The default YouTube transcription model is the cheapest configured model validated by M10 live smoke, currently `gemini-2.5-flash`.
@@ -754,6 +792,9 @@ Initial Tauri command groups:
 - `update_feed_item`
 - `prune_old_feed_items`
 - `delete_unsaved_feed_items`
+- `start_ai_analysis`
+- `list_ai_analysis`
+- `retry_ai_analysis`
 - `refresh_sources`
 - `refresh_source`
 - `refresh_gpw_company_registry`

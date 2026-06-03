@@ -25,6 +25,9 @@ export function SettingsScreen({
   onShortcutBindingsChange,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
+  onGeneralAnalysisProviderChange,
+  onGeneralAnalysisModelChange,
+  onGeneralAnalysisTimeoutChange,
   onGeminiApiKeyDraftChange,
   onSaveGeminiApiKey,
   onClearGeminiApiKey,
@@ -70,6 +73,9 @@ export function SettingsScreen({
           settings={settings}
           onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
           onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
+          onGeneralAnalysisProviderChange={onGeneralAnalysisProviderChange}
+          onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
+          onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
           formatAiProvider={formatAiProvider}
           formatGeminiModel={formatGeminiModel}
           formatCredentialConfigured={formatCredentialConfigured}

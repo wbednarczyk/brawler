@@ -80,3 +80,72 @@ M10 closure rule:
 
 - M10 cannot close until this smoke test has passed at least once on the milestone branch.
 - The smoke test result must not require storing the API key in the repository, Nix files, `.envrc`, logs, or exported settings.
+
+## Gemini Feed-Item Analysis
+
+Purpose: prove that the configured Gemini general-analysis model can process one real feed-item-sized source sample and return the provider-neutral AI analysis shape used by the app.
+
+Default model:
+
+- `gemini-2.5-flash`
+
+Required environment:
+
+- `GEMINI_API_KEY`: Gemini API key from Google AI Studio.
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL`: source URL for the sample feed item.
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE`: title for the sample feed item.
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY`: source text to analyze.
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_MODEL`: optional model override when validating alternatives.
+- `BRAWLER_GEMINI_ANALYSIS_TIMEOUT_SECONDS`: optional request timeout override. Use a shorter value such as `45` for fail-fast provider smoke attempts; keep the app setting default of `90` seconds, or a longer configured value, for larger source bodies.
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_QUESTION`: optional custom question to validate the custom-question path.
+
+Optional sample metadata:
+
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_COMPANY`
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_TYPE`
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE`
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_LANGUAGE`
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_ATTRIBUTION`
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_SUMMARY`
+- `BRAWLER_GEMINI_ANALYSIS_SMOKE_PROMPT_PRESET`
+
+Command:
+
+```bash
+GEMINI_API_KEY=... \
+BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL='https://example.com/report' \
+BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE='Example company report' \
+BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY='Paste or provide a short source excerpt here.' \
+make smoke-gemini-analysis
+```
+
+Fail-fast command while checking provider capacity:
+
+```bash
+BRAWLER_GEMINI_ANALYSIS_TIMEOUT_SECONDS=45 \
+BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL='https://example.com/report' \
+BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE='Example company report' \
+BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY='Paste or provide a short source excerpt here.' \
+make smoke-gemini-analysis
+```
+
+Expected result:
+
+- The ignored Rust smoke test `live_gemini_analyzes_feed_item` passes.
+- Output includes provider ID, model name, `job_status=succeeded`, and the number of returned source references.
+- The response includes a non-empty summary and at least one source reference.
+
+Failure interpretation:
+
+- Missing credentials: create a Gemini API key in Google AI Studio and set `GEMINI_API_KEY`.
+- Missing sample input: set source URL, title, and body explicitly; this smoke test does not read from the local SQLite database.
+- Provider limit: retry later or choose a smaller/cheaper model if available.
+- Provider unavailable: Gemini accepted the request shape but the selected model is temporarily unavailable or overloaded. Retry later or rerun with `BRAWLER_GEMINI_ANALYSIS_SMOKE_MODEL=gemini-2.5-flash`.
+- Network timeout: retry with a shorter source body first. If short samples pass but large source bodies time out, tune the app's general-analysis timeout setting instead of treating Gemini as non-working.
+- Provider rejection: the selected source content or model was not accepted by Gemini.
+- Parse error: Gemini returned output that did not match the provider-neutral analysis shape; fix provider prompting/parsing before closing M13.
+
+M13 closure rule:
+
+- M13 cannot close until this smoke test has passed at least once on the milestone branch or a documented provider outage/cost decision explicitly defers the live check.
+- The smoke test result must not require storing the API key in the repository, Nix files, `.envrc`, logs, exported settings, or SQLite settings.

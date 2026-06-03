@@ -102,3 +102,5 @@ Testing should be lean and behavior-focused:
 The React frontend must call typed Tauri commands only. It must not receive API keys, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
 
 V1 uses local logs only. Telemetry and remote error reporting require a future ADR. Source and job errors surface in the Sources screen.
+
+Developer diagnostics are planned as a local-only V1 framework, separate from normal user-facing status UI. Modules should report typed, redacted diagnostic events through a shared boundary when developer mode is enabled instead of building module-specific debug panels. Diagnostic payloads must not include secrets, full prompts, raw provider responses, full source bodies, full transcript text, or license private material by default.

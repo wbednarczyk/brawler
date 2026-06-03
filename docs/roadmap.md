@@ -449,6 +449,8 @@ Completion notes:
 
 ## Milestone 13: General AI Analysis Framework
 
+Status: completed in `0.13.0`.
+
 Goal: add source-grounded AI analysis using the existing Gemini implementation first while keeping the framework extensible for ChatGPT, Claude, and other future providers.
 
 Included:
@@ -456,21 +458,60 @@ Included:
 - provider-neutral AI analysis interface
 - Gemini-backed general analysis implementation as the first live provider path
 - provider/model/credential boundaries that can support OpenAI, Anthropic, and other future providers without rewiring the UI
+- asynchronous AI analysis job model so provider calls do not block the UI
 - prompt/result contract for summaries, tags, significance, reasoning, and source references
 - test-sample-backed and mocked AI result flow
 - UI display in feed detail
-- no buy/sell/hold recommendation guardrails
+- Settings configuration for general AI analysis provider, model, timeout, and provider disclosure
+- source-grounded prompt policy that excludes buy/sell/hold and portfolio advice; automated post-generation recommendation-language enforcement is deferred after v1
 
 Exit criteria:
 
 - app can display source-grounded AI analysis results from Gemini or deterministic test samples
 - Gemini is the first implementation, but the contract does not hard-code Gemini as the only future provider
 - provider credentials remain under the reusable OS-keychain credential boundary
+- analysis runs as an async job with visible queued/running/succeeded/failed states
+- analysis starts from an explicit visible user action
+- Settings exposes general AI analysis configuration and provider disclosure
 - AI results preserve source references
-- tests cover contract mapping, provider mapping, and recommendation guardrails
+- tests cover storage, job flow, contract mapping, provider mapping, and UI display
 - default automated tests do not require live external services or secrets
 
-## Milestone 14: V1 Friend-Test License Gate
+## Milestone 14: Developer Mode And Diagnostics Framework
+
+Goal: add an extensible local developer mode that lets trusted users inspect what the app is doing across modules without adding telemetry or exposing secrets.
+
+Included:
+
+- Developer mode setting, default off, visible in Settings
+- developer-only diagnostics panel or screen with module-scoped timelines
+- typed diagnostic event contract shared by app modules
+- local-only diagnostic storage or bounded in-memory history, with retention rules
+- module registry so AI analysis, sources, scheduler, credentials, storage, transcripts, shortcuts, locale, licensing, and packaging checks can report events through one framework
+- AI analysis as the first rich diagnostic producer, including job lifecycle, provider resolution, credential check result, request sent, response received, parse/result storage, and failure stage
+- privacy and secret redaction rules for diagnostic payloads
+- controls for clearing diagnostics and copying/exporting a redacted diagnostic summary
+- UI affordance that makes developer mode clearly separate from normal user-facing decision-support UI
+
+Exit criteria:
+
+- Developer mode can be enabled and disabled from Settings
+- diagnostics are not visible in normal mode
+- modules can report typed diagnostic events without each module inventing its own debug UI
+- diagnostic events include timestamp, module, scope/entity ID, stage, severity, message, and redacted metadata
+- AI analysis reports enough staged progress to explain queued/running/failure states without exposing API keys, raw full prompts, full source bodies, or raw provider responses by default
+- default retention prevents unbounded local database growth
+- tests cover settings persistence, event recording/redaction, bounded retention, and developer-only UI visibility
+- no diagnostic event leaves the local machine
+
+Non-goals:
+
+- remote telemetry, crash reporting, or hosted observability
+- streaming token-level Gemini progress
+- storing full provider prompts/responses by default
+- replacing normal user-facing status/error UI
+
+## Milestone 15: V1 Friend-Test License Gate
 
 Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed.
 
@@ -493,7 +534,7 @@ Exit criteria:
 - logs, settings export, and diagnostics do not leak license private signing material or full license secrets
 - user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
 
-## Milestone 15: V1 Packaging Candidate
+## Milestone 16: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -567,6 +608,14 @@ Decision criteria:
 
 Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
 
+## Future: AI Recommendation Guardrail Enforcement
+
+Goal: add automated post-generation validation that detects and rejects AI output containing buy/sell/hold, portfolio allocation, or similarly actionable recommendation language.
+
+M13 keeps the source-grounded prompt policy and UI positioning as decision support, but hard output enforcement is explicitly deferred until after v1.
+
+Not in scope for v1.
+
 ## Future: Cloud Backup And Sync
 
 Cloud backup/sync is not part of core v1 implementation. It is a future roadmap area that requires a separate design discussion and ADR covering identity, encryption, sync conflicts, storage provider, monetization, and cost.
@@ -587,9 +636,8 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 Recommended next Ready cards:
 
-- Milestone 12 keyboard shortcuts, locale, and workflow polish
-- Milestone 13 general AI analysis framework, using Gemini first while preserving extensibility for OpenAI, Anthropic, and other providers
-- Milestone 14 v1 friend-test license gate
-- Milestone 15 v1 packaging candidate
+- Milestone 14 developer mode and diagnostics framework
+- Milestone 15 v1 friend-test license gate
+- Milestone 16 v1 packaging candidate
 
-M12 should be prepared before implementation starts. M13 is intentionally deferred until the provider-neutral AI framework design is explicit.
+M14 should be broken down in Kanban before implementation starts.

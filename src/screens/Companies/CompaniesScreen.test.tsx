@@ -429,6 +429,13 @@ describe("Companies screen workflows", () => {
 
   it("shows company feed item details inline and can open the item in the inbox", async () => {
     const user = userEvent.setup();
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      aiProviders: {
+        ...appTestState.settingsResponse.aiProviders,
+        generalAnalysisProvider: "provider_gemini",
+      },
+    };
 
     renderApp();
 
@@ -457,6 +464,20 @@ describe("Companies screen workflows", () => {
       "href",
       "https://www.gpw.pl/komunikaty",
     );
+    await user.click(within(companyFeedDetail).getByRole("button", { name: "Summarize impact" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("start_ai_analysis", {
+        input: {
+          feedItemId: "feed_sample_cdr_report",
+          promptPresetId: "default_summary",
+          customQuestion: undefined,
+        },
+      });
+    });
+    expect(
+      await within(companyFeedDetail).findByText("AI summary for Current report placeholder for watchlist company"),
+    ).toBeInTheDocument();
 
     await user.click(within(companyFeedDetail).getByRole("button", { name: "Open in Inbox" }));
 

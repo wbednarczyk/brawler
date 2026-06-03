@@ -309,6 +309,7 @@ Fields:
 - `feed_item_id`
 - `provider_id`
 - `model`
+- `prompt_version`
 - `summary`
 - `significance`
 - `reasoning`
@@ -317,12 +318,15 @@ Fields:
 
 Related tables:
 
+- `ai_analysis_jobs`
 - `ai_analysis_tags`
 - `ai_analysis_source_references`
 
 Rules:
 
 - General AI analysis is implemented later through a provider-neutral boundary. Gemini may be the first live provider, but stored analysis records must not assume Gemini is the only provider.
+- M13 analysis runs through async job records with queued, running, succeeded, and failed states.
+- Job records preserve prompt preset/custom-question context, provider ID, model, prompt version, error state, and timestamps.
 - AI output must not contain buy/sell/hold recommendations.
 - Source references are required.
 
@@ -485,6 +489,7 @@ The first migration should create:
 - notebook_entry_origins
 - transcript_jobs
 - transcript_segments
+- ai_analysis_jobs
 - ai_analysis_results
 - ai_analysis_tags
 - ai_analysis_source_references

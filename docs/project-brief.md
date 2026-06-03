@@ -21,6 +21,7 @@ Contracts and data:
 - [Contracts](contracts.md): stable command payloads and UI-facing read models.
 - [Data Model](data-model.md): local entity model, origin model, migrations, and deferred data areas.
 - [Source Strategy](source-strategy.md): source adapter policy, accepted source paths, source candidates, and rate-limit posture.
+- [AI Analysis Framework](ai-analysis-framework.md): M13 provider-neutral AI analysis design, async job model, settings, and implementation boundaries.
 
 Planning and workflow:
 

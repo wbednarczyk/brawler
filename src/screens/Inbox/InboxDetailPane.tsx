@@ -1,5 +1,6 @@
 import { BookOpenText, Building2, ExternalLink, FileText, Mail, MailOpen, Save } from "lucide-react";
 import { Button } from "../../shared/components/Button";
+import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { useLocale } from "../../shared/locale";
 import type { InboxScreenProps } from "./inboxTypes";
 
@@ -7,11 +8,18 @@ type InboxDetailPaneProps = Pick<
   InboxScreenProps,
   | "selectedFeedItem"
   | "selectedFeedCompany"
+  | "aiAnalysisJobsByFeedItemId"
+  | "aiAnalysisErrorByFeedItemId"
+  | "aiAnalysisRequestInFlightByFeedItemId"
+  | "aiAnalysisProviderConfigured"
   | "healthError"
   | "databaseError"
   | "updateSelectedFeedItem"
   | "openCompanyWorkspaceFromFeedItem"
   | "openFeedItemNoteDraft"
+  | "startFeedItemAiAnalysis"
+  | "refreshFeedItemAiAnalysis"
+  | "retryFeedItemAiAnalysis"
   | "feedItemSummary"
   | "formatTimestamp"
 >;
@@ -19,11 +27,18 @@ type InboxDetailPaneProps = Pick<
 export function InboxDetailPane({
   selectedFeedItem,
   selectedFeedCompany,
+  aiAnalysisJobsByFeedItemId,
+  aiAnalysisErrorByFeedItemId,
+  aiAnalysisRequestInFlightByFeedItemId,
+  aiAnalysisProviderConfigured,
   healthError,
   databaseError,
   updateSelectedFeedItem,
   openCompanyWorkspaceFromFeedItem,
   openFeedItemNoteDraft,
+  startFeedItemAiAnalysis,
+  refreshFeedItemAiAnalysis,
+  retryFeedItemAiAnalysis,
   feedItemSummary,
   formatTimestamp,
 }: InboxDetailPaneProps) {
@@ -150,6 +165,16 @@ export function InboxDetailPane({
               ))}
             </div>
           ) : null}
+          <FeedAiAnalysisPanel
+            feedItem={selectedFeedItem}
+            jobs={aiAnalysisJobsByFeedItemId[selectedFeedItem.id] ?? []}
+            error={aiAnalysisErrorByFeedItemId[selectedFeedItem.id] ?? null}
+            providerConfigured={aiAnalysisProviderConfigured}
+            requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedFeedItem.id] ?? false}
+            onStart={startFeedItemAiAnalysis}
+            onRefresh={refreshFeedItemAiAnalysis}
+            onRetry={retryFeedItemAiAnalysis}
+          />
         </>
       ) : (
         <>

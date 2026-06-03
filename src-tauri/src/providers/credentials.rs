@@ -4,6 +4,8 @@ use thiserror::Error;
 const APP_SERVICE: &str = "brawler";
 const GEMINI_TRANSCRIPTION_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
 const GEMINI_TRANSCRIPTION_ACCOUNT: &str = "provider_gemini:youtube_transcription:api_key";
+const GEMINI_GENERAL_ANALYSIS_TARGET: &str = GEMINI_TRANSCRIPTION_TARGET;
+const GEMINI_GENERAL_ANALYSIS_ACCOUNT: &str = GEMINI_TRANSCRIPTION_ACCOUNT;
 const GEMINI_TRANSCRIPTION_ENV_VAR: &str = "GEMINI_API_KEY";
 
 #[derive(Debug, Error)]
@@ -52,6 +54,18 @@ pub fn gemini_transcription_descriptor() -> CredentialDescriptor {
     }
 }
 
+pub fn gemini_general_analysis_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "provider_gemini",
+        purpose: "general_analysis",
+        secret_kind: "api_key",
+        label: "Gemini general analysis API key",
+        target: GEMINI_GENERAL_ANALYSIS_TARGET,
+        account: GEMINI_GENERAL_ANALYSIS_ACCOUNT,
+        development_env_var: Some(GEMINI_TRANSCRIPTION_ENV_VAR),
+    }
+}
+
 pub fn get_gemini_transcription_credential_status() -> CredentialStatus {
     credential_status(&gemini_transcription_descriptor())
 }
@@ -68,6 +82,10 @@ pub fn clear_gemini_transcription_api_key() -> Result<CredentialStatus, Credenti
 
 pub fn read_gemini_transcription_api_key() -> Result<Option<String>, CredentialError> {
     read_credential_secret(&gemini_transcription_descriptor())
+}
+
+pub fn read_gemini_general_analysis_api_key() -> Result<Option<String>, CredentialError> {
+    read_credential_secret(&gemini_general_analysis_descriptor())
 }
 
 fn credential_status(descriptor: &CredentialDescriptor) -> CredentialStatus {

@@ -271,7 +271,7 @@ pub(super) fn unsaved_feed_item_ids(connection: &Connection) -> StorageResult<Ve
         .map_err(StorageError::from)
 }
 
-pub(super) fn get_feed_item(
+pub(crate) fn get_feed_item(
     connection: &Connection,
     feed_item_id: &str,
 ) -> StorageResult<FeedItem> {

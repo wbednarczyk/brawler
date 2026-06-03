@@ -28,6 +28,11 @@ fn reads_default_settings_from_sqlite() {
         300
     );
     assert!(settings.ai_providers.general_analysis_provider.is_none());
+    assert_eq!(
+        settings.ai_providers.general_analysis_model,
+        "gemini-2.5-flash"
+    );
+    assert_eq!(settings.ai_providers.general_analysis_timeout_seconds, 90);
     assert_eq!(settings.ai_analysis_mode, "source_grounded");
     assert!(settings.shortcut_bindings.is_empty());
 }
@@ -68,7 +73,9 @@ fn updates_settings_through_storage_api() {
             youtube_transcription_provider: None,
             youtube_transcription_model: None,
             youtube_transcription_timeout_seconds: Some(600),
-            general_analysis_provider: None,
+            general_analysis_provider: Some("provider_gemini".to_owned()),
+            general_analysis_model: Some("gemini-3.5-flash".to_owned()),
+            general_analysis_timeout_seconds: Some(180),
             ai_analysis_mode: None,
             shortcut_bindings: None,
         })
@@ -81,6 +88,15 @@ fn updates_settings_through_storage_api() {
         settings.ai_providers.youtube_transcription_timeout_seconds,
         600
     );
+    assert_eq!(
+        settings.ai_providers.general_analysis_provider.as_deref(),
+        Some("provider_gemini")
+    );
+    assert_eq!(
+        settings.ai_providers.general_analysis_model,
+        "gemini-3.5-flash"
+    );
+    assert_eq!(settings.ai_providers.general_analysis_timeout_seconds, 180);
 
     let persisted = state.get_settings().expect("settings should persist");
 
@@ -91,6 +107,15 @@ fn updates_settings_through_storage_api() {
         persisted.ai_providers.youtube_transcription_timeout_seconds,
         600
     );
+    assert_eq!(
+        persisted.ai_providers.general_analysis_provider.as_deref(),
+        Some("provider_gemini")
+    );
+    assert_eq!(
+        persisted.ai_providers.general_analysis_model,
+        "gemini-3.5-flash"
+    );
+    assert_eq!(persisted.ai_providers.general_analysis_timeout_seconds, 180);
 }
 
 #[test]
@@ -131,6 +156,8 @@ fn updates_shortcut_bindings_through_storage_api() {
             youtube_transcription_model: None,
             youtube_transcription_timeout_seconds: None,
             general_analysis_provider: None,
+            general_analysis_model: None,
+            general_analysis_timeout_seconds: None,
             ai_analysis_mode: None,
             shortcut_bindings: Some(shortcut_bindings),
         })
@@ -168,6 +195,8 @@ fn rejects_invalid_poll_interval_setting() {
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
+        general_analysis_model: None,
+        general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
         shortcut_bindings: None,
     });
@@ -188,6 +217,8 @@ fn rejects_invalid_theme_setting() {
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
+        general_analysis_model: None,
+        general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
         shortcut_bindings: None,
     });
@@ -208,9 +239,65 @@ fn rejects_invalid_locale_setting() {
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
         general_analysis_provider: None,
+        general_analysis_model: None,
+        general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
         shortcut_bindings: None,
     });
 
     assert!(result.is_err());
+}
+
+#[test]
+fn rejects_invalid_general_analysis_settings() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let invalid_provider = state.update_settings(SettingsUpdate {
+        theme: None,
+        locale: None,
+        poll_interval_seconds: None,
+        youtube_transcription_provider: None,
+        youtube_transcription_model: None,
+        youtube_transcription_timeout_seconds: None,
+        general_analysis_provider: Some("provider_unknown".to_owned()),
+        general_analysis_model: None,
+        general_analysis_timeout_seconds: None,
+        ai_analysis_mode: None,
+        shortcut_bindings: None,
+    });
+
+    assert!(invalid_provider.is_err());
+
+    let invalid_model = state.update_settings(SettingsUpdate {
+        theme: None,
+        locale: None,
+        poll_interval_seconds: None,
+        youtube_transcription_provider: None,
+        youtube_transcription_model: None,
+        youtube_transcription_timeout_seconds: None,
+        general_analysis_provider: None,
+        general_analysis_model: Some("gemini-unknown".to_owned()),
+        general_analysis_timeout_seconds: None,
+        ai_analysis_mode: None,
+        shortcut_bindings: None,
+    });
+
+    assert!(invalid_model.is_err());
+
+    let invalid_timeout = state.update_settings(SettingsUpdate {
+        theme: None,
+        locale: None,
+        poll_interval_seconds: None,
+        youtube_transcription_provider: None,
+        youtube_transcription_model: None,
+        youtube_transcription_timeout_seconds: None,
+        general_analysis_provider: None,
+        general_analysis_model: None,
+        general_analysis_timeout_seconds: Some(12),
+        ai_analysis_mode: None,
+        shortcut_bindings: None,
+    });
+
+    assert!(invalid_timeout.is_err());
 }

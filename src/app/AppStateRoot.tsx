@@ -2,6 +2,7 @@ import {
   type CSSProperties,
   type FormEvent,
   type KeyboardEvent,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -77,6 +78,7 @@ import { LocaleContext, makeTextTranslator, makeTranslator } from "../shared/loc
 import type { CompanyEventForm, CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { NotebookForm } from "../shared/types/notebook";
 import type {
+  AiAnalysisJob,
   Company,
   CompanyForm,
   CompanyEvent,
@@ -100,6 +102,11 @@ import type {
   Watchlist,
   WatchlistMembership,
 } from "../api/types";
+import {
+  listAiAnalysis,
+  retryAiAnalysis,
+  startAiAnalysis,
+} from "../api/aiAnalysis";
 
 export function AppStateRoot() {
   const contentGridRef = useRef<HTMLElement | null>(null);
@@ -138,6 +145,9 @@ export function AppStateRoot() {
   const [inboxStatusFilter, setInboxStatusFilter] = useState<InboxStatusFilter>("all");
   const [feedState, setFeedState] = useState<FeedItem[]>([]);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [aiAnalysisJobsByFeedItemId, setAiAnalysisJobsByFeedItemId] = useState<Record<string, AiAnalysisJob[]>>({});
+  const [aiAnalysisErrorByFeedItemId, setAiAnalysisErrorByFeedItemId] = useState<Record<string, string | null>>({});
+  const [aiAnalysisRequestInFlightByFeedItemId, setAiAnalysisRequestInFlightByFeedItemId] = useState<Record<string, boolean>>({});
   const [companyEvents, setCompanyEvents] = useState<CompanyEvent[]>([]);
   const [companyEventsError, setCompanyEventsError] = useState<string | null>(null);
   const [transcriptJobs, setTranscriptJobs] = useState<TranscriptJob[]>([]);
@@ -447,6 +457,9 @@ export function AppStateRoot() {
     clearGeminiApiKey,
     saveGeminiApiKey,
     updateLocale,
+    updateGeneralAnalysisModel,
+    updateGeneralAnalysisProvider,
+    updateGeneralAnalysisTimeout,
     updatePollInterval,
     updateShortcutBindings,
     updateTheme,
@@ -640,6 +653,107 @@ export function AppStateRoot() {
     setSelectedCompanyId,
     setSelectedFeedItemId,
   });
+
+  function storeAiAnalysisJobs(feedItemId: string, jobs: AiAnalysisJob[]) {
+    setAiAnalysisJobsByFeedItemId((current) => ({
+      ...current,
+      [feedItemId]: jobs,
+    }));
+  }
+
+  function setAiAnalysisFeedError(feedItemId: string, error: string | null) {
+    setAiAnalysisErrorByFeedItemId((current) => ({
+      ...current,
+      [feedItemId]: error,
+    }));
+  }
+
+  function setAiAnalysisFeedInFlight(feedItemId: string, inFlight: boolean) {
+    setAiAnalysisRequestInFlightByFeedItemId((current) => ({
+      ...current,
+      [feedItemId]: inFlight,
+    }));
+  }
+
+  async function refreshFeedItemAiAnalysis(feedItemId: string) {
+    setAiAnalysisFeedInFlight(feedItemId, true);
+    setAiAnalysisFeedError(feedItemId, null);
+
+    try {
+      const jobs = await listAiAnalysis({ feedItemId });
+      storeAiAnalysisJobs(feedItemId, jobs);
+    } catch (error) {
+      setAiAnalysisFeedError(feedItemId, error instanceof Error ? error.message : String(error));
+    } finally {
+      setAiAnalysisFeedInFlight(feedItemId, false);
+    }
+  }
+
+  function pollFeedItemAiAnalysis(feedItemId: string, remainingAttempts = 5) {
+    if (remainingAttempts <= 0) return;
+
+    window.setTimeout(() => {
+      void listAiAnalysis({ feedItemId })
+        .then((jobs) => {
+          storeAiAnalysisJobs(feedItemId, jobs);
+          const latestJob = jobs[0];
+          if (latestJob?.status === "queued" || latestJob?.status === "running") {
+            pollFeedItemAiAnalysis(feedItemId, remainingAttempts - 1);
+          }
+        })
+        .catch((error) => {
+          setAiAnalysisFeedError(feedItemId, error instanceof Error ? error.message : String(error));
+        });
+    }, 1200);
+  }
+
+  async function startFeedItemAiAnalysis(item: FeedItem, promptPresetId?: string, customQuestion?: string) {
+    setAiAnalysisFeedInFlight(item.id, true);
+    setAiAnalysisFeedError(item.id, null);
+
+    try {
+      const job = await startAiAnalysis({
+        feedItemId: item.id,
+        promptPresetId,
+        customQuestion,
+      });
+      storeAiAnalysisJobs(item.id, [job, ...(aiAnalysisJobsByFeedItemId[item.id] ?? []).filter((existingJob) => existingJob.id !== job.id)]);
+      pollFeedItemAiAnalysis(item.id);
+    } catch (error) {
+      setAiAnalysisFeedError(item.id, error instanceof Error ? error.message : String(error));
+    } finally {
+      setAiAnalysisFeedInFlight(item.id, false);
+    }
+  }
+
+  async function retryFeedItemAiAnalysis(jobId: string, itemId: string) {
+    setAiAnalysisFeedInFlight(itemId, true);
+    setAiAnalysisFeedError(itemId, null);
+
+    try {
+      const job = await retryAiAnalysis(jobId);
+      storeAiAnalysisJobs(itemId, [job, ...(aiAnalysisJobsByFeedItemId[itemId] ?? []).filter((existingJob) => existingJob.id !== job.id)]);
+      pollFeedItemAiAnalysis(itemId);
+    } catch (error) {
+      setAiAnalysisFeedError(itemId, error instanceof Error ? error.message : String(error));
+    } finally {
+      setAiAnalysisFeedInFlight(itemId, false);
+    }
+  }
+
+  useEffect(() => {
+    if (!selectedFeedItem) return;
+    if (aiAnalysisJobsByFeedItemId[selectedFeedItem.id]) return;
+
+    void refreshFeedItemAiAnalysis(selectedFeedItem.id);
+  }, [selectedFeedItem?.id]);
+
+  useEffect(() => {
+    if (!selectedCompanyFeedItem) return;
+    if (aiAnalysisJobsByFeedItemId[selectedCompanyFeedItem.id]) return;
+
+    void refreshFeedItemAiAnalysis(selectedCompanyFeedItem.id);
+  }, [selectedCompanyFeedItem?.id]);
 
   const {
     focusCompanyWorkspace,
@@ -969,6 +1083,10 @@ export function AppStateRoot() {
               filteredFeedItems={filteredFeedItems}
               selectedFeedItem={selectedFeedItem}
               selectedFeedCompany={selectedFeedCompany}
+              aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
+              aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
+              aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
+              aiAnalysisProviderConfigured={Boolean(settings?.aiProviders.generalAnalysisProvider)}
               inboxStatusFilter={inboxStatusFilter}
               inboxWatchlistFilter={inboxWatchlistFilter}
               inboxCompanyFilter={inboxCompanyFilter}
@@ -1004,6 +1122,9 @@ export function AppStateRoot() {
               updateSelectedFeedItem={updateSelectedFeedItem}
               openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
               openFeedItemNoteDraft={openFeedItemNoteDraft}
+              startFeedItemAiAnalysis={startFeedItemAiAnalysis}
+              refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
+              retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
               resizeDetailPaneWithKeyboard={resizeDetailPaneWithKeyboard}
               startDetailPaneResize={startDetailPaneResize}
               resizeDetailPane={resizeDetailPane}
@@ -1031,6 +1152,10 @@ export function AppStateRoot() {
               companyWorkspaceTab={companyWorkspaceTab}
               selectedCompanyFeedItems={selectedCompanyFeedItems}
               selectedCompanyFeedItem={selectedCompanyFeedItem}
+              aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
+              aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
+              aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
+              aiAnalysisProviderConfigured={Boolean(settings?.aiProviders.generalAnalysisProvider)}
               selectedCompanyNotebookEntries={selectedCompanyNotebookEntries}
               isNotebookComposerOpen={isNotebookComposerOpen}
               notebookForm={notebookForm}
@@ -1066,6 +1191,9 @@ export function AppStateRoot() {
               updateFeedItemState={updateFeedItemState}
               inspectCompanyFeedItem={inspectCompanyFeedItem}
               openFeedItemNoteDraft={openFeedItemNoteDraft}
+              startFeedItemAiAnalysis={startFeedItemAiAnalysis}
+              refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
+              retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
               openCompanyInboxFilter={openCompanyInboxFilter}
               setNotebookComposerOpen={setNotebookComposerOpen}
               updateNotebookForm={updateNotebookForm}
@@ -1300,6 +1428,9 @@ export function AppStateRoot() {
               onShortcutBindingsChange={updateShortcutBindings}
               onYoutubeTranscriptionModelChange={updateYoutubeTranscriptionModel}
               onYoutubeTranscriptionTimeoutChange={updateYoutubeTranscriptionTimeout}
+              onGeneralAnalysisProviderChange={updateGeneralAnalysisProvider}
+              onGeneralAnalysisModelChange={updateGeneralAnalysisModel}
+              onGeneralAnalysisTimeoutChange={updateGeneralAnalysisTimeout}
               onGeminiApiKeyDraftChange={setGeminiApiKeyDraft}
               onSaveGeminiApiKey={saveGeminiApiKey}
               onClearGeminiApiKey={clearGeminiApiKey}

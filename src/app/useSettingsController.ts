@@ -63,6 +63,18 @@ export function useSettingsController({
     updateSettings({ youtubeTranscriptionTimeoutSeconds: nextTimeoutSeconds });
   }
 
+  function updateGeneralAnalysisProvider(nextProvider: string) {
+    updateSettings({ generalAnalysisProvider: nextProvider });
+  }
+
+  function updateGeneralAnalysisModel(nextModel: string) {
+    updateSettings({ generalAnalysisModel: nextModel });
+  }
+
+  function updateGeneralAnalysisTimeout(nextTimeoutSeconds: number) {
+    updateSettings({ generalAnalysisTimeoutSeconds: nextTimeoutSeconds });
+  }
+
   function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
@@ -109,6 +121,9 @@ export function useSettingsController({
   return {
     clearGeminiApiKey,
     saveGeminiApiKey,
+    updateGeneralAnalysisModel,
+    updateGeneralAnalysisProvider,
+    updateGeneralAnalysisTimeout,
     updateLocale,
     updatePollInterval,
     updateShortcutBindings,

@@ -4,6 +4,44 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M13.8 Close M13
+
+Intent: verify M13 end to end and close documentation/versioning once the provider-neutral AI analysis workflow is stable.
+
+Acceptance criteria:
+
+- Source-grounded analysis works through deterministic test samples and the live Gemini path.
+- Settings configuration and feed-detail workflows pass focused UI tests.
+- Storage, job, provider, command, and frontend tests pass.
+- Roadmap records M13 completion status.
+- Kanban M13 cards move out of active context.
+- Version is bumped to `0.13.0`.
+
+Delivered:
+
+- Added provider-neutral AI analysis architecture, contracts, storage, settings, async job runtime, typed commands, and frontend API.
+- Added deterministic `test_sample` analysis provider for secret-free automated tests.
+- Added Gemini as the first live general-analysis provider behind the provider-neutral boundary.
+- Added Settings configuration for general AI provider/model/timeout and provider disclosure.
+- Added feed-detail AI analysis UI in Inbox and company feed details with prompt presets, custom questions, async state, retry, result metadata, reasoning, tags, and source references.
+- Added opt-in live Gemini feed-item analysis smoke path with documented env vars and `make smoke-gemini-analysis`.
+- Recorded successful live Gemini analysis smoke evidence: provider `provider_gemini`, model `gemini-3.5-flash`, `job_status=succeeded`, 1 source reference.
+- Added future V1 Milestone 14 for a module-neutral developer mode diagnostics framework.
+- Moved M13 active cards out of the active Kanban context.
+- Version bumped to `0.13.0` in package, Rust, lock, Tauri config, and Rust health-test files.
+
+Docs/contracts touched: roadmap, kanban, kanban archive, contracts, data model, project brief, architecture, engineering workflow, live smoke tests, AI analysis framework, version files.
+
+Test expectations:
+
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed, 77 tests.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed from `src-tauri/`.
+- `rtk cargo clippy --all-targets -- -D warnings` passed from `src-tauri/`.
+- `rtk cargo test` passed from `src-tauri/`, 102 tests, 3 ignored.
+- `make smoke-gemini-analysis` passed with local `.env.local` credentials.
+
 ### M12.9 Close M12 workflow polish
 
 Intent: verify M12 end to end and close documentation/versioning once locale and shortcut workflows are stable.

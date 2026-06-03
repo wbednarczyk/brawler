@@ -43,7 +43,7 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByText("Last cleanup")).toBeInTheDocument();
     expect(within(settingsRegion).getAllByText("Not run this session")).toHaveLength(2);
     expect(within(settingsRegion).getByText("Saved")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Gemini")).toBeInTheDocument();
+    expect(within(settingsRegion).getAllByText("Gemini").length).toBeGreaterThanOrEqual(1);
     expect(within(settingsRegion).getByText("provider_gemini")).toBeInTheDocument();
     expect(within(settingsRegion).getAllByText("Gemini 2.5 Flash-Lite").length).toBeGreaterThanOrEqual(1);
     expect(within(settingsRegion).getByText("Cheapest supported")).toBeInTheDocument();
@@ -57,6 +57,14 @@ describe("Settings screen workflows", () => {
     ).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Gemini is used only for YouTube transcription.")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("YouTube transcription timeout")).toBeInTheDocument();
+    expect(within(settingsRegion).getAllByText("General AI model").length).toBeGreaterThanOrEqual(1);
+    expect(within(settingsRegion).getAllByText("General AI timeout").length).toBeGreaterThanOrEqual(1);
+    expect(
+      within(settingsRegion).getByText(
+        "Starting feed analysis sends the selected source text and metadata to the configured AI provider.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Source-grounded feed analysis")).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("heading", { name: "Keyboard shortcuts" })).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shortcuts are ignored while typing in fields and editors.")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open Inbox")).toBeInTheDocument();
@@ -138,6 +146,33 @@ describe("Settings screen workflows", () => {
       },
     });
     expect(screen.getByLabelText("Limit czasu transkrypcji Gemini")).toHaveValue("600");
+
+    await user.selectOptions(screen.getByLabelText("Ogólny dostawca AI"), "provider_gemini");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        generalAnalysisProvider: "provider_gemini",
+      },
+    });
+    expect(screen.getByLabelText("Ogólny dostawca AI")).toHaveValue("provider_gemini");
+
+    await user.selectOptions(screen.getByLabelText("Ogólny model AI"), "gemini-3.5-flash");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        generalAnalysisModel: "gemini-3.5-flash",
+      },
+    });
+    expect(screen.getByLabelText("Ogólny model AI")).toHaveValue("gemini-3.5-flash");
+
+    await user.selectOptions(screen.getByLabelText("Limit czasu ogólnego AI"), "180");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        generalAnalysisTimeoutSeconds: 180,
+      },
+    });
+    expect(screen.getByLabelText("Limit czasu ogólnego AI")).toHaveValue("180");
 
     await user.type(screen.getByLabelText("Klucz API Gemini"), "test-gemini-key");
     await user.click(screen.getByRole("button", { name: "Zapisz" }));
