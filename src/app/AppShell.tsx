@@ -48,6 +48,7 @@ type AppShellProps = {
   totalUnreadFeedItems: number;
   updateTheme: (theme: Theme) => void;
   openSourceStatus: () => void;
+  developerMode: boolean;
 };
 
 export function AppShell({
@@ -74,6 +75,7 @@ export function AppShell({
   totalUnreadFeedItems,
   updateTheme,
   openSourceStatus,
+  developerMode,
 }: AppShellProps) {
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const t = makeTranslator(locale);
@@ -166,27 +168,29 @@ export function AppShell({
         </div>
 
         <nav className="nav-list">
-          {sections.map((section) => {
-            const Icon = section.icon;
-            const sectionLabel = t(section.localeKey);
-            return (
-              <button
-                className={activeSection === section.label ? "nav-item nav-item-active" : "nav-item"}
-                key={section.label}
-                onClick={() => setActiveSection(section.label)}
-                type="button"
-                title={sectionLabel}
-              >
-                <Icon size={18} aria-hidden="true" />
-                <span>{sectionLabel}</span>
-                {section.label === "Inbox" && totalUnreadFeedItems > 0 ? (
-                  <span className="nav-badge" aria-label={`${totalUnreadFeedItems} ${text("unread feed item")}`}>
-                    {totalUnreadFeedItems}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
+          {sections
+            .filter((section) => section.label !== "Diagnostics" || developerMode)
+            .map((section) => {
+              const Icon = section.icon;
+              const sectionLabel = t(section.localeKey);
+              return (
+                <button
+                  className={activeSection === section.label ? "nav-item nav-item-active" : "nav-item"}
+                  key={section.label}
+                  onClick={() => setActiveSection(section.label)}
+                  type="button"
+                  title={sectionLabel}
+                >
+                  <Icon size={18} aria-hidden="true" />
+                  <span>{sectionLabel}</span>
+                  {section.label === "Inbox" && totalUnreadFeedItems > 0 ? (
+                    <span className="nav-badge" aria-label={`${totalUnreadFeedItems} ${text("unread feed item")}`}>
+                      {totalUnreadFeedItems}
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
         </nav>
 
         <div className="sidebar-footer">

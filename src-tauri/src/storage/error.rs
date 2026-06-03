@@ -16,6 +16,8 @@ pub enum StorageError {
     InvalidTranscriptValue { key: &'static str, value: String },
     #[error("invalid AI analysis value for {key}: {value}")]
     InvalidAiAnalysisValue { key: &'static str, value: String },
+    #[error("invalid diagnostic value for {key}: {value}")]
+    InvalidDiagnosticValue { key: &'static str, value: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

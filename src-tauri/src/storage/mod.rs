@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 
 mod ai_analysis;
 mod companies;
+mod diagnostics;
 mod error;
 mod events;
 mod feed;
@@ -45,6 +46,7 @@ pub use ai_analysis::{
     AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
     NewAiAnalysisJob, NewAiAnalysisSourceReference,
 };
+pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
 pub use migrations::{open_database, open_in_memory_database};
 pub use settings::{AiProviderSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings};
@@ -450,6 +452,33 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         settings::update_settings(&connection, input)
+    }
+
+    pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        settings::set_developer_mode_enabled(&connection, enabled)
+    }
+
+    pub fn record_diagnostic_event(
+        &self,
+        input: NewDiagnosticEvent,
+    ) -> StorageResult<Option<DiagnosticEvent>> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        diagnostics::record_diagnostic_event(&mut connection, input)
+    }
+
+    pub fn list_diagnostic_events(&self, limit: i64) -> StorageResult<Vec<DiagnosticEvent>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        diagnostics::list_diagnostic_events(&connection, limit)
+    }
+
+    pub fn clear_diagnostic_events(&self) -> StorageResult<usize> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        diagnostics::clear_diagnostic_events(&connection)
     }
 
     pub fn create_ai_analysis_job(&self, input: NewAiAnalysisJob) -> StorageResult<AiAnalysisJob> {

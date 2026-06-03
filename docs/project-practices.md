@@ -17,6 +17,19 @@ Rules:
 - Every milestone closure should include real-use validation evidence appropriate to the milestone, such as a manual smoke test, packaged-app check, real source refresh, real API call, or real local workflow verification.
 - Default automated tests should remain deterministic and secret-free; live checks are manual or opt-in when they require credentials or external services.
 
+## ADR Hygiene
+
+ADRs record durable architecture and policy decisions. They should stay current as part of normal feature work, not as a separate cleanup project.
+
+Rules:
+
+- Before non-trivial implementation work, check whether the task changes a durable decision about storage, security, permissions, provider boundaries, source policy, AI behavior, observability, licensing, packaging, dependencies, or release workflow.
+- If the task changes one of those decisions, add a new ADR or update the relevant accepted ADR before or alongside implementation.
+- If the task only implements an already documented decision, no new ADR is needed.
+- Milestone closure should include an ADR checkpoint: explicitly confirm that no ADR is needed, or list the ADRs added/updated.
+- Prefer short ADRs that capture context, decision, and consequences over duplicating roadmap tasks or implementation details.
+- Do not bury new durable decisions only in roadmap, kanban, code comments, or commit messages.
+
 ## License Posture
 
 Brawler is all rights reserved for now. The GitHub repository is currently private. Do not add an open-source license until a future ADR resolves the license and commercial boundary.
@@ -61,15 +74,18 @@ Rules:
 
 ## Observability
 
-V1 uses local logs only. There is no telemetry or remote error reporting.
+V1 observability is local-only. There is no telemetry, remote error reporting, remote log shipping, hosted metrics, or hosted tracing.
 
 Rules:
 
 - Sources screen shows adapter and job errors.
-- Logs must not include API keys.
-- Logs should not include full note bodies or full transcript text by default.
-- Logs may include IDs, source URLs, statuses, timestamps, and error classes.
-- Diagnostic export may be added later as a user-triggered feature.
+- Developer diagnostics are structured, SQLite-backed, visible only in Developer mode, and recorded only while Developer mode is enabled.
+- Runtime logs are a separate append-only local file framework with rotation and conservative log-level defaults.
+- Metrics are local operational health signals, not product analytics or user behavior tracking.
+- Logs, diagnostics, and metrics must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Logs may include IDs, source URLs, statuses, timestamps, and error classes when doing so is useful and not private.
+- Diagnostic summary copy/export should be redacted and user-triggered.
+- OpenTelemetry-compatible naming/structure is acceptable when cheap, but do not add OpenTelemetry dependencies, exporters, or compatibility-only code unless a later implementation proves the overhead is low.
 - Telemetry or remote reporting requires a future ADR.
 
 ## Dependency Policy

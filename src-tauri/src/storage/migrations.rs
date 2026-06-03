@@ -128,6 +128,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "ai_analysis_jobs",
         sql: include_str!("../../migrations/0024_ai_analysis_jobs.sql"),
     },
+    Migration {
+        version: 25,
+        name: "developer_mode_setting",
+        sql: include_str!("../../migrations/0025_developer_mode_setting.sql"),
+    },
+    Migration {
+        version: 26,
+        name: "diagnostic_events",
+        sql: include_str!("../../migrations/0026_diagnostic_events.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

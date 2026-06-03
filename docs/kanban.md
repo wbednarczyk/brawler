@@ -131,26 +131,41 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
-### Implement developer mode diagnostics framework
+### Implement local logs framework
 
-Intent: create a developer-only diagnostics framework that any app module can report into, starting with AI analysis but not limited to AI.
+Intent: add bounded local runtime logs that complement structured diagnostics without introducing telemetry.
 
 Acceptance criteria:
 
-- Developer mode is a persisted setting and is off by default.
-- Developer-only diagnostics UI is hidden from normal users.
-- Modules report typed diagnostic events through a shared boundary instead of custom one-off debug panels.
-- Event fields include timestamp, module, scope/entity ID, stage, severity, message, and redacted metadata.
-- AI analysis reports job lifecycle stages including queued, running, context loaded, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
-- Sources, scheduler, credentials, storage, transcripts, shortcuts, locale, licensing, and packaging checks can adopt the same event contract later without schema churn.
-- Secrets, API keys, full prompts, full source bodies, full transcript text, raw provider responses, and license private material are not stored by default.
-- Retention or bounded history prevents unbounded local diagnostic growth.
-- User can clear diagnostics and copy/export a redacted diagnostic summary when Developer mode is enabled.
-- Diagnostics remain local-only; no telemetry or hosted reporting is introduced.
+- Local logs are written under the app data logs directory.
+- Runtime logs cover startup, command failures, source/provider failures, storage errors, and important background job transitions.
+- Logs rotate by bounded file count and size.
+- Log level defaults are conservative and can be raised only through intentional developer configuration.
+- Logs share redaction rules with diagnostics.
+- Logs do not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
+- Developer diagnostics may show log status or copy a redacted log summary when Developer mode is active.
+- Logs remain local-only; no remote shipping, hosted crash reporting, or OpenTelemetry exporter is introduced.
 
-Docs/contracts touched: roadmap, architecture, project practices, contracts, data model, UI information architecture.
+Docs/contracts touched: roadmap, architecture, project practices, engineering workflow if commands are added.
 
-Test expectations: settings persistence, diagnostic event recording, redaction tests, retention tests, and developer-only UI visibility tests.
+Test expectations: redaction tests and rotation tests where practical.
+
+### Implement local metrics exposure
+
+Intent: expose modest local operational metrics for app health and performance in Developer mode without product analytics.
+
+Acceptance criteria:
+
+- Developer-mode metrics expose counters, gauges, and durations where useful.
+- Candidate metrics include source refresh duration/counts, source failures, scheduler skips, AI/external-provider duration/failures/timeouts, transcript job duration/failures, credential-check outcomes, SQLite database size, high-growth table counts, cleanup duration/deleted count, and diagnostic counts by module/severity.
+- Metrics are local-only and visible only in Developer mode.
+- Metric names and labels avoid full URLs, source titles, prompts, note bodies, transcript text, and other private or high-cardinality values.
+- Metric shape stays compatible with future OpenTelemetry mapping when cheap, but implementation must not add significant compatibility-only code or a mandatory OpenTelemetry dependency.
+- Metrics are operational health signals, not user behavior analytics.
+
+Docs/contracts touched: roadmap, architecture, project practices, contracts if metrics commands are added.
+
+Test expectations: aggregation tests and privacy-safe label tests.
 
 ### Implement v1 friend-test license gate
 
@@ -205,5 +220,37 @@ Docs/contracts touched: agent contract, project brief, kanban, kanban archive, a
 Test expectations: docs-only change; link and stale-reference checks are sufficient.
 
 ## Done
+
+### Implement developer mode diagnostics framework
+
+Intent: create a developer-only diagnostics framework that any app module can report into, starting with AI analysis but not limited to AI.
+
+Delivered:
+
+- Completed Developer mode and local diagnostics framework implementation.
+- Added ADR 0015 for local observability and Developer mode policy.
+- Added ADR 0016 for the provider-neutral AI analysis framework decision that feeds the first rich diagnostic producer.
+- Added persisted Developer mode setting, environment startup activation, hidden runtime passphrase unlock, and app disable action.
+- Added SQLite-backed diagnostic events with typed module/scope/stage/severity/message/metadata fields.
+- Added redaction before persistence and bounded retention by latest 1,000 events or 7 days.
+- Added typed diagnostics commands and frontend API wrappers.
+- Added developer-only Diagnostics navigation and panel with filters, event expansion, refresh, clear, copy summary, and disable Developer mode action.
+- Added AI analysis lifecycle diagnostics plus lightweight source refresh and credential diagnostics.
+- Kept Diagnostics last in the left navigation when Developer mode is active.
+- Manual app smoke passed before milestone closure.
+- Bumped app version to `0.14.0`.
+
+Validation:
+
+- `rtk cargo test diagnostics` passed.
+- `rtk cargo test source_adapters::bankier_company::tests` passed.
+- `rtk npm test -- App.test.tsx` passed.
+- `rtk npm typecheck` passed.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
 
 Completed-card history has moved to [Kanban Archive](kanban-archive.md) so the active board stays small for day-to-day agent context.

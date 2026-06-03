@@ -95,7 +95,7 @@ tauri-build:
 	$(NIX) npm run tauri -- build
 
 package-windows-from-linux:
-	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	BRAWLER_DEVELOPER_UNLOCK_CODE="dup dup dupa" $(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
 	@if [ ! -f "$(WINDOWS_EXE)" ]; then \
 		printf "Expected Windows executable not found: $(WINDOWS_EXE)\n"; \
 		exit 1; \
@@ -109,7 +109,9 @@ package-windows-from-linux:
 	@if command -v powershell.exe >/dev/null 2>&1; then \
 		EXE_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)/brawler.exe")"; \
 		DIR_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)")"; \
-		powershell.exe -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$$EXE_WIN' -WorkingDirectory '$$DIR_WIN'" ; \
+		powershell.exe -ExecutionPolicy Bypass -Command "\$$env:BRAWLER_DEVELOPER_UNLOCK_CODE = 'dup dup dupa'; \
+														 \$$env:BRAWLER_DEVELOPER_MODE = "1"; \
+														 Start-Process -FilePath '$$EXE_WIN' -WorkingDirectory '$$DIR_WIN'" ; \
 	else \
 		printf "powershell.exe not found; copied artifact but did not launch it.\n"; \
 	fi

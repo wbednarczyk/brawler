@@ -33,6 +33,7 @@ pub struct UserSettings {
     pub theme: String,
     pub locale: String,
     pub accent_palette: String,
+    pub developer_mode: bool,
     pub poll_interval_seconds: i64,
     pub settings_source: &'static str,
     pub settings_import_export_format: String,
@@ -63,6 +64,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
         theme: setting_string(connection, "theme")?,
         locale: setting_string(connection, "locale")?,
         accent_palette: setting_string(connection, "accent_palette")?,
+        developer_mode: setting_bool(connection, "developer_mode")?,
         poll_interval_seconds: setting_i64(connection, "poll_interval_seconds")?,
         settings_source: "sqlite",
         settings_import_export_format: setting_string(connection, "settings_import_export_format")?,
@@ -90,6 +92,19 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
         ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
     })
+}
+
+pub(crate) fn set_developer_mode_enabled(
+    connection: &Connection,
+    enabled: bool,
+) -> StorageResult<UserSettings> {
+    update_setting(
+        connection,
+        "developer_mode",
+        if enabled { "true" } else { "false" },
+    )?;
+
+    get_settings(connection)
 }
 
 pub(crate) fn update_settings(
@@ -236,6 +251,16 @@ fn setting_i64(connection: &Connection, key: &'static str) -> StorageResult<i64>
     value
         .parse::<i64>()
         .map_err(|_| StorageError::InvalidSettingValue { key, value })
+}
+
+fn setting_bool(connection: &Connection, key: &'static str) -> StorageResult<bool> {
+    let value = setting_string(connection, key)?;
+
+    match value.as_str() {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        _ => Err(StorageError::InvalidSettingValue { key, value }),
+    }
 }
 
 fn setting_json<T>(connection: &Connection, key: &'static str) -> StorageResult<T>

@@ -42,6 +42,7 @@ import { useWorkspaceNavigationController } from "./useWorkspaceNavigationContro
 import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
+import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
 import { EventsScreen } from "../screens/Events/EventsScreen";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
@@ -455,7 +456,9 @@ export function AppStateRoot() {
 
   const {
     clearGeminiApiKey,
+    disableDeveloperMode,
     saveGeminiApiKey,
+    unlockDeveloperMode,
     updateLocale,
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
@@ -477,6 +480,38 @@ export function AppStateRoot() {
     setTheme,
     text,
   });
+
+  useEffect(() => {
+    if (settings?.developerMode) {
+      return undefined;
+    }
+
+    function unlockFromHiddenChord(event: globalThis.KeyboardEvent) {
+      if (!event.ctrlKey || !event.altKey || !event.shiftKey || event.key.toLowerCase() !== "d") {
+        return;
+      }
+
+      event.preventDefault();
+      const passphrase = window.prompt("Developer mode unlock");
+      if (!passphrase) {
+        return;
+      }
+
+      unlockDeveloperMode(passphrase);
+    }
+
+    window.addEventListener("keydown", unlockFromHiddenChord);
+
+    return () => {
+      window.removeEventListener("keydown", unlockFromHiddenChord);
+    };
+  }, [settings?.developerMode, unlockDeveloperMode]);
+
+  useEffect(() => {
+    if (activeSection === "Diagnostics" && !settings?.developerMode) {
+      setActiveSection("Settings");
+    }
+  }, [activeSection, settings?.developerMode]);
 
   const {
     addCompanyFromRegistry,
@@ -1064,6 +1099,7 @@ export function AppStateRoot() {
         shortcutActions={shortcutActions}
         totalUnreadFeedItems={totalUnreadFeedItems}
         updateTheme={updateTheme}
+        developerMode={Boolean(settings?.developerMode)}
       >
         <section
           className={activeSection === "Inbox" ? "content-grid" : "content-grid content-grid-single"}
@@ -1406,6 +1442,12 @@ export function AppStateRoot() {
               formatSourceScheduler={formatSourceScheduler}
               formatNextRefresh={formatNextRefresh}
               formatTimestamp={formatTimestamp}
+            />
+          ) : null}
+          {activeSection === "Diagnostics" && settings?.developerMode ? (
+            <DiagnosticsScreen
+              developerMode={settings.developerMode}
+              onDisableDeveloperMode={disableDeveloperMode}
             />
           ) : null}
           {activeSection === "Settings" ? (

@@ -106,6 +106,17 @@ pub fn fetch_company_items_with_detail_filter(
     target: &BankierCompanyTarget,
     should_fetch_detail: impl Fn(&BankierCompanyItem) -> bool,
 ) -> Result<(Option<BankierCompanyIdentifiers>, Vec<BankierCompanyItem>), BankierCompanyError> {
+    let fetched_at = time::OffsetDateTime::now_utc().format(&Rfc3339)?;
+
+    fetch_company_items_with_detail_filter_at(fetcher, target, &fetched_at, should_fetch_detail)
+}
+
+fn fetch_company_items_with_detail_filter_at(
+    fetcher: &impl BankierCompanyFetcher,
+    target: &BankierCompanyTarget,
+    fetched_at: &str,
+    should_fetch_detail: impl Fn(&BankierCompanyItem) -> bool,
+) -> Result<(Option<BankierCompanyIdentifiers>, Vec<BankierCompanyItem>), BankierCompanyError> {
     let identifiers = match (&target.bankier_slug, &target.bankier_tag_id) {
         (Some(slug), Some(tag_id)) if !slug.trim().is_empty() && !tag_id.trim().is_empty() => None,
         _ => {
@@ -119,9 +130,8 @@ pub fn fetch_company_items_with_detail_filter(
         .map(|identifiers| identifiers.tag_id.as_str())
         .or(target.bankier_tag_id.as_deref())
         .expect("tag id must be present after identifier resolution");
-    let fetched_at = time::OffsetDateTime::now_utc().format(&Rfc3339)?;
     let json = fetcher.fetch_text(&listing_api_url(tag_id, 1, PAGE_LIMIT)?)?;
-    let mut items = parse_company_listing_json(target, &json, &fetched_at)?;
+    let mut items = parse_company_listing_json(target, &json, fetched_at)?;
 
     for item in &mut items {
         if !should_fetch_detail(item) {
@@ -681,9 +691,12 @@ mod tests {
             ..target()
         };
 
-        let (_, items) = fetch_company_items_with_detail_filter(&fetcher, &target, |item| {
-            item.article_id != "9141553"
-        })
+        let (_, items) = fetch_company_items_with_detail_filter_at(
+            &fetcher,
+            &target,
+            "2026-05-31T10:00:00Z",
+            |item| item.article_id != "9141553",
+        )
         .expect("items should fetch");
 
         assert_eq!(items.len(), 2);

@@ -79,6 +79,32 @@ export function useSettingsController({
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
 
+  function disableDeveloperMode() {
+    settingsApi.disableDeveloperMode()
+      .then((response) => {
+        setSettings(response);
+        setLocale(response.locale);
+        setTheme(response.theme);
+        setSettingsError(null);
+      })
+      .catch((error) => {
+        setSettingsError(String(error));
+      });
+  }
+
+  function unlockDeveloperMode(passphrase: string) {
+    settingsApi.unlockDeveloperMode(passphrase)
+      .then((response) => {
+        setSettings(response);
+        setLocale(response.locale);
+        setTheme(response.theme);
+        setSettingsError(null);
+      })
+      .catch((error) => {
+        setSettingsError(String(error));
+      });
+  }
+
   function saveGeminiApiKey(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const apiKey = geminiApiKeyDraft.trim();
@@ -120,7 +146,9 @@ export function useSettingsController({
 
   return {
     clearGeminiApiKey,
+    disableDeveloperMode,
     saveGeminiApiKey,
+    unlockDeveloperMode,
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,

@@ -1,6 +1,100 @@
 use crate::{app_state, source_adapters, storage};
+use serde_json::json;
 
 pub fn refresh_sources_for_trigger(
+    state: &app_state::AppState,
+    trigger: &str,
+) -> Result<storage::SourceIngestionResult, String> {
+    record_source_diagnostic(
+        state,
+        "all",
+        "running",
+        "info",
+        "Source refresh started.",
+        json!({ "trigger": trigger }),
+    );
+    let result = refresh_sources_for_trigger_inner(state, trigger);
+
+    match result {
+        Ok(result) => {
+            record_source_diagnostic(
+                state,
+                "all",
+                "succeeded",
+                "info",
+                "Source refresh completed.",
+                source_result_metadata(trigger, &result),
+            );
+            Ok(result)
+        }
+        Err(error) => {
+            record_source_diagnostic(
+                state,
+                "all",
+                "failed",
+                "error",
+                "Source refresh failed.",
+                json!({
+                    "trigger": trigger,
+                    "errorClass": "source_refresh_error"
+                }),
+            );
+            Err(error)
+        }
+    }
+}
+
+pub fn refresh_source_for_trigger(
+    state: &app_state::AppState,
+    adapter_id: &str,
+    trigger: &str,
+    date: Option<&str>,
+) -> Result<storage::SourceIngestionResult, String> {
+    record_source_diagnostic(
+        state,
+        adapter_id,
+        "running",
+        "info",
+        "Source adapter refresh started.",
+        json!({
+            "adapterId": adapter_id,
+            "trigger": trigger,
+            "hasDate": date.is_some()
+        }),
+    );
+    let result = refresh_source_for_trigger_inner(state, adapter_id, trigger, date);
+
+    match result {
+        Ok(result) => {
+            record_source_diagnostic(
+                state,
+                adapter_id,
+                "succeeded",
+                "info",
+                "Source adapter refresh completed.",
+                source_result_metadata(trigger, &result),
+            );
+            Ok(result)
+        }
+        Err(error) => {
+            record_source_diagnostic(
+                state,
+                adapter_id,
+                "failed",
+                "error",
+                "Source adapter refresh failed.",
+                json!({
+                    "adapterId": adapter_id,
+                    "trigger": trigger,
+                    "errorClass": "source_refresh_error"
+                }),
+            );
+            Err(error)
+        }
+    }
+}
+
+fn refresh_sources_for_trigger_inner(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
@@ -38,7 +132,7 @@ pub fn refresh_sources_for_trigger(
     })
 }
 
-pub fn refresh_source_for_trigger(
+fn refresh_source_for_trigger_inner(
     state: &app_state::AppState,
     adapter_id: &str,
     trigger: &str,
@@ -85,6 +179,46 @@ pub fn refresh_source_for_trigger(
         ),
         _ => Err(format!("Unknown source adapter: {adapter_id}")),
     }
+}
+
+fn source_result_metadata(
+    trigger: &str,
+    result: &storage::SourceIngestionResult,
+) -> serde_json::Value {
+    json!({
+        "adapterId": result.adapter_id,
+        "trigger": trigger,
+        "itemsFetched": result.items_fetched,
+        "itemsCreated": result.items_created,
+        "itemsMatched": result.items_matched,
+        "itemsUnmatched": result.items_unmatched,
+        "detailItemsAttempted": result.detail_items_attempted,
+        "detailItemsStored": result.detail_items_stored,
+        "detailItemsFailed": result.detail_items_failed,
+        "hasFetchedAt": result.fetched_at.is_some()
+    })
+}
+
+fn record_source_diagnostic(
+    state: &app_state::AppState,
+    adapter_id: &str,
+    stage: &str,
+    severity: &str,
+    message: &str,
+    metadata: serde_json::Value,
+) {
+    let _ = state.record_diagnostic_event(storage::NewDiagnosticEvent {
+        occurred_at: None,
+        module: "sources".to_owned(),
+        scope: Some(storage::DiagnosticScope {
+            scope_type: "source_adapter".to_owned(),
+            id: Some(adapter_id.to_owned()),
+        }),
+        stage: stage.to_owned(),
+        severity: severity.to_owned(),
+        message: message.to_owned(),
+        metadata: Some(metadata),
+    });
 }
 
 #[allow(dead_code)]
@@ -382,4 +516,34 @@ pub fn refresh_gpw_company_registry_for_trigger(
     state
         .refresh_gpw_company_registry(&entries, &fetched_at)
         .map_err(|error| error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::refresh_source_for_trigger;
+    use crate::storage::{open_in_memory_database, AppState};
+
+    #[test]
+    fn failed_source_refresh_records_lightweight_diagnostics_when_enabled() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        state
+            .set_developer_mode_enabled(true)
+            .expect("developer mode should enable");
+
+        let result = refresh_source_for_trigger(&state, "unknown-adapter", "manual", None);
+
+        assert!(result.is_err());
+        let events = state
+            .list_diagnostic_events(10)
+            .expect("diagnostic events should list");
+        assert_eq!(events.len(), 2);
+        assert!(events.iter().any(|event| event.stage == "running"));
+        assert!(events.iter().any(|event| event.stage == "failed"));
+        assert!(events.iter().all(|event| event.module == "sources"));
+        assert!(events.iter().all(|event| !event
+            .metadata
+            .to_string()
+            .contains("Unknown source adapter")));
+    }
 }

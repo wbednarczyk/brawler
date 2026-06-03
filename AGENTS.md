@@ -26,6 +26,7 @@ Then read only the relevant canonical references for the work being done:
 
 - Do not implement non-trivial changes without an explicit plan and approval.
 - Keep public behavior, contracts, and docs in sync with code changes.
+- Before non-trivial implementation and milestone closure, perform an ADR checkpoint: add or update an ADR when the work changes durable architecture or policy decisions, or explicitly confirm that existing ADRs already cover the decision.
 - Milestone closure must include the matching app version bump in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - Milestone and feature completion require real working application behavior against the real local runtime, real source, real API, or real agent described by the milestone. Samples, mocks, seed data, fake endpoints, and placeholder providers are valid only as intermediate development steps and in automated tests. They are not sufficient to mark a feature or milestone complete unless the roadmap explicitly defines that work item as a mock/sample-only spike.
 - If implementation evidence conflicts with a roadmap item or product requirement, explicitly call out the conflict, explain the tradeoff, and ask before weakening or deferring required scope.

@@ -357,6 +357,7 @@ const initialSettings: UserSettings = {
 theme: "dark",
 locale: "en",
 accentPalette: "night-neon",
+developerMode: false,
 pollIntervalSeconds: 900,
 settingsSource: "sqlite",
 settingsImportExportFormat: "yaml",

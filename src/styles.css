@@ -8,6 +8,7 @@
 @import "./styles/rows.css";
 @import "./styles/screens/transcripts.css";
 @import "./styles/screens/sources.css";
+@import "./styles/screens/diagnostics.css";
 @import "./styles/screens/settings.css";
 @import "./styles/membership.css";
 @import "./styles/screens/company-workspace.css";

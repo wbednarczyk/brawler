@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_json::json;
 
 use crate::{
     app_state, jobs,
@@ -50,6 +51,21 @@ pub async fn start_ai_analysis(
             prompt_version: Some("m13.source_grounded.v1".to_owned()),
         })
         .map_err(|error| error.to_string())?;
+    record_ai_analysis_diagnostic(
+        &state,
+        &job,
+        "queued",
+        "info",
+        "AI analysis job queued.",
+        json!({
+            "feedItemId": job.feed_item_id,
+            "providerId": job.provider_id,
+            "model": job.model,
+            "promptPresetId": job.prompt_preset_id,
+            "promptVersion": job.prompt_version,
+            "hasCustomQuestion": job.custom_question.is_some()
+        }),
+    );
 
     spawn_analysis_job(state.inner().clone(), job.id.clone());
 
@@ -74,10 +90,47 @@ pub async fn retry_ai_analysis(
     let job = state
         .get_ai_analysis_job(&job_id)
         .map_err(|error| error.to_string())?;
+    record_ai_analysis_diagnostic(
+        &state,
+        &job,
+        "queued",
+        "info",
+        "AI analysis job retry queued.",
+        json!({
+            "feedItemId": job.feed_item_id,
+            "providerId": job.provider_id,
+            "model": job.model,
+            "promptPresetId": job.prompt_preset_id,
+            "promptVersion": job.prompt_version,
+            "hasCustomQuestion": job.custom_question.is_some()
+        }),
+    );
 
     spawn_analysis_job(state.inner().clone(), job.id.clone());
 
     Ok(job)
+}
+
+fn record_ai_analysis_diagnostic(
+    state: &app_state::AppState,
+    job: &storage::AiAnalysisJob,
+    stage: &str,
+    severity: &str,
+    message: &str,
+    metadata: serde_json::Value,
+) {
+    let _ = state.record_diagnostic_event(storage::NewDiagnosticEvent {
+        occurred_at: None,
+        module: "ai_analysis".to_owned(),
+        scope: Some(storage::DiagnosticScope {
+            scope_type: "ai_analysis_job".to_owned(),
+            id: Some(job.id.clone()),
+        }),
+        stage: stage.to_owned(),
+        severity: severity.to_owned(),
+        message: message.to_owned(),
+        metadata: Some(metadata),
+    });
 }
 
 fn spawn_analysis_job(state: app_state::AppState, job_id: String) {
