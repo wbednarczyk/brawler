@@ -1,7 +1,7 @@
 import type { Dispatch, FormEvent, SetStateAction } from "react";
 import * as credentialsApi from "../api/credentials";
 import * as settingsApi from "../api/settings";
-import type { AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
+import type { AccentPalette, AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
 
 type SettingsControllerInput = {
   geminiApiKeyDraft: string;
@@ -11,6 +11,7 @@ type SettingsControllerInput = {
   setGeminiCredentialStatus: Dispatch<SetStateAction<CredentialStatus | null>>;
   setSettings: Dispatch<SetStateAction<UserSettings | null>>;
   setSettingsError: Dispatch<SetStateAction<string | null>>;
+  setAccentPalette: Dispatch<SetStateAction<AccentPalette>>;
   setLocale: Dispatch<SetStateAction<AppLocale>>;
   setTheme: Dispatch<SetStateAction<Theme>>;
   text: (value: string) => string;
@@ -24,18 +25,22 @@ export function useSettingsController({
   setGeminiCredentialStatus,
   setSettings,
   setSettingsError,
+  setAccentPalette,
   setLocale,
   setTheme,
   text,
 }: SettingsControllerInput) {
+  function applySettingsResponse(response: UserSettings) {
+    setSettings(response);
+    setAccentPalette(response.accentPalette);
+    setLocale(response.locale);
+    setTheme(response.theme);
+    setSettingsError(null);
+  }
+
   function updateSettings(input: settingsApi.UpdateSettingsInput) {
     settingsApi.updateSettings(input)
-      .then((response) => {
-        setSettings(response);
-        setLocale(response.locale);
-        setTheme(response.theme);
-        setSettingsError(null);
-      })
+      .then(applySettingsResponse)
       .catch((error) => {
         setSettingsError(String(error));
       });
@@ -44,6 +49,11 @@ export function useSettingsController({
   function updateTheme(nextTheme: Theme) {
     setTheme(nextTheme);
     updateSettings({ theme: nextTheme });
+  }
+
+  function updateAccentPalette(nextAccentPalette: AccentPalette) {
+    setAccentPalette(nextAccentPalette);
+    updateSettings({ accentPalette: nextAccentPalette });
   }
 
   function updateLocale(nextLocale: AppLocale) {
@@ -93,12 +103,7 @@ export function useSettingsController({
 
   function disableDeveloperMode() {
     settingsApi.disableDeveloperMode()
-      .then((response) => {
-        setSettings(response);
-        setLocale(response.locale);
-        setTheme(response.theme);
-        setSettingsError(null);
-      })
+      .then(applySettingsResponse)
       .catch((error) => {
         setSettingsError(String(error));
       });
@@ -106,12 +111,7 @@ export function useSettingsController({
 
   function unlockDeveloperMode(passphrase: string) {
     settingsApi.unlockDeveloperMode(passphrase)
-      .then((response) => {
-        setSettings(response);
-        setLocale(response.locale);
-        setTheme(response.theme);
-        setSettingsError(null);
-      })
+      .then(applySettingsResponse)
       .catch((error) => {
         setSettingsError(String(error));
       });
@@ -161,6 +161,7 @@ export function useSettingsController({
     disableDeveloperMode,
     saveGeminiApiKey,
     unlockDeveloperMode,
+    updateAccentPalette,
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,

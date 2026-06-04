@@ -46,6 +46,14 @@ describe("Notebook and transcript workflows", () => {
       name: "Open notebook company: GPW:CDR",
     });
     expect(notebookCompanyButton).toBeInTheDocument();
+    expect(within(notebookCompanyButton).getByText("CD PROJEKT S.A.")).toBeInTheDocument();
+    expect(within(notebookCompanyButton).getByLabelText("GPW:CDR")).toBeInTheDocument();
+    expect(within(notebooksWorkspace).getByRole("separator", {
+      name: "Resize notebook company list",
+    })).toBeInTheDocument();
+    expect(within(notebooksWorkspace).getByRole("separator", {
+      name: "Resize notebook note list",
+    })).toBeInTheDocument();
     expect(
       within(notebooksWorkspace).getByRole("button", { name: "Show open claims for GPW:CDR" }),
     ).toBeInTheDocument();
@@ -114,7 +122,7 @@ describe("Notebook and transcript workflows", () => {
     expect(within(transcriptJobsRegion).getByText("Queued")).toBeInTheDocument();
     expect(screen.getByText("Credentials")).toBeInTheDocument();
     expect(screen.getByText("Configured")).toBeInTheDocument();
-    expect(screen.getByText("OS keychain")).toBeInTheDocument();
+    expect(screen.getByText("Timeout")).toBeInTheDocument();
     expect(screen.getByText("300s")).toBeInTheDocument();
 
     await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Retry" }));
@@ -465,6 +473,20 @@ describe("Notebook and transcript workflows", () => {
         name: "Select notebook screen entry: Margin observation",
       }),
     ).toBeInTheDocument();
+
+    expect(
+      within(notebooksWorkspace).getByRole("button", {
+        name: "Open notebook company: GPW:PZU",
+      }),
+    ).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Notebook watchlist filter"), "watchlist_main_gpw");
+    expect(
+      within(notebooksWorkspace).queryByRole("button", {
+        name: "Open notebook company: GPW:PZU",
+      }),
+    ).not.toBeInTheDocument();
+
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Clear filters" }));
 
     await user.click(within(notebooksWorkspace).getByRole("button", { name: "Show open claims for GPW:CDR" }));
 

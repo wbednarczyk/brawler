@@ -416,6 +416,8 @@ Rules:
 
 - Default theme is `dark`.
 - Default accent palette is `night-neon`.
+- `theme` stores brightness mode only: `dark`, `light`, or `system`.
+- `accent_palette` stores the named semantic color palette. Initial allowed values are `night-neon` and `midnight-horizon`.
 - Default poll interval is `900`.
 - Default YouTube transcription provider is `provider_gemini`.
 - Default YouTube transcription model is `gemini-2.5-flash`.

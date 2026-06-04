@@ -2,6 +2,7 @@ import { CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { useLocale } from "../../shared/locale";
+import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 import type { SourcesScreenProps } from "./sourceTypes";
 
@@ -41,6 +42,7 @@ export function SourcesScreen({
   formatTimestamp,
 }: SourcesScreenProps) {
   const { t, text } = useLocale();
+  const groupedAdapters = groupSourceAdapters(sourceAdapters);
 
   return (
     <section className="feed-panel" aria-labelledby="sources-title">
@@ -59,7 +61,7 @@ export function SourcesScreen({
         </Button>
       </div>
 
-      <div className="sources-layout" aria-label={text("Source adapters")}>
+      <div className="sources-layout" aria-label={text("Source list")}>
         {sourceRefreshResult ? (
           <dl className="source-status-grid source-refresh-summary" aria-label={text("Last source refresh summary")}>
             <div>
@@ -90,41 +92,54 @@ export function SourcesScreen({
             </div>
           </dl>
         ) : null}
-        {sourceAdapters.map((adapter) => (
-          <SourceAdapterRow
-            adapter={adapter}
-            addingRegistryTicker={addingRegistryTicker}
-            companyRegistryEntries={companyRegistryEntries}
-            companyRegistryEntriesError={companyRegistryEntriesError}
-            companyRegistrySearch={companyRegistrySearch}
-            expandedUnmatchedAdapters={expandedUnmatchedAdapters}
-            filteredCompanyRegistryEntries={filteredCompanyRegistryEntries}
-            gpwRegistryAdapterId={gpwRegistryAdapterId}
-            isCompanyRegistryListExpanded={isCompanyRegistryListExpanded}
-            key={adapter.id}
-            registryRefreshError={registryRefreshError}
-            registryRefreshResult={registryRefreshResult}
-            registryRefreshState={registryRefreshState}
-            selected={selectedSourceAdapterId === adapter.id}
-            sourceAdapterRefreshInFlight={sourceAdapterRefreshInFlight}
-            sourceRefreshError={sourceRefreshError}
-            sourceRefreshState={sourceRefreshState}
-            unmatchedSourceItems={unmatchedSourceItems}
-            addCompanyFromRegistry={addCompanyFromRegistry}
-            formatNextRefresh={formatNextRefresh}
-            formatSourceScheduler={formatSourceScheduler}
-            formatTimestamp={formatTimestamp}
-            openExternalUrl={openExternalUrl}
-            refreshCompanyRegistry={refreshCompanyRegistry}
-            refreshSingleSource={refreshSingleSource}
-            setCompanyRegistrySearch={setCompanyRegistrySearch}
-            toggleCompanyRegistryList={toggleCompanyRegistryList}
-            toggleSourceAdapter={toggleSourceAdapter}
-            toggleSourceAdapterFromKeyboard={(event) =>
-              toggleSourceAdapterFromKeyboard(event, adapter.id)
-            }
-            toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
-          />
+        {groupedAdapters.map((group) => (
+          <section className="source-group" key={group.id} aria-label={text(group.label)}>
+            <div className="source-group-header">
+              <div>
+                <h2>{text(group.label)}</h2>
+                <p>{text(group.description)}</p>
+              </div>
+              <span>{group.adapters.length}</span>
+            </div>
+            <div className="source-group-list">
+              {group.adapters.map((adapter) => (
+                <SourceAdapterRow
+                  adapter={adapter}
+                  addingRegistryTicker={addingRegistryTicker}
+                  companyRegistryEntries={companyRegistryEntries}
+                  companyRegistryEntriesError={companyRegistryEntriesError}
+                  companyRegistrySearch={companyRegistrySearch}
+                  expandedUnmatchedAdapters={expandedUnmatchedAdapters}
+                  filteredCompanyRegistryEntries={filteredCompanyRegistryEntries}
+                  gpwRegistryAdapterId={gpwRegistryAdapterId}
+                  isCompanyRegistryListExpanded={isCompanyRegistryListExpanded}
+                  key={adapter.id}
+                  registryRefreshError={registryRefreshError}
+                  registryRefreshResult={registryRefreshResult}
+                  registryRefreshState={registryRefreshState}
+                  selected={selectedSourceAdapterId === adapter.id}
+                  sourceAdapterRefreshInFlight={sourceAdapterRefreshInFlight}
+                  sourceRefreshError={sourceRefreshError}
+                  sourceRefreshState={sourceRefreshState}
+                  unmatchedSourceItems={unmatchedSourceItems}
+                  addCompanyFromRegistry={addCompanyFromRegistry}
+                  formatNextRefresh={formatNextRefresh}
+                  formatSourceScheduler={formatSourceScheduler}
+                  formatTimestamp={formatTimestamp}
+                  openExternalUrl={openExternalUrl}
+                  refreshCompanyRegistry={refreshCompanyRegistry}
+                  refreshSingleSource={refreshSingleSource}
+                  setCompanyRegistrySearch={setCompanyRegistrySearch}
+                  toggleCompanyRegistryList={toggleCompanyRegistryList}
+                  toggleSourceAdapter={toggleSourceAdapter}
+                  toggleSourceAdapterFromKeyboard={(event) =>
+                    toggleSourceAdapterFromKeyboard(event, adapter.id)
+                  }
+                  toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
+                />
+              ))}
+            </div>
+          </section>
         ))}
         {sourceAdapters.length === 0 ? <EmptyState>{t("empty.noSourceAdapters")}</EmptyState> : null}
         {sourceAdaptersError ? <p className="error-text">{t("error.sourceCommandFailed")}: {sourceAdaptersError}</p> : null}

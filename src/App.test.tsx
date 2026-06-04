@@ -31,18 +31,30 @@ describe("App shell", () => {
     expect(
       screen.getAllByText("Sample official report used to validate feed filtering and detail rendering.").length,
     ).toBeGreaterThan(0);
-    expect(await screen.findByText("ok 0.3.0")).toBeInTheDocument();
-    expect(screen.getByText("DB")).toBeInTheDocument();
-    expect(screen.getByLabelText("Database connection active")).toBeInTheDocument();
+    expect(await screen.findByText("v0.3.0")).toBeInTheDocument();
+    expect(screen.queryByText("ok 0.3.0")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Data")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open source status" })).toBeInTheDocument();
   });
 
   it("shows unread feed count in the Inbox navigation item", async () => {
+    const user = userEvent.setup();
+
     renderApp();
 
     const inboxNav = await screen.findByRole("button", { name: /Inbox/ });
 
     expect(within(inboxNav).getByText("1")).toHaveClass("nav-badge");
     expect(within(inboxNav).getByLabelText("1 unread feed item")).toBeInTheDocument();
+
+    const navigationResizer = screen.getByRole("separator", { name: "Resize navigation" });
+    expect(navigationResizer).toHaveAttribute("aria-valuenow", "190");
+
+    navigationResizer.focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(navigationResizer).toHaveAttribute("aria-valuenow", "202");
   });
 
   it("shows Diagnostics navigation only in Developer mode", async () => {
@@ -93,11 +105,12 @@ describe("App shell", () => {
     expect(await screen.findByRole("heading", { name: "Companies" })).toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     const searchInput = screen.getByLabelText("Search feed");
     expect(searchInput).toHaveFocus();
 
     fireEvent.keyDown(searchInput, { key: "3", code: "Digit3", ctrlKey: true });
-    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
 
     searchInput.blur();
     fireEvent.keyDown(document, { key: "7", code: "Digit7", ctrlKey: true });

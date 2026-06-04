@@ -15,6 +15,12 @@
   overflow: hidden;
 }
 
+.content-grid > .feed-panel,
+.content-grid > .detail-pane {
+  height: 100%;
+  min-height: 0;
+}
+
 .transcripts-panel {
   overflow-y: auto;
 }

@@ -80,6 +80,5 @@ export type TranscriptsScreenProps = {
   formatAiProvider: (value: string | null | undefined) => string;
   formatGeminiModel: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatCredentialStorage: (value: string | null | undefined) => string;
   formatEnumLabel: (value: string) => string;
 };

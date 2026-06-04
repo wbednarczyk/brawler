@@ -73,7 +73,6 @@ import {
   formatCompanyEventType,
   formatCredentialConfigured,
   formatCredentialKind,
-  formatCredentialStorage,
   formatEnumLabel,
   formatGeminiModel,
 } from "../shared/formatting/labels";
@@ -116,11 +115,14 @@ type AppStateRootProps = {
   initialLicenseStatus?: LicenseStatus | null;
 };
 
+const aiAnalysisPollIntervalMs = 1500;
+
 export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps) {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
   const sourceAdaptersRef = useRef<SourceAdapter[]>([]);
   const eventWeekFetchAttemptedRef = useRef<Set<string>>(new Set());
+  const aiAnalysisPollTimersRef = useRef<Record<string, number>>({});
   const companyLookupVersionRef = useRef(0);
   const skipNextCompanyLookupRef = useRef(false);
   const companyFieldRefs = useRef<Record<keyof CompanyForm, HTMLInputElement | null>>({
@@ -131,6 +133,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   });
   const [activeSection, setActiveSection] = useState<Section>("Inbox");
   const [theme, setTheme] = useState<Theme>("dark");
+  const [accentPalette, setAccentPalette] = useState<UserSettings["accentPalette"]>("night-neon");
   const [locale, setLocale] = useState<UserSettings["locale"]>("en");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
@@ -142,7 +145,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [watchlistMemberships, setWatchlistMemberships] = useState<WatchlistMembership[]>([]);
   const [watchlistsError, setWatchlistsError] = useState<string | null>(null);
   const [watchlistName, setWatchlistName] = useState("");
-  const [watchlistAssignments, setWatchlistAssignments] = useState<Record<string, string>>({});
   const [watchlistFeedback, setWatchlistFeedback] = useState<WatchlistFeedback | null>(null);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [notebookError, setNotebookError] = useState<string | null>(null);
@@ -221,6 +223,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [isNotebookScreenComposerOpen, setNotebookScreenComposerOpen] = useState(false);
   const [isNotebookScreenEditMode, setNotebookScreenEditMode] = useState(false);
   const [notebookScreenKindFilter, setNotebookScreenKindFilter] = useState("all");
+  const [notebookScreenWatchlistFilter, setNotebookScreenWatchlistFilter] = useState("all");
   const [notebookScreenClaimStatusFilter, setNotebookScreenClaimStatusFilter] = useState("all");
   const [notebookScreenFollowUpFilter, setNotebookScreenFollowUpFilter] = useState("all");
   const [notebookScreenTagFilter, setNotebookScreenTagFilter] = useState("");
@@ -254,6 +257,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [selectedCompanyRegistryTicker, setSelectedCompanyRegistryTicker] = useState<string | null>(null);
   const [addingRegistryTicker, setAddingRegistryTicker] = useState<string | null>(null);
   const [companyListSearch, setCompanyListSearch] = useState("");
+  const [companyWatchlistFilter, setCompanyWatchlistFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
@@ -281,6 +285,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     filteredCompanies,
     filteredCompanyRegistryEntries,
     filteredFeedItems,
+    filteredNotebookScreenCompanies,
     hasActiveInboxFilters,
     inboxEmptyState,
     inboxReviewStats,
@@ -314,6 +319,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     companyEvents,
     companyForm,
     companyListSearch,
+    companyWatchlistFilter,
     companyRegistryEntries,
     companyRegistrySearch,
     feedState,
@@ -324,6 +330,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     inboxWatchlistFilter,
     notebookEditForm,
     notebookEntries,
+    notebookScreenWatchlistFilter,
     notebookScreenClaimStatusFilter,
     notebookScreenEditForm,
     notebookScreenFollowUpFilter,
@@ -400,7 +407,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     refreshWatchlistMemberships,
     refreshWatchlists,
   } = useAppDataController({
-    companies,
     feedPruneRetentionDays,
     refreshCompanyEvents,
     setCompanies,
@@ -422,13 +428,13 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setSelectedFeedItemId,
     setSettings,
     setSettingsError,
+    setAccentPalette,
     setLocale,
     setSourceAdapters,
     setSourceAdaptersError,
     setTheme,
     setUnmatchedSourceItems,
     setUnmatchedSourceItemsError,
-    setWatchlistAssignments,
     setWatchlistMemberships,
     setWatchlists,
     setWatchlistsError,
@@ -483,6 +489,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     disableDeveloperMode,
     saveGeminiApiKey,
     unlockDeveloperMode,
+    updateAccentPalette,
     updateLocale,
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
@@ -503,6 +510,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setGeminiCredentialStatus,
     setSettings,
     setSettingsError,
+    setAccentPalette,
     setLocale,
     setTheme,
     text,
@@ -542,7 +550,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
 
   const {
     addCompanyFromRegistry,
-    addCompanyToWatchlist,
     applyRegistryEntryToCompanyForm,
     clearCompanyFormField,
     createCompany,
@@ -550,9 +557,8 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     deleteCompany,
     lookupCompany,
     lookupCompanyIfUseful,
-    removeCompanyFromWatchlist,
+    toggleCompanyWatchlistMembership,
     updateCompanyForm,
-    updateWatchlistAssignment,
   } = useCompanyController({
     companyFieldRefs,
     companyForm,
@@ -567,12 +573,11 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setCompanyForm,
     setLookupStatus,
     setSelectedCompanyRegistryTicker,
-    setWatchlistAssignments,
     setWatchlistFeedback,
     setWatchlistName,
     setWatchlistsError,
     skipNextCompanyLookupRef,
-    watchlistAssignments,
+    watchlistMemberships,
     watchlistName,
     watchlists,
     text,
@@ -737,6 +742,27 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     }));
   }
 
+  function aiAnalysisJobIsActive(job: AiAnalysisJob | null | undefined) {
+    return job?.status === "queued" || job?.status === "running";
+  }
+
+  function clearAiAnalysisPollTimer(feedItemId: string) {
+    const timer = aiAnalysisPollTimersRef.current[feedItemId];
+    if (timer === undefined) return;
+
+    window.clearTimeout(timer);
+    delete aiAnalysisPollTimersRef.current[feedItemId];
+  }
+
+  function scheduleAiAnalysisPoll(feedItemId: string) {
+    if (aiAnalysisPollTimersRef.current[feedItemId] !== undefined) return;
+
+    aiAnalysisPollTimersRef.current[feedItemId] = window.setTimeout(() => {
+      delete aiAnalysisPollTimersRef.current[feedItemId];
+      void pollFeedItemAiAnalysis(feedItemId);
+    }, aiAnalysisPollIntervalMs);
+  }
+
   async function refreshFeedItemAiAnalysis(feedItemId: string) {
     setAiAnalysisFeedInFlight(feedItemId, true);
     setAiAnalysisFeedError(feedItemId, null);
@@ -744,6 +770,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     try {
       const jobs = await listAiAnalysis({ feedItemId });
       storeAiAnalysisJobs(feedItemId, jobs);
+      if (aiAnalysisJobIsActive(jobs[0])) {
+        scheduleAiAnalysisPoll(feedItemId);
+      }
     } catch (error) {
       setAiAnalysisFeedError(feedItemId, error instanceof Error ? error.message : String(error));
     } finally {
@@ -751,22 +780,20 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     }
   }
 
-  function pollFeedItemAiAnalysis(feedItemId: string, remainingAttempts = 5) {
-    if (remainingAttempts <= 0) return;
+  async function pollFeedItemAiAnalysis(feedItemId: string) {
+    try {
+      const jobs = await listAiAnalysis({ feedItemId });
+      storeAiAnalysisJobs(feedItemId, jobs);
+      setAiAnalysisFeedError(feedItemId, null);
 
-    window.setTimeout(() => {
-      void listAiAnalysis({ feedItemId })
-        .then((jobs) => {
-          storeAiAnalysisJobs(feedItemId, jobs);
-          const latestJob = jobs[0];
-          if (latestJob?.status === "queued" || latestJob?.status === "running") {
-            pollFeedItemAiAnalysis(feedItemId, remainingAttempts - 1);
-          }
-        })
-        .catch((error) => {
-          setAiAnalysisFeedError(feedItemId, error instanceof Error ? error.message : String(error));
-        });
-    }, 1200);
+      if (aiAnalysisJobIsActive(jobs[0])) {
+        scheduleAiAnalysisPoll(feedItemId);
+      } else {
+        clearAiAnalysisPollTimer(feedItemId);
+      }
+    } catch (error) {
+      setAiAnalysisFeedError(feedItemId, error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function startFeedItemAiAnalysis(item: FeedItem, promptPresetId?: string, customQuestion?: string) {
@@ -780,7 +807,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
         customQuestion,
       });
       storeAiAnalysisJobs(item.id, [job, ...(aiAnalysisJobsByFeedItemId[item.id] ?? []).filter((existingJob) => existingJob.id !== job.id)]);
-      pollFeedItemAiAnalysis(item.id);
+      if (aiAnalysisJobIsActive(job)) {
+        scheduleAiAnalysisPoll(item.id);
+      }
     } catch (error) {
       setAiAnalysisFeedError(item.id, error instanceof Error ? error.message : String(error));
     } finally {
@@ -795,7 +824,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     try {
       const job = await retryAiAnalysis(jobId);
       storeAiAnalysisJobs(itemId, [job, ...(aiAnalysisJobsByFeedItemId[itemId] ?? []).filter((existingJob) => existingJob.id !== job.id)]);
-      pollFeedItemAiAnalysis(itemId);
+      if (aiAnalysisJobIsActive(job)) {
+        scheduleAiAnalysisPoll(itemId);
+      }
     } catch (error) {
       setAiAnalysisFeedError(itemId, error instanceof Error ? error.message : String(error));
     } finally {
@@ -803,19 +834,46 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     }
   }
 
+  const selectedFeedAiAnalysisJob = selectedFeedItem
+    ? aiAnalysisJobsByFeedItemId[selectedFeedItem.id]?.[0] ?? null
+    : null;
+  const selectedCompanyFeedAiAnalysisJob = selectedCompanyFeedItem
+    ? aiAnalysisJobsByFeedItemId[selectedCompanyFeedItem.id]?.[0] ?? null
+    : null;
+
   useEffect(() => {
     if (!selectedFeedItem) return;
-    if (aiAnalysisJobsByFeedItemId[selectedFeedItem.id]) return;
+    if (!aiAnalysisJobsByFeedItemId[selectedFeedItem.id]) {
+      void refreshFeedItemAiAnalysis(selectedFeedItem.id);
+      return;
+    }
 
-    void refreshFeedItemAiAnalysis(selectedFeedItem.id);
-  }, [selectedFeedItem?.id]);
+    if (aiAnalysisJobIsActive(selectedFeedAiAnalysisJob)) {
+      scheduleAiAnalysisPoll(selectedFeedItem.id);
+    }
+  }, [selectedFeedItem?.id, selectedFeedAiAnalysisJob?.id, selectedFeedAiAnalysisJob?.status]);
 
   useEffect(() => {
     if (!selectedCompanyFeedItem) return;
-    if (aiAnalysisJobsByFeedItemId[selectedCompanyFeedItem.id]) return;
+    if (!aiAnalysisJobsByFeedItemId[selectedCompanyFeedItem.id]) {
+      void refreshFeedItemAiAnalysis(selectedCompanyFeedItem.id);
+      return;
+    }
 
-    void refreshFeedItemAiAnalysis(selectedCompanyFeedItem.id);
-  }, [selectedCompanyFeedItem?.id]);
+    if (aiAnalysisJobIsActive(selectedCompanyFeedAiAnalysisJob)) {
+      scheduleAiAnalysisPoll(selectedCompanyFeedItem.id);
+    }
+  }, [
+    selectedCompanyFeedItem?.id,
+    selectedCompanyFeedAiAnalysisJob?.id,
+    selectedCompanyFeedAiAnalysisJob?.status,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      Object.keys(aiAnalysisPollTimersRef.current).forEach(clearAiAnalysisPollTimer);
+    };
+  }, []);
 
   const {
     focusCompanyWorkspace,
@@ -888,6 +946,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     companyEventViewMode,
     companyEventWatchlistFilter,
     companyEventWeekRange,
+    accentPalette,
     effectiveTheme,
     eventWeekFetchAttemptedRef,
     filteredFeedItems,
@@ -1122,17 +1181,13 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
       <AppShell
         activeSection={activeSection}
-        databaseError={databaseError}
-        databaseStatus={databaseStatus}
         dbRefreshState={dbRefreshState}
         effectiveTheme={effectiveTheme}
         health={health}
         openSourceStatus={openSourceStatus}
         refreshDatabaseBackedViews={refreshDatabaseBackedViews}
         refreshSources={refreshSources}
-        searchQuery={searchQuery}
         setActiveSection={setActiveSection}
-        setSearchQuery={setSearchQuery}
         sourceRefreshError={sourceRefreshError}
         sourceRefreshResult={sourceRefreshResult}
         sourceRefreshState={sourceRefreshState}
@@ -1168,6 +1223,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
               aiAnalysisProviderConfigured={Boolean(settings?.aiProviders.generalAnalysisProvider)}
               inboxStatusFilter={inboxStatusFilter}
+              searchQuery={searchQuery}
               inboxWatchlistFilter={inboxWatchlistFilter}
               inboxCompanyFilter={inboxCompanyFilter}
               inboxTypeFilter={inboxTypeFilter}
@@ -1186,6 +1242,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               healthError={healthError}
               databaseError={databaseError}
               setInboxStatusFilter={setInboxStatusFilter}
+              setSearchQuery={setSearchQuery}
               setInboxWatchlistFilter={setInboxWatchlistFilter}
               setInboxCompanyFilter={setInboxCompanyFilter}
               setInboxTypeFilter={setInboxTypeFilter}
@@ -1203,7 +1260,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
               openFeedItemNoteDraft={openFeedItemNoteDraft}
               startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-              refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
               retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
               resizeDetailPaneWithKeyboard={resizeDetailPaneWithKeyboard}
               startDetailPaneResize={startDetailPaneResize}
@@ -1222,11 +1278,11 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               companyForm={companyForm}
               companyFormRegistryMatches={companyFormRegistryMatches}
               companyListSearch={companyListSearch}
+              companyWatchlistFilter={companyWatchlistFilter}
               filteredCompanies={filteredCompanies}
               companies={companies}
               selectedCompany={selectedCompany}
               membershipsByCompany={membershipsByCompany}
-              watchlistAssignments={watchlistAssignments}
               watchlistFeedback={watchlistFeedback}
               selectedCompanyFeedStats={selectedCompanyFeedStats}
               companyWorkspaceTab={companyWorkspaceTab}
@@ -1259,11 +1315,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               lookupCompany={lookupCompany}
               applyRegistryEntryToCompanyForm={applyRegistryEntryToCompanyForm}
               setCompanyListSearch={setCompanyListSearch}
+              setCompanyWatchlistFilter={setCompanyWatchlistFilter}
               openCompanyWorkspace={openCompanyWorkspace}
               openCompanyWorkspaceFromKeyboard={openCompanyWorkspaceFromKeyboard}
-              updateWatchlistAssignment={updateWatchlistAssignment}
-              addCompanyToWatchlist={addCompanyToWatchlist}
-              removeCompanyFromWatchlist={removeCompanyFromWatchlist}
+              toggleCompanyWatchlistMembership={toggleCompanyWatchlistMembership}
               deleteCompany={deleteCompany}
               setCompanyWorkspaceTab={setCompanyWorkspaceTab}
               toggleCompanyFeedItem={toggleCompanyFeedItem}
@@ -1272,7 +1327,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               inspectCompanyFeedItem={inspectCompanyFeedItem}
               openFeedItemNoteDraft={openFeedItemNoteDraft}
               startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-              refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
               retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
               openCompanyInboxFilter={openCompanyInboxFilter}
               setNotebookComposerOpen={setNotebookComposerOpen}
@@ -1296,7 +1350,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
           ) : null}
           {activeSection === "Notebooks" ? (
             <NotebooksScreen
-              companies={companies}
+              companies={filteredNotebookScreenCompanies}
+              totalCompanyCount={companies.length}
+              watchlists={watchlists}
               notebookEntries={notebookEntries}
               selectedNotebookScreenCompany={selectedNotebookScreenCompany}
               selectedNotebookScreenEntries={selectedNotebookScreenEntries}
@@ -1305,6 +1361,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               isNotebookScreenEditMode={isNotebookScreenEditMode}
               isNotebookScreenEditDirty={isNotebookScreenEditDirty}
               notebookScreenKindFilter={notebookScreenKindFilter}
+              notebookScreenWatchlistFilter={notebookScreenWatchlistFilter}
               notebookScreenClaimStatusFilter={notebookScreenClaimStatusFilter}
               notebookScreenFollowUpFilter={notebookScreenFollowUpFilter}
               notebookScreenTagFilter={notebookScreenTagFilter}
@@ -1323,6 +1380,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               cancelNotebookScreenEdit={cancelNotebookScreenEdit}
               setNotebookScreenEditMode={setNotebookScreenEditMode}
               setNotebookScreenKindFilter={setNotebookScreenKindFilter}
+              setNotebookScreenWatchlistFilter={setNotebookScreenWatchlistFilter}
               setNotebookScreenClaimStatusFilter={setNotebookScreenClaimStatusFilter}
               setNotebookScreenFollowUpFilter={setNotebookScreenFollowUpFilter}
               setNotebookScreenTagFilter={setNotebookScreenTagFilter}
@@ -1447,7 +1505,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               formatAiProvider={formatAiProvider}
               formatGeminiModel={formatGeminiModel}
               formatCredentialConfigured={formatCredentialConfigured}
-              formatCredentialStorage={formatCredentialStorage}
               formatEnumLabel={formatEnumLabel}
             />
           ) : null}
@@ -1497,6 +1554,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
           {activeSection === "Settings" ? (
             <SettingsScreen
               theme={theme}
+              accentPalette={accentPalette}
               locale={locale}
               settings={settings}
               settingsError={settingsError}
@@ -1513,6 +1571,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               shortcutBindings={shortcutBindings}
               shortcutReferences={shortcutReferences}
               onThemeChange={updateTheme}
+              onAccentPaletteChange={updateAccentPalette}
               onLocaleChange={updateLocale}
               onPollIntervalChange={updatePollInterval}
               onShortcutBindingsChange={updateShortcutBindings}
@@ -1538,7 +1597,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               formatAiProvider={formatAiProvider}
               formatGeminiModel={formatGeminiModel}
               formatCredentialConfigured={formatCredentialConfigured}
-              formatCredentialStorage={formatCredentialStorage}
               formatCredentialKind={formatCredentialKind}
             />
           ) : null}

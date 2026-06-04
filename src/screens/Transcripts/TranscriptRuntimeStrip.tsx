@@ -6,7 +6,6 @@ type TranscriptRuntimeStripProps = {
   settings: UserSettings | null;
   formatAiProvider: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatCredentialStorage: (value: string | null | undefined) => string;
 };
 
 export function TranscriptRuntimeStrip({
@@ -14,7 +13,6 @@ export function TranscriptRuntimeStrip({
   settings,
   formatAiProvider,
   formatCredentialConfigured,
-  formatCredentialStorage,
 }: TranscriptRuntimeStripProps) {
   const { text } = useLocale();
 
@@ -27,10 +25,6 @@ export function TranscriptRuntimeStrip({
       <div>
         <dt>{text("Credentials")}</dt>
         <dd>{formatCredentialConfigured(geminiCredentialStatus)}</dd>
-      </div>
-      <div>
-        <dt>{text("Storage")}</dt>
-        <dd>{formatCredentialStorage(geminiCredentialStatus?.storage)}</dd>
       </div>
       <div>
         <dt>{text("Timeout")}</dt>

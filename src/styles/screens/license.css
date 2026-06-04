@@ -1,6 +1,8 @@
 .license-gate {
   display: grid;
-  min-height: 100vh;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
   place-items: center;
   padding: 32px;
   background: var(--background);

@@ -10,8 +10,8 @@ V1 uses a desktop app shell with persistent navigation and work-focused density.
 
 Regions:
 
-- left sidebar: primary sections, watchlists, pinned companies
-- top toolbar: global search, manual refresh, source health indicator, theme/settings access
+- left sidebar: primary sections and pinned companies
+- top toolbar: manual refresh, source health indicator, theme/settings access
 - main workspace: current screen content
 - right detail pane: selected feed item, note, transcript segment, or job detail
 
@@ -33,12 +33,16 @@ Shell behavior:
 - Dark theme is the first-run default.
 - Sidebar should be collapsible after v1 if space becomes tight, but v1 can keep it fixed.
 - The top toolbar stays visible while the current workspace scrolls.
+- The app shell owns the viewport height; screens should use internal panel/list scroll areas instead of relying on page/body scrolling.
+- The browser page should not expose a global application scrollbar. The left navigation, top toolbar, and each screen's primary header or control bar should remain visible while long lists, detail panes, or subpanels scroll internally.
 - The Inbox navigation item shows an unread count badge when unread feed items exist.
-- The top toolbar source health indicator summarizes locally registered source adapters and opens the Sources screen with the most relevant adapter expanded. Manual source refresh remains a separate disabled control until ingestion jobs exist.
+- The top toolbar source health indicator summarizes locally registered sources and opens the Sources screen with the most relevant source expanded. Manual source refresh remains a separate disabled control until ingestion jobs exist.
 - Detail pane should be dismissible.
 - Empty states should offer direct actions and avoid marketing copy.
 - Common mutations should provide immediate visual confirmation without blocking the workflow.
 - Intuitive, responsive UX is a core product requirement for every screen.
+- Normal user-facing UI copy should use product terms and avoid implementation details such as SQLite, Tauri, database engine, internal adapter, module, collector, schema, or command boundary. Technical terms are reserved for Developer Diagnostics and owner/developer docs.
+- Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with a per-exchange color map. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
 
 ## Inbox Screen
 
@@ -68,8 +72,8 @@ If the selected item disappears from the current filtered set, the next visible 
 Detail pane should show:
 
 - title
-- source attribution and source URL
-- publication and fetch timestamps
+- source URL as an actionable original link
+- publication and fetch timestamps as lower-priority footer metadata
 - matched companies
 - original excerpt/body when available
 - AI summary/significance when available
@@ -86,22 +90,28 @@ The UI-facing feed is scoped to tracked companies. Create-note is available for 
 
 ## Companies Screen
 
-Purpose: manage tracked companies and open company workspaces.
+Purpose: manage tracked companies, open company workspaces, and enter the dedicated watchlist-management panel.
 
 Main regions:
 
 - company search/add control
-- company list grouped or filtered by watchlist/exchange
+- company list searchable and filtered by watchlist/exchange
+- dedicated Watchlists panel/subview inside Companies
 - company metadata summary
 
 Actions:
 
 - add company by exchange-qualified ticker
 - edit company metadata
-- add/remove company from watchlist
 - open company workspace
+- create and delete watchlists from the dedicated Watchlists panel
+- add/remove tracked companies from the selected watchlist inside the dedicated Watchlists panel
 
-Early implementation may expose watchlist assignment directly on company rows. This is acceptable for proving storage and command behavior, but the workflow should be refined before v1 because repeated row-level assign/remove actions are tedious.
+Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists panel. The company list and expanded company workspace should not show watchlist create, delete, add, or remove controls. The company workspace can show current memberships as context only.
+
+The company list should own its vertical scrolling so the company add/search/filter controls remain visible while reviewing long tracked-company lists.
+
+The Watchlists panel is subordinate to Companies rather than a separate top-level navigation item. It should show the user's watchlists, the selected watchlist's companies, and a searchable way to add tracked companies to the selected watchlist. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies.
 
 Milestone 3 implementation starts the company workspace from the Companies screen. Clicking a company row expands the ticker-focused workspace inline directly under that row, and clicking the same row again collapses it. Up and Down arrows move through company rows while preserving expansion state: collapsed lists stay collapsed, and an already-open workspace moves to the focused company. This keeps the expanded context anchored to the company the user selected and avoids adding another row-level button.
 
@@ -114,7 +124,7 @@ Header should show:
 - qualified ticker
 - display name
 - exchange
-- watchlist membership
+- watchlist memberships as read-only context
 - last feed update
 - feed, unread, and saved counts
 - quick actions: refresh company, add note, add transcript
@@ -186,7 +196,7 @@ Purpose: cross-company note review.
 Main regions:
 
 - company navigator: company list with ticker, display name, note count, open claim count, and due follow-up cues
-- filters: company, tag, kind, claim status, follow-up period
+- filters: watchlist/company navigator, tag, kind, claim status, follow-up period
 - note list
 - note detail/editor pane
 - selected-company manual note creation form
@@ -199,7 +209,7 @@ Use cases:
 - follow-up notes due this quarter
 - search personal research across companies
 
-The working assumption is that the Notebooks screen becomes the daily notes workspace. It should therefore make company switching cheap and obvious, not force the user to bounce through the Companies screen for ordinary note follow-up. Its first implementation provides a company navigator, selected-company note creation, tracked-company feed-to-note drafts, compact filters for kind, claim status, tag, and follow-up scheduling presence, and company-scoped note rows that expand in place. Company navigator rows show note count, open-claim count, and follow-up scheduled count when present. The open-claim cue is actionable: selecting it opens that company and applies the `Open` claim-status filter. The follow-up cue is actionable: selecting it opens that company and applies the `Has follow-up` filter. Expanded notes open in read mode and switch in place to edit mode with the same core editable metadata fields as the company workspace note editor, including event date and exact follow-up date. Opening the full company workspace should be available from the company navigator as a small contextual action, not as a separate toolbar that competes with note reading. The company workspace Notebook tab remains useful when the user is already researching a ticker, but it is not expected to carry the whole notes workflow alone.
+The working assumption is that the Notebooks screen becomes the daily notes workspace. It should therefore make company switching cheap and obvious, not force the user to bounce through the Companies screen for ordinary note follow-up. Its primary layout is a desktop master-detail workspace with independent scroll areas: company navigator, note list/filter column, and selected note/editor pane. Desktop users can resize the company navigator and note-list panels so long company names, dense note lists, or active note editing can get the needed width. Company navigator rows show the full company name first, then the exchange-qualified ticker, plus note count, open-claim count, and follow-up scheduled count when present, and the navigator can be narrowed by watchlist for focused review. The open-claim cue is actionable: selecting it opens that company and applies the `Open` claim-status filter. The follow-up cue is actionable: selecting it opens that company and applies the `Has follow-up` filter. Selected notes open in read mode in the detail pane and switch there to edit mode with the same core editable metadata fields as the company workspace note editor, including event date and exact follow-up date. Opening the full company workspace should be available from the company navigator as a small contextual action, not as a separate toolbar that competes with note reading. The company workspace Notebook tab remains useful when the user is already researching a ticker, but it is not expected to carry the whole notes workflow alone.
 
 Note detail surfaces should show origin links as compact actions. Feed-item origins should open the referenced item in the Inbox with filters adjusted so the item is visible. URL-backed origins should expose an external source action.
 
@@ -252,14 +262,17 @@ Purpose: show whether data ingestion is healthy.
 
 Main regions:
 
-- adapter list
+- source groups by purpose
+- source list within each group
 - last successful fetch
 - last error/warning
 - next scheduled poll
 - manual refresh action
 - source policy notes or links
 
-Source rows follow the same list/detail behavior as the rest of the app: clicking a source adapter, or pressing Enter/Space on a focused source row, expands operational details inline under that row. Repeating the action collapses the details.
+Source rows follow the same list/detail behavior as the rest of the app: clicking a source, or pressing Enter/Space on a focused source row, expands operational details inline under that row. Repeating the action collapses the details.
+
+M18 groups sources in frontend configuration without changing backend source contracts. Groups separate official reports, calendar/events, public media/news, company registry, private research, and disabled/review candidates. Disabled and review-candidate sources should be visually distinct from active operational sources.
 
 V1 adapters:
 
@@ -302,14 +315,17 @@ Rules:
 
 Purpose: local preferences and provider configuration.
 
+Settings uses local subnavigation rather than route-level pages. Each section opens in the settings workspace while the settings navigation remains visible.
+
 Sections:
 
-- Appearance: dark/light/system theme, `night-neon` palette, extensible locale setting with English default and Polish as the first additional language
+- Appearance: dark/light/system brightness mode, separate accent palette with `night-neon` and `midnight-horizon`, extensible locale setting with English default and Polish as the first additional language
+- Sources: polling interval, feed cleanup status, import/export status
+- AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, and future general AI provider slots
+- Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
 - License: local author/friend-test license status, safe metadata, replace, and clear controls
-- Ingestion: polling interval, manual refresh defaults
-- AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls, future general AI provider slots
 - Privacy: local data location, provider data disclosure
 - About: codename, app version, license status
 
@@ -334,7 +350,7 @@ Global search should eventually cover:
 - notes
 - transcript text
 
-V1 can start with company and feed search, then expand.
+V1 keeps search scoped to the workspace that owns the result list. Inbox owns feed-item search inside its filter toolbar, Companies owns company-list search, and Notebooks owns note filtering. The top toolbar must not show a search box until a true cross-workspace result model exists.
 
 ## Responsive Behavior
 

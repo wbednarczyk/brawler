@@ -1,6 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
 import { Button } from "../../shared/components/Button";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
 
@@ -70,7 +71,7 @@ export function WeekEventsView({
           tabIndex={0}
         >
           <div className="event-week-card-topline">
-            <strong>{event.company}</strong>
+            <strong><TickerLabel value={event.company} /></strong>
             <div>
               {dueLabel ? <em>{dueLabel}</em> : null}
               <span>{formatCompanyEventStatus(event.status)}</span>
@@ -92,7 +93,7 @@ export function WeekEventsView({
             <dl>
               <div>
                 <dt>{text("Company")}</dt>
-                <dd>{event.companyName}</dd>
+                <dd><TickerLabel value={event.company} /> · {event.companyName}</dd>
               </div>
               <div>
                 <dt>{text("Date")}</dt>

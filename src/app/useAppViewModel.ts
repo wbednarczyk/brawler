@@ -33,6 +33,7 @@ type AppViewModelInput = {
   companyEvents: CompanyEvent[];
   companyForm: CompanyForm;
   companyListSearch: string;
+  companyWatchlistFilter: string;
   companyRegistryEntries: CompanyRegistryEntry[];
   companyRegistrySearch: string;
   feedState: FeedItem[];
@@ -43,6 +44,7 @@ type AppViewModelInput = {
   inboxWatchlistFilter: string;
   notebookEditForm: NotebookForm;
   notebookEntries: NotebookEntry[];
+  notebookScreenWatchlistFilter: string;
   notebookScreenClaimStatusFilter: string;
   notebookScreenEditForm: NotebookForm;
   notebookScreenFollowUpFilter: string;
@@ -73,6 +75,7 @@ export function useAppViewModel({
   companyEvents,
   companyForm,
   companyListSearch,
+  companyWatchlistFilter,
   companyRegistryEntries,
   companyRegistrySearch,
   feedState,
@@ -83,6 +86,7 @@ export function useAppViewModel({
   inboxWatchlistFilter,
   notebookEditForm,
   notebookEntries,
+  notebookScreenWatchlistFilter,
   notebookScreenClaimStatusFilter,
   notebookScreenEditForm,
   notebookScreenFollowUpFilter,
@@ -122,6 +126,15 @@ export function useAppViewModel({
       return indexed;
     }, {});
   }, [companies]);
+  const companyIdsByWatchlist = useMemo(() => {
+    return watchlistMemberships.reduce<Record<string, Set<string>>>((grouped, membership) => {
+      grouped[membership.watchlistId] = grouped[membership.watchlistId] ?? new Set<string>();
+      grouped[membership.watchlistId].add(membership.companyId);
+      return grouped;
+    }, {});
+  }, [watchlistMemberships]);
+  const companyMatchesWatchlist = (company: Company, watchlistId: string) =>
+    watchlistId === "all" || Boolean(companyIdsByWatchlist[watchlistId]?.has(company.id));
   const transcriptCompanySuggestions = useMemo(() => {
     const query = transcriptJobForm.companyQuery.trim().toLowerCase();
 
@@ -286,8 +299,15 @@ export function useAppViewModel({
   const isNotebookEditDirty = selectedNotebookEntry
     ? JSON.stringify(notebookEditForm) !== JSON.stringify(notebookFormFromEntry(selectedNotebookEntry))
     : false;
+  const filteredNotebookScreenCompanies = useMemo(() => {
+    return companies.filter((company) =>
+      companyMatchesWatchlist(company, notebookScreenWatchlistFilter),
+    );
+  }, [companies, companyIdsByWatchlist, notebookScreenWatchlistFilter]);
   const selectedNotebookScreenCompany =
-    companies.find((company) => company.id === selectedNotebookCompanyId) ?? companies[0] ?? null;
+    filteredNotebookScreenCompanies.find((company) => company.id === selectedNotebookCompanyId) ??
+    filteredNotebookScreenCompanies[0] ??
+    null;
   const selectedNotebookScreenEntries = useMemo(() => {
     if (!selectedNotebookScreenCompany) {
       return [];
@@ -425,12 +445,11 @@ export function useAppViewModel({
   const filteredCompanies = useMemo(() => {
     const normalizedSearch = companyListSearch.trim().toLowerCase();
 
-    if (normalizedSearch.length === 0) {
-      return companies;
-    }
-
-    return companies.filter((company) =>
-      [
+    return companies.filter((company) => {
+      const watchlistMatches = companyMatchesWatchlist(company, companyWatchlistFilter);
+      const searchMatches =
+        normalizedSearch.length === 0 ||
+        [
         company.exchange,
         company.ticker,
         company.qualifiedTicker,
@@ -439,9 +458,11 @@ export function useAppViewModel({
       ]
         .join(" ")
         .toLowerCase()
-        .includes(normalizedSearch),
-    );
-  }, [companies, companyListSearch]);
+          .includes(normalizedSearch);
+
+      return watchlistMatches && searchMatches;
+    });
+  }, [companies, companyIdsByWatchlist, companyListSearch, companyWatchlistFilter]);
   const selectedCompanyFeedStats = useMemo(
     () => ({
       total: selectedCompanyFeedItems.length,
@@ -454,7 +475,7 @@ export function useAppViewModel({
     if (sourceAdaptersError) {
       return {
         label: "error",
-        title: `Source adapter command failed: ${sourceAdaptersError}`,
+        title: `Source refresh failed: ${sourceAdaptersError}`,
         tone: "danger",
       };
     }
@@ -462,7 +483,7 @@ export function useAppViewModel({
     if (sourceAdapters.length === 0) {
       return {
         label: "0 sources",
-        title: "No source adapters configured",
+        title: "No sources configured",
         tone: "warn",
       };
     }
@@ -473,14 +494,14 @@ export function useAppViewModel({
     if (adaptersWithErrors.length > 0) {
       return {
         label: `${adaptersWithErrors.length} issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
-        title: `${adaptersWithErrors.length} source adapter issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
+        title: `${adaptersWithErrors.length} source issue${adaptersWithErrors.length === 1 ? "" : "s"}`,
         tone: "danger",
       };
     }
 
     return {
       label: `${enabledAdapters.length}/${sourceAdapters.length}`,
-      title: `${enabledAdapters.length} enabled source adapter${enabledAdapters.length === 1 ? "" : "s"} ready`,
+      title: `${enabledAdapters.length} enabled source${enabledAdapters.length === 1 ? "" : "s"} ready`,
       tone: "ok",
     };
   }, [sourceAdapters, sourceAdaptersError]);
@@ -516,6 +537,7 @@ export function useAppViewModel({
     filteredCompanies,
     filteredCompanyRegistryEntries,
     filteredFeedItems,
+    filteredNotebookScreenCompanies,
     hasActiveInboxFilters,
     inboxEmptyState,
     inboxReviewStats,

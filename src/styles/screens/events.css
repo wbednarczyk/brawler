@@ -8,14 +8,16 @@
   padding: 18px;
 }
 
+.companies-layout,
 .events-layout,
 .sources-layout,
 .settings-layout {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  overflow: auto;
 }
 
+.companies-layout,
 .events-layout {
   align-content: start;
 }

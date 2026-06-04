@@ -35,71 +35,6 @@ Docs/contracts touched: contracts, product spec, project practices.
 
 Test expectations: YAML round-trip, validation, and secret-exclusion tests.
 
-### Refine watchlist membership UX
-
-Intent: replace the early company-row assign/remove controls with a more intuitive watchlist membership workflow.
-
-Acceptance criteria:
-
-- User can see current watchlist membership for a company at a glance.
-- Adding/removing memberships does not require tedious repeated row-level actions.
-- Mutating actions provide quick visual confirmation.
-- Workflow remains responsive and efficient for many companies and many watchlists.
-
-Docs/contracts touched: UI information architecture, product spec if behavior changes.
-
-Test expectations: UI workflow tests for membership add/remove and confirmation states.
-
-### Add field-level clear controls across typed inputs
-
-Intent: make repeated desktop data entry and filtering faster by giving text-like fields a consistent inline clear affordance.
-
-Acceptance criteria:
-
-- Text, search, URL, and optional metadata inputs expose a compact inline clear control when they have a value.
-- Required fields only expose clear controls when clearing does not create confusing validation feedback, or the validation state remains clear and local.
-- Controls use consistent icon-only styling and accessible labels.
-- Clearing one field must not trigger stale lookup/autocomplete side effects.
-- Native browser search clear controls are avoided when the app renders its own clear control.
-- Existing manual typing, autocomplete, lookup, and form-submit workflows continue to work.
-
-Docs/contracts touched: product spec or UI information architecture if this becomes a cross-screen UI standard.
-
-Test expectations: focused UI workflow tests for representative forms and filters.
-
-### Refine feed item metadata bar readability
-
-Intent: make the feed item top metadata line easier to scan across official reports, public media, and future transcript items.
-
-Acceptance criteria:
-
-- Inbox and company feed rows separate company, item type, source, and timestamp into a clearer visual hierarchy.
-- Long source names, localized labels, and compact widths remain readable without crowding the title.
-- Timestamp display follows the app-wide human-readable timestamp standard.
-- Saved and unread indicators do not compete with the title or metadata.
-- The design works for official report rows, public media rows, and items with missing optional metadata.
-
-Docs/contracts touched: UI information architecture and product spec if this becomes a formal cross-screen row pattern.
-
-Test expectations: focused UI workflow or component coverage for representative feed rows after the layout pass.
-
-### Refine Sources grouping and status hierarchy
-
-Intent: make Sources scale beyond a flat diagnostics list as official reports, calendars, media, registry, and private research adapters accumulate.
-
-Acceptance criteria:
-
-- Sources are grouped by purpose: official reports, official calendar/events, public media/news, company registry, private/authenticated research, and disabled/review candidates.
-- Enabled sources appear before disabled sources inside each group.
-- Disabled placeholders are collapsed by default or visually de-emphasized.
-- Source rows remain compact and expandable for details.
-- Source health/status is visually separated from source configuration.
-- Per-source refresh actions remain clear; group-level refresh can be considered later.
-
-Docs/contracts touched: UI information architecture, product spec if grouping becomes a formal UI standard.
-
-Test expectations: UI workflow/component coverage for grouped Sources once implemented.
-
 ### Explore terminal interface
 
 Intent: record and later evaluate a terminal/TUI version of Brawler for keyboard-first investor research.
@@ -133,11 +68,56 @@ Test expectations: future sync contract tests, conflict-resolution tests, and mo
 
 ## Ready
 
+### M19: Dedicated watchlist management
+
+Intent: turn watchlists into a real management workflow instead of scattered company-row or company-workspace controls.
+
+Acceptance criteria:
+
+- Companies contains a dedicated Watchlists panel or subview below/inside the Companies section, not a separate top-level navigation item.
+- The Watchlists panel owns creating, renaming if supported, deleting, and selecting watchlists.
+- The Watchlists panel owns adding companies to a selected watchlist and removing companies from it.
+- The Companies list and company workspace show existing watchlist memberships for scanning only.
+- No watchlist create/delete/add/remove controls remain visible in the Companies list or company workspace.
+- Watchlist filters remain available in Inbox, Events/Calendar, Companies, and Notebooks.
+- The watchlist workflow leaves room for future premium alert configuration based on watchlists without adding alerts in M19.
+
+Docs/contracts touched: roadmap, product spec, UI information architecture, contracts if command/read models change.
+
+Test expectations: focused React workflow tests for watchlist create/delete and add/remove membership from the dedicated Watchlists panel, plus regression coverage that Companies shows membership labels without membership controls.
+
 ## In Progress
 
 ## Review
 
 ## Done
+
+### M18: Implement V1 application polish
+
+Delivered:
+
+- Repaired Notebooks layout, scrolling, ticker formatting, and panel resizing for daily note work.
+- Refined Inbox row hierarchy, detail-pane layout, scoped search placement, PDF-only attachment presentation, and AI analysis polling.
+- Grouped Sources by purpose and improved source/status hierarchy without changing backend source contracts.
+- Added Settings subnavigation, theme mode/accent palette settings, `night-neon`, and `midnight-horizon`.
+- Added shared exchange/symbol ticker rendering and tuned ticker colors.
+- Added watchlist filters across Inbox, Events/Calendar, Companies, and Notebooks while deferring durable watchlist management to M19.
+- Tightened Companies, shell/sidebar, topbar, scrolling, focus, selected-row, clear-control, and architecture-copy polish across the app.
+- Removed normal user-facing references to implementation details such as SQLite, storage internals, Tauri, adapters, modules, collectors, and similar plumbing outside developer/owner contexts.
+- Updated docs/contracts, locale coverage, and focused workflow tests.
+- Bumped app version to `0.18.0`.
+
+ADR checkpoint: ADR 0006 covers the theme and visual-direction changes. Existing ADRs cover the source, local-first, diagnostics, logs, metrics, and licensing policies touched by M18; no new ADR was needed for this polish milestone.
+
+Validation:
+
+- User manually reviewed and signed off the M18 UI/UX polish.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
 
 ### M17: Implement v1 friend-test license gate
 

@@ -7,11 +7,13 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { InboxDetailPane } from "./InboxDetailPane";
 import type { InboxScreenProps } from "./inboxTypes";
@@ -29,6 +31,7 @@ export function InboxScreen({
   aiAnalysisRequestInFlightByFeedItemId,
   aiAnalysisProviderConfigured,
   inboxStatusFilter,
+  searchQuery,
   inboxWatchlistFilter,
   inboxCompanyFilter,
   inboxTypeFilter,
@@ -47,6 +50,7 @@ export function InboxScreen({
   healthError,
   databaseError,
   setInboxStatusFilter,
+  setSearchQuery,
   setInboxWatchlistFilter,
   setInboxCompanyFilter,
   setInboxTypeFilter,
@@ -64,7 +68,6 @@ export function InboxScreen({
   openCompanyWorkspaceFromFeedItem,
   openFeedItemNoteDraft,
   startFeedItemAiAnalysis,
-  refreshFeedItemAiAnalysis,
   retryFeedItemAiAnalysis,
   resizeDetailPaneWithKeyboard,
   startDetailPaneResize,
@@ -133,14 +136,6 @@ export function InboxScreen({
           </Button>
           <Button
             className="compact-button"
-            disabled={deleteUnsavedFeedState === "refreshing"}
-            onClick={deleteUnsavedFeedItems}
-          >
-            {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
-            {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
-          </Button>
-          <Button
-            className="compact-button"
             disabled={!hasActiveInboxFilters}
             onClick={clearInboxFilters}
           >
@@ -150,6 +145,31 @@ export function InboxScreen({
         </div>
 
         <div className="filter-toolbar" aria-label={text("Inbox filters")}>
+          <label className="inbox-search-field">
+            {text("Search")}
+            <span className="search-box">
+              <Search size={16} aria-hidden="true" />
+              <input
+                aria-label={t("app.search.ariaLabel")}
+                data-inbox-search-input="true"
+                placeholder={t("app.search.placeholder")}
+                type="text"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+              />
+              {searchQuery.trim().length > 0 ? (
+                <button
+                  aria-label={text("Clear inbox search")}
+                  className="field-clear-button"
+                  onClick={() => setSearchQuery("")}
+                  title={text("Clear inbox search")}
+                  type="button"
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
+            </span>
+          </label>
           <label>
             {text("Watchlist")}
             <select
@@ -235,11 +255,13 @@ export function InboxScreen({
               title={text("Select feed item")}
             >
               <div className="feed-row-main">
-                <div className="feed-meta">
-                  <span>{item.company}</span>
+                <div className="feed-row-topline">
+                  <strong><TickerLabel value={item.company} /></strong>
+                  <span>{formatTimestamp(item.time, text("Unknown"))}</span>
+                </div>
+                <div className="feed-row-source-line">
                   <span>{item.type}</span>
                   <span>{item.source}</span>
-                  <span>{formatTimestamp(item.time, text("Unknown"))}</span>
                 </div>
                 <h2>{item.title}</h2>
                 <p>{feedItemSummary(item)}</p>
@@ -313,6 +335,18 @@ export function InboxScreen({
             <p className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</p>
           ) : null}
         </div>
+
+        <div className="inbox-maintenance-row" aria-label={text("Inbox maintenance")}>
+          <span>{text("Feed cleanup")}</span>
+          <Button
+            className="compact-button danger-subtle-button"
+            disabled={deleteUnsavedFeedState === "refreshing"}
+            onClick={deleteUnsavedFeedItems}
+          >
+            {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
+            {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
+          </Button>
+        </div>
       </section>
 
       <div
@@ -344,7 +378,6 @@ export function InboxScreen({
           openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
           openFeedItemNoteDraft={openFeedItemNoteDraft}
           startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-          refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
           retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
           feedItemSummary={feedItemSummary}
           formatTimestamp={formatTimestamp}

@@ -51,6 +51,13 @@
   gap: 7px;
 }
 
+.company-workspace-header-side {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  min-width: min(420px, 50%);
+}
+
 .company-workspace-meta span {
   display: inline-flex;
   align-items: center;
@@ -61,6 +68,24 @@
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 48%, transparent);
   font-size: 12px;
+}
+
+.company-watchlist-editor {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
+  max-width: 460px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 42%, transparent);
+}
+
+.company-watchlist-editor-title {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .company-tabs {

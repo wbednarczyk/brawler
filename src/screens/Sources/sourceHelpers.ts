@@ -1,6 +1,111 @@
 import type { SourceAdapter } from "../../api/types";
 import { formatEnumLabel } from "../../shared/formatting/labels";
 
+type SourceGroupId =
+  | "officialReports"
+  | "calendarEvents"
+  | "publicMedia"
+  | "companyRegistry"
+  | "privateResearch"
+  | "disabledReview";
+
+export type SourceAdapterGroup = {
+  id: SourceGroupId;
+  label: string;
+  description: string;
+  adapters: SourceAdapter[];
+};
+
+const sourceGroupDefinitions: Array<Omit<SourceAdapterGroup, "adapters">> = [
+  {
+    id: "officialReports",
+    label: "Official reports",
+    description: "Regulatory reports and official disclosure feeds.",
+  },
+  {
+    id: "calendarEvents",
+    label: "Calendar and events",
+    description: "Company dates, report calendars, and market event feeds.",
+  },
+  {
+    id: "publicMedia",
+    label: "Public media and news",
+    description: "Public market news and company-specific media sources.",
+  },
+  {
+    id: "companyRegistry",
+    label: "Company registry",
+    description: "Local company identity and matching caches.",
+  },
+  {
+    id: "privateResearch",
+    label: "Private research",
+    description: "Authenticated or owner-scoped research sources.",
+  },
+  {
+    id: "disabledReview",
+    label: "Disabled and review candidates",
+    description: "Configured sources that are not active in normal refresh.",
+  },
+];
+
+export function groupSourceAdapters(adapters: SourceAdapter[]): SourceAdapterGroup[] {
+  const groups = new Map<SourceGroupId, SourceAdapter[]>(
+    sourceGroupDefinitions.map((group) => [group.id, []]),
+  );
+
+  for (const adapter of adapters) {
+    groups.get(sourceGroupIdForAdapter(adapter))?.push(adapter);
+  }
+
+  return sourceGroupDefinitions
+    .map((definition) => ({
+      ...definition,
+      adapters: (groups.get(definition.id) ?? []).sort(compareSourceAdapters),
+    }))
+    .filter((group) => group.adapters.length > 0);
+}
+
+function sourceGroupIdForAdapter(adapter: SourceAdapter): SourceGroupId {
+  if (!adapter.enabled) {
+    return "disabledReview";
+  }
+
+  if (adapter.sourceType === "company_registry") {
+    return "companyRegistry";
+  }
+
+  if (adapter.sourceType === "official_report" || adapter.sourceType === "official_report_secondary") {
+    return "officialReports";
+  }
+
+  if (adapter.sourceType === "official_calendar" || adapter.sourceType === "public_calendar") {
+    return "calendarEvents";
+  }
+
+  if (adapter.sourceType === "authenticated_research") {
+    return "privateResearch";
+  }
+
+  return "publicMedia";
+}
+
+function compareSourceAdapters(left: SourceAdapter, right: SourceAdapter) {
+  if (left.enabled !== right.enabled) {
+    return left.enabled ? -1 : 1;
+  }
+
+  if (left.lastError && !right.lastError) {
+    return -1;
+  }
+
+  if (!left.lastError && right.lastError) {
+    return 1;
+  }
+
+  return left.displayName.localeCompare(right.displayName);
+}
+
 export function formatSourceLastResult(adapter: SourceAdapter) {
   if (adapter.lastItemsFetched === null) {
     return "None";

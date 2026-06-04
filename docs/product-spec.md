@@ -7,7 +7,7 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 The first screen is an investor inbox: a dense chronological feed of company-specific reports and news. It should support repeated daily use and fast scanning. Each company also has a notebook for durable research notes.
 
 Early sample feed implementations should already obey local watchlist, company, unread, and saved filters, even before real source ingestion exists.
-Sample feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state in SQLite.
+Sample feed implementations may keep read/saved changes in memory, but stored feed items must persist read and saved state locally.
 The UI-facing Inbox is scoped to tracked companies. Raw or sample source items that do not match the local company registry may exist internally, but they should not appear in the normal feed until the company is added.
 Source URLs in item details must be directly actionable so the user can verify the original report or article quickly.
 Feed details should show a short summary first. `summary` is separate from the report title and full body, but when no source or AI summary is available the UI may use the report title as the summary fallback. Full official report body text should be available in the same detail pane but collapsed by default and expanded on demand.
@@ -29,7 +29,7 @@ Expected v1 UI areas:
 - source/type filter
 - unread/read state
 - saved items
-- item detail pane with source attribution and original link
+- item detail pane with original link, compact metadata, and bottom-aligned publication/fetch timestamps
 - action to create a company notebook note from a feed item
 - manual refresh control
 - in-app badges for new/unread items
@@ -44,7 +44,7 @@ Keyboard shortcuts are in v1 scope as late workflow polish. They should speed up
 
 ## Theme And Visual Direction
 
-The app must support user-selectable dark and light themes. Dark theme is the default.
+The app must support user-selectable dark, light, and system brightness modes. Dark theme is the default.
 
 The dark visual direction is inspired by the attached blue, pink, and purple night landscape reference:
 
@@ -58,9 +58,15 @@ The palette should support a serious work-focused desktop app. Use the reference
 
 Light theme should preserve the same brand accent colors while using readable light surfaces and accessible contrast.
 
+Brightness mode and accent palette are separate user settings. `theme` controls dark, light, or system mode; `accent_palette` controls the named palette mapped onto semantic UI tokens. V1 starts with `night-neon` and adds `midnight-horizon`, a palette based on colors sampled from the project owner's preferred reference image. Future palettes should be added through the same palette boundary instead of hard-coded per-screen colors.
+
 ## Watchlists And Companies
 
-Users can maintain multiple watchlists. Companies can be assigned to and removed from watchlists without deleting the company from the local registry. Company list rows should make existing watchlist memberships visible at a glance. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
+Users can maintain multiple watchlists. Companies can be assigned to and removed from watchlists without deleting the company from the local registry. Watchlists should be useful as filters in the Inbox, Events/Calendar, Companies, and Notebooks workspaces. The durable watchlist management workflow belongs in a dedicated Watchlists panel inside the Companies section. That panel owns creating and deleting watchlists and adding/removing companies from the selected watchlist. Company list rows and the company workspace should only show existing watchlist memberships for scanning and context; they should not expose watchlist create, delete, add, or remove controls. Companies are displayed ticker-first, but canonical storage uses exchange-qualified tickers such as `GPW:CDR` or `NASDAQ:MSFT`.
+
+Watchlists are user-owned company groups. Normal UI copy should describe them in those terms and should not expose storage or architecture language. Future premium alerts may use watchlists as configuration inputs, but alerting is outside the dedicated watchlist-management milestone.
+
+Exchange-qualified ticker labels should visually distinguish the exchange segment from the symbol segment across the app through a shared renderer. The initial exchange color map covers GPW and reserves clear paths for future NASDAQ/NYSE support without changing storage contracts.
 
 The Companies screen should let the user open a company workspace by clicking the company row itself, not a separate `Open` button. The workspace expands inline directly under the selected company row and collapses when the same row is clicked again. Up/Down arrows move focus through company rows. If a workspace is already open, arrow movement moves the open workspace to the focused company; if no workspace is open, arrow movement keeps the list collapsed. The workspace Feed tab follows the same pattern: clicking a feed row or pressing Enter/Space on a focused feed row expands source details directly under that row, repeating the action collapses the details, Up/Down arrows move focus between company feed rows, and if detail is already open the detail moves to the focused feed row. An explicit action can open the same item in the Inbox with the company filter applied.
 
@@ -80,7 +86,7 @@ Company metadata may include:
 
 Company entry should support lookup/enrichment. After the user selects an exchange and enters a ticker, ISIN, or company name, the app should be able to fill the remaining company fields when a confident match exists. Exact ticker and ISIN lookups may auto-fill directly. Name lookup may require suggestions or user confirmation when multiple matches exist.
 
-Local test samples for GPW metadata are allowed only in tests and development research, not as target runtime seed data. V1 includes a local GPW company registry cache for all companies exposed by the public GPW company list so company creation, autocomplete, and source matching are not driven by manual entry long term. The registry is stored in SQLite, refreshed manually and by a slow in-app stale-cache scheduler, and may auto-refresh from company lookup when the runtime cache is empty. The Companies form shows cached registry suggestions while the user enters ticker, company name, or ISIN, the tracked company list is searchable, and the Sources registry list remains searchable for diagnostics and bulk inspection. The registry is used for ticker-first matching with ISIN fallback. Company names remain useful for display and suggestions, but should not silently match feed items by themselves.
+Local test samples for GPW metadata are allowed only in tests and development research, not as target runtime seed data. V1 includes a local GPW company registry cache for all companies exposed by the public GPW company list so company creation, autocomplete, and source matching are not driven by manual entry long term. The registry is stored locally, refreshed manually and by a slow in-app stale-cache scheduler, and may auto-refresh from company lookup when the runtime cache is empty. The Companies form shows cached registry suggestions while the user enters ticker, company name, or ISIN, the tracked company list is searchable, and the Sources registry list remains searchable for diagnostics and bulk inspection. The registry is used for ticker-first matching with ISIN fallback. Company names remain useful for display and suggestions, but should not silently match feed items by themselves.
 
 ## Company Notebooks
 
@@ -130,16 +136,16 @@ Official reports are not the whole v1 feed. The user also wants a company-specif
 
 Portal Analiz is a desired v1 source using the user's own paid personal account. Because it is authenticated, private, and likely lacks a public API, it must not be implemented as a generic scraper or hidden browser automation shortcut. [ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md) accepts it only as a dedicated authenticated private research adapter with local keychain secrets, conservative user-scoped fetching, source attribution, offline test samples/mocks, and explicit discussion if the source proves technically or policy-wise too troublesome.
 
-The Sources screen shows locally configured source adapters, supported markets, fetch mode, enabled state, poll interval, and last success or error status. Before real ingestion exists, this screen still reads the seeded adapter registry from SQLite so source monitoring has a stable UI home.
-Source adapter rows should follow the app-wide row interaction rule: the row is the primary click target, and adapter operational details expand inline under the selected source row. Enter or Space on a focused source row should expand or collapse the same inline detail.
-The topbar should expose a compact source status entry point that summarizes adapter readiness and opens the Sources screen. Opening source status should expand the most relevant adapter immediately, preferring adapters with errors, then enabled adapters, then the first configured adapter. This is separate from manual source refresh; before real ingestion exists, refresh remains disabled while status inspection is available.
+The Sources screen shows locally configured sources, supported markets, fetch mode, enabled state, poll interval, and last success or error status. Before real ingestion exists, this screen still reads the local source registry so source monitoring has a stable UI home.
+Source rows should follow the app-wide row interaction rule: the row is the primary click target, and source operational details expand inline under the selected source row. Enter or Space on a focused source row should expand or collapse the same inline detail.
+The topbar should expose a compact source status entry point that summarizes source readiness and opens the Sources screen. Opening source status should expand the most relevant source immediately, preferring sources with errors, then enabled sources, then the first configured source. This is separate from manual source refresh; before real ingestion exists, refresh remains disabled while status inspection is available.
 
 ## Ingestion
 
 The default polling interval is 15 minutes while the app is open. Manual source refresh must be supported.
 Before real source ingestion exists, the topbar source refresh control is a disabled placeholder. It must eventually trigger or enqueue source refresh jobs.
 
-The DB status indicator may expose a small database-backed view refresh action for development and recovery ergonomics. That action reloads local SQLite-backed app state such as feed items, companies, watchlists, memberships, and database status, but it is not the product-level news/source refresh workflow.
+A local data status indicator may expose a small view refresh action for development and recovery ergonomics. That action reloads local app state such as feed items, companies, watchlists, memberships, and local data status, but it is not the product-level news/source refresh workflow.
 
 Ingestion should preserve source attribution, publication time, fetch time, original language, matched company, and source URL.
 
@@ -191,9 +197,13 @@ AI output must be presented as decision support. It must not contain direct buy/
 
 Default AI analysis mode is source-grounded. A future opinionated mode may be added behind explicit user opt-in, but it must remain source-cited and must not provide buy/sell/hold or personalized portfolio advice.
 
+Visible AI analysis panels should refresh status automatically while the latest selected job is queued or running. The user should not need a dedicated refresh button to see an in-progress analysis complete.
+
 ## Settings, Export, And Local Data
 
-The Settings panel edits runtime settings stored in SQLite. English is the default app language, and Settings should let the user switch the app UI to Polish. Locale handling should be an extensible app-locale boundary so future supported languages can be added without rewriting screens. Locale changes affect app-owned UI copy and formatting labels; source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
+The Settings panel edits runtime settings stored locally. English is the default app language, and Settings should let the user switch the app UI to Polish. Locale handling should be an extensible app-locale boundary so future supported languages can be added without rewriting screens. Locale changes affect app-owned UI copy and formatting labels; source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
+
+Normal user-facing UI should use product language and avoid implementation architecture language. Do not show terms such as SQLite, database engine, Tauri, internal adapter, module, collector, schema, or command boundary in ordinary app copy. Use terms like local data, sources, activity, settings, logs, and diagnostics where the user needs to understand behavior. Technical implementation wording is acceptable in Developer Diagnostics, owner/developer documentation, and code-level contracts.
 
 YAML is accepted as the future import/export/bootstrap format for non-secret settings, but YAML implementation is deferred until the later export/import/backup work. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
 

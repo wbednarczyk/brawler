@@ -7,6 +7,7 @@ import type {
   CompanyLookupResult,
   CompanyRegistryEntry,
   Watchlist,
+  WatchlistMembership,
 } from "../api/types";
 import type { WatchlistFeedback } from "./appTypes";
 
@@ -24,12 +25,11 @@ type CompanyControllerInput = {
   setCompanyForm: Dispatch<SetStateAction<CompanyForm>>;
   setLookupStatus: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyRegistryTicker: Dispatch<SetStateAction<string | null>>;
-  setWatchlistAssignments: Dispatch<SetStateAction<Record<string, string>>>;
   setWatchlistFeedback: Dispatch<SetStateAction<WatchlistFeedback | null>>;
   setWatchlistName: Dispatch<SetStateAction<string>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
   skipNextCompanyLookupRef: MutableRefObject<boolean>;
-  watchlistAssignments: Record<string, string>;
+  watchlistMemberships: WatchlistMembership[];
   watchlistName: string;
   watchlists: Watchlist[];
   text: (value: string) => string;
@@ -49,12 +49,11 @@ export function useCompanyController({
   setCompanyForm,
   setLookupStatus,
   setSelectedCompanyRegistryTicker,
-  setWatchlistAssignments,
   setWatchlistFeedback,
   setWatchlistName,
   setWatchlistsError,
   skipNextCompanyLookupRef,
-  watchlistAssignments,
+  watchlistMemberships,
   watchlistName,
   watchlists,
   text,
@@ -241,13 +240,6 @@ export function useCompanyController({
       });
   }
 
-  function updateWatchlistAssignment(companyId: string, watchlistId: string) {
-    setWatchlistAssignments((current) => ({
-      ...current,
-      [companyId]: watchlistId,
-    }));
-  }
-
   function showWatchlistFeedback(companyId: string, message: string) {
     setWatchlistFeedback({ companyId, message });
     window.setTimeout(() => {
@@ -255,46 +247,29 @@ export function useCompanyController({
     }, 1200);
   }
 
-  function addCompanyToWatchlist(company: Company) {
-    const watchlistId = watchlistAssignments[company.id] || watchlists[0]?.id;
-    const assignedWatchlistName = watchlists.find((watchlist) => watchlist.id === watchlistId)?.name;
+  function toggleCompanyWatchlistMembership(company: Company, watchlistId: string) {
+    const watchlistName =
+      watchlists.find((watchlist) => watchlist.id === watchlistId)?.name ?? text("watchlist");
+    const isMember = watchlistMemberships.some(
+      (membership) =>
+        membership.companyId === company.id && membership.watchlistId === watchlistId,
+    );
+    const command = isMember
+      ? watchlistsApi.removeCompanyFromWatchlist
+      : watchlistsApi.addCompanyToWatchlist;
 
-    if (!watchlistId) {
-      setWatchlistsError(text("Create a watchlist before assigning companies."));
-      return;
-    }
-
-    watchlistsApi.addCompanyToWatchlist({
+    command({
       watchlistId,
       companyId: company.id,
     })
       .then(() => {
         setWatchlistsError(null);
-        showWatchlistFeedback(company.id, `${text("Assigned to")} ${assignedWatchlistName ?? text("watchlist")}`);
-        refreshWatchlists();
-        refreshWatchlistMemberships();
-      })
-      .catch((error) => {
-        setWatchlistsError(String(error));
-      });
-  }
-
-  function removeCompanyFromWatchlist(company: Company) {
-    const watchlistId = watchlistAssignments[company.id] || watchlists[0]?.id;
-    const assignedWatchlistName = watchlists.find((watchlist) => watchlist.id === watchlistId)?.name;
-
-    if (!watchlistId) {
-      setWatchlistsError(text("Select a watchlist before removing companies."));
-      return;
-    }
-
-    watchlistsApi.removeCompanyFromWatchlist({
-      watchlistId,
-      companyId: company.id,
-    })
-      .then(() => {
-        setWatchlistsError(null);
-        showWatchlistFeedback(company.id, `${text("Removed from")} ${assignedWatchlistName ?? text("watchlist")}`);
+        showWatchlistFeedback(
+          company.id,
+          isMember
+            ? `${text("Removed from")} ${watchlistName}`
+            : `${text("Assigned to")} ${watchlistName}`,
+        );
         refreshWatchlists();
         refreshWatchlistMemberships();
       })
@@ -305,7 +280,6 @@ export function useCompanyController({
 
   return {
     addCompanyFromRegistry,
-    addCompanyToWatchlist,
     applyRegistryEntryToCompanyForm,
     clearCompanyFormField,
     createCompany,
@@ -313,8 +287,7 @@ export function useCompanyController({
     deleteCompany,
     lookupCompany,
     lookupCompanyIfUseful,
-    removeCompanyFromWatchlist,
+    toggleCompanyWatchlistMembership,
     updateCompanyForm,
-    updateWatchlistAssignment,
   };
 }

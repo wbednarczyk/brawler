@@ -55,6 +55,25 @@ Recommended workflow:
 
 Do not routinely run Windows npm/Rust builds inside the same working tree used by WSL/Nix. Mixing Windows and Linux `node_modules` and Rust `target` artifacts in one tree can create slow, confusing, and noisy changes. Prefer `package-windows-from-linux` if the spike proves stable. If native Windows packaging is needed, use a separate Windows checkout/worktree.
 
+## M18 Polish Smoke Checklist
+
+M18 visual regression is manual. Do not add Playwright or another browser automation dependency for this milestone.
+
+Run the app in the normal desktop path when possible. `make frontend-preview` is acceptable for browser-only layout review, but it does not validate Tauri commands, keychain behavior, or native window behavior.
+
+Manual review path:
+
+- Settings: open every local settings section, verify the subnavigation stays stable, controls remain readable, and the active panel scrolls independently.
+- Appearance: switch dark/light/system, then switch `night-neon` and `midnight-horizon`; verify the palette changes the app tokens without changing the brightness mode unexpectedly.
+- Notebooks: select a company, select a note, create a note, edit a long note, use tag filtering and clear it; verify the company list, note list, and detail/editor pane scroll independently.
+- Inbox: scan feed rows, change filters, clear representative filter/search inputs, open details, and verify the destructive feed cleanup action is separated from routine review controls.
+- Sources: verify adapters are grouped by purpose, disabled/review candidates are visually distinct, expanded rows remain readable, registry search works, and the clear control resets it.
+- Companies: create a watchlist, toggle company membership on and off, verify feedback and selected states, and clear representative company form fields.
+- Global search: type a query, clear it with the field button, and verify focus returns to the search input.
+- Polish locale: switch to Polish and check the updated labels in Settings, Sources, Notebooks, Companies, and licensing views.
+
+Record pass/fail notes in the milestone review before asking for closure signoff.
+
 ## Nix Development Environment
 
 Brawler uses Nix from the first scaffold.

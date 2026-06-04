@@ -1,9 +1,10 @@
 import type { FormEvent } from "react";
-import type { AppLocale, CredentialStatus, FeedPruneResult, LicenseStatus, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
+import type { AccentPalette, AppLocale, CredentialStatus, FeedPruneResult, LicenseStatus, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 
 export type SettingsScreenProps = {
   theme: Theme;
+  accentPalette: AccentPalette;
   locale: AppLocale;
   settings: UserSettings | null;
   settingsError: string | null;
@@ -20,6 +21,7 @@ export type SettingsScreenProps = {
   shortcutBindings: Record<string, ShortcutBindingSetting>;
   shortcutReferences: AppShortcutReferenceItem[];
   onThemeChange: (theme: Theme) => void;
+  onAccentPaletteChange: (accentPalette: AccentPalette) => void;
   onLocaleChange: (locale: AppLocale) => void;
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onShortcutBindingsChange: (shortcutBindings: Record<string, ShortcutBindingSetting>) => void;
@@ -43,6 +45,5 @@ export type SettingsScreenProps = {
   formatAiProvider: (value: string | null | undefined) => string;
   formatGeminiModel: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatCredentialStorage: (value: string | null | undefined) => string;
   formatCredentialKind: (value: string | null | undefined) => string;
 };

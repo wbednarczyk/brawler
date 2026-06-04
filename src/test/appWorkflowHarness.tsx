@@ -5,12 +5,15 @@ import { beforeEach, vi } from "vitest";
 import { App } from "../App";
 import type {
   AiAnalysisJob,
+  AccentPalette,
   AppLocale,
   LicenseStatus,
   LocalMetricsSnapshot,
   ShortcutBindingSetting,
   Theme,
   UserSettings,
+  Watchlist,
+  WatchlistMembership,
 } from "../api/types";
 
 export { screen, waitFor, within } from "@testing-library/react";
@@ -709,6 +712,21 @@ export const appTestState = {
   companyEventsResponse: initialCompanyEvents,
   transcriptJobsResponse: initialTranscriptJobs,
   companyRegistryEntriesResponse: initialCompanyRegistryEntries,
+  watchlistsResponse: [
+    {
+      id: "watchlist_main_gpw",
+      name: "Main GPW",
+      description: null,
+      companyCount: 1,
+    },
+  ] as Watchlist[],
+  watchlistMembershipsResponse: [
+    {
+      watchlistId: "watchlist_main_gpw",
+      watchlistName: "Main GPW",
+      companyId: "company_gpw_cdr",
+    },
+  ] as WatchlistMembership[],
   notebookEntriesResponse: [] as TestNotebookEntry[],
   aiAnalysisJobsResponse: {} as Record<string, AiAnalysisJob[]>,
   settingsResponse: initialSettings,
@@ -724,6 +742,21 @@ beforeEach(() => {
   appTestState.companyEventsResponse = initialCompanyEvents;
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
   appTestState.companyRegistryEntriesResponse = initialCompanyRegistryEntries;
+  appTestState.watchlistsResponse = [
+    {
+      id: "watchlist_main_gpw",
+      name: "Main GPW",
+      description: null,
+      companyCount: 1,
+    },
+  ];
+  appTestState.watchlistMembershipsResponse = [
+    {
+      watchlistId: "watchlist_main_gpw",
+      watchlistName: "Main GPW",
+      companyId: "company_gpw_cdr",
+    },
+  ];
   appTestState.notebookEntriesResponse = [];
   appTestState.aiAnalysisJobsResponse = {};
   appTestState.settingsResponse = initialSettings;
@@ -789,40 +822,54 @@ beforeEach(() => {
     }
 
     if (command === "list_watchlists") {
-      return Promise.resolve([
-        {
-          id: "watchlist_main_gpw",
-          name: "Main GPW",
-          description: null,
-          companyCount: 1,
-        },
-      ]);
+      return Promise.resolve(appTestState.watchlistsResponse);
     }
 
     if (command === "list_watchlist_memberships") {
-      return Promise.resolve([
-        {
-          watchlistId: "watchlist_main_gpw",
-          watchlistName: "Main GPW",
-          companyId: "company_gpw_cdr",
-        },
-      ]);
+      return Promise.resolve(appTestState.watchlistMembershipsResponse);
     }
 
     if (command === "create_watchlist") {
-      return Promise.resolve({
-        id: "watchlist_main_gpw",
-        name: "Main GPW",
-        description: null,
+      const { input } = args as { input: { name: string; description: string | null } };
+      const created = {
+        id: `watchlist_${input.name.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "")}`,
+        name: input.name,
+        description: input.description,
         companyCount: 0,
-      });
+      };
+      appTestState.watchlistsResponse = [...appTestState.watchlistsResponse, created];
+
+      return Promise.resolve(created);
     }
 
     if (command === "add_company_to_watchlist") {
+      const { input } = args as { input: { watchlistId: string; companyId: string } };
+      const watchlist = appTestState.watchlistsResponse.find((entry) => entry.id === input.watchlistId);
+      if (
+        watchlist &&
+        !appTestState.watchlistMembershipsResponse.some(
+          (membership) =>
+            membership.watchlistId === input.watchlistId && membership.companyId === input.companyId,
+        )
+      ) {
+        appTestState.watchlistMembershipsResponse = [
+          ...appTestState.watchlistMembershipsResponse,
+          {
+            watchlistId: input.watchlistId,
+            watchlistName: watchlist.name,
+            companyId: input.companyId,
+          },
+        ];
+      }
       return Promise.resolve();
     }
 
     if (command === "remove_company_from_watchlist") {
+      const { input } = args as { input: { watchlistId: string; companyId: string } };
+      appTestState.watchlistMembershipsResponse = appTestState.watchlistMembershipsResponse.filter(
+        (membership) =>
+          membership.watchlistId !== input.watchlistId || membership.companyId !== input.companyId,
+      );
       return Promise.resolve();
     }
 
@@ -1369,6 +1416,7 @@ beforeEach(() => {
       const input = (args as {
         input: {
           theme?: Theme;
+          accentPalette?: AccentPalette;
           locale?: AppLocale;
           pollIntervalSeconds?: number;
           youtubeTranscriptionModel?: string;
@@ -1380,10 +1428,11 @@ beforeEach(() => {
         };
       }).input;
 
-      appTestState.settingsResponse = {
-        ...appTestState.settingsResponse,
-        theme: input.theme ?? appTestState.settingsResponse.theme,
-        locale: input.locale ?? appTestState.settingsResponse.locale,
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      theme: input.theme ?? appTestState.settingsResponse.theme,
+      accentPalette: input.accentPalette ?? appTestState.settingsResponse.accentPalette,
+      locale: input.locale ?? appTestState.settingsResponse.locale,
         pollIntervalSeconds: input.pollIntervalSeconds ?? appTestState.settingsResponse.pollIntervalSeconds,
         shortcutBindings: input.shortcutBindings ?? appTestState.settingsResponse.shortcutBindings,
         aiProviders: {

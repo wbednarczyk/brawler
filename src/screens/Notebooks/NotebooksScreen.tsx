@@ -1,12 +1,16 @@
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { LocateFixed, Plus, Save, X } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { NotebookEntryEditor } from "./NotebookEntryEditor";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
 export function NotebooksScreen({
   companies,
+  totalCompanyCount,
+  watchlists,
   notebookEntries,
   selectedNotebookScreenCompany,
   selectedNotebookScreenEntries,
@@ -15,6 +19,7 @@ export function NotebooksScreen({
   isNotebookScreenEditMode,
   isNotebookScreenEditDirty,
   notebookScreenKindFilter,
+  notebookScreenWatchlistFilter,
   notebookScreenClaimStatusFilter,
   notebookScreenFollowUpFilter,
   notebookScreenTagFilter,
@@ -33,6 +38,7 @@ export function NotebooksScreen({
   cancelNotebookScreenEdit,
   setNotebookScreenEditMode,
   setNotebookScreenKindFilter,
+  setNotebookScreenWatchlistFilter,
   setNotebookScreenClaimStatusFilter,
   setNotebookScreenFollowUpFilter,
   setNotebookScreenTagFilter,
@@ -44,6 +50,82 @@ export function NotebooksScreen({
   renderNotebookOrigins,
 }: NotebooksScreenProps) {
   const { t, text } = useLocale();
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const resizeStartRef = useRef<{
+    handle: "companies" | "notes";
+    clientX: number;
+    companyWidth: number;
+    notesWidth: number;
+  } | null>(null);
+  const [companyPanelWidth, setCompanyPanelWidth] = useState(280);
+  const [notesPanelWidth, setNotesPanelWidth] = useState(420);
+
+  function clampPanelWidth(width: number, minWidth: number, maxShare: number) {
+    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width ?? 0;
+    const maxWidth = workspaceWidth > 0 ? Math.max(minWidth, workspaceWidth * maxShare) : minWidth * 2;
+
+    return Math.round(Math.min(Math.max(width, minWidth), maxWidth));
+  }
+
+  function startNotebookResize(handle: "companies" | "notes", event: PointerEvent<HTMLDivElement>) {
+    resizeStartRef.current = {
+      handle,
+      clientX: event.clientX,
+      companyWidth: companyPanelWidth,
+      notesWidth: notesPanelWidth,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function resizeNotebookPanels(event: PointerEvent<HTMLDivElement>) {
+    const resizeStart = resizeStartRef.current;
+
+    if (!resizeStart || !event.currentTarget.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+
+    const delta = event.clientX - resizeStart.clientX;
+
+    if (resizeStart.handle === "companies") {
+      setCompanyPanelWidth(clampPanelWidth(resizeStart.companyWidth + delta, 220, 0.42));
+      return;
+    }
+
+    setNotesPanelWidth(clampPanelWidth(resizeStart.notesWidth + delta, 280, 0.52));
+  }
+
+  function stopNotebookResize(event: PointerEvent<HTMLDivElement>) {
+    resizeStartRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function resizeNotebookPanelWithKeyboard(
+    handle: "companies" | "notes",
+    event: KeyboardEvent<HTMLDivElement>,
+  ) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+
+    event.preventDefault();
+
+    const delta = event.key === "ArrowRight" ? 24 : -24;
+
+    if (handle === "companies") {
+      setCompanyPanelWidth((current) => clampPanelWidth(current + delta, 220, 0.42));
+      return;
+    }
+
+    setNotesPanelWidth((current) => clampPanelWidth(current + delta, 280, 0.52));
+  }
+
+  const notebookWorkspaceStyle = {
+    "--notebooks-company-panel-width": `${companyPanelWidth}px`,
+    "--notebooks-notes-panel-width": `${notesPanelWidth}px`,
+  } as CSSProperties;
 
   return (
     <section className="feed-panel" aria-labelledby="notebooks-title">
@@ -54,7 +136,12 @@ export function NotebooksScreen({
         </div>
       </div>
 
-      <div className="notebooks-screen" aria-label={text("Notebooks workspace")}>
+      <div
+        className="notebooks-screen"
+        aria-label={text("Notebooks workspace")}
+        ref={workspaceRef}
+        style={notebookWorkspaceStyle}
+      >
         <div className="notebooks-company-nav" aria-label={text("Notebook companies")}>
           {companies.map((company) => {
             const companyNotes = notebookEntries.filter((entry) => entry.companyId === company.id);
@@ -82,8 +169,10 @@ export function NotebooksScreen({
                   type="button"
                 >
                   <span>
-                    <strong>{company.qualifiedTicker}</strong>
-                    <small>{company.displayName}</small>
+                    <strong className="notebooks-company-name">{company.displayName}</strong>
+                    <small className="notebooks-company-ticker">
+                      <TickerLabel value={company.qualifiedTicker} />
+                    </small>
                   </span>
                 </button>
                 <div className="notebooks-company-cues">
@@ -127,14 +216,40 @@ export function NotebooksScreen({
             );
           })}
           {companies.length === 0 ? (
-            <EmptyState>{text("Add companies before using notebooks.")}</EmptyState>
+            <EmptyState>
+              {totalCompanyCount === 0
+                ? text("Add companies before using notebooks.")
+                : text("No notebook companies match this watchlist.")}
+            </EmptyState>
           ) : null}
         </div>
+
+        <div
+          aria-label={text("Resize notebook company list")}
+          aria-orientation="vertical"
+          aria-valuemax={520}
+          aria-valuemin={220}
+          aria-valuenow={companyPanelWidth}
+          className="notebooks-resizer"
+          onKeyDown={(event) => resizeNotebookPanelWithKeyboard("companies", event)}
+          onPointerDown={(event) => startNotebookResize("companies", event)}
+          onPointerMove={resizeNotebookPanels}
+          onPointerUp={stopNotebookResize}
+          role="separator"
+          tabIndex={0}
+          title={text("Drag to resize notebook company list")}
+        />
 
         <div className="notebooks-main" aria-label={text("Notebook screen entries")}>
           <div className="notebooks-context-line">
             <div>
-              <strong>{selectedNotebookScreenCompany?.qualifiedTicker ?? text("No company selected")}</strong>
+              <strong>
+                {selectedNotebookScreenCompany ? (
+                  <TickerLabel value={selectedNotebookScreenCompany.qualifiedTicker} />
+                ) : (
+                  text("No company selected")
+                )}
+              </strong>
               <span>
                 {selectedNotebookScreenEntries.length} {text(selectedNotebookScreenEntries.length === 1 ? "visible note" : "visible notes")}
               </span>
@@ -164,12 +279,14 @@ export function NotebooksScreen({
             <Button
               className="compact-button"
               disabled={
+                notebookScreenWatchlistFilter === "all" &&
                 notebookScreenKindFilter === "all" &&
                 notebookScreenClaimStatusFilter === "all" &&
                 notebookScreenFollowUpFilter === "all" &&
                 notebookScreenTagFilter.trim().length === 0
               }
               onClick={() => {
+                setNotebookScreenWatchlistFilter("all");
                 setNotebookScreenKindFilter("all");
                 setNotebookScreenClaimStatusFilter("all");
                 setNotebookScreenFollowUpFilter("all");
@@ -181,6 +298,21 @@ export function NotebooksScreen({
             </Button>
           </div>
           <div className="notebooks-filter-row" aria-label={text("Notebook filters")}>
+            <label>
+              {text("Watchlist")}
+              <select
+                aria-label={text("Notebook watchlist filter")}
+                value={notebookScreenWatchlistFilter}
+                onChange={(event) => setNotebookScreenWatchlistFilter(event.target.value)}
+              >
+                <option value="all">{text("All watchlists")}</option>
+                {watchlists.map((watchlist) => (
+                  <option key={watchlist.id} value={watchlist.id}>
+                    {watchlist.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label>
               {text("Kind")}
               <select
@@ -214,12 +346,26 @@ export function NotebooksScreen({
             </label>
             <label>
               {text("Tag")}
-              <input
-                aria-label={text("Notebook tag filter")}
-                placeholder={text("tag")}
-                value={notebookScreenTagFilter}
-                onChange={(event) => setNotebookScreenTagFilter(event.target.value)}
-              />
+              <span className="field-with-clear">
+                <input
+                  aria-label={text("Notebook tag filter")}
+                  placeholder={text("tag")}
+                  value={notebookScreenTagFilter}
+                  onChange={(event) => setNotebookScreenTagFilter(event.target.value)}
+                />
+                {notebookScreenTagFilter.trim().length > 0 ? (
+                  <button
+                    aria-label={text("Clear notebook tag filter")}
+                    className="field-clear-button"
+                    onClick={() => setNotebookScreenTagFilter("")}
+                    onMouseDown={(event) => event.preventDefault()}
+                    title={text("Clear notebook tag filter")}
+                    type="button"
+                  >
+                    <X size={13} />
+                  </button>
+                ) : null}
+              </span>
             </label>
             <label>
               {text("Follow-up")}
@@ -235,97 +381,7 @@ export function NotebooksScreen({
             </label>
           </div>
 
-          <div className="notebooks-notes-list">
-            {isNotebookScreenComposerOpen ? (
-              <form
-                id="notebook-screen-create-form"
-                className="notebook-form notebooks-create-form"
-                onSubmit={createNotebookScreenEntry}
-              >
-                <div className="notebooks-draft-header">
-                  <Button onClick={discardNotebookScreenDraft} variant="minimal">
-                    <X size={12} />
-                    {text("Discard")}
-                  </Button>
-                </div>
-                <div className="notebook-form-grid">
-                  <label>
-                    {text("Title")}
-                    <input
-                      aria-label={text("Notebook screen note title")}
-                      value={notebookScreenForm.title}
-                      onChange={(event) => updateNotebookScreenForm("title", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    {text("Kind")}
-                    <select
-                      aria-label={text("Notebook screen note kind")}
-                      value={notebookScreenForm.kind}
-                      onChange={(event) => updateNotebookScreenForm("kind", event.target.value)}
-                    >
-                      <option value="manual">{text("Manual")}</option>
-                      <option value="observation">{text("Observation")}</option>
-                      <option value="claim">{text("Claim")}</option>
-                      <option value="question">{text("Question")}</option>
-                      <option value="follow_up">{text("Follow-up")}</option>
-                    </select>
-                  </label>
-                  <label>
-                    {text("Tags")}
-                    <input
-                      aria-label={text("Notebook screen note tags")}
-                      placeholder={text("comma, separated")}
-                      value={notebookScreenForm.tags}
-                      onChange={(event) => updateNotebookScreenForm("tags", event.target.value)}
-                    />
-                  </label>
-                  <label>
-                    {text("Claim status")}
-                    <select
-                      aria-label={text("Notebook screen note claim status")}
-                      value={notebookScreenForm.claimStatus}
-                      onChange={(event) => updateNotebookScreenForm("claimStatus", event.target.value)}
-                    >
-                      <option value="">{text("None")}</option>
-                      <option value="open">{text("Status open")}</option>
-                      <option value="delivered">{text("Delivered")}</option>
-                      <option value="partially_delivered">{text("Partially delivered")}</option>
-                      <option value="missed">{text("Missed")}</option>
-                      <option value="unknown">{text("Unknown")}</option>
-                      <option value="not_applicable">{text("Not applicable")}</option>
-                    </select>
-                  </label>
-                  <NotebookDateField
-                    ariaLabel={text("Notebook screen note event date")}
-                    label={text("Event date")}
-                    value={notebookScreenForm.eventDate}
-                    onChange={(value) => updateNotebookScreenForm("eventDate", value)}
-                  />
-                  <NotebookQuarterField
-                    ariaLabel={text("Notebook screen note follow-up quarter")}
-                    label={text("Follow-up quarter")}
-                    value={notebookScreenForm.followUpAfter}
-                    onChange={(value) => updateNotebookScreenForm("followUpAfter", value)}
-                  />
-                  <NotebookDateField
-                    ariaLabel={text("Notebook screen note follow-up date")}
-                    label={text("Follow-up date")}
-                    value={notebookScreenForm.followUpDate}
-                    onChange={(value) => updateNotebookScreenForm("followUpDate", value)}
-                  />
-                </div>
-                <label className="notebook-body-field">
-                  {text("Body")}
-                  <textarea
-                    aria-label={text("Notebook screen note body")}
-                    value={notebookScreenForm.body}
-                    onChange={(event) => updateNotebookScreenForm("body", event.target.value)}
-                  />
-                </label>
-              </form>
-            ) : null}
-
+          <div className="notebooks-notes-list" aria-label={text("Notebook note list")}>
             {selectedNotebookScreenEntries.map((entry) => (
               <div className="notebook-row-block" key={entry.id}>
                 <button
@@ -353,30 +409,154 @@ export function NotebooksScreen({
                     ))}
                   </div>
                 </button>
-
-                {selectedNotebookScreenEntry?.id === entry.id ? (
-                  <NotebookEntryEditor
-                    selectedNotebookScreenEntry={selectedNotebookScreenEntry}
-                    isNotebookScreenEditMode={isNotebookScreenEditMode}
-                    isNotebookScreenEditDirty={isNotebookScreenEditDirty}
-                    notebookScreenEditForm={notebookScreenEditForm}
-                    saveNotebookScreenEntry={saveNotebookScreenEntry}
-                    cancelNotebookScreenEdit={cancelNotebookScreenEdit}
-                    setNotebookScreenEditMode={setNotebookScreenEditMode}
-                    updateNotebookScreenEditForm={updateNotebookScreenEditForm}
-                    NotebookDateField={NotebookDateField}
-                    NotebookQuarterField={NotebookQuarterField}
-                    MarkdownNoteBody={MarkdownNoteBody}
-                    renderNotebookOrigins={renderNotebookOrigins}
-                  />
-                ) : null}
               </div>
             ))}
             {selectedNotebookScreenCompany && selectedNotebookScreenEntries.length === 0 ? (
-                    <EmptyState>{text("No notes for")} {selectedNotebookScreenCompany.qualifiedTicker} {text("yet.")}</EmptyState>
+              <EmptyState>
+                {text("No notes for")} <TickerLabel value={selectedNotebookScreenCompany.qualifiedTicker} /> {text("yet.")}
+              </EmptyState>
             ) : null}
           </div>
         </div>
+
+        <div
+          aria-label={text("Resize notebook note list")}
+          aria-orientation="vertical"
+          aria-valuemax={640}
+          aria-valuemin={280}
+          aria-valuenow={notesPanelWidth}
+          className="notebooks-resizer"
+          onKeyDown={(event) => resizeNotebookPanelWithKeyboard("notes", event)}
+          onPointerDown={(event) => startNotebookResize("notes", event)}
+          onPointerMove={resizeNotebookPanels}
+          onPointerUp={stopNotebookResize}
+          role="separator"
+          tabIndex={0}
+          title={text("Drag to resize notebook note list")}
+        />
+
+        <aside className="notebooks-detail-pane" aria-label={text("Notebook selected entry")}>
+          {isNotebookScreenComposerOpen ? (
+            <form
+              id="notebook-screen-create-form"
+              className="notebook-form notebooks-create-form"
+              onSubmit={createNotebookScreenEntry}
+            >
+              <div className="notebooks-draft-header">
+                <div>
+                  <span className="eyebrow">{text("New note")}</span>
+                  <h2>
+                    {selectedNotebookScreenCompany ? (
+                      <TickerLabel value={selectedNotebookScreenCompany.qualifiedTicker} />
+                    ) : (
+                      text("Notebook")
+                    )}
+                  </h2>
+                </div>
+                <Button onClick={discardNotebookScreenDraft} variant="minimal">
+                  <X size={12} />
+                  {text("Discard")}
+                </Button>
+              </div>
+              <div className="notebook-form-grid">
+                <label>
+                  {text("Title")}
+                  <input
+                    aria-label={text("Notebook screen note title")}
+                    value={notebookScreenForm.title}
+                    onChange={(event) => updateNotebookScreenForm("title", event.target.value)}
+                  />
+                </label>
+                <label>
+                  {text("Kind")}
+                  <select
+                    aria-label={text("Notebook screen note kind")}
+                    value={notebookScreenForm.kind}
+                    onChange={(event) => updateNotebookScreenForm("kind", event.target.value)}
+                  >
+                    <option value="manual">{text("Manual")}</option>
+                    <option value="observation">{text("Observation")}</option>
+                    <option value="claim">{text("Claim")}</option>
+                    <option value="question">{text("Question")}</option>
+                    <option value="follow_up">{text("Follow-up")}</option>
+                  </select>
+                </label>
+                <label>
+                  {text("Tags")}
+                  <input
+                    aria-label={text("Notebook screen note tags")}
+                    placeholder={text("comma, separated")}
+                    value={notebookScreenForm.tags}
+                    onChange={(event) => updateNotebookScreenForm("tags", event.target.value)}
+                  />
+                </label>
+                <label>
+                  {text("Claim status")}
+                  <select
+                    aria-label={text("Notebook screen note claim status")}
+                    value={notebookScreenForm.claimStatus}
+                    onChange={(event) => updateNotebookScreenForm("claimStatus", event.target.value)}
+                  >
+                    <option value="">{text("None")}</option>
+                    <option value="open">{text("Status open")}</option>
+                    <option value="delivered">{text("Delivered")}</option>
+                    <option value="partially_delivered">{text("Partially delivered")}</option>
+                    <option value="missed">{text("Missed")}</option>
+                    <option value="unknown">{text("Unknown")}</option>
+                    <option value="not_applicable">{text("Not applicable")}</option>
+                  </select>
+                </label>
+                <NotebookDateField
+                  ariaLabel={text("Notebook screen note event date")}
+                  label={text("Event date")}
+                  value={notebookScreenForm.eventDate}
+                  onChange={(value) => updateNotebookScreenForm("eventDate", value)}
+                />
+                <NotebookQuarterField
+                  ariaLabel={text("Notebook screen note follow-up quarter")}
+                  label={text("Follow-up quarter")}
+                  value={notebookScreenForm.followUpAfter}
+                  onChange={(value) => updateNotebookScreenForm("followUpAfter", value)}
+                />
+                <NotebookDateField
+                  ariaLabel={text("Notebook screen note follow-up date")}
+                  label={text("Follow-up date")}
+                  value={notebookScreenForm.followUpDate}
+                  onChange={(value) => updateNotebookScreenForm("followUpDate", value)}
+                />
+              </div>
+              <label className="notebook-body-field">
+                {text("Body")}
+                <textarea
+                  aria-label={text("Notebook screen note body")}
+                  value={notebookScreenForm.body}
+                  onChange={(event) => updateNotebookScreenForm("body", event.target.value)}
+                />
+              </label>
+            </form>
+          ) : null}
+
+          {!isNotebookScreenComposerOpen && selectedNotebookScreenEntry ? (
+            <NotebookEntryEditor
+              selectedNotebookScreenEntry={selectedNotebookScreenEntry}
+              isNotebookScreenEditMode={isNotebookScreenEditMode}
+              isNotebookScreenEditDirty={isNotebookScreenEditDirty}
+              notebookScreenEditForm={notebookScreenEditForm}
+              saveNotebookScreenEntry={saveNotebookScreenEntry}
+              cancelNotebookScreenEdit={cancelNotebookScreenEdit}
+              setNotebookScreenEditMode={setNotebookScreenEditMode}
+              updateNotebookScreenEditForm={updateNotebookScreenEditForm}
+              NotebookDateField={NotebookDateField}
+              NotebookQuarterField={NotebookQuarterField}
+              MarkdownNoteBody={MarkdownNoteBody}
+              renderNotebookOrigins={renderNotebookOrigins}
+            />
+          ) : null}
+
+          {!isNotebookScreenComposerOpen && !selectedNotebookScreenEntry ? (
+            <EmptyState>{text("Select a note to read or edit it.")}</EmptyState>
+          ) : null}
+        </aside>
       </div>
       {notebookError ? <p className="error-text">{text("Notebook command failed")}: {notebookError}</p> : null}
     </section>

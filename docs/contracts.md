@@ -31,6 +31,7 @@ Rules:
 - `ticker` alone is not unique.
 - `isin`, `cik`, and `lei` are optional.
 - Source adapters may attach source-specific IDs without changing the canonical identity.
+- UI ticker labels may split `qualifiedTicker` into exchange and symbol for styling, including per-exchange colors, but command payloads and storage continue to use the unchanged `qualifiedTicker` string.
 
 ## Watchlist Membership
 
@@ -489,6 +490,7 @@ Rules:
 - Allowed statuses begin with `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
 - `errorCode` and `error` are recoverable local diagnostics and must not contain provider secrets or full source text.
 - Successful jobs may include the current `AI Analysis Result` read model.
+- UI panels showing a selected feed item's latest `queued` or `running` job should poll `list_ai_analysis` until the job reaches a terminal state or the panel is no longer relevant.
 
 ## Video Transcript Job
 
@@ -972,6 +974,11 @@ Allowed theme values:
 - `light`
 - `system`
 
+Allowed accent palette values:
+
+- `night-neon`
+- `midnight-horizon`
+
 Initial allowed locale values:
 
 - `en`
@@ -980,6 +987,9 @@ Initial allowed locale values:
 Rules:
 
 - The default theme is `dark`.
+- `theme` controls brightness mode only. `accentPalette` controls the semantic color palette.
+- The default accent palette is `night-neon`.
+- `midnight-horizon` maps the project owner's sampled reference-image colors onto semantic UI tokens: background `#00021E`, surface `#061135`, primary `#63C0E9`, secondary `#55388F`, accent `#C550B9`, highlight `#FB82C0`, and text `#EAF7FF`.
 - The default locale is `en`.
 - The default Developer mode setting is `false`.
 - The default runtime log level is `info`.
@@ -995,7 +1005,7 @@ Rules:
 - Locale changes affect app-owned UI copy and formatting labels only.
 - Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
 - `system` may be added to the UI as a convenience, but first-run behavior still defaults to `dark` until the user changes it.
-- The initial accent palette is `night-neon`, inspired by deep navy, electric blue/cyan, pink, and purple.
+- Accent palettes must be added through the settings validation and theme-token registry, not as component-local color overrides.
 - General AI analysis is deferred until the AI analysis framework milestone. That milestone may enable `provider_gemini` first, but the contract must remain provider-neutral so future OpenAI, Anthropic, and other providers can be added without rewiring the UI.
 - General AI analysis runs through asynchronous local job state so provider calls do not block the UI.
 - Settings must let the user choose the general analysis provider and model from supported configured options once M13 is implemented.

@@ -9,6 +9,8 @@ type CredentialSettingsProps = {
   geminiCredentialError: string | null;
   geminiCredentialInFlight: boolean;
   geminiCredentialStatus: CredentialStatus | null;
+  formatCredentialConfigured: (status: CredentialStatus | null) => string;
+  formatCredentialKind: (value: string | null | undefined) => string;
   onClearGeminiApiKey: () => void;
   onGeminiApiKeyDraftChange: (apiKey: string) => void;
   onOpenGeminiApiKeyPage: () => void;
@@ -20,6 +22,8 @@ export function CredentialSettings({
   geminiCredentialError,
   geminiCredentialInFlight,
   geminiCredentialStatus,
+  formatCredentialConfigured,
+  formatCredentialKind,
   onClearGeminiApiKey,
   onGeminiApiKeyDraftChange,
   onOpenGeminiApiKeyPage,
@@ -30,6 +34,16 @@ export function CredentialSettings({
   return (
     <section className="settings-group" aria-labelledby="settings-credentials-title">
       <h2 id="settings-credentials-title">{t("settings.credentials.title")}</h2>
+      <dl className="settings-grid">
+        <div>
+          <dt>{text("Credential status")}</dt>
+          <dd>{text(formatCredentialConfigured(geminiCredentialStatus))}</dd>
+        </div>
+        <div>
+          <dt>{text("Credential kind")}</dt>
+          <dd>{text(formatCredentialKind(geminiCredentialStatus?.secretKind))}</dd>
+        </div>
+      </dl>
       <form className="credential-form" onSubmit={onSaveGeminiApiKey}>
         <label>
           {t("settings.credentials.geminiApiKey")}
@@ -76,7 +90,7 @@ export function CredentialSettings({
         </p>
       ) : null}
       {geminiCredentialStatus?.error ? (
-        <p className="error-text">{text("Credential backend")}: {geminiCredentialStatus.error}</p>
+        <p className="error-text">{text("Credential check failed")}: {geminiCredentialStatus.error}</p>
       ) : null}
       {geminiCredentialError ? (
         <p className="error-text">{text("Credential command failed")}: {geminiCredentialError}</p>

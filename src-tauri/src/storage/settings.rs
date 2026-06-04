@@ -56,6 +56,7 @@ pub struct UserSettings {
 #[serde(rename_all = "camelCase")]
 pub struct SettingsUpdate {
     pub theme: Option<String>,
+    pub accent_palette: Option<String>,
     pub locale: Option<String>,
     pub poll_interval_seconds: Option<i64>,
     pub youtube_transcription_provider: Option<String>,
@@ -131,6 +132,15 @@ pub(crate) fn update_settings(
     if let Some(theme) = input.theme {
         validate_allowed_setting("theme", &theme, &["dark", "light", "system"])?;
         update_setting(connection, "theme", &theme)?;
+    }
+
+    if let Some(accent_palette) = input.accent_palette {
+        validate_allowed_setting(
+            "accent_palette",
+            &accent_palette,
+            &["night-neon", "midnight-horizon"],
+        )?;
+        update_setting(connection, "accent_palette", &accent_palette)?;
     }
 
     if let Some(locale) = input.locale {

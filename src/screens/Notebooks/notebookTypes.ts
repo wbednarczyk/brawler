@@ -1,5 +1,5 @@
 import type { ComponentType, FormEvent, ReactNode } from "react";
-import type { Company, NotebookEntry, NotebookOrigin } from "../../api/types";
+import type { Company, NotebookEntry, NotebookOrigin, Watchlist } from "../../api/types";
 import type {
   MarkdownNoteBodyProps,
   NotebookDateLikeFieldProps,
@@ -8,6 +8,8 @@ import type {
 
 export type NotebooksScreenProps = {
   companies: Company[];
+  totalCompanyCount: number;
+  watchlists: Watchlist[];
   notebookEntries: NotebookEntry[];
   selectedNotebookScreenCompany: Company | null;
   selectedNotebookScreenEntries: NotebookEntry[];
@@ -16,6 +18,7 @@ export type NotebooksScreenProps = {
   isNotebookScreenEditMode: boolean;
   isNotebookScreenEditDirty: boolean;
   notebookScreenKindFilter: string;
+  notebookScreenWatchlistFilter: string;
   notebookScreenClaimStatusFilter: string;
   notebookScreenFollowUpFilter: string;
   notebookScreenTagFilter: string;
@@ -34,6 +37,7 @@ export type NotebooksScreenProps = {
   cancelNotebookScreenEdit: () => void;
   setNotebookScreenEditMode: (value: boolean) => void;
   setNotebookScreenKindFilter: (value: string) => void;
+  setNotebookScreenWatchlistFilter: (value: string) => void;
   setNotebookScreenClaimStatusFilter: (value: string) => void;
   setNotebookScreenFollowUpFilter: (value: string) => void;
   setNotebookScreenTagFilter: (value: string) => void;

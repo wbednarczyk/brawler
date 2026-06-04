@@ -1,4 +1,17 @@
-import type { DatabaseStatus, Theme } from "../api/types";
+import type { AccentPalette, DatabaseStatus, Theme } from "../api/types";
+
+export const accentPaletteOptions = [
+  { value: "night-neon", label: "Night Neon" },
+  { value: "midnight-horizon", label: "Midnight Horizon" },
+] satisfies Array<{ value: AccentPalette; label: string }>;
+
+export function isAccentPalette(value: string): value is AccentPalette {
+  return accentPaletteOptions.some((option) => option.value === value);
+}
+
+export function normalizeAccentPalette(value: string | null | undefined): AccentPalette {
+  return value && isAccentPalette(value) ? value : "night-neon";
+}
 
 export function databaseIndicatorClass(status: DatabaseStatus | null, error: string | null) {
   if (error) {

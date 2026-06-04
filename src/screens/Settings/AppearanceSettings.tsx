@@ -1,11 +1,14 @@
-import type { AppLocale, Theme, UserSettings } from "../../api/types";
+import type { AccentPalette, AppLocale, Theme, UserSettings } from "../../api/types";
+import { accentPaletteOptions } from "../../app/theme";
 import { localeDisplayName, supportedLocales, useLocale, type LocaleKey } from "../../shared/locale";
 
 type AppearanceSettingsProps = {
   settings: UserSettings | null;
   theme: Theme;
+  accentPalette: AccentPalette;
   locale: AppLocale;
   onThemeChange: (theme: Theme) => void;
+  onAccentPaletteChange: (accentPalette: AccentPalette) => void;
   onLocaleChange: (locale: AppLocale) => void;
   t: (key: LocaleKey) => string;
 };
@@ -13,8 +16,10 @@ type AppearanceSettingsProps = {
 export function AppearanceSettings({
   settings,
   theme,
+  accentPalette,
   locale,
   onThemeChange,
+  onAccentPaletteChange,
   onLocaleChange,
   t,
 }: AppearanceSettingsProps) {
@@ -37,6 +42,20 @@ export function AppearanceSettings({
           </select>
         </label>
         <label>
+          {t("settings.appearance.palette")}
+          <select
+            aria-label={text("Settings palette")}
+            value={accentPalette}
+            onChange={(event) => onAccentPaletteChange(event.target.value as AccentPalette)}
+          >
+            {accentPaletteOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           {t("settings.appearance.locale")}
           <select
             aria-label={text("Settings locale")}
@@ -51,7 +70,7 @@ export function AppearanceSettings({
           </select>
         </label>
         <div className="settings-summary">
-          <span>{t("settings.appearance.palette")}</span>
+          <span>{text("Active palette")}</span>
           <strong>{settings?.accentPalette ?? "night-neon"}</strong>
         </div>
       </div>

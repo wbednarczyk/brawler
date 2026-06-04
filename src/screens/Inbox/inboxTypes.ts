@@ -24,6 +24,7 @@ export type InboxScreenProps = {
   aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
   aiAnalysisProviderConfigured: boolean;
   inboxStatusFilter: InboxStatusFilter;
+  searchQuery: string;
   inboxWatchlistFilter: string;
   inboxCompanyFilter: string;
   inboxTypeFilter: string;
@@ -42,6 +43,7 @@ export type InboxScreenProps = {
   healthError: string | null;
   databaseError: string | null;
   setInboxStatusFilter: (filter: InboxStatusFilter) => void;
+  setSearchQuery: (query: string) => void;
   setInboxWatchlistFilter: (filter: string) => void;
   setInboxCompanyFilter: (filter: string) => void;
   setInboxTypeFilter: (filter: string) => void;
@@ -59,7 +61,6 @@ export type InboxScreenProps = {
   openCompanyWorkspaceFromFeedItem: (item: FeedItem) => void;
   openFeedItemNoteDraft: (item: FeedItem) => void;
   startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
-  refreshFeedItemAiAnalysis: (itemId: string) => Promise<void>;
   retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
   resizeDetailPaneWithKeyboard: (event: KeyboardEvent<HTMLDivElement>) => void;
   startDetailPaneResize: (event: PointerEvent<HTMLDivElement>) => void;

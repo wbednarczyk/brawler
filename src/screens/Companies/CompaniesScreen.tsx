@@ -1,10 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { CheckCircle2, LocateFixed, Plus, Search, Trash2, X } from "lucide-react";
+import { LocateFixed, Plus, Search, Trash2, X } from "lucide-react";
 import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
 import type { WatchlistFeedback } from "../../app/appTypes";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type {
   MarkdownNoteBodyProps,
@@ -24,11 +25,11 @@ export type CompaniesScreenProps = {
   companyForm: CompanyForm;
   companyFormRegistryMatches: CompanyRegistryEntry[];
   companyListSearch: string;
+  companyWatchlistFilter: string;
   filteredCompanies: Company[];
   companies: Company[];
   selectedCompany: Company | null;
   membershipsByCompany: Record<string, WatchlistMembership[]>;
-  watchlistAssignments: Record<string, string>;
   watchlistFeedback: WatchlistFeedback | null;
   selectedCompanyFeedStats: { total: number; unread: number; saved: number };
   companyWorkspaceTab: CompanyWorkspaceTab;
@@ -61,11 +62,10 @@ export type CompaniesScreenProps = {
   lookupCompany: () => void;
   applyRegistryEntryToCompanyForm: (entry: CompanyRegistryEntry) => void;
   setCompanyListSearch: (value: string) => void;
+  setCompanyWatchlistFilter: (value: string) => void;
   openCompanyWorkspace: (company: Company) => void;
   openCompanyWorkspaceFromKeyboard: (event: React.KeyboardEvent<HTMLElement>, company: Company) => void;
-  updateWatchlistAssignment: (companyId: string, watchlistId: string) => void;
-  addCompanyToWatchlist: (company: Company) => void;
-  removeCompanyFromWatchlist: (company: Company) => void;
+  toggleCompanyWatchlistMembership: (company: Company, watchlistId: string) => void;
   deleteCompany: (company: Company) => void;
   setCompanyWorkspaceTab: (tab: CompanyWorkspaceTab) => void;
   toggleCompanyFeedItem: (item: FeedItem) => void;
@@ -74,7 +74,6 @@ export type CompaniesScreenProps = {
   inspectCompanyFeedItem: (item: FeedItem) => void;
   openFeedItemNoteDraft: (item: FeedItem) => void;
   startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
-  refreshFeedItemAiAnalysis: (itemId: string) => Promise<void>;
   retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
   openCompanyInboxFilter: (company: Company) => void;
   setNotebookComposerOpen: Dispatch<SetStateAction<boolean>>;
@@ -104,11 +103,11 @@ export function CompaniesScreen({
   companyForm,
   companyFormRegistryMatches,
   companyListSearch,
+  companyWatchlistFilter,
   filteredCompanies,
   companies,
   selectedCompany,
   membershipsByCompany,
-  watchlistAssignments,
   watchlistFeedback,
   selectedCompanyFeedStats,
   companyWorkspaceTab,
@@ -141,11 +140,10 @@ export function CompaniesScreen({
   lookupCompany,
   applyRegistryEntryToCompanyForm,
   setCompanyListSearch,
+  setCompanyWatchlistFilter,
   openCompanyWorkspace,
   openCompanyWorkspaceFromKeyboard,
-  updateWatchlistAssignment,
-  addCompanyToWatchlist,
-  removeCompanyFromWatchlist,
+  toggleCompanyWatchlistMembership,
   deleteCompany,
   setCompanyWorkspaceTab,
   toggleCompanyFeedItem,
@@ -154,7 +152,6 @@ export function CompaniesScreen({
   inspectCompanyFeedItem,
   openFeedItemNoteDraft,
   startFeedItemAiAnalysis,
-  refreshFeedItemAiAnalysis,
   retryFeedItemAiAnalysis,
   openCompanyInboxFilter,
   setNotebookComposerOpen,
@@ -359,7 +356,7 @@ export function CompaniesScreen({
                             title={`${text("Use")} ${entry.qualifiedTicker}`}
                             type="button"
                           >
-                            <strong>{entry.qualifiedTicker}</strong>
+                            <strong><TickerLabel value={entry.qualifiedTicker} /></strong>
                             <span>{entry.displayName}</span>
                             <small>{entry.isin ?? text("No ISIN")}</small>
                             {entry.tracked ? <em>{text("Added")}</em> : null}
@@ -393,6 +390,21 @@ export function CompaniesScreen({
                       </button>
                     ) : null}
                   </label>
+                  <label className="company-list-filter">
+                    {text("Watchlist")}
+                    <select
+                      aria-label={text("Company watchlist filter")}
+                      onChange={(event) => setCompanyWatchlistFilter(event.target.value)}
+                      value={companyWatchlistFilter}
+                    >
+                      <option value="all">{text("All watchlists")}</option>
+                      {watchlists.map((watchlist) => (
+                        <option key={watchlist.id} value={watchlist.id}>
+                          {watchlist.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <span>
                     {filteredCompanies.length}/{companies.length} {text("companies")}
                   </span>
@@ -418,7 +430,7 @@ export function CompaniesScreen({
                         title={`${text("Open")} ${company.qualifiedTicker} ${text("workspace")}`}
                       >
                         <div className="company-row-main">
-                          <h2>{company.qualifiedTicker}</h2>
+                          <h2><TickerLabel value={company.qualifiedTicker} /></h2>
                           <p>{company.displayName}</p>
                           <div
                             className="membership-list"
@@ -434,46 +446,6 @@ export function CompaniesScreen({
                         </div>
                         <div className="company-row-actions" onClick={(event) => event.stopPropagation()}>
                           <span>{company.isin ?? text("No ISIN")}</span>
-                          <select
-                            aria-label={`${text("Watchlist for")} ${company.qualifiedTicker}`}
-                            disabled={watchlists.length === 0}
-                            value={watchlistAssignments[company.id] || watchlists[0]?.id || ""}
-                            onChange={(event) =>
-                              updateWatchlistAssignment(company.id, event.target.value)
-                            }
-                          >
-                            {watchlists.map((watchlist) => (
-                              <option key={watchlist.id} value={watchlist.id}>
-                                {watchlist.name}
-                              </option>
-                            ))}
-                          </select>
-                          <Button
-                            className="compact-button assign-button"
-                            disabled={watchlists.length === 0}
-                            onClick={() => addCompanyToWatchlist(company)}
-                          >
-                            <Plus size={15} />
-                            {text("Assign")}
-                          </Button>
-                          <Button
-                            className="compact-button remove-button"
-                            disabled={watchlists.length === 0}
-                            onClick={() => removeCompanyFromWatchlist(company)}
-                          >
-                            <X size={15} />
-                            {text("Remove")}
-                          </Button>
-                          {watchlistFeedback?.companyId === company.id ? (
-                            <span
-                              aria-label={watchlistFeedback.message}
-                              className="inline-success"
-                              role="status"
-                              title={watchlistFeedback.message}
-                            >
-                              <CheckCircle2 size={16} />
-                            </span>
-                          ) : null}
                           <Button
                             onClick={() => deleteCompany(company)}
                             title={`${text("Delete")} ${company.qualifiedTicker}`}
@@ -487,7 +459,9 @@ export function CompaniesScreen({
                       {selectedCompany?.id === company.id ? (
                         <CompanyWorkspace
                           selectedCompany={selectedCompany}
+                          watchlists={watchlists}
                           membershipsByCompany={membershipsByCompany}
+                          watchlistFeedback={watchlistFeedback}
                           selectedCompanyFeedStats={selectedCompanyFeedStats}
                           companyWorkspaceTab={companyWorkspaceTab}
                           selectedCompanyFeedItems={selectedCompanyFeedItems}
@@ -509,13 +483,13 @@ export function CompaniesScreen({
                           selectedClaimEntry={selectedClaimEntry}
                           claimStatusDraft={claimStatusDraft}
                           setCompanyWorkspaceTab={setCompanyWorkspaceTab}
+                          toggleCompanyWatchlistMembership={toggleCompanyWatchlistMembership}
                           toggleCompanyFeedItem={toggleCompanyFeedItem}
                           selectCompanyFeedItemFromKeyboard={selectCompanyFeedItemFromKeyboard}
                           updateFeedItemState={updateFeedItemState}
                           inspectCompanyFeedItem={inspectCompanyFeedItem}
                           openFeedItemNoteDraft={openFeedItemNoteDraft}
                           startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-                          refreshFeedItemAiAnalysis={refreshFeedItemAiAnalysis}
                           retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
                           openCompanyInboxFilter={openCompanyInboxFilter}
                           setNotebookComposerOpen={setNotebookComposerOpen}
@@ -543,7 +517,7 @@ export function CompaniesScreen({
                     <EmptyState>{text("No companies yet.")}</EmptyState>
                   ) : null}
                   {companies.length > 0 && filteredCompanies.length === 0 ? (
-                    <EmptyState>{text("No companies match this search.")}</EmptyState>
+                    <EmptyState>{text("No companies match these filters.")}</EmptyState>
                   ) : null}
                 </div>
 
