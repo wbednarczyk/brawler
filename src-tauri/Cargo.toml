@@ -1,6 +1,6 @@
 [package]
 name = "brawler"
-version = "0.16.0"
+version = "0.17.0"
 description = "Local-first investor research workspace"
 authors = ["Brawler contributors"]
 edition = "2021"
@@ -14,16 +14,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+base64 = "0.22"
+ed25519-dalek = "2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
 keyring = { version = "3", features = ["windows-native"] }
 log = "0.4"
 quick-xml = "0.39"
 rusqlite = { version = "0.32", features = ["bundled"] }
 scraper = "0.22"
+semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 thiserror = "2"
-time = { version = "0.3", features = ["formatting", "macros"] }
+time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 url = "2"

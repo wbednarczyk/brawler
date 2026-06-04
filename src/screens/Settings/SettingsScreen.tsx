@@ -1,6 +1,7 @@
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
+import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
@@ -12,6 +13,10 @@ export function SettingsScreen({
   locale,
   settings,
   settingsError,
+  licenseStatus,
+  licenseError,
+  licenseInFlight,
+  licenseKeyDraft,
   feedPruneRetentionDays,
   feedPruneResult,
   geminiCredentialStatus,
@@ -32,6 +37,9 @@ export function SettingsScreen({
   onLogLevelChange,
   onLogMaxFilesChange,
   onLogMaxFileBytesChange,
+  onClearLicenseKey,
+  onLicenseKeyDraftChange,
+  onSubmitLicenseKey,
   onGeminiApiKeyDraftChange,
   onSaveGeminiApiKey,
   onClearGeminiApiKey,
@@ -107,6 +115,15 @@ export function SettingsScreen({
           onLogLevelChange={onLogLevelChange}
           onLogMaxFilesChange={onLogMaxFilesChange}
           onLogMaxFileBytesChange={onLogMaxFileBytesChange}
+        />
+        <LicenseSettings
+          licenseError={licenseError}
+          licenseInFlight={licenseInFlight}
+          licenseKeyDraft={licenseKeyDraft}
+          licenseStatus={licenseStatus}
+          onClearLicenseKey={onClearLicenseKey}
+          onLicenseKeyDraftChange={onLicenseKeyDraftChange}
+          onSubmitLicenseKey={onSubmitLicenseKey}
         />
 
         {settingsError ? (

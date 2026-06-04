@@ -598,24 +598,27 @@ Non-goals:
 
 ## Milestone 17: V1 Friend-Test License Gate
 
-Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed.
+Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed, plus an author-only license path that exercises the same gate.
+
+Status: completed in `0.17.0`.
 
 Included:
 
 - ADR for the v1 friend-test licensing posture and threat model
-- offline signed license-key validation
+- offline signed author and friend-test license-key validation
+- separate author and friend-test signing keys with embedded public verification material
 - license entry and status UI in first-run flow or Settings
 - local storage for accepted license state without storing private signing material
 - app access gate when no valid license exists
 - clear expired, invalid, tampered, and unsupported-version states
-- release-owner workflow for generating friend-test keys outside the app repository
+- release-owner workflow and local automation for generating author and friend-test keys outside the app repository
 
 Exit criteria:
 
-- v1 friend-test artifacts cannot be used normally without a valid license key
+- v1 author/friend-test artifacts cannot be used normally without a valid license key
 - license verification works offline and does not require cloud accounts, telemetry, hosted activation, or billing infrastructure
 - the app embeds only public verification material; private signing material remains outside the repo and build outputs
-- tests cover valid, missing, expired, tampered, and unsupported-version licenses
+- tests cover valid author, valid all-version friend-test, missing, expired, tampered, unsupported-channel, and unsupported-version licenses
 - logs, settings export, and diagnostics do not leak license private signing material or full license secrets
 - user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
 
@@ -639,7 +642,7 @@ Exit criteria:
 
 - app can be installed or run on Windows
 - existing local data survives restart
-- packaged app enforces the v1 friend-test license gate
+- packaged app enforces the v1 author/friend-test license gate
 - primary workflows pass smoke testing
 - packaging workflow can be run from GitHub
 - packaging workflow is manually triggered unless release automation is explicitly approved

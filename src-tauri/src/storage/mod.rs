@@ -33,6 +33,7 @@ mod diagnostics;
 mod error;
 mod events;
 mod feed;
+mod licensing;
 mod metrics;
 mod migrations;
 mod notebooks;
@@ -49,6 +50,7 @@ pub use ai_analysis::{
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
+pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
 pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
@@ -498,6 +500,27 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         settings::set_developer_mode_enabled(&connection, enabled)
+    }
+
+    pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        licensing::get_license_metadata(&connection)
+    }
+
+    pub fn upsert_license_metadata(
+        &self,
+        input: LicenseMetadataUpdate,
+    ) -> StorageResult<StoredLicenseMetadata> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        licensing::upsert_license_metadata(&connection, input)
+    }
+
+    pub fn clear_license_metadata(&self) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        licensing::clear_license_metadata(&connection)
     }
 
     pub fn record_diagnostic_event(

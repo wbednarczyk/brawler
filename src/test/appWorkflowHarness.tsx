@@ -6,6 +6,7 @@ import { App } from "../App";
 import type {
   AiAnalysisJob,
   AppLocale,
+  LicenseStatus,
   LocalMetricsSnapshot,
   ShortcutBindingSetting,
   Theme,
@@ -20,7 +21,7 @@ export { expect } from "vitest";
 export { vi };
 
 export function renderApp() {
-  return render(<App />);
+  return render(<App initialLicenseStatus={appTestState.licenseStatusResponse} />);
 }
 
 const noFeedAttachments: Array<{ id: string; label: string; url: string }> = [];
@@ -424,6 +425,40 @@ const initialLocalMetricsSnapshot: LocalMetricsSnapshot = {
   ],
 };
 
+const initialLicenseStatus: LicenseStatus = {
+  status: "valid",
+  canUseApp: true,
+  reason: null,
+  license: {
+    licenseId: "lic_friend_test",
+    holder: "Friend Tester",
+    channel: "friend_test",
+    edition: "friend",
+    features: ["core"],
+    issuedAt: "2026-06-01T00:00:00Z",
+    expiresAt: "2027-01-01T00:00:00Z",
+    appVersionRange: "*",
+    keyId: "owner_friend_test_2026_06",
+  },
+  checkedAt: "2026-06-04T10:00:00Z",
+};
+
+export const missingLicenseStatus: LicenseStatus = {
+  status: "missing",
+  canUseApp: false,
+  reason: "A valid local license is required.",
+  license: null,
+  checkedAt: "2026-06-04T10:00:00Z",
+};
+
+export const invalidLicenseStatus: LicenseStatus = {
+  status: "invalid",
+  canUseApp: false,
+  reason: "This license key could not be verified.",
+  license: null,
+  checkedAt: "2026-06-04T10:00:00Z",
+};
+
 const initialCompanies: TestCompany[] = [
 {
   id: "company_gpw_cdr",
@@ -680,6 +715,7 @@ export const appTestState = {
   refreshSourcesError: null as string | null,
   geminiCredentialStatusResponse: initialGeminiCredentialStatus,
   localMetricsSnapshotResponse: initialLocalMetricsSnapshot,
+  licenseStatusResponse: initialLicenseStatus,
 };
 
 beforeEach(() => {
@@ -694,6 +730,7 @@ beforeEach(() => {
   appTestState.refreshSourcesError = null;
   appTestState.geminiCredentialStatusResponse = initialGeminiCredentialStatus;
   appTestState.localMetricsSnapshotResponse = initialLocalMetricsSnapshot;
+  appTestState.licenseStatusResponse = initialLicenseStatus;
   vi.mocked(invoke).mockClear();
   vi.mocked(openUrl).mockClear();
   vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
@@ -1274,6 +1311,28 @@ beforeEach(() => {
 
     if (command === "get_settings") {
       return Promise.resolve(appTestState.settingsResponse);
+    }
+
+    if (command === "get_license_status") {
+      return Promise.resolve(appTestState.licenseStatusResponse);
+    }
+
+    if (command === "submit_license_key") {
+      const input = (args as { input: { licenseKey: string } }).input;
+
+      if (input.licenseKey.includes("valid-friend-license")) {
+        appTestState.licenseStatusResponse = initialLicenseStatus;
+      } else {
+        appTestState.licenseStatusResponse = invalidLicenseStatus;
+      }
+
+      return Promise.resolve(appTestState.licenseStatusResponse);
+    }
+
+    if (command === "clear_license_key") {
+      appTestState.licenseStatusResponse = missingLicenseStatus;
+
+      return Promise.resolve(appTestState.licenseStatusResponse);
     }
 
     if (command === "get_local_metrics_snapshot") {

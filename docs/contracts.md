@@ -884,6 +884,64 @@ Rules:
 - Diagnostics may expose a full in-app log viewer, copy-redacted-log action, log status, and open-logs-folder action only while Developer mode is active.
 - React may call typed commands for log status, redacted log reads, and opening the app-owned logs directory. It must not receive arbitrary filesystem browsing capability.
 
+## Licensing
+
+M17 exposes a local signed entitlement gate for author and friend-test builds. It is not the final public license model and does not add hosted activation, billing, telemetry, or cloud accounts.
+
+License status read model:
+
+```json
+{
+  "status": "valid",
+  "canUseApp": true,
+  "reason": null,
+  "license": {
+    "licenseId": "lic_author_001",
+    "holder": "Project Author",
+    "channel": "author",
+    "edition": "author",
+    "features": ["*"],
+    "issuedAt": "2026-06-01T00:00:00Z",
+    "expiresAt": "2099-01-01T00:00:00Z",
+    "appVersionRange": "*",
+    "keyId": "owner_author_2026_06"
+  },
+  "checkedAt": "2026-06-04T10:00:00Z"
+}
+```
+
+Allowed `status` values:
+
+- `valid`
+- `missing`
+- `invalid`
+- `expired`
+- `wrong_version`
+- `unsupported_version`
+- `storage_error`
+
+Typed commands:
+
+- `get_license_status() -> LicenseStatus`
+- `submit_license_key({ licenseKey }) -> LicenseStatus`
+- `clear_license_key() -> LicenseStatus`
+
+Rules:
+
+- Normal app navigation requires `canUseApp = true` for M17 author and friend-test builds.
+- Missing, malformed, tampered, expired, unsupported-version, unsupported-channel, and storage-error states must remain recoverable through the local license screen.
+- Supported M17 channels are `author` and `friend_test`; unsupported channels are invalid for this build.
+- Author tokens require `edition: "author"`, `features: ["*"]`, and the author signing key id.
+- Friend-test tokens require `channel: "friend_test"` and the friend-test signing key id.
+- M17 author and friend-test tokens are not app-version bounded; `appVersionRange` remains compatibility metadata and is `*` for generated M17 tokens.
+- Future entitlement channels may opt into app-version limits through the existing `appVersionRange` policy path.
+- `submit_license_key` validates the token offline before saving it. Invalid replacement attempts must not overwrite an existing valid key.
+- The raw license token is treated as a bearer secret and stored through the OS keychain.
+- SQLite stores only derived redacted license metadata/status and never stores the full token, private signing material, or private key material.
+- React receives only `LicenseStatus`; it never receives private signing material.
+- Logs, diagnostics, metrics, settings export, tests, and UI state must not include full license tokens, private signing material, or raw private key material.
+- Future community/open-core, paid feature, subscription, or hosted activation policies must be added as entitlement-policy or verifier/storage adapters and require a later ADR when they introduce hosted services or billing.
+
 ## User Settings
 
 ```json
@@ -952,6 +1010,7 @@ Rules:
 - Settings must let the user save, replace, and clear the Gemini API key used only for YouTube transcription.
 - Settings must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
 - Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs.
+- Settings/About must show local license status and allow valid users to inspect safe metadata, replace the token, and clear the token.
 - Shortcut binding overrides are stored as a JSON object keyed by action ID. Missing entries use the current default binding for that action.
 - Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
 - SQLite is the runtime source of truth for settings.

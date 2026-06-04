@@ -147,6 +147,35 @@ export type LocalMetricsSnapshot = {
   samples: MetricSample[];
 };
 
+export type LicenseStatusKind =
+  | "valid"
+  | "missing"
+  | "invalid"
+  | "expired"
+  | "wrong_version"
+  | "unsupported_version"
+  | "storage_error";
+
+export type LicenseDisplayMetadata = {
+  licenseId: string;
+  holder: string;
+  channel: string;
+  edition: string;
+  features: string[];
+  issuedAt: string;
+  expiresAt: string;
+  appVersionRange: string;
+  keyId: string;
+};
+
+export type LicenseStatus = {
+  status: LicenseStatusKind;
+  canUseApp: boolean;
+  reason: string | null;
+  license: LicenseDisplayMetadata | null;
+  checkedAt: string;
+};
+
 export type SourceIngestionResult = {
   adapterId: string;
   itemsFetched: number;

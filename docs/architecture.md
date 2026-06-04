@@ -28,6 +28,7 @@ Rust owns domain behavior:
 - video/transcript processing orchestration
 - transcript-to-note selection workflows
 - local settings and secrets
+- local license entitlement validation
 - SQLite persistence
 - Tauri command handlers and event streams
 
@@ -80,6 +81,8 @@ Gemini is preferred only for the YouTube press conference transcription workflow
 
 Provider credentials should use a reusable credential boundary rather than provider-specific ad hoc storage. The first credential is the Gemini YouTube transcription API key, but the same boundary must be able to describe future API keys, username/password credentials, session tokens, or other source-specific secret material. Runtime secrets live in the OS keychain and are referenced by provider, purpose, and secret kind; only non-secret status metadata is exposed to the UI.
 
+Licensing is a local entitlement module governed by [ADR 0017](adr/0017-friend-test-license-gate.md). M17 uses local author and friend-test policies with versioned signed tokens, Ed25519 public-key verification, separate author/friend-test signing keys, OS-keychain storage for raw accepted tokens, SQLite storage for derived metadata only, and an app-shell gate for normal navigation. Parser, verifier, entitlement-policy, secret-store, storage, command, and presentation boundaries must remain explicit so future community/open-core, paid-feature, subscription, or hosted-activation policies can be added as adapters after later ADR approval.
+
 Provider model choice and request timeout are configurable. Gemini YouTube transcription defaults to the cheapest configured model that passed M10 live smoke validation with direct YouTube/video input. The runtime timeout defaults to 300 seconds, can be changed in Settings, and may be overridden by `BRAWLER_GEMINI_REQUEST_TIMEOUT_SECONDS` for development/live-smoke runs.
 
 Notebook entries should be source-linked. A note can originate from manual entry, a feed item, an AI summary, a transcript segment, or a selected AI-suggested claim.
@@ -99,7 +102,7 @@ Testing should be lean and behavior-focused:
 
 ## Security And Observability Posture
 
-The React frontend must call typed Tauri commands only. It must not receive API keys, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
+The React frontend must call typed Tauri commands only. It must not receive API keys, full license tokens, private signing material, execute arbitrary shell commands, or receive broad filesystem access. Source and provider requests happen in Rust.
 
 V1 uses local-only observability. Telemetry, remote error reporting, remote log shipping, hosted metrics, and hosted tracing require a future ADR. Source and job errors surface in the Sources screen. Developer mode and local observability are governed by [ADR 0015](adr/0015-developer-mode-local-observability.md).
 

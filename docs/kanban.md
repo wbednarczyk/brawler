@@ -131,26 +131,6 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
-### Implement v1 friend-test license gate
-
-Intent: prevent casual redistribution of v1 friend-test builds without introducing hosted accounts, telemetry, billing, or activation infrastructure.
-
-Acceptance criteria:
-
-- A licensing ADR records the v1 friend-test posture, threat model, and offline validation approach before implementation.
-- App can validate an offline signed license key using public verification material embedded in the app.
-- Private signing material and key-generation workflow stay outside the repository and build outputs.
-- First-run flow or Settings lets the user enter, inspect, replace, and clear a license.
-- Normal app use is gated when no valid license exists.
-- Expired, invalid, tampered, wrong-version, and missing-license states are clear and recoverable.
-- License validation does not require cloud accounts, telemetry, hosted activation, or billing infrastructure.
-- Logs, settings export, diagnostics, and tests do not leak private signing material or full license secrets.
-- Packaged v1 friend-test artifacts enforce the license gate before distribution.
-
-Docs/contracts touched: licensing ADR, project practices, product spec, UI information architecture, contracts, release docs.
-
-Test expectations: Rust license validation tests and UI workflow tests for entry, invalid states, expiry, and gated app access.
-
 ## Ready
 
 ## In Progress
@@ -158,6 +138,32 @@ Test expectations: Rust license validation tests and UI workflow tests for entry
 ## Review
 
 ## Done
+
+### M17: Implement v1 friend-test license gate
+
+Delivered:
+
+- Added ADR 0017 for the local author/friend-test license gate, threat model, offline validation model, key separation, storage/redaction rules, and future adapter/version-limit extension points.
+- Added an extensible Rust licensing module with token parsing, Ed25519 verifier registry, entitlement policy evaluation, OS keychain token storage, SQLite redacted metadata, typed Tauri commands, diagnostics, logging, and metrics integration.
+- Added separate author and friend-test signing paths; present author and friend-test licenses are all-version while future version-limited licenses remain supported.
+- Added the app-level license gate plus Settings license inspect, replace, and clear UI with Polish translations and no unnecessary technical reassurance copy.
+- Added owner tooling and docs: `scripts/licensing/*`, `make license-author`, `make license-friend`, key-generation targets, gitignored `private/`, and `docs/license-operations.md`.
+- Updated contracts, data model, architecture, product spec, UI information architecture, engineering workflow, licensing strategy, roadmap, practices, and project brief.
+- Bumped app version to `0.17.0`.
+
+ADR checkpoint: ADR 0017 records the M17 licensing posture and extension boundaries. No additional ADR was needed for closure.
+
+Validation:
+
+- Manual UI license gate testing passed by user.
+- Manual Makefile/token-generation checks passed by user.
+- `rtk cargo test licensing` passed.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
 
 ### M16: Implement local metrics exposure
 

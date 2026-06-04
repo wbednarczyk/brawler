@@ -241,3 +241,5 @@ Until that design exists, v1 remains local-first and single-device.
 The app should leave room for future monetization, but the model is undecided. Open core plus paid convenience features is one possible path, but not a committed direction. Potential paid features could include packaged builds, sync, backups, managed AI configuration, and notifications.
 
 Brawler is all rights reserved for now. The exact license, monetization model, and commercial boundary require a future ADR before public release, accepting external contributions, or publishing release artifacts.
+
+V1 author and friend-test builds require a local offline license gate before normal app use. The gate validates signed license tokens with embedded public verification material, stores the raw accepted token in the OS keychain, stores only derived metadata in SQLite, and does not require cloud accounts, telemetry, hosted activation, billing, or remote entitlement checks. Missing, invalid, expired, tampered, unsupported-version, and unsupported-channel states must be clear and recoverable.

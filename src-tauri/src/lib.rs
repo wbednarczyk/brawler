@@ -3,6 +3,7 @@ use tauri::Manager;
 
 pub mod app_state;
 pub mod jobs;
+pub mod licensing;
 pub mod logging;
 pub mod observability;
 pub mod providers;
@@ -89,6 +90,9 @@ pub fn run() {
             commands::logs::list_log_entries,
             commands::logs::open_logs_directory,
             commands::metrics::get_local_metrics_snapshot,
+            commands::licensing::get_license_status,
+            commands::licensing::submit_license_key,
+            commands::licensing::clear_license_key,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::disable_developer_mode,
@@ -123,7 +127,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.16.0");
+        assert_eq!(response.version, "0.17.0");
     }
 
     #[test]
