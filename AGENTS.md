@@ -26,6 +26,7 @@ Then read only the relevant canonical references for the work being done:
 
 - Do not implement non-trivial changes without an explicit plan and approval.
 - Start every new milestone by breaking it into tasks and presenting all important architecture decisions to the user. Explain options and tradeoffs briefly, require explicit answers, and ask until the architecture is clear before implementation.
+- Agents may implement all approved milestone tasks, but must not close a milestone, move it to Done, or perform the milestone version bump until the user explicitly signs off on closure.
 - Keep public behavior, contracts, and docs in sync with code changes.
 - Before non-trivial implementation and milestone closure, perform an ADR checkpoint: add or update an ADR when the work changes durable architecture or policy decisions, or explicitly confirm that existing ADRs already cover the decision.
 - Milestone closure must include the matching app version bump in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
@@ -33,7 +34,7 @@ Then read only the relevant canonical references for the work being done:
 - If implementation evidence conflicts with a roadmap item or product requirement, explicitly call out the conflict, explain the tradeoff, and ask before weakening or deferring required scope.
 - It is acceptable to challenge the user's proposed direction when technical, legal, source-policy, UX, cost, or reliability evidence suggests a better path, but the challenge must be communicated clearly before docs or code change the product commitment.
 - Prefer small, reviewable changes that preserve local-first operation.
-- Treat modularity and configurability as first-class design constraints. New features should expose provider/source/model/credential/configuration boundaries that are easy to extend, while avoiding premature complexity that is not tied to a real planned extension.
+- Treat modularity, extensibility, pluggability, and configurability as first-class design constraints across the whole application. New features should expose provider/source/model/credential/configuration/collector/renderer/storage-operation boundaries that are easy to extend, while avoiding premature complexity that is not tied to a real planned extension.
 - Treat very large source files as architecture debt. When working near a large UI, storage, command, or test file, prefer extracting cohesive modules as part of the feature slice instead of adding more unrelated responsibility to the same file.
 - Do not add cloud services, telemetry, hosted dependencies, or paid APIs unless a new ADR approves them.
 - Treat `Brawler` as a codename only; do not hard-code it as the final product name in user-facing copy unless the spec says so.

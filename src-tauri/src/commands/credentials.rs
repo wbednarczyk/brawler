@@ -30,6 +30,7 @@ pub fn get_gemini_transcription_credential_status(
         "Credential status checked.",
         &status,
     );
+    record_credential_metric(&state, "checked", &status);
 
     Ok(status)
 }
@@ -50,6 +51,7 @@ pub fn set_gemini_transcription_api_key(
                 status.storage
             );
             record_credential_diagnostic(&state, "stored", "info", "Credential saved.", &status);
+            record_credential_metric(&state, "stored", &status);
             Ok(status)
         }
         Err(error) => {
@@ -62,6 +64,14 @@ pub fn set_gemini_transcription_api_key(
                 "failed",
                 "Credential save failed.",
                 "credential_save_error",
+            );
+            state.increment_runtime_counter(
+                "brawler_credential_checks_total",
+                &[
+                    ("provider_id", "provider_gemini"),
+                    ("module", "youtube_transcription"),
+                    ("status", "failed"),
+                ],
             );
             Err(error.to_string())
         }
@@ -83,6 +93,7 @@ pub fn clear_gemini_transcription_api_key(
                 status.storage
             );
             record_credential_diagnostic(&state, "cleared", "info", "Credential cleared.", &status);
+            record_credential_metric(&state, "cleared", &status);
             Ok(status)
         }
         Err(error) => {
@@ -96,9 +107,47 @@ pub fn clear_gemini_transcription_api_key(
                 "Credential clear failed.",
                 "credential_clear_error",
             );
+            state.increment_runtime_counter(
+                "brawler_credential_checks_total",
+                &[
+                    ("provider_id", "provider_gemini"),
+                    ("module", "youtube_transcription"),
+                    ("status", "failed"),
+                ],
+            );
             Err(error.to_string())
         }
     }
+}
+
+fn record_credential_metric(
+    state: &app_state::AppState,
+    stage: &str,
+    status: &credentials::CredentialStatus,
+) {
+    let outcome = if status.error.is_some() {
+        "error"
+    } else if status.configured {
+        "configured"
+    } else {
+        "not_configured"
+    };
+    state.increment_runtime_counter(
+        "brawler_credential_checks_total",
+        &[
+            ("provider_id", status.provider_id),
+            ("module", status.purpose),
+            ("status", outcome),
+        ],
+    );
+    state.increment_runtime_counter(
+        "brawler_credential_operations_total",
+        &[
+            ("provider_id", status.provider_id),
+            ("module", status.purpose),
+            ("status", stage),
+        ],
+    );
 }
 
 fn record_credential_diagnostic(

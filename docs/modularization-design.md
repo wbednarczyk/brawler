@@ -10,7 +10,8 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 - Make feature work easier for humans and AI agents.
 - Preserve typed Tauri command behavior and public contracts during extraction.
 - Keep real runtime behavior separate from tests, samples, and mocks.
-- Support future providers, sources, credentials, models, and screens without turning core files into dumping grounds.
+- Support future providers, sources, credentials, models, collectors, renderers/exporters, storage implementations, screens, and integration adapters without turning core files into dumping grounds.
+- Make extension points explicit across the application so future implementations can plug into stable internal contracts instead of requiring rewrites.
 
 ## Historical Pain Points
 
@@ -51,6 +52,8 @@ New behavior should land in the matching API, screen, shared, command, storage, 
 ## Design Principles
 
 - Split by domain first, then by technical layer.
+- Treat extensibility as a default module design goal. Prefer stable contracts plus adapters for plausible future implementations over hard-coded one-off paths.
+- Keep collection, orchestration, storage access, presentation, and export/integration concerns separate when a module is likely to grow more than one implementation.
 - Keep screen modules responsible for presentation and local UI state.
 - Keep API/client modules responsible for Tauri command calls and TypeScript DTOs.
 - Keep Rust command modules thin: parse command input, call domain/storage/provider code, map errors.

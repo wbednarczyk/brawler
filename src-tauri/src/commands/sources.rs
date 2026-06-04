@@ -119,6 +119,7 @@ pub fn refresh_gpw_company_registry_if_stale(
         .gpw_company_registry_is_stale(stale_after_seconds)
         .map_err(|error| error.to_string())?
     {
+        jobs::source_refresh::record_scheduler_skip(&state, "registry_fresh");
         return Ok(None);
     }
 

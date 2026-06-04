@@ -6,6 +6,7 @@ pub mod events;
 pub mod feed;
 pub mod health;
 pub mod logs;
+pub mod metrics;
 pub mod notebooks;
 pub mod settings;
 pub mod sources;

@@ -33,6 +33,7 @@ mod diagnostics;
 mod error;
 mod events;
 mod feed;
+mod metrics;
 mod migrations;
 mod notebooks;
 mod registry;
@@ -48,6 +49,9 @@ pub use ai_analysis::{
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
+pub use metrics::{
+    LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
+};
 pub use migrations::{open_database, open_in_memory_database};
 pub use settings::{
     AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
@@ -68,13 +72,47 @@ const MONEY_CALENDAR_SOURCE_URL: &str = "https://www.money.pl/gielda/raporty/";
 #[derive(Clone)]
 pub struct AppState {
     connection: Arc<Mutex<Connection>>,
+    runtime_metrics: Arc<RuntimeMetricCounters>,
 }
 
 impl AppState {
     pub fn new(connection: Connection) -> Self {
         Self {
             connection: Arc::new(Mutex::new(connection)),
+            runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
         }
+    }
+
+    pub fn increment_runtime_counter(&self, name: &'static str, labels: &[(&'static str, &str)]) {
+        self.runtime_metrics.increment(name, labels);
+    }
+
+    pub fn add_runtime_counter_value(
+        &self,
+        name: &'static str,
+        labels: &[(&'static str, &str)],
+        value: f64,
+    ) {
+        self.runtime_metrics.add_counter_value(name, labels, value);
+    }
+
+    pub fn observe_runtime_duration_seconds(
+        &self,
+        name: &'static str,
+        labels: &[(&'static str, &str)],
+        duration_seconds: f64,
+    ) {
+        self.runtime_metrics
+            .observe_duration_seconds(name, labels, duration_seconds);
+    }
+
+    pub fn local_metrics_snapshot(
+        &self,
+        app_data_dir: &std::path::Path,
+    ) -> StorageResult<LocalMetricsSnapshot> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        metrics::collect_local_metrics_snapshot(&connection, &self.runtime_metrics, app_data_dir)
     }
 
     pub fn database_status(&self) -> StorageResult<DatabaseStatus> {

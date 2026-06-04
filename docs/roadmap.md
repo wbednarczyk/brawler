@@ -562,9 +562,12 @@ Non-goals:
 
 Goal: expose modest local operational metrics that help understand app health and performance without product analytics, telemetry, or hosted observability.
 
+Status: completed in `0.16.0`.
+
 Included:
 
 - local metrics model for counters, gauges, and durations where useful
+- static collector registry, typed internal samples, runtime counters, and a presentation/export adapter boundary for future Prometheus or other local metrics integrations
 - metrics view or Diagnostics-panel tab visible only when Developer mode is active
 - source refresh duration and item counts per adapter
 - source refresh failure and scheduler skipped/running counters
@@ -718,5 +721,4 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 Recommended next Ready cards:
 
-- Milestone 15 local logs framework
-- Milestone 16 local metrics exposure
+- Milestone 17 v1 friend-test license gate

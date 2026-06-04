@@ -197,7 +197,7 @@ The Settings panel edits runtime settings stored in SQLite. English is the defau
 
 YAML is accepted as the future import/export/bootstrap format for non-secret settings, but YAML implementation is deferred until the later export/import/backup work. API keys and provider secrets are stored in the OS keychain and must never be exported to YAML.
 
-App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs only and no telemetry. Settings expose runtime log level and rotation limits. Developer mode Diagnostics may show a full local log viewer and open the app-owned logs folder for troubleshooting.
+App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs and local Developer-mode metrics only, with no telemetry. Settings expose runtime log level and rotation limits. Developer mode Diagnostics may show local metrics, a full local log viewer, and open the app-owned logs folder for troubleshooting.
 
 Export is part of normal v1 implementation. Notes should export as Markdown with metadata, and watchlists/companies/settings should export as structured JSON or YAML. Import/restore and full local backup are late-v1 items. Cloud backup/sync requires a later design discussion.
 
