@@ -131,23 +131,6 @@ Docs/contracts touched: product spec, roadmap, architecture, future sync ADR.
 
 Test expectations: future sync contract tests, conflict-resolution tests, and mobile workflow tests if implemented.
 
-### Implement local metrics exposure
-
-Intent: expose modest local operational metrics for app health and performance in Developer mode without product analytics.
-
-Acceptance criteria:
-
-- Developer-mode metrics expose counters, gauges, and durations where useful.
-- Candidate metrics include source refresh duration/counts, source failures, scheduler skips, AI/external-provider duration/failures/timeouts, transcript job duration/failures, credential-check outcomes, SQLite database size, high-growth table counts, cleanup duration/deleted count, and diagnostic counts by module/severity.
-- Metrics are local-only and visible only in Developer mode.
-- Metric names and labels avoid full URLs, source titles, prompts, note bodies, transcript text, and other private or high-cardinality values.
-- Metric shape stays compatible with future OpenTelemetry mapping when cheap, but implementation must not add significant compatibility-only code or a mandatory OpenTelemetry dependency.
-- Metrics are operational health signals, not user behavior analytics.
-
-Docs/contracts touched: roadmap, architecture, project practices, contracts if metrics commands are added.
-
-Test expectations: aggregation tests and privacy-safe label tests.
-
 ### Implement v1 friend-test license gate
 
 Intent: prevent casual redistribution of v1 friend-test builds without introducing hosted accounts, telemetry, billing, or activation infrastructure.
@@ -174,18 +157,38 @@ Test expectations: Rust license validation tests and UI workflow tests for entry
 
 ## Review
 
+## Done
+
+### M16: Implement local metrics exposure
+
+Delivered:
+
+- Added a dedicated Rust metrics module with typed metric samples, kind/unit enums, privacy-safe label validation, runtime counters, and a static collector registry.
+- Implemented on-demand local metrics snapshots from SQLite state plus process-lifetime runtime counters that reset on app restart.
+- Kept collectors separate from presentation/export so future Prometheus, OpenTelemetry, file, or other local metrics integrations can be added as adapters over the same internal samples.
+- Added Prometheus-friendly internal metric names and units without adding Prometheus, OpenTelemetry, remote export, scrape endpoints, hosted observability, or metrics settings.
+- Added collectors for source state, runtime source refreshes, scheduler skips, AI jobs/runs, transcript jobs/runs, credential status/operations, diagnostics, local logs, SQLite database size/table rows, and feed cleanup runs/deletes/durations.
+- Added the Developer-mode-gated `get_local_metrics_snapshot` Tauri command and frontend API wrapper.
+- Added a Metrics section inside Developer Diagnostics as the first presentation adapter.
+- Updated ADR 0015, architecture, contracts, product spec, UI information architecture, engineering workflow, roadmap, project practices, project brief, modularization design, AGENTS, and Kanban.
+- Bumped app version to `0.16.0`.
+
+ADR checkpoint: ADR 0015 covers the local-only observability policy and was updated for the pluggable metrics collector/adapter boundary. No new ADR was needed because M16 did not add a new exposure surface.
+
+Validation:
+
+- `rtk cargo test metrics` passed.
+- `rtk npm typecheck` passed.
+- `rtk npm test -- App.test.tsx` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm build` passed.
+
 ### Documentation Context Optimization
 
 Intent: reduce the amount of documentation context future agents need to load while preserving all canonical project value.
-
-Acceptance criteria:
-
-- Active Kanban context contains active work and a pointer to completed-card history.
-- Completed-card history remains available in a separate archive.
-- Agent required reading is task-scoped instead of blanket-loading every canonical document.
-- The project brief provides a clear routing map for which docs to read by task type.
-- Cross-document "see also" lines point back to the project brief and only the most relevant local references.
-- No product, contract, source-policy, security, testing, or modularization requirement is weakened.
 
 Delivered:
 
@@ -196,11 +199,13 @@ Delivered:
 - Shortened broad cross-document reference lines across the canonical docs.
 - Updated architecture wording to treat [Modularization Design](modularization-design.md) as the current ownership guide, not a future extraction-order plan.
 
-Docs/contracts touched: agent contract, project brief, kanban, kanban archive, architecture, canonical documentation headers.
+Validation:
 
-Test expectations: docs-only change; link and stale-reference checks are sufficient.
-
-## Done
+- Confirmed active Kanban context points to [Kanban Archive](kanban-archive.md) for completed-card history.
+- Confirmed [AGENTS.md](../AGENTS.md) required reading is task-scoped.
+- Confirmed [Project Brief](project-brief.md) provides a task-oriented document map.
+- Confirmed canonical docs route readers through the project brief with only local relevant references.
+- Confirmed this docs-only optimization did not change product, contract, source-policy, security, testing, or modularization requirements.
 
 ### M15: Implement local logs framework
 

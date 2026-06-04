@@ -45,6 +45,7 @@ Recommended workflow:
 - Run `make build` in WSL when validating frontend production output.
 - Use `make smoke-gemini-transcript`, `make smoke-gemini-analysis`, and `make smoke-keyring` only as documented opt-in live smoke tests; they require local credentials or OS/runtime state and are not part of default CI.
 - Runtime logs are local JSON Lines files under the app data logs directory. Settings controls the normal log level and rotation limits. Development runs may override these with `BRAWLER_LOG_LEVEL`, `BRAWLER_LOG_MAX_FILES`, and `BRAWLER_LOG_MAX_FILE_MEGABYTES`.
+- Local metrics are Developer-mode-only snapshots available through Diagnostics. They are collected on demand from local state plus process-lifetime runtime counters and are not telemetry.
 - When closing a milestone, bump the app minor version in all package manifests before handing the branch back for commit/merge.
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.

@@ -93,6 +93,63 @@
   overflow: auto;
 }
 
+.diagnostics-metrics-list {
+  display: grid;
+  gap: 10px;
+}
+
+.diagnostics-metric-group {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.diagnostics-metric-group h3 {
+  margin: 0 0 3px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.diagnostics-metric-group small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.diagnostics-metric-samples {
+  display: grid;
+  gap: 6px;
+}
+
+.diagnostics-metric-sample {
+  display: grid;
+  grid-template-columns: minmax(90px, 130px) minmax(110px, 150px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  font-size: 12px;
+}
+
+.diagnostics-metric-value {
+  color: var(--accent);
+  font-weight: 750;
+}
+
+.diagnostics-metric-kind,
+.diagnostics-metric-labels {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .diagnostic-log-entry {
   display: grid;
   gap: 6px;

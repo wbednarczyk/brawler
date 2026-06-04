@@ -123,6 +123,30 @@ export type LogEntry = {
   record: Record<string, unknown>;
 };
 
+export type MetricKind = "counter" | "gauge";
+
+export type MetricUnit = "count" | "seconds" | "bytes";
+
+export type MetricLabel = {
+  key: string;
+  value: string;
+};
+
+export type MetricSample = {
+  name: string;
+  description: string;
+  kind: MetricKind;
+  unit: MetricUnit;
+  value: number;
+  labels: MetricLabel[];
+  collectedAt: string;
+};
+
+export type LocalMetricsSnapshot = {
+  collectedAt: string;
+  samples: MetricSample[];
+};
+
 export type SourceIngestionResult = {
   adapterId: string;
   itemsFetched: number;

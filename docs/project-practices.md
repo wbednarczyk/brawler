@@ -27,6 +27,7 @@ Rules:
 - Present the important architecture decisions to the user before implementation. Keep each decision short, explain the practical options and tradeoffs, and require explicit user answers.
 - Do not guess on architecture. If ownership boundaries, storage shape, provider model, security posture, UI placement, configuration, persistence, background-job behavior, observability, or release impact are unclear, ask until the decision is clear enough to implement.
 - Architecture decisions must be settled before code changes for that milestone begin, except for small discovery spikes that are explicitly framed as research.
+- Agents may implement all approved milestone tasks, but milestone closure is a separate manual signoff step. Do not move a milestone to Done, mark the roadmap status completed, or perform the milestone version bump until the user explicitly approves closure.
 - If the milestone description is missing something that would materially improve the application, its maintainability, or its user-facing workflow, propose it to the user instead of silently ignoring it.
 - Once decisions are made, update roadmap, kanban, contracts, architecture docs, or ADRs as needed before or alongside implementation so later agents inherit the decision.
 
@@ -117,12 +118,14 @@ Rules:
 
 ## Modularity And Configurability
 
-Modularity and configurability are first-class design constraints.
+Modularity, extensibility, pluggability, and configurability are first-class design constraints across the whole application.
 
 Rules:
 
 - Before non-trivial implementation work, identify the owning domain and layer using [Modularization Design](modularization-design.md).
-- New features should define clear boundaries for providers, sources, credentials, models, settings, and user-visible workflow options.
+- New features should define clear boundaries for providers, sources, credentials, models, settings, collectors, renderers/exporters, storage-facing operations, and user-visible workflow options.
+- Design modules around stable internal contracts so future implementations can be added as adapters or plugins where a real extension path is plausible.
+- Apply this principle to every domain, not only obvious provider/source systems: UI surfaces, commands, jobs, storage access, observability, settings, credentials, import/export, packaging, licensing, and future sync should all keep logical extension points explicit.
 - Prefer reusable typed configuration surfaces over one-off hard-coded provider/source behavior.
 - Keep defaults practical and conservative, but make likely future provider/source/model changes configurable when doing so is cheap and clear.
 - Avoid abstracting for hypothetical futures that are not connected to the roadmap, contracts, or an explicit user requirement.

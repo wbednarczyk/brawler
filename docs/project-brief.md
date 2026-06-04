@@ -73,6 +73,7 @@ Initial source priorities:
 - Ticker-based UI should stay simple, but storage must avoid ticker collisions.
 - Notes must preserve origin so future review can trace a claim back to a report, article, or transcript.
 - AI must explain and cite source material, not provide buy/sell recommendations.
+- Extensibility is a product architecture principle across the application. Modules should expose clear logical boundaries for future implementations, adapters, providers, collectors, renderers, storage backends, or integration surfaces when a real extension path is plausible.
 - Dark theme is the default UI mode, with a user-selectable light theme.
 - GitHub Actions should provide fast build and test feedback from the first scaffold.
 - GitHub Actions usage should be conservative to avoid paid usage at the start.

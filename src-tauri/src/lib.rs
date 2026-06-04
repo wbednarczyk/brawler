@@ -88,6 +88,7 @@ pub fn run() {
             commands::logs::get_log_status,
             commands::logs::list_log_entries,
             commands::logs::open_logs_directory,
+            commands::metrics::get_local_metrics_snapshot,
             commands::settings::get_settings,
             commands::settings::update_settings,
             commands::settings::disable_developer_mode,
@@ -122,7 +123,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.15.0");
+        assert_eq!(response.version, "0.16.0");
     }
 
     #[test]

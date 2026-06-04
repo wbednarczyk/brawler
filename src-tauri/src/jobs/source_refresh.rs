@@ -5,6 +5,7 @@ pub fn refresh_sources_for_trigger(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
+    let started_at = std::time::Instant::now();
     log::info!("module=sources stage=running adapterId=all trigger={trigger}");
     record_source_diagnostic(
         state,
@@ -18,6 +19,7 @@ pub fn refresh_sources_for_trigger(
 
     match result {
         Ok(result) => {
+            record_source_refresh_metrics(state, &result.adapter_id, "succeeded", started_at);
             log::info!(
                 "module=sources stage=succeeded adapterId={} trigger={} itemsFetched={} itemsCreated={} itemsMatched={} itemsUnmatched={}",
                 result.adapter_id,
@@ -38,6 +40,7 @@ pub fn refresh_sources_for_trigger(
             Ok(result)
         }
         Err(error) => {
+            record_source_refresh_metrics(state, "all", "failed", started_at);
             log::error!(
                 "module=sources stage=failed adapterId=all trigger={} errorClass=source_refresh_error error={}",
                 trigger,
@@ -65,6 +68,7 @@ pub fn refresh_source_for_trigger(
     trigger: &str,
     date: Option<&str>,
 ) -> Result<storage::SourceIngestionResult, String> {
+    let started_at = std::time::Instant::now();
     log::info!(
         "module=sources stage=running adapterId={} trigger={} hasDate={}",
         adapter_id,
@@ -87,6 +91,7 @@ pub fn refresh_source_for_trigger(
 
     match result {
         Ok(result) => {
+            record_source_refresh_metrics(state, &result.adapter_id, "succeeded", started_at);
             log::info!(
                 "module=sources stage=succeeded adapterId={} trigger={} itemsFetched={} itemsCreated={} itemsMatched={} itemsUnmatched={}",
                 result.adapter_id,
@@ -107,6 +112,7 @@ pub fn refresh_source_for_trigger(
             Ok(result)
         }
         Err(error) => {
+            record_source_refresh_metrics(state, adapter_id, "failed", started_at);
             log::error!(
                 "module=sources stage=failed adapterId={} trigger={} errorClass=source_refresh_error error={}",
                 adapter_id,
@@ -128,6 +134,13 @@ pub fn refresh_source_for_trigger(
             Err(error)
         }
     }
+}
+
+pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {
+    state.increment_runtime_counter(
+        "brawler_scheduler_skips_total",
+        &[("module", "sources"), ("status", reason)],
+    );
 }
 
 fn refresh_sources_for_trigger_inner(
@@ -255,6 +268,23 @@ fn record_source_diagnostic(
         message: message.to_owned(),
         metadata: Some(metadata),
     });
+}
+
+fn record_source_refresh_metrics(
+    state: &app_state::AppState,
+    adapter_id: &str,
+    status: &str,
+    started_at: std::time::Instant,
+) {
+    state.increment_runtime_counter(
+        "brawler_source_refresh_total",
+        &[("adapter_id", adapter_id), ("status", status)],
+    );
+    state.observe_runtime_duration_seconds(
+        "brawler_source_refresh_duration_seconds",
+        &[("adapter_id", adapter_id), ("status", status)],
+        started_at.elapsed().as_secs_f64(),
+    );
 }
 
 #[allow(dead_code)]

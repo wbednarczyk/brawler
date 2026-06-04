@@ -15,6 +15,7 @@ pub fn run_ai_analysis_job(
     state: &app_state::AppState,
     job_id: &str,
 ) -> Result<storage::AiAnalysisJob, String> {
+    let started_at = std::time::Instant::now();
     let job = state
         .get_ai_analysis_job(job_id)
         .map_err(|error| error.to_string())?;
@@ -60,6 +61,7 @@ pub fn run_ai_analysis_job(
             let failed = state
                 .mark_ai_analysis_job_failed(job_id, "provider_error", &error)
                 .map_err(|storage_error| storage_error.to_string())?;
+            record_ai_analysis_metrics(state, &failed, "failed", started_at);
             record_ai_analysis_diagnostic(
                 state,
                 &failed,
@@ -175,6 +177,7 @@ pub fn run_ai_analysis_job(
                         .collect(),
                 })
                 .map_err(|error| error.to_string())?;
+            record_ai_analysis_metrics(state, &completed, "succeeded", started_at);
             record_ai_analysis_diagnostic(
                 state,
                 &completed,
@@ -205,6 +208,7 @@ pub fn run_ai_analysis_job(
             let failed = state
                 .mark_ai_analysis_job_failed(job_id, error_code, &error.to_string())
                 .map_err(|storage_error| storage_error.to_string())?;
+            record_ai_analysis_metrics(state, &failed, "failed", started_at);
             record_ai_analysis_diagnostic(
                 state,
                 &failed,
@@ -222,6 +226,31 @@ pub fn run_ai_analysis_job(
             Ok(failed)
         }
     }
+}
+
+fn record_ai_analysis_metrics(
+    state: &app_state::AppState,
+    job: &storage::AiAnalysisJob,
+    status: &str,
+    started_at: std::time::Instant,
+) {
+    state.increment_runtime_counter(
+        "brawler_ai_analysis_runs_total",
+        &[
+            ("provider_id", job.provider_id.as_str()),
+            ("model", job.model.as_str()),
+            ("status", status),
+        ],
+    );
+    state.observe_runtime_duration_seconds(
+        "brawler_ai_analysis_duration_seconds",
+        &[
+            ("provider_id", job.provider_id.as_str()),
+            ("model", job.model.as_str()),
+            ("status", status),
+        ],
+        started_at.elapsed().as_secs_f64(),
+    );
 }
 
 fn provider_for_job(

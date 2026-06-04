@@ -65,6 +65,25 @@ describe("App shell", () => {
     expect(navButtons[navButtons.length - 1]).toHaveAccessibleName("Diagnostics");
   });
 
+  it("shows Developer-mode local metrics in Diagnostics", async () => {
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      developerMode: true,
+    };
+
+    renderApp();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Diagnostics" }));
+
+    expect(await screen.findByRole("heading", { name: "Metrics" })).toBeInTheDocument();
+    expect(await screen.findByText("brawler_source_refresh_total")).toBeInTheDocument();
+    expect(screen.getByText("adapter_id=bankier-company-komunikaty · status=succeeded")).toBeInTheDocument();
+    expect(screen.getByText("512 KiB")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("get_local_metrics_snapshot");
+    });
+  });
+
   it("registers app-level shortcuts and suppresses them while searching", async () => {
     renderApp();
 

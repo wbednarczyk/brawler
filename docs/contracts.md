@@ -811,6 +811,47 @@ Command rules:
 - Summary text must not include raw diagnostic JSON or unredacted metadata.
 - Summary text is intended for manual copy/paste from the developer-only UI, not automatic export.
 
+## Local Metrics
+
+Local metrics are Developer-mode-only operational health samples. They are separate from user-facing status, diagnostics, logs, telemetry, traces, and analytics.
+
+Initial command:
+
+- `get_local_metrics_snapshot()`: returns a point-in-time metrics snapshot only when Developer mode is active.
+
+Snapshot shape:
+
+```json
+{
+  "collectedAt": "2026-06-04T10:00:00.000Z",
+  "samples": [
+    {
+      "name": "brawler_source_refresh_total",
+      "description": "Process-lifetime source refresh attempts by adapter and status.",
+      "kind": "counter",
+      "unit": "count",
+      "value": 2,
+      "labels": [
+        { "key": "adapter_id", "value": "bankier-company-komunikaty" },
+        { "key": "status", "value": "succeeded" }
+      ],
+      "collectedAt": "2026-06-04T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+Rules:
+
+- Metrics are collected as on-demand snapshots from durable local state plus explicit in-memory runtime counters.
+- Runtime counters are process-lifetime signals and reset when the app restarts.
+- Metric names use Prometheus-friendly snake case where practical.
+- Metric labels must stay low-cardinality and privacy-safe.
+- Allowed label keys include `module`, `collector`, `adapter_id`, `provider_id`, `model`, `status`, `severity`, `table`, and `unit`.
+- Metric names and labels must not include full URLs, titles, prompts, source bodies, note text, transcript text, company names, ticker symbols, user-entered strings, secrets, or high-cardinality values.
+- The in-app Diagnostics Metrics section is the first presentation adapter. Prometheus, OpenTelemetry, file, or other local integrations must be added later as separate adapters over the same internal samples.
+- M16 does not expose a Prometheus endpoint, scrape surface, remote export, hosted observability, or metrics settings.
+
 ## Runtime Logs
 
 Runtime logs are bounded local file records for troubleshooting normal app execution. They are separate from user-facing errors, structured diagnostic events, metrics, telemetry, traces, and analytics.

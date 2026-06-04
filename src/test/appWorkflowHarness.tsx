@@ -3,7 +3,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, vi } from "vitest";
 import { App } from "../App";
-import type { AiAnalysisJob, AppLocale, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
+import type {
+  AiAnalysisJob,
+  AppLocale,
+  LocalMetricsSnapshot,
+  ShortcutBindingSetting,
+  Theme,
+  UserSettings,
+} from "../api/types";
 
 export { screen, waitFor, within } from "@testing-library/react";
 export { default as userEvent } from "@testing-library/user-event";
@@ -390,6 +397,33 @@ devFallbackAvailable: false,
 error: null as string | null,
 };
 
+const initialLocalMetricsSnapshot: LocalMetricsSnapshot = {
+  collectedAt: "2026-06-04T10:00:00.000Z",
+  samples: [
+    {
+      name: "brawler_source_refresh_total",
+      description: "Process-lifetime source refresh attempts by adapter and status.",
+      kind: "counter",
+      unit: "count",
+      value: 2,
+      labels: [
+        { key: "adapter_id", value: "bankier-company-komunikaty" },
+        { key: "status", value: "succeeded" },
+      ],
+      collectedAt: "2026-06-04T10:00:00.000Z",
+    },
+    {
+      name: "brawler_sqlite_database_bytes",
+      description: "Current SQLite database size.",
+      kind: "gauge",
+      unit: "bytes",
+      value: 524288,
+      labels: [{ key: "collector", value: "sqlite" }],
+      collectedAt: "2026-06-04T10:00:00.000Z",
+    },
+  ],
+};
+
 const initialCompanies: TestCompany[] = [
 {
   id: "company_gpw_cdr",
@@ -645,6 +679,7 @@ export const appTestState = {
   settingsResponse: initialSettings,
   refreshSourcesError: null as string | null,
   geminiCredentialStatusResponse: initialGeminiCredentialStatus,
+  localMetricsSnapshotResponse: initialLocalMetricsSnapshot,
 };
 
 beforeEach(() => {
@@ -658,6 +693,7 @@ beforeEach(() => {
   appTestState.settingsResponse = initialSettings;
   appTestState.refreshSourcesError = null;
   appTestState.geminiCredentialStatusResponse = initialGeminiCredentialStatus;
+  appTestState.localMetricsSnapshotResponse = initialLocalMetricsSnapshot;
   vi.mocked(invoke).mockClear();
   vi.mocked(openUrl).mockClear();
   vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
@@ -1238,6 +1274,10 @@ beforeEach(() => {
 
     if (command === "get_settings") {
       return Promise.resolve(appTestState.settingsResponse);
+    }
+
+    if (command === "get_local_metrics_snapshot") {
+      return Promise.resolve(appTestState.localMetricsSnapshotResponse);
     }
 
     if (command === "get_gemini_transcription_credential_status") {

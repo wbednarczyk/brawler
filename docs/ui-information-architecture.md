@@ -283,6 +283,7 @@ Main regions:
 - timeline list: newest meaningful diagnostic events first
 - event detail pane or inline expansion: redacted metadata, scope/entity ID, stage, timestamp, severity, and message
 - actions: clear diagnostics and copy redacted diagnostic summary
+- metrics tab or section: local operational counters, gauges, and durations from the Developer-mode metrics snapshot
 - logs tab or section: full in-app runtime log viewer, log status, copy redacted log output, and open logs folder
 - developer mode status and disable action
 
@@ -291,9 +292,10 @@ Rules:
 - The Diagnostics navigation item is hidden unless Developer mode is active.
 - Diagnostic events are for troubleshooting only and must not replace normal user-facing status, errors, or progress UI.
 - Event details must clearly show that metadata is redacted and local-only.
+- Metrics are operational health signals, not product analytics. Process-lifetime counters must be presented as runtime-only signals that reset on app restart.
 - Runtime log viewing is available only from Diagnostics while Developer mode is active, even though log configuration is visible in Settings.
 - The first rich timeline is AI analysis job progress, including queued, running, context loaded, provider resolved, credential checked, request sent, response received, parsed, stored, and failed.
-- Non-AI modules may show lightweight baseline events where useful, but detailed logs and metrics are separate later milestones.
+- Non-AI modules may show lightweight baseline events where useful, while detailed logs and metrics remain separate observability surfaces.
 - Raw diagnostic JSON/file export is outside M14 scope.
 
 ## Settings Screen

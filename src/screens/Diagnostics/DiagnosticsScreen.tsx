@@ -2,7 +2,15 @@ import { ChevronDown, ClipboardCopy, FolderOpen, RefreshCw, ShieldAlert, Trash2 
 import { useEffect, useMemo, useState } from "react";
 import * as diagnosticsApi from "../../api/diagnostics";
 import * as logsApi from "../../api/logs";
-import type { DiagnosticEvent, DiagnosticSeverity, LogEntry, LogStatus } from "../../api/types";
+import * as metricsApi from "../../api/metrics";
+import type {
+  DiagnosticEvent,
+  DiagnosticSeverity,
+  LocalMetricsSnapshot,
+  LogEntry,
+  LogStatus,
+  MetricSample,
+} from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { useLocale } from "../../shared/locale";
@@ -35,9 +43,12 @@ export function DiagnosticsScreen({
   const [diagnosticsStatus, setDiagnosticsStatus] = useState<string | null>(null);
   const [logStatus, setLogStatus] = useState<LogStatus | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
+  const [metricsSnapshot, setMetricsSnapshot] = useState<LocalMetricsSnapshot | null>(null);
   const [inFlight, setInFlight] = useState(false);
   const [logsInFlight, setLogsInFlight] = useState(false);
+  const [metricsInFlight, setMetricsInFlight] = useState(false);
   const [eventsSectionOpen, setEventsSectionOpen] = useState(true);
+  const [metricsSectionOpen, setMetricsSectionOpen] = useState(true);
   const [logsSectionOpen, setLogsSectionOpen] = useState(true);
 
   function refreshDiagnostics() {
@@ -85,8 +96,29 @@ export function DiagnosticsScreen({
       });
   }
 
+  function refreshMetrics() {
+    if (!developerMode) {
+      setMetricsSnapshot(null);
+      return;
+    }
+
+    setMetricsInFlight(true);
+    metricsApi.getLocalMetricsSnapshot()
+      .then((snapshot) => {
+        setMetricsSnapshot(snapshot);
+        setDiagnosticsError(null);
+      })
+      .catch((error) => {
+        setDiagnosticsError(String(error));
+      })
+      .finally(() => {
+        setMetricsInFlight(false);
+      });
+  }
+
   useEffect(() => {
     refreshDiagnostics();
+    refreshMetrics();
     refreshLogs();
   }, [developerMode]);
 
@@ -183,6 +215,8 @@ export function DiagnosticsScreen({
         setLogsInFlight(false);
       });
   }
+
+  const metricGroups = useMemo(() => groupMetricSamples(metricsSnapshot?.samples ?? []), [metricsSnapshot]);
 
   return (
     <section className="feed-panel diagnostics-panel" aria-labelledby="diagnostics-title">
@@ -310,6 +344,62 @@ export function DiagnosticsScreen({
           ) : null}
         </section>
 
+        <section className="diagnostics-section" aria-labelledby="diagnostics-metrics-title">
+          <button
+            aria-expanded={metricsSectionOpen}
+            className="diagnostics-section-header"
+            onClick={() => setMetricsSectionOpen((open) => !open)}
+            type="button"
+          >
+            <span>
+              <h2 id="diagnostics-metrics-title">{text("Metrics")}</h2>
+              <small>{text("Local operational counters, gauges, and durations.")}</small>
+            </span>
+            <span className="diagnostics-section-meta">
+              {metricsSnapshot?.samples.length ?? 0}
+              <ChevronDown className={metricsSectionOpen ? "section-chevron section-chevron-open" : "section-chevron"} size={16} />
+            </span>
+          </button>
+          {metricsSectionOpen ? (
+            <div className="diagnostics-section-body">
+              <div className="diagnostics-section-toolbar">
+                <dl className="settings-grid diagnostics-log-status">
+                  <div>
+                    <dt>{text("Collected")}</dt>
+                    <dd>{metricsSnapshot?.collectedAt ?? text("Unknown")}</dd>
+                  </div>
+                  <div>
+                    <dt>{text("Samples")}</dt>
+                    <dd>{metricsSnapshot?.samples.length ?? 0}</dd>
+                  </div>
+                </dl>
+                <div className="diagnostics-actions">
+                  <Button className="compact-button" disabled={metricsInFlight} onClick={refreshMetrics}>
+                    <RefreshCw size={15} />
+                    {metricsInFlight ? text("Loading") : text("Refresh metrics")}
+                  </Button>
+                </div>
+              </div>
+              <div className="diagnostics-metrics-list" aria-label={text("Local metrics")}>
+                {metricGroups.map((group) => (
+                  <article className="diagnostics-metric-group" key={group.name}>
+                    <div>
+                      <h3>{group.name}</h3>
+                      <small>{group.samples[0]?.description}</small>
+                    </div>
+                    <div className="diagnostics-metric-samples">
+                      {group.samples.map((sample) => (
+                        <MetricSampleRow key={metricSampleKey(sample)} sample={sample} />
+                      ))}
+                    </div>
+                  </article>
+                ))}
+                {metricGroups.length === 0 ? <EmptyState>{text("No local metrics recorded.")}</EmptyState> : null}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         <section className="diagnostics-section" aria-labelledby="diagnostics-logs-title">
           <button
             aria-expanded={logsSectionOpen}
@@ -382,6 +472,63 @@ export function DiagnosticsScreen({
       </div>
     </section>
   );
+}
+
+type MetricSampleGroup = {
+  name: string;
+  samples: MetricSample[];
+};
+
+function groupMetricSamples(samples: MetricSample[]): MetricSampleGroup[] {
+  const groups = new Map<string, MetricSample[]>();
+
+  for (const sample of samples) {
+    const existing = groups.get(sample.name) ?? [];
+    existing.push(sample);
+    groups.set(sample.name, existing);
+  }
+
+  return Array.from(groups.entries())
+    .map(([name, samples]) => ({ name, samples }))
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function MetricSampleRow({ sample }: { sample: MetricSample }) {
+  return (
+    <div className="diagnostics-metric-sample">
+      <span className="diagnostics-metric-value">{formatMetricValue(sample)}</span>
+      <span className="diagnostics-metric-kind">{sample.kind} · {sample.unit}</span>
+      <span className="diagnostics-metric-labels">{formatMetricLabels(sample)}</span>
+    </div>
+  );
+}
+
+function metricSampleKey(sample: MetricSample) {
+  return `${sample.name}:${sample.labels.map((label) => `${label.key}=${label.value}`).join(",")}`;
+}
+
+function formatMetricLabels(sample: MetricSample) {
+  if (sample.labels.length === 0) {
+    return "global";
+  }
+
+  return sample.labels.map((label) => `${label.key}=${label.value}`).join(" · ");
+}
+
+function formatMetricValue(sample: MetricSample) {
+  if (sample.unit === "bytes") {
+    return formatBytes(sample.value);
+  }
+
+  if (sample.unit === "seconds") {
+    return `${sample.value.toFixed(3)}s`;
+  }
+
+  if (Number.isInteger(sample.value)) {
+    return String(sample.value);
+  }
+
+  return sample.value.toFixed(2);
 }
 
 type LogEntryRowProps = {

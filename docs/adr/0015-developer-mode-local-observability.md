@@ -26,7 +26,7 @@ Developer diagnostics are structured SQLite-backed events recorded only while De
 
 Runtime logs are a separate local append-only file framework with conservative defaults, rotation, and shared redaction rules. Runtime logging uses the Rust `log` facade with a local JSON Lines file backend. Logs are written under the app data logs directory, default to `info`, and can be configured through Settings and local environment overrides. Rotation is configurable and defaults to five files of five MiB each. The Diagnostics panel may expose a developer-only full in-app log viewer and log-folder open action, while Settings may expose always-visible log configuration because those settings affect local files only.
 
-Metrics are separate local operational health signals exposed only in Developer mode. They are not product analytics or user behavior tracking.
+Metrics are separate local operational health signals exposed only in Developer mode. They are not product analytics or user behavior tracking. The metrics implementation should keep collection, internal metric representation, and presentation/export adapters separate. M16 should expose an in-app Developer-mode view through a typed command, while keeping the internal metric model compatible with future Prometheus-style adapters and other metrics ecosystems. M16 metrics are collected as on-demand snapshots from durable local state plus explicit in-memory runtime counters that reset when the app restarts. Future adapters may render the same internal samples into Prometheus text format, OpenTelemetry mapping, files, or another local integration, but adding any new exposure surface still requires a separate decision.
 
 OpenTelemetry-compatible naming and structure are acceptable where cheap, but v1 must not add OpenTelemetry dependencies, exporters, remote reporting, or compatibility-only code unless a later implementation proves the overhead is low.
 
@@ -34,8 +34,8 @@ OpenTelemetry-compatible naming and structure are acceptable where cheap, but v1
 
 - M14 implements Developer mode and structured diagnostics before logs and metrics.
 - M15 implements local runtime logs separately using the `log` crate, JSON Lines, configurable rotation, Settings-visible log configuration, and a Developer-mode Diagnostics log viewer.
-- M16 implements modest local metrics separately.
+- M16 implements modest local metrics separately with a pluggable collector and adapter boundary.
 - Diagnostics, logs, and metrics share redaction rules but remain different surfaces.
 - Events are not recorded while Developer mode is disabled.
 - Logs, diagnostics, and metrics must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
-- Telemetry, hosted observability, remote crash reporting, remote log shipping, hosted metrics, hosted tracing, or an OpenTelemetry exporter require a future ADR.
+- Telemetry, hosted observability, remote crash reporting, remote log shipping, hosted metrics, hosted tracing, a Prometheus endpoint, or an OpenTelemetry exporter require a future ADR.
