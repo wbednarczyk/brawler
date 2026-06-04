@@ -11,6 +11,7 @@ import {
 
 type AppLifecycleEffectsInput = {
   activeSection: Section;
+  accentPalette: string;
   companies: Company[];
   companyEventCompanyFilter: string;
   companyEventDateFrom: string;
@@ -71,6 +72,7 @@ type AppLifecycleEffectsInput = {
 
 export function useAppLifecycleEffects({
   activeSection,
+  accentPalette,
   companies,
   companyEventCompanyFilter,
   companyEventDateFrom,
@@ -130,7 +132,8 @@ export function useAppLifecycleEffects({
 }: AppLifecycleEffectsInput) {
   useEffect(() => {
     document.documentElement.dataset.theme = effectiveTheme;
-  }, [effectiveTheme]);
+    document.documentElement.dataset.palette = accentPalette;
+  }, [accentPalette, effectiveTheme]);
 
   useEffect(() => {
     if (selectedFeedItemId && filteredFeedItems.some((item) => item.id === selectedFeedItemId)) {

@@ -1,6 +1,7 @@
 import { BookOpenText, Building2, ExternalLink, FileText, Mail, MailOpen, Save } from "lucide-react";
 import { Button } from "../../shared/components/Button";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { InboxScreenProps } from "./inboxTypes";
 
@@ -18,11 +19,24 @@ type InboxDetailPaneProps = Pick<
   | "openCompanyWorkspaceFromFeedItem"
   | "openFeedItemNoteDraft"
   | "startFeedItemAiAnalysis"
-  | "refreshFeedItemAiAnalysis"
   | "retryFeedItemAiAnalysis"
   | "feedItemSummary"
   | "formatTimestamp"
 >;
+
+function isPdfAttachment(attachment: { label: string; url: string }) {
+  const label = attachment.label.trim().toLowerCase();
+  const isSourcePageChrome =
+    label === "regulamin" ||
+    label === "polityka prywatności" ||
+    label === "polityka prywatnosci" ||
+    label === "polityka cookies";
+
+  return (
+    !isSourcePageChrome &&
+    (/\.pdf(?:$|[?#])/i.test(attachment.url) || /\.pdf(?:$|[?#])/i.test(attachment.label))
+  );
+}
 
 export function InboxDetailPane({
   selectedFeedItem,
@@ -37,12 +51,12 @@ export function InboxDetailPane({
   openCompanyWorkspaceFromFeedItem,
   openFeedItemNoteDraft,
   startFeedItemAiAnalysis,
-  refreshFeedItemAiAnalysis,
   retryFeedItemAiAnalysis,
   feedItemSummary,
   formatTimestamp,
 }: InboxDetailPaneProps) {
   const { text } = useLocale();
+  const pdfAttachments = selectedFeedItem?.attachments.filter(isPdfAttachment) ?? [];
 
   return (
     <aside className="detail-pane" aria-label={text("Feed item details")}>
@@ -52,6 +66,22 @@ export function InboxDetailPane({
       {selectedFeedItem ? (
         <>
           <h2>{selectedFeedItem.title}</h2>
+          <dl className="detail-context" aria-label={text("Feed item context")}>
+            <div>
+              <dt>{text("Company")}</dt>
+              <dd>
+                <TickerLabel value={selectedFeedItem.company} />
+              </dd>
+            </div>
+            <div>
+              <dt>{text("Source URL")}</dt>
+              <dd>
+                <a href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
+                  {selectedFeedItem.sourceUrl}
+                </a>
+              </dd>
+            </div>
+          </dl>
           <section className="feed-body-section" aria-label={text("Feed summary")}>
             <div className="feed-body-heading">
               <span>{text("Summary")}</span>
@@ -114,44 +144,11 @@ export function InboxDetailPane({
                 {text("Note")}
               </Button>
             ) : null}
-            <a className="secondary-button compact-button" href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
-              <ExternalLink size={15} />
-              {text("Open source")}
-            </a>
           </div>
-          <dl>
-            <div>
-              <dt>{text("Company")}</dt>
-              <dd>{selectedFeedItem.company}</dd>
-            </div>
-            <div>
-              <dt>{text("Source")}</dt>
-              <dd>{selectedFeedItem.source}</dd>
-            </div>
-            <div>
-              <dt>{text("Source URL")}</dt>
-              <dd>
-                <a href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
-                  {selectedFeedItem.sourceUrl}
-                </a>
-              </dd>
-            </div>
-            <div>
-              <dt>{text("Published")}</dt>
-              <dd>{formatTimestamp(selectedFeedItem.publishedAt, text("Unknown"))}</dd>
-            </div>
-            <div>
-              <dt>{text("Fetched")}</dt>
-              <dd>{formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown"))}</dd>
-            </div>
-            <div>
-              <dt>{text("Attribution")}</dt>
-              <dd>{selectedFeedItem.attribution}</dd>
-            </div>
-          </dl>
-          {selectedFeedItem.attachments.length > 0 ? (
+          {pdfAttachments.length > 0 ? (
             <div className="feed-attachment-list" aria-label={text("Feed attachments")}>
-              {selectedFeedItem.attachments.map((attachment) => (
+              <span className="feed-attachment-heading">{text("Attachments")}</span>
+              {pdfAttachments.map((attachment) => (
                 <a
                   className="feed-attachment-link"
                   href={attachment.url}
@@ -172,9 +169,18 @@ export function InboxDetailPane({
             providerConfigured={aiAnalysisProviderConfigured}
             requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedFeedItem.id] ?? false}
             onStart={startFeedItemAiAnalysis}
-            onRefresh={refreshFeedItemAiAnalysis}
             onRetry={retryFeedItemAiAnalysis}
           />
+          <dl className="detail-pane-footer-meta" aria-label={text("Feed item timestamps")}>
+            <div>
+              <dt>{text("Published")}</dt>
+              <dd>{formatTimestamp(selectedFeedItem.publishedAt, text("Unknown"))}</dd>
+            </div>
+            <div>
+              <dt>{text("Fetched")}</dt>
+              <dd>{formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown"))}</dd>
+            </div>
+          </dl>
         </>
       ) : (
         <>
@@ -183,7 +189,7 @@ export function InboxDetailPane({
         </>
       )}
       {healthError ? <p className="error-text">{text("Health command failed")}: {healthError}</p> : null}
-      {databaseError ? <p className="error-text">{text("Database command failed")}: {databaseError}</p> : null}
+      {databaseError ? <p className="error-text">{text("Local data refresh failed")}: {databaseError}</p> : null}
     </aside>
   );
 }

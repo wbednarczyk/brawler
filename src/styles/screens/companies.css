@@ -1,6 +1,13 @@
+.companies-layout {
+  grid-template-rows: auto auto auto minmax(320px, 1fr) auto auto;
+  align-content: stretch;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .watchlist-panel {
   display: grid;
-  gap: 12px;
+  gap: 8px;
 }
 
 .subsection-header {
@@ -11,13 +18,13 @@
 }
 
 .subsection-header h2 {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .subsection-header p {
   margin-top: 4px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .watchlist-form {
@@ -45,7 +52,7 @@
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  min-height: 34px;
+  min-height: 28px;
   padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -57,10 +64,44 @@
   color: var(--primary);
 }
 
+.watchlist-toggle-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: 360px;
+}
+
+.watchlist-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
+  font-size: 12px;
+}
+
+.watchlist-toggle:hover,
+.watchlist-toggle:focus-visible,
+.watchlist-toggle-active {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.watchlist-toggle-active {
+  color: var(--primary);
+}
+
 .company-form {
   display: grid;
   grid-template-columns: 110px 110px minmax(180px, 1fr) 170px auto auto;
-  gap: 12px;
+  gap: 10px;
   align-items: end;
 }
 
@@ -255,18 +296,39 @@
 
 .company-list-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) max-content;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) max-content;
   gap: 10px;
   align-items: center;
 }
 
-.company-list-toolbar .registry-search-field {
+.company-form + .company-list-toolbar {
+  margin-top: -2px;
+}
+
+.company-list-toolbar .registry-search-field,
+.company-list-filter {
   position: relative;
   min-height: 38px;
 }
 
 .company-list-toolbar .registry-search-field input {
   padding-right: 28px;
+}
+
+.company-list-filter {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.company-list-filter select {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
 }
 
 .company-list-toolbar > span {
@@ -276,9 +338,12 @@
 
 .company-list {
   display: grid;
-  overflow: hidden;
+  align-content: start;
+  min-height: 0;
+  overflow: auto;
   border: 1px solid var(--border);
   border-radius: 8px;
+  overscroll-behavior: contain;
 }
 
 .company-row-block {

@@ -64,7 +64,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   })),
   {
     id: "app.focusSearch",
-    label: "Focus global search",
+    label: "Focus Inbox search",
     group: "Global actions",
     scope: "app",
     binding: {
@@ -80,7 +80,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "app.refreshSources",
-    label: "Refresh source adapters",
+    label: "Refresh sources",
     group: "Global actions",
     scope: "app",
     binding: {
@@ -94,7 +94,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "app.refreshDatabase",
-    label: "Refresh database views",
+    label: "Refresh local data",
     group: "Global actions",
     scope: "app",
     binding: {

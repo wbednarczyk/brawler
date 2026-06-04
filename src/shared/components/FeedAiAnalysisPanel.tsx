@@ -13,7 +13,6 @@ export type FeedAiAnalysisPanelProps = {
   providerConfigured: boolean;
   requestInFlight: boolean;
   onStart: (feedItem: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
-  onRefresh: (feedItemId: string) => Promise<void>;
   onRetry: (jobId: string, feedItemId: string) => Promise<void>;
 };
 
@@ -41,7 +40,6 @@ export function FeedAiAnalysisPanel({
   providerConfigured,
   requestInFlight,
   onStart,
-  onRefresh,
   onRetry,
 }: FeedAiAnalysisPanelProps) {
   const { text } = useLocale();
@@ -159,10 +157,6 @@ export function FeedAiAnalysisPanel({
       ) : null}
 
       <div className="ai-analysis-footer">
-        <Button className="compact-button" disabled={requestInFlight} onClick={() => void onRefresh(feedItem.id)}>
-          <RefreshCw size={15} />
-          {text("Refresh analysis")}
-        </Button>
         {error ? <p className="error-text">{text("AI analysis command failed")}: {error}</p> : null}
       </div>
     </section>

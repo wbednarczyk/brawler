@@ -1,7 +1,8 @@
-import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
+import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw, Search, X } from "lucide-react";
 import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger, UnmatchedSourceItem } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import {
   formatSourceAccess,
@@ -80,8 +81,8 @@ export function SourceAdapterRow({
   return (
     <div className="source-row-block">
       <article
-        aria-label={`${text("Open source adapter")}: ${adapter.displayName}`}
-        className={["source-row", selected ? "source-row-selected" : ""]
+        aria-label={`${text("Open source")}: ${adapter.displayName}`}
+        className={["source-row", adapter.enabled ? "" : "source-row-disabled", selected ? "source-row-selected" : ""]
           .filter(Boolean)
           .join(" ")}
         onClick={() => toggleSourceAdapter(adapter.id)}
@@ -114,7 +115,7 @@ export function SourceAdapterRow({
         </div>
       </article>
       {selected ? (
-        <div className="source-detail-panel" aria-label={text("Source adapter details")}>
+        <div className="source-detail-panel" aria-label={text("Source details")}>
           <div className="source-detail-actions">
             <Button
               className="compact-button"
@@ -320,13 +321,25 @@ function RegistrySourcePanel({
                 type="search"
                 value={companyRegistrySearch}
               />
+              {companyRegistrySearch.trim().length > 0 ? (
+                <button
+                  aria-label={text("Clear registry search")}
+                  className="field-clear-button"
+                  onClick={() => setCompanyRegistrySearch("")}
+                  onMouseDown={(event) => event.preventDefault()}
+                  title={text("Clear registry search")}
+                  type="button"
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
             </label>
             <span className="source-registry-count">
               {filteredCompanyRegistryEntries.length}/{companyRegistryEntries.length} {text("companies")}
             </span>
             {filteredCompanyRegistryEntries.map((entry) => (
               <div className="source-registry-row" key={entry.qualifiedTicker}>
-                <span>{entry.qualifiedTicker}</span>
+                <span><TickerLabel value={entry.qualifiedTicker} /></span>
                 <strong title={entry.displayName}>{entry.displayName}</strong>
                 <small>{entry.isin ?? text("No ISIN")}</small>
                 <Button

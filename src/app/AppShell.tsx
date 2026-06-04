@@ -1,7 +1,13 @@
-import { useMemo, useRef, type ReactNode } from "react";
-import { Activity, CheckCircle2, Moon, RefreshCw, Search, Sun } from "lucide-react";
+import {
+  useMemo,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
+import { Activity, CheckCircle2, Moon, RefreshCw, Sun } from "lucide-react";
 import type {
-  DatabaseStatus,
   HealthResponse,
   SourceIngestionResult,
   SourceRefreshTrigger,
@@ -14,7 +20,6 @@ import { useKeyboardShortcuts } from "../shared/shortcuts";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { sections, type Section } from "./navigation";
 import { createAppShortcutDefinitions, type AppShortcutActionMap } from "./shortcuts";
-import { databaseIndicatorClass } from "./theme";
 
 type SourceStatusTone = "ok" | "warn" | "danger";
 
@@ -27,16 +32,12 @@ export type SourceStatusSummary = {
 type AppShellProps = {
   activeSection: Section;
   children: ReactNode;
-  databaseError: string | null;
-  databaseStatus: DatabaseStatus | null;
   dbRefreshState: DbRefreshState;
   effectiveTheme: "dark" | "light";
   health: HealthResponse | null;
   refreshDatabaseBackedViews: () => void;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
-  searchQuery: string;
   setActiveSection: (section: Section) => void;
-  setSearchQuery: (query: string) => void;
   sourceRefreshError: string | null;
   sourceRefreshResult: SourceIngestionResult | null;
   sourceRefreshState: SourceRefreshState;
@@ -51,19 +52,19 @@ type AppShellProps = {
   developerMode: boolean;
 };
 
+const defaultSidebarWidth = 190;
+const minSidebarWidth = 160;
+const maxSidebarWidth = 280;
+
 export function AppShell({
   activeSection,
   children,
-  databaseError,
-  databaseStatus,
   dbRefreshState,
   effectiveTheme,
   health,
   refreshDatabaseBackedViews,
   refreshSources,
-  searchQuery,
   setActiveSection,
-  setSearchQuery,
   sourceRefreshError,
   sourceRefreshResult,
   sourceRefreshState,
@@ -77,9 +78,10 @@ export function AppShell({
   openSourceStatus,
   developerMode,
 }: AppShellProps) {
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
+  const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const shortcuts = useMemo(() => createAppShortcutDefinitions(
     {
       "app.openInbox": () => setActiveSection("Inbox"),
@@ -90,7 +92,10 @@ export function AppShell({
       "app.openSources": () => setActiveSection("Sources"),
       "app.openSettings": () => setActiveSection("Settings"),
       "app.focusSearch": () => {
-        searchInputRef.current?.focus();
+        setActiveSection("Inbox");
+        window.setTimeout(() => {
+          document.querySelector<HTMLInputElement>("[data-inbox-search-input]")?.focus();
+        }, 0);
       },
       "app.refreshSources": () => {
         if (sourceRefreshState !== "refreshing") {
@@ -156,8 +161,64 @@ export function AppShell({
     return text("Fetch GPW ESPI/EBI public listings");
   }
 
+  function clampSidebarWidth(width: number) {
+    return Math.min(maxSidebarWidth, Math.max(minSidebarWidth, Math.round(width)));
+  }
+
+  function resizeSidebarFromPointer(event: PointerEvent<HTMLDivElement>) {
+    setSidebarWidth(clampSidebarWidth(event.clientX));
+  }
+
+  function startSidebarResize(event: PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsSidebarResizing(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeSidebarFromPointer(event);
+  }
+
+  function resizeSidebar(event: PointerEvent<HTMLDivElement>) {
+    if (!isSidebarResizing) {
+      return;
+    }
+
+    resizeSidebarFromPointer(event);
+  }
+
+  function stopSidebarResize(event: PointerEvent<HTMLDivElement>) {
+    if (!isSidebarResizing) {
+      return;
+    }
+
+    setIsSidebarResizing(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function resizeSidebarWithKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.key === "Home") {
+      setSidebarWidth(minSidebarWidth);
+      return;
+    }
+    if (event.key === "End") {
+      setSidebarWidth(maxSidebarWidth);
+      return;
+    }
+
+    const delta = event.key === "ArrowLeft" ? -12 : 12;
+    setSidebarWidth((currentWidth) => clampSidebarWidth(currentWidth + delta));
+  }
+
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+    >
       <aside className="sidebar" aria-label={text("Primary navigation")}>
         <div className="brand">
           <div className="brand-mark">B</div>
@@ -194,30 +255,29 @@ export function AppShell({
         </nav>
 
         <div className="sidebar-footer">
-          <div className="status-pill" title={text("Rust command boundary health")}>
-            <span className={health ? "status-dot status-ok" : "status-dot status-warn"} />
-            {health ? `${health.status} ${health.version}` : t("app.health.pending")}
-          </div>
+          <span className="version-label">{health ? `v${health.version}` : "v..."}</span>
         </div>
       </aside>
 
+      <div
+        aria-label={text("Resize navigation")}
+        aria-orientation="vertical"
+        aria-valuemax={maxSidebarWidth}
+        aria-valuemin={minSidebarWidth}
+        aria-valuenow={sidebarWidth}
+        className="sidebar-resizer"
+        onKeyDown={resizeSidebarWithKeyboard}
+        onPointerDown={startSidebarResize}
+        onPointerMove={resizeSidebar}
+        onPointerUp={stopSidebarResize}
+        role="separator"
+        tabIndex={0}
+        title={text("Drag to resize navigation")}
+      />
+
       <main className="workspace">
         <header className="topbar">
-          <div className="search-box">
-            <Search size={18} aria-hidden="true" />
-            <input
-              aria-label={t("app.search.ariaLabel")}
-              placeholder={t("app.search.placeholder")}
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
-            />
-          </div>
           <div className="topbar-actions">
-            <div className="ai-mode-pill" title={t("app.aiMode.title")}>
-              <span>{t("app.aiMode.label")}</span>
-              <strong>{t("app.aiMode.value")}</strong>
-            </div>
             <button
               aria-label={t("app.sources.openStatus")}
               className={[
@@ -237,57 +297,11 @@ export function AppShell({
               <strong>{sourceStatusSummary.label}</strong>
             </button>
             <button
-              aria-label={
-                dbRefreshState === "refreshing"
-                  ? t("app.database.refreshing")
-                  : t("app.database.refresh")
-              }
-              className={[
-                "db-status-pill",
-                dbRefreshState === "refreshing" ? "icon-button-spinning" : "",
-                dbRefreshState === "done" ? "db-status-pill-success" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              disabled={dbRefreshState === "refreshing"}
-              onClick={refreshDatabaseBackedViews}
-              type="button"
-              title={
-                dbRefreshState === "refreshing"
-                  ? t("app.database.refreshing")
-                  : dbRefreshState === "done"
-                    ? t("app.database.refreshed")
-                    : databaseStatus
-                      ? `${t("app.database.active")}: ${databaseStatus.appliedMigrations} ${text("migration")}, ${databaseStatus.sourceAdapters} ${text("source")}, ${databaseStatus.settings} ${text("settings")}`
-                      : databaseError
-                        ? `Database error: ${databaseError}`
-                        : t("app.database.pending")
-              }
-            >
-              <span
-                aria-label={
-                  databaseError
-                    ? t("app.database.failed")
-                    : databaseStatus
-                      ? t("app.database.active")
-                      : t("app.database.pending")
-                }
-                className={databaseIndicatorClass(databaseStatus, databaseError)}
-                role="status"
-              />
-              <span>{t("app.database.label")}</span>
-              {dbRefreshState === "done" ? (
-                <CheckCircle2 size={14} aria-hidden="true" />
-              ) : (
-                <RefreshCw size={14} aria-hidden="true" />
-              )}
-            </button>
-            <button
               aria-label={sourceRefreshButtonLabel()}
               className={[
                 "icon-button",
                 sourceRefreshState === "refreshing" ? "icon-button-spinning" : "",
-                sourceRefreshState === "done" ? "db-status-pill-success" : "",
+                sourceRefreshState === "done" ? "topbar-action-success" : "",
                 sourceRefreshError ? "source-refresh-button-danger" : "",
               ]
                 .filter(Boolean)

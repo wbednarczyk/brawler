@@ -1,8 +1,9 @@
 import { callCommand } from "./tauri";
-import type { AppLocale, ShortcutBindingSetting, Theme, UserSettings } from "./types";
+import type { AccentPalette, AppLocale, ShortcutBindingSetting, Theme, UserSettings } from "./types";
 
 export type UpdateSettingsInput = {
   theme?: Theme;
+  accentPalette?: AccentPalette;
   locale?: AppLocale;
   pollIntervalSeconds?: number;
   youtubeTranscriptionModel?: string;

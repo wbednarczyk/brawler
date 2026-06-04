@@ -1,3 +1,47 @@
+.source-group {
+  display: grid;
+  gap: 8px;
+}
+
+.source-group-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 42%, transparent);
+}
+
+.source-group-header h2 {
+  font-size: 14px;
+}
+
+.source-group-header p {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.source-group-header > span {
+  display: inline-grid;
+  min-width: 28px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
+  border-radius: 999px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.source-group-list {
+  display: grid;
+  gap: 0;
+}
+
 .source-row:hover,
 .source-row:focus-visible,
 .source-row-selected {
@@ -7,6 +51,15 @@
 
 .source-row-selected {
   box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.source-row-disabled {
+  opacity: 0.76;
+}
+
+.source-row-disabled .source-title-line h2,
+.source-row-disabled .source-row-status span {
+  color: var(--muted);
 }
 
 .source-row:focus-visible {
@@ -271,6 +324,11 @@
   white-space: nowrap;
 }
 
+.source-row:not(.source-row-selected) .source-row-status span {
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
+}
+
 .source-unmatched-row span {
   color: var(--muted);
   font-size: 12px;
@@ -302,7 +360,7 @@
   padding: 0 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--panel) 72%, transparent);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
   color: var(--muted);
 }
 
@@ -320,6 +378,12 @@
   font: inherit;
   font-size: 12px;
   outline: none;
+}
+
+.registry-search-field .field-clear-button {
+  position: static;
+  flex: 0 0 auto;
+  transform: none;
 }
 
 .source-registry-count {

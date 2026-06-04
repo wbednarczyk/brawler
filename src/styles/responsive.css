@@ -3,7 +3,8 @@
     grid-template-columns: 1fr;
   }
 
-  .sidebar {
+  .sidebar,
+  .sidebar-resizer {
     display: none;
   }
 
@@ -17,9 +18,27 @@
 
   .notebook-workspace,
   .notebooks-screen,
+  .settings-layout,
   .notebook-form-grid,
   .notebook-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .notebooks-screen,
+  .settings-layout {
+    overflow: auto;
+  }
+
+  .notebooks-company-nav,
+  .notebooks-notes-list,
+  .notebooks-detail-pane,
+  .settings-subnav,
+  .settings-tab-panel {
+    overflow: visible;
+  }
+
+  .notebooks-resizer {
+    display: none;
   }
 }
 
@@ -40,10 +59,17 @@
 
   .subsection-header,
   .watchlist-form,
+  .company-workspace-header,
+  .company-workspace-header-side,
+  .company-watchlist-editor,
   .company-row,
   .company-row-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .company-list-toolbar {
+    grid-template-columns: 1fr;
   }
 
   .segmented-control button {

@@ -1,4 +1,5 @@
 export type Theme = "dark" | "light" | "system";
+export type AccentPalette = "night-neon" | "midnight-horizon";
 export type AppLocale = "en" | "pl";
 
 export type HealthResponse = {
@@ -394,7 +395,7 @@ export type ShortcutBindingSetting = ShortcutKeyBinding & {
 export type UserSettings = {
   theme: Theme;
   locale: AppLocale;
-  accentPalette: string;
+  accentPalette: AccentPalette;
   developerMode: boolean;
   pollIntervalSeconds: number;
   settingsSource: string;

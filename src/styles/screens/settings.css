@@ -1,3 +1,51 @@
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.22fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.settings-subnav {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.settings-subnav button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  text-align: left;
+}
+
+.settings-subnav button:hover,
+.settings-subnav button:focus-visible,
+.settings-subnav-active {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.settings-subnav-active {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.settings-tab-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
 .settings-row {
   display: flex;
   align-items: end;

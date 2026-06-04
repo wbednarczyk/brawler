@@ -2,6 +2,7 @@ import { CalendarDays, ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
 
@@ -82,7 +83,7 @@ export function EventListView({
                   <span>{formatCompanyEventType(event.eventType)}</span>
                 </div>
                 <p>
-                  <strong>{event.company}</strong> · {event.companyName}
+                  <strong><TickerLabel value={event.company} /></strong> · {event.companyName}
                 </p>
               </div>
               <div className="event-row-status">
@@ -96,7 +97,7 @@ export function EventListView({
                 <dl className="metadata-grid">
                   <div>
                     <dt>{text("Company")}</dt>
-                    <dd>{event.company}</dd>
+                    <dd><TickerLabel value={event.company} /></dd>
                   </div>
                   <div>
                     <dt>{text("Type")}</dt>

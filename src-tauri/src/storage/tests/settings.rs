@@ -91,6 +91,7 @@ fn updates_settings_through_storage_api() {
     let settings = state
         .update_settings(SettingsUpdate {
             theme: Some("light".to_owned()),
+            accent_palette: Some("midnight-horizon".to_owned()),
             locale: Some("pl".to_owned()),
             poll_interval_seconds: Some(1800),
             youtube_transcription_provider: None,
@@ -108,6 +109,7 @@ fn updates_settings_through_storage_api() {
         .expect("settings should update");
 
     assert_eq!(settings.theme, "light");
+    assert_eq!(settings.accent_palette, "midnight-horizon");
     assert_eq!(settings.locale, "pl");
     assert_eq!(settings.poll_interval_seconds, 1800);
     assert_eq!(
@@ -130,6 +132,7 @@ fn updates_settings_through_storage_api() {
     let persisted = state.get_settings().expect("settings should persist");
 
     assert_eq!(persisted.theme, "light");
+    assert_eq!(persisted.accent_palette, "midnight-horizon");
     assert_eq!(persisted.locale, "pl");
     assert_eq!(persisted.poll_interval_seconds, 1800);
     assert_eq!(
@@ -182,6 +185,7 @@ fn updates_shortcut_bindings_through_storage_api() {
     let settings = state
         .update_settings(SettingsUpdate {
             theme: None,
+            accent_palette: None,
             locale: None,
             poll_interval_seconds: None,
             youtube_transcription_provider: None,
@@ -224,6 +228,7 @@ fn rejects_invalid_poll_interval_setting() {
 
     let result = state.update_settings(SettingsUpdate {
         theme: None,
+        accent_palette: None,
         locale: None,
         poll_interval_seconds: Some(42),
         youtube_transcription_provider: None,
@@ -249,6 +254,7 @@ fn rejects_invalid_theme_setting() {
 
     let result = state.update_settings(SettingsUpdate {
         theme: Some("sepia".to_owned()),
+        accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
         youtube_transcription_provider: None,
@@ -268,12 +274,26 @@ fn rejects_invalid_theme_setting() {
 }
 
 #[test]
+fn rejects_invalid_accent_palette_setting() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let result = state.update_settings(SettingsUpdate {
+        accent_palette: Some("terminal-green".to_owned()),
+        ..SettingsUpdate::default()
+    });
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn rejects_invalid_locale_setting() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
 
     let result = state.update_settings(SettingsUpdate {
         theme: None,
+        accent_palette: None,
         locale: Some("de".to_owned()),
         poll_interval_seconds: None,
         youtube_transcription_provider: None,
@@ -299,6 +319,7 @@ fn rejects_invalid_general_analysis_settings() {
 
     let invalid_provider = state.update_settings(SettingsUpdate {
         theme: None,
+        accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
         youtube_transcription_provider: None,
@@ -318,6 +339,7 @@ fn rejects_invalid_general_analysis_settings() {
 
     let invalid_model = state.update_settings(SettingsUpdate {
         theme: None,
+        accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
         youtube_transcription_provider: None,
@@ -337,6 +359,7 @@ fn rejects_invalid_general_analysis_settings() {
 
     let invalid_timeout = state.update_settings(SettingsUpdate {
         theme: None,
+        accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
         youtube_transcription_provider: None,

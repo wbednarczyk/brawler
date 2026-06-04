@@ -1,6 +1,7 @@
 import { CheckCircle2, Plus } from "lucide-react";
 import type { Company } from "../../api/types";
 import { Button } from "../../shared/components/Button";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { transcriptUrlValidationMessage } from "./transcriptHelpers";
 import type { TranscriptsScreenProps } from "./transcriptTypes";
@@ -137,7 +138,7 @@ function TranscriptCompanySuggestions({
               onClick={() => selectTranscriptCompany(company)}
               type="button"
             >
-              <strong>{company.qualifiedTicker}</strong>
+              <strong><TickerLabel value={company.qualifiedTicker} /></strong>
               <span>{company.displayName}</span>
               {company.isin ? <small>{company.isin}</small> : null}
             </button>

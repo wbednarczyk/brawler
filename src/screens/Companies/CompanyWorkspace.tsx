@@ -16,12 +16,15 @@ import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
 
 type CompanyWorkspaceProps = Pick<
   CompaniesScreenProps,
   | "membershipsByCompany"
+  | "watchlists"
+  | "watchlistFeedback"
   | "selectedCompanyFeedStats"
   | "companyWorkspaceTab"
   | "selectedCompanyFeedItems"
@@ -43,13 +46,13 @@ type CompanyWorkspaceProps = Pick<
   | "selectedClaimEntry"
   | "claimStatusDraft"
   | "setCompanyWorkspaceTab"
+  | "toggleCompanyWatchlistMembership"
   | "toggleCompanyFeedItem"
   | "selectCompanyFeedItemFromKeyboard"
   | "updateFeedItemState"
   | "inspectCompanyFeedItem"
   | "openFeedItemNoteDraft"
   | "startFeedItemAiAnalysis"
-  | "refreshFeedItemAiAnalysis"
   | "retryFeedItemAiAnalysis"
   | "openCompanyInboxFilter"
   | "setNotebookComposerOpen"
@@ -76,6 +79,8 @@ type CompanyWorkspaceProps = Pick<
 export function CompanyWorkspace({
   selectedCompany,
   membershipsByCompany,
+  watchlists,
+  watchlistFeedback,
   selectedCompanyFeedStats,
   companyWorkspaceTab,
   selectedCompanyFeedItems,
@@ -97,13 +102,13 @@ export function CompanyWorkspace({
   selectedClaimEntry,
   claimStatusDraft,
   setCompanyWorkspaceTab,
+  toggleCompanyWatchlistMembership,
   toggleCompanyFeedItem,
   selectCompanyFeedItemFromKeyboard,
   updateFeedItemState,
   inspectCompanyFeedItem,
   openFeedItemNoteDraft,
   startFeedItemAiAnalysis,
-  refreshFeedItemAiAnalysis,
   retryFeedItemAiAnalysis,
   openCompanyInboxFilter,
   setNotebookComposerOpen,
@@ -125,24 +130,68 @@ export function CompanyWorkspace({
   feedItemSummary,
 }: CompanyWorkspaceProps) {
   const { text } = useLocale();
+  const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
 
   return (
     <section className="company-workspace" aria-label={text("Company workspace")}>
       <div className="company-workspace-header">
         <div>
           <span className="eyebrow">{text("Company workspace")}</span>
-          <h2>{selectedCompany.qualifiedTicker}</h2>
+          <h2><TickerLabel value={selectedCompany.qualifiedTicker} /></h2>
           <p>{selectedCompany.displayName}</p>
         </div>
-        <div className="company-workspace-meta" aria-label={text("Selected company metadata")}>
-          <span>{selectedCompany.exchange}</span>
-          <span>{selectedCompany.isin ?? text("No ISIN")}</span>
-          <span>{selectedCompanyFeedStats.total} {text("feed")}</span>
-          <span>{selectedCompanyFeedStats.unread} {text("unread")}</span>
-          <span>{selectedCompanyFeedStats.saved} {text("saved")}</span>
-          {(membershipsByCompany[selectedCompany.id] ?? []).map((membership) => (
-            <span key={membership.watchlistId}>{membership.watchlistName}</span>
-          ))}
+        <div className="company-workspace-header-side">
+          <div className="company-workspace-meta" aria-label={text("Selected company metadata")}>
+            <span>{selectedCompany.exchange}</span>
+            <span>{selectedCompany.isin ?? text("No ISIN")}</span>
+            <span>{selectedCompanyFeedStats.total} {text("feed")}</span>
+            <span>{selectedCompanyFeedStats.unread} {text("unread")}</span>
+            <span>{selectedCompanyFeedStats.saved} {text("saved")}</span>
+            {selectedCompanyMemberships.map((membership) => (
+              <span key={membership.watchlistId}>{membership.watchlistName}</span>
+            ))}
+          </div>
+          <div
+            className="company-watchlist-editor"
+            aria-label={`${text("Manage watchlists for")} ${selectedCompany.qualifiedTicker}`}
+          >
+            <span className="company-watchlist-editor-title">{text("Watchlists")}</span>
+            <div className="watchlist-toggle-list">
+              {watchlists.map((watchlist) => {
+                const isMember = selectedCompanyMemberships.some(
+                  (membership) => membership.watchlistId === watchlist.id,
+                );
+
+                return (
+                  <button
+                    aria-pressed={isMember}
+                    className={isMember ? "watchlist-toggle watchlist-toggle-active" : "watchlist-toggle"}
+                    key={watchlist.id}
+                    onClick={() => toggleCompanyWatchlistMembership(selectedCompany, watchlist.id)}
+                    title={`${isMember ? text("Remove from") : text("Assign to")} ${watchlist.name}`}
+                    type="button"
+                  >
+                    {isMember ? <CheckCircle2 size={13} /> : <Plus size={13} />}
+                    {watchlist.name}
+                  </button>
+                );
+              })}
+              {watchlists.length === 0 ? (
+                <span className="membership-empty">{text("No watchlists")}</span>
+              ) : null}
+              {watchlistFeedback?.companyId === selectedCompany.id ? (
+                <span
+                  aria-label={watchlistFeedback.message}
+                  className="inline-success"
+                  role="status"
+                  title={watchlistFeedback.message}
+                >
+                  <CheckCircle2 size={16} />
+                  <span className="visually-hidden">{watchlistFeedback.message}</span>
+                </span>
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
     
@@ -342,7 +391,6 @@ export function CompanyWorkspace({
                     providerConfigured={aiAnalysisProviderConfigured}
                     requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedCompanyFeedItem.id] ?? false}
                     onStart={startFeedItemAiAnalysis}
-                    onRefresh={refreshFeedItemAiAnalysis}
                     onRetry={retryFeedItemAiAnalysis}
                   />
                 </aside>
@@ -352,7 +400,7 @@ export function CompanyWorkspace({
           {selectedCompanyFeedItems.length === 0 ? (
             <EmptyState className="company-feed-empty" wrapText={false}>
               <div>
-                <strong>{text("No stored feed items for")} {selectedCompany.qualifiedTicker} {text("yet.")}</strong>
+                <strong>{text("No stored feed items for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</strong>
                 <p>
                   {text("This company is tracked locally, but no sample or ingested items are attached to it yet.")}
                 </p>
@@ -376,7 +424,7 @@ export function CompanyWorkspace({
               <h3>{text("Notebook")}</h3>
               <p>
                 {selectedCompanyNotebookEntries.length} {text(selectedCompanyNotebookEntries.length === 1 ? "note" : "notes")} {text("for")}{" "}
-                {selectedCompany.qualifiedTicker}
+                <TickerLabel value={selectedCompany.qualifiedTicker} />
               </p>
             </div>
             <Button
@@ -509,7 +557,7 @@ export function CompanyWorkspace({
                 </button>
               ))}
               {selectedCompanyNotebookEntries.length === 0 ? (
-                <EmptyState>{text("No notebook entries for")} {selectedCompany.qualifiedTicker} {text("yet.")}</EmptyState>
+                <EmptyState>{text("No notebook entries for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</EmptyState>
               ) : null}
             </div>
             <form
@@ -698,7 +746,7 @@ export function CompanyWorkspace({
               <h3>{text("Claims")}</h3>
               <p>
                 {selectedCompanyClaimEntries.length} {text(selectedCompanyClaimEntries.length === 1 ? "follow-up item" : "follow-up items")} {text("for")}{" "}
-                {selectedCompany.qualifiedTicker}
+                <TickerLabel value={selectedCompany.qualifiedTicker} />
               </p>
             </div>
           </div>
@@ -791,7 +839,7 @@ export function CompanyWorkspace({
               </div>
             ))}
             {selectedCompanyClaimEntries.length === 0 ? (
-              <EmptyState>{text("No claim notes for")} {selectedCompany.qualifiedTicker} {text("yet.")}</EmptyState>
+              <EmptyState>{text("No claim notes for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</EmptyState>
             ) : null}
           </div>
           {notebookError ? (
@@ -810,7 +858,7 @@ export function CompanyWorkspace({
         <dl className="company-tab-panel metadata-grid" aria-label={text("Company metadata")}>
           <div>
             <dt>{text("Qualified ticker")}</dt>
-            <dd>{selectedCompany.qualifiedTicker}</dd>
+            <dd><TickerLabel value={selectedCompany.qualifiedTicker} /></dd>
           </div>
           <div>
             <dt>{text("Exchange")}</dt>

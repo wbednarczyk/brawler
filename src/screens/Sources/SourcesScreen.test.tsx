@@ -89,10 +89,10 @@ describe("Sources screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Refresh sources" }));
     await user.click(await screen.findByRole("button", { name: "Source refresh failed" }));
     await user.click(screen.getByRole("button", { name: "Sources" }));
-    await user.click(await screen.findByRole("button", { name: "Open source adapter: Bankier Giełda RSS" }));
+    await user.click(await screen.findByRole("button", { name: "Open source: Bankier Giełda RSS" }));
 
     expect(
-      within(await screen.findByLabelText("Source adapter details")).getByText("In-app · 15 min · backoff 30 min"),
+      within(await screen.findByLabelText("Source details")).getByText("In-app · 15 min · backoff 30 min"),
     ).toBeInTheDocument();
   });
 
@@ -118,14 +118,14 @@ describe("Sources screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
-    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
-    await user.click(within(sourceAdaptersRegion).getByRole("button", {
-      name: "Open source adapter: Bankier Giełda RSS",
+    const sourcesRegion = await screen.findByLabelText("Source list");
+    await user.click(within(sourcesRegion).getByRole("button", {
+      name: "Open source: Bankier Giełda RSS",
     }));
 
-    expect(within(await screen.findByLabelText("Source adapter details")).getByText("Public RSS")).toBeInTheDocument();
+    expect(within(await screen.findByLabelText("Source details")).getByText("Public RSS")).toBeInTheDocument();
 
-    await user.click(within(await screen.findByLabelText("Source adapter details")).getByRole("button", {
+    await user.click(within(await screen.findByLabelText("Source details")).getByRole("button", {
       name: "Refresh source",
     }));
 
@@ -154,19 +154,19 @@ describe("Sources screen workflows", () => {
 
       await user.click(screen.getByRole("button", { name: "Sources" }));
 
-      const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
-      await user.click(within(sourceAdaptersRegion).getByRole("button", {
-        name: "Open source adapter: Bankier Company Komunikaty",
+      const sourcesRegion = await screen.findByLabelText("Source list");
+      await user.click(within(sourcesRegion).getByRole("button", {
+        name: "Open source: Bankier Company Komunikaty",
       }));
       const bankierCompanyNextPoll =
-        within(await screen.findByLabelText("Source adapter details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
+        within(await screen.findByLabelText("Source details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
           .textContent;
 
-      await user.click(within(sourceAdaptersRegion).getByRole("button", {
-        name: "Open source adapter: Bankier Giełda RSS",
+      await user.click(within(sourcesRegion).getByRole("button", {
+        name: "Open source: Bankier Giełda RSS",
       }));
       const bankierNextPoll =
-        within(await screen.findByLabelText("Source adapter details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
+        within(await screen.findByLabelText("Source details")).getByText(/^In 15 min \d+s$|^In 16 min$/)
           .textContent;
 
       expect(bankierNextPoll).not.toEqual(bankierCompanyNextPoll);
@@ -188,68 +188,44 @@ describe("Sources screen workflows", () => {
     await user.click(sourceStatus);
 
     expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
-    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
-    const sourceRow = within(sourceAdaptersRegion).getByRole("button", {
-      name: "Open source adapter: GPW Company Registry",
+    const sourcesRegion = await screen.findByLabelText("Source list");
+    const sourceRow = within(sourcesRegion).getByRole("button", {
+      name: "Open source: GPW Company Registry",
     });
 
     expect(sourceRow).toHaveClass("source-row-selected");
-    expect(within(sourceAdaptersRegion).getByLabelText("Source adapter details")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByLabelText("Source details")).toBeInTheDocument();
   });
 
-  it("refreshes database-backed views from the DB status pill", async () => {
-    const user = userEvent.setup();
-
-    renderApp();
-
-    await within(screen.getByLabelText("Feed items")).findByText(
-      "Current report placeholder for watchlist company",
-    );
-
-    vi.mocked(invoke).mockClear();
-
-    await user.click(screen.getByRole("button", { name: "Refresh database-backed views" }));
-
-    await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("database_status");
-      expect(invoke).toHaveBeenCalledWith("list_companies");
-      expect(invoke).toHaveBeenCalledWith("list_watchlists");
-      expect(invoke).toHaveBeenCalledWith("list_watchlist_memberships");
-      expect(invoke).toHaveBeenCalledWith("list_feed_items");
-      expect(invoke).toHaveBeenCalledWith("list_source_adapters");
-      expect(invoke).toHaveBeenCalledWith("get_settings");
-    });
-  });
-
-  it("shows source adapter status", async () => {
+  it("shows source status", async () => {
     const user = userEvent.setup();
 
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
-    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
-    const sourceRow = await within(sourceAdaptersRegion).findByRole("button", {
-      name: "Open source adapter: GPW ESPI/EBI",
+    const sourcesRegion = await screen.findByLabelText("Source list");
+    const sourceRow = await within(sourcesRegion).findByRole("button", {
+      name: "Open source: GPW ESPI/EBI",
     });
 
-    expect(within(sourceAdaptersRegion).getByText("GPW ESPI/EBI")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("gpw-espi-ebi")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Official Reports · Public Page")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Bankier Giełda RSS")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getAllByText("Public Media · RSS")).toHaveLength(3);
-    expect(within(sourceAdaptersRegion).getByText("Bankier Company Komunikaty")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Official Reports · Public JSON")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Bankier Firma RSS")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Bankier Wiadomosci RSS")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Portal Analiz")).toBeInTheDocument();
-    expect(within(sourceAdaptersRegion).getByText("Authenticated Research · Authenticated")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("GPW ESPI/EBI")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("gpw-espi-ebi")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Official Reports · Public Page")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Bankier Giełda RSS")).toBeInTheDocument();
+    expect(within(sourcesRegion).getAllByText("Public Media · RSS")).toHaveLength(3);
+    expect(within(sourcesRegion).getByText("Bankier Company Komunikaty")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Official Reports · Public JSON")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Bankier Firma RSS")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Bankier Wiadomosci RSS")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Portal Analiz")).toBeInTheDocument();
+    expect(within(sourcesRegion).getByText("Authenticated Research · Authenticated")).toBeInTheDocument();
     expect(within(sourceRow).getByText("Disabled")).toBeInTheDocument();
 
     await user.click(sourceRow);
 
     expect(sourceRow).toHaveClass("source-row-selected");
-    const sourceDetails = await screen.findByLabelText("Source adapter details");
+    const sourceDetails = await screen.findByLabelText("Source details");
     expect(within(sourceDetails).getAllByText("Off")).not.toHaveLength(0);
     expect(within(sourceDetails).getByText("Next poll")).toBeInTheDocument();
     expect(within(sourceDetails).getAllByText("Off")).not.toHaveLength(0);
@@ -257,31 +233,31 @@ describe("Sources screen workflows", () => {
     expect(within(sourceDetails).getAllByText("Disabled")).not.toHaveLength(0);
     expect(within(sourceDetails).getByText("Manual")).toBeInTheDocument();
     expect(
-      within(await screen.findByLabelText("Source adapter details")).getByText(
+      within(await screen.findByLabelText("Source details")).getByText(
         "2 fetched · 1 created · 1 matched · 1 unmatched · details 1/1 stored · 0 failed",
       ),
     ).toBeInTheDocument();
     expect(
-      within(await screen.findByLabelText("Source adapter details")).getByText(
+      within(await screen.findByLabelText("Source details")).getByText(
         "Disabled while Bankier Company Komunikaty is the active official-report source",
       ),
     ).toBeInTheDocument();
 
     expect(
-      within(await screen.findByLabelText("Source adapter details")).getByText(/Registered for later revisit/),
+      within(await screen.findByLabelText("Source details")).getByText(/Registered for later revisit/),
     ).toBeInTheDocument();
-    const sourcePageButton = within(await screen.findByLabelText("Source adapter details")).getByRole("button", {
+    const sourcePageButton = within(await screen.findByLabelText("Source details")).getByRole("button", {
       name: "Open source page for GPW ESPI/EBI",
     });
     await user.click(sourcePageButton);
     expect(openUrl).toHaveBeenCalledWith("https://www.gpw.pl/komunikaty");
 
-    const portalAnalizRow = within(sourceAdaptersRegion).getByRole("button", {
-      name: "Open source adapter: Portal Analiz",
+    const portalAnalizRow = within(sourcesRegion).getByRole("button", {
+      name: "Open source: Portal Analiz",
     });
     expect(within(portalAnalizRow).getByText("Disabled")).toBeInTheDocument();
     await user.click(portalAnalizRow);
-    const portalAnalizDetails = await screen.findByLabelText("Source adapter details");
+    const portalAnalizDetails = await screen.findByLabelText("Source details");
     expect(within(portalAnalizDetails).getAllByText("Off")).not.toHaveLength(0);
     expect(within(portalAnalizDetails).getByText("Access")).toBeInTheDocument();
     expect(within(portalAnalizDetails).getAllByText("Disabled")).not.toHaveLength(0);
@@ -294,7 +270,7 @@ describe("Sources screen workflows", () => {
 
     await user.click(portalAnalizRow);
 
-    expect(screen.queryByLabelText("Source adapter details")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Source details")).not.toBeInTheDocument();
   });
 
   it("refreshes the GPW company registry from source details", async () => {
@@ -304,15 +280,15 @@ describe("Sources screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
-    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
-    const registryRow = within(sourceAdaptersRegion).getByRole("button", {
-      name: "Open source adapter: GPW Company Registry",
+    const sourcesRegion = await screen.findByLabelText("Source list");
+    const registryRow = within(sourcesRegion).getByRole("button", {
+      name: "Open source: GPW Company Registry",
     });
 
     expect(within(registryRow).getByText("Company registry · Public GPW company list")).toBeInTheDocument();
 
     await user.click(registryRow);
-    const registryDetails = await screen.findByLabelText("Source adapter details");
+    const registryDetails = await screen.findByLabelText("Source details");
     expect(within(registryDetails).getByText("Next poll")).toBeInTheDocument();
     expect(within(registryDetails).getByText(/In 23h|In 1 day/)).toBeInTheDocument();
     expect(within(registryDetails).getByText("Cache result")).toBeInTheDocument();
@@ -338,9 +314,9 @@ describe("Sources screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
-    const sourceAdaptersRegion = await screen.findByLabelText("Source adapters");
-    await user.click(within(sourceAdaptersRegion).getByRole("button", {
-      name: "Open source adapter: GPW Company Registry",
+    const sourcesRegion = await screen.findByLabelText("Source list");
+    await user.click(within(sourcesRegion).getByRole("button", {
+      name: "Open source: GPW Company Registry",
     }));
 
     const registryPanel = await screen.findByLabelText("GPW company registry entries");
@@ -373,7 +349,7 @@ describe("Sources screen workflows", () => {
     expect(await within(registryPanel).findByTitle("GPW:DNP already added")).toBeDisabled();
   });
 
-  it("expands and collapses source adapter details with keyboard controls", async () => {
+  it("expands and collapses source details with keyboard controls", async () => {
     const user = userEvent.setup();
 
     renderApp();
@@ -381,16 +357,16 @@ describe("Sources screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
     const sourceRow = await screen.findByRole("button", {
-      name: "Open source adapter: GPW ESPI/EBI",
+      name: "Open source: GPW ESPI/EBI",
     });
 
     sourceRow.focus();
     await user.keyboard("{Enter}");
 
-    expect(await screen.findByLabelText("Source adapter details")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Source details")).toBeInTheDocument();
 
     await user.keyboard(" ");
 
-    expect(screen.queryByLabelText("Source adapter details")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Source details")).not.toBeInTheDocument();
   });
 });

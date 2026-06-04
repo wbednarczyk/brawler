@@ -2,6 +2,7 @@ import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { StatusPill } from "../../shared/components/StatusPill";
+import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
@@ -157,7 +158,9 @@ export function TranscriptJobRow({
             <h2>{job.sourceLabel ?? text("Untitled transcript")}</h2>
           </div>
           <p>
-            {job.sourceUrl} · {job.company ?? text("Unlinked transcript")} · {formatAiProvider(job.providerId)} ·{" "}
+            {job.sourceUrl} ·{" "}
+            {job.company ? <TickerLabel value={job.company} /> : text("Unlinked transcript")} ·{" "}
+            {formatAiProvider(job.providerId)} ·{" "}
             {formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel)}
           </p>
           <div className="source-chip-list" aria-label={`${text("Transcript job metadata for")} ${job.id}`}>
@@ -231,7 +234,7 @@ export function TranscriptJobRow({
           <dl className="source-status-grid source-status-detail">
             <div>
               <dt>{text("Company")}</dt>
-              <dd>{job.company ?? text("Unlinked")}</dd>
+              <dd>{job.company ? <TickerLabel exposeText={false} value={job.company} /> : text("Unlinked")}</dd>
             </div>
             <div>
               <dt>{text("Status")}</dt>
@@ -280,7 +283,7 @@ export function TranscriptJobRow({
                           onClick={() => linkTranscriptJobCompany(job.id, company)}
                           type="button"
                         >
-                          <strong>{company.qualifiedTicker}</strong>
+                          <strong><TickerLabel value={company.qualifiedTicker} /></strong>
                           <span>{company.displayName}</span>
                           {company.isin ? <small>{company.isin}</small> : null}
                         </button>

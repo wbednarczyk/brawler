@@ -622,7 +622,72 @@ Exit criteria:
 - logs, settings export, and diagnostics do not leak license private signing material or full license secrets
 - user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
 
-## Milestone 18: V1 Packaging Candidate
+## Milestone 18: V1 Application Polish
+
+Status: completed in `0.18.0`.
+
+Goal: tighten the daily-use UX/UI and nearby application structure before producing a packaging candidate.
+
+Included:
+
+- notebook workspace layout and scrolling repair
+- Inbox feed row metadata and detail-pane readability polish
+- safer placement for destructive feed cleanup actions
+- Sources grouping and source-health hierarchy polish
+- Settings subnavigation for growing settings areas
+- watchlist filtering and temporary membership visibility polish before the dedicated M19 watchlist workflow
+- reusable field clear controls across typed inputs
+- keyboard focus, selected-row, and expanded-row consistency pass
+- removal of normal user-facing implementation/architecture wording such as SQLite, database-engine labels, Tauri, adapters, modules, collectors, or similar plumbing outside Developer Diagnostics and owner/developer documentation
+- theme framework for separate brightness mode and accent palette selection
+- `midnight-horizon` palette based on the project owner's reference-image colors
+- focused locale coverage for changed UI
+- light extraction of repeated async/loading/error or scheduler patterns where touched
+- focused workflow tests and manual smoke checklist for polished screens
+
+Exit criteria:
+
+- Notebooks can be used with long company lists, note lists, and note bodies without broken formatting or lost scrolling
+- Inbox rows and details are faster to scan across official reports and public media items
+- destructive feed cleanup is visually separated from routine review controls
+- Sources is grouped by source purpose and surfaces source health clearly
+- Settings remains navigable as settings areas grow
+- watchlist memberships remain visible enough for scanning, with full management explicitly moved to M19
+- normal user-facing UI uses product language rather than implementation architecture language; technical details remain limited to Developer Diagnostics and owner/developer documentation
+- common text/search/URL inputs expose consistent clear controls where useful
+- theme mode and accent palette are separate settings, with at least `night-neon` and `midnight-horizon` palettes supported
+- keyboard and accessible row states remain consistent across polished screens
+- existing local-first, licensing, source, AI, logging, metrics, and settings behavior remains intact
+- focused automated tests and a manual smoke checklist cover the polished workflows
+
+## Milestone 19: Dedicated Watchlist Management
+
+Goal: make watchlists a complete, coherent management workflow under Companies.
+
+Included:
+
+- a dedicated Watchlists panel or subview inside the Companies section
+- watchlist create controls
+- watchlist delete controls with confirmation
+- selected-watchlist company membership management
+- add tracked companies to the selected watchlist from a searchable company picker/list
+- remove companies from the selected watchlist from the same panel
+- visible membership summaries in the Companies list and company workspace without create/delete/add/remove controls there
+- watchlist filters retained in Inbox, Events/Calendar, Companies, and Notebooks
+- UX wording that explains watchlists as user-owned company groups, not storage entities
+- extension point for future alert configuration based on watchlists, without implementing alerts in M19
+
+Exit criteria:
+
+- user can create and delete watchlists from the dedicated Watchlists panel
+- user can add and remove companies from a watchlist without opening each company workspace
+- Companies list rows show which watchlists each company belongs to, but expose no watchlist mutation controls
+- Company workspace shows current memberships as context only, with no watchlist mutation controls
+- existing watchlist filters continue to work across Inbox, Events/Calendar, Companies, and Notebooks
+- focused workflow tests cover the dedicated Watchlists panel and Companies membership-display regression
+- docs and contracts describe the new ownership of watchlist management
+
+## Milestone 20: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
@@ -724,4 +789,4 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 
 Recommended next Ready cards:
 
-- Milestone 17 v1 friend-test license gate
+- Milestone 19 dedicated watchlist management

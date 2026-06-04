@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
+import type { AiAnalysisJob } from "../../api/types";
 import {
   appTestState,
   currentWeekTestDate,
@@ -35,15 +36,68 @@ describe("Inbox screen workflows", () => {
     expect(
       screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "Open source" })).toHaveAttribute(
-      "href",
-      "https://example.local/sample/pkn",
-    );
     expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toHaveAttribute(
       "href",
       "https://example.local/sample/pkn",
     );
-    expect(screen.getByText("Sample")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open source" })).not.toBeInTheDocument();
+    const detailPane = within(screen.getByLabelText("Feed item details"));
+    expect(detailPane.queryByText("Sample feed")).not.toBeInTheDocument();
+    expect(detailPane.queryByText("Sample")).not.toBeInTheDocument();
+
+    const timestampMeta = within(screen.getByLabelText("Feed item timestamps"));
+    expect(timestampMeta.getByText("Published")).toBeInTheDocument();
+    expect(timestampMeta.getByText("Fetched")).toBeInTheDocument();
+    expect(timestampMeta.getAllByText("Yesterday")).toHaveLength(2);
+  });
+
+  it("shows only PDF attachments in feed item details", async () => {
+    appTestState.feedItemsResponse = [
+      {
+        ...initialFeedItems[0],
+        attachments: [
+          {
+            id: "feed_attachment_report_pdf",
+            label: "report.pdf",
+            url: "https://example.local/report.pdf",
+          },
+          {
+            id: "feed_attachment_sheet_xlsx",
+            label: "sheet.xlsx",
+            url: "https://example.local/sheet.xlsx",
+          },
+          {
+            id: "feed_attachment_source_terms",
+            label: "Regulamin",
+            url: "https://example.local/regulamin.pdf",
+          },
+          {
+            id: "feed_attachment_source_privacy",
+            label: "Polityka prywatności",
+            url: "https://example.local/prywatnosc.pdf",
+          },
+          {
+            id: "feed_attachment_source_cookies",
+            label: "Polityka Cookies",
+            url: "https://example.local/cookies.pdf",
+          },
+        ],
+      },
+    ];
+
+    renderApp();
+
+    const detailPane = within(await screen.findByLabelText("Feed item details"));
+
+    expect(detailPane.getByText("Attachments")).toBeInTheDocument();
+    expect(detailPane.getByRole("link", { name: "report.pdf" })).toHaveAttribute(
+      "href",
+      "https://example.local/report.pdf",
+    );
+    expect(detailPane.queryByRole("link", { name: "sheet.xlsx" })).not.toBeInTheDocument();
+    expect(detailPane.queryByRole("link", { name: "Regulamin" })).not.toBeInTheDocument();
+    expect(detailPane.queryByRole("link", { name: "Polityka prywatności" })).not.toBeInTheDocument();
+    expect(detailPane.queryByRole("link", { name: "Polityka Cookies" })).not.toBeInTheDocument();
   });
 
   it("starts AI analysis from a selected feed item", async () => {
@@ -74,6 +128,90 @@ describe("Inbox screen workflows", () => {
       "href",
       "https://www.gpw.pl/komunikaty",
     );
+  });
+
+  it("polls visible running AI analysis until the result is stored", async () => {
+    vi.useFakeTimers();
+
+    try {
+      const createdAt = "2026-01-01T10:00:00.000Z";
+      const runningJob: AiAnalysisJob = {
+        id: "ai_job_running_cdr",
+        feedItemId: "feed_sample_cdr_report",
+        promptPresetId: "default_summary",
+        customQuestion: null,
+        providerId: "provider_gemini",
+        model: "gemini-2.5-flash",
+        promptVersion: "analysis_v1",
+        status: "running",
+        errorCode: null,
+        error: null,
+        createdAt,
+        startedAt: createdAt,
+        finishedAt: null,
+        result: null,
+      };
+      const completedJob: AiAnalysisJob = {
+        ...runningJob,
+        status: "succeeded",
+        finishedAt: "2026-01-01T10:00:02.000Z",
+        result: {
+          id: "ai_result_polled_cdr",
+          aiAnalysisJobId: runningJob.id,
+          feedItemId: runningJob.feedItemId,
+          providerId: runningJob.providerId,
+          model: runningJob.model,
+          promptVersion: runningJob.promptVersion,
+          summary: "Polled AI summary for CDR.",
+          significance: "medium",
+          reasoning: "Completed by the background poll.",
+          language: "en",
+          tags: ["analysis"],
+          sourceReferences: [
+            {
+              id: "ai_source_polled_cdr",
+              sourceUrl: "https://www.gpw.pl/komunikaty",
+              label: "GPW ESPI/EBI",
+              createdAt,
+            },
+          ],
+          createdAt,
+        },
+      };
+
+      appTestState.settingsResponse = {
+        ...appTestState.settingsResponse,
+        aiProviders: {
+          ...appTestState.settingsResponse.aiProviders,
+          generalAnalysisProvider: "provider_gemini",
+        },
+      };
+      appTestState.aiAnalysisJobsResponse = {
+        feed_sample_cdr_report: [runningJob],
+      };
+
+      renderApp();
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("running")).toBeInTheDocument();
+
+      appTestState.aiAnalysisJobsResponse = {
+        feed_sample_cdr_report: [completedJob],
+      };
+
+      await act(async () => {
+        vi.advanceTimersByTime(1500);
+        await Promise.resolve();
+      });
+
+      expect(screen.getByText("Polled AI summary for CDR.")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Refresh analysis" })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("opens the matching company workspace from an inbox feed item", async () => {
@@ -534,7 +672,7 @@ describe("Inbox screen workflows", () => {
     await user.click(within(feedList).getByRole("button", { name: "Open Sources" }));
 
     expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("Source adapter details")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Source details")).toBeInTheDocument();
   });
 
   it("updates sample read and saved state from the detail pane", async () => {

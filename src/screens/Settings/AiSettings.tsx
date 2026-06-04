@@ -12,7 +12,6 @@ type AiSettingsProps = {
   formatAiProvider: (value: string | null | undefined) => string;
   formatGeminiModel: (value: string | null | undefined) => string;
   formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatCredentialStorage: (value: string | null | undefined) => string;
   formatCredentialKind: (value: string | null | undefined) => string;
 };
 
@@ -27,7 +26,6 @@ export function AiSettings({
   formatAiProvider,
   formatGeminiModel,
   formatCredentialConfigured,
-  formatCredentialStorage,
   formatCredentialKind,
 }: AiSettingsProps) {
   const { t, text } = useLocale();
@@ -55,10 +53,6 @@ export function AiSettings({
         <div>
           <dt>{text("YouTube transcription credentials")}</dt>
           <dd>{text(formatCredentialConfigured(geminiCredentialStatus))}</dd>
-        </div>
-        <div>
-          <dt>{t("settings.credentials.storage")}</dt>
-          <dd>{text(formatCredentialStorage(geminiCredentialStatus?.storage))}</dd>
         </div>
         <div>
           <dt>{text("Credential kind")}</dt>

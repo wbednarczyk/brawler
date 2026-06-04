@@ -59,6 +59,7 @@ describe("License gate workflows", () => {
 
     await user.click(await screen.findByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "License" }));
     const licenseSection = within(settingsRegion).getByRole("heading", { name: "License" })
       .closest("section");
 

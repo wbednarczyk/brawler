@@ -101,6 +101,25 @@ describe("Companies screen workflows", () => {
     expect(screen.getByText("4/4 companies")).toBeInTheDocument();
   });
 
+  it("filters the tracked companies list by watchlist", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+
+    const companyList = await screen.findByLabelText("Companies list");
+
+    expect(within(companyList).getByText("GPW:CDR")).toBeInTheDocument();
+    expect(within(companyList).getByText("GPW:PZU")).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Company watchlist filter"), "watchlist_main_gpw");
+
+    expect(within(companyList).getByText("GPW:CDR")).toBeInTheDocument();
+    expect(within(companyList).queryByText("GPW:PZU")).not.toBeInTheDocument();
+    expect(screen.getByText("1/4 companies")).toBeInTheDocument();
+  });
+
   it("confirms and deletes a company", async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -279,7 +298,7 @@ describe("Companies screen workflows", () => {
     });
 
     expect(claimRow).toBeInTheDocument();
-    expect(within(claims).getByText("1 follow-up item for GPW:CDR")).toBeInTheDocument();
+    expect(claims).toHaveTextContent("1 follow-up item for GPW:CDR");
 
     await user.click(claimRow);
 
@@ -413,7 +432,7 @@ describe("Companies screen workflows", () => {
 
     const companyFeed = await screen.findByLabelText("Company feed");
 
-    expect(within(companyFeed).getByText("No stored feed items for GPW:LPP yet.")).toBeInTheDocument();
+    expect(companyFeed).toHaveTextContent("No stored feed items for GPW:LPP yet.");
     expect(
       within(companyFeed).getByText(
         "This company is tracked locally, but no sample or ingested items are attached to it yet.",
@@ -635,20 +654,21 @@ describe("Companies screen workflows", () => {
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
-    await user.type(screen.getByLabelText("Watchlist name"), "Main GPW");
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+    await user.type(screen.getByLabelText("Watchlist name"), "Growth GPW");
     await user.click(screen.getByRole("button", { name: "Create" }));
     await user.click(
-      within(await screen.findByRole("button", { name: "Open GPW:CDR workspace" })).getByRole(
+      within(await screen.findByLabelText("Manage watchlists for GPW:CDR")).getByRole(
         "button",
-        { name: "Assign" },
+        { name: "Growth GPW" },
       ),
     );
 
-    expect(await within(screen.getByLabelText("Watchlist chips")).findByText("Main GPW")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Watchlist chips")).findByText("Growth GPW")).toBeInTheDocument();
     expect(
-      await within(screen.getByLabelText("Watchlist memberships for GPW:CDR")).findByText("Main GPW"),
+      await within(screen.getByLabelText("Watchlist memberships for GPW:CDR")).findByText("Growth GPW"),
     ).toBeInTheDocument();
-    expect(await screen.findByRole("status", { name: "Assigned to Main GPW" })).toBeInTheDocument();
+    expect(await screen.findByText("Assigned to Growth GPW")).toBeInTheDocument();
   });
 
   it("removes a company from a selected watchlist", async () => {
@@ -657,14 +677,15 @@ describe("Companies screen workflows", () => {
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
     await user.click(
-      within(await screen.findByRole("button", { name: "Open GPW:CDR workspace" })).getByRole(
+      within(await screen.findByLabelText("Manage watchlists for GPW:CDR")).getByRole(
         "button",
-        { name: "Remove" },
+        { name: "Main GPW" },
       ),
     );
 
-    expect(await screen.findByRole("status", { name: "Removed from Main GPW" })).toBeInTheDocument();
+    expect(await screen.findByText("Removed from Main GPW")).toBeInTheDocument();
     expect(invoke).toHaveBeenCalledWith("remove_company_from_watchlist", {
       input: {
         watchlistId: "watchlist_main_gpw",

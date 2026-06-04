@@ -23,7 +23,6 @@ import type {
 import type { DbRefreshState } from "./appTypes";
 
 type AppDataControllerInput = {
-  companies: Company[];
   feedPruneRetentionDays: number;
   refreshCompanyEvents: () => Promise<void>;
   setCompanies: Dispatch<SetStateAction<Company[]>>;
@@ -45,13 +44,13 @@ type AppDataControllerInput = {
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSettings: Dispatch<SetStateAction<UserSettings | null>>;
   setSettingsError: Dispatch<SetStateAction<string | null>>;
+  setAccentPalette: Dispatch<SetStateAction<UserSettings["accentPalette"]>>;
   setLocale: Dispatch<SetStateAction<UserSettings["locale"]>>;
   setSourceAdapters: Dispatch<SetStateAction<SourceAdapter[]>>;
   setSourceAdaptersError: Dispatch<SetStateAction<string | null>>;
   setTheme: Dispatch<SetStateAction<UserSettings["theme"]>>;
   setUnmatchedSourceItems: Dispatch<SetStateAction<Record<string, UnmatchedSourceItem[]>>>;
   setUnmatchedSourceItemsError: Dispatch<SetStateAction<string | null>>;
-  setWatchlistAssignments: Dispatch<SetStateAction<Record<string, string>>>;
   setWatchlistMemberships: Dispatch<SetStateAction<WatchlistMembership[]>>;
   setWatchlists: Dispatch<SetStateAction<Watchlist[]>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
@@ -59,7 +58,6 @@ type AppDataControllerInput = {
 };
 
 export function useAppDataController({
-  companies,
   feedPruneRetentionDays,
   refreshCompanyEvents,
   setCompanies,
@@ -81,13 +79,13 @@ export function useAppDataController({
   setSelectedFeedItemId,
   setSettings,
   setSettingsError,
+  setAccentPalette,
   setLocale,
   setSourceAdapters,
   setSourceAdaptersError,
   setTheme,
   setUnmatchedSourceItems,
   setUnmatchedSourceItemsError,
-  setWatchlistAssignments,
   setWatchlistMemberships,
   setWatchlists,
   setWatchlistsError,
@@ -134,18 +132,6 @@ export function useAppDataController({
       .then((response) => {
         setWatchlists(response);
         setWatchlistsError(null);
-        setWatchlistAssignments((current) => {
-          const fallback = response[0]?.id ?? "";
-          const next = { ...current };
-
-          for (const company of companies) {
-            if (!next[company.id]) {
-              next[company.id] = fallback;
-            }
-          }
-
-          return next;
-        });
       })
       .catch((error) => {
         setWatchlists([]);
@@ -230,6 +216,7 @@ export function useAppDataController({
     return settingsApi.getSettings()
       .then((response) => {
         setSettings(response);
+        setAccentPalette(response.accentPalette);
         setLocale(response.locale);
         setTheme(response.theme);
         setSettingsError(null);

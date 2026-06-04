@@ -414,11 +414,11 @@ fn extract_report_attachments(document: &Html) -> Vec<BankierCompanyAttachment> 
         .select(&anchor_selector)
         .filter_map(|anchor| {
             let href = anchor.value().attr("href")?.trim();
-            if !is_report_attachment_url(href) {
+            let label = normalized_lines(anchor.text()).join(" ");
+            if !is_report_attachment_url(href) || is_source_page_chrome_link(&label) {
                 return None;
             }
 
-            let label = normalized_lines(anchor.text()).join(" ");
             Some(BankierCompanyAttachment {
                 label: if label.is_empty() {
                     href.rsplit('/').next().unwrap_or(href).to_owned()
@@ -437,6 +437,13 @@ fn extract_report_attachments(document: &Html) -> Vec<BankierCompanyAttachment> 
             }
             attachments
         })
+}
+
+fn is_source_page_chrome_link(label: &str) -> bool {
+    matches!(
+        label.trim().to_lowercase().as_str(),
+        "regulamin" | "polityka prywatności" | "polityka prywatnosci" | "polityka cookies"
+    )
 }
 
 fn is_report_attachment_url(value: &str) -> bool {
@@ -740,6 +747,9 @@ mod tests {
                   <ol><li>STRONA TYTUŁOWA</li></ol>
                   <p>Spis załączników:</p>
                   <a href="https://bonnier.pl/report.xhtml">Raport XHTML</a>
+                  <a href="https://www.bankier.pl/regulamin.pdf">Regulamin</a>
+                  <a href="https://www.bankier.pl/prywatnosc.pdf">Polityka prywatności</a>
+                  <a href="https://www.bankier.pl/cookies.pdf">Polityka Cookies</a>
                   <h4>STRONA TYTUŁOWA&gt;&gt;&gt;</h4>
                   <p>KOMISJA NADZORU FINANSOWEGO</p>
                   <p>Skonsolidowany raport kwartalny QSr</p>

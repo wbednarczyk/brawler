@@ -1,0 +1,87 @@
+:root,
+:root[data-theme="dark"][data-palette="night-neon"],
+:root[data-theme="dark"]:not([data-palette]) {
+  color-scheme: dark;
+  background: #050719;
+  color: #f6f7ff;
+  --bg: #050719;
+  --surface: #0c1025;
+  --surface-raised: #141a36;
+  --border: #263051;
+  --text: #f6f7ff;
+  --muted: #98a3c7;
+  --primary: #57d7ff;
+  --primary-strong: #2eb3ff;
+  --secondary: #ff4fc4;
+  --accent: #9b6cff;
+  --highlight: #ff8ad8;
+  --success: #4ade80;
+  --warning: #fbbf24;
+  --danger: #fb7185;
+  --shadow: 0 18px 60px rgb(0 0 0 / 32%);
+}
+
+:root[data-theme="light"][data-palette="night-neon"],
+:root[data-theme="light"]:not([data-palette]) {
+  color-scheme: light;
+  background: #f7f9ff;
+  color: #11172f;
+  --bg: #f7f9ff;
+  --surface: #ffffff;
+  --surface-raised: #eef3ff;
+  --border: #d7def2;
+  --text: #11172f;
+  --muted: #52607f;
+  --primary: #006ee6;
+  --primary-strong: #0057bc;
+  --secondary: #c71985;
+  --accent: #6941d9;
+  --highlight: #c71985;
+  --success: #15803d;
+  --warning: #a16207;
+  --danger: #be123c;
+  --shadow: 0 18px 50px rgb(28 40 80 / 16%);
+}
+
+:root[data-theme="dark"][data-palette="midnight-horizon"],
+:root:not([data-theme])[data-palette="midnight-horizon"] {
+  color-scheme: dark;
+  background: #00021e;
+  color: #eaf7ff;
+  --bg: #00021e;
+  --surface: #061135;
+  --surface-raised: #0a1948;
+  --border: #20356a;
+  --text: #eaf7ff;
+  --muted: #9bb5d7;
+  --primary: #63c0e9;
+  --primary-strong: #37a7d5;
+  --secondary: #55388f;
+  --accent: #c550b9;
+  --highlight: #fb82c0;
+  --success: #5bd69b;
+  --warning: #f5c35b;
+  --danger: #ff7392;
+  --shadow: 0 18px 60px rgb(0 2 30 / 40%);
+}
+
+:root[data-theme="light"][data-palette="midnight-horizon"] {
+  color-scheme: light;
+  background: #f4f9ff;
+  color: #07102d;
+  --bg: #f4f9ff;
+  --surface: #ffffff;
+  --surface-raised: #e9f2ff;
+  --border: #ccd9ee;
+  --text: #07102d;
+  --muted: #536681;
+  --primary: #147aa6;
+  --primary-strong: #075f86;
+  --secondary: #55388f;
+  --accent: #a02a96;
+  --highlight: #d6388e;
+  --success: #167a45;
+  --warning: #9a6514;
+  --danger: #b81e4c;
+  --shadow: 0 18px 50px rgb(6 17 53 / 16%);
+}

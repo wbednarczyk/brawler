@@ -58,7 +58,6 @@ export function TranscriptsScreen({
   formatAiProvider,
   formatGeminiModel,
   formatCredentialConfigured,
-  formatCredentialStorage,
   formatEnumLabel,
 }: TranscriptsScreenProps) {
   const { t, text } = useLocale();
@@ -86,7 +85,6 @@ export function TranscriptsScreen({
         settings={settings}
         formatAiProvider={formatAiProvider}
         formatCredentialConfigured={formatCredentialConfigured}
-        formatCredentialStorage={formatCredentialStorage}
       />
 
       <TranscriptJobComposer
