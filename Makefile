@@ -7,7 +7,7 @@ WINDOWS_TARGET := x86_64-pc-windows-msvc
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
 
-.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -17,6 +17,11 @@ help:
 	@printf "  make build               Build the frontend inside nix develop\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
+	@printf "  make license-keygen-author\n"
+	@printf "                            Generate the external author Ed25519 key if missing\n"
+	@printf "  make license-author      Generate an author license token under private/licenses\n"
+	@printf "  make license-friend HOLDER=\"Friend Name\"\n"
+	@printf "                            Generate a friend-test license token under private/licenses\n"
 	@printf "  make smoke-gemini-transcript\n"
 	@printf "                            Opt-in live Gemini YouTube transcript smoke test\n"
 	@printf "  make smoke-gemini-analysis\n"
@@ -54,6 +59,24 @@ frontend-check:
 
 rust-check:
 	$(NIX) npm run check:rust
+
+license-keygen-author:
+	$(NIX) node scripts/licensing/generate-ed25519-key.mjs
+
+license-author:
+	@OUT_PATH="$${OUT:-private/licenses/author.txt}"; \
+	$(NIX) node scripts/licensing/generate-license.mjs --type author --out "$$OUT_PATH"
+
+license-friend:
+	@if [ -z "$${HOLDER:-}" ]; then \
+		printf "HOLDER is required. Example: make license-friend HOLDER=\"Friend Name\"\n"; \
+		exit 1; \
+	fi
+	@OUT_PATH="$${OUT:-private/licenses/friend-$$(printf "%s" "$$HOLDER" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-$$//').txt}"; \
+	ARGS=(--type friend --holder "$$HOLDER" --out "$$OUT_PATH"); \
+	if [ -n "$${EXPIRES_AT:-}" ]; then ARGS+=(--expires-at "$$EXPIRES_AT"); fi; \
+	if [ -n "$${FEATURES:-}" ]; then ARGS+=(--features "$$FEATURES"); fi; \
+	$(NIX) node scripts/licensing/generate-license.mjs "$${ARGS[@]}"
 
 smoke-gemini-transcript:
 	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \

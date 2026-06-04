@@ -24,6 +24,7 @@ type AppLifecycleEffectsInput = {
   effectiveTheme: string;
   eventWeekFetchAttemptedRef: MutableRefObject<Set<string>>;
   filteredFeedItems: FeedItem[];
+  licenseCanUseApp: boolean;
   pruneOldFeedItems: () => void;
   refreshBankierCalendarWeek: (date: string, trigger?: "manual") => void;
   refreshCompanies: () => void;
@@ -34,6 +35,7 @@ type AppLifecycleEffectsInput = {
   refreshFeedItems: () => void;
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
+  refreshLicenseStatus: () => void;
   refreshNotebookEntries: (companyId: string) => void;
   refreshScheduledSource: (adapterId: string, intervalMs: number) => void;
   refreshSettings: () => void;
@@ -82,6 +84,7 @@ export function useAppLifecycleEffects({
   effectiveTheme,
   eventWeekFetchAttemptedRef,
   filteredFeedItems,
+  licenseCanUseApp,
   pruneOldFeedItems,
   refreshBankierCalendarWeek,
   refreshCompanies,
@@ -92,6 +95,7 @@ export function useAppLifecycleEffects({
   refreshFeedItems,
   refreshGeminiCredentialStatus,
   refreshHealth,
+  refreshLicenseStatus,
   refreshNotebookEntries,
   refreshScheduledSource,
   refreshSettings,
@@ -147,6 +151,13 @@ export function useAppLifecycleEffects({
   useEffect(() => {
     refreshHealth();
     refreshDatabaseStatus();
+    refreshSettings();
+    refreshLicenseStatus();
+
+    if (!licenseCanUseApp) {
+      return;
+    }
+
     refreshCompanies();
     refreshWatchlists();
     refreshWatchlistMemberships();
@@ -154,13 +165,17 @@ export function useAppLifecycleEffects({
     refreshCompanyEvents();
     refreshTranscriptJobs();
     refreshSourceAdapters();
-    refreshSettings();
     refreshGeminiCredentialStatus();
-  }, []);
+  }, [licenseCanUseApp]);
 
   useEffect(() => {
+    if (!licenseCanUseApp) {
+      return;
+    }
+
     void refreshCompanyEvents(companyEventMode);
   }, [
+    licenseCanUseApp,
     companyEventCompanyFilter,
     companyEventDateFrom,
     companyEventDateTo,
@@ -174,7 +189,7 @@ export function useAppLifecycleEffects({
   ]);
 
   useEffect(() => {
-    if (activeSection !== "Events" || companyEventViewMode !== "week") {
+    if (!licenseCanUseApp || activeSection !== "Events" || companyEventViewMode !== "week") {
       return;
     }
 
@@ -185,9 +200,13 @@ export function useAppLifecycleEffects({
 
     eventWeekFetchAttemptedRef.current.add(weekStart);
     void refreshBankierCalendarWeek(weekStart, "manual");
-  }, [activeSection, companyEventViewMode, companyEventWeekRange.start]);
+  }, [licenseCanUseApp, activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
   useEffect(() => {
+    if (!licenseCanUseApp) {
+      return undefined;
+    }
+
     const firstRunDelayMs = feedPruneInitialDelayMs + schedulerStartJitterMs(feedPruneIntervalMs);
     let intervalId: number | null = null;
     const timeoutId = window.setTimeout(() => {
@@ -203,10 +222,15 @@ export function useAppLifecycleEffects({
         window.clearInterval(intervalId);
       }
     };
-  }, []);
+  }, [licenseCanUseApp]);
 
   useEffect(() => {
-    if (!settings || settings.pollIntervalSeconds <= 0 || scheduledSourceAdapters.length === 0) {
+    if (
+      !licenseCanUseApp ||
+      !settings ||
+      settings.pollIntervalSeconds <= 0 ||
+      scheduledSourceAdapters.length === 0
+    ) {
       setNextSourceRefreshAtByAdapterId({});
       return undefined;
     }
@@ -252,10 +276,10 @@ export function useAppLifecycleEffects({
       }
       setNextSourceRefreshAtByAdapterId({});
     };
-  }, [settings?.pollIntervalSeconds, sourceRefreshFailureCount, scheduledSourceAdapterKey]);
+  }, [licenseCanUseApp, settings?.pollIntervalSeconds, sourceRefreshFailureCount, scheduledSourceAdapterKey]);
 
   useEffect(() => {
-    if (!registryAdapter?.enabled || registryAdapter.defaultPollIntervalSeconds <= 0) {
+    if (!licenseCanUseApp || !registryAdapter?.enabled || registryAdapter.defaultPollIntervalSeconds <= 0) {
       setNextRegistryRefreshAt(null);
       return undefined;
     }
@@ -281,9 +305,13 @@ export function useAppLifecycleEffects({
       }
       setNextRegistryRefreshAt(null);
     };
-  }, [registryAdapter?.enabled, registryAdapter?.defaultPollIntervalSeconds]);
+  }, [licenseCanUseApp, registryAdapter?.enabled, registryAdapter?.defaultPollIntervalSeconds]);
 
   useEffect(() => {
+    if (!licenseCanUseApp) {
+      return;
+    }
+
     if (!selectedCompanyId) {
       setSelectedNotebookEntryId(null);
       setSelectedClaimEntryId(null);
@@ -292,10 +320,10 @@ export function useAppLifecycleEffects({
     }
 
     refreshNotebookEntries(selectedCompanyId);
-  }, [selectedCompanyId]);
+  }, [licenseCanUseApp, selectedCompanyId]);
 
   useEffect(() => {
-    if (activeSection !== "Notebooks" || companies.length === 0) {
+    if (!licenseCanUseApp || activeSection !== "Notebooks" || companies.length === 0) {
       return;
     }
 
@@ -310,13 +338,13 @@ export function useAppLifecycleEffects({
     }
 
     refreshNotebookEntries(nextCompanyId);
-  }, [activeSection, companies, selectedNotebookCompanyId]);
+  }, [licenseCanUseApp, activeSection, companies, selectedNotebookCompanyId]);
 
   useEffect(() => {
-    if (activeSection === "Companies") {
+    if (licenseCanUseApp && activeSection === "Companies") {
       refreshCompanyRegistryEntries();
     }
-  }, [activeSection, companies.length]);
+  }, [licenseCanUseApp, activeSection, companies.length]);
 
   useEffect(() => {
     if (!selectedNotebookEntry) {

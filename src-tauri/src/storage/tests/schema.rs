@@ -10,7 +10,7 @@ fn creates_clean_database_with_initial_schema() {
         })
         .expect("schema_migrations should exist");
 
-    assert_eq!(migration_count, 27);
+    assert_eq!(migration_count, 28);
 
     let company_table_exists: bool = connection
         .query_row(
@@ -39,6 +39,20 @@ fn creates_clean_database_with_initial_schema() {
         .expect("diagnostic events table lookup should work");
 
     assert!(diagnostic_events_table_exists);
+
+    let license_metadata_table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(
+                    SELECT 1
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'license_metadata'
+                )",
+            [],
+            |row| row.get(0),
+        )
+        .expect("license metadata table lookup should work");
+
+    assert!(license_metadata_table_exists);
 }
 
 #[test]
@@ -156,7 +170,7 @@ fn reports_database_status() {
     let connection = open_in_memory_database().expect("database should initialize");
     let status = database_status(&connection).expect("status should be available");
 
-    assert_eq!(status.applied_migrations, 27);
+    assert_eq!(status.applied_migrations, 28);
     assert_eq!(status.companies, 0);
     assert_eq!(status.source_adapters, 11);
     assert_eq!(status.settings, 17);

@@ -11,6 +11,7 @@ mod companies;
 mod diagnostics;
 mod events;
 mod feed_sources;
+mod licensing;
 mod notebooks;
 mod schema;
 mod settings;

@@ -30,6 +30,8 @@ Planning and workflow:
 - [Kanban Archive](kanban-archive.md): completed-card history.
 - [Engineering Workflow](engineering-workflow.md): local commands, Nix, WSL/Windows split, CI, quality gates, and packaging posture.
 - [Live Smoke Tests](live-smoke-tests.md): opt-in real-provider validation procedures.
+- [Licensing Strategy Assessment](licensing-strategy.md): current licensing and monetization options, M17 friend-test gate implications, and future ADR triggers.
+- [License Operations](license-operations.md): owner-only local license key generation, activation, manual gate testing, and licensing architecture notes.
 
 Decision records:
 
@@ -86,7 +88,7 @@ Initial source priorities:
 
 ## Monetization Direction
 
-The current GitHub repository is private. The future monetization model is undecided. Open core plus paid convenience features remains one candidate, but other approaches are still possible.
+The current GitHub repository is private. The future monetization model is undecided. Open core plus paid convenience features remains one candidate, but other approaches are still possible. The current assessment is captured in [Licensing Strategy Assessment](licensing-strategy.md).
 
 Brawler is all rights reserved for now. The exact future license and monetization model must be decided before public release, accepting external contributions, or publishing public release artifacts.
 

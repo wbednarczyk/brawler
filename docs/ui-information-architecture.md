@@ -307,10 +307,23 @@ Sections:
 - Appearance: dark/light/system theme, `night-neon` palette, extensible locale setting with English default and Polish as the first additional language
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
+- License: local author/friend-test license status, safe metadata, replace, and clear controls
 - Ingestion: polling interval, manual refresh defaults
 - AI providers: Gemini configuration for YouTube transcription, selectable transcription model, credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls, future general AI provider slots
 - Privacy: local data location, provider data disclosure
 - About: codename, app version, license status
+
+## License Gate
+
+Purpose: block normal author/friend-test build usage until a valid local license is present.
+
+Behavior:
+
+- First-run or invalid-license state shows a dedicated license-required screen before normal navigation.
+- The screen accepts a pasted license key and shows recoverable missing, malformed, invalid, expired, unsupported-version, unsupported-channel, and storage-error states.
+- Successful activation opens normal app navigation.
+- Normal Settings/About license controls remain available after activation for inspection, replacement, and clearing.
+- The UI must not imply cloud activation, billing, account sync, telemetry, or investment advice.
 
 ## Search
 
@@ -338,6 +351,6 @@ Do not build these in v1:
 
 - portfolio position tracking
 - trade journal
-- billing/licensing UI
+- hosted billing/licensing UI
 - cloud sync UI
 - team or sharing workflows

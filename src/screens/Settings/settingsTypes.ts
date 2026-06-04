@@ -1,5 +1,5 @@
 import type { FormEvent } from "react";
-import type { AppLocale, CredentialStatus, FeedPruneResult, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
+import type { AppLocale, CredentialStatus, FeedPruneResult, LicenseStatus, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 
 export type SettingsScreenProps = {
@@ -7,6 +7,10 @@ export type SettingsScreenProps = {
   locale: AppLocale;
   settings: UserSettings | null;
   settingsError: string | null;
+  licenseStatus: LicenseStatus | null;
+  licenseError: string | null;
+  licenseInFlight: boolean;
+  licenseKeyDraft: string;
   feedPruneRetentionDays: number;
   feedPruneResult: FeedPruneResult | null;
   geminiCredentialStatus: CredentialStatus | null;
@@ -27,6 +31,9 @@ export type SettingsScreenProps = {
   onLogLevelChange: (level: string) => void;
   onLogMaxFilesChange: (maxFiles: number) => void;
   onLogMaxFileBytesChange: (maxFileBytes: number) => void;
+  onClearLicenseKey: () => void;
+  onLicenseKeyDraftChange: (licenseKey: string) => void;
+  onSubmitLicenseKey: (event: FormEvent<HTMLFormElement>) => void;
   onGeminiApiKeyDraftChange: (apiKey: string) => void;
   onSaveGeminiApiKey: (event: FormEvent<HTMLFormElement>) => void;
   onClearGeminiApiKey: () => void;

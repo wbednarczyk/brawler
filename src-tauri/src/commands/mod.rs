@@ -5,6 +5,7 @@ pub mod diagnostics;
 pub mod events;
 pub mod feed;
 pub mod health;
+pub mod licensing;
 pub mod logs;
 pub mod metrics;
 pub mod notebooks;

@@ -427,6 +427,37 @@ Rules:
 - YAML import/export excludes secrets and is contract-accepted but implementation-deferred until later export/import/backup work.
 - Provider secrets are referenced indirectly and stored in the OS keychain.
 
+### Licensing
+
+M17 stores accepted local license evidence through two separate local stores:
+
+- Raw license token: OS keychain.
+- Derived non-secret status/metadata: SQLite `license_metadata`.
+
+Recommended `license_metadata` fields:
+
+- `id`: singleton row, currently `1`
+- `status`
+- `reason`
+- `license_id`
+- `holder`
+- `channel` (`author` or `friend_test` in M17)
+- `edition`
+- `features_json`
+- `issued_at`
+- `expires_at`
+- `app_version_range`
+- `key_id`
+- `checked_at`
+- `updated_at`
+
+Rules:
+
+- `license_metadata` must never store the full license token, private signing material, or private key material.
+- Clearing the license deletes the keychain token and removes derived metadata.
+- Invalid replacement attempts do not overwrite an existing valid keychain token.
+- Future entitlement policies may add derived metadata fields through migrations, but raw tokens and private signing material must remain outside SQLite.
+
 ## Origin Model
 
 Notebook origin links should be flexible enough to connect notes to different source types.

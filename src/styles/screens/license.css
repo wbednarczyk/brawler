@@ -1,0 +1,68 @@
+.license-gate {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 32px;
+  background: var(--background);
+}
+
+.license-gate-panel {
+  display: grid;
+  width: min(560px, 100%);
+  gap: 18px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.license-gate-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.license-gate-brand h1 {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.license-gate-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.license-gate-form {
+  display: grid;
+  gap: 10px;
+}
+
+.license-gate-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.license-gate-form textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: inherit;
+}
+
+.license-gate-form textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}

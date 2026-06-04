@@ -748,6 +748,11 @@ fn runtime_metric_contract(name: &str) -> (&'static str, MetricKind, MetricUnit)
             MetricKind::Counter,
             MetricUnit::Count,
         ),
+        "brawler_license_operations_total" => (
+            "Process-lifetime license status checks and activation operations.",
+            MetricKind::Counter,
+            MetricUnit::Count,
+        ),
         _ => (
             "Process-lifetime runtime metric.",
             MetricKind::Counter,

@@ -45,13 +45,20 @@
   font-size: 12px;
 }
 
-.credential-form input {
+.credential-form input,
+.credential-form textarea {
   min-height: 36px;
-  padding: 0 10px;
+  padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
   background: var(--surface-raised);
+  font: inherit;
+}
+
+.credential-form textarea {
+  min-height: 96px;
+  resize: vertical;
 }
 
 .credential-actions {

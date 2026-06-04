@@ -46,7 +46,7 @@ Rules:
 
 ## License Posture
 
-Brawler is all rights reserved for now. The GitHub repository is currently private. Do not add an open-source license until a future ADR resolves the license and commercial boundary.
+Brawler is all rights reserved for now. The GitHub repository is currently private. Do not add an open-source license until a future ADR resolves the license and commercial boundary. The current licensing and monetization assessment lives in [Licensing Strategy Assessment](licensing-strategy.md).
 
 Rules:
 

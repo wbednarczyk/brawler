@@ -34,6 +34,7 @@ import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
+import { useLicenseController } from "./useLicenseController";
 import { useSettingsController } from "./useSettingsController";
 import { useSourceDisplayController } from "./useSourceDisplayController";
 import { useSourceRefreshController } from "./useSourceRefreshController";
@@ -45,6 +46,7 @@ import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
 import { EventsScreen } from "../screens/Events/EventsScreen";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
+import { LicenseGateScreen } from "../screens/License/LicenseGateScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
 import { SettingsScreen } from "../screens/Settings/SettingsScreen";
@@ -91,6 +93,7 @@ import type {
   FeedItem,
   FeedPruneResult,
   HealthResponse,
+  LicenseStatus,
   NotebookDraftOrigin,
   NotebookEntry,
   SourceAdapter,
@@ -109,7 +112,11 @@ import {
   startAiAnalysis,
 } from "../api/aiAnalysis";
 
-export function AppStateRoot() {
+type AppStateRootProps = {
+  initialLicenseStatus?: LicenseStatus | null;
+};
+
+export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps) {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
   const sourceAdaptersRef = useRef<SourceAdapter[]>([]);
@@ -193,6 +200,10 @@ export function AppStateRoot() {
   const [selectedSourceAdapterId, setSelectedSourceAdapterId] = useState<string | null>(null);
   const [settings, setSettings] = useState<UserSettings | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(initialLicenseStatus);
+  const [licenseError, setLicenseError] = useState<string | null>(null);
+  const [licenseKeyDraft, setLicenseKeyDraft] = useState("");
+  const [licenseInFlight, setLicenseInFlight] = useState(false);
   const [geminiCredentialStatus, setGeminiCredentialStatus] = useState<CredentialStatus | null>(null);
   const [geminiCredentialError, setGeminiCredentialError] = useState<string | null>(null);
   const [geminiApiKeyDraft, setGeminiApiKeyDraft] = useState("");
@@ -339,6 +350,7 @@ export function AppStateRoot() {
   const text = makeTextTranslator(locale);
   const shortcutBindings = settings?.shortcutBindings ?? {};
   const shortcutReferences = resolveAppShortcutReferenceItems(shortcutBindings);
+  const licenseCanUseApp = licenseStatus?.canUseApp === true;
 
   const {
     clearCompanyEventFilters,
@@ -421,6 +433,18 @@ export function AppStateRoot() {
     setWatchlists,
     setWatchlistsError,
     text,
+  });
+
+  const {
+    clearLicenseKey,
+    refreshLicenseStatus,
+    submitLicenseKey,
+  } = useLicenseController({
+    licenseKeyDraft,
+    setLicenseError,
+    setLicenseInFlight,
+    setLicenseKeyDraft,
+    setLicenseStatus,
   });
 
   const {
@@ -877,6 +901,7 @@ export function AppStateRoot() {
     refreshFeedItems,
     refreshGeminiCredentialStatus,
     refreshHealth,
+    refreshLicenseStatus,
     refreshNotebookEntries,
     refreshScheduledSource,
     refreshSettings,
@@ -894,6 +919,7 @@ export function AppStateRoot() {
     selectedNotebookEntry,
     selectedNotebookScreenEntry,
     settings,
+    licenseCanUseApp,
     setClaimStatusDraft,
     setNextRegistryRefreshAt,
     setNextSourceRefreshAtByAdapterId,
@@ -1076,6 +1102,21 @@ export function AppStateRoot() {
     selectedNotebookScreenEntry,
     updateSelectedFeedItem,
   ]);
+
+  if (!licenseCanUseApp) {
+    return (
+      <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
+        <LicenseGateScreen
+          licenseError={licenseError}
+          licenseInFlight={licenseInFlight}
+          licenseKeyDraft={licenseKeyDraft}
+          licenseStatus={licenseStatus}
+          onLicenseKeyDraftChange={setLicenseKeyDraft}
+          onSubmitLicenseKey={submitLicenseKey}
+        />
+      </LocaleContext.Provider>
+    );
+  }
 
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
@@ -1459,6 +1500,10 @@ export function AppStateRoot() {
               locale={locale}
               settings={settings}
               settingsError={settingsError}
+              licenseError={licenseError}
+              licenseInFlight={licenseInFlight}
+              licenseKeyDraft={licenseKeyDraft}
+              licenseStatus={licenseStatus}
               feedPruneRetentionDays={feedPruneRetentionDays}
               feedPruneResult={feedPruneResult}
               geminiCredentialStatus={geminiCredentialStatus}
@@ -1479,6 +1524,9 @@ export function AppStateRoot() {
               onLogLevelChange={updateLogLevel}
               onLogMaxFilesChange={updateLogMaxFiles}
               onLogMaxFileBytesChange={updateLogMaxFileBytes}
+              onClearLicenseKey={clearLicenseKey}
+              onLicenseKeyDraftChange={setLicenseKeyDraft}
+              onSubmitLicenseKey={submitLicenseKey}
               onGeminiApiKeyDraftChange={setGeminiApiKeyDraft}
               onSaveGeminiApiKey={saveGeminiApiKey}
               onClearGeminiApiKey={clearGeminiApiKey}
