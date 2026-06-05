@@ -1,10 +1,8 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { LocateFixed, Plus, Search, Trash2, X } from "lucide-react";
 import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
-import type { WatchlistFeedback } from "../../app/appTypes";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
-import { StatusPill } from "../../shared/components/StatusPill";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type {
@@ -19,8 +17,6 @@ type CompanyFieldRefs = MutableRefObject<Record<keyof CompanyForm, HTMLInputElem
 
 export type CompaniesScreenProps = {
   watchlists: Watchlist[];
-  watchlistName: string;
-  watchlistsError: string | null;
   companyFieldRefs: CompanyFieldRefs;
   companyForm: CompanyForm;
   companyFormRegistryMatches: CompanyRegistryEntry[];
@@ -30,7 +26,6 @@ export type CompaniesScreenProps = {
   companies: Company[];
   selectedCompany: Company | null;
   membershipsByCompany: Record<string, WatchlistMembership[]>;
-  watchlistFeedback: WatchlistFeedback | null;
   selectedCompanyFeedStats: { total: number; unread: number; saved: number };
   companyWorkspaceTab: CompanyWorkspaceTab;
   selectedCompanyFeedItems: FeedItem[];
@@ -53,8 +48,6 @@ export type CompaniesScreenProps = {
   claimStatusDraft: string;
   companiesError: string | null;
   lookupStatus: string | null;
-  setWatchlistName: (value: string) => void;
-  createWatchlist: (event: React.FormEvent<HTMLFormElement>) => void;
   createCompany: (event: React.FormEvent<HTMLFormElement>) => void;
   updateCompanyForm: (field: keyof CompanyForm, value: string) => void;
   clearCompanyFormField: (field: keyof CompanyForm) => void;
@@ -63,9 +56,9 @@ export type CompaniesScreenProps = {
   applyRegistryEntryToCompanyForm: (entry: CompanyRegistryEntry) => void;
   setCompanyListSearch: (value: string) => void;
   setCompanyWatchlistFilter: (value: string) => void;
+  openWatchlistFromCompanyRow: (watchlistId: string) => void;
   openCompanyWorkspace: (company: Company) => void;
   openCompanyWorkspaceFromKeyboard: (event: React.KeyboardEvent<HTMLElement>, company: Company) => void;
-  toggleCompanyWatchlistMembership: (company: Company, watchlistId: string) => void;
   deleteCompany: (company: Company) => void;
   setCompanyWorkspaceTab: (tab: CompanyWorkspaceTab) => void;
   toggleCompanyFeedItem: (item: FeedItem) => void;
@@ -97,8 +90,6 @@ export type CompaniesScreenProps = {
 
 export function CompaniesScreen({
   watchlists,
-  watchlistName,
-  watchlistsError,
   companyFieldRefs,
   companyForm,
   companyFormRegistryMatches,
@@ -108,7 +99,6 @@ export function CompaniesScreen({
   companies,
   selectedCompany,
   membershipsByCompany,
-  watchlistFeedback,
   selectedCompanyFeedStats,
   companyWorkspaceTab,
   selectedCompanyFeedItems,
@@ -131,8 +121,6 @@ export function CompaniesScreen({
   claimStatusDraft,
   companiesError,
   lookupStatus,
-  setWatchlistName,
-  createWatchlist,
   createCompany,
   updateCompanyForm,
   clearCompanyFormField,
@@ -141,9 +129,9 @@ export function CompaniesScreen({
   applyRegistryEntryToCompanyForm,
   setCompanyListSearch,
   setCompanyWatchlistFilter,
+  openWatchlistFromCompanyRow,
   openCompanyWorkspace,
   openCompanyWorkspaceFromKeyboard,
-  toggleCompanyWatchlistMembership,
   deleteCompany,
   setCompanyWorkspaceTab,
   toggleCompanyFeedItem,
@@ -184,44 +172,6 @@ export function CompaniesScreen({
               </div>
 
               <div className="companies-layout">
-                <section className="watchlist-panel" aria-labelledby="watchlists-title">
-                  <div className="subsection-header">
-                    <div>
-                      <h2 id="watchlists-title">{text("Watchlists")}</h2>
-                      <p>{text("Local groups for companies.")}</p>
-                    </div>
-                    <form className="watchlist-form" onSubmit={createWatchlist}>
-                      <input
-                        aria-label={text("Watchlist name")}
-                        placeholder="Main GPW"
-                        value={watchlistName}
-                        onChange={(event) => setWatchlistName(event.target.value)}
-                        required
-                      />
-                      <Button type="submit" variant="primary">
-                        <Plus size={16} />
-                        {text("Create")}
-                      </Button>
-                    </form>
-                  </div>
-
-                  <div className="watchlist-list" aria-label={text("Watchlist chips")}>
-                    {watchlists.map((watchlist) => (
-                      <div className="watchlist-chip" key={watchlist.id}>
-                        <span>{watchlist.name}</span>
-                        <strong>{watchlist.companyCount}</strong>
-                      </div>
-                    ))}
-                    {watchlists.length === 0 ? (
-                      <EmptyState>{text("No watchlists yet.")}</EmptyState>
-                    ) : null}
-                  </div>
-
-                  {watchlistsError ? (
-                    <p className="error-text">{text("Watchlist command failed")}: {watchlistsError}</p>
-                  ) : null}
-                </section>
-
                 <form className="company-form" onSubmit={createCompany}>
                   <label>
                     {text("Exchange")}
@@ -432,36 +382,44 @@ export function CompaniesScreen({
                         <div className="company-row-main">
                           <h2><TickerLabel value={company.qualifiedTicker} /></h2>
                           <p>{company.displayName}</p>
+                        </div>
+                        <div className="company-row-context" onClick={(event) => event.stopPropagation()}>
                           <div
                             className="membership-list"
                             aria-label={`${text("Watchlist memberships for")} ${company.qualifiedTicker}`}
                           >
                             {(membershipsByCompany[company.id] ?? []).map((membership) => (
-                              <StatusPill key={membership.watchlistId}>{membership.watchlistName}</StatusPill>
+                              <button
+                                className="membership-chip membership-link"
+                                key={membership.watchlistId}
+                                onClick={() => openWatchlistFromCompanyRow(membership.watchlistId)}
+                                title={`${text("Open watchlist")} ${membership.watchlistName}`}
+                                type="button"
+                              >
+                                {membership.watchlistName}
+                              </button>
                             ))}
                             {(membershipsByCompany[company.id] ?? []).length === 0 ? (
                               <span className="membership-empty">{text("No watchlist")}</span>
                             ) : null}
                           </div>
-                        </div>
-                        <div className="company-row-actions" onClick={(event) => event.stopPropagation()}>
-                          <span>{company.isin ?? text("No ISIN")}</span>
-                          <Button
-                            onClick={() => deleteCompany(company)}
-                            title={`${text("Delete")} ${company.qualifiedTicker}`}
-                            variant="danger"
-                          >
-                            <Trash2 size={16} />
-                          </Button>
+                          <div className="company-row-actions">
+                            <span>{company.isin ?? text("No ISIN")}</span>
+                            <Button
+                              onClick={() => deleteCompany(company)}
+                              title={`${text("Delete")} ${company.qualifiedTicker}`}
+                              variant="danger"
+                            >
+                              <Trash2 size={16} />
+                            </Button>
+                          </div>
                         </div>
                       </article>
 
                       {selectedCompany?.id === company.id ? (
                         <CompanyWorkspace
                           selectedCompany={selectedCompany}
-                          watchlists={watchlists}
                           membershipsByCompany={membershipsByCompany}
-                          watchlistFeedback={watchlistFeedback}
                           selectedCompanyFeedStats={selectedCompanyFeedStats}
                           companyWorkspaceTab={companyWorkspaceTab}
                           selectedCompanyFeedItems={selectedCompanyFeedItems}
@@ -483,7 +441,6 @@ export function CompaniesScreen({
                           selectedClaimEntry={selectedClaimEntry}
                           claimStatusDraft={claimStatusDraft}
                           setCompanyWorkspaceTab={setCompanyWorkspaceTab}
-                          toggleCompanyWatchlistMembership={toggleCompanyWatchlistMembership}
                           toggleCompanyFeedItem={toggleCompanyFeedItem}
                           selectCompanyFeedItemFromKeyboard={selectCompanyFeedItemFromKeyboard}
                           updateFeedItemState={updateFeedItemState}

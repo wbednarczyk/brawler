@@ -36,9 +36,9 @@ describe("Inbox screen workflows", () => {
     expect(
       screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "https://example.test/sample/pkn" })).toHaveAttribute(
       "href",
-      "https://example.local/sample/pkn",
+      "https://example.test/sample/pkn",
     );
     expect(screen.queryByRole("link", { name: "Open source" })).not.toBeInTheDocument();
     const detailPane = within(screen.getByLabelText("Feed item details"));
@@ -59,27 +59,27 @@ describe("Inbox screen workflows", () => {
           {
             id: "feed_attachment_report_pdf",
             label: "report.pdf",
-            url: "https://example.local/report.pdf",
+            url: "https://example.test/report.pdf",
           },
           {
             id: "feed_attachment_sheet_xlsx",
             label: "sheet.xlsx",
-            url: "https://example.local/sheet.xlsx",
+            url: "https://example.test/sheet.xlsx",
           },
           {
             id: "feed_attachment_source_terms",
             label: "Regulamin",
-            url: "https://example.local/regulamin.pdf",
+            url: "https://example.test/regulamin.pdf",
           },
           {
             id: "feed_attachment_source_privacy",
             label: "Polityka prywatności",
-            url: "https://example.local/prywatnosc.pdf",
+            url: "https://example.test/prywatnosc.pdf",
           },
           {
             id: "feed_attachment_source_cookies",
             label: "Polityka Cookies",
-            url: "https://example.local/cookies.pdf",
+            url: "https://example.test/cookies.pdf",
           },
         ],
       },
@@ -92,7 +92,7 @@ describe("Inbox screen workflows", () => {
     expect(detailPane.getByText("Attachments")).toBeInTheDocument();
     expect(detailPane.getByRole("link", { name: "report.pdf" })).toHaveAttribute(
       "href",
-      "https://example.local/report.pdf",
+      "https://example.test/report.pdf",
     );
     expect(detailPane.queryByRole("link", { name: "sheet.xlsx" })).not.toBeInTheDocument();
     expect(detailPane.queryByRole("link", { name: "Regulamin" })).not.toBeInTheDocument();
@@ -312,7 +312,7 @@ describe("Inbox screen workflows", () => {
     expect(
       screen.getAllByText("Saved sample item used to validate the saved filter before real ingestion exists.").length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("link", { name: "https://example.local/sample/pkn" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "https://example.test/sample/pkn" })).toBeInTheDocument();
   });
 
   it("moves through inbox feed items with arrow keys", async () => {
@@ -373,7 +373,7 @@ describe("Inbox screen workflows", () => {
     });
 
     fireEvent.keyDown(document, { key: "O", code: "KeyO" });
-    expect(openUrl).toHaveBeenCalledWith("https://example.local/sample/pkn");
+    expect(openUrl).toHaveBeenCalledWith("https://example.test/sample/pkn");
 
     fireEvent.keyDown(document, { key: "N", code: "KeyN" });
     expect(await screen.findByRole("heading", { name: "Notebooks" })).toBeInTheDocument();

@@ -7,9 +7,7 @@ import type {
   CompanyLookupResult,
   CompanyRegistryEntry,
   Watchlist,
-  WatchlistMembership,
 } from "../api/types";
-import type { WatchlistFeedback } from "./appTypes";
 
 type CompanyControllerInput = {
   companyFieldRefs: MutableRefObject<Record<keyof CompanyForm, HTMLInputElement | null>>;
@@ -25,13 +23,9 @@ type CompanyControllerInput = {
   setCompanyForm: Dispatch<SetStateAction<CompanyForm>>;
   setLookupStatus: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyRegistryTicker: Dispatch<SetStateAction<string | null>>;
-  setWatchlistFeedback: Dispatch<SetStateAction<WatchlistFeedback | null>>;
-  setWatchlistName: Dispatch<SetStateAction<string>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
   skipNextCompanyLookupRef: MutableRefObject<boolean>;
-  watchlistMemberships: WatchlistMembership[];
-  watchlistName: string;
-  watchlists: Watchlist[];
+  resetDeletedWatchlistFilters: (watchlistId: string) => void;
   text: (value: string) => string;
 };
 
@@ -49,13 +43,9 @@ export function useCompanyController({
   setCompanyForm,
   setLookupStatus,
   setSelectedCompanyRegistryTicker,
-  setWatchlistFeedback,
-  setWatchlistName,
   setWatchlistsError,
   skipNextCompanyLookupRef,
-  watchlistMemberships,
-  watchlistName,
-  watchlists,
+  resetDeletedWatchlistFilters,
   text,
 }: CompanyControllerInput) {
   function updateCompanyForm(field: keyof CompanyForm, value: string) {
@@ -204,7 +194,7 @@ export function useCompanyController({
   }
 
   function deleteCompany(company: Company) {
-    const confirmed = window.confirm(`${text("Delete")} ${company.qualifiedTicker} ${text("from your local registry?")}`);
+    const confirmed = window.confirm(`${text("Delete")} ${company.qualifiedTicker} ${text("from tracked companies?")}`);
 
     if (!confirmed) {
       return;
@@ -222,15 +212,12 @@ export function useCompanyController({
       });
   }
 
-  function createWatchlist(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
+  function createWatchlist(name: string) {
     watchlistsApi.createWatchlist({
-      name: watchlistName,
+      name,
       description: null,
     })
       .then(() => {
-        setWatchlistName("");
         setWatchlistsError(null);
         refreshWatchlists();
         refreshWatchlistMemberships();
@@ -240,36 +227,63 @@ export function useCompanyController({
       });
   }
 
-  function showWatchlistFeedback(companyId: string, message: string) {
-    setWatchlistFeedback({ companyId, message });
-    window.setTimeout(() => {
-      setWatchlistFeedback((current) => (current?.companyId === companyId ? null : current));
-    }, 1200);
+  function renameWatchlist(watchlist: Watchlist, name: string) {
+    watchlistsApi.renameWatchlist({
+      id: watchlist.id,
+      name,
+      description: watchlist.description,
+    })
+      .then(() => {
+        setWatchlistsError(null);
+        refreshWatchlists();
+        refreshWatchlistMemberships();
+      })
+      .catch((error) => {
+        setWatchlistsError(String(error));
+      });
   }
 
-  function toggleCompanyWatchlistMembership(company: Company, watchlistId: string) {
-    const watchlistName =
-      watchlists.find((watchlist) => watchlist.id === watchlistId)?.name ?? text("watchlist");
-    const isMember = watchlistMemberships.some(
-      (membership) =>
-        membership.companyId === company.id && membership.watchlistId === watchlistId,
-    );
-    const command = isMember
-      ? watchlistsApi.removeCompanyFromWatchlist
-      : watchlistsApi.addCompanyToWatchlist;
+  function deleteWatchlist(watchlist: Watchlist) {
+    const confirmed = window.confirm(`${text("Delete")} ${watchlist.name}?`);
 
-    command({
-      watchlistId,
+    if (!confirmed) {
+      return;
+    }
+
+    watchlistsApi.deleteWatchlist(watchlist.id)
+      .then(() => {
+        setWatchlistsError(null);
+        resetDeletedWatchlistFilters(watchlist.id);
+        refreshWatchlists();
+        refreshWatchlistMemberships();
+      })
+      .catch((error) => {
+        setWatchlistsError(String(error));
+      });
+  }
+
+  function addCompanyToWatchlist(watchlist: Watchlist, company: Company) {
+    watchlistsApi.addCompanyToWatchlist({
+      watchlistId: watchlist.id,
       companyId: company.id,
     })
       .then(() => {
         setWatchlistsError(null);
-        showWatchlistFeedback(
-          company.id,
-          isMember
-            ? `${text("Removed from")} ${watchlistName}`
-            : `${text("Assigned to")} ${watchlistName}`,
-        );
+        refreshWatchlists();
+        refreshWatchlistMemberships();
+      })
+      .catch((error) => {
+        setWatchlistsError(String(error));
+      });
+  }
+
+  function removeCompanyFromWatchlist(watchlist: Watchlist, company: Company) {
+    watchlistsApi.removeCompanyFromWatchlist({
+      watchlistId: watchlist.id,
+      companyId: company.id,
+    })
+      .then(() => {
+        setWatchlistsError(null);
         refreshWatchlists();
         refreshWatchlistMemberships();
       })
@@ -280,14 +294,17 @@ export function useCompanyController({
 
   return {
     addCompanyFromRegistry,
+    addCompanyToWatchlist,
     applyRegistryEntryToCompanyForm,
     clearCompanyFormField,
     createCompany,
     createWatchlist,
+    deleteWatchlist,
     deleteCompany,
     lookupCompany,
     lookupCompanyIfUseful,
-    toggleCompanyWatchlistMembership,
+    removeCompanyFromWatchlist,
+    renameWatchlist,
     updateCompanyForm,
   };
 }

@@ -75,7 +75,7 @@ const initialFeedItems = [
   title: "Sample item proving the inbox layout can scan dense rows",
   unread: false,
   saved: true,
-  sourceUrl: "https://example.local/sample/pkn",
+  sourceUrl: "https://example.test/sample/pkn",
   language: "en",
   publishedAt: "Yesterday",
   fetchedAt: "Yesterday",
@@ -88,12 +88,12 @@ const initialFeedItems = [
   id: "feed_sample_kgh_transcript",
   company: "GPW:KGH",
   type: "Transcript",
-  source: "Local sample",
+  source: "Sample transcript",
   time: "Mon",
   title: "Transcript-derived note candidate waits for future provider work",
   unread: false,
   saved: false,
-  sourceUrl: "https://example.local/sample/kgh-transcript",
+  sourceUrl: "https://example.test/sample/kgh-transcript",
   language: "en",
   publishedAt: "Mon",
   fetchedAt: "Mon",
@@ -116,7 +116,7 @@ const initialFeedItems = [
   publishedAt: "Fri",
   fetchedAt: "Fri",
   attribution: "GPW",
-  summary: "Fourth sample item keeps the sample feed aligned with local GPW lookup companies.",
+  summary: "Fourth sample item keeps the sample feed aligned with tracked GPW lookup companies.",
   bodyText: "",
   attachments: noFeedAttachments,
 },
@@ -842,6 +842,41 @@ beforeEach(() => {
       return Promise.resolve(created);
     }
 
+    if (command === "rename_watchlist") {
+      const { input } = args as { input: { id: string; name: string; description: string | null } };
+      let renamed: Watchlist | null = null;
+      appTestState.watchlistsResponse = appTestState.watchlistsResponse.map((watchlist) => {
+        if (watchlist.id !== input.id) {
+          return watchlist;
+        }
+
+        renamed = {
+          ...watchlist,
+          name: input.name,
+          description: input.description,
+        };
+        return renamed;
+      });
+      appTestState.watchlistMembershipsResponse = appTestState.watchlistMembershipsResponse.map((membership) =>
+        membership.watchlistId === input.id
+          ? { ...membership, watchlistName: input.name }
+          : membership,
+      );
+
+      return Promise.resolve(renamed);
+    }
+
+    if (command === "delete_watchlist") {
+      const { watchlistId } = args as { watchlistId: string };
+      appTestState.watchlistsResponse = appTestState.watchlistsResponse.filter(
+        (watchlist) => watchlist.id !== watchlistId,
+      );
+      appTestState.watchlistMembershipsResponse = appTestState.watchlistMembershipsResponse.filter(
+        (membership) => membership.watchlistId !== watchlistId,
+      );
+      return Promise.resolve();
+    }
+
     if (command === "add_company_to_watchlist") {
       const { input } = args as { input: { watchlistId: string; companyId: string } };
       const watchlist = appTestState.watchlistsResponse.find((entry) => entry.id === input.watchlistId);
@@ -860,16 +895,32 @@ beforeEach(() => {
             companyId: input.companyId,
           },
         ];
+        appTestState.watchlistsResponse = appTestState.watchlistsResponse.map((entry) =>
+          entry.id === input.watchlistId
+            ? { ...entry, companyCount: entry.companyCount + 1 }
+            : entry,
+        );
       }
       return Promise.resolve();
     }
 
     if (command === "remove_company_from_watchlist") {
       const { input } = args as { input: { watchlistId: string; companyId: string } };
+      const hadMembership = appTestState.watchlistMembershipsResponse.some(
+        (membership) =>
+          membership.watchlistId === input.watchlistId && membership.companyId === input.companyId,
+      );
       appTestState.watchlistMembershipsResponse = appTestState.watchlistMembershipsResponse.filter(
         (membership) =>
           membership.watchlistId !== input.watchlistId || membership.companyId !== input.companyId,
       );
+      if (hadMembership) {
+        appTestState.watchlistsResponse = appTestState.watchlistsResponse.map((entry) =>
+          entry.id === input.watchlistId
+            ? { ...entry, companyCount: Math.max(0, entry.companyCount - 1) }
+            : entry,
+        );
+      }
       return Promise.resolve();
     }
 

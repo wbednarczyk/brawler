@@ -90,13 +90,12 @@ The UI-facing feed is scoped to tracked companies. Create-note is available for 
 
 ## Companies Screen
 
-Purpose: manage tracked companies, open company workspaces, and enter the dedicated watchlist-management panel.
+Purpose: manage tracked companies and open company workspaces.
 
 Main regions:
 
 - company search/add control
 - company list searchable and filtered by watchlist/exchange
-- dedicated Watchlists panel/subview inside Companies
 - company metadata summary
 
 Actions:
@@ -104,14 +103,28 @@ Actions:
 - add company by exchange-qualified ticker
 - edit company metadata
 - open company workspace
-- create and delete watchlists from the dedicated Watchlists panel
-- add/remove tracked companies from the selected watchlist inside the dedicated Watchlists panel
-
-Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists panel. The company list and expanded company workspace should not show watchlist create, delete, add, or remove controls. The company workspace can show current memberships as context only.
+Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists menu panel. The company list and expanded company workspace should not show watchlist create, delete, add, or remove controls. The company workspace can show current memberships as context only.
 
 The company list should own its vertical scrolling so the company add/search/filter controls remain visible while reviewing long tracked-company lists.
 
-The Watchlists panel is subordinate to Companies rather than a separate top-level navigation item. It should show the user's watchlists, the selected watchlist's companies, and a searchable way to add tracked companies to the selected watchlist. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies.
+## Watchlists Screen
+
+Purpose: manage user-owned company groups used by filters across the app.
+
+Main regions:
+
+- watchlist create control
+- watchlist selector/list
+- selected-watchlist member companies
+- searchable list of already-tracked companies available to add
+
+Actions:
+
+- create, rename, and delete watchlists
+- add already-tracked companies to the selected watchlist
+- remove companies from the selected watchlist
+
+The Watchlists screen is a dedicated left-menu panel. It should use a watchlist-first dual-pane workflow: select a watchlist, then manage that watchlist's member companies. Renaming a watchlist should preserve the watchlist's stable internal id. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies. If a deleted watchlist is active in a view filter, that filter should reset to `All`.
 
 Milestone 3 implementation starts the company workspace from the Companies screen. Clicking a company row expands the ticker-focused workspace inline directly under that row, and clicking the same row again collapses it. Up and Down arrows move through company rows while preserving expansion state: collapsed lists stay collapsed, and an already-open workspace moves to the focused company. This keeps the expanded context anchored to the company the user selected and avoids adding another row-level button.
 

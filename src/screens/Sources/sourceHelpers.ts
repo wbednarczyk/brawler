@@ -169,7 +169,7 @@ export function formatSourceAccess(adapter: SourceAdapter) {
     rss: "Public RSS",
     public_json: "Public JSON",
     api: "Public API",
-    manual: "Manual/Local",
+  manual: "Manual",
     authenticated: "Authenticated",
     paywalled: "Paywalled",
   };

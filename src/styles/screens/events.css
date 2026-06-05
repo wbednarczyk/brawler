@@ -26,6 +26,7 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(170px, 1fr));
   gap: 10px;
+  min-height: 0;
   min-width: 920px;
 }
 
@@ -56,7 +57,10 @@
   display: grid;
   align-content: start;
   gap: 8px;
+  min-height: 0;
   min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .event-week-empty {

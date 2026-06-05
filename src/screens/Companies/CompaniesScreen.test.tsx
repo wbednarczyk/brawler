@@ -120,6 +120,24 @@ describe("Companies screen workflows", () => {
     expect(screen.getByText("1/4 companies")).toBeInTheDocument();
   });
 
+  it("opens the matching Watchlists panel from a company watchlist pill", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(
+      within(await screen.findByLabelText("Watchlist memberships for GPW:CDR")).getByRole("button", {
+        name: "Main GPW",
+      }),
+    );
+
+    expect(await screen.findByRole("heading", { name: "Watchlists" })).toBeInTheDocument();
+    expect(
+      within(screen.getByLabelText("Selected watchlist")).getByRole("heading", { name: "Main GPW" }),
+    ).toBeInTheDocument();
+  });
+
   it("confirms and deletes a company", async () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -129,7 +147,7 @@ describe("Companies screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await user.click(await screen.findByTitle("Delete GPW:CDR"));
 
-    expect(confirm).toHaveBeenCalledWith("Delete GPW:CDR from your local registry?");
+    expect(confirm).toHaveBeenCalledWith("Delete GPW:CDR from tracked companies?");
 
     confirm.mockRestore();
   });
@@ -435,7 +453,7 @@ describe("Companies screen workflows", () => {
     expect(companyFeed).toHaveTextContent("No stored feed items for GPW:LPP yet.");
     expect(
       within(companyFeed).getByText(
-        "This company is tracked locally, but no sample or ingested items are attached to it yet.",
+        "This company is tracked, but no sample or ingested items are attached to it yet.",
       ),
     ).toBeInTheDocument();
 
@@ -648,49 +666,108 @@ describe("Companies screen workflows", () => {
     });
   });
 
-  it("creates a watchlist and assigns a company", async () => {
+  it("creates a watchlist and assigns an already-tracked company from the Watchlists panel", async () => {
     const user = userEvent.setup();
 
     renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Companies" }));
-    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+    await user.click(screen.getByRole("button", { name: "Watchlists" }));
     await user.type(screen.getByLabelText("Watchlist name"), "Growth GPW");
     await user.click(screen.getByRole("button", { name: "Create" }));
-    await user.click(
-      within(await screen.findByLabelText("Manage watchlists for GPW:CDR")).getByRole(
-        "button",
-        { name: "Growth GPW" },
-      ),
-    );
+    await user.click(await screen.findByRole("button", { name: /Growth GPW/ }));
+    await user.click(screen.getByRole("button", { name: "Add companies" }));
+    await user.click(within(screen.getByLabelText("Add companies")).getByRole("button", { name: /GPW:CDR/ }));
+    await user.click(screen.getByRole("button", { name: "Add selected" }));
 
-    expect(await within(screen.getByLabelText("Watchlist chips")).findByText("Growth GPW")).toBeInTheDocument();
+    expect(await within(screen.getByLabelText("Companies in watchlist")).findByText("GPW:CDR")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Companies" }));
     expect(
       await within(screen.getByLabelText("Watchlist memberships for GPW:CDR")).findByText("Growth GPW"),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Assigned to Growth GPW")).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("create_watchlist", {
+      input: {
+        name: "Growth GPW",
+        description: null,
+      },
+    });
+    expect(invoke).toHaveBeenCalledWith("add_company_to_watchlist", {
+      input: {
+        watchlistId: "watchlist_growth_gpw",
+        companyId: "company_gpw_cdr",
+      },
+    });
   });
 
-  it("removes a company from a selected watchlist", async () => {
+  it("renames a watchlist without changing its stable id", async () => {
     const user = userEvent.setup();
 
     renderApp();
 
-    await user.click(screen.getByRole("button", { name: "Companies" }));
-    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
-    await user.click(
-      within(await screen.findByLabelText("Manage watchlists for GPW:CDR")).getByRole(
-        "button",
-        { name: "Main GPW" },
-      ),
-    );
+    await user.click(screen.getByRole("button", { name: "Watchlists" }));
+    await user.click(screen.getByRole("button", { name: "Rename" }));
+    await user.clear(screen.getByLabelText("Rename watchlist"));
+    await user.type(screen.getByLabelText("Rename watchlist"), "Long-term GPW");
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByText("Removed from Main GPW")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Long-term GPW/ })).toBeInTheDocument();
+    expect(invoke).toHaveBeenCalledWith("rename_watchlist", {
+      input: {
+        id: "watchlist_main_gpw",
+        name: "Long-term GPW",
+        description: null,
+      },
+    });
+  });
+
+  it("removes a company from a selected watchlist in the Watchlists panel", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Watchlists" }));
+    await user.click(within(await screen.findByLabelText("Companies in watchlist")).getByRole("button", { name: /Remove/ }));
+
     expect(invoke).toHaveBeenCalledWith("remove_company_from_watchlist", {
       input: {
         watchlistId: "watchlist_main_gpw",
         companyId: "company_gpw_cdr",
       },
     });
+  });
+
+  it("deletes a watchlist, keeps companies, and resets an active company watchlist filter", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.selectOptions(screen.getByLabelText("Company watchlist filter"), "watchlist_main_gpw");
+
+    expect(screen.getByText("1/4 companies")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Watchlists" }));
+    await user.click(within(screen.getByLabelText("Selected watchlist")).getByRole("button", { name: "Delete" }));
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await waitFor(() => expect(screen.getByText("4/4 companies")).toBeInTheDocument());
+    expect(screen.getByLabelText("Company watchlist filter")).toHaveValue("all");
+    expect(invoke).toHaveBeenCalledWith("delete_watchlist", {
+      watchlistId: "watchlist_main_gpw",
+    });
+
+    confirm.mockRestore();
+  });
+
+  it("shows watchlist memberships in the company workspace without mutation controls", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+
+    expect(within(await screen.findByLabelText("Company workspace")).getByText("Main GPW")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Manage watchlists for GPW:CDR")).not.toBeInTheDocument();
   });
 });

@@ -189,7 +189,7 @@ export function InboxDetailPane({
         </>
       )}
       {healthError ? <p className="error-text">{text("Health command failed")}: {healthError}</p> : null}
-      {databaseError ? <p className="error-text">{text("Local data refresh failed")}: {databaseError}</p> : null}
+          {databaseError ? <p className="error-text">{text("Workspace refresh failed")}: {databaseError}</p> : null}
     </aside>
   );
 }

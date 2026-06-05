@@ -662,38 +662,76 @@ Exit criteria:
 
 ## Milestone 19: Dedicated Watchlist Management
 
-Goal: make watchlists a complete, coherent management workflow under Companies.
+Status: completed in `0.19.0`.
+
+Goal: make watchlists a complete, coherent management workflow in a dedicated Watchlists menu panel.
 
 Included:
 
-- a dedicated Watchlists panel or subview inside the Companies section
+- a dedicated Watchlists panel/view in the left menu
 - watchlist create controls
+- watchlist rename controls that preserve the stable internal watchlist id
 - watchlist delete controls with confirmation
 - selected-watchlist company membership management
-- add tracked companies to the selected watchlist from a searchable company picker/list
+- add already-tracked companies to the selected watchlist from a searchable company picker/list
 - remove companies from the selected watchlist from the same panel
 - visible membership summaries in the Companies list and company workspace without create/delete/add/remove controls there
 - watchlist filters retained in Inbox, Events/Calendar, Companies, and Notebooks
 - UX wording that explains watchlists as user-owned company groups, not storage entities
-- extension point for future alert configuration based on watchlists, without implementing alerts in M19
+- modular backend boundaries that allow future features such as watchlist-based alerts to attach later, without implementing alert placeholders or unused alert fields in M19
 
 Exit criteria:
 
-- user can create and delete watchlists from the dedicated Watchlists panel
+- user can create, rename, and delete watchlists from the dedicated Watchlists menu panel
 - user can add and remove companies from a watchlist without opening each company workspace
+- adding companies to a watchlist is limited to companies already tracked in the company list
+- renaming a watchlist does not change its stable watchlist id
 - Companies list rows show which watchlists each company belongs to, but expose no watchlist mutation controls
 - Company workspace shows current memberships as context only, with no watchlist mutation controls
 - existing watchlist filters continue to work across Inbox, Events/Calendar, Companies, and Notebooks
-- focused workflow tests cover the dedicated Watchlists panel and Companies membership-display regression
+- deleting an active filtered watchlist resets affected view filters to `All`
+- focused workflow tests cover the dedicated Watchlists panel, rename/delete behavior, filter reset, and Companies membership-display regression
 - docs and contracts describe the new ownership of watchlist management
 
-## Milestone 20: V1 Packaging Candidate
+## Milestone 20: Import And Export
+
+Goal: let the user move core local configuration and company-group data in and out of the app without exposing secrets.
+
+Included:
+
+- export companies list
+- import companies list
+- export watchlists and watchlist memberships
+- import watchlists and watchlist memberships
+- export non-secret settings
+- import non-secret settings
+- validation and preview of imported data before it is applied
+- conflict handling for existing companies, watchlists, and settings
+- explicit exclusion of API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and notes unless a later backup milestone expands scope
+- structured import/export adapters so future backup, sync, or alternate file formats can be added without rewriting the feature
+- Settings entry points for import/export actions using product language rather than implementation details
+- owner/developer documentation for the supported file format and manual recovery expectations
+
+Exit criteria:
+
+- user can export companies and watchlists to a documented structured file
+- user can import companies and watchlists from a supported file and see clear validation errors for unsupported or malformed content
+- imported companies and watchlists merge predictably with existing local data without duplicating existing companies
+- user can export non-secret settings to a documented structured file
+- user can import supported non-secret settings and reject unsupported, invalid, or secret-bearing settings
+- import/export code is organized behind explicit format, validation, domain-apply, and UI workflow boundaries
+- contracts, data model, product spec, and UI information architecture describe the supported import/export scope
+- automated tests cover file validation, secret exclusion, merge behavior, and settings round-trips
+- manual smoke testing covers export, clean-profile import, duplicate import, invalid file handling, and settings import
+
+## Milestone 21: V1 Packaging Candidate
 
 Goal: produce the first personal-use Windows build candidate.
 
 Included:
 
 - Windows packaging
+- portable Windows packaging
 - GitHub Actions packaging workflow
 - local database location decision
 - app version/about screen
@@ -705,7 +743,7 @@ Included:
 
 Exit criteria:
 
-- app can be installed or run on Windows
+- app can be installed or run on Windows (including portable package)
 - existing local data survives restart
 - packaged app enforces the v1 author/friend-test license gate
 - primary workflows pass smoke testing
