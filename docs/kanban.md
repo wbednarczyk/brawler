@@ -53,32 +53,40 @@ Test expectations: future sync contract tests, conflict-resolution tests, and mo
 
 ## Ready
 
-### M20: Import and export companies, watchlists, and settings
-
-Intent: let the user move core local configuration and company-group data in and out of the app without exposing secrets.
-
-Acceptance criteria:
-
-- Companies can be exported to a documented structured file.
-- Companies can be imported from a supported file with validation before local data is changed.
-- Watchlists and watchlist memberships can be exported with enough stable identity to restore groups correctly.
-- Watchlists and watchlist memberships can be imported and merged without duplicating existing companies.
-- Non-secret settings can be exported.
-- Supported non-secret settings can be imported after key/type/value validation.
-- Provider secrets, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and notes are excluded from this milestone's export scope.
-- Import conflicts for existing companies, watchlists, memberships, and settings have explicit behavior before implementation.
-- Import/export is implemented behind clear format, validation, domain-apply, storage-operation, and UI workflow boundaries.
-- The implementation leaves room for future full backup, restore, cloud sync, and alternate file-format adapters without a large refactor.
-
-Docs/contracts touched: roadmap, product spec, UI information architecture, contracts, data model, architecture or ADR if import/export boundaries establish a durable policy.
-
-Test expectations: format validation tests, settings round-trip tests, secret-exclusion tests, company/watchlist merge tests, and focused UI workflow tests for export/import success and validation failure.
-
 ## In Progress
 
 ## Review
 
 ## Done
+
+### M20: Import and export companies, watchlists, notebooks, and settings
+
+Delivered:
+
+- Added JSON research-data export/import for companies, watchlists, memberships, and notebook entries.
+- Added YAML settings export/import for allowlisted non-secret preferences.
+- Added import preview before apply with counts, warnings, and blocking validation errors.
+- Added transactional apply behavior for research-data and settings imports.
+- Preserved imported watchlist IDs when absent locally; merged existing IDs and same-name conflicts without duplicating memberships.
+- Kept existing company fields during merge while allowing missing optional fields to be filled from import payloads.
+- Skipped duplicate notebook entry IDs with preview warnings.
+- Excluded provider secrets, license tokens, private signing material, logs, diagnostics, metrics, feed items, and transcript records from M20 export scope.
+- Added separate Settings UI flows for research data and settings backed by shared import/export boundaries.
+- Added file picker save/open filters for JSON and YAML/YML files.
+- Added ADR 0018 for import/export boundaries and future extension points.
+- Bumped app version to `0.20.0`.
+
+ADR checkpoint: Added ADR 0018 to capture import/export boundaries, format adapters, validation/apply separation, and future backup/sync extension points.
+
+Validation:
+
+- User manually reviewed and signed off M20.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed from `src-tauri`.
+- `rtk cargo clippy --all-targets -- -D warnings` passed from `src-tauri`.
+- `rtk cargo test` passed from `src-tauri`.
 
 ### M19: Dedicated watchlist management
 

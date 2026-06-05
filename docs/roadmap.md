@@ -697,17 +697,21 @@ Exit criteria:
 
 Goal: let the user move core local configuration and company-group data in and out of the app without exposing secrets.
 
+Status: completed in `0.20.0`.
+
 Included:
 
 - export companies list
 - import companies list
 - export watchlists and watchlist memberships
 - import watchlists and watchlist memberships
+- export notebook entries with tags, claim fields, follow-up fields, and origin metadata
+- import notebook entries for existing companies or companies included in the same import
 - export non-secret settings
 - import non-secret settings
 - validation and preview of imported data before it is applied
 - conflict handling for existing companies, watchlists, and settings
-- explicit exclusion of API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and notes unless a later backup milestone expands scope
+- explicit exclusion of API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, and transcript records unless a later backup milestone expands scope
 - structured import/export adapters so future backup, sync, or alternate file formats can be added without rewriting the feature
 - Settings entry points for import/export actions using product language rather than implementation details
 - owner/developer documentation for the supported file format and manual recovery expectations

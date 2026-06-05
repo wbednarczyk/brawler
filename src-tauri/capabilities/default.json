@@ -3,5 +3,12 @@
   "identifier": "default",
   "description": "Default permissions for the main Brawler window",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default"]
+  "permissions": [
+    "core:default",
+    "core:path:allow-resolve-directory",
+    "core:path:allow-join",
+    "opener:default",
+    "dialog:allow-save",
+    "fs:allow-write-text-file"
+  ]
 }

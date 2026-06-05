@@ -40,6 +40,7 @@ export type SettingsScreenProps = {
   onSaveGeminiApiKey: (event: FormEvent<HTMLFormElement>) => void;
   onClearGeminiApiKey: () => void;
   onOpenGeminiApiKeyPage: () => void;
+  onImportApplied: () => void;
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   formatPollInterval: (seconds: number) => string;
   formatAiProvider: (value: string | null | undefined) => string;

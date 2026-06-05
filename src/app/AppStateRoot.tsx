@@ -1615,6 +1615,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               onOpenGeminiApiKeyPage={() => {
                 void openUrl("https://aistudio.google.com/app/apikey");
               }}
+              onImportApplied={refreshDatabaseBackedViews}
               formatTimestamp={formatTimestamp}
               formatPollInterval={formatPollInterval}
               formatAiProvider={formatAiProvider}

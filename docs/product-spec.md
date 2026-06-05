@@ -209,7 +209,7 @@ YAML is accepted as the future import/export/bootstrap format for non-secret set
 
 App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs and local Developer-mode metrics only, with no telemetry. Settings expose runtime log level and rotation limits. Developer mode Diagnostics may show local metrics, a full local log viewer, and open the app-owned logs folder for troubleshooting.
 
-Export is part of normal v1 implementation. Notes should export as Markdown with metadata, and watchlists/companies/settings should export as structured JSON or YAML. Import/restore and full local backup are late-v1 items. Cloud backup/sync requires a later design discussion.
+Export is part of normal v1 implementation. M20 exports companies, watchlists, watchlist memberships, notebook entries, and non-secret settings. Research data uses structured JSON. Settings use YAML. Import preview validates supported files before applying changes. Full local backup/restore and cloud backup/sync require later design discussions.
 
 ## Future Experience Directions
 

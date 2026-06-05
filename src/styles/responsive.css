@@ -19,6 +19,7 @@
   .notebook-workspace,
   .notebooks-screen,
   .settings-layout,
+  .import-export-grid,
   .notebook-form-grid,
   .notebook-detail-grid {
     grid-template-columns: 1fr;
