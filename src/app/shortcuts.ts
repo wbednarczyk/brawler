@@ -5,6 +5,7 @@ import type { Section } from "./navigation";
 export type AppShortcutId =
   | "app.openInbox"
   | "app.openCompanies"
+  | "app.openWatchlists"
   | "app.openNotebooks"
   | "app.openEvents"
   | "app.openTranscripts"
@@ -38,11 +39,12 @@ export type AppShortcutReferenceItem = ShortcutReferenceItem & {
 const navigationShortcuts = [
   ["app.openInbox", "Open Inbox", "1", "Inbox"],
   ["app.openCompanies", "Open Companies", "2", "Companies"],
-  ["app.openNotebooks", "Open Notebooks", "3", "Notebooks"],
-  ["app.openEvents", "Open Events", "4", "Events"],
-  ["app.openTranscripts", "Open Transcripts", "5", "Transcripts"],
-  ["app.openSources", "Open Sources", "6", "Sources"],
-  ["app.openSettings", "Open Settings", "7", "Settings"],
+  ["app.openWatchlists", "Open Watchlists", "3", "Watchlists"],
+  ["app.openNotebooks", "Open Notebooks", "4", "Notebooks"],
+  ["app.openEvents", "Open Events", "5", "Events"],
+  ["app.openTranscripts", "Open Transcripts", "6", "Transcripts"],
+  ["app.openSources", "Open Sources", "7", "Sources"],
+  ["app.openSettings", "Open Settings", "8", "Settings"],
 ] satisfies Array<[AppShortcutId, string, string, Section]>;
 
 export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
@@ -94,7 +96,7 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
   },
   {
     id: "app.refreshDatabase",
-    label: "Refresh local data",
+    label: "Refresh workspace data",
     group: "Global actions",
     scope: "app",
     binding: {

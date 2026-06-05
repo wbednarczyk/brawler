@@ -190,6 +190,18 @@ impl AppState {
         watchlists::create_watchlist(&connection, input)
     }
 
+    pub fn rename_watchlist(&self, input: WatchlistUpdate) -> StorageResult<Watchlist> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        watchlists::rename_watchlist(&connection, input)
+    }
+
+    pub fn delete_watchlist(&self, watchlist_id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        watchlists::delete_watchlist(&connection, watchlist_id)
+    }
+
     pub fn add_company_to_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 

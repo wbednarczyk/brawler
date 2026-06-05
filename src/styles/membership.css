@@ -29,8 +29,9 @@
 .membership-list {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .membership-chip,
@@ -44,9 +45,26 @@
 }
 
 .membership-chip {
-  border: 1px solid color-mix(in srgb, var(--primary) 42%, var(--border));
+  border: 1px solid color-mix(in srgb, var(--primary) 58%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface-raised));
+  font-weight: 700;
+}
+
+.membership-link {
+  cursor: pointer;
+}
+
+.membership-link:hover,
+.membership-link:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 82%, var(--border));
   color: var(--primary);
-  background: color-mix(in srgb, var(--primary) 10%, var(--surface-raised));
+  background: color-mix(in srgb, var(--primary) 24%, var(--surface-raised));
+}
+
+.membership-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
 }
 
 .membership-empty {

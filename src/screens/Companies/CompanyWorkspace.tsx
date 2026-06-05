@@ -23,8 +23,6 @@ import type { CompaniesScreenProps } from "./CompaniesScreen";
 type CompanyWorkspaceProps = Pick<
   CompaniesScreenProps,
   | "membershipsByCompany"
-  | "watchlists"
-  | "watchlistFeedback"
   | "selectedCompanyFeedStats"
   | "companyWorkspaceTab"
   | "selectedCompanyFeedItems"
@@ -46,7 +44,6 @@ type CompanyWorkspaceProps = Pick<
   | "selectedClaimEntry"
   | "claimStatusDraft"
   | "setCompanyWorkspaceTab"
-  | "toggleCompanyWatchlistMembership"
   | "toggleCompanyFeedItem"
   | "selectCompanyFeedItemFromKeyboard"
   | "updateFeedItemState"
@@ -79,8 +76,6 @@ type CompanyWorkspaceProps = Pick<
 export function CompanyWorkspace({
   selectedCompany,
   membershipsByCompany,
-  watchlists,
-  watchlistFeedback,
   selectedCompanyFeedStats,
   companyWorkspaceTab,
   selectedCompanyFeedItems,
@@ -102,7 +97,6 @@ export function CompanyWorkspace({
   selectedClaimEntry,
   claimStatusDraft,
   setCompanyWorkspaceTab,
-  toggleCompanyWatchlistMembership,
   toggleCompanyFeedItem,
   selectCompanyFeedItemFromKeyboard,
   updateFeedItemState,
@@ -150,47 +144,6 @@ export function CompanyWorkspace({
             {selectedCompanyMemberships.map((membership) => (
               <span key={membership.watchlistId}>{membership.watchlistName}</span>
             ))}
-          </div>
-          <div
-            className="company-watchlist-editor"
-            aria-label={`${text("Manage watchlists for")} ${selectedCompany.qualifiedTicker}`}
-          >
-            <span className="company-watchlist-editor-title">{text("Watchlists")}</span>
-            <div className="watchlist-toggle-list">
-              {watchlists.map((watchlist) => {
-                const isMember = selectedCompanyMemberships.some(
-                  (membership) => membership.watchlistId === watchlist.id,
-                );
-
-                return (
-                  <button
-                    aria-pressed={isMember}
-                    className={isMember ? "watchlist-toggle watchlist-toggle-active" : "watchlist-toggle"}
-                    key={watchlist.id}
-                    onClick={() => toggleCompanyWatchlistMembership(selectedCompany, watchlist.id)}
-                    title={`${isMember ? text("Remove from") : text("Assign to")} ${watchlist.name}`}
-                    type="button"
-                  >
-                    {isMember ? <CheckCircle2 size={13} /> : <Plus size={13} />}
-                    {watchlist.name}
-                  </button>
-                );
-              })}
-              {watchlists.length === 0 ? (
-                <span className="membership-empty">{text("No watchlists")}</span>
-              ) : null}
-              {watchlistFeedback?.companyId === selectedCompany.id ? (
-                <span
-                  aria-label={watchlistFeedback.message}
-                  className="inline-success"
-                  role="status"
-                  title={watchlistFeedback.message}
-                >
-                  <CheckCircle2 size={16} />
-                  <span className="visually-hidden">{watchlistFeedback.message}</span>
-                </span>
-              ) : null}
-            </div>
           </div>
         </div>
       </div>
@@ -402,7 +355,7 @@ export function CompanyWorkspace({
               <div>
                 <strong>{text("No stored feed items for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</strong>
                 <p>
-                  {text("This company is tracked locally, but no sample or ingested items are attached to it yet.")}
+                  {text("This company is tracked, but no sample or ingested items are attached to it yet.")}
                 </p>
               </div>
               <Button

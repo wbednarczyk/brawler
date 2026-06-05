@@ -59,6 +59,14 @@ pub struct NewWatchlist {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct WatchlistUpdate {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct WatchlistCompanyInput {
     pub watchlist_id: String,
     pub company_id: String,

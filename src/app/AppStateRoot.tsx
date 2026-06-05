@@ -9,7 +9,7 @@ import {
 } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { AppShell } from "./AppShell";
-import type { DbRefreshState, SourceRefreshState, WatchlistFeedback } from "./appTypes";
+import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { useAppDataController } from "./useAppDataController";
 import { useCompanyController } from "./useCompanyController";
 import { useCompanyEventsController } from "./useCompanyEventsController";
@@ -52,6 +52,7 @@ import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
 import { SettingsScreen } from "../screens/Settings/SettingsScreen";
 import { SourcesScreen } from "../screens/Sources/SourcesScreen";
 import { TranscriptsScreen } from "../screens/Transcripts/TranscriptsScreen";
+import { WatchlistsScreen } from "../screens/Watchlists/WatchlistsScreen";
 import type { TranscriptJobForm } from "../screens/Transcripts/transcriptTypes";
 import { MarkdownNoteBody } from "../shared/components/MarkdownNoteBody";
 import { NotebookDateField } from "../shared/components/NotebookDateField";
@@ -144,8 +145,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   const [watchlistMemberships, setWatchlistMemberships] = useState<WatchlistMembership[]>([]);
   const [watchlistsError, setWatchlistsError] = useState<string | null>(null);
-  const [watchlistName, setWatchlistName] = useState("");
-  const [watchlistFeedback, setWatchlistFeedback] = useState<WatchlistFeedback | null>(null);
   const [notebookEntries, setNotebookEntries] = useState<NotebookEntry[]>([]);
   const [notebookError, setNotebookError] = useState<string | null>(null);
   const [inboxWatchlistFilter, setInboxWatchlistFilter] = useState("all");
@@ -258,6 +257,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [addingRegistryTicker, setAddingRegistryTicker] = useState<string | null>(null);
   const [companyListSearch, setCompanyListSearch] = useState("");
   const [companyWatchlistFilter, setCompanyWatchlistFilter] = useState("all");
+  const [selectedManagedWatchlistId, setSelectedManagedWatchlistId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [lookupStatus, setLookupStatus] = useState<string | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>({
@@ -548,16 +548,32 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     }
   }, [activeSection, settings?.developerMode]);
 
+  function resetDeletedWatchlistFilters(watchlistId: string) {
+    setInboxWatchlistFilter((current) => (current === watchlistId ? "all" : current));
+    setCompanyEventWatchlistFilter((current) => (current === watchlistId ? "all" : current));
+    setCompanyWatchlistFilter((current) => (current === watchlistId ? "all" : current));
+    setNotebookScreenWatchlistFilter((current) => (current === watchlistId ? "all" : current));
+    setSelectedManagedWatchlistId((current) => (current === watchlistId ? null : current));
+  }
+
+  function openWatchlistFromCompanyRow(watchlistId: string) {
+    setSelectedManagedWatchlistId(watchlistId);
+    setActiveSection("Watchlists");
+  }
+
   const {
+    addCompanyToWatchlist,
     addCompanyFromRegistry,
     applyRegistryEntryToCompanyForm,
     clearCompanyFormField,
     createCompany,
     createWatchlist,
+    deleteWatchlist,
     deleteCompany,
     lookupCompany,
     lookupCompanyIfUseful,
-    toggleCompanyWatchlistMembership,
+    removeCompanyFromWatchlist,
+    renameWatchlist,
     updateCompanyForm,
   } = useCompanyController({
     companyFieldRefs,
@@ -573,13 +589,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setCompanyForm,
     setLookupStatus,
     setSelectedCompanyRegistryTicker,
-    setWatchlistFeedback,
-    setWatchlistName,
     setWatchlistsError,
     skipNextCompanyLookupRef,
-    watchlistMemberships,
-    watchlistName,
-    watchlists,
+    resetDeletedWatchlistFilters,
     text,
   });
 
@@ -1054,6 +1066,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const shortcutActions = useMemo<AppShortcutActionMap>(() => ({
     "app.openInbox": () => undefined,
     "app.openCompanies": () => undefined,
+    "app.openWatchlists": () => undefined,
     "app.openNotebooks": () => undefined,
     "app.openEvents": () => undefined,
     "app.openTranscripts": () => undefined,
@@ -1272,8 +1285,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
           {activeSection === "Companies" ? (
             <CompaniesScreen
               watchlists={watchlists}
-              watchlistName={watchlistName}
-              watchlistsError={watchlistsError}
               companyFieldRefs={companyFieldRefs}
               companyForm={companyForm}
               companyFormRegistryMatches={companyFormRegistryMatches}
@@ -1283,7 +1294,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               companies={companies}
               selectedCompany={selectedCompany}
               membershipsByCompany={membershipsByCompany}
-              watchlistFeedback={watchlistFeedback}
               selectedCompanyFeedStats={selectedCompanyFeedStats}
               companyWorkspaceTab={companyWorkspaceTab}
               selectedCompanyFeedItems={selectedCompanyFeedItems}
@@ -1306,8 +1316,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               claimStatusDraft={claimStatusDraft}
               companiesError={companiesError}
               lookupStatus={lookupStatus}
-              setWatchlistName={setWatchlistName}
-              createWatchlist={createWatchlist}
               createCompany={createCompany}
               updateCompanyForm={updateCompanyForm}
               clearCompanyFormField={clearCompanyFormField}
@@ -1316,9 +1324,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               applyRegistryEntryToCompanyForm={applyRegistryEntryToCompanyForm}
               setCompanyListSearch={setCompanyListSearch}
               setCompanyWatchlistFilter={setCompanyWatchlistFilter}
+              openWatchlistFromCompanyRow={openWatchlistFromCompanyRow}
               openCompanyWorkspace={openCompanyWorkspace}
               openCompanyWorkspaceFromKeyboard={openCompanyWorkspaceFromKeyboard}
-              toggleCompanyWatchlistMembership={toggleCompanyWatchlistMembership}
               deleteCompany={deleteCompany}
               setCompanyWorkspaceTab={setCompanyWorkspaceTab}
               toggleCompanyFeedItem={toggleCompanyFeedItem}
@@ -1346,6 +1354,21 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               renderNotebookOrigins={renderNotebookOrigins}
               formatTimestamp={formatTimestamp}
               feedItemSummary={feedItemSummary}
+            />
+          ) : null}
+          {activeSection === "Watchlists" ? (
+            <WatchlistsScreen
+              companies={companies}
+              watchlists={watchlists}
+              watchlistMemberships={watchlistMemberships}
+              watchlistsError={watchlistsError}
+              selectedWatchlistId={selectedManagedWatchlistId}
+              setSelectedWatchlistId={setSelectedManagedWatchlistId}
+              createWatchlist={createWatchlist}
+              renameWatchlist={renameWatchlist}
+              deleteWatchlist={deleteWatchlist}
+              addCompanyToWatchlist={addCompanyToWatchlist}
+              removeCompanyFromWatchlist={removeCompanyFromWatchlist}
             />
           ) : null}
           {activeSection === "Notebooks" ? (

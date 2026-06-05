@@ -54,6 +54,8 @@ pub fn run() {
             commands::watchlists::list_watchlists,
             commands::watchlists::list_watchlist_memberships,
             commands::watchlists::create_watchlist,
+            commands::watchlists::rename_watchlist,
+            commands::watchlists::delete_watchlist,
             commands::watchlists::add_company_to_watchlist,
             commands::watchlists::remove_company_from_watchlist,
             commands::feed::list_feed_items,
@@ -127,7 +129,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.18.0");
+        assert_eq!(response.version, "0.19.0");
     }
 
     #[test]

@@ -1,0 +1,141 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const stylesDir = join(process.cwd(), "src", "styles");
+
+function readStyle(relativePath: string) {
+  return readFileSync(join(stylesDir, relativePath), "utf8");
+}
+
+const companiesCss = readStyle("screens/companies.css");
+const controlsCss = readStyle("controls.css");
+const eventsCss = readStyle("screens/events.css");
+const inboxCss = readStyle("screens/inbox.css");
+const layoutCss = readStyle("layout.css");
+const notebooksCss = readStyle("screens/notebooks.css");
+const responsiveCss = readStyle("responsive.css");
+const shellCss = readStyle("shell.css");
+const watchlistsCss = readStyle("screens/watchlists.css");
+
+function ruleFor(css: string, selector: string) {
+  const rules = [...css.matchAll(/(?<selectors>[^{}]+)\{(?<body>[^}]*)\}/gm)]
+    .filter((match) =>
+      match.groups?.selectors
+        .split(",")
+        .map((item) => item.trim())
+        .includes(selector),
+    )
+    .map((match) => match.groups?.body ?? "");
+
+  return rules.join("\n");
+}
+
+describe("layout scroll contracts", () => {
+  it("keeps app chrome fixed and routes overflow into workspace panels", () => {
+    const appShellRule = ruleFor(shellCss, ".app-shell");
+    const sidebarRule = ruleFor(shellCss, ".sidebar");
+    const workspaceRule = ruleFor(shellCss, ".workspace");
+    const topbarRule = ruleFor(shellCss, ".topbar");
+    const feedPanelRule = ruleFor(layoutCss, ".feed-panel");
+
+    expect(appShellRule).toContain("height: 100dvh");
+    expect(appShellRule).toContain("min-height: 0");
+    expect(appShellRule).toContain("overflow: hidden");
+    expect(sidebarRule).toContain("display: flex");
+    expect(sidebarRule).toContain("flex-direction: column");
+    expect(workspaceRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(workspaceRule).toContain("overflow: hidden");
+    expect(topbarRule).toContain("position: sticky");
+    expect(feedPanelRule).toContain("height: 100%");
+    expect(feedPanelRule).toContain("overflow: hidden");
+  });
+
+  it("keeps the Companies list as the primary flexible scroll region", () => {
+    const layoutRule = ruleFor(companiesCss, ".companies-layout");
+    const listRule = ruleFor(companiesCss, ".company-list");
+
+    expect(layoutRule).toContain("grid-template-rows: auto auto minmax(520px, 1fr) auto auto");
+    expect(layoutRule).toContain("overflow: hidden");
+    expect(listRule).toContain("min-height: 0");
+    expect(listRule).toContain("overflow: auto");
+    expect(listRule).toContain("overscroll-behavior: contain");
+  });
+
+  it("keeps Inbox feed and detail panes as independent scroll regions", () => {
+    const feedPanelRule = ruleFor(layoutCss, ".feed-panel");
+    const feedListRule = ruleFor(controlsCss, ".feed-list");
+    const detailPaneRule = ruleFor(inboxCss, ".detail-pane");
+
+    expect(feedPanelRule).toContain("display: flex");
+    expect(feedPanelRule).toContain("flex-direction: column");
+    expect(feedPanelRule).toContain("overflow: hidden");
+    expect(feedListRule).toContain("flex: 1");
+    expect(feedListRule).toContain("min-height: 0");
+    expect(feedListRule).toContain("overflow: auto");
+    expect(detailPaneRule).toContain("height: 100%");
+    expect(detailPaneRule).toContain("min-height: 0");
+    expect(detailPaneRule).toContain("overflow: auto");
+  });
+
+  it("keeps Watchlists member companies in a scrollable remaining-height region", () => {
+    const workspaceRule = ruleFor(watchlistsCss, ".watchlists-workspace");
+    const sidebarRule = ruleFor(watchlistsCss, ".watchlists-sidebar");
+    const listRule = ruleFor(watchlistsCss, ".watchlist-list");
+    const detailRule = ruleFor(watchlistsCss, ".watchlist-detail");
+    const membersRule = ruleFor(watchlistsCss, ".watchlist-members-section");
+    const tableRule = ruleFor(watchlistsCss, ".watchlist-member-table");
+
+    expect(workspaceRule).toContain("min-height: 0");
+    expect(workspaceRule).toContain("flex: 1");
+    expect(sidebarRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(listRule).toContain("min-height: 0");
+    expect(listRule).toContain("overflow: auto");
+    expect(detailRule).toContain("display: flex");
+    expect(detailRule).toContain("flex-direction: column");
+    expect(detailRule).toContain("overflow: hidden");
+    expect(membersRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(membersRule).toContain("min-height: 0");
+    expect(membersRule).toContain("flex: 1");
+    expect(tableRule).toContain("overflow: auto");
+  });
+
+  it("keeps Notebooks subpanels independently scrollable on desktop", () => {
+    const screenRule = ruleFor(notebooksCss, ".notebooks-screen");
+    const companiesRule = ruleFor(notebooksCss, ".notebooks-company-nav");
+    const mainRule = ruleFor(notebooksCss, ".notebooks-main");
+    const notesRule = ruleFor(notebooksCss, ".notebooks-notes-list");
+    const detailRule = ruleFor(notebooksCss, ".notebooks-detail-pane");
+    const responsiveNotebooksRule = ruleFor(responsiveCss, ".notebooks-screen");
+
+    expect(screenRule).toContain("min-height: 0");
+    expect(screenRule).toContain("overflow: hidden");
+    expect(companiesRule).toContain("min-height: 0");
+    expect(companiesRule).toContain("overflow: auto");
+    expect(mainRule).toContain("grid-template-rows: auto auto auto minmax(0, 1fr)");
+    expect(mainRule).toContain("overflow: hidden");
+    expect(notesRule).toContain("min-height: 0");
+    expect(notesRule).toContain("overflow: auto");
+    expect(detailRule).toContain("min-height: 0");
+    expect(detailRule).toContain("overflow: auto");
+    expect(responsiveNotebooksRule).toContain("overflow: auto");
+  });
+
+  it("keeps Events headers and filters outside the scrollable event body", () => {
+    const eventsLayoutRule = ruleFor(eventsCss, ".events-layout");
+    const weekGridRule = ruleFor(eventsCss, ".event-week-grid");
+    const dayRule = ruleFor(eventsCss, ".event-week-day");
+    const dayBodyRule = ruleFor(eventsCss, ".event-week-day-body");
+
+    expect(eventsLayoutRule).toContain("flex: 1");
+    expect(eventsLayoutRule).toContain("min-height: 0");
+    expect(eventsLayoutRule).toContain("overflow: auto");
+    expect(weekGridRule).toContain("min-height: 0");
+    expect(weekGridRule).toContain("min-width: 920px");
+    expect(dayRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(dayBodyRule).toContain("min-height: 0");
+    expect(dayBodyRule).toContain("min-width: 0");
+    expect(dayBodyRule).toContain("overflow: auto");
+    expect(dayBodyRule).toContain("overscroll-behavior: contain");
+  });
+});

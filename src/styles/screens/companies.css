@@ -1,5 +1,5 @@
 .companies-layout {
-  grid-template-rows: auto auto auto minmax(320px, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(520px, 1fr) auto auto;
   align-content: stretch;
   min-height: 0;
   overflow: hidden;
@@ -33,6 +33,7 @@
 }
 
 .watchlist-form input,
+.watchlist-rename-form input,
 .company-row-actions select {
   min-height: 36px;
   padding: 0 10px;
@@ -42,59 +43,150 @@
   background: var(--surface-raised);
 }
 
-.watchlist-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.watchlist-management-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.6fr);
+  gap: 12px;
+  min-height: 220px;
 }
 
-.watchlist-chip {
-  display: inline-flex;
+.watchlist-list,
+.watchlist-detail,
+.watchlist-company-list {
+  min-height: 0;
+}
+
+.watchlist-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.watchlist-row,
+.watchlist-add-company {
+  display: grid;
   align-items: center;
-  gap: 10px;
-  min-height: 28px;
-  padding: 0 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
   background: var(--surface-raised);
+  text-align: left;
 }
 
-.watchlist-chip strong {
+.watchlist-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  min-height: 36px;
+  padding: 0 10px;
+}
+
+.watchlist-row strong {
   color: var(--primary);
 }
 
-.watchlist-toggle-list {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 6px;
-  max-width: 360px;
+.watchlist-row:hover,
+.watchlist-row:focus-visible,
+.watchlist-row-selected {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-raised));
 }
 
-.watchlist-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 28px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+.watchlist-detail {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--muted);
   background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
+}
+
+.watchlist-detail-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.watchlist-detail-header h3,
+.watchlist-detail-header p,
+.watchlist-member-columns h4 {
+  margin: 0;
+}
+
+.watchlist-detail-header p {
+  margin-top: 4px;
+  color: var(--muted);
   font-size: 12px;
 }
 
-.watchlist-toggle:hover,
-.watchlist-toggle:focus-visible,
-.watchlist-toggle-active {
-  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
-  color: var(--text);
-  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+.watchlist-detail-actions,
+.watchlist-rename-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.watchlist-toggle-active {
+.watchlist-member-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+}
+
+.watchlist-member-columns section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.watchlist-company-list {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.watchlist-company-row,
+.watchlist-add-company {
+  min-width: 0;
+}
+
+.watchlist-company-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 65%, transparent);
+}
+
+.watchlist-company-row > div,
+.watchlist-add-company {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.watchlist-company-row span:not(.ticker-exchange):not(.ticker-symbol),
+.watchlist-add-company span:not(.ticker-exchange):not(.ticker-symbol) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.watchlist-add-company {
+  min-height: 36px;
+  padding: 0 8px;
+}
+
+.watchlist-add-company:hover,
+.watchlist-add-company:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
   color: var(--primary);
 }
 
@@ -355,9 +447,9 @@
 }
 
 .company-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 0.78fr);
   align-items: center;
-  justify-content: space-between;
   gap: 16px;
   min-height: 72px;
   padding: 12px 14px;
@@ -387,4 +479,22 @@
 
 .company-row-main {
   min-width: 0;
+}
+
+.company-row-main p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.company-row-context {
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.company-row-context .membership-list {
+  justify-content: flex-start;
 }

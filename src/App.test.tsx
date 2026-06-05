@@ -113,7 +113,7 @@ describe("App shell", () => {
     expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
 
     searchInput.blur();
-    fireEvent.keyDown(document, { key: "7", code: "Digit7", ctrlKey: true });
+    fireEvent.keyDown(document, { key: "8", code: "Digit8", ctrlKey: true });
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
   });
 

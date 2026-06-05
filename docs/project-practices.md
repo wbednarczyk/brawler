@@ -230,6 +230,20 @@ Rules:
 - Docs may record uncertainty, fallback options, and technical risk, but they must not downgrade required scope without explicit user confirmation.
 - It is acceptable and expected to disagree with the project owner when the evidence supports it; the disagreement should be specific, sourced when possible, and framed around the product goal.
 
+## UI Regression Guardrails
+
+UI polish work should leave executable guardrails behind when it fixes repeated layout or copy regressions.
+
+Rules:
+
+- Normal user-facing UI must avoid implementation and architecture terms such as SQLite, Tauri, adapter, schema, database, module, collector, and local/Local. Use product language instead.
+- Developer-only Diagnostics may use implementation terms when Developer mode is explicitly enabled.
+- Source-provided content and URLs may contain arbitrary text, but test samples used in normal UI tests should not accidentally include forbidden terms.
+- Screens with fixed app chrome should keep navigation, top bar, and screen-level headers/filters visible while the primary content area scrolls internally.
+- Companies, Watchlists, Notebooks, Inbox, and Events need automated scroll/layout contract coverage when their layout CSS changes.
+- Cross-screen navigation affordances, such as company links and watchlist membership links, should have workflow tests when they are added or moved.
+- Prefer shared renderers for repeated visual concepts, especially tickers, memberships, status pills, and source links, and add tests when a shared renderer is adopted across screens.
+
 ## Local And CI Build Parity
 
 Local build and test commands are the primary development interface. GitHub Actions mirrors local commands.

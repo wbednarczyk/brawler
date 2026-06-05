@@ -20,21 +20,6 @@ Docs/contracts touched: product spec, data model, contracts, settings docs.
 
 Test expectations: future retention policy unit tests and migration/storage tests.
 
-### Implement YAML settings import/export/bootstrap
-
-Intent: implement the accepted YAML settings contract during the later export/import/backup work.
-
-Acceptance criteria:
-
-- Non-secret settings export to YAML.
-- YAML import validates known setting keys and value types before writing to SQLite.
-- YAML bootstrap can initialize non-secret settings for a new local database.
-- Provider secrets are never exported.
-
-Docs/contracts touched: contracts, product spec, project practices.
-
-Test expectations: YAML round-trip, validation, and secret-exclusion tests.
-
 ### Explore terminal interface
 
 Intent: record and later evaluate a terminal/TUI version of Brawler for keyboard-first investor research.
@@ -68,29 +53,60 @@ Test expectations: future sync contract tests, conflict-resolution tests, and mo
 
 ## Ready
 
-### M19: Dedicated watchlist management
+### M20: Import and export companies, watchlists, and settings
 
-Intent: turn watchlists into a real management workflow instead of scattered company-row or company-workspace controls.
+Intent: let the user move core local configuration and company-group data in and out of the app without exposing secrets.
 
 Acceptance criteria:
 
-- Companies contains a dedicated Watchlists panel or subview below/inside the Companies section, not a separate top-level navigation item.
-- The Watchlists panel owns creating, renaming if supported, deleting, and selecting watchlists.
-- The Watchlists panel owns adding companies to a selected watchlist and removing companies from it.
-- The Companies list and company workspace show existing watchlist memberships for scanning only.
-- No watchlist create/delete/add/remove controls remain visible in the Companies list or company workspace.
-- Watchlist filters remain available in Inbox, Events/Calendar, Companies, and Notebooks.
-- The watchlist workflow leaves room for future premium alert configuration based on watchlists without adding alerts in M19.
+- Companies can be exported to a documented structured file.
+- Companies can be imported from a supported file with validation before local data is changed.
+- Watchlists and watchlist memberships can be exported with enough stable identity to restore groups correctly.
+- Watchlists and watchlist memberships can be imported and merged without duplicating existing companies.
+- Non-secret settings can be exported.
+- Supported non-secret settings can be imported after key/type/value validation.
+- Provider secrets, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and notes are excluded from this milestone's export scope.
+- Import conflicts for existing companies, watchlists, memberships, and settings have explicit behavior before implementation.
+- Import/export is implemented behind clear format, validation, domain-apply, storage-operation, and UI workflow boundaries.
+- The implementation leaves room for future full backup, restore, cloud sync, and alternate file-format adapters without a large refactor.
 
-Docs/contracts touched: roadmap, product spec, UI information architecture, contracts if command/read models change.
+Docs/contracts touched: roadmap, product spec, UI information architecture, contracts, data model, architecture or ADR if import/export boundaries establish a durable policy.
 
-Test expectations: focused React workflow tests for watchlist create/delete and add/remove membership from the dedicated Watchlists panel, plus regression coverage that Companies shows membership labels without membership controls.
+Test expectations: format validation tests, settings round-trip tests, secret-exclusion tests, company/watchlist merge tests, and focused UI workflow tests for export/import success and validation failure.
 
 ## In Progress
 
 ## Review
 
 ## Done
+
+### M19: Dedicated watchlist management
+
+Delivered:
+
+- Added backend watchlist lifecycle commands for rename and delete.
+- Added stable-id rename behavior and delete-with-membership-cascade behavior while keeping companies.
+- Added a dedicated Watchlists left-menu panel for create, rename, delete, select, add, and remove workflows.
+- Removed watchlist mutation controls from the company workspace; company rows/workspace now show membership context only.
+- Added deleted-watchlist filter reset across Inbox, Events/Calendar, Companies, and Notebooks.
+- Kept future alert/premium feature work out of the frontend and schema while preserving explicit watchlist module boundaries.
+- Updated docs/contracts and Polish translations for the new workflow.
+- Added UI regression guardrails for fixed chrome, screen-level scroll regions, and normal-user copy that must not expose implementation wording.
+- Removed normal-user visible references to implementation/storage language, including visible `local` wording, from the touched app surfaces.
+- Bumped app version to `0.19.0`.
+
+ADR checkpoint: Existing watchlist, local-first, storage, and UI architecture docs cover the M19 ownership and extension-boundary decisions. No new ADR was needed for closure.
+
+Validation:
+
+- User manually reviewed and signed off M19.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk npm test -- --run src/App.uiGuardrails.test.tsx src/styles/layoutContracts.test.ts` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
 
 ### M18: Implement V1 application polish
 

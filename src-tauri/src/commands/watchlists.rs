@@ -27,6 +27,26 @@ pub fn create_watchlist(
 }
 
 #[tauri::command]
+pub fn rename_watchlist(
+    input: storage::WatchlistUpdate,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::Watchlist, String> {
+    state
+        .rename_watchlist(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn delete_watchlist(
+    watchlist_id: String,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<(), String> {
+    state
+        .delete_watchlist(&watchlist_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn add_company_to_watchlist(
     input: storage::WatchlistCompanyInput,
     state: tauri::State<'_, app_state::AppState>,

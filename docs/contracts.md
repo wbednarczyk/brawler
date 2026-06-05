@@ -59,8 +59,11 @@ Rules:
 
 - Assigning a company to the same watchlist more than once is harmless.
 - Removing a company from a watchlist must not delete the company.
+- Renaming a watchlist updates its display name and optional description but preserves its stable watchlist `id`.
+- Deleting a watchlist removes its memberships and must not delete member companies.
 - Deleting a company removes its watchlist memberships through local referential integrity.
 - UI-facing read models may list watchlist memberships separately from company identity so company identity remains canonical and watchlist-specific views stay explicit.
+- The dedicated watchlist-management UI may add only already-tracked companies to watchlists; adding a brand-new company remains a company-management operation.
 
 ## Source Adapter
 
@@ -1065,7 +1068,12 @@ Initial Tauri command groups:
 - `list_companies`
 - `create_company`
 - `list_watchlists`
+- `list_watchlist_memberships`
 - `create_watchlist`
+- `rename_watchlist`
+- `delete_watchlist`
+- `add_company_to_watchlist`
+- `remove_company_from_watchlist`
 - `list_feed_items`
 - `update_feed_item`
 - `prune_old_feed_items`

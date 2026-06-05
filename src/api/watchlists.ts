@@ -6,6 +6,12 @@ export type CreateWatchlistInput = {
   description: string | null;
 };
 
+export type RenameWatchlistInput = {
+  id: string;
+  name: string;
+  description: string | null;
+};
+
 export type WatchlistMembershipInput = {
   watchlistId: string;
   companyId: string;
@@ -21,6 +27,14 @@ export function listWatchlistMemberships() {
 
 export function createWatchlist(input: CreateWatchlistInput) {
   return callCommand<Watchlist>("create_watchlist", { input });
+}
+
+export function renameWatchlist(input: RenameWatchlistInput) {
+  return callCommand<Watchlist>("rename_watchlist", { input });
+}
+
+export function deleteWatchlist(watchlistId: string) {
+  return callCommand<void>("delete_watchlist", { watchlistId });
 }
 
 export function addCompanyToWatchlist(input: WatchlistMembershipInput) {
