@@ -25,9 +25,10 @@ The preferred experimental direction is to build the Windows executable from Lin
 
 ```bash
 make package-windows-from-linux
+make package-windows-smoke-run
 ```
 
-That target builds the portable Windows executable from the Linux/Nix toolchain, copies it to the output directory, and launches the copied executable by default. Installer generation is intentionally separate and deferred.
+The package target builds the portable Windows executable from the Linux/Nix toolchain and copies a versioned executable to the output directory. It does not launch the app automatically. Use `make package-windows-smoke-run` to launch the copied executable for manual smoke testing. Installer generation is intentionally separate and deferred.
 
 The scripts in this directory are the fallback native-Windows path. They require Windows Node/Rust/MSVC tooling.
 
@@ -47,6 +48,7 @@ Useful targets:
 
 ```bash
 make package-windows-from-linux
+make package-windows-smoke-run
 make windows-package
 make windows-package-no-run
 ```
@@ -58,6 +60,8 @@ powershell -ExecutionPolicy Bypass -File scripts/windows/package.ps1
 powershell -ExecutionPolicy Bypass -File scripts/windows/package.ps1 -NoRun
 powershell -ExecutionPolicy Bypass -File scripts/windows/package.ps1 -OpenOutput
 ```
+
+Portable data is stored in a `data` folder next to the copied executable.
 
 ## WSL Role
 

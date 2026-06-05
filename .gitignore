@@ -18,6 +18,7 @@ src-tauri/gen/
 .direnv/
 .xwin-cache/
 private/
+data/
 
 # Logs
 *.log

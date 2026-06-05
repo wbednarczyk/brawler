@@ -1,21 +1,13 @@
-use tauri::Manager;
-
 use crate::{app_state, storage};
 
 #[tauri::command]
 pub fn get_local_metrics_snapshot(
-    app: tauri::AppHandle,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<storage::LocalMetricsSnapshot, String> {
     ensure_developer_mode_enabled(&state)?;
 
-    let app_data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| error.to_string())?;
-
     state
-        .local_metrics_snapshot(&app_data_dir)
+        .local_metrics_snapshot(state.data_dir())
         .map_err(|error| error.to_string())
 }
 

@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+};
 
 use crate::source_adapters::bankier_calendar::{
     BankierCalendarEventItem, ADAPTER_ID as BANKIER_CALENDAR_ADAPTER_ID,
@@ -77,14 +80,24 @@ const MONEY_CALENDAR_SOURCE_URL: &str = "https://www.money.pl/gielda/raporty/";
 pub struct AppState {
     connection: Arc<Mutex<Connection>>,
     runtime_metrics: Arc<RuntimeMetricCounters>,
+    data_dir: PathBuf,
 }
 
 impl AppState {
     pub fn new(connection: Connection) -> Self {
+        Self::with_data_dir(connection, std::env::temp_dir().join("brawler-test-data"))
+    }
+
+    pub fn with_data_dir(connection: Connection, data_dir: PathBuf) -> Self {
         Self {
             connection: Arc::new(Mutex::new(connection)),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
+            data_dir,
         }
+    }
+
+    pub fn data_dir(&self) -> &Path {
+        &self.data_dir
     }
 
     pub fn increment_runtime_counter(&self, name: &'static str, labels: &[(&'static str, &str)]) {

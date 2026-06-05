@@ -6,8 +6,11 @@ NIX_WINDOWS := nix develop .\#windows-cross -c
 WINDOWS_TARGET := x86_64-pc-windows-msvc
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
+APP_VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null)
+WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
+WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 
-.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -29,8 +32,10 @@ help:
 	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
 	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
 	@printf "  make package-windows-from-linux\n"
-	@printf "                            Experimental: build Windows app from Linux/WSL\n"
-	@printf "  make windows-package     Build, copy, and run the packaged Windows app via PowerShell\n"
+	@printf "                            Build versioned portable Windows executable from Linux/WSL\n"
+	@printf "  make package-windows-smoke-run\n"
+	@printf "                            Launch the latest portable Windows executable copied by packaging\n"
+	@printf "  make windows-package     Build and copy the packaged Windows app via PowerShell\n"
 	@printf "  make windows-test-help   Explain the recommended native Windows sanity-check path\n"
 
 install:
@@ -118,25 +123,32 @@ tauri-build:
 	$(NIX) npm run tauri -- build
 
 package-windows-from-linux:
-	BRAWLER_DEVELOPER_UNLOCK_CODE="dup dup dupa" $(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
 	@if [ ! -f "$(WINDOWS_EXE)" ]; then \
 		printf "Expected Windows executable not found: $(WINDOWS_EXE)\n"; \
 		exit 1; \
 	fi
 	@if command -v powershell.exe >/dev/null 2>&1; then \
-		powershell.exe -ExecutionPolicy Bypass -Command '$$ErrorActionPreference = "SilentlyContinue"; Stop-Process -Name brawler; exit 0'; \
+		powershell.exe -ExecutionPolicy Bypass -Command '$$ErrorActionPreference = "SilentlyContinue"; Get-Process | Where-Object { $$_.ProcessName -like "brawler*" } | Stop-Process -Force; exit 0'; \
 	fi
 	@mkdir -p "$(WINDOWS_OUT_DIR)"
-	@cp -f "$(WINDOWS_EXE)" "$(WINDOWS_OUT_DIR)/brawler.exe"
-	@printf "Copied Windows executable to %s\n" "$(WINDOWS_OUT_DIR)/brawler.exe"
+	@rm -f "$(WINDOWS_OUT_DIR)/brawler.exe"
+	@cp -f "$(WINDOWS_EXE)" "$(WINDOWS_ARTIFACT)"
+	@printf "Copied portable Windows executable to %s\n" "$(WINDOWS_ARTIFACT)"
+
+package-windows-smoke-run:
+	@if [ ! -f "$(WINDOWS_ARTIFACT)" ]; then \
+		printf "Expected portable Windows executable not found: $(WINDOWS_ARTIFACT)\n"; \
+		printf "Run 'make package-windows-from-linux' first.\n"; \
+		exit 1; \
+	fi
 	@if command -v powershell.exe >/dev/null 2>&1; then \
-		EXE_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)/brawler.exe")"; \
+		EXE_WIN="$$(wslpath -w "$(WINDOWS_ARTIFACT)")"; \
 		DIR_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)")"; \
-		powershell.exe -ExecutionPolicy Bypass -Command "\$$env:BRAWLER_DEVELOPER_UNLOCK_CODE = 'dup dup dupa'; \
-														 \$$env:BRAWLER_DEVELOPER_MODE = "1"; \
-														 Start-Process -FilePath '$$EXE_WIN' -WorkingDirectory '$$DIR_WIN'" ; \
+		powershell.exe -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$$EXE_WIN' -WorkingDirectory '$$DIR_WIN'" ; \
 	else \
-		printf "powershell.exe not found; copied artifact but did not launch it.\n"; \
+		printf "powershell.exe not found; cannot launch the Windows executable from this environment.\n"; \
+		exit 1; \
 	fi
 
 windows-package:
@@ -148,7 +160,7 @@ windows-package:
 	ARGS=(); \
 	if [ -n "$${BRAWLER_WINDOWS_REPO:-}" ]; then ARGS+=("-WindowsRepo" "$$(wslpath -w "$$BRAWLER_WINDOWS_REPO")"); fi; \
 	if [ -n "$${BRAWLER_WINDOWS_OUT:-}" ]; then ARGS+=("-OutputDir" "$$(wslpath -w "$$BRAWLER_WINDOWS_OUT")"); fi; \
-	powershell.exe -ExecutionPolicy Bypass -File "$$SCRIPT" "$${ARGS[@]}"
+	powershell.exe -ExecutionPolicy Bypass -File "$$SCRIPT" "$${ARGS[@]}" -NoRun
 
 windows-package-no-run:
 	@if ! command -v powershell.exe >/dev/null 2>&1; then \
@@ -167,9 +179,11 @@ windows-test-help:
 	@printf "  make check\n"
 	@printf "  make build\n\n"
 	@printf "For complete packaged app testing from WSL, use the default D:\\Brawler checkout and run:\n"
-	@printf "  make package-windows-from-linux\n\n"
+	@printf "  make package-windows-from-linux\n"
+	@printf "  make package-windows-smoke-run\n\n"
 	@printf "Fallback if cross-building does not work yet:\n"
-	@printf "  make windows-package\n\n"
+	@printf "  make windows-package\n"
+	@printf "  make windows-package-no-run\n\n"
 	@printf "Override with BRAWLER_WINDOWS_REPO and BRAWLER_WINDOWS_OUT when needed.\n\n"
 	@printf "For native dev-mode testing, use a Windows checkout or worktree and run:\n"
 	@printf "  powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1\n\n"

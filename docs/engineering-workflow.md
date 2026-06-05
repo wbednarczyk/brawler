@@ -50,7 +50,8 @@ Recommended workflow:
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.
 - From that Windows checkout, run `scripts/windows/dev.ps1` to start Tauri dev mode.
-- The preferred experimental direction is `make package-windows-from-linux`: build the portable Windows executable from the Linux/WSL Nix environment, copy it to a Windows test directory, and launch it.
+- The M21 portable executable path is `make package-windows-from-linux`: build the versioned portable Windows executable from the Linux/WSL Nix environment and copy it to a Windows test directory.
+- Launch the copied portable executable separately with `make package-windows-smoke-run`.
 - `make windows-package` remains a fallback that triggers a native Windows package build, but it requires Windows Node/Rust/MSVC tooling.
 
 Do not routinely run Windows npm/Rust builds inside the same working tree used by WSL/Nix. Mixing Windows and Linux `node_modules` and Rust `target` artifacts in one tree can create slow, confusing, and noisy changes. Prefer `package-windows-from-linux` if the spike proves stable. If native Windows packaging is needed, use a separate Windows checkout/worktree.
@@ -233,7 +234,7 @@ Use full parity checks when appropriate:
 
 - `make check`: milestone closure, broad behavior changes, or before user commit/merge
 - Nix-wrapped commands: when validating the canonical environment or investigating environment drift
-- `make package-windows-from-linux`: packaged Windows sanity path when desktop behavior needs validation
+- `make package-windows-from-linux`: portable Windows executable packaging path for M21 candidate validation
 
 The local convenience toolchain currently expected in WSL includes Rust through `rustup`, `clippy`, `rustfmt`, `cargo-nextest`, Node/npm, `ripgrep`, `fd`/`fdfind`, `jq`, `sqlite3`, and the native libraries needed by the Rust/Tauri tests. Keep `flake.nix` as the source of truth for reproducible dependency intent even when agents use the direct toolchain for faster feedback.
 
@@ -245,9 +246,10 @@ Recommended WSL commands:
 - `make build`: build the frontend inside `nix develop`
 - `make dev`: start Tauri dev mode inside `nix develop`, only useful when Linux GUI forwarding exists
 - `make frontend-preview`: serve the frontend preview to a Windows browser; not a native Tauri test
-- `make package-windows-from-linux`: experimental target for building the Windows executable from Linux/WSL
-- `make windows-package`: fallback target that calls Windows PowerShell to build, copy, and run the native packaged Windows app from the default `D:\Brawler` checkout
-- `make windows-package-no-run`: fallback target that builds and copies the native packaged Windows app without launching it
+- `make package-windows-from-linux`: target for building the versioned portable Windows executable from Linux/WSL
+- `make package-windows-smoke-run`: launch the latest copied portable Windows executable for manual smoke testing
+- `make windows-package`: fallback target that calls Windows PowerShell to build and copy the native packaged Windows app from the default `D:\Brawler` checkout
+- `make windows-package-no-run`: compatibility alias for the fallback build-and-copy behavior
 - `make windows-test-help`: print the Windows hands-on testing path
 
 Underlying commands:
@@ -267,7 +269,7 @@ Recommended Windows commands:
 - `powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1`: start native Tauri dev mode from a Windows checkout
 - `powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1 -Check`: run checks before native dev mode
 - `powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1 -Build`: create a native Windows Tauri build
-- `powershell -ExecutionPolicy Bypass -File scripts/windows/package.ps1`: build, copy, and launch the packaged Windows executable
+- `powershell -ExecutionPolicy Bypass -File scripts/windows/package.ps1 -NoRun`: build and copy the packaged Windows executable
 
 `scripts/windows/package.ps1` accepts:
 
@@ -279,7 +281,7 @@ Recommended Windows commands:
 
 When using fallback `make windows-package` from WSL, `BRAWLER_WINDOWS_REPO` and `BRAWLER_WINDOWS_OUT` may use WSL-style `/mnt/c/...` paths. The Makefile converts them before invoking PowerShell.
 
-Experimental Windows-from-Linux packaging target:
+Portable Windows-from-Linux packaging target:
 
 - `package-windows-from-linux`
 
@@ -288,10 +290,17 @@ Implementation direction:
 - Use the dedicated Nix shell named `windows-cross`.
 - Include the Rust `x86_64-pc-windows-msvc` target, `cargo-xwin`, NSIS, LLVM/LLD, Clang, Node, npm, and Tauri CLI prerequisites.
 - Run the Tauri build from Linux with a Windows target and `--no-bundle`.
-- Copy the resulting portable executable to `D:\Brawler\Builds\latest`.
-- Stop an already-running copied `brawler.exe` before replacing it.
-- Launch the copied executable through `powershell.exe`.
+- Copy the resulting portable executable to `D:\Brawler\Builds\latest` with a versioned name such as `brawler-0.21.0-windows-x64-portable.exe`.
+- Stop already-running copied `brawler*` processes before replacing the portable artifact.
+- Launch the copied executable through `powershell.exe` only through `make package-windows-smoke-run`.
 - Treat Windows installer generation as a later target; the first Windows-from-Linux loop validates the runnable `.exe`.
+
+Portable Windows data policy:
+
+- M21 Windows release executables store runtime data in `data/` next to the executable.
+- Development builds keep using the OS app-data directory.
+- Runtime secrets continue to use the OS keychain and may need to be re-entered when a portable folder is moved to another machine or user profile.
+- The portable executable relies on the system WebView2 runtime. Bundling a fixed WebView2 runtime or producing an installer is deferred.
 
 ## Lean Testing Strategy
 
