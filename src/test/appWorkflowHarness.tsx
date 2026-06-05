@@ -1,5 +1,8 @@
 import { render } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
+import { downloadDir, join } from "@tauri-apps/api/path";
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, vi } from "vitest";
 import { App } from "../App";
@@ -19,6 +22,9 @@ import type {
 export { screen, waitFor, within } from "@testing-library/react";
 export { default as userEvent } from "@testing-library/user-event";
 export { invoke } from "@tauri-apps/api/core";
+export { downloadDir, join } from "@tauri-apps/api/path";
+export { save } from "@tauri-apps/plugin-dialog";
+export { writeTextFile } from "@tauri-apps/plugin-fs";
 export { openUrl } from "@tauri-apps/plugin-opener";
 export { expect } from "vitest";
 export { vi };
@@ -702,8 +708,21 @@ vi.mock("@tauri-apps/api/core", () => ({
 invoke: vi.fn(),
 }));
 
+vi.mock("@tauri-apps/api/path", () => ({
+downloadDir: vi.fn(() => Promise.resolve("/home/test/Downloads")),
+join: vi.fn((...paths: string[]) => Promise.resolve(paths.join("/"))),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
 openUrl: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+save: vi.fn(() => Promise.resolve("/tmp/brawler-export.json")),
+}));
+
+vi.mock("@tauri-apps/plugin-fs", () => ({
+writeTextFile: vi.fn(() => Promise.resolve()),
 }));
 
 export const appTestState = {
@@ -765,7 +784,11 @@ beforeEach(() => {
   appTestState.localMetricsSnapshotResponse = initialLocalMetricsSnapshot;
   appTestState.licenseStatusResponse = initialLicenseStatus;
   vi.mocked(invoke).mockClear();
+  vi.mocked(downloadDir).mockClear();
+  vi.mocked(join).mockClear();
   vi.mocked(openUrl).mockClear();
+  vi.mocked(save).mockClear();
+  vi.mocked(writeTextFile).mockClear();
   vi.mocked(invoke).mockImplementation((command: string, args?: unknown) => {
     if (command === "health") {
       return Promise.resolve({ status: "ok", version: "0.3.0" });
@@ -819,6 +842,109 @@ beforeEach(() => {
 
     if (command === "delete_company") {
       return Promise.resolve();
+    }
+
+    if (command === "export_research_data") {
+      return Promise.resolve({
+        fileName: "brawler-research-data-2026-06-05.json",
+        mediaType: "application/json",
+        contents: "{\"schemaVersion\":1}",
+        summary: {
+          companies: appTestState.companiesResponse.length,
+          watchlists: appTestState.watchlistsResponse.length,
+          memberships: appTestState.watchlistMembershipsResponse.length,
+          notebookEntries: appTestState.notebookEntriesResponse.length,
+          settings: 0,
+        },
+      });
+    }
+
+    if (command === "preview_research_import") {
+      return Promise.resolve({
+        valid: true,
+        summary: {
+          companiesCreated: 1,
+          companiesMerged: 1,
+          watchlistsCreated: 1,
+          watchlistsMerged: 0,
+          membershipsCreated: 1,
+          notebookEntriesCreated: 1,
+          notebookEntriesSkipped: 0,
+          settingsUpdated: 0,
+        },
+        warnings: [],
+        errors: [],
+      });
+    }
+
+    if (command === "apply_research_import") {
+      return Promise.resolve({
+        summary: {
+          companiesCreated: 1,
+          companiesMerged: 1,
+          watchlistsCreated: 1,
+          watchlistsMerged: 0,
+          membershipsCreated: 1,
+          notebookEntriesCreated: 1,
+          notebookEntriesSkipped: 0,
+          settingsUpdated: 0,
+        },
+        warnings: [],
+      });
+    }
+
+    if (command === "export_settings_data") {
+      return Promise.resolve({
+        fileName: "brawler-settings-2026-06-05.yaml",
+        mediaType: "application/x-yaml",
+        contents: "schemaVersion: 1\nsettings:\n  theme: dark\n",
+        summary: {
+          companies: 0,
+          watchlists: 0,
+          memberships: 0,
+          notebookEntries: 0,
+          settings: 15,
+        },
+      });
+    }
+
+    if (command === "preview_settings_import") {
+      return Promise.resolve({
+        valid: true,
+        summary: {
+          companiesCreated: 0,
+          companiesMerged: 0,
+          watchlistsCreated: 0,
+          watchlistsMerged: 0,
+          membershipsCreated: 0,
+          notebookEntriesCreated: 0,
+          notebookEntriesSkipped: 0,
+          settingsUpdated: 2,
+        },
+        warnings: [],
+        errors: [],
+      });
+    }
+
+    if (command === "apply_settings_import") {
+      appTestState.settingsResponse = {
+        ...appTestState.settingsResponse,
+        theme: "light",
+      };
+
+      return Promise.resolve({
+        summary: {
+          companiesCreated: 0,
+          companiesMerged: 0,
+          watchlistsCreated: 0,
+          watchlistsMerged: 0,
+          membershipsCreated: 0,
+          notebookEntriesCreated: 0,
+          notebookEntriesSkipped: 0,
+          settingsUpdated: 2,
+        },
+        warnings: [],
+      });
     }
 
     if (command === "list_watchlists") {

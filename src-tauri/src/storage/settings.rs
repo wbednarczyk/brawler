@@ -24,7 +24,7 @@ pub struct LogSettings {
     pub max_file_bytes: i64,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutBindingSetting {
     pub key: String,

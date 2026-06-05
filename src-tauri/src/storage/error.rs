@@ -6,6 +6,8 @@ pub enum StorageError {
     Sqlite(#[from] rusqlite::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("yaml error: {0}")]
+    Yaml(#[from] serde_yaml::Error),
     #[error("invalid setting value for {key}: {value}")]
     InvalidSettingValue { key: &'static str, value: String },
     #[error("invalid notebook value for {key}: {value}")]

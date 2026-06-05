@@ -9,12 +9,15 @@ import {
   initialGeminiCredentialStatus,
   initialNotebookEntry,
   invoke,
+  join,
   openUrl,
   renderApp,
+  save,
   screen,
   userEvent,
   vi,
   waitFor,
+  writeTextFile,
   within,
 } from "../../test/appWorkflowHarness";
 
@@ -31,6 +34,7 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
     expect(within(settingsRegion).getByText("night-neon")).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("button", { name: "Sources" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("button", { name: "Import And Export" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("button", { name: "Keyboard shortcuts" })).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("Settings palette"), "midnight-horizon");
@@ -46,9 +50,6 @@ describe("Settings screen workflows", () => {
 
     expect(within(settingsRegion).getByRole("heading", { name: "Sources" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("heading", { name: "Feed Cleanup" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByRole("heading", { name: "Import And Export" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("sqlite")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("accepted_deferred")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Feed cleanup")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("30 days")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Cleanup interval")).toBeInTheDocument();
@@ -144,6 +145,11 @@ describe("Settings screen workflows", () => {
 
     expect(within(settingsRegion).getByRole("heading", { name: "Źródła" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("heading", { name: "Czyszczenie kanału" })).toBeInTheDocument();
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "Import i eksport" }));
+
+    expect(within(settingsRegion).getByRole("heading", { name: "Import i eksport" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Dane badawcze")).toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Skróty klawiaturowe" }));
 
@@ -244,5 +250,106 @@ describe("Settings screen workflows", () => {
     await user.click(within(primaryNavigation).getByRole("button", { name: "Transkrypcje" }));
     expect(await screen.findByRole("heading", { name: "Transkrypcje" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Odśwież zadania" })).toBeInTheDocument();
+  });
+
+  it("previews and applies import/export workflows", async () => {
+    const user = userEvent.setup();
+    vi.mocked(save)
+      .mockResolvedValueOnce("/tmp/research-export")
+      .mockResolvedValueOnce("/tmp/settings-export");
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "Import And Export" }));
+    const researchPanel = within(settingsRegion).getByLabelText("Research data");
+    const settingsPanel = within(settingsRegion).getByLabelText("Settings");
+
+    await user.click(within(researchPanel).getByRole("button", { name: "Export" }));
+
+    expect(invoke).toHaveBeenCalledWith("export_research_data");
+    expect(join).toHaveBeenCalledWith("/home/test/Downloads", "brawler-research-data-2026-06-05.json");
+    expect(save).toHaveBeenCalledWith({
+      title: "Export file",
+      defaultPath: "/home/test/Downloads/brawler-research-data-2026-06-05.json",
+      filters: [{ name: "Research data", extensions: ["json"] }],
+      canCreateDirectories: true,
+    });
+    expect(writeTextFile).toHaveBeenCalledWith("/tmp/research-export.json", "{\"schemaVersion\":1}");
+
+    await user.upload(
+      within(researchPanel).getByLabelText("Choose research data file"),
+      new File(["{\"schemaVersion\":1}"], "research.json", { type: "application/json" }),
+    );
+    expect(within(researchPanel).getByLabelText("Choose research data file")).toHaveAttribute(
+      "accept",
+      ".json",
+    );
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("preview_research_import", {
+        input: {
+          contents: "{\"schemaVersion\":1}",
+        },
+      });
+    });
+    expect(within(researchPanel).getByLabelText("Import preview")).toBeInTheDocument();
+    expect(within(researchPanel).getByText("Companies created")).toBeInTheDocument();
+
+    await user.click(within(researchPanel).getByRole("button", { name: "Apply import" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("apply_research_import", {
+        input: {
+          contents: "{\"schemaVersion\":1}",
+        },
+      });
+    });
+    expect(within(researchPanel).getByLabelText("Import result")).toBeInTheDocument();
+
+    await user.click(within(settingsPanel).getByRole("button", { name: "Export" }));
+
+    expect(invoke).toHaveBeenCalledWith("export_settings_data");
+    expect(join).toHaveBeenCalledWith("/home/test/Downloads", "brawler-settings-2026-06-05.yaml");
+    expect(save).toHaveBeenCalledWith({
+      title: "Export file",
+      defaultPath: "/home/test/Downloads/brawler-settings-2026-06-05.yaml",
+      filters: [{ name: "Settings", extensions: ["yaml", "yml"] }],
+      canCreateDirectories: true,
+    });
+    expect(writeTextFile).toHaveBeenCalledWith(
+      "/tmp/settings-export.yaml",
+      "schemaVersion: 1\nsettings:\n  theme: dark\n",
+    );
+
+    await user.upload(
+      within(settingsPanel).getByLabelText("Choose settings file"),
+      new File(["schemaVersion: 1\nsettings:\n  theme: light\n"], "settings.yaml", {
+        type: "application/x-yaml",
+      }),
+    );
+    expect(within(settingsPanel).getByLabelText("Choose settings file")).toHaveAttribute(
+      "accept",
+      ".yaml,.yml",
+    );
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("preview_settings_import", {
+        input: {
+          contents: "schemaVersion: 1\nsettings:\n  theme: light\n",
+        },
+      });
+    });
+
+    await user.click(within(settingsPanel).getByRole("button", { name: "Apply import" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("apply_settings_import", {
+        input: {
+          contents: "schemaVersion: 1\nsettings:\n  theme: light\n",
+        },
+      });
+    });
   });
 });

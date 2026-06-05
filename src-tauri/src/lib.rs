@@ -23,6 +23,8 @@ pub mod commands;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&app_data_dir)?;
@@ -58,6 +60,12 @@ pub fn run() {
             commands::watchlists::delete_watchlist,
             commands::watchlists::add_company_to_watchlist,
             commands::watchlists::remove_company_from_watchlist,
+            commands::import_export::export_research_data,
+            commands::import_export::preview_research_import,
+            commands::import_export::apply_research_import,
+            commands::import_export::export_settings_data,
+            commands::import_export::preview_settings_import,
+            commands::import_export::apply_settings_import,
             commands::feed::list_feed_items,
             commands::sources::list_unmatched_source_items,
             commands::feed::update_feed_item_state,
@@ -129,7 +137,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.19.0");
+        assert_eq!(response.version, "0.20.0");
     }
 
     #[test]

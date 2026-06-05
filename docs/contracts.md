@@ -1029,6 +1029,7 @@ Rules:
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.
 - YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.
+- M20 implements YAML settings import/export for allowlisted non-secret settings only.
 - YAML must not contain secrets.
 - API keys and provider secrets live in the OS keychain.
 - `.env` or environment-variable API key fallback is allowed for local development and tests only.
@@ -1104,6 +1105,55 @@ Initial Tauri command groups:
 - `clear_gemini_transcription_api_key`
 - `get_settings`
 - `update_settings`
+- `export_research_data`
+- `preview_research_import`
+- `apply_research_import`
+- `export_settings_data`
+- `preview_settings_import`
+- `apply_settings_import`
+
+## Import And Export
+
+M20 exposes typed commands for portable user-owned setup and research data. It is not a full backup/restore feature.
+
+Research-data export returns a JSON document:
+
+```json
+{
+  "schemaVersion": 1,
+  "exportedAt": "2026-06-05T12:00:00Z",
+  "appVersion": "0.20.0",
+  "sections": ["companies", "watchlists", "notebooks"],
+  "companies": [],
+  "watchlists": [],
+  "memberships": [],
+  "notebookEntries": []
+}
+```
+
+Settings export returns a YAML document with `schemaVersion`, `exportedAt`, `appVersion`, and an allowlisted `settings` object.
+
+Typed commands:
+
+- `export_research_data() -> ExportPayload`
+- `preview_research_import({ contents }) -> ImportPreview`
+- `apply_research_import({ contents }) -> ImportApplyResult`
+- `export_settings_data() -> ExportPayload`
+- `preview_settings_import({ contents }) -> ImportPreview`
+- `apply_settings_import({ contents }) -> ImportApplyResult`
+
+Rules:
+
+- Research-data JSON includes companies, watchlists, memberships, and notebook entries.
+- Settings YAML includes only allowlisted non-secret settings.
+- Import preview validates schema version, references, setting keys, setting values, and duplicate note behavior before apply.
+- Apply must reject invalid preview states and must be transactional for each import operation.
+- Companies match by `qualifiedTicker`; existing local company fields win and missing optional fields may be filled.
+- Watchlist IDs are preserved when absent locally. Existing watchlist IDs merge memberships while keeping local name and description.
+- Membership companies must resolve from existing companies, companies included in the import, or an explicit future repair result. Placeholder companies are not created.
+- Notebook entries import for existing or included companies. Duplicate notebook entry IDs are skipped with preview warnings.
+- Notebook origins preserve source URL and label metadata even when referenced feed/transcript records are not part of M20 export.
+- Provider secrets, API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are excluded.
 
 Initial `refresh_gpw_company_registry` behavior:
 

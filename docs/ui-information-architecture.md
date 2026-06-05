@@ -338,6 +338,7 @@ Sections:
 - Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
+- Import and Export: export/import research data, export/import safe preferences, preview import changes before applying them
 - License: local author/friend-test license status, safe metadata, replace, and clear controls
 - Privacy: local data location, provider data disclosure
 - About: codename, app version, license status

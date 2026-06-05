@@ -577,3 +577,16 @@ Do not model these in v1:
 - cloud sync metadata
 - team permissions
 - cloud backup/sync metadata
+
+## Import And Export Documents
+
+M20 import/export documents are portable files, not runtime tables.
+
+Rules:
+
+- Research data is exported as JSON with schema version, export timestamp, app version, companies, watchlists, memberships, and notebook entries.
+- Settings are exported as YAML with schema version, export timestamp, app version, and allowlisted non-secret settings.
+- Import validates documents before any storage change.
+- Research import applies through existing SQLite tables inside one transaction.
+- Settings import writes through the same settings validation path used by normal Settings updates.
+- Provider secrets, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are not represented in M20 documents.

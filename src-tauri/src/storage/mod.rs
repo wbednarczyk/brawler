@@ -33,6 +33,7 @@ mod diagnostics;
 mod error;
 mod events;
 mod feed;
+mod import_export;
 mod licensing;
 mod metrics;
 mod migrations;
@@ -50,6 +51,7 @@ pub use ai_analysis::{
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
+pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
 pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
@@ -170,6 +172,40 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         companies::delete_company(&connection, company_id)
+    }
+
+    pub fn export_research_data(&self) -> StorageResult<ExportPayload> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        import_export::export_research_data(&connection)
+    }
+
+    pub fn preview_research_import(&self, contents: &str) -> StorageResult<ImportPreview> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        import_export::preview_research_import(&connection, contents)
+    }
+
+    pub fn apply_research_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        import_export::apply_research_import(&mut connection, contents)
+    }
+
+    pub fn export_settings_data(&self) -> StorageResult<ExportPayload> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        import_export::export_settings_data(&connection)
+    }
+
+    pub fn preview_settings_import(&self, contents: &str) -> StorageResult<ImportPreview> {
+        import_export::preview_settings_import(contents)
+    }
+
+    pub fn apply_settings_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        import_export::apply_settings_import(&connection, contents)
     }
 
     pub fn list_watchlists(&self) -> StorageResult<Vec<Watchlist>> {

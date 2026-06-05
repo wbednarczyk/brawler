@@ -168,6 +168,100 @@
   overflow-wrap: anywhere;
 }
 
+.import-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.import-export-panel,
+.import-export-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.import-export-panel {
+  align-content: start;
+}
+
+.import-export-panel h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.import-export-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-export-actions .compact-button {
+  width: auto;
+  white-space: nowrap;
+}
+
+.import-export-summary {
+  gap: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--surface-raised) 74%, var(--surface));
+}
+
+.import-export-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.import-export-summary-grid div {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.import-export-summary-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.import-export-summary-grid dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.import-export-messages {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  padding-right: 4px;
+  max-height: 140px;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.import-export-empty {
+  padding: 8px 0;
+}
+
+.import-export-apply {
+  justify-self: stretch;
+}
+
 .shortcut-reference-list {
   display: grid;
   gap: 12px;

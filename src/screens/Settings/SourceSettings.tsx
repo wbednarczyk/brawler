@@ -41,10 +41,6 @@ export function SourceSettings({
         </div>
         <dl className="settings-grid">
           <div>
-            <dt>{text("Settings source")}</dt>
-            <dd>{settings?.settingsSource ?? "sqlite"}</dd>
-          </div>
-          <div>
             <dt>{text("Poll interval")}</dt>
             <dd>{formatPollInterval(settings?.pollIntervalSeconds ?? 900)}</dd>
           </div>
@@ -81,19 +77,6 @@ export function SourceSettings({
         </dl>
       </section>
 
-      <section className="settings-group" aria-labelledby="settings-import-title">
-        <h2 id="settings-import-title">{t("settings.importExport.title")}</h2>
-        <dl className="settings-grid">
-          <div>
-            <dt>{text("YAML import/export")}</dt>
-            <dd>{settings?.yamlImportExportStatus ?? "accepted_deferred"}</dd>
-          </div>
-          <div>
-            <dt>{text("Settings format")}</dt>
-            <dd>{settings?.settingsImportExportFormat ?? "yaml"}</dd>
-          </div>
-        </dl>
-      </section>
     </>
   );
 }

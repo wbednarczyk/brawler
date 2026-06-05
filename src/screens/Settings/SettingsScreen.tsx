@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
+import { ImportExportSettings } from "./ImportExportSettings";
 import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
@@ -14,6 +15,7 @@ type SettingsTab =
   | "sources"
   | "ai"
   | "credentials"
+  | "importExport"
   | "shortcuts"
   | "logs"
   | "license";
@@ -23,6 +25,7 @@ const settingsTabs = [
   { id: "sources", labelKey: "settings.sources.title" },
   { id: "ai", labelKey: "settings.ai.title" },
   { id: "credentials", labelKey: "settings.credentials.title" },
+  { id: "importExport", labelKey: "settings.importExport.title" },
   { id: "shortcuts", labelText: "Keyboard shortcuts" },
   { id: "logs", labelText: "Logs" },
   { id: "license", labelText: "License" },
@@ -66,6 +69,7 @@ export function SettingsScreen({
   onSaveGeminiApiKey,
   onClearGeminiApiKey,
   onOpenGeminiApiKeyPage,
+  onImportApplied,
   formatTimestamp,
   formatPollInterval,
   formatAiProvider,
@@ -153,6 +157,9 @@ export function SettingsScreen({
               onOpenGeminiApiKeyPage={onOpenGeminiApiKeyPage}
               onSaveGeminiApiKey={onSaveGeminiApiKey}
             />
+          ) : null}
+          {activeSettingsTab === "importExport" ? (
+            <ImportExportSettings onImportApplied={onImportApplied} />
           ) : null}
           {activeSettingsTab === "shortcuts" ? (
             <ShortcutSettings
