@@ -2,6 +2,7 @@ use serde::Serialize;
 use tauri::Manager;
 
 pub mod app_state;
+pub mod data_directory;
 pub mod jobs;
 pub mod licensing;
 pub mod logging;
@@ -26,12 +27,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
-            let app_data_dir = app.path().app_data_dir()?;
+            let app_data_dir = data_directory::runtime_data_dir(app.path().app_data_dir()?)?;
             std::fs::create_dir_all(&app_data_dir)?;
 
             let database_path = app_data_dir.join("brawler.sqlite3");
             let connection = storage::open_database(database_path)?;
-            let state = app_state::AppState::new(connection);
+            let state = app_state::AppState::with_data_dir(connection, app_data_dir.clone());
             if developer_mode_requested_from_environment() {
                 state.set_developer_mode_enabled(true)?;
             }
@@ -137,7 +138,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.20.0");
+        assert_eq!(response.version, "0.21.0");
     }
 
     #[test]

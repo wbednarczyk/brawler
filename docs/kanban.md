@@ -59,6 +59,33 @@ Test expectations: future sync contract tests, conflict-resolution tests, and mo
 
 ## Done
 
+### M21: Portable Windows executable candidate
+
+Delivered:
+
+- Added ADR 0019 for the portable-only Windows candidate decision, including unsigned artifact posture, Windows 10/11 target, system WebView2 reliance, separate package/smoke-run commands, and executable-adjacent data.
+- Added portable Windows data-directory mode so Windows release builds store runtime data in `data/` next to the executable while development builds keep the OS app-data path.
+- Kept runtime secrets in the OS keychain while documenting that moved portable folders may require secrets to be re-entered.
+- Hardened `make package-windows-from-linux` to build and copy a versioned portable executable without launching it.
+- Added `make package-windows-smoke-run` as the separate manual launch command.
+- Hardened the native Windows fallback packaging script to copy the same versioned portable artifact shape.
+- Added the Windows GUI subsystem attribute so release executables run without opening a terminal window.
+- Added README quickstart and packaged-app smoke checklist documentation.
+- Deferred installer packaging, GitHub Actions packaging workflow, About/version UI, full backup/restore, release automation, tags, changelog, and hosted artifacts.
+- Bumped app version to `0.21.0`.
+
+ADR checkpoint: Added ADR 0019 to capture the M21 portable Windows executable packaging and data-location policy.
+
+Validation:
+
+- User manually signed off M21 closure.
+- `rtk cargo fmt --check` passed from `src-tauri`.
+- `rtk cargo test data_directory` passed from `src-tauri`.
+- `make package-windows-from-linux` passed after closure version bump and produced `D:\Brawler\Builds\latest\brawler-0.21.0-windows-x64-portable.exe`.
+- The packaged artifact was verified as `PE32+ executable (GUI) x86-64, for MS Windows`.
+- The packaged artifact created `D:\Brawler\Builds\latest\data\brawler.sqlite3` and `D:\Brawler\Builds\latest\data\logs\`.
+- `make check` passed before closure version bump.
+
 ### M20: Import and export companies, watchlists, notebooks, and settings
 
 Delivered:

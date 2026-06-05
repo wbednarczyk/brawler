@@ -728,32 +728,74 @@ Exit criteria:
 - automated tests cover file validation, secret exclusion, merge behavior, and settings round-trips
 - manual smoke testing covers export, clean-profile import, duplicate import, invalid file handling, and settings import
 
-## Milestone 21: V1 Packaging Candidate
+## Milestone 21: Portable Windows Executable Candidate
 
-Goal: produce the first personal-use Windows build candidate.
+Status: completed in `0.21.0`.
+
+Goal: produce the first personal-use portable Windows executable candidate.
 
 Included:
 
-- Windows packaging
-- portable Windows packaging
-- GitHub Actions packaging workflow
-- local database location decision
-- app version/about screen
-- license status visible in the packaged app
-- basic backup/export consideration
+- portable Windows executable packaging
+- self-sufficient executable packaging posture, with required runtime libraries bundled or otherwise delivered with the candidate artifact
+- local WSL-to-Windows packaging command hardening
+- native Windows packaging fallback hardening where needed
+- portable data directory mode that stores the portable app's data next to the executable
+- clear artifact naming with app version and Windows target
+- packaged-app license-gate validation
+- packaged-app local data persistence validation
 - smoke test checklist
-- README quickstart
-- import/restore and full local backup
+- README quickstart for running the portable executable
+- known limitations for the portable candidate
 
 Exit criteria:
 
-- app can be installed or run on Windows (including portable package)
-- existing local data survives restart
+- app can be run on Windows from the portable candidate artifact
+- the candidate artifact includes the runtime pieces needed by a normal Windows 10/11 machine, or documents any unavoidable prerequisite explicitly
+- portable app data is stored in the same folder tree as the executable
+- portable app data survives restart and moving the portable app folder when OS-keychain secrets are re-entered as needed
 - packaged app enforces the v1 author/friend-test license gate
 - primary workflows pass smoke testing
-- packaging workflow can be run from GitHub
-- packaging workflow is manually triggered unless release automation is explicitly approved
+- portable package creation can be run from the documented local command path
 - known limitations are documented
+
+Deferred from the original M21 scope:
+
+- installer packaging
+- GitHub Actions packaging workflow
+- app version/about screen
+- richer license status surface beyond the existing license-gate/settings UI
+- full import/restore and local backup beyond the M20 import/export feature
+- release automation, tags, changelog, and hosted artifacts
+
+## Future: Release Packaging And Distribution Hardening
+
+Goal: add release-grade distribution paths after the portable Windows executable candidate is proven.
+
+Candidate scope:
+
+- Windows installer packaging
+- manual GitHub Actions packaging workflow
+- artifact retention and naming policy
+- app version/about screen
+- release notes or changelog workflow
+- optional tag-driven release candidate workflow
+
+Not scheduled.
+
+## Future: Full Backup And Restore
+
+Goal: design and implement full local backup and restore beyond the scoped M20 import/export feature.
+
+Candidate scope:
+
+- full app data backup format
+- restore safety while the app is running
+- clear exclusions for secrets, license tokens, logs, diagnostics, metrics, and private signing material
+- compatibility strategy across app versions
+- manual recovery documentation
+
+Not scheduled.
 
 ## Future Exploration: Terminal Interface
 

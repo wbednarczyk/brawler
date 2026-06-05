@@ -84,9 +84,21 @@ if (-not (Test-Path $exePath)) {
     throw "Expected packaged executable was not found: $exePath"
 }
 
+$appVersion = (node -p "require('./package.json').version").Trim()
+$artifactName = "brawler-$appVersion-windows-x64-portable.exe"
+
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
-$copiedExe = Join-Path $OutputDir "brawler.exe"
+Get-Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.ProcessName -like "brawler*" } |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+
+$oldUnversionedExe = Join-Path $OutputDir "brawler.exe"
+if (Test-Path $oldUnversionedExe) {
+    Remove-Item -Force $oldUnversionedExe
+}
+
+$copiedExe = Join-Path $OutputDir $artifactName
 Copy-Item -Force $exePath $copiedExe
 
 $bundleDir = Join-Path $WindowsRepo "src-tauri\target\release\bundle"
@@ -96,7 +108,7 @@ if (Test-Path $bundleDir) {
     Copy-Item -Force -Recurse (Join-Path $bundleDir "*") $copiedBundleDir
 }
 
-Write-Host "Copied executable: $copiedExe" -ForegroundColor Green
+Write-Host "Copied portable executable: $copiedExe" -ForegroundColor Green
 
 if ($OpenOutput) {
     Start-Process explorer.exe $OutputDir | Out-Null
