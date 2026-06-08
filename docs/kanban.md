@@ -22,6 +22,27 @@ Docs/contracts touched: roadmap, engineering workflow, project practices, possib
 
 Test expectations: no Playwright dependency until the assessment approves scope and cost; existing frontend tests continue to pass.
 
+### M24: Research workspace architecture
+
+Intent: plan the future research-workspace feature family before implementation so company timelines, review mode, claim tracking, research questions, AI briefs, digests, source trust signals, reminders, and evidence links share one coherent model.
+
+Acceptance criteria:
+
+- Candidate capabilities are grouped into cohesive implementation milestones instead of ten isolated screens.
+- A shared research evidence model is designed for feed items, reports, media items, notes, claims, transcripts, events, questions, reminders, AI briefs, and digests.
+- Timeline/read-model ownership is decided so UI screens can aggregate evidence without coupling directly to unrelated storage tables.
+- Review workflow semantics are defined, including "last reviewed", "changed since review", company review, and watchlist review.
+- Evidence-linking semantics are defined for source-to-note, source-to-claim, event-to-claim, question-to-evidence, AI-brief citations, and digest citations.
+- AI brief generation boundaries are planned as pluggable evidence collector, prompt/builder, provider, renderer, and storage surfaces.
+- Source quality/trust signal vocabulary is defined without exposing implementation language in normal UI.
+- Storage, import/export, backup, retention, and migration impacts are assessed.
+- Architectural decisions are captured in an ADR if the model becomes a durable product boundary.
+- Resulting implementation milestones are added to roadmap/kanban only after the architecture is clear.
+
+Docs/contracts touched: product spec, roadmap, contracts, data model, UI information architecture, modularization design, AI analysis framework, possibly ADR.
+
+Test expectations: no feature implementation in this milestone; future tests should cover evidence aggregation, review-state updates, linking integrity, AI citation grounding, and UI workflow regressions.
+
 ### Design feed retention policy
 
 Intent: prevent the local SQLite database from growing indefinitely with low-value feed items.

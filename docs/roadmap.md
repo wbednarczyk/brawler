@@ -849,6 +849,66 @@ Exit criteria:
 - if accepted, implementation tasks are split into a follow-up milestone or approved implementation slice
 - if rejected or deferred, current CSS contract/manual smoke strategy is updated with the known limitations
 
+## Milestone 24: Research Workspace Architecture
+
+Status: planned.
+
+Goal: plan the next product-differentiation layer before implementation so future company timelines, review workflows, research questions, claim tracking, AI briefs, digests, source trust signals, reminders, and evidence links are built on one coherent model.
+
+Context:
+
+Brawler should grow toward a personal research memory system for public companies, not a generic market dashboard. The product value should come from traceable source-grounded research: what changed, why it matters, what management said before, and what the user should check next.
+
+Included:
+
+- group the research-workspace candidates into cohesive implementation milestones
+- design a shared research evidence model for feed items, official reports, media items, notes, claims, transcripts, events, questions, reminders, AI briefs, and digests
+- decide timeline/read-model ownership for aggregating evidence across domains
+- define company review and watchlist review semantics, including last-reviewed state and changed-since-review behavior
+- define evidence-linking semantics across notes, claims, source items, events, questions, transcripts, AI briefs, and digests
+- plan AI brief generation as pluggable evidence collector, prompt/builder, provider, renderer, and storage boundaries
+- define source quality/trust signal vocabulary suitable for normal UI
+- assess storage, import/export, backup, retention, migration, and test impact
+- decide which existing modules are extensible enough and which boundaries need refactoring before feature implementation
+- add or update an ADR if the research evidence model becomes a durable architecture boundary
+
+Candidate capabilities to organize:
+
+- company change timeline
+- "what changed since last review" views
+- expanded management claim tracker
+- source-grounded AI research briefs
+- open research questions or threads
+- watchlist review mode
+- event-aware reminders
+- source quality and trust signals
+- personal research digest
+- evidence graph or related-items linking
+
+Not in scope:
+
+- implementing the research workspace features
+- adding AI-generated briefs before evidence and citation boundaries are clear
+- adding generic portfolio tracking, trading signals, technical charts, or market dashboard features
+
+Architecture decisions to make:
+
+- Evidence model: extend existing domain tables with a shared read model, add a dedicated evidence table, or build a hybrid projection.
+- Timeline ownership: frontend aggregation, backend read model, or stored projection.
+- Review state: per-company, per-watchlist, per-source-item, per-evidence-item, or layered.
+- Linking model: typed links table, embedded origin references, or hybrid.
+- AI output persistence: notebook-like entries, dedicated brief entities, or generated-on-demand snapshots.
+- Reminder model: derived from claims/events only, explicit reminder entities, or both.
+- Source trust vocabulary: fixed system taxonomy, user-editable labels, or adapter-provided defaults with user override.
+
+Exit criteria:
+
+- recommended architecture is recorded with options and tradeoffs
+- user explicitly approves the architecture decisions before implementation milestones are created
+- roadmap and Kanban contain the resulting implementation sequence
+- docs/contracts/data model/UI architecture are updated enough that future agents can implement without rediscovering the model
+- ADR checkpoint is complete
+
 ## Future: Release Packaging And Distribution Hardening
 
 Goal: add release-grade distribution paths after the portable Windows executable candidate is proven.

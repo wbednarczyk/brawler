@@ -217,6 +217,25 @@ Export is part of normal v1 implementation. M20 exports companies, watchlists, w
 
 These ideas are intentionally out of v1 scope, but should influence architectural choices where the cost is low.
 
+### Research Workspace
+
+A future product-differentiation direction is to make the app a personal research memory system for public companies, not only a feed reader. The goal is to help the user answer what changed, why it matters, what management said before, and what should be checked next.
+
+Candidate capabilities:
+
+- company change timeline combining feed items, official reports, media items, notes, transcripts, claims, calendar events, and future AI outputs
+- "what changed since last review" views for a company, watchlist, or time window
+- expanded management claim tracking with source, expected period, follow-up date, related future events, and status history
+- source-grounded company or watchlist research brief with cited evidence and no buy/sell/hold recommendations
+- open research questions or threads per company, linked to notes, claims, events, and source items
+- watchlist review mode that guides the user company-by-company through unread items, upcoming events, unresolved claims, and open questions
+- event-aware reminders such as unresolved claims tied to an upcoming reporting period
+- source quality and trust signals that distinguish official reports, company publications, media articles, opinion, paid research, and other source types
+- daily or weekly personal research digest generated from the user's local watchlists and source items
+- evidence linking between related source items, notes, claims, transcripts, questions, AI briefs, and events
+
+This direction should not be implemented as ten separate isolated screens. Before implementation, a dedicated planning milestone should define a shared research evidence model, timeline/read-model boundary, review-session model, evidence-linking model, AI brief-building boundary, storage implications, and import/export impact. Existing notebooks, claims, feed items, transcripts, and future events should plug into this model through stable contracts instead of direct cross-screen coupling.
+
 ### Terminal Interface
 
 A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.
