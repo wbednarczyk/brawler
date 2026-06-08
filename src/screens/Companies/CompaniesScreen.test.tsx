@@ -31,7 +31,7 @@ describe("Companies screen workflows", () => {
 
     expect(await screen.findByDisplayValue("CD PROJEKT S.A.")).toBeInTheDocument();
     expect(screen.getByDisplayValue("PLOPTTC00011")).toBeInTheDocument();
-    expect(screen.getByText("Filled from gpw_registry: GPW:CDR")).toBeInTheDocument();
+    expect(screen.getByText("Filled from company_directory: GPW:CDR")).toBeInTheDocument();
   });
 
   it("selects a company from local GPW registry suggestions", async () => {
@@ -49,7 +49,7 @@ describe("Companies screen workflows", () => {
     expect(screen.getByDisplayValue("DNP")).toBeInTheDocument();
     expect(screen.getByDisplayValue("DINO POLSKA S.A.")).toBeInTheDocument();
     expect(screen.getByDisplayValue("PLDINPL00011")).toBeInTheDocument();
-    expect(screen.getByText("Selected from GPW registry: GPW:DNP")).toBeInTheDocument();
+    expect(screen.getByText("Selected from company directory: GPW:DNP")).toBeInTheDocument();
     expect(screen.queryByLabelText("Company registry suggestions")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Clear ticker" }));
@@ -58,7 +58,7 @@ describe("Companies screen workflows", () => {
     expect(screen.getByLabelText("Ticker")).toHaveValue("");
     expect(screen.getByLabelText("Name")).toHaveValue("DINO POLSKA S.A.");
     expect(screen.getByLabelText("ISIN")).toHaveValue("PLDINPL00011");
-    expect(screen.queryByText("Selected from GPW registry: GPW:DNP")).not.toBeInTheDocument();
+    expect(screen.queryByText("Selected from company directory: GPW:DNP")).not.toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Ticker"), "DNP");
 

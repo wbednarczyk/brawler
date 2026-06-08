@@ -8,7 +8,7 @@ import type {
   UserSettings,
 } from "../api/types";
 import type { SourceRefreshState } from "./appTypes";
-import { eventSourceAdapterIds, gpwRegistryAdapterId } from "./sourceScheduler";
+import { eventSourceAdapterIds } from "./sourceScheduler";
 
 type RefreshCallbacks = {
   refreshCompanyEvents: () => Promise<void>;
@@ -49,6 +49,10 @@ function sourceAdapterRefreshDue(adapter: SourceAdapter, intervalMs: number) {
   }
 
   return now - lastSuccessAt >= intervalMs;
+}
+
+function isCompanyDirectorySource(adapter: SourceAdapter) {
+  return adapter.sourceType === "company_registry";
 }
 
 function combineSourceResults(results: SourceIngestionResult[], adapterId: string): SourceIngestionResult {
@@ -168,7 +172,9 @@ export function useSourceRefreshController({
     return sourcesApi.refreshGpwCompanyRegistry(trigger)
       .then((response) => {
         setRegistryRefreshResult(response);
-        setSelectedSourceAdapterId(response.adapterId);
+        if (response.adapterId !== "company-directories") {
+          setSelectedSourceAdapterId(response.adapterId);
+        }
         return Promise.all([refreshSourceAdapters(), refreshDatabaseStatus(), refreshCompanyRegistryEntries()]);
       })
       .then(() => {
@@ -193,7 +199,7 @@ export function useSourceRefreshController({
       return Promise.resolve();
     }
 
-    if (adapter.id === gpwRegistryAdapterId) {
+    if (isCompanyDirectorySource(adapter)) {
       return refreshCompanyRegistry(trigger);
     }
 

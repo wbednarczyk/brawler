@@ -768,6 +768,87 @@ Deferred from the original M21 scope:
 - full import/restore and local backup beyond the M20 import/export feature
 - release automation, tags, changelog, and hosted artifacts
 
+## Milestone 22: Sources Trust, Control, And Company Directory Extensibility
+
+Status: completed in `0.22.0`.
+
+Goal: make Sources a normal-user trust and control surface, move unimplemented source candidates to Developer mode/docs, implement the NewConnect company directory source, and keep the company-directory model ready for later markets.
+
+Included:
+
+- normal Sources view showing only implemented sources with normal-user detail depth
+- Developer-mode/docs visibility for unimplemented candidates, review-only source details, and source diagnostics that are not normal-user actions
+- source visibility tiers for required, optional, and candidate/developer-only sources
+- source enable/disable support for optional implemented sources
+- protection against disabling required source support from normal UI
+- GPW registry reframed as company directory / lookup support
+- simple source health statuses suitable for normal users
+- removal of unmatched source-item diagnostics from normal UI unless turned into clear user actions
+- source-candidate study covering current candidates before any candidate is promoted into normal UI
+- NewConnect company-directory source implementation using the official NewConnect company list
+- company-directory architecture review for later company-directory sources
+- assessment of whether the current company registry, source ID, and database model can support multiple company-directory sources without a larger refactor
+- source copy cleanup so normal UI does not expose implementation or architecture wording
+- focused tests for source visibility, enable/disable behavior, required-source protection, Developer-mode candidate visibility, copy guardrails, and Sources layout/scroll behavior
+
+Initial source classification:
+
+- required: GPW company directory / registry support, NewConnect company directory support
+- optional, default enabled: Bankier Company Komunikaty, Bankier Giełda RSS, GPW market events RSS, Bankier Kalendarium
+- candidate/developer-only: GPW ESPI/EBI, Portal Analiz, Bankier Firma RSS, Bankier Wiadomości RSS, Strefa report calendar, Money calendar
+
+Exit criteria:
+
+- normal users see implemented sources only, with clear health and actions
+- optional implemented sources can be enabled and disabled, and the choice persists
+- required source support cannot be disabled from normal UI
+- Developer mode or owner docs expose source candidates and technical review details without showing placeholders in normal UI
+- GPW company directory support is understandable as company lookup/matching support
+- NewConnect company-directory source is implemented and uses the same directory/cache boundary as GPW
+- source-candidate study records the next action for every current candidate
+- docs/contracts describe the source visibility tiers and source enablement boundary
+- automated tests cover the normal/developer visibility split, enable/disable behavior, copy guardrails, and layout/scroll regressions
+
+## Milestone 23: Browser UI Regression Testing Assessment
+
+Status: planned.
+
+Goal: assess and plan whether Playwright, or an equivalent real-browser UI testing path, should be added to catch layout and visual regressions that Vitest/jsdom cannot reliably detect.
+
+Included:
+
+- compare current Vitest/jsdom workflow tests, CSS contract tests, manual smoke checks, and real-browser automation coverage
+- decide whether Playwright should test the Vite preview app, Tauri desktop app, or both
+- assess local developer workflow impact, Nix integration, Windows/WSL practicality, and default CI cost
+- define a small first-test slice if Playwright is accepted, focused on regressions that have already happened: scrolling boundaries, fixed app chrome, Sources bar sizing, notebook panel layout, and dense list rendering
+- decide screenshot/visual snapshot policy, including when pixel snapshots are useful versus brittle
+- decide whether Playwright tests are default checks, opt-in checks, or release/smoke checks only
+- document setup, commands, troubleshooting, and artifact handling before adding the dependency
+- update project practices and engineering workflow if browser automation becomes part of the normal development loop
+
+Not in scope:
+
+- broad end-to-end coverage of all product workflows
+- live external source/API tests
+- replacing existing Vitest component/workflow tests
+- adding Playwright before the assessment resolves scope, runtime cost, and ownership
+
+Architecture decisions to make:
+
+- Test target: Vite preview app only, Tauri desktop runtime, or both.
+- Execution path: default local/CI check, opt-in local smoke check, or release-gate check.
+- Evidence model: DOM assertions only, screenshots, visual snapshots, or a mixed approach.
+- Runtime ownership: WSL/Nix only, native Windows only, or documented split.
+- Artifact policy: whether screenshots/videos/traces are retained locally, in CI, or only on failures.
+
+Exit criteria:
+
+- recommendation recorded with rationale and tradeoffs
+- first Playwright scope is explicitly approved or rejected
+- local commands and CI posture are documented
+- if accepted, implementation tasks are split into a follow-up milestone or approved implementation slice
+- if rejected or deferred, current CSS contract/manual smoke strategy is updated with the known limitations
+
 ## Future: Release Packaging And Distribution Hardening
 
 Goal: add release-grade distribution paths after the portable Windows executable candidate is proven.
@@ -794,6 +875,33 @@ Candidate scope:
 - clear exclusions for secrets, license tokens, logs, diagnostics, metrics, and private signing material
 - compatibility strategy across app versions
 - manual recovery documentation
+
+Not scheduled.
+
+## Future: Windows Taskbar Unread Indicator
+
+Goal: make unread Inbox activity visible from the Windows taskbar without opening the app.
+
+Candidate scope:
+
+- small dot-style taskbar indicator when unread feed items exist
+- clear the indicator when unread count returns to zero
+- route unread state through a small desktop taskbar indicator boundary
+- Windows adapter for the real taskbar integration
+- no-op adapter for non-Windows and unsupported runtimes
+- native Windows packaged-app smoke test covering indicator appearance and clearing
+
+Deferred:
+
+- numeric unread badges
+- source-failure, license, or background-job taskbar indicators
+- taskbar behavior on non-Windows platforms
+
+Architecture notes:
+
+- The Inbox should publish unread activity state; it should not own Windows taskbar API calls directly.
+- The desktop boundary should allow later platform adapters or richer attention states without changing Inbox behavior.
+- If Tauri does not expose a suitable Windows taskbar overlay/badge API, a Windows-specific native adapter should be isolated behind the same boundary.
 
 Not scheduled.
 
@@ -868,9 +976,3 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 - hosted ingestion jobs
 - commercial paid data APIs that require redistribution/licensing or product-level billing
 - mobile app
-
-## Next Ready Candidates
-
-Recommended next Ready cards:
-
-- Milestone 19 dedicated watchlist management

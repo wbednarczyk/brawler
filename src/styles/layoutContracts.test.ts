@@ -16,6 +16,7 @@ const layoutCss = readStyle("layout.css");
 const notebooksCss = readStyle("screens/notebooks.css");
 const responsiveCss = readStyle("responsive.css");
 const shellCss = readStyle("shell.css");
+const sourcesCss = readStyle("screens/sources.css");
 const watchlistsCss = readStyle("screens/watchlists.css");
 
 function ruleFor(css: string, selector: string) {
@@ -137,5 +138,30 @@ describe("layout scroll contracts", () => {
     expect(dayBodyRule).toContain("min-width: 0");
     expect(dayBodyRule).toContain("overflow: auto");
     expect(dayBodyRule).toContain("overscroll-behavior: contain");
+  });
+
+  it("keeps Sources category and source rows at intrinsic content height", () => {
+    const layoutRule = ruleFor(sourcesCss, ".sources-layout");
+    const groupRule = ruleFor(sourcesCss, ".source-group");
+    const groupListRule = ruleFor(sourcesCss, ".source-group-list");
+    const rowMainRule = ruleFor(sourcesCss, ".source-row-main");
+    const titleRule = ruleFor(sourcesCss, ".source-title-line h2");
+    const subtitleRule = ruleFor(sourcesCss, ".source-row p");
+    const sourceChipListRule = ruleFor(sourcesCss, ".sources-layout .source-chip-list");
+    const selectedSourceRule = ruleFor(sourcesCss, ".sources-layout .source-row-selected");
+
+    expect(layoutRule).toContain("align-content: start");
+    expect(groupRule).toContain("align-content: start");
+    expect(groupListRule).toContain("align-content: start");
+    expect(rowMainRule).toContain("display: flex");
+    expect(rowMainRule).toContain("align-items: center");
+    expect(titleRule).toContain("white-space: nowrap");
+    expect(titleRule).toContain("text-overflow: ellipsis");
+    expect(subtitleRule).toContain("white-space: nowrap");
+    expect(subtitleRule).toContain("text-overflow: ellipsis");
+    expect(sourceChipListRule).toContain("margin-top: 0");
+    expect(selectedSourceRule).toContain("border-color: color-mix(in srgb, var(--primary) 76%, var(--border))");
+    expect(selectedSourceRule).toContain("linear-gradient");
+    expect(selectedSourceRule).toContain("0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent)");
   });
 });

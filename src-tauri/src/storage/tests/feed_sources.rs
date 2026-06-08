@@ -124,7 +124,7 @@ fn ingests_gpw_listings_and_matches_tracked_company_by_isin() {
     assert_eq!(result.items_unmatched, 1);
 
     let adapters = state
-        .list_source_adapters()
+        .list_source_adapters_with_developer(true)
         .expect("source adapters should list");
     let adapter = adapters
         .iter()
@@ -1088,7 +1088,7 @@ fn records_successful_zero_item_gpw_refresh() {
     assert!(result.fetched_at.is_some());
 
     let adapters = state
-        .list_source_adapters()
+        .list_source_adapters_with_developer(true)
         .expect("source adapters should list");
     let adapter = adapters
         .iter()

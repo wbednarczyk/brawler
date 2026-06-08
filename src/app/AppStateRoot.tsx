@@ -26,10 +26,8 @@ import {
   emptyNotebookForm,
   manualNotebookOrigins,
 } from "./notebookForms";
-import {
-  feedPruneRetentionDays,
-  gpwRegistryAdapterId,
-} from "./sourceScheduler";
+import { feedPruneRetentionDays } from "./sourceScheduler";
+import * as sourcesApi from "../api/sources";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAppViewModel } from "./useAppViewModel";
@@ -936,6 +934,26 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     sourceRefreshFailureCount,
   });
 
+  function setSourceEnabled(adapter: SourceAdapter, enabled: boolean) {
+    if (!adapter.userConfigurable || adapter.enabled === enabled) {
+      return;
+    }
+
+    sourcesApi.setSourceAdapterEnabled({ adapterId: adapter.id, enabled })
+      .then((updatedAdapter) => {
+        setSourceAdapters((current) =>
+          current.map((sourceAdapter) =>
+            sourceAdapter.id === updatedAdapter.id ? updatedAdapter : sourceAdapter,
+          ),
+        );
+        setSourceAdaptersError(null);
+      })
+      .catch((error) => {
+        setSourceAdaptersError(String(error));
+        refreshSourceAdapters();
+      });
+  }
+
   const {
     resizeDetailPane,
     resizeDetailPaneWithKeyboard,
@@ -1535,6 +1553,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
             <SourcesScreen
               sourceAdapters={sourceAdapters}
               sourceAdaptersError={sourceAdaptersError}
+              developerMode={Boolean(settings?.developerMode)}
               selectedSourceAdapterId={selectedSourceAdapterId}
               sourceRefreshState={sourceRefreshState}
               sourceRefreshResult={sourceRefreshResult}
@@ -1552,10 +1571,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               unmatchedSourceItems={unmatchedSourceItems}
               unmatchedSourceItemsError={unmatchedSourceItemsError}
               expandedUnmatchedAdapters={expandedUnmatchedAdapters}
-              gpwRegistryAdapterId={gpwRegistryAdapterId}
               refreshSources={refreshSources}
-              refreshSingleSource={refreshSingleSource}
               refreshCompanyRegistry={refreshCompanyRegistry}
+              setSourceEnabled={setSourceEnabled}
               toggleSourceAdapter={toggleSourceAdapter}
               toggleSourceAdapterFromKeyboard={toggleSourceAdapterFromKeyboard}
               toggleCompanyRegistryList={toggleCompanyRegistryList}

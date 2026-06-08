@@ -22,7 +22,6 @@ import type {
   UserSettings,
   WatchlistMembership,
 } from "../api/types";
-import { gpwRegistryAdapterId } from "./sourceScheduler";
 import { resolveTheme } from "./theme";
 import { notebookFormFromEntry } from "./notebookForms";
 
@@ -375,11 +374,11 @@ export function useAppViewModel({
   const selectedCompanyFeedItem =
     selectedCompanyFeedItems.find((item) => item.id === selectedCompanyFeedItemId) ?? null;
   const registryAdapter = useMemo(
-    () => sourceAdapters.find((adapter) => adapter.id === gpwRegistryAdapterId) ?? null,
+    () => sourceAdapters.find((adapter) => adapter.sourceType === "company_registry") ?? null,
     [sourceAdapters],
   );
   const scheduledSourceAdapters = useMemo(
-    () => sourceAdapters.filter((adapter) => adapter.enabled && adapter.id !== gpwRegistryAdapterId),
+    () => sourceAdapters.filter((adapter) => adapter.enabled && adapter.sourceType !== "company_registry"),
     [sourceAdapters],
   );
   const scheduledSourceAdapterKey = useMemo(
@@ -415,13 +414,18 @@ export function useAppViewModel({
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value.length >= 2);
 
-    if (companyForm.exchange.trim().toUpperCase() !== "GPW" || searchTerms.length === 0) {
+    const formExchange = companyForm.exchange.trim().toUpperCase();
+    if (searchTerms.length === 0) {
       return [];
     }
 
     return companyRegistryEntries
-      .filter((entry) =>
-        searchTerms.some((term) =>
+      .filter((entry) => {
+        if (formExchange && entry.exchange.toUpperCase() !== formExchange) {
+          return false;
+        }
+
+        return searchTerms.some((term) =>
           [
             entry.ticker,
             entry.qualifiedTicker,
@@ -431,8 +435,8 @@ export function useAppViewModel({
             .join(" ")
             .toLowerCase()
             .includes(term),
-        ),
-      )
+        );
+      })
       .slice(0, 5);
   }, [
     companyForm.displayName,

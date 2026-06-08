@@ -147,13 +147,33 @@ fn refresh_sources_for_trigger_inner(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
-    let bankier_result = refresh_bankier_rss_for_trigger(state, trigger)?;
-    let bankier_company_result = refresh_bankier_company_for_trigger(state, trigger)?;
-    let gpw_market_events_result = refresh_gpw_market_events_for_trigger(state, trigger)?;
-    let bankier_calendar_result = refresh_bankier_calendar_for_trigger(state, trigger)?;
+    let bankier_result = refresh_optional_source(
+        state,
+        source_adapters::bankier_rss::ADAPTER_ID,
+        trigger,
+        refresh_bankier_rss_for_trigger,
+    )?;
+    let bankier_company_result = refresh_optional_source(
+        state,
+        source_adapters::bankier_company::ADAPTER_ID,
+        trigger,
+        refresh_bankier_company_for_trigger,
+    )?;
+    let gpw_market_events_result = refresh_optional_source(
+        state,
+        source_adapters::gpw_market_events::ADAPTER_ID,
+        trigger,
+        refresh_gpw_market_events_for_trigger,
+    )?;
+    let bankier_calendar_result = refresh_optional_source(
+        state,
+        source_adapters::bankier_calendar::ADAPTER_ID,
+        trigger,
+        refresh_bankier_calendar_for_trigger,
+    )?;
 
     Ok(storage::SourceIngestionResult {
-        adapter_id: bankier_company_result.adapter_id,
+        adapter_id: "all".to_owned(),
         items_fetched: bankier_result.items_fetched
             + bankier_company_result.items_fetched
             + gpw_market_events_result.items_fetched
@@ -187,6 +207,13 @@ fn refresh_source_for_trigger_inner(
     trigger: &str,
     date: Option<&str>,
 ) -> Result<storage::SourceIngestionResult, String> {
+    if !state
+        .source_adapter_enabled(adapter_id)
+        .map_err(|error| error.to_string())?
+    {
+        return Err("Source is turned off".to_owned());
+    }
+
     match adapter_id {
         source_adapters::gpw_espi_ebi::ADAPTER_ID => Err(
             "GPW ESPI/EBI is disabled while Bankier Company Komunikaty is the active official-report source"
@@ -216,6 +243,20 @@ fn refresh_source_for_trigger_inner(
                 fetched_at: Some(registry_result.fetched_at),
             })
         }
+        source_adapters::newconnect_company_directory::ADAPTER_ID => {
+            let registry_result = refresh_newconnect_company_directory_for_trigger(state, trigger)?;
+            Ok(storage::SourceIngestionResult {
+                adapter_id: registry_result.adapter_id,
+                items_fetched: registry_result.entries_fetched,
+                items_created: registry_result.entries_upserted,
+                items_matched: 0,
+                items_unmatched: registry_result.entries_deactivated,
+                detail_items_attempted: 0,
+                detail_items_stored: 0,
+                detail_items_failed: 0,
+                fetched_at: Some(registry_result.fetched_at),
+            })
+        }
         "portal-analiz" => {
             Err("Portal Analiz is disabled until its authenticated adapter is implemented".to_owned())
         }
@@ -227,6 +268,36 @@ fn refresh_source_for_trigger_inner(
                 .to_owned(),
         ),
         _ => Err(format!("Unknown source adapter: {adapter_id}")),
+    }
+}
+
+fn refresh_optional_source(
+    state: &app_state::AppState,
+    adapter_id: &str,
+    trigger: &str,
+    refresh: fn(&app_state::AppState, &str) -> Result<storage::SourceIngestionResult, String>,
+) -> Result<storage::SourceIngestionResult, String> {
+    if !state
+        .source_adapter_enabled(adapter_id)
+        .map_err(|error| error.to_string())?
+    {
+        return Ok(empty_source_result(adapter_id));
+    }
+
+    refresh(state, trigger)
+}
+
+fn empty_source_result(adapter_id: &str) -> storage::SourceIngestionResult {
+    storage::SourceIngestionResult {
+        adapter_id: adapter_id.to_owned(),
+        items_fetched: 0,
+        items_created: 0,
+        items_matched: 0,
+        items_unmatched: 0,
+        detail_items_attempted: 0,
+        detail_items_stored: 0,
+        detail_items_failed: 0,
+        fetched_at: None,
     }
 }
 
@@ -548,7 +619,7 @@ pub fn should_bootstrap_gpw_registry(
             .as_deref()
             .is_some_and(|value| value.trim().chars().count() >= 3);
 
-    if input.exchange.trim().to_uppercase() != "GPW" || !has_lookup_value {
+    if !matches!(input.exchange.trim().to_uppercase().as_str(), "GPW" | "NC") || !has_lookup_value {
         return Ok(false);
     }
 
@@ -582,6 +653,54 @@ pub fn refresh_gpw_company_registry_for_trigger(
     state
         .refresh_gpw_company_registry(&entries, &fetched_at)
         .map_err(|error| error.to_string())
+}
+
+pub fn refresh_newconnect_company_directory_for_trigger(
+    state: &app_state::AppState,
+    trigger: &str,
+) -> Result<storage::CompanyRegistryRefreshResult, String> {
+    let _ = state.record_source_adapter_attempt(
+        source_adapters::newconnect_company_directory::ADAPTER_ID,
+        trigger,
+    );
+
+    let fetcher =
+        source_adapters::newconnect_company_directory::HttpNewConnectCompanyDirectoryFetcher;
+    let (entries, fetched_at) =
+        match source_adapters::newconnect_company_directory::fetch_company_directory_entries(
+            &fetcher,
+        ) {
+            Ok(result) => result,
+            Err(error) => {
+                let message = error.to_string();
+                let _ = state.record_source_adapter_error(
+                    source_adapters::newconnect_company_directory::ADAPTER_ID,
+                    &message,
+                );
+
+                return Err(message);
+            }
+        };
+
+    state
+        .refresh_newconnect_company_directory(&entries, &fetched_at)
+        .map_err(|error| error.to_string())
+}
+
+pub fn refresh_company_directories_for_trigger(
+    state: &app_state::AppState,
+    trigger: &str,
+) -> Result<storage::CompanyRegistryRefreshResult, String> {
+    let gpw_result = refresh_gpw_company_registry_for_trigger(state, trigger)?;
+    let newconnect_result = refresh_newconnect_company_directory_for_trigger(state, trigger)?;
+
+    Ok(storage::CompanyRegistryRefreshResult {
+        adapter_id: "company-directories".to_owned(),
+        entries_fetched: gpw_result.entries_fetched + newconnect_result.entries_fetched,
+        entries_upserted: gpw_result.entries_upserted + newconnect_result.entries_upserted,
+        entries_deactivated: gpw_result.entries_deactivated + newconnect_result.entries_deactivated,
+        fetched_at: gpw_result.fetched_at.max(newconnect_result.fetched_at),
+    })
 }
 
 #[cfg(test)]

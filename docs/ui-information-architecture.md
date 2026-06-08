@@ -42,7 +42,7 @@ Shell behavior:
 - Common mutations should provide immediate visual confirmation without blocking the workflow.
 - Intuitive, responsive UX is a core product requirement for every screen.
 - Normal user-facing UI copy should use product terms and avoid implementation details such as SQLite, Tauri, database engine, internal adapter, module, collector, schema, or command boundary. Technical terms are reserved for Developer Diagnostics and owner/developer docs.
-- Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with a per-exchange color map. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
+- Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with explicit known-exchange colors plus deterministic fallback palette colors for future exchanges. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
 
 ## Inbox Screen
 
@@ -275,17 +275,20 @@ Purpose: show whether data ingestion is healthy.
 
 Main regions:
 
-- source groups by purpose
+- implemented source groups by purpose
 - source list within each group
 - last successful fetch
 - last error/warning
 - next scheduled poll
 - manual refresh action
-- source policy notes or links
+- source links
+- optional source enable/disable controls
 
 Source rows follow the same list/detail behavior as the rest of the app: clicking a source, or pressing Enter/Space on a focused source row, expands operational details inline under that row. Repeating the action collapses the details.
 
-M18 groups sources in frontend configuration without changing backend source contracts. Groups separate official reports, calendar/events, public media/news, company registry, private research, and disabled/review candidates. Disabled and review-candidate sources should be visually distinct from active operational sources.
+Normal Sources shows required and optional implemented sources only. Required sources, such as company-directory support, can be refreshed but not disabled. Optional implemented sources can be enabled or disabled, and that state affects real refresh behavior. Developer-only source candidates, source IDs, fetch modes, policy notes, rate-limit detail, and unmatched diagnostics are hidden from normal Sources and belong in Developer Diagnostics or docs.
+
+Groups separate official reports, calendar/events, public media/news, and company directory support.
 
 V1 adapters:
 
@@ -311,6 +314,7 @@ Main regions:
 - actions: clear diagnostics and copy redacted diagnostic summary
 - metrics tab or section: local operational counters, gauges, and durations from the Developer-mode metrics snapshot
 - logs tab or section: full in-app runtime log viewer, log status, copy redacted log output, and open logs folder
+- source candidates section: registered developer-tier source candidates, IDs, source types, fetch modes, source URLs, and source-policy notes
 - developer mode status and disable action
 
 Rules:

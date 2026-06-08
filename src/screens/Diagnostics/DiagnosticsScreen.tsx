@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import * as diagnosticsApi from "../../api/diagnostics";
 import * as logsApi from "../../api/logs";
 import * as metricsApi from "../../api/metrics";
+import * as sourcesApi from "../../api/sources";
 import type {
   DiagnosticEvent,
   DiagnosticSeverity,
@@ -10,6 +11,7 @@ import type {
   LogEntry,
   LogStatus,
   MetricSample,
+  SourceAdapter,
 } from "../../api/types";
 import { Button } from "../../shared/components/Button";
 import { EmptyState } from "../../shared/components/EmptyState";
@@ -44,10 +46,12 @@ export function DiagnosticsScreen({
   const [logStatus, setLogStatus] = useState<LogStatus | null>(null);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [metricsSnapshot, setMetricsSnapshot] = useState<LocalMetricsSnapshot | null>(null);
+  const [developerSources, setDeveloperSources] = useState<SourceAdapter[]>([]);
   const [inFlight, setInFlight] = useState(false);
   const [logsInFlight, setLogsInFlight] = useState(false);
   const [metricsInFlight, setMetricsInFlight] = useState(false);
   const [eventsSectionOpen, setEventsSectionOpen] = useState(true);
+  const [sourcesSectionOpen, setSourcesSectionOpen] = useState(false);
   const [metricsSectionOpen, setMetricsSectionOpen] = useState(true);
   const [logsSectionOpen, setLogsSectionOpen] = useState(true);
 
@@ -116,10 +120,27 @@ export function DiagnosticsScreen({
       });
   }
 
+  function refreshDeveloperSources() {
+    if (!developerMode) {
+      setDeveloperSources([]);
+      return;
+    }
+
+    sourcesApi.listSourceAdapters({ includeDeveloperOnly: true })
+      .then((adapters) => {
+        setDeveloperSources(adapters.filter((adapter) => adapter.visibility === "developer"));
+        setDiagnosticsError(null);
+      })
+      .catch((error) => {
+        setDiagnosticsError(String(error));
+      });
+  }
+
   useEffect(() => {
     refreshDiagnostics();
     refreshMetrics();
     refreshLogs();
+    refreshDeveloperSources();
   }, [developerMode]);
 
   const modules = useMemo(() => {
@@ -339,6 +360,58 @@ export function DiagnosticsScreen({
                   );
                 })}
                 {filteredEvents.length === 0 ? <EmptyState>{text("No diagnostic events recorded.")}</EmptyState> : null}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className="diagnostics-section" aria-labelledby="diagnostics-sources-title">
+          <button
+            aria-expanded={sourcesSectionOpen}
+            className="diagnostics-section-header"
+            onClick={() => setSourcesSectionOpen((open) => !open)}
+            type="button"
+          >
+            <span>
+              <h2 id="diagnostics-sources-title">{text("Source candidates")}</h2>
+              <small>{text("Registered source candidates and developer-only source details.")}</small>
+            </span>
+            <span className="diagnostics-section-meta">
+              {developerSources.length}
+              <ChevronDown className={sourcesSectionOpen ? "section-chevron section-chevron-open" : "section-chevron"} size={16} />
+            </span>
+          </button>
+          {sourcesSectionOpen ? (
+            <div className="diagnostics-section-body">
+              <div className="diagnostics-list" aria-label={text("Source candidates")}>
+                {developerSources.map((adapter) => (
+                  <article className="diagnostic-event" key={adapter.id}>
+                    <div className="diagnostic-event-main">
+                      <span className="diagnostic-severity diagnostic-severity-info">
+                        {adapter.enabled ? "enabled" : "disabled"}
+                      </span>
+                      <span className="diagnostic-event-stage">
+                        <strong>{adapter.id}</strong>
+                        <span>{adapter.sourceType} · {adapter.fetchMode}</span>
+                      </span>
+                      <span className="diagnostic-event-message">{adapter.displayName}</span>
+                      <time>{adapter.healthStatus}</time>
+                    </div>
+                    <div className="diagnostic-event-detail">
+                      <dl className="settings-grid">
+                        <div>
+                          <dt>{text("URL")}</dt>
+                          <dd>{adapter.sourceUrl}</dd>
+                        </div>
+                        <div>
+                          <dt>{text("Policy")}</dt>
+                          <dd>{adapter.policyNote}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  </article>
+                ))}
+                {developerSources.length === 0 ? <EmptyState>{text("No source candidates registered.")}</EmptyState> : null}
               </div>
             </div>
           ) : null}

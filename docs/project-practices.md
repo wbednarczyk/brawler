@@ -28,6 +28,7 @@ Rules:
 - Do not guess on architecture. If ownership boundaries, storage shape, provider model, security posture, UI placement, configuration, persistence, background-job behavior, observability, or release impact are unclear, ask until the decision is clear enough to implement.
 - Architecture decisions must be settled before code changes for that milestone begin, except for small discovery spikes that are explicitly framed as research.
 - Agents may implement all approved milestone tasks, but milestone closure is a separate manual signoff step. Do not move a milestone to Done, mark the roadmap status completed, or perform the milestone version bump until the user explicitly approves closure.
+- After user signoff, milestone closure ends with kanban cleanup: after the version bump and final validation are complete, move already finished milestone cards from [Kanban](kanban.md) to [Kanban Archive](kanban-archive.md) so `kanban.md` stays focused on active work.
 - If the milestone description is missing something that would materially improve the application, its maintainability, or its user-facing workflow, propose it to the user instead of silently ignoring it.
 - Once decisions are made, update roadmap, kanban, contracts, architecture docs, or ADRs as needed before or alongside implementation so later agents inherit the decision.
 
@@ -305,6 +306,7 @@ Rules:
 
 - Every completed milestone bumps the minor version before the milestone branch is handed back for commit/merge.
 - Milestone closure must update the app version consistently in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+- Kanban cleanup is the final closure step after the version bump and final validation: move completed milestone content out of [Kanban](kanban.md) into [Kanban Archive](kanban-archive.md).
 - Patch versions are for fixes.
 - Git tags mark meaningful build candidates.
 - Public release automation waits until packaging is ready.

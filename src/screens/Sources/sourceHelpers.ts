@@ -5,9 +5,7 @@ type SourceGroupId =
   | "officialReports"
   | "calendarEvents"
   | "publicMedia"
-  | "companyRegistry"
-  | "privateResearch"
-  | "disabledReview";
+  | "companyDirectory";
 
 export type SourceAdapterGroup = {
   id: SourceGroupId;
@@ -33,19 +31,9 @@ const sourceGroupDefinitions: Array<Omit<SourceAdapterGroup, "adapters">> = [
     description: "Public market news and company-specific media sources.",
   },
   {
-    id: "companyRegistry",
-    label: "Company registry",
-    description: "Local company identity and matching caches.",
-  },
-  {
-    id: "privateResearch",
-    label: "Private research",
-    description: "Authenticated or owner-scoped research sources.",
-  },
-  {
-    id: "disabledReview",
-    label: "Disabled and review candidates",
-    description: "Configured sources that are not active in normal refresh.",
+    id: "companyDirectory",
+    label: "Company directory",
+    description: "Company lookup and matching support.",
   },
 ];
 
@@ -67,12 +55,8 @@ export function groupSourceAdapters(adapters: SourceAdapter[]): SourceAdapterGro
 }
 
 function sourceGroupIdForAdapter(adapter: SourceAdapter): SourceGroupId {
-  if (!adapter.enabled) {
-    return "disabledReview";
-  }
-
   if (adapter.sourceType === "company_registry") {
-    return "companyRegistry";
+    return "companyDirectory";
   }
 
   if (adapter.sourceType === "official_report" || adapter.sourceType === "official_report_secondary") {
@@ -83,18 +67,10 @@ function sourceGroupIdForAdapter(adapter: SourceAdapter): SourceGroupId {
     return "calendarEvents";
   }
 
-  if (adapter.sourceType === "authenticated_research") {
-    return "privateResearch";
-  }
-
   return "publicMedia";
 }
 
 function compareSourceAdapters(left: SourceAdapter, right: SourceAdapter) {
-  if (left.enabled !== right.enabled) {
-    return left.enabled ? -1 : 1;
-  }
-
   if (left.lastError && !right.lastError) {
     return -1;
   }
@@ -111,8 +87,8 @@ export function formatSourceLastResult(adapter: SourceAdapter) {
     return "None";
   }
 
-  if (adapter.id === "gpw-company-registry") {
-    return `${adapter.lastItemsFetched} cached entries · ${
+  if (adapter.sourceType === "company_registry") {
+    return `${adapter.lastItemsFetched} directory entries · ${
       adapter.lastItemsCreated ?? 0
     } refreshed or updated`;
   }
@@ -179,18 +155,33 @@ export function formatSourceAccess(adapter: SourceAdapter) {
 
 export function formatSourceSubtitle(adapter: SourceAdapter) {
   if (adapter.id === "gpw-company-registry") {
-    return "Company registry · Public GPW company list";
+    return "Company directory · GPW company list";
   }
 
-  return `${formatSourceType(adapter.sourceType)} · ${formatFetchMode(adapter.fetchMode)}`;
+  if (adapter.id === "newconnect-company-directory") {
+    return "Company directory · NewConnect company list";
+  }
+
+  return formatSourceType(adapter.sourceType);
+}
+
+export function formatSourceHealth(adapter: SourceAdapter) {
+  const labels: Record<SourceAdapter["healthStatus"], string> = {
+    healthy: "Healthy",
+    attention: "Needs attention",
+    notRefreshed: "Not refreshed yet",
+    off: "Off",
+  };
+
+  return labels[adapter.healthStatus] ?? "Unknown";
 }
 
 export function sourceLastResultLabel(adapter: SourceAdapter) {
-  return adapter.id === "gpw-company-registry" ? "Cache result" : "Last result";
+  return adapter.sourceType === "company_registry" ? "Directory result" : "Last result";
 }
 
 export function sourcePolicyLabel(adapter: SourceAdapter) {
-  return adapter.id === "gpw-company-registry" ? "Refresh policy" : "Rate limit";
+  return adapter.sourceType === "company_registry" ? "Refresh policy" : "Rate limit";
 }
 
 export function formatSourceTrigger(adapter: SourceAdapter) {

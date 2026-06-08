@@ -23,12 +23,40 @@ pub struct RefreshRegistryIfStaleInput {
     stale_after_seconds: Option<i64>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSourceAdaptersInput {
+    include_developer_only: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetSourceEnabledInput {
+    adapter_id: String,
+    enabled: bool,
+}
+
 #[tauri::command]
 pub fn list_source_adapters(
+    input: Option<ListSourceAdaptersInput>,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<Vec<storage::SourceAdapter>, String> {
     state
-        .list_source_adapters()
+        .list_source_adapters_with_developer(
+            input
+                .and_then(|input| input.include_developer_only)
+                .unwrap_or(false),
+        )
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_source_adapter_enabled(
+    input: SetSourceEnabledInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::SourceAdapter, String> {
+    state
+        .set_source_adapter_enabled(&input.adapter_id, input.enabled)
         .map_err(|error| error.to_string())
 }
 
@@ -89,41 +117,51 @@ pub async fn refresh_source(
 }
 
 #[tauri::command]
-pub fn refresh_gpw_company_registry(
+pub async fn refresh_gpw_company_registry(
     input: Option<RefreshSourcesInput>,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<storage::CompanyRegistryRefreshResult, String> {
-    let trigger = input
-        .and_then(|input| input.trigger)
-        .filter(|trigger| trigger == "manual" || trigger == "scheduler" || trigger == "lookup")
-        .unwrap_or_else(|| "manual".to_owned());
+    let state = state.inner().clone();
 
-    jobs::source_refresh::refresh_gpw_company_registry_for_trigger(&state, &trigger)
+    jobs::scheduler::run_blocking_task(move || {
+        let trigger = input
+            .and_then(|input| input.trigger)
+            .filter(|trigger| trigger == "manual" || trigger == "scheduler" || trigger == "lookup")
+            .unwrap_or_else(|| "manual".to_owned());
+
+        jobs::source_refresh::refresh_company_directories_for_trigger(&state, &trigger)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn refresh_gpw_company_registry_if_stale(
+pub async fn refresh_gpw_company_registry_if_stale(
     input: Option<RefreshRegistryIfStaleInput>,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<Option<storage::CompanyRegistryRefreshResult>, String> {
-    let trigger = input
-        .as_ref()
-        .and_then(|input| input.trigger.clone())
-        .filter(|trigger| trigger == "scheduler")
-        .unwrap_or_else(|| "scheduler".to_owned());
-    let stale_after_seconds = input
-        .and_then(|input| input.stale_after_seconds)
-        .unwrap_or(86_400);
+    let state = state.inner().clone();
 
-    if !state
-        .gpw_company_registry_is_stale(stale_after_seconds)
-        .map_err(|error| error.to_string())?
-    {
-        jobs::source_refresh::record_scheduler_skip(&state, "registry_fresh");
-        return Ok(None);
-    }
+    jobs::scheduler::run_blocking_task(move || {
+        let trigger = input
+            .as_ref()
+            .and_then(|input| input.trigger.clone())
+            .filter(|trigger| trigger == "scheduler")
+            .unwrap_or_else(|| "scheduler".to_owned());
+        let stale_after_seconds = input
+            .and_then(|input| input.stale_after_seconds)
+            .unwrap_or(86_400);
 
-    jobs::source_refresh::refresh_gpw_company_registry_for_trigger(&state, &trigger).map(Some)
+        if !state
+            .gpw_company_registry_is_stale(stale_after_seconds)
+            .map_err(|error| error.to_string())?
+        {
+            jobs::source_refresh::record_scheduler_skip(&state, "registry_fresh");
+            return Ok(None);
+        }
+
+        jobs::source_refresh::refresh_company_directories_for_trigger(&state, &trigger).map(Some)
+    })
+    .await
 }
 
 fn refresh_trigger(trigger: Option<String>) -> String {

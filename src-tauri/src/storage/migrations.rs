@@ -148,6 +148,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "license_metadata",
         sql: include_str!("../../migrations/0028_license_metadata.sql"),
     },
+    Migration {
+        version: 29,
+        name: "newconnect_company_directory",
+        sql: include_str!("../../migrations/0029_newconnect_company_directory.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

@@ -29,7 +29,7 @@ pub fn lookup_company(
         return Ok(first_result);
     }
 
-    source_refresh::refresh_gpw_company_registry_for_trigger(&state, "lookup")?;
+    source_refresh::refresh_company_directories_for_trigger(&state, "lookup")?;
 
     state
         .lookup_company(input)

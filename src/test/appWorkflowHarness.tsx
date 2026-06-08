@@ -128,7 +128,7 @@ const initialFeedItems = [
 },
 ];
 
-const sourceAdapters = [
+const rawSourceAdapters = [
 {
   id: "gpw-espi-ebi",
   displayName: "GPW ESPI/EBI",
@@ -157,7 +157,7 @@ const sourceAdapters = [
 },
 {
   id: "gpw-company-registry",
-  displayName: "GPW Company Registry",
+  displayName: "GPW Company Directory",
   sourceType: "company_registry",
   fetchMode: "public_page",
   enabled: true,
@@ -179,6 +179,32 @@ const sourceAdapters = [
   lastDetailItemsFailed: null,
   lastDetailWarning: null,
   markets: ["GPW"],
+},
+{
+  id: "newconnect-company-directory",
+  displayName: "NewConnect Company Directory",
+  sourceType: "company_registry",
+  fetchMode: "public_page",
+  enabled: true,
+  defaultPollIntervalSeconds: 86400,
+  sourceUrl: "https://newconnect.pl/spolki?offset=0&limit=500",
+  rateLimitPolicy: "Manual refresh plus daily stale-cache scheduled refresh",
+  policyNote:
+    "Fetches the complete public NewConnect company list and caches ticker and ISIN metadata for lookup, autocomplete, and ticker-first matching.",
+  lastAttemptAt: null,
+  lastTrigger: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  lastItemsFetched: 350,
+  lastItemsCreated: 350,
+  lastItemsMatched: null,
+  lastItemsUnmatched: null,
+  lastDetailItemsAttempted: null,
+  lastDetailItemsStored: null,
+  lastDetailItemsFailed: null,
+  lastDetailWarning: null,
+  markets: ["NEWCONNECT"],
 },
 {
   id: "bankier-market-rss",
@@ -313,7 +339,134 @@ const sourceAdapters = [
   lastDetailWarning: null,
   markets: ["GPW"],
 },
+{
+  id: "gpw-market-events-rss",
+  displayName: "GPW Market Events RSS",
+  sourceType: "official_calendar",
+  fetchMode: "rss",
+  enabled: true,
+  defaultPollIntervalSeconds: 900,
+  sourceUrl: "https://www.gpw.pl/rss-calendar-of-market-events",
+  rateLimitPolicy: "Manual refresh plus normal in-app source scheduler",
+  policyNote: "Fetches GPW official market-events RSS for tracked companies matched by exact ticker.",
+  lastAttemptAt: null,
+  lastTrigger: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  lastItemsFetched: 2,
+  lastItemsCreated: 2,
+  lastItemsMatched: 2,
+  lastItemsUnmatched: 0,
+  lastDetailItemsAttempted: null,
+  lastDetailItemsStored: null,
+  lastDetailItemsFailed: null,
+  lastDetailWarning: null,
+  markets: ["GPW"],
+},
+{
+  id: "bankier-kalendarium-html",
+  displayName: "Bankier Kalendarium",
+  sourceType: "public_calendar",
+  fetchMode: "public_page",
+  enabled: true,
+  defaultPollIntervalSeconds: 900,
+  sourceUrl: "https://www.bankier.pl/gielda/kalendarium",
+  rateLimitPolicy: "Manual refresh plus normal in-app source scheduler",
+  policyNote: "Fetches Bankier public calendar pages for tracked companies matched by exact ticker.",
+  lastAttemptAt: null,
+  lastTrigger: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  lastItemsFetched: 2,
+  lastItemsCreated: 2,
+  lastItemsMatched: 2,
+  lastItemsUnmatched: 0,
+  lastDetailItemsAttempted: null,
+  lastDetailItemsStored: null,
+  lastDetailItemsFailed: null,
+  lastDetailWarning: null,
+  markets: ["GPW"],
+},
+{
+  id: "strefa-report-calendar",
+  displayName: "Strefa Report Calendar",
+  sourceType: "public_calendar",
+  fetchMode: "public_page",
+  enabled: false,
+  defaultPollIntervalSeconds: 0,
+  sourceUrl: "https://strefainwestorow.pl/",
+  rateLimitPolicy: "Developer-only candidate pending source review",
+  policyNote: "Fallback candidate for periodic-report publication dates.",
+  lastAttemptAt: null,
+  lastTrigger: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  lastItemsFetched: null,
+  lastItemsCreated: null,
+  lastItemsMatched: null,
+  lastItemsUnmatched: null,
+  lastDetailItemsAttempted: null,
+  lastDetailItemsStored: null,
+  lastDetailItemsFailed: null,
+  lastDetailWarning: null,
+  markets: ["GPW"],
+},
+{
+  id: "money-calendar",
+  displayName: "Money Calendar",
+  sourceType: "public_calendar",
+  fetchMode: "public_page",
+  enabled: false,
+  defaultPollIntervalSeconds: 0,
+  sourceUrl: "https://www.money.pl/",
+  rateLimitPolicy: "Developer-only candidate pending source review",
+  policyNote: "Fallback candidate for calendar and report-date coverage.",
+  lastAttemptAt: null,
+  lastTrigger: null,
+  lastSuccessAt: null,
+  lastErrorAt: null,
+  lastError: null,
+  lastItemsFetched: null,
+  lastItemsCreated: null,
+  lastItemsMatched: null,
+  lastItemsUnmatched: null,
+  lastDetailItemsAttempted: null,
+  lastDetailItemsStored: null,
+  lastDetailItemsFailed: null,
+  lastDetailWarning: null,
+  markets: ["GPW"],
+},
 ];
+
+const requiredSourceIds = new Set(["gpw-company-registry", "newconnect-company-directory"]);
+const optionalSourceIds = new Set([
+  "bankier-company-komunikaty",
+  "bankier-market-rss",
+  "gpw-market-events-rss",
+  "bankier-kalendarium-html",
+]);
+
+const sourceAdapters = rawSourceAdapters.map((adapter) => {
+  const visibility = requiredSourceIds.has(adapter.id)
+    ? "required"
+    : optionalSourceIds.has(adapter.id)
+      ? "optional"
+      : "developer";
+
+  return {
+    ...adapter,
+    visibility,
+    userConfigurable: visibility === "optional",
+    healthStatus: adapter.enabled ? "notRefreshed" : "off",
+  };
+});
+
+function cloneSourceAdapters() {
+  return sourceAdapters.map((adapter) => ({ ...adapter, markets: [...adapter.markets] }));
+}
 
 const initialUnmatchedSourceItems = [
 {
@@ -329,6 +482,7 @@ const initialUnmatchedSourceItems = [
 
 const initialCompanyRegistryEntries = [
 {
+  sourceAdapterId: "gpw-company-registry",
   exchange: "GPW",
   ticker: "CDR",
   qualifiedTicker: "GPW:CDR",
@@ -339,12 +493,24 @@ const initialCompanyRegistryEntries = [
   tracked: true,
 },
 {
+  sourceAdapterId: "gpw-company-registry",
   exchange: "GPW",
   ticker: "DNP",
   qualifiedTicker: "GPW:DNP",
   displayName: "DINO POLSKA S.A.",
   isin: "PLDINPL00011",
   sourceUrl: "https://www.gpw.pl/spolka?isin=PLDINPL00011",
+  fetchedAt: "2026-05-31T12:00:00Z",
+  tracked: false,
+},
+{
+  sourceAdapterId: "newconnect-company-directory",
+  exchange: "NC",
+  ticker: "4MB",
+  qualifiedTicker: "NC:4MB",
+  displayName: "4MOBILITY SPÓŁKA AKCYJNA",
+  isin: "PLESLTN00010",
+  sourceUrl: "https://newconnect.pl/spolka?isin=PLESLTN00010",
   fetchedAt: "2026-05-31T12:00:00Z",
   tracked: false,
 },
@@ -753,6 +919,7 @@ export const appTestState = {
   geminiCredentialStatusResponse: initialGeminiCredentialStatus,
   localMetricsSnapshotResponse: initialLocalMetricsSnapshot,
   licenseStatusResponse: initialLicenseStatus,
+  sourceAdaptersResponse: cloneSourceAdapters(),
 };
 
 beforeEach(() => {
@@ -783,6 +950,7 @@ beforeEach(() => {
   appTestState.geminiCredentialStatusResponse = initialGeminiCredentialStatus;
   appTestState.localMetricsSnapshotResponse = initialLocalMetricsSnapshot;
   appTestState.licenseStatusResponse = initialLicenseStatus;
+  appTestState.sourceAdaptersResponse = cloneSourceAdapters();
   vi.mocked(invoke).mockClear();
   vi.mocked(downloadDir).mockClear();
   vi.mocked(join).mockClear();
@@ -796,9 +964,9 @@ beforeEach(() => {
 
     if (command === "database_status") {
       return Promise.resolve({
-        appliedMigrations: 22,
+        appliedMigrations: 29,
         companies: 0,
-        sourceAdapters: 11,
+        sourceAdapters: 12,
         settings: 11,
       });
     }
@@ -814,7 +982,7 @@ beforeEach(() => {
         qualifiedTicker: "GPW:CDR",
         displayName: "CD PROJEKT S.A.",
         isin: "PLOPTTC00011",
-        source: "gpw_registry",
+        source: "company_directory",
       });
     }
 
@@ -1454,7 +1622,25 @@ beforeEach(() => {
     }
 
     if (command === "list_source_adapters") {
-      return Promise.resolve(sourceAdapters);
+      const input = (args as { input?: { includeDeveloperOnly?: boolean } } | undefined)?.input;
+      const includeDeveloperOnly = Boolean(input?.includeDeveloperOnly);
+      return Promise.resolve(
+        includeDeveloperOnly
+          ? appTestState.sourceAdaptersResponse
+          : appTestState.sourceAdaptersResponse.filter((adapter) => adapter.visibility !== "developer"),
+      );
+    }
+
+    if (command === "set_source_adapter_enabled") {
+      const input = (args as { input: { adapterId: string; enabled: boolean } }).input;
+      const adapter = appTestState.sourceAdaptersResponse.find((sourceAdapter) => sourceAdapter.id === input.adapterId);
+      if (!adapter || !adapter.userConfigurable) {
+        return Promise.reject(new Error("source is not user configurable"));
+      }
+
+      adapter.enabled = input.enabled;
+      adapter.healthStatus = input.enabled ? "notRefreshed" : "off";
+      return Promise.resolve(adapter);
     }
 
     if (command === "list_unmatched_source_items") {
@@ -1525,9 +1711,9 @@ beforeEach(() => {
 
     if (command === "refresh_gpw_company_registry") {
       return Promise.resolve({
-        adapterId: "gpw-company-registry",
-        entriesFetched: 400,
-        entriesUpserted: 400,
+        adapterId: "company-directories",
+        entriesFetched: 750,
+        entriesUpserted: 750,
         entriesDeactivated: 0,
         fetchedAt: "2026-05-31T12:00:00Z",
       });

@@ -84,8 +84,9 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
         .map_err(StorageError::from)
 }
 
-pub(super) fn refresh_gpw_company_registry(
+pub(super) fn refresh_company_directory(
     connection: &mut Connection,
+    source_adapter_id: &str,
     entries: &[GpwCompanyRegistryEntry],
     fetched_at: &str,
 ) -> StorageResult<CompanyRegistryRefreshResult> {
@@ -99,7 +100,7 @@ pub(super) fn refresh_gpw_company_registry(
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE source_adapter_id = ?1
         ",
-        [GPW_REGISTRY_ADAPTER_ID],
+        [source_adapter_id],
     )?;
 
     for entry in entries {
@@ -134,7 +135,7 @@ pub(super) fn refresh_gpw_company_registry(
                 entry.qualified_ticker,
                 entry.display_name,
                 empty_string_to_none(Some(entry.isin.clone())),
-                GPW_REGISTRY_ADAPTER_ID,
+                source_adapter_id,
                 entry.source_url,
                 fetched_at,
             ],
@@ -151,7 +152,7 @@ pub(super) fn refresh_gpw_company_registry(
             AND fetched_at <> ?2
             AND active = 1
         ",
-        params![GPW_REGISTRY_ADAPTER_ID, fetched_at],
+        params![source_adapter_id, fetched_at],
     )?;
 
     transaction.execute(
@@ -163,17 +164,17 @@ pub(super) fn refresh_gpw_company_registry(
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?2
         ",
-        params![fetched_at, GPW_REGISTRY_ADAPTER_ID],
+        params![fetched_at, source_adapter_id],
     )?;
     set_source_adapter_state(
         &transaction,
-        GPW_REGISTRY_ADAPTER_ID,
+        source_adapter_id,
         "last_items_fetched",
         &entries.len().to_string(),
     )?;
     set_source_adapter_state(
         &transaction,
-        GPW_REGISTRY_ADAPTER_ID,
+        source_adapter_id,
         "last_items_created",
         &entries_upserted.to_string(),
     )?;
@@ -181,7 +182,7 @@ pub(super) fn refresh_gpw_company_registry(
     transaction.commit()?;
 
     Ok(CompanyRegistryRefreshResult {
-        adapter_id: GPW_REGISTRY_ADAPTER_ID.to_owned(),
+        adapter_id: source_adapter_id.to_owned(),
         entries_fetched: entries.len(),
         entries_upserted,
         entries_deactivated,
@@ -227,7 +228,7 @@ pub(super) fn lookup_company_registry(
                 LIMIT 1
                 ",
                 params![exchange, ticker],
-                |row| registry_lookup_result(row, "gpw_registry"),
+                |row| registry_lookup_result(row, "company_directory"),
             )
             .optional()
             .map_err(StorageError::from);
@@ -246,7 +247,7 @@ pub(super) fn lookup_company_registry(
                 LIMIT 1
                 ",
                 params![exchange, isin],
-                |row| registry_lookup_result(row, "gpw_registry"),
+                |row| registry_lookup_result(row, "company_directory"),
             )
             .optional()
             .map_err(StorageError::from);
@@ -268,7 +269,7 @@ pub(super) fn lookup_company_registry(
                 LIMIT 1
                 ",
                 params![exchange, display_name],
-                |row| registry_lookup_result(row, "gpw_registry"),
+                |row| registry_lookup_result(row, "company_directory"),
             )
             .optional()
             .map_err(StorageError::from);
@@ -280,18 +281,25 @@ pub(super) fn lookup_company_registry(
 pub(super) fn gpw_company_registry_needs_bootstrap_refresh(
     connection: &Connection,
 ) -> StorageResult<bool> {
-    let active_count: i64 = connection.query_row(
+    let stale_required_directories: i64 = connection.query_row(
         "
         SELECT COUNT(*)
-        FROM company_registry_entries
-        WHERE source_adapter_id = ?1
-            AND active = 1
+        FROM source_adapters
+        WHERE source_type = 'company_registry'
+            AND enabled = 1
+            AND id IN (?1, ?2)
+            AND NOT EXISTS (
+                SELECT 1
+                FROM company_registry_entries
+                WHERE company_registry_entries.source_adapter_id = source_adapters.id
+                    AND company_registry_entries.active = 1
+            )
         ",
-        [GPW_REGISTRY_ADAPTER_ID],
+        params![GPW_REGISTRY_ADAPTER_ID, NEWCONNECT_DIRECTORY_ADAPTER_ID],
         |row| row.get(0),
     )?;
 
-    Ok(active_count == 0)
+    Ok(stale_required_directories > 0)
 }
 
 pub(super) fn gpw_company_registry_is_stale(
@@ -301,21 +309,26 @@ pub(super) fn gpw_company_registry_is_stale(
     let stale_after_seconds = stale_after_seconds.max(60);
     let is_stale: bool = connection.query_row(
         "
-        SELECT COALESCE(
-            (
-                SELECT
+        SELECT EXISTS(
+            SELECT 1
+            FROM source_adapters
+            WHERE source_type = 'company_registry'
+                AND enabled = 1
+                AND id IN (?2, ?3)
+                AND (
                     last_success_at IS NULL
                     OR COALESCE(
                         ((julianday('now') - julianday(last_success_at)) * 86400.0) >= ?1,
                         1
                     )
-                FROM source_adapters
-                WHERE id = ?2
-            ),
-            1
+                )
         )
         ",
-        params![stale_after_seconds, GPW_REGISTRY_ADAPTER_ID],
+        params![
+            stale_after_seconds,
+            GPW_REGISTRY_ADAPTER_ID,
+            NEWCONNECT_DIRECTORY_ADAPTER_ID
+        ],
         |row| row.get(0),
     )?;
 

@@ -5,12 +5,11 @@ import { StatusPill } from "../../shared/components/StatusPill";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import {
-  formatSourceAccess,
+  formatSourceHealth,
   formatSourceLastResult,
   formatSourceSubtitle,
   formatSourceTrigger,
   sourceLastResultLabel,
-  sourcePolicyLabel,
 } from "./sourceHelpers";
 
 type SourceAdapterRowProps = {
@@ -21,7 +20,6 @@ type SourceAdapterRowProps = {
   companyRegistrySearch: string;
   expandedUnmatchedAdapters: Record<string, boolean>;
   filteredCompanyRegistryEntries: CompanyRegistryEntry[];
-  gpwRegistryAdapterId: string;
   isCompanyRegistryListExpanded: boolean;
   registryRefreshError: string | null;
   registryRefreshResult: { entriesFetched: number; entriesUpserted: number } | null;
@@ -29,7 +27,6 @@ type SourceAdapterRowProps = {
   selected: boolean;
   sourceAdapterRefreshInFlight: string | null;
   sourceRefreshError: string | null;
-  sourceRefreshState: string;
   unmatchedSourceItems: Record<string, UnmatchedSourceItem[]>;
   addCompanyFromRegistry: (entry: CompanyRegistryEntry) => void;
   formatNextRefresh: (adapter: SourceAdapter) => string;
@@ -37,7 +34,7 @@ type SourceAdapterRowProps = {
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   openExternalUrl: (url: string) => void;
   refreshCompanyRegistry: (trigger: SourceRefreshTrigger) => void;
-  refreshSingleSource: (adapter: SourceAdapter, trigger: SourceRefreshTrigger) => void;
+  setSourceEnabled: (adapter: SourceAdapter, enabled: boolean) => void;
   setCompanyRegistrySearch: (value: string) => void;
   toggleCompanyRegistryList: () => void;
   toggleSourceAdapter: (adapterId: string) => void;
@@ -53,7 +50,6 @@ export function SourceAdapterRow({
   companyRegistrySearch,
   expandedUnmatchedAdapters,
   filteredCompanyRegistryEntries,
-  gpwRegistryAdapterId,
   isCompanyRegistryListExpanded,
   registryRefreshError,
   registryRefreshResult,
@@ -61,7 +57,6 @@ export function SourceAdapterRow({
   selected,
   sourceAdapterRefreshInFlight,
   sourceRefreshError,
-  sourceRefreshState,
   unmatchedSourceItems,
   addCompanyFromRegistry,
   formatNextRefresh,
@@ -69,7 +64,7 @@ export function SourceAdapterRow({
   formatTimestamp,
   openExternalUrl,
   refreshCompanyRegistry,
-  refreshSingleSource,
+  setSourceEnabled,
   setCompanyRegistrySearch,
   toggleCompanyRegistryList,
   toggleSourceAdapter,
@@ -77,6 +72,7 @@ export function SourceAdapterRow({
   toggleUnmatchedSourceItems,
 }: SourceAdapterRowProps) {
   const { text } = useLocale();
+  const isCompanyDirectorySource = adapter.sourceType === "company_registry";
 
   return (
     <div className="source-row-block">
@@ -98,7 +94,6 @@ export function SourceAdapterRow({
               title={adapter.enabled ? text("Enabled") : text("Disabled")}
             />
             <h2>{adapter.displayName}</h2>
-            <span className="source-id">{adapter.id}</span>
           </div>
           <p>{text(formatSourceSubtitle(adapter))}</p>
           <div className="source-chip-list" aria-label={`${text("Markets for")} ${adapter.displayName}`}>
@@ -111,41 +106,31 @@ export function SourceAdapterRow({
           </div>
         </div>
         <div className="source-row-status">
-          <span>{adapter.lastError ?? (adapter.enabled ? text("Ready") : text("Disabled"))}</span>
+          <span className={`source-health source-health-${adapter.healthStatus}`}>
+            <span aria-hidden="true" />
+            {text(formatSourceHealth(adapter))}
+          </span>
+          {adapter.userConfigurable ? (
+            <label className="source-enable-control" onClick={(event) => event.stopPropagation()}>
+              <input
+                aria-label={`${adapter.enabled ? text("Turn off") : text("Turn on")} ${adapter.displayName}`}
+                checked={adapter.enabled}
+                onChange={(event) => setSourceEnabled(adapter, event.target.checked)}
+                role="switch"
+                type="checkbox"
+              />
+              <span aria-hidden="true" className="source-enable-track">
+                <span />
+              </span>
+            </label>
+          ) : null}
         </div>
       </article>
       {selected ? (
         <div className="source-detail-panel" aria-label={text("Source details")}>
-          <div className="source-detail-actions">
-            <Button
-              className="compact-button"
-              disabled={
-                !adapter.enabled ||
-                sourceRefreshState === "refreshing" ||
-                (adapter.id === gpwRegistryAdapterId
-                  ? registryRefreshState === "refreshing"
-                  : sourceAdapterRefreshInFlight !== null)
-              }
-              onClick={() => refreshSingleSource(adapter, "manual")}
-              title={adapter.enabled ? `${text("Refresh source")}: ${adapter.displayName}` : `${adapter.displayName} ${text("is disabled")}`}
-            >
-              {adapter.id === gpwRegistryAdapterId && registryRefreshState === "done" ? (
-                <CheckCircle2 size={15} />
-              ) : (
-                <RefreshCw size={15} />
-              )}
-              {adapter.id === gpwRegistryAdapterId
-                ? registryRefreshState === "refreshing"
-                  ? text("Refreshing")
-                  : text("Refresh source")
-                : sourceAdapterRefreshInFlight === adapter.id
-                  ? text("Refreshing")
-                  : text("Refresh source")}
-            </Button>
-            {sourceRefreshError && sourceAdapterRefreshInFlight === null ? (
-              <span className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</span>
-            ) : null}
-          </div>
+          {sourceRefreshError && sourceAdapterRefreshInFlight === null ? (
+            <span className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</span>
+          ) : null}
           <dl className="source-status-grid source-status-detail">
             <div>
               <dt>{text("Scheduler")}</dt>
@@ -175,7 +160,7 @@ export function SourceAdapterRow({
               <dt>{text(sourceLastResultLabel(adapter))}</dt>
               <dd>{text(formatSourceLastResult(adapter))}</dd>
             </div>
-            {adapter.id === gpwRegistryAdapterId ? null : (
+            {isCompanyDirectorySource ? null : (
               <div>
                 <dt>{text("Detail warning")}</dt>
                 <dd>{adapter.lastDetailWarning ?? text("None")}</dd>
@@ -183,15 +168,7 @@ export function SourceAdapterRow({
             )}
             <div>
               <dt>{text("Status")}</dt>
-              <dd>{adapter.lastError ?? (adapter.enabled ? text("Ready") : text("Disabled"))}</dd>
-            </div>
-            <div>
-              <dt>{text("Access")}</dt>
-              <dd>{text(formatSourceAccess(adapter))}</dd>
-            </div>
-            <div>
-              <dt>{text(sourcePolicyLabel(adapter))}</dt>
-              <dd>{adapter.rateLimitPolicy}</dd>
+              <dd>{text(formatSourceHealth(adapter))}</dd>
             </div>
             <div>
               <dt>{text("Source page")}</dt>
@@ -207,12 +184,8 @@ export function SourceAdapterRow({
                 </Button>
               </dd>
             </div>
-            <div>
-              <dt>{text("Policy")}</dt>
-              <dd>{adapter.policyNote}</dd>
-            </div>
           </dl>
-          {adapter.id === gpwRegistryAdapterId ? (
+          {isCompanyDirectorySource ? (
             <RegistrySourcePanel
               addingRegistryTicker={addingRegistryTicker}
               companyRegistryEntries={companyRegistryEntries}
@@ -228,15 +201,7 @@ export function SourceAdapterRow({
               setCompanyRegistrySearch={setCompanyRegistrySearch}
               toggleCompanyRegistryList={toggleCompanyRegistryList}
             />
-          ) : (
-            <UnmatchedSourcePanel
-              adapterId={adapter.id}
-              expandedUnmatchedAdapters={expandedUnmatchedAdapters}
-              unmatchedSourceItems={unmatchedSourceItems}
-              formatTimestamp={formatTimestamp}
-              toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
-            />
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -279,25 +244,25 @@ function RegistrySourcePanel({
 
   return (
     <>
-      <div className="source-registry-actions" aria-label={text("Company registry refresh")}>
+      <div className="source-registry-actions" aria-label={text("Company directory refresh")}>
         <Button
           className="compact-button"
           disabled={registryRefreshState === "refreshing"}
           onClick={() => refreshCompanyRegistry("manual")}
         >
           {registryRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
-          {registryRefreshState === "refreshing" ? text("Refreshing") : text("Refresh registry")}
+          {registryRefreshState === "refreshing" ? text("Refreshing") : text("Refresh company directory")}
         </Button>
         {registryRefreshResult ? (
           <span>
-            {registryRefreshResult.entriesUpserted}/{registryRefreshResult.entriesFetched} {text("cached")}
+            {registryRefreshResult.entriesUpserted}/{registryRefreshResult.entriesFetched} {text("saved entries")}
           </span>
         ) : null}
         {registryRefreshError ? (
-          <span className="error-text">{text("Registry refresh failed")}: {registryRefreshError}</span>
+          <span className="error-text">{text("Company directory refresh failed")}: {registryRefreshError}</span>
         ) : null}
       </div>
-      <div className="source-collapsible-panel" aria-label={text("GPW company registry entries")}>
+      <div className="source-collapsible-panel" aria-label={text("Company directory entries")}>
         <button
           aria-expanded={isCompanyRegistryListExpanded}
           className="source-collapsible-header"
@@ -315,7 +280,7 @@ function RegistrySourcePanel({
             <label className="registry-search-field">
               <Search size={15} />
               <input
-                aria-label={text("Search GPW company registry")}
+                aria-label={text("Search company directory")}
                 onChange={(event) => setCompanyRegistrySearch(event.target.value)}
                 placeholder={text("Search ticker, company, ISIN")}
                 type="search"
@@ -323,11 +288,11 @@ function RegistrySourcePanel({
               />
               {companyRegistrySearch.trim().length > 0 ? (
                 <button
-                  aria-label={text("Clear registry search")}
+                  aria-label={text("Clear company directory search")}
                   className="field-clear-button"
                   onClick={() => setCompanyRegistrySearch("")}
                   onMouseDown={(event) => event.preventDefault()}
-                  title={text("Clear registry search")}
+                  title={text("Clear company directory search")}
                   type="button"
                 >
                   <X size={13} />
@@ -354,13 +319,13 @@ function RegistrySourcePanel({
               </div>
             ))}
             {companyRegistryEntries.length === 0 ? (
-              <span className="membership-empty">{text("No cached companies yet. Refresh registry first.")}</span>
+              <span className="membership-empty">{text("No companies available yet. Refresh the company directory first.")}</span>
             ) : null}
             {companyRegistryEntries.length > 0 && filteredCompanyRegistryEntries.length === 0 ? (
-              <span className="membership-empty">{text("No registry companies match this search.")}</span>
+              <span className="membership-empty">{text("No company directory entries match this search.")}</span>
             ) : null}
             {companyRegistryEntriesError ? (
-              <span className="error-text">{text("Company registry list failed")}: {companyRegistryEntriesError}</span>
+              <span className="error-text">{text("Company directory list failed")}: {companyRegistryEntriesError}</span>
             ) : null}
           </div>
         ) : null}

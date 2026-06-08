@@ -96,7 +96,7 @@ fn looks_up_registry_company_by_ticker() {
     assert_eq!(result.qualified_ticker, "GPW:CDR");
     assert_eq!(result.display_name, "CD PROJEKT S.A.");
     assert_eq!(result.isin, "PLOPTTC00011");
-    assert_eq!(result.source, "gpw_registry");
+    assert_eq!(result.source, "company_directory");
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn looks_up_registry_company_by_isin() {
 
     assert_eq!(result.ticker, "PZU");
     assert_eq!(result.display_name, "PZU S.A.");
-    assert_eq!(result.source, "gpw_registry");
+    assert_eq!(result.source, "company_directory");
 }
 
 #[test]
@@ -157,7 +157,42 @@ fn refreshes_gpw_company_registry_cache() {
         .expect("refreshed registry entry should match");
 
     assert_eq!(lookup.qualified_ticker, "GPW:TST");
-    assert_eq!(lookup.source, "gpw_registry");
+    assert_eq!(lookup.source, "company_directory");
+}
+
+#[test]
+fn refreshes_newconnect_company_directory_cache() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let entries = vec![GpwCompanyRegistryEntry {
+        exchange: "NC".to_owned(),
+        ticker: "4MB".to_owned(),
+        qualified_ticker: "NC:4MB".to_owned(),
+        display_name: "4MOBILITY SPÓŁKA AKCYJNA".to_owned(),
+        isin: "PLESLTN00010".to_owned(),
+        source_url: "https://newconnect.pl/spolka?isin=PLESLTN00010".to_owned(),
+    }];
+
+    let result = state
+        .refresh_newconnect_company_directory(&entries, "2026-05-31T12:00:00Z")
+        .expect("NewConnect directory refresh should succeed");
+
+    assert_eq!(result.adapter_id, NEWCONNECT_DIRECTORY_ADAPTER_ID);
+    assert_eq!(result.entries_fetched, 1);
+    assert_eq!(result.entries_upserted, 1);
+
+    let lookup = state
+        .lookup_company(CompanyLookupInput {
+            exchange: "NC".to_owned(),
+            ticker: Some("4mb".to_owned()),
+            display_name: None,
+            isin: None,
+        })
+        .expect("lookup should succeed")
+        .expect("refreshed NewConnect entry should match");
+
+    assert_eq!(lookup.qualified_ticker, "NC:4MB");
+    assert_eq!(lookup.source, "company_directory");
 }
 
 #[test]
@@ -172,9 +207,9 @@ fn detects_stale_gpw_company_registry_cache() {
             "
                 UPDATE source_adapters
                 SET last_success_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                WHERE id = ?1
+                WHERE id IN (?1, ?2)
                 ",
-            [GPW_REGISTRY_ADAPTER_ID],
+            params![GPW_REGISTRY_ADAPTER_ID, NEWCONNECT_DIRECTORY_ADAPTER_ID],
         )
         .expect("registry adapter timestamp should update");
 

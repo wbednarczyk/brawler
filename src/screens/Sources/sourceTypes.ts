@@ -11,6 +11,7 @@ import type {
 export type SourcesScreenProps = {
   sourceAdapters: SourceAdapter[];
   sourceAdaptersError: string | null;
+  developerMode: boolean;
   selectedSourceAdapterId: string | null;
   sourceRefreshState: string;
   sourceRefreshResult: SourceIngestionResult | null;
@@ -28,10 +29,9 @@ export type SourcesScreenProps = {
   unmatchedSourceItems: Record<string, UnmatchedSourceItem[]>;
   unmatchedSourceItemsError: string | null;
   expandedUnmatchedAdapters: Record<string, boolean>;
-  gpwRegistryAdapterId: string;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
-  refreshSingleSource: (adapter: SourceAdapter, trigger: SourceRefreshTrigger) => void;
   refreshCompanyRegistry: (trigger: SourceRefreshTrigger) => void;
+  setSourceEnabled: (adapter: SourceAdapter, enabled: boolean) => void;
   toggleSourceAdapter: (adapterId: string) => void;
   toggleSourceAdapterFromKeyboard: (
     event: KeyboardEvent<HTMLElement>,

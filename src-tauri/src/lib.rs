@@ -90,6 +90,7 @@ pub fn run() {
             commands::transcripts::run_video_transcript_job,
             commands::sources::list_source_adapters,
             commands::sources::list_company_registry_entries,
+            commands::sources::set_source_adapter_enabled,
             commands::sources::refresh_sources,
             commands::sources::refresh_source,
             commands::sources::refresh_gpw_company_registry,
@@ -138,7 +139,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.21.0");
+        assert_eq!(response.version, "0.22.0");
     }
 
     #[test]

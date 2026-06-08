@@ -4,6 +4,169 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M22: Sources trust, control, and company-directory extensibility
+
+Intent: make Sources useful as a normal-user trust/control surface while preserving developer/author visibility for source candidates and implementation detail.
+
+Delivered:
+
+- Reworked normal Sources to show only implemented required/optional sources with normal-user status depth.
+- Moved unimplemented source candidates and review-only details out of normal Sources and into Developer Diagnostics plus docs.
+- Added source visibility tiers to the source read model: required, optional, and developer.
+- Added typed optional-source enable/disable support with required-source and developer-candidate protection.
+- Made batch/manual/scheduled source refresh respect persisted optional source enablement.
+- Moved company-directory refresh commands to the async source-refresh task boundary so long live refreshes do not block the app UI.
+- Default source classification:
+  - required: GPW company directory / registry support, NewConnect company directory support.
+  - optional, default enabled: Bankier Company Komunikaty, Bankier Giełda RSS, GPW market events RSS, Bankier Kalendarium.
+  - candidate/developer-only: GPW ESPI/EBI, Portal Analiz, Bankier Firma RSS, Bankier Wiadomości RSS, Strefa report calendar, Money calendar.
+- Reframed GPW registry read-model and normal UI copy as GPW company directory / lookup support.
+- Implemented the NewConnect company-directory source from the official NewConnect company list and exposed it as a required normal source.
+- Kept GPW and NewConnect directory company lists separated in each source detail panel while preserving shared lookup/cache behavior.
+- Added a deterministic exchange-color strategy so `GPW:`, `NC:`, and future market prefixes stay visually distinct.
+- Derived simple source health for normal UI: healthy, needs attention, not refreshed yet, and off.
+- Removed unmatched source-item diagnostics from normal Sources.
+- Added source-candidate study documentation covering current and future source candidates before candidate promotion.
+- Added company-directory architecture documentation for NewConnect and later company-directory sources.
+- Added ADR 0020 for source visibility tiers, Developer-mode candidate visibility, optional enablement, and company-directory boundaries.
+- Updated product, UI IA, source strategy, contracts, and data model docs.
+- Added/updated regression tests for normal UI hiding candidates, Developer mode candidate visibility, optional source enablement persistence, required-source protection, forbidden normal-user implementation terms, Sources workflows, ticker exchange colors, and Sources layout/scroll/selected-row styling.
+- Bumped app version to `0.22.0`.
+
+ADR checkpoint: Added [ADR 0020](adr/0020-sources-visibility-and-directory-boundaries.md).
+
+Validation:
+
+- User manually signed off M22 closure.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
+- `rtk git diff --check` passed.
+
+### M21: Portable Windows executable candidate
+
+Delivered:
+
+- Added ADR 0019 for portable-only Windows candidate packaging and executable-adjacent data policy.
+- Added portable Windows data-directory mode and hardened WSL/native Windows packaging helpers.
+- Added GUI-subsystem release executable behavior, README quickstart, package smoke checklist, and documented deferred release automation/installer scope.
+- Bumped app version to `0.21.0`.
+
+Validation:
+
+- User manually signed off M21 closure.
+- `make package-windows-from-linux` produced `brawler-0.21.0-windows-x64-portable.exe`.
+- Packaged artifact was verified as a Windows GUI executable and created executable-adjacent `data/` storage.
+- Required closure checks passed before version bump.
+
+### M20: Import and export companies, watchlists, notebooks, and settings
+
+Delivered:
+
+- Added JSON research-data export/import for companies, watchlists, memberships, and notebook entries.
+- Added YAML settings export/import for allowlisted non-secret preferences.
+- Added import preview, transactional apply behavior, merge semantics, file picker filters, and ADR 0018.
+- Bumped app version to `0.20.0`.
+
+Validation:
+
+- User manually reviewed and signed off M20.
+- Frontend typecheck/test/build passed.
+- Rust fmt, clippy, and tests passed.
+
+### M19: Dedicated watchlist management
+
+Delivered:
+
+- Added backend watchlist rename/delete lifecycle commands and a dedicated Watchlists panel.
+- Removed watchlist mutation controls from Companies while preserving membership context and cross-view filtering.
+- Added UI regression guardrails for fixed chrome, scroll regions, and normal-user copy.
+- Bumped app version to `0.19.0`.
+
+Validation:
+
+- User manually reviewed and signed off M19.
+- Frontend typecheck/test/build passed.
+- Rust fmt, clippy, and tests passed.
+
+### M18: Implement V1 application polish
+
+Delivered:
+
+- Repaired Notebooks, Inbox, Sources, Settings, Companies, shell/sidebar, topbar, scrolling, selected-row, and architecture-copy polish.
+- Added shared ticker rendering, app themes, watchlist filters, locale coverage, docs/contracts updates, and focused workflow tests.
+- Bumped app version to `0.18.0`.
+
+Validation:
+
+- User manually reviewed and signed off M18.
+- Frontend typecheck/test/build passed.
+- Rust fmt, clippy, and tests passed.
+
+### M17: Implement v1 friend-test license gate
+
+Delivered:
+
+- Added ADR 0017 for the local author/friend-test license gate.
+- Added extensible license parsing, verification, entitlement policy, OS keychain storage, redacted metadata, typed commands, UI gate/settings flows, owner tooling, and license operations docs.
+- Bumped app version to `0.17.0`.
+
+Validation:
+
+- Manual UI license gate and token-generation testing passed by user.
+- Frontend typecheck/test/build passed.
+- Rust licensing tests, fmt, clippy, and full tests passed.
+
+### M16: Implement local metrics exposure
+
+Delivered:
+
+- Added a dedicated local metrics module with typed samples, runtime counters, collector registry, on-demand snapshots, and Developer Diagnostics presentation.
+- Kept collector and presentation/export boundaries ready for future Prometheus/OpenTelemetry/file adapters without adding remote exposure.
+- Bumped app version to `0.16.0`.
+
+Validation:
+
+- Focused metrics tests, frontend typecheck/test/build, Rust fmt, clippy, and full tests passed.
+
+### Documentation Context Optimization
+
+Delivered:
+
+- Added Kanban Archive and moved completed-card history out of active Kanban.
+- Updated AGENTS, Project Brief, and canonical docs routing so future agents load less unrelated context.
+
+Validation:
+
+- Confirmed active Kanban routes completed-card history to Kanban Archive and that product/contract/security/testing requirements were unchanged.
+
+### M15: Implement local logs framework
+
+Delivered:
+
+- Added local JSON Lines runtime logging, log directory initialization, configurable rotation, redaction, Settings controls, Developer Diagnostics log viewer, and typed commands.
+- Updated ADR 0015 and related docs.
+- Bumped app version to `0.15.0`.
+
+Validation:
+
+- Focused storage/observability/logging/job tests, frontend typecheck/test/build, Rust fmt, clippy, full tests, and diff check passed.
+
+### M14: Implement developer mode diagnostics framework
+
+Delivered:
+
+- Added ADR 0015 for local observability and Developer mode policy plus ADR 0016 for provider-neutral AI analysis diagnostics.
+- Added persisted Developer mode, diagnostics storage/redaction/retention, typed commands, developer-only Diagnostics UI, and first AI/source/credential diagnostic producers.
+- Bumped app version to `0.14.0`.
+
+Validation:
+
+- Focused diagnostics/source-adapter tests, frontend typecheck/test/build, Rust fmt, clippy, and full tests passed.
+
 ### M13.8 Close M13
 
 Intent: verify M13 end to end and close documentation/versioning once the provider-neutral AI analysis workflow is stable.
