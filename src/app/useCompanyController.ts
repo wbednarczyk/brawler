@@ -91,12 +91,12 @@ export function useCompanyController({
       displayName: entry.displayName,
       isin: entry.isin ?? "",
     });
-    setLookupStatus(`${text("Selected from GPW registry")}: ${entry.qualifiedTicker}`);
+    setLookupStatus(`${text("Selected from company directory")}: ${entry.qualifiedTicker}`);
   }
 
   function lookupCompany() {
     const lookupVersion = companyLookupVersionRef.current;
-    setLookupStatus(text("Looking up GPW registry..."));
+    setLookupStatus(text("Looking up company directory..."));
 
     companiesApi.lookupCompany({
       exchange: companyForm.exchange,
@@ -112,7 +112,7 @@ export function useCompanyController({
         if (result) {
           applyLookupResult(result);
         } else {
-          setLookupStatus(text("No GPW registry match."));
+          setLookupStatus(text("No company directory match."));
         }
         setCompaniesError(null);
       })

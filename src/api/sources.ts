@@ -19,8 +19,21 @@ export type RefreshCompanyRegistryIfStaleInput = {
   staleAfterSeconds: number;
 };
 
-export function listSourceAdapters() {
-  return callCommand<SourceAdapter[]>("list_source_adapters");
+export type ListSourceAdaptersInput = {
+  includeDeveloperOnly?: boolean;
+};
+
+export type SetSourceEnabledInput = {
+  adapterId: string;
+  enabled: boolean;
+};
+
+export function listSourceAdapters(input?: ListSourceAdaptersInput) {
+  return callCommand<SourceAdapter[]>("list_source_adapters", input ? { input } : undefined);
+}
+
+export function setSourceAdapterEnabled(input: SetSourceEnabledInput) {
+  return callCommand<SourceAdapter>("set_source_adapter_enabled", { input });
 }
 
 export function listUnmatchedSourceItems(adapterId: string) {

@@ -296,6 +296,9 @@ export type SourceAdapter = {
   displayName: string;
   sourceType: string;
   fetchMode: string;
+  visibility: "required" | "optional" | "developer";
+  userConfigurable: boolean;
+  healthStatus: "healthy" | "attention" | "notRefreshed" | "off";
   enabled: boolean;
   defaultPollIntervalSeconds: number;
   sourceUrl: string;
@@ -318,6 +321,7 @@ export type SourceAdapter = {
 };
 
 export type CompanyRegistryEntry = {
+  sourceAdapterId: string;
   exchange: string;
   ticker: string;
   qualifiedTicker: string;

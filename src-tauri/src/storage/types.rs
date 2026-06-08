@@ -227,6 +227,9 @@ pub struct SourceAdapter {
     pub display_name: String,
     pub source_type: String,
     pub fetch_mode: String,
+    pub visibility: String,
+    pub user_configurable: bool,
+    pub health_status: String,
     pub enabled: bool,
     pub default_poll_interval_seconds: i64,
     pub source_url: String,
@@ -251,6 +254,7 @@ pub struct SourceAdapter {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyRegistryEntry {
+    pub source_adapter_id: String,
     pub exchange: String,
     pub ticker: String,
     pub qualified_ticker: String,

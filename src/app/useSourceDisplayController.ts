@@ -1,7 +1,6 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import type { SourceAdapter, UserSettings } from "../api/types";
 import { formatPollInterval } from "../shared/formatting/date";
-import { gpwRegistryAdapterId } from "./sourceScheduler";
 import type { Section } from "./navigation";
 
 type SourceDisplayControllerInput = {
@@ -31,12 +30,15 @@ export function useSourceDisplayController({
   sourceAdapters,
   sourceRefreshFailureCount,
 }: SourceDisplayControllerInput) {
+  function isCompanyDirectorySource(adapter: SourceAdapter) {
+    return adapter.sourceType === "company_registry";
+  }
+
   function toggleSourceAdapter(adapterId: string) {
     setSelectedSourceAdapterId((current) => (current === adapterId ? null : adapterId));
-    if (adapterId === gpwRegistryAdapterId) {
+    const adapter = sourceAdapters.find((sourceAdapter) => sourceAdapter.id === adapterId);
+    if (adapter && isCompanyDirectorySource(adapter)) {
       refreshCompanyRegistryEntries();
-    } else {
-      refreshUnmatchedSourceItems(adapterId);
     }
   }
 
@@ -61,12 +63,8 @@ export function useSourceDisplayController({
       null;
 
     setSelectedSourceAdapterId(relevantAdapter?.id ?? null);
-    if (relevantAdapter) {
-      if (relevantAdapter.id === gpwRegistryAdapterId) {
-        refreshCompanyRegistryEntries();
-      } else {
-        refreshUnmatchedSourceItems(relevantAdapter.id);
-      }
+    if (relevantAdapter && isCompanyDirectorySource(relevantAdapter)) {
+      refreshCompanyRegistryEntries();
     }
     setActiveSection("Sources");
   }
@@ -86,7 +84,7 @@ export function useSourceDisplayController({
       return "Off";
     }
 
-    if (adapter.id === gpwRegistryAdapterId) {
+    if (isCompanyDirectorySource(adapter)) {
       return adapter.defaultPollIntervalSeconds > 0
         ? `In-app · ${formatPollInterval(adapter.defaultPollIntervalSeconds)}`
         : "Off";
@@ -123,7 +121,7 @@ export function useSourceDisplayController({
     }
 
     const nextRefreshAt =
-      adapter.id === gpwRegistryAdapterId ? nextRegistryRefreshAt : nextSourceRefreshAtByAdapterId[adapter.id];
+      isCompanyDirectorySource(adapter) ? nextRegistryRefreshAt : nextSourceRefreshAtByAdapterId[adapter.id];
 
     if (!nextRefreshAt) {
       return "Off";

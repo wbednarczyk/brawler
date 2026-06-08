@@ -27,6 +27,9 @@ use crate::source_adapters::gpw_market_events::{
     GpwMarketEventItem, ADAPTER_ID as GPW_MARKET_EVENTS_ADAPTER_ID,
     ATTRIBUTION as GPW_MARKET_EVENTS_ATTRIBUTION, SOURCE_URL as GPW_MARKET_EVENTS_SOURCE_URL,
 };
+use crate::source_adapters::newconnect_company_directory::{
+    ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID, SOURCE_URL as NEWCONNECT_DIRECTORY_SOURCE_URL,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
@@ -178,7 +181,27 @@ impl AppState {
     ) -> StorageResult<CompanyRegistryRefreshResult> {
         let mut connection = self.connection.lock().expect("database mutex poisoned");
 
-        companies::refresh_gpw_company_registry(&mut connection, entries, fetched_at)
+        companies::refresh_company_directory(
+            &mut connection,
+            GPW_REGISTRY_ADAPTER_ID,
+            entries,
+            fetched_at,
+        )
+    }
+
+    pub fn refresh_newconnect_company_directory(
+        &self,
+        entries: &[GpwCompanyRegistryEntry],
+        fetched_at: &str,
+    ) -> StorageResult<CompanyRegistryRefreshResult> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        companies::refresh_company_directory(
+            &mut connection,
+            NEWCONNECT_DIRECTORY_ADAPTER_ID,
+            entries,
+            fetched_at,
+        )
     }
 
     pub fn delete_company(&self, company_id: &str) -> StorageResult<()> {
@@ -507,9 +530,32 @@ impl AppState {
     }
 
     pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {
+        self.list_source_adapters_with_developer(false)
+    }
+
+    pub fn list_source_adapters_with_developer(
+        &self,
+        include_developer_only: bool,
+    ) -> StorageResult<Vec<SourceAdapter>> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
-        registry::list_source_adapters(&connection)
+        registry::list_source_adapters(&connection, include_developer_only)
+    }
+
+    pub fn set_source_adapter_enabled(
+        &self,
+        adapter_id: &str,
+        enabled: bool,
+    ) -> StorageResult<SourceAdapter> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        registry::set_source_adapter_enabled(&connection, adapter_id, enabled)
+    }
+
+    pub fn source_adapter_enabled(&self, adapter_id: &str) -> StorageResult<bool> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        registry::source_adapter_enabled(&connection, adapter_id)
     }
 
     pub fn list_company_registry_entries(&self) -> StorageResult<Vec<CompanyRegistryEntry>> {

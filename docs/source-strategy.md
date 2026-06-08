@@ -91,29 +91,29 @@ Rules:
 
 - Prefer ticker-first matching because that is how the user manages and thinks about GPW watchlists.
 - Do not use issuer/company name alone as an automatic GPW feed match key. Names are display/search metadata and can be used for suggestions or diagnostics, but they are too fuzzy for silent Inbox matching.
-- If the GPW listing source only provides ISIN, resolve ISIN to ticker through the local GPW company registry cache first, then match the user's stored company by ticker.
-- If no registry ticker is available, fall back to an exact ISIN match.
+- If the GPW listing source only provides ISIN, resolve ISIN to ticker through the GPW company directory cache first, then match the user's stored company by ticker.
+- If no directory ticker is available, fall back to an exact ISIN match.
 - Unmatched items can still be stored, but they should not appear in company-specific views until matched.
-- The Sources screen should expose unmatched counts and recent unmatched item diagnostics after implementation supports them.
+- Unmatched counts and recent unmatched item diagnostics belong in Developer mode unless they become a clear normal-user action.
 - Matched listing ingestion writes `feed_item_companies.match_type = "ticker"` or `"isin"`.
 - Re-ingesting the same listing updates source metadata but preserves read/saved user state.
 
-## GPW Company Registry
+## GPW Company Directory
 
-Manual company management should not be the long-term default. The app has a local GPW company registry cache with ticker, ISIN, display name, and source metadata for all currently listed companies exposed by GPW's public company list. It is used for lookup, autocomplete groundwork, and ticker-first source matching.
+Manual company management should not be the long-term default. The app has a GPW company directory cache with ticker, ISIN, display name, and source metadata for all currently listed companies exposed by GPW's public company list. It is used for lookup, autocomplete groundwork, and ticker-first source matching.
 
-Registry requirements:
+Directory requirements:
 
-- Fetch the registry from GPW's public company list.
-- Store the registry in SQLite so lookup, autocomplete, and source matching do not require live network access.
-- Refresh the registry on a slow cadence, initially daily or weekly, not on every app start.
-- Preserve manual companies and user edits separately from the remote registry cache.
-- Use the registry to resolve source identifiers into ticker-first matches.
-- Show registry freshness and last error in Sources or Settings.
+- Fetch the directory from GPW's public company list.
+- Store the directory cache so lookup, autocomplete, and source matching do not require live network access.
+- Refresh the directory on a slow cadence, initially daily or weekly, not on every app start.
+- Preserve manual companies and user edits separately from the remote directory cache.
+- Use the directory to resolve source identifiers into ticker-first matches.
+- Show directory freshness and last error in Sources or Settings.
 
-The implementation stores registry rows in SQLite and exposes a manual registry refresh command from Sources. Runtime refresh fetches `https://www.gpw.pl/spolki?offset=0&limit=500`, which currently covers the full public list shown by GPW. The desktop UI schedules a slow in-app registry refresh check using the registry adapter interval, currently one day; the scheduler does not run immediately on startup and only fetches when the cached registry is stale. Company-form lookup may auto-bootstrap the registry on a miss when the runtime cache is empty, then retry the lookup. Parser tests remain test-sample-backed so default checks do not depend on live GPW availability, but test samples must not seed target runtime databases.
+The implementation stores directory rows and exposes a manual directory refresh command from Sources. Runtime refresh fetches `https://www.gpw.pl/spolki?offset=0&limit=500`, which currently covers the full public list shown by GPW. Directory refresh commands run through the same async blocking-task boundary as feed and event source refreshes so live network work does not block the app UI. The desktop UI schedules a slow in-app directory refresh check using the directory source interval, currently one day; the scheduler does not run immediately on startup and only fetches when the cached directory is stale. Company-form lookup may auto-bootstrap required company directories on a miss when the runtime cache is empty, then retry the lookup. Parser tests remain test-sample-backed so default checks do not depend on live GPW availability, but test samples must not seed target runtime databases.
 
-The Sources screen should not show unmatched-feed diagnostics for the company registry adapter because the registry is not a feed source. Its detail panel should instead expose a collapsed searchable cached-companies list with tracked/untracked state and an add action for untracked companies.
+The Sources screen should not show unmatched-feed diagnostics for company directory sources because directories are not feed sources. Each directory source detail panel should expose only that source's collapsed searchable company list with tracked/untracked state and an add action for untracked companies.
 
 Accepted matching priority:
 
@@ -121,6 +121,33 @@ Accepted matching priority:
 2. If a source item only exposes ISIN, resolve ISIN to ticker through `company_registry_entries`, then match by ticker.
 3. If registry resolution is unavailable, fall back to exact ISIN.
 4. Do not silently match by company name.
+
+## Company Directory Sources
+
+Company directory sources are source-backed company identity catalogs used for company lookup, autocomplete, and source matching. They are not feed/news sources and should be presented to normal users as company directory or lookup support, not as generic ingestion plumbing.
+
+M22 confirmed that the current company registry model is extensible enough for a second directory source without a schema refactor.
+
+Implemented company directory sources:
+
+- GPW main-market companies from `https://www.gpw.pl/spolki?offset=0&limit=500`, using `GPW:<ticker>` company identity.
+- NewConnect listed companies from `https://newconnect.pl/spolki?offset=0&limit=500`, using `NC:<ticker>` company identity. The high limit is required because the base page renders only the first 10 rows.
+
+Expected future direction:
+
+- GPW main-market companies and NewConnect companies use the same company-directory boundary.
+- Later market directories, including US and European company lists, should be addable without rewriting company identity, matching, or source status flows.
+- The data model should support multiple directory sources, source-specific identifiers, active/inactive listing state, refresh state, and source attribution.
+- Source matching should continue to prefer exchange-qualified ticker identity and exact authoritative identifiers such as ISIN when available.
+- Normal UI should expose directory freshness and lookup support in product language. Developer mode may expose source IDs, candidate status, and diagnostic detail.
+
+M22 directory decisions:
+
+- `company_registry_entries` supports multiple directory sources through `source_adapter_id`, `exchange`, `ticker`, `qualified_ticker`, active state, and source URL.
+- GPW main market and NewConnect use separate source adapters behind the same company-directory interface.
+- `company_source_ids` does not need a schema change for NewConnect because the directory cache is keyed by exchange-qualified ticker and ISIN.
+- The source adapter read model distinguishes company-directory sources through `source_type = company_registry`.
+- NewConnect required one new adapter registration migration and one source adapter implementation over the existing tables.
 
 ## Detail Fetching
 
@@ -222,14 +249,15 @@ The adapter should record:
 The Sources screen should show for each adapter:
 
 - enabled/disabled state
-- fetch mode
+- simple health status
 - last successful fetch
 - last error/warning
 - next scheduled poll
 - manual refresh action
-- source policy note
+- source page link
+- optional enable/disable control for implemented optional sources
 
-For GPW ESPI/EBI, the source policy note should mention that v1 uses the public GPW report page and that paid processed GPW data products may be evaluated later.
+Normal Sources must not show developer-only candidates, source IDs, fetch modes, rate-limit policy notes, source-policy notes, or unmatched diagnostics. Developer mode and docs may expose those details.
 
 ## Media/RSS Sources
 
@@ -364,7 +392,7 @@ Fallback candidate order:
 2. Money.pl report/calendar pages as cross-checks. Registered as disabled adapter candidate `money-calendar`.
 3. Per-company investor-relations calendars for selected issuers when a company-specific source review accepts them.
 
-Disabled candidates are visible in Sources so the event-source roadmap is explicit, but they must stay disabled until source-specific parser tests, attribution rules, and ticker/ISIN matching quality are accepted.
+Disabled candidates are visible only in Developer mode and docs. They must stay out of normal Sources and cannot become user-enableable until source-specific parser tests, attribution rules, and ticker/ISIN matching quality are accepted.
 
 Rejected or unproven for now:
 
@@ -400,6 +428,51 @@ Candidates:
 - major European exchange disclosure pages or feeds
 
 These are not v1 implementation requirements unless explicitly moved into Ready.
+
+## Source Candidate Study
+
+M22 includes a study task for all currently registered or documented source candidates. A candidate must not become visible in normal UI or user-enableable until its study records an accepted source path, usage posture, attribution, matching strategy, rate limit, tests, and implementation scope.
+
+Current candidates to study:
+
+- GPW ESPI/EBI official reports reliability path.
+- Portal Analiz authenticated private research.
+- Bankier Firma RSS.
+- Bankier Wiadomości RSS.
+- Strefa Inwestorów report calendar.
+- Money calendar/report-date pages.
+- Bankier ESPI RSS and Parkiet ESPI/EBI RSS as secondary official-report cross-checks.
+- PAP Biznes ESPI/EBI fallback path.
+- Investing.com Poland RSS categories.
+- Stooq ticker news and price/context endpoints.
+- XTB market news and analysis pages.
+- BiznesRadar and StockWatch public or authenticated research candidates.
+- Future official/public company and filing sources such as SEC EDGAR, Nasdaq RSS, and major European exchange feeds.
+
+Study output should classify each candidate as one of:
+
+- accepted for implementation,
+- keep as documented future candidate,
+- developer-only diagnostic/cross-check candidate,
+- rejected for policy, reliability, matching quality, licensing, cost, or UX reasons.
+
+Normal Sources must not show candidates that are not implemented. Developer mode and owner/developer docs may expose candidate status and study notes.
+
+Initial M22 candidate disposition:
+
+- GPW ESPI/EBI official reports: keep as developer-only reliability candidate; next action is tracked-company-scoped fetch reliability research before runtime promotion.
+- Portal Analiz authenticated private research: keep as developer-only authenticated-source candidate governed by ADR 0014; next action is account-scoped usage-path research before any implementation.
+- Bankier Firma RSS: keep as documented future candidate; next action is matching-quality review against tracked GPW companies.
+- Bankier Wiadomości RSS: keep as documented future candidate; next action is noise/backfill and matching-quality review before considering ingestion.
+- Strefa Inwestorów report calendar: keep as documented future candidate; next action is source-specific parsing and attribution review.
+- Money calendar/report-date pages: keep as documented future candidate; next action is source-specific parsing and matching review.
+- Bankier ESPI RSS and Parkiet ESPI/EBI RSS: keep as developer-only diagnostic/cross-check candidates; next action is reconciliation research against canonical official-report items.
+- PAP Biznes ESPI/EBI fallback path: keep as documented future official-adjacent fallback candidate; next action is policy/terms and URL-pattern review.
+- Investing.com Poland RSS categories: keep as documented future public-media candidate; next action is exact feed discovery and ticker/company matching review.
+- Stooq ticker news and price/context endpoints: keep as documented future media/price-context candidate; next action is separate source-type decision for news versus price context.
+- XTB market news and analysis pages: keep as documented future media/analysis candidate; next action is source policy and attribution review.
+- BiznesRadar and StockWatch: keep as documented future research/context candidates; next action is public/authenticated access and scraping-policy review.
+- SEC EDGAR, Nasdaq RSS, and major European exchange feeds: keep as future official/public market expansion candidates after GPW/NewConnect directory support is stable.
 
 ## Source Research Notes
 

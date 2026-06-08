@@ -10,7 +10,7 @@ fn creates_clean_database_with_initial_schema() {
         })
         .expect("schema_migrations should exist");
 
-    assert_eq!(migration_count, 28);
+    assert_eq!(migration_count, 29);
 
     let company_table_exists: bool = connection
         .query_row(
@@ -109,6 +109,13 @@ fn seeds_default_settings_and_source_adapters() {
             |row| row.get(0),
         )
         .expect("GPW registry adapter should be seeded");
+    let newconnect_directory_adapter: (String, bool) = connection
+        .query_row(
+            "SELECT display_name, enabled FROM source_adapters WHERE id = 'newconnect-company-directory'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("NewConnect directory adapter should be seeded");
     let bankier_adapter_name: String = connection
         .query_row(
             "SELECT display_name FROM source_adapters WHERE id = 'bankier-market-rss'",
@@ -152,6 +159,10 @@ fn seeds_default_settings_and_source_adapters() {
     assert_eq!(log_level, "info");
     assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), false));
     assert_eq!(registry_adapter_name, "GPW Company Registry");
+    assert_eq!(
+        newconnect_directory_adapter,
+        ("NewConnect Company Directory".to_owned(), true)
+    );
     assert_eq!(bankier_adapter_name, "Bankier Giełda RSS");
     assert_eq!(bankier_company_adapter_name, "Bankier Company Komunikaty");
     assert_eq!(portal_analiz_adapter, ("Portal Analiz".to_owned(), false));
@@ -170,8 +181,8 @@ fn reports_database_status() {
     let connection = open_in_memory_database().expect("database should initialize");
     let status = database_status(&connection).expect("status should be available");
 
-    assert_eq!(status.applied_migrations, 28);
+    assert_eq!(status.applied_migrations, 29);
     assert_eq!(status.companies, 0);
-    assert_eq!(status.source_adapters, 11);
+    assert_eq!(status.source_adapters, 12);
     assert_eq!(status.settings, 17);
 }

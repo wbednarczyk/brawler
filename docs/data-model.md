@@ -81,6 +81,8 @@ Fields:
 - `source_type`
 - `fetch_mode`
 - `enabled`
+- UI-facing visibility tier derived from source metadata: `required`, `optional`, or `developer`
+- user-configurable flag derived from visibility and implementation status
 - `default_poll_interval_seconds`
 - `last_attempt_at` via `source_adapter_state`
 - `last_success_at`
@@ -102,8 +104,11 @@ Rules:
 
 - Adapter IDs should be stable, for example `gpw-espi-ebi`.
 - Source-specific cursors or checkpoints live in adapter state.
+- Required sources are protected from disabling.
+- Optional implemented sources can be enabled or disabled by the user, and refresh jobs must respect that state.
+- Developer-tier source candidates may remain registered for owner/developer visibility, but normal source listing filters them out.
 
-### Company Registry Entries
+### Company Directory Entries
 
 Supports company lookup, autocomplete, and ticker-first feed matching.
 
@@ -125,9 +130,10 @@ Fields:
 Rules:
 
 - `exchange + ticker` is the uniqueness boundary.
-- Registry records are cached source data, not user-owned company records.
-- User-created companies are stored in `companies` and must not be overwritten silently by registry refresh.
+- Directory records are cached source data, not user-owned company records.
+- User-created companies are stored in `companies` and must not be overwritten silently by directory refresh.
 - Feed matching should resolve source identifiers to ticker through this cache before using ISIN fallback.
+- Multiple company-directory sources are supported. GPW main market uses `GPW:<ticker>` and NewConnect uses `NC:<ticker>` behind the same directory boundary.
 - Slow refresh cadence is expected, initially daily or weekly.
 
 ### Feed Items

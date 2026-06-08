@@ -31,7 +31,7 @@ Rules:
 - `ticker` alone is not unique.
 - `isin`, `cik`, and `lei` are optional.
 - Source adapters may attach source-specific IDs without changing the canonical identity.
-- UI ticker labels may split `qualifiedTicker` into exchange and symbol for styling, including per-exchange colors, but command payloads and storage continue to use the unchanged `qualifiedTicker` string.
+- UI ticker labels may split `qualifiedTicker` into exchange and symbol for styling, including explicit known-exchange colors and deterministic fallback colors for future exchanges, but command payloads and storage continue to use the unchanged `qualifiedTicker` string.
 
 ## Watchlist Membership
 
@@ -76,6 +76,9 @@ Each source adapter must expose metadata and a fetch operation.
   "sourceType": "official_report",
   "supportedMarkets": ["GPW"],
   "fetchMode": "public_page",
+  "visibility": "optional",
+  "userConfigurable": true,
+  "healthStatus": "notRefreshed",
   "accessMode": "public",
   "enabled": true,
   "defaultPollIntervalSeconds": 900,
@@ -122,13 +125,17 @@ Rules:
 - Adapters must preserve source URLs and attribution.
 - Adapters must declare and respect source-specific rate limits.
 - Restricted scraping is not allowed without a source-specific ADR.
-- `sourceType` must distinguish `official_report`, `public_media`, `analysis`, `authenticated_research`, and future source categories where relevant.
+- `sourceType` must distinguish `official_report`, `public_media`, `analysis`, `authenticated_research`, `company_registry`, and future source categories where relevant.
+- `visibility` must distinguish `required`, `optional`, and `developer` sources.
+- Normal source listing returns only `required` and `optional` sources. Developer tooling may request `developer` sources explicitly.
+- `userConfigurable` is true only for implemented optional sources that the user may enable or disable.
+- `healthStatus` is a simple UI-facing status: `healthy`, `attention`, `notRefreshed`, or `off`.
 - `accessMode` must distinguish `public`, `rss`, `paywalled`, `authenticated`, and `manual` sources where relevant.
 - Authenticated private sources require a source-specific ADR before implementation. Portal Analiz is governed by [ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md).
 - Authenticated adapters must use OS keychain secrets or session storage and must not export credentials to YAML, backup files, logs, or test samples.
-- `portal-analiz` exists only as a disabled late-v1 placeholder until the authenticated-source implementation is explicitly built. It must not be fetched by normal refresh commands.
-- The Sources screen reads adapter status from local SQLite before real fetching exists.
-- The Sources screen must expose the adapter source URL, rate-limit policy, and source-policy note once live fetching exists.
+- `portal-analiz` exists only as a developer-tier candidate until the authenticated-source implementation is explicitly built. It must not be fetched by normal refresh commands.
+- The Sources screen reads source status from local runtime state before real fetching exists.
+- Normal Sources exposes implemented source status, source URL, refresh controls, and optional enablement. Source IDs, fetch modes, rate-limit policy, source-policy notes, unmatched diagnostics, and unimplemented candidates belong in Developer mode and docs.
 - The first GPW implementation parses listing HTML test samples before live network fetch is wired.
 - GPW listing ingestion upserts feed items by `(sourceAdapterId, dedupeKey)` and must preserve existing `read` and `saved` user state.
 - GPW listing ingestion matches companies by ticker first, then exact ISIN fallback. Matched items populate `feed_item_companies` with `matchType: "ticker"` or `"isin"` and use the matched exchange-qualified ticker as `displayCompany`.
@@ -1157,36 +1164,40 @@ Rules:
 
 Initial `refresh_gpw_company_registry` behavior:
 
-- Runs the GPW company registry adapter path.
+- Legacy command name retained for frontend compatibility; behavior now refreshes the required company-directory adapter set.
+- Runs through the same async blocking-task boundary as other source refresh commands so long network/directory refreshes do not block the app UI.
+- Runs the GPW company directory adapter and the NewConnect company directory adapter.
 - Fetches the public GPW companies page with a high limit, currently `https://www.gpw.pl/spolki?offset=0&limit=500`, so the cache represents all currently listed GPW companies exposed by that page.
+- Fetches the public NewConnect companies page with a high limit, currently `https://newconnect.pl/spolki?offset=0&limit=500`, because the base page renders only the first 10 rows.
 - Stores registry rows in SQLite under `company_registry_entries`.
 - Upserts by `exchange + ticker`.
 - Preserves user-managed `companies` records and does not overwrite them silently.
-- Records adapter attempt/success/error state under `gpw-company-registry`.
+- Records adapter attempt/success/error state under each concrete directory adapter.
 - Automated tests use test-sample-backed parser/fetch behavior; default checks do not depend on live GPW availability.
 
 Initial `refresh_gpw_company_registry_if_stale` behavior:
 
 - Runs only for scheduler-triggered refreshes.
-- Checks local adapter freshness before making a live request.
-- Uses the registry adapter poll interval, initially one day, as the stale threshold.
-- Returns no refresh result when the cached registry is still fresh.
+- Runs through the async blocking-task boundary and must not block the app UI while checking or refreshing directory sources.
+- Checks required company-directory adapter freshness before making live requests.
+- Uses the directory adapter poll interval, initially one day, as the stale threshold.
+- Returns no refresh result when all required directory caches are still fresh.
 - Does not run immediately on app startup; the first scheduled check happens after one full registry poll interval while the app is open.
 
 Initial `list_company_registry_entries` behavior:
 
-- Returns active cached GPW company registry rows from SQLite.
-- Includes exchange, ticker, qualified ticker, display name, ISIN, source URL, fetched timestamp, and whether the company is already tracked locally.
+- Returns active cached GPW and NewConnect company directory rows from SQLite.
+- Includes source adapter ID, exchange, ticker, qualified ticker, display name, ISIN, source URL, fetched timestamp, and whether the company is already tracked locally.
 - Supports the Companies form registry suggestions and the Sources screen registry detail panel.
 - The Companies form can use cached registry matches to fill exchange, ticker, display name, and ISIN while preserving manual company entry.
-- The Sources registry list is collapsed by default, searchable by ticker/company/ISIN, and each untracked company can be added to the local company list.
+- Each Sources directory row shows its own collapsed company list, searchable by ticker/company/ISIN, and each untracked company can be added to the local company list.
 - Does not fetch live data by itself; refresh is handled by `refresh_gpw_company_registry` or lookup bootstrap behavior.
 
 Initial `lookup_company` behavior:
 
-- Looks up GPW companies from the local `company_registry_entries` cache.
+- Looks up companies from the local `company_registry_entries` cache for supported directory exchanges, initially `GPW` and `NC`.
 - Uses exact ticker first, exact ISIN second, and company-name search only for company-form lookup/enrichment.
-- If a GPW lookup misses while the registry cache is empty, the command may refresh the full GPW registry once and retry the lookup.
+- If a supported directory lookup misses while the required directory cache is empty, the command may refresh required company directories once and retry the lookup.
 - Feed/source matching remains stricter than form lookup: ticker first, ISIN-to-ticker registry resolution second, exact ISIN fallback, and no silent company-name matching.
 
 Initial `refresh_sources` behavior:

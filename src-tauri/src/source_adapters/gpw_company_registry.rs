@@ -1,22 +1,19 @@
-use scraper::{Html, Selector};
 use thiserror::Error;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use super::USER_AGENT;
+use super::{
+    company_directory::{
+        parse_company_directory_html, CompanyDirectoryEntry, CompanyDirectoryParseError,
+    },
+    USER_AGENT,
+};
 
 pub const ADAPTER_ID: &str = "gpw-company-registry";
 pub const DISPLAY_NAME: &str = "GPW Company Registry";
 pub const SOURCE_URL: &str = "https://www.gpw.pl/spolki?offset=0&limit=500";
+const BASE_URL: &str = "https://www.gpw.pl";
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GpwCompanyRegistryEntry {
-    pub exchange: String,
-    pub ticker: String,
-    pub qualified_ticker: String,
-    pub display_name: String,
-    pub isin: String,
-    pub source_url: String,
-}
+pub type GpwCompanyRegistryEntry = CompanyDirectoryEntry;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum GpwCompanyRegistryParseError {
@@ -24,6 +21,15 @@ pub enum GpwCompanyRegistryParseError {
     InvalidSelector(String),
     #[error("no GPW company registry rows found")]
     NoRows,
+}
+
+impl From<CompanyDirectoryParseError> for GpwCompanyRegistryParseError {
+    fn from(error: CompanyDirectoryParseError) -> Self {
+        match error {
+            CompanyDirectoryParseError::InvalidSelector(value) => Self::InvalidSelector(value),
+            CompanyDirectoryParseError::NoRows => Self::NoRows,
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -75,91 +81,7 @@ pub fn fetch_company_registry_entries(
 pub fn parse_company_registry_html(
     html: &str,
 ) -> Result<Vec<GpwCompanyRegistryEntry>, GpwCompanyRegistryParseError> {
-    let document = Html::parse_document(html);
-    let row_selector = selector("#search-result tr")?;
-    let anchor_selector = selector("a[href*='spolka?isin=']")?;
-    let name_selector = selector("strong.name")?;
-
-    let entries = document
-        .select(&row_selector)
-        .filter_map(|row| {
-            let anchor = row.select(&anchor_selector).next()?;
-            let href = anchor.value().attr("href")?;
-            let isin = extract_isin_from_company_href(href)?;
-            let source_url = absolute_gpw_url(href);
-            let name_text = row
-                .select(&name_selector)
-                .next()
-                .map(|name| normalized_text(name.text()))
-                .unwrap_or_else(|| normalized_text(anchor.text()));
-            let (display_name, ticker) = split_company_name_and_ticker(&name_text)?;
-            let exchange = "GPW".to_owned();
-
-            Some(GpwCompanyRegistryEntry {
-                qualified_ticker: format!("{exchange}:{ticker}"),
-                exchange,
-                ticker,
-                display_name,
-                isin,
-                source_url,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    if entries.is_empty() {
-        Err(GpwCompanyRegistryParseError::NoRows)
-    } else {
-        Ok(entries)
-    }
-}
-
-fn selector(value: &str) -> Result<Selector, GpwCompanyRegistryParseError> {
-    Selector::parse(value)
-        .map_err(|_| GpwCompanyRegistryParseError::InvalidSelector(value.to_owned()))
-}
-
-fn extract_isin_from_company_href(href: &str) -> Option<String> {
-    href.split('?')
-        .nth(1)?
-        .split('&')
-        .find_map(|part| part.strip_prefix("isin="))
-        .map(|isin| isin.trim().to_uppercase())
-        .filter(|isin| !isin.is_empty())
-}
-
-fn split_company_name_and_ticker(value: &str) -> Option<(String, String)> {
-    let open = value.rfind('(')?;
-    let close = value.rfind(')')?;
-    if close <= open {
-        return None;
-    }
-
-    let display_name = value[..open].trim().to_owned();
-    let ticker = value[open + 1..close].trim().to_uppercase();
-
-    if display_name.is_empty() || ticker.is_empty() {
-        None
-    } else {
-        Some((display_name, ticker))
-    }
-}
-
-fn normalized_text<'a>(text: impl Iterator<Item = &'a str>) -> String {
-    text.collect::<Vec<_>>()
-        .join(" ")
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn absolute_gpw_url(href: &str) -> String {
-    if href.starts_with("http://") || href.starts_with("https://") {
-        href.to_owned()
-    } else if href.starts_with('/') {
-        format!("https://www.gpw.pl{href}")
-    } else {
-        format!("https://www.gpw.pl/{href}")
-    }
+    parse_company_directory_html(html, "GPW", BASE_URL).map_err(Into::into)
 }
 
 #[cfg(test)]

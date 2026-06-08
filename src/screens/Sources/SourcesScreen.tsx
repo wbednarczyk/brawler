@@ -9,6 +9,7 @@ import type { SourcesScreenProps } from "./sourceTypes";
 export function SourcesScreen({
   sourceAdapters,
   sourceAdaptersError,
+  developerMode,
   selectedSourceAdapterId,
   sourceRefreshState,
   sourceRefreshResult,
@@ -26,10 +27,9 @@ export function SourcesScreen({
   unmatchedSourceItems,
   unmatchedSourceItemsError,
   expandedUnmatchedAdapters,
-  gpwRegistryAdapterId,
   refreshSources,
-  refreshSingleSource,
   refreshCompanyRegistry,
+  setSourceEnabled,
   toggleSourceAdapter,
   toggleSourceAdapterFromKeyboard,
   toggleCompanyRegistryList,
@@ -62,36 +62,6 @@ export function SourcesScreen({
       </div>
 
       <div className="sources-layout" aria-label={text("Source list")}>
-        {sourceRefreshResult ? (
-          <dl className="source-status-grid source-refresh-summary" aria-label={text("Last source refresh summary")}>
-            <div>
-              <dt>{text("Fetched")}</dt>
-              <dd aria-label={text("Fetched source items")}>{sourceRefreshResult.itemsFetched}</dd>
-            </div>
-            <div>
-              <dt>{text("Created")}</dt>
-              <dd aria-label={text("Created source items")}>{sourceRefreshResult.itemsCreated}</dd>
-            </div>
-            <div>
-              <dt>{text("Matched")}</dt>
-              <dd aria-label={text("Matched source items")}>{sourceRefreshResult.itemsMatched}</dd>
-            </div>
-            <div>
-              <dt>{text("Unmatched")}</dt>
-              <dd aria-label={text("Unmatched source items")}>{sourceRefreshResult.itemsUnmatched}</dd>
-            </div>
-            <div>
-              <dt>{text("Details")}</dt>
-              <dd aria-label={text("Stored source detail bodies")}>
-                {sourceRefreshResult.detailItemsStored}/{sourceRefreshResult.detailItemsAttempted}
-              </dd>
-            </div>
-            <div>
-              <dt>{text("Detail failures")}</dt>
-              <dd aria-label={text("Failed source detail bodies")}>{sourceRefreshResult.detailItemsFailed}</dd>
-            </div>
-          </dl>
-        ) : null}
         {groupedAdapters.map((group) => (
           <section className="source-group" key={group.id} aria-label={text(group.label)}>
             <div className="source-group-header">
@@ -106,12 +76,19 @@ export function SourcesScreen({
                 <SourceAdapterRow
                   adapter={adapter}
                   addingRegistryTicker={addingRegistryTicker}
-                  companyRegistryEntries={companyRegistryEntries}
+                  companyRegistryEntries={
+                    adapter.sourceType === "company_registry"
+                      ? companyRegistryEntries.filter((entry) => entry.sourceAdapterId === adapter.id)
+                      : companyRegistryEntries
+                  }
                   companyRegistryEntriesError={companyRegistryEntriesError}
                   companyRegistrySearch={companyRegistrySearch}
                   expandedUnmatchedAdapters={expandedUnmatchedAdapters}
-                  filteredCompanyRegistryEntries={filteredCompanyRegistryEntries}
-                  gpwRegistryAdapterId={gpwRegistryAdapterId}
+                  filteredCompanyRegistryEntries={
+                    adapter.sourceType === "company_registry"
+                      ? filteredCompanyRegistryEntries.filter((entry) => entry.sourceAdapterId === adapter.id)
+                      : filteredCompanyRegistryEntries
+                  }
                   isCompanyRegistryListExpanded={isCompanyRegistryListExpanded}
                   key={adapter.id}
                   registryRefreshError={registryRefreshError}
@@ -120,7 +97,6 @@ export function SourcesScreen({
                   selected={selectedSourceAdapterId === adapter.id}
                   sourceAdapterRefreshInFlight={sourceAdapterRefreshInFlight}
                   sourceRefreshError={sourceRefreshError}
-                  sourceRefreshState={sourceRefreshState}
                   unmatchedSourceItems={unmatchedSourceItems}
                   addCompanyFromRegistry={addCompanyFromRegistry}
                   formatNextRefresh={formatNextRefresh}
@@ -128,7 +104,7 @@ export function SourcesScreen({
                   formatTimestamp={formatTimestamp}
                   openExternalUrl={openExternalUrl}
                   refreshCompanyRegistry={refreshCompanyRegistry}
-                  refreshSingleSource={refreshSingleSource}
+                  setSourceEnabled={setSourceEnabled}
                   setCompanyRegistrySearch={setCompanyRegistrySearch}
                   toggleCompanyRegistryList={toggleCompanyRegistryList}
                   toggleSourceAdapter={toggleSourceAdapter}
@@ -146,6 +122,42 @@ export function SourcesScreen({
         {sourceRefreshError ? <p className="error-text">{t("error.sourceRefreshFailed")}: {sourceRefreshError}</p> : null}
         {unmatchedSourceItemsError ? (
           <p className="error-text">{t("error.unmatchedSourceDiagnosticsFailed")}: {unmatchedSourceItemsError}</p>
+        ) : null}
+        {developerMode && sourceRefreshResult ? (
+          <section className="source-developer-summary" aria-label={text("Developer source refresh summary")}>
+            <div className="source-developer-summary-header">
+              <h2>{text("Developer refresh summary")}</h2>
+              <span>{text("Latest manual or scheduled source run")}</span>
+            </div>
+            <dl className="source-status-grid source-refresh-summary" aria-label={text("Last source refresh summary")}>
+              <div>
+                <dt>{text("Fetched")}</dt>
+                <dd aria-label={text("Fetched source items")}>{sourceRefreshResult.itemsFetched}</dd>
+              </div>
+              <div>
+                <dt>{text("Created")}</dt>
+                <dd aria-label={text("Created source items")}>{sourceRefreshResult.itemsCreated}</dd>
+              </div>
+              <div>
+                <dt>{text("Matched")}</dt>
+                <dd aria-label={text("Matched source items")}>{sourceRefreshResult.itemsMatched}</dd>
+              </div>
+              <div>
+                <dt>{text("Unmatched")}</dt>
+                <dd aria-label={text("Unmatched source items")}>{sourceRefreshResult.itemsUnmatched}</dd>
+              </div>
+              <div>
+                <dt>{text("Details")}</dt>
+                <dd aria-label={text("Stored source detail bodies")}>
+                  {sourceRefreshResult.detailItemsStored}/{sourceRefreshResult.detailItemsAttempted}
+                </dd>
+              </div>
+              <div>
+                <dt>{text("Detail failures")}</dt>
+                <dd aria-label={text("Failed source detail bodies")}>{sourceRefreshResult.detailItemsFailed}</dd>
+              </div>
+            </dl>
+          </section>
         ) : null}
       </div>
     </section>
