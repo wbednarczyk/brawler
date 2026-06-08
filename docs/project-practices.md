@@ -244,6 +244,8 @@ Rules:
 - Companies, Watchlists, Notebooks, Inbox, and Events need automated scroll/layout contract coverage when their layout CSS changes.
 - Cross-screen navigation affordances, such as company links and watchlist membership links, should have workflow tests when they are added or moved.
 - Prefer shared renderers for repeated visual concepts, especially tickers, memberships, status pills, and source links, and add tests when a shared renderer is adopted across screens.
+- Browser UI smoke tests should be added or updated when jsdom/CSS contract tests cannot realistically catch a repeated layout regression, especially fixed chrome, global scrollbar, panel scrolling, row sizing, or viewport-specific behavior.
+- Playwright browser smoke is opt-in at first. Do not add it to default `make check` or default CI until the suite is stable and explicitly promoted.
 
 ## Local And CI Build Parity
 

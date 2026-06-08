@@ -1,7 +1,7 @@
 {
   "name": "brawler",
   "private": true,
-  "version": "0.22.0",
+  "version": "0.23.0",
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run",
+    "test": "vitest run src",
+    "test:browser:install": "playwright install chromium",
+    "test:browser": "playwright test",
     "test:watch": "vitest",
     "check:frontend": "npm run typecheck && npm run test && npm run build",
     "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
@@ -26,6 +28,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.0.0",
     "@testing-library/jest-dom": "^6.4.8",
     "@testing-library/react": "^16.0.1",

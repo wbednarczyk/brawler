@@ -811,43 +811,55 @@ Exit criteria:
 
 ## Milestone 23: Browser UI Regression Testing Assessment
 
-Status: planned.
+Status: completed in `0.23.0`.
 
-Goal: assess and plan whether Playwright, or an equivalent real-browser UI testing path, should be added to catch layout and visual regressions that Vitest/jsdom cannot reliably detect.
+Goal: add a small opt-in Playwright browser UI regression smoke path focused on layout problems that Vitest/jsdom cannot reliably detect.
 
 Included:
 
 - compare current Vitest/jsdom workflow tests, CSS contract tests, manual smoke checks, and real-browser automation coverage
-- decide whether Playwright should test the Vite preview app, Tauri desktop app, or both
-- assess local developer workflow impact, Nix integration, Windows/WSL practicality, and default CI cost
-- define a small first-test slice if Playwright is accepted, focused on regressions that have already happened: scrolling boundaries, fixed app chrome, Sources bar sizing, notebook panel layout, and dense list rendering
-- decide screenshot/visual snapshot policy, including when pixel snapshots are useful versus brittle
-- decide whether Playwright tests are default checks, opt-in checks, or release/smoke checks only
-- document setup, commands, troubleshooting, and artifact handling before adding the dependency
-- update project practices and engineering workflow if browser automation becomes part of the normal development loop
+- add Playwright with a Chromium-only first configuration
+- target the Vite preview app first, not the real Tauri desktop runtime
+- keep the browser smoke suite opt-in at first, outside default `make check` and default CI
+- use DOM/layout assertions as pass/fail evidence
+- retain screenshots and traces only on failure
+- use two desktop viewports: compact desktop and normal desktop
+- use deterministic frontend test data instead of live sources or the user's local runtime database
+- keep Playwright tests under `tests/browser/`
+- add a small first-test slice focused on regressions that have already happened: scrolling boundaries, fixed app chrome, Sources bar sizing, notebook panel layout, Companies list height, Watchlists member scrolling, and dense list rendering
+- add a tiny navigation smoke check across the main screens
+- document setup, commands, troubleshooting, artifact handling, and the WSL/Windows split
+- update project practices and engineering workflow for when browser automation should be run
 
 Not in scope:
 
 - broad end-to-end coverage of all product workflows
 - live external source/API tests
 - replacing existing Vitest component/workflow tests
-- adding Playwright before the assessment resolves scope, runtime cost, and ownership
+- real Tauri desktop automation
+- Windows file dialog, keychain, taskbar, portable executable, or WebView2 validation
+- screenshot comparison tests as pass/fail evidence
+- adding the browser smoke suite to default CI before it proves stable
 
-Architecture decisions to make:
+Accepted architecture decisions:
 
-- Test target: Vite preview app only, Tauri desktop runtime, or both.
-- Execution path: default local/CI check, opt-in local smoke check, or release-gate check.
-- Evidence model: DOM assertions only, screenshots, visual snapshots, or a mixed approach.
-- Runtime ownership: WSL/Nix only, native Windows only, or documented split.
-- Artifact policy: whether screenshots/videos/traces are retained locally, in CI, or only on failures.
+- Test target: Vite preview app in Chromium first; real Tauri desktop automation remains deferred.
+- Execution path: opt-in local smoke command first; promotion to default checks requires later stability evidence.
+- Evidence model: DOM/layout assertions, with screenshots/traces on failure only.
+- Runtime ownership: WSL/Nix owns automated browser layout smoke; native Windows remains the runtime for hands-on desktop behavior and packaging smoke.
+- Artifact policy: retain screenshots/traces only on failure.
+- Data strategy: deterministic frontend test harness.
+- First slice: regression-only layout checks plus a tiny navigation smoke.
 
 Exit criteria:
 
-- recommendation recorded with rationale and tradeoffs
-- first Playwright scope is explicitly approved or rejected
+- ADR 0021 records the browser UI regression testing boundary
+- Playwright scope is implemented as approved
 - local commands and CI posture are documented
-- if accepted, implementation tasks are split into a follow-up milestone or approved implementation slice
-- if rejected or deferred, current CSS contract/manual smoke strategy is updated with the known limitations
+- opt-in browser smoke command exists and is not part of default `make check`
+- first smoke tests cover shell fixed chrome, no global app scrollbar, Companies list scroll/height, Notebooks pane scrolling, Sources compact rows, Watchlists member scrolling, and basic navigation
+- existing Vitest/jsdom tests remain the fast default workflow suite
+- validation evidence includes existing frontend checks plus the new opt-in browser smoke
 
 ## Milestone 24: Research Workspace Architecture
 

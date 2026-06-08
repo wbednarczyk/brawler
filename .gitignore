@@ -3,6 +3,8 @@ node_modules/
 
 # Frontend build output
 dist/
+test-results/
+playwright-report/
 
 # Rust build output
 target/

@@ -4,6 +4,34 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M23: Browser UI regression testing assessment and first Playwright slice
+
+Intent: add a small opt-in Playwright browser UI regression smoke path focused on layout problems that Vitest/jsdom cannot reliably detect.
+
+Delivered:
+
+- Added an opt-in Playwright browser UI smoke suite with Chromium-only first coverage.
+- Added deterministic browser-smoke data so UI smoke does not use live sources or the user's app data.
+- Added `npm run test:browser:install`, `npm run test:browser`, `make ui-smoke-install`, and `make ui-smoke`.
+- Added regression coverage for fixed app chrome, absence of global app scrolling, Companies list scrolling/height, Notebooks pane scrolling, Sources compact rows, Watchlists scrolling, and basic navigation.
+- Added [ADR 0021](adr/0021-browser-ui-regression-testing.md) for the browser UI regression testing boundary.
+- Documented setup, commands, failure-only artifacts, and the WSL/Vite-preview versus native-Windows testing split.
+- Kept Playwright opt-in; default `make check` and default frontend tests remain Vitest/jsdom based.
+- Bumped app version to `0.23.0`.
+
+ADR checkpoint: Added [ADR 0021](adr/0021-browser-ui-regression-testing.md).
+
+Validation:
+
+- User manually signed off M23 closure.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk npm run test:browser` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
+
 ### M22: Sources trust, control, and company-directory extensibility
 
 Intent: make Sources useful as a normal-user trust/control surface while preserving developer/author visibility for source candidates and implementation detail.

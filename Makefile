@@ -10,13 +10,15 @@ APP_VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null)
 WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 
-.PHONY: help install dev frontend-preview build check test typecheck frontend-check rust-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
 	@printf "  make install             Install npm dependencies inside nix develop\n"
 	@printf "  make check               Run the full local automated check suite inside nix develop\n"
 	@printf "  make test                Run frontend tests inside nix develop\n"
+	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
+	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
 	@printf "  make build               Build the frontend inside nix develop\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
@@ -55,6 +57,12 @@ check:
 
 test:
 	$(NIX) npm run test
+
+ui-smoke-install:
+	$(NIX) npm run test:browser:install
+
+ui-smoke:
+	$(NIX) npm run test:browser
 
 typecheck:
 	$(NIX) npm run typecheck

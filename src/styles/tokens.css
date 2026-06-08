@@ -11,6 +11,11 @@ body,
 #root {
   height: 100%;
   min-height: 0;
+  overflow: hidden;
+}
+
+html {
+  overflow: hidden;
 }
 
 * {
@@ -18,10 +23,14 @@ body,
 }
 
 body {
+  position: fixed;
+  inset: 0;
+  width: 100%;
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
+  max-height: 100%;
   overflow: hidden;
+  overscroll-behavior: none;
   background:
     radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--primary) 32%, transparent), transparent 30rem),
     radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--secondary) 22%, transparent), transparent 24rem),

@@ -4,24 +4,6 @@ Active work only. Completed-card history lives in [Kanban Archive](kanban-archiv
 
 ## Backlog
 
-### M23: Browser UI regression testing assessment
-
-Intent: assess and plan whether Playwright, or an equivalent real-browser UI testing path, should be added to catch layout and visual regressions that Vitest/jsdom cannot reliably detect.
-
-Acceptance criteria:
-
-- Current Vitest/jsdom workflow tests, CSS contract tests, manual smoke checks, and real-browser automation coverage are compared.
-- Test target is decided: Vite preview app only, Tauri desktop runtime, or both.
-- Execution path is decided: default local/CI check, opt-in local smoke check, or release-gate check.
-- Evidence model is decided: DOM assertions only, screenshots, visual snapshots, or mixed.
-- Runtime ownership is decided for WSL/Nix, native Windows, or a documented split.
-- Artifact handling is decided for screenshots, videos, and traces.
-- First Playwright implementation slice is either approved and split into tasks, or explicitly rejected/deferred with rationale.
-
-Docs/contracts touched: roadmap, engineering workflow, project practices, possibly ADR if Playwright is accepted as a durable testing boundary.
-
-Test expectations: no Playwright dependency until the assessment approves scope and cost; existing frontend tests continue to pass.
-
 ### M24: Research workspace architecture
 
 Intent: plan the future research-workspace feature family before implementation so company timelines, review mode, claim tracking, research questions, AI briefs, digests, source trust signals, reminders, and evidence links share one coherent model.

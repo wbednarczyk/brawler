@@ -243,6 +243,8 @@ Recommended WSL commands:
 - `make install`: install npm dependencies inside `nix develop`
 - `make check`: run the full local automated check suite inside `nix develop`
 - `make test`: run frontend tests inside `nix develop`
+- `make ui-smoke-install`: download Chromium for the opt-in Playwright browser UI smoke suite
+- `make ui-smoke`: run the opt-in Playwright browser UI smoke suite
 - `make build`: build the frontend inside `nix develop`
 - `make dev`: start Tauri dev mode inside `nix develop`, only useful when Linux GUI forwarding exists
 - `make frontend-preview`: serve the frontend preview to a Windows browser; not a native Tauri test
@@ -257,6 +259,8 @@ Underlying commands:
 - `npm run dev`: start the Tauri app in development mode
 - `npm run build`: build the frontend
 - `npm run test`: run frontend tests
+- `npm run test:browser:install`: download Chromium for the opt-in Playwright browser UI smoke suite
+- `npm run test:browser`: run the opt-in Playwright browser UI smoke suite
 - `npm run typecheck`: run TypeScript checks
 - `cargo test`: run Rust tests
 - `cargo clippy`: run Rust lints
@@ -328,6 +332,45 @@ Use broader tests only when the risk justifies them:
 - transcript-to-note workflow
 - packaging startup
 - local data persistence
+
+### Browser UI Regression Smoke
+
+M23 accepts a small Playwright-based browser smoke layer for UI/layout regressions that Vitest/jsdom cannot reliably catch. The first implementation targets the Vite preview app in Chromium and remains opt-in until it proves stable.
+
+Setup and run:
+
+- `make ui-smoke-install`: first-time Chromium download for the local Playwright cache
+- `make ui-smoke`: run the browser UI smoke suite
+- `npm run test:browser:install` and `npm run test:browser` are the direct npm equivalents
+
+The command starts a Vite preview/test server with deterministic browser-smoke data. It does not read live sources or the user's local app database.
+
+Use browser UI smoke tests for repeated layout risks:
+
+- fixed app chrome and absence of a global application scrollbar
+- independently scrollable panels in Companies, Watchlists, Notebooks, Inbox, Events, and Sources
+- dense row and category sizing in Sources and other list-heavy screens
+- compact desktop and normal desktop viewport regressions
+- tiny cross-screen navigation smoke when it helps prove the preview harness is wired correctly
+
+Do not use the first Playwright suite for:
+
+- live external source/API testing
+- real Tauri desktop file dialogs, keychain, taskbar, packaging, or WebView2 validation
+- broad end-to-end coverage of every product workflow
+- screenshot comparison as pass/fail evidence
+
+Evidence policy:
+
+- DOM/layout assertions are the pass/fail signal.
+- Screenshots and traces are retained only on failure.
+- Visual snapshot comparisons are deferred until a specific stable use case justifies the maintenance cost.
+
+Runtime split:
+
+- WSL/Nix owns automated Playwright smoke against the Vite preview app.
+- Native Windows remains responsible for hands-on desktop behavior, native OS integrations, and packaged executable smoke testing.
+- Browser smoke tests should use deterministic frontend test data, not live sources or the user's local app database.
 
 ## Test Pyramid For V1
 
