@@ -51,6 +51,55 @@ fn creates_and_lists_company_events() {
 }
 
 #[test]
+fn creates_and_lists_manual_events_for_future_exchange_company() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = state
+        .create_company(NewCompany {
+            exchange: "XETRA".to_owned(),
+            ticker: "SAP".to_owned(),
+            display_name: "SAP SE".to_owned(),
+            isin: Some("DE0007164600".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("future exchange company should be created");
+
+    let created = state
+        .create_company_event(NewCompanyEvent {
+            company_id: company.id.clone(),
+            event_type: "periodic_report".to_owned(),
+            title: "Quarterly report publication".to_owned(),
+            event_date: "2099-08-29".to_owned(),
+            event_time: None,
+            status: Some("scheduled".to_owned()),
+            source_type: Some("manual".to_owned()),
+            source_adapter_id: None,
+            source_event_key: None,
+            source_url: None,
+            attribution: None,
+            fetched_at: None,
+        })
+        .expect("event should be created");
+
+    let events = state
+        .list_company_events(CompanyEventListInput {
+            mode: Some("upcoming".to_owned()),
+            company_id: Some(company.id),
+            watchlist_id: None,
+            event_type: Some("periodic_report".to_owned()),
+            status: None,
+            date_from: None,
+            date_to: None,
+        })
+        .expect("events should list");
+
+    assert_eq!(created.company, "XETRA:SAP");
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].company, "XETRA:SAP");
+}
+
+#[test]
 fn updates_sourced_company_events_by_source_key() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

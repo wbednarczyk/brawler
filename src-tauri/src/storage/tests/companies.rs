@@ -196,10 +196,201 @@ fn refreshes_newconnect_company_directory_cache() {
 }
 
 #[test]
-fn detects_stale_gpw_company_registry_cache() {
+fn creates_newconnect_company_from_directory_result() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let company = state
+        .create_company(NewCompany {
+            exchange: "NC".to_owned(),
+            ticker: "4MB".to_owned(),
+            display_name: "4MOBILITY SPÓŁKA AKCYJNA".to_owned(),
+            isin: Some("PLESLTN00010".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("NewConnect company should create");
+    let companies = state.list_companies().expect("companies should list");
+
+    assert_eq!(company.id, "company_nc_4mb");
+    assert_eq!(company.qualified_ticker, "NC:4MB");
+    assert!(companies
+        .iter()
+        .any(|listed| listed.qualified_ticker == "NC:4MB"));
+}
+
+#[test]
+fn lookup_searches_all_company_directories_and_returns_newconnect_from_default_exchange() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let entries = vec![GpwCompanyRegistryEntry {
+        exchange: "NC".to_owned(),
+        ticker: "4MB".to_owned(),
+        qualified_ticker: "NC:4MB".to_owned(),
+        display_name: "4MOBILITY SPÓŁKA AKCYJNA".to_owned(),
+        isin: "PLESLTN00010".to_owned(),
+        source_url: "https://newconnect.pl/spolka?isin=PLESLTN00010".to_owned(),
+    }];
+
+    state
+        .refresh_newconnect_company_directory(&entries, "2026-05-31T12:00:00Z")
+        .expect("NewConnect directory refresh should succeed");
+
+    let lookup = state
+        .lookup_company(CompanyLookupInput {
+            exchange: "GPW".to_owned(),
+            ticker: Some("4mb".to_owned()),
+            display_name: None,
+            isin: None,
+        })
+        .expect("lookup should succeed")
+        .expect("lookup should search all company directories");
+
+    assert_eq!(lookup.exchange, "NC");
+    assert_eq!(lookup.qualified_ticker, "NC:4MB");
+}
+
+#[test]
+fn lookup_prefers_selected_exchange_when_directory_tickers_collide() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    state
+        .refresh_gpw_company_registry(
+            &[GpwCompanyRegistryEntry {
+                exchange: "GPW".to_owned(),
+                ticker: "ABC".to_owned(),
+                qualified_ticker: "GPW:ABC".to_owned(),
+                display_name: "ABC MAIN MARKET S.A.".to_owned(),
+                isin: "PLABC000001".to_owned(),
+                source_url: "https://www.gpw.pl/spolka?isin=PLABC000001".to_owned(),
+            }],
+            "2026-05-31T12:00:00Z",
+        )
+        .expect("GPW directory refresh should succeed");
+    state
+        .refresh_newconnect_company_directory(
+            &[GpwCompanyRegistryEntry {
+                exchange: "NC".to_owned(),
+                ticker: "ABC".to_owned(),
+                qualified_ticker: "NC:ABC".to_owned(),
+                display_name: "ABC NEWCONNECT S.A.".to_owned(),
+                isin: "PLABC000002".to_owned(),
+                source_url: "https://newconnect.pl/spolka?isin=PLABC000002".to_owned(),
+            }],
+            "2026-05-31T12:00:00Z",
+        )
+        .expect("NewConnect directory refresh should succeed");
+
+    let lookup = state
+        .lookup_company(CompanyLookupInput {
+            exchange: "NC".to_owned(),
+            ticker: Some("abc".to_owned()),
+            display_name: None,
+            isin: None,
+        })
+        .expect("lookup should succeed")
+        .expect("selected exchange should be preferred");
+
+    assert_eq!(lookup.qualified_ticker, "NC:ABC");
+}
+
+#[test]
+fn future_company_directory_entries_work_without_registry_specific_code() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "
+                INSERT INTO source_adapters (
+                    id,
+                    display_name,
+                    source_type,
+                    fetch_mode,
+                    enabled,
+                    default_poll_interval_seconds
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                ",
+            (
+                "future-company-directory",
+                "Future Company Directory",
+                "company_registry",
+                "public_page",
+                1,
+                86_400,
+            ),
+        )
+        .expect("future directory source adapter should insert");
+    connection
+        .execute(
+            "
+                INSERT INTO source_adapter_markets (source_adapter_id, market)
+                VALUES (?1, ?2)
+                ",
+            ("future-company-directory", "XETRA"),
+        )
+        .expect("future directory market should insert");
+    connection
+        .execute(
+            "
+                INSERT INTO company_registry_entries (
+                    id,
+                    exchange,
+                    ticker,
+                    qualified_ticker,
+                    display_name,
+                    isin,
+                    source_adapter_id,
+                    source_url,
+                    fetched_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                ",
+            (
+                "registry_future_xetra_sap",
+                "XETRA",
+                "SAP",
+                "XETRA:SAP",
+                "SAP SE",
+                "DE0007164600",
+                "future-company-directory",
+                "https://example.test/xetra/sap",
+                "2026-05-31T12:00:00Z",
+            ),
+        )
+        .expect("future directory entry should insert");
+    let state = AppState::new(connection);
+
+    let lookup = state
+        .lookup_company(CompanyLookupInput {
+            exchange: "GPW".to_owned(),
+            ticker: Some("sap".to_owned()),
+            display_name: None,
+            isin: None,
+        })
+        .expect("lookup should succeed")
+        .expect("lookup should search all company directories");
+
+    assert_eq!(lookup.exchange, "XETRA");
+    assert_eq!(lookup.qualified_ticker, "XETRA:SAP");
+
+    let created = state
+        .create_company(NewCompany {
+            exchange: lookup.exchange,
+            ticker: lookup.ticker,
+            display_name: lookup.display_name,
+            isin: Some(lookup.isin),
+            cik: None,
+            lei: None,
+        })
+        .expect("future directory company should create");
+
+    assert_eq!(created.qualified_ticker, "XETRA:SAP");
+}
+
+#[test]
+fn detects_stale_company_directory_cache() {
     let connection = open_in_memory_database().expect("database should initialize");
 
-    assert!(gpw_company_registry_is_stale(&connection, 86_400)
+    assert!(company_directories_are_stale(&connection, 86_400)
         .expect("registry should report stale when never refreshed"));
 
     connection
@@ -213,7 +404,7 @@ fn detects_stale_gpw_company_registry_cache() {
         )
         .expect("registry adapter timestamp should update");
 
-    assert!(!gpw_company_registry_is_stale(&connection, 86_400)
+    assert!(!company_directories_are_stale(&connection, 86_400)
         .expect("fresh registry should not be stale"));
 
     connection
@@ -228,8 +419,40 @@ fn detects_stale_gpw_company_registry_cache() {
         .expect("registry adapter timestamp should update");
 
     assert!(
-        gpw_company_registry_is_stale(&connection, 86_400).expect("old registry should be stale")
+        company_directories_are_stale(&connection, 86_400).expect("old registry should be stale")
     );
+}
+
+#[test]
+fn future_enabled_company_directory_participates_in_staleness_checks() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "
+                INSERT INTO source_adapters (
+                    id,
+                    display_name,
+                    source_type,
+                    fetch_mode,
+                    enabled,
+                    default_poll_interval_seconds,
+                    last_success_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                ",
+            (
+                "future-company-directory",
+                "Future Company Directory",
+                "company_registry",
+                "public_page",
+                1,
+                86_400,
+                "2026-05-31T12:00:00Z",
+            ),
+        )
+        .expect("future directory source adapter should insert");
+
+    assert!(company_directories_are_stale(&connection, 86_400)
+        .expect("old future registry should be stale"));
 }
 
 #[test]

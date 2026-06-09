@@ -514,6 +514,17 @@ const initialCompanyRegistryEntries = [
   fetchedAt: "2026-05-31T12:00:00Z",
   tracked: false,
 },
+{
+  sourceAdapterId: "future-company-directory",
+  exchange: "XETRA",
+  ticker: "SAP",
+  qualifiedTicker: "XETRA:SAP",
+  displayName: "SAP SE",
+  isin: "DE0007164600",
+  sourceUrl: "https://example.test/xetra/sap",
+  fetchedAt: "2026-05-31T12:00:00Z",
+  tracked: false,
+},
 ];
 
 type CreateCompanyArgs = {
@@ -976,14 +987,42 @@ beforeEach(() => {
     }
 
     if (command === "lookup_company") {
-      return Promise.resolve({
-        exchange: "GPW",
-        ticker: "CDR",
-        qualifiedTicker: "GPW:CDR",
-        displayName: "CD PROJEKT S.A.",
-        isin: "PLOPTTC00011",
-        source: "company_directory",
-      });
+      const input = (args as {
+        input: {
+          exchange: string;
+          ticker: string | null;
+          displayName: string | null;
+          isin: string | null;
+        };
+      }).input;
+      const exchange = input.exchange.trim().toUpperCase();
+      const ticker = input.ticker?.trim().toUpperCase();
+      const isin = input.isin?.trim().toUpperCase();
+      const displayName = input.displayName?.trim().toUpperCase();
+      const match = appTestState.companyRegistryEntriesResponse
+        .filter((entry) =>
+          (ticker && entry.ticker.toUpperCase() === ticker) ||
+          (isin && entry.isin?.toUpperCase() === isin) ||
+          (displayName && displayName.length >= 3 && entry.displayName.toUpperCase().includes(displayName)),
+        )
+        .sort((left, right) => {
+          const leftPreferred = left.exchange.toUpperCase() === exchange ? 0 : 1;
+          const rightPreferred = right.exchange.toUpperCase() === exchange ? 0 : 1;
+          return leftPreferred - rightPreferred || left.qualifiedTicker.localeCompare(right.qualifiedTicker);
+        })[0];
+
+      return Promise.resolve(
+        match
+          ? {
+              exchange: match.exchange,
+              ticker: match.ticker,
+              qualifiedTicker: match.qualifiedTicker,
+              displayName: match.displayName,
+              isin: match.isin ?? "",
+              source: "company_directory",
+            }
+          : null,
+      );
     }
 
     if (command === "create_company") {

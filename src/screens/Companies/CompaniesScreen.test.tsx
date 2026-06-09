@@ -34,6 +34,57 @@ describe("Companies screen workflows", () => {
     expect(screen.getByText("Filled from company_directory: GPW:CDR")).toBeInTheDocument();
   });
 
+  it("fills company form from NewConnect lookup while the default exchange is GPW", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    expect(screen.getByLabelText("Exchange")).toHaveValue("GPW");
+
+    await user.clear(screen.getByLabelText("Ticker"));
+    await user.type(screen.getByLabelText("Ticker"), "4MB");
+    await user.click(screen.getByRole("button", { name: "Lookup" }));
+
+    expect(await screen.findByDisplayValue("NC")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("4MB")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("4MOBILITY SPÓŁKA AKCYJNA")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("PLESLTN00010")).toBeInTheDocument();
+    expect(screen.getByText("Filled from company_directory: NC:4MB")).toBeInTheDocument();
+  });
+
+  it("adds a NewConnect company after lookup fills the company form", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.selectOptions(screen.getByLabelText("Company watchlist filter"), "watchlist_main_gpw");
+    expect(screen.getByLabelText("Company watchlist filter")).toHaveValue("watchlist_main_gpw");
+
+    await user.clear(screen.getByLabelText("Ticker"));
+    await user.type(screen.getByLabelText("Ticker"), "4MB");
+    await user.click(screen.getByRole("button", { name: "Lookup" }));
+    expect(await screen.findByDisplayValue("NC")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("create_company", {
+        input: {
+          exchange: "NC",
+          ticker: "4MB",
+          displayName: "4MOBILITY SPÓŁKA AKCYJNA",
+          isin: "PLESLTN00010",
+          cik: null,
+          lei: null,
+        },
+      }),
+    );
+    expect(screen.getByLabelText("Company watchlist filter")).toHaveValue("all");
+    expect(within(screen.getByLabelText("Companies list")).getByText("NC:4MB")).toBeInTheDocument();
+  });
+
   it("selects a company from local GPW registry suggestions", async () => {
     const user = userEvent.setup();
 
@@ -76,6 +127,62 @@ describe("Companies screen workflows", () => {
         },
       }),
     );
+  });
+
+  it("shows NewConnect registry suggestions from the default company form", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    expect(screen.getByLabelText("Exchange")).toHaveValue("GPW");
+
+    await user.clear(screen.getByLabelText("Name"));
+    await user.type(screen.getByLabelText("Name"), "4MOBILITY");
+
+    const suggestions = await screen.findByLabelText("Company registry suggestions");
+    await user.click(within(suggestions).getByRole("button", { name: /NC:4MB/ }));
+
+    expect(screen.getByLabelText("Exchange")).toHaveValue("NC");
+    expect(screen.getByDisplayValue("4MB")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("4MOBILITY SPÓŁKA AKCYJNA")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("PLESLTN00010")).toBeInTheDocument();
+    expect(screen.getByText("Selected from company directory: NC:4MB")).toBeInTheDocument();
+  });
+
+  it("adds a company from a future directory entry through the shared lookup flow", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    expect(screen.getByLabelText("Exchange")).toHaveValue("GPW");
+
+    await user.clear(screen.getByLabelText("Ticker"));
+    await user.type(screen.getByLabelText("Ticker"), "SAP");
+    await user.click(screen.getByRole("button", { name: "Lookup" }));
+
+    expect(await screen.findByDisplayValue("XETRA")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("SAP")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("SAP SE")).toBeInTheDocument();
+    expect(screen.getByDisplayValue("DE0007164600")).toBeInTheDocument();
+    expect(screen.getByText("Filled from company_directory: XETRA:SAP")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() =>
+      expect(invoke).toHaveBeenCalledWith("create_company", {
+        input: {
+          exchange: "XETRA",
+          ticker: "SAP",
+          displayName: "SAP SE",
+          isin: "DE0007164600",
+          cik: null,
+          lei: null,
+        },
+      }),
+    );
+    expect(within(screen.getByLabelText("Companies list")).getByText("XETRA:SAP")).toBeInTheDocument();
   });
 
   it("filters the tracked companies list", async () => {

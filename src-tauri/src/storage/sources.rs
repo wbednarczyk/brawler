@@ -963,7 +963,6 @@ pub(super) fn list_media_match_companies(
         "
         SELECT id, ticker, qualified_ticker, display_name
         FROM companies
-        WHERE exchange = 'GPW'
         ORDER BY qualified_ticker
         ",
     )?;
@@ -1075,9 +1074,9 @@ pub(super) fn normalize_media_character(character: char) -> char {
 }
 
 pub(super) struct MatchedCompany {
-    id: String,
-    qualified_ticker: String,
-    match_type: &'static str,
+    pub(super) id: String,
+    pub(super) qualified_ticker: String,
+    pub(super) match_type: &'static str,
 }
 
 pub(super) fn find_company_for_gpw_listing(
@@ -1085,12 +1084,21 @@ pub(super) fn find_company_for_gpw_listing(
     ticker: &str,
     isin: &str,
 ) -> StorageResult<Option<MatchedCompany>> {
-    if let Some(company) = find_company_by_ticker(connection, "GPW", ticker)? {
+    find_company_for_exchange_listing(connection, "GPW", ticker, isin)
+}
+
+pub(super) fn find_company_for_exchange_listing(
+    connection: &Connection,
+    exchange: &str,
+    ticker: &str,
+    isin: &str,
+) -> StorageResult<Option<MatchedCompany>> {
+    if let Some(company) = find_company_by_ticker(connection, exchange, ticker)? {
         return Ok(Some(company));
     }
 
-    if let Some(mapped_ticker) = gpw_registry_ticker_for_isin(connection, isin)? {
-        if let Some(company) = find_company_by_ticker(connection, "GPW", &mapped_ticker)? {
+    if let Some(mapped_ticker) = registry_ticker_for_exchange_isin(connection, exchange, isin)? {
+        if let Some(company) = find_company_by_ticker(connection, exchange, &mapped_ticker)? {
             return Ok(Some(company));
         }
     }
@@ -1164,8 +1172,9 @@ pub(super) fn find_company_by_isin(
         .map_err(StorageError::from)
 }
 
-pub(super) fn gpw_registry_ticker_for_isin(
+pub(super) fn registry_ticker_for_exchange_isin(
     connection: &Connection,
+    exchange: &str,
     isin: &str,
 ) -> StorageResult<Option<String>> {
     let isin = isin.trim();
@@ -1178,13 +1187,13 @@ pub(super) fn gpw_registry_ticker_for_isin(
             "
             SELECT ticker
             FROM company_registry_entries
-            WHERE exchange = 'GPW'
-                AND isin = ?1
+            WHERE exchange = ?1
+                AND isin = ?2
                 AND active = 1
             ORDER BY qualified_ticker
             LIMIT 1
             ",
-            [isin.to_uppercase()],
+            params![exchange.trim().to_uppercase(), isin.to_uppercase()],
             |row| row.get(0),
         )
         .optional()

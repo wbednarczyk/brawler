@@ -152,7 +152,7 @@ pub async fn refresh_gpw_company_registry_if_stale(
             .unwrap_or(86_400);
 
         if !state
-            .gpw_company_registry_is_stale(stale_after_seconds)
+            .company_directories_are_stale(stale_after_seconds)
             .map_err(|error| error.to_string())?
         {
             jobs::source_refresh::record_scheduler_skip(&state, "registry_fresh");

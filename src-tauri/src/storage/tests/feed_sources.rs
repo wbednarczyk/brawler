@@ -1,4 +1,5 @@
 use super::common::*;
+use super::sources::find_company_for_exchange_listing;
 use super::*;
 
 #[test]
@@ -222,6 +223,85 @@ fn ingests_gpw_listing_by_registry_ticker_when_local_isin_is_missing() {
 }
 
 #[test]
+fn source_listing_match_can_use_future_exchange_registry_ticker() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .create_company(NewCompany {
+            exchange: "XETRA".to_owned(),
+            ticker: "SAP".to_owned(),
+            display_name: "SAP SE".to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("future exchange company should create");
+    {
+        let connection = state.connection.lock().expect("database mutex poisoned");
+        connection
+            .execute(
+                "
+                    INSERT INTO source_adapters (
+                        id,
+                        display_name,
+                        source_type,
+                        fetch_mode,
+                        enabled,
+                        default_poll_interval_seconds
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                    ",
+                (
+                    "future-company-directory",
+                    "Future Company Directory",
+                    "company_registry",
+                    "public_page",
+                    1,
+                    86_400,
+                ),
+            )
+            .expect("future source adapter should insert");
+        connection
+            .execute(
+                "
+                    INSERT INTO company_registry_entries (
+                        id,
+                        exchange,
+                        ticker,
+                        qualified_ticker,
+                        display_name,
+                        isin,
+                        source_adapter_id,
+                        source_url,
+                        fetched_at
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    ",
+                (
+                    "registry_future_xetra_sap",
+                    "XETRA",
+                    "SAP",
+                    "XETRA:SAP",
+                    "SAP SE",
+                    "DE0007164600",
+                    "future-company-directory",
+                    "https://example.test/xetra/sap",
+                    "2026-05-31T12:00:00Z",
+                ),
+            )
+            .expect("future registry row should insert");
+    }
+
+    let matched = {
+        let connection = state.connection.lock().expect("database mutex poisoned");
+        find_company_for_exchange_listing(&connection, "XETRA", "", "DE0007164600")
+            .expect("source listing should match")
+            .expect("future registry should resolve source identifier")
+    };
+
+    assert_eq!(matched.qualified_ticker, "XETRA:SAP");
+    assert_eq!(matched.match_type, "ticker");
+}
+
+#[test]
 fn ingests_bankier_rss_items_and_matches_tracked_company_by_strong_signal() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -268,6 +348,42 @@ fn ingests_bankier_rss_items_and_matches_tracked_company_by_strong_signal() {
         unmatched[0].title,
         "Rynek czeka na decyzje banków centralnych"
     );
+}
+
+#[test]
+fn media_ingestion_matches_tracked_companies_from_future_exchanges() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    state
+        .create_company(NewCompany {
+            exchange: "XETRA".to_owned(),
+            ticker: "SAP".to_owned(),
+            display_name: "SAP SE".to_owned(),
+            isin: Some("DE0007164600".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("future exchange company should create");
+
+    let result = state
+        .ingest_bankier_rss_items(&[BankierRssItem {
+            title: "SAP SE zwiększa prognozy po mocnym kwartale".to_owned(),
+            link: "https://www.bankier.pl/wiadomosc/sap-se-prognozy-900002.html".to_owned(),
+            summary: "Inwestorzy obserwują SAP po publikacji wyników.".to_owned(),
+            published_at: Some("2026-05-31T09:15:00+02:00".to_owned()),
+            fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+            dedupe_key: "bankier-market-rss:bankier-900002".to_owned(),
+        }])
+        .expect("RSS item should ingest");
+
+    assert_eq!(result.items_matched, 1);
+    assert_eq!(result.items_unmatched, 0);
+
+    let visible_items = state.list_feed_items().expect("feed items should list");
+
+    assert_eq!(visible_items.len(), 1);
+    assert_eq!(visible_items[0].company, "XETRA:SAP");
 }
 
 #[test]

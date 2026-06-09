@@ -602,7 +602,7 @@ fn refresh_bankier_calendar_for_trigger_and_date(
         .map_err(|error| error.to_string())
 }
 
-pub fn should_bootstrap_gpw_registry(
+pub fn should_bootstrap_company_directories(
     input: &storage::CompanyLookupInput,
     state: &app_state::AppState,
 ) -> Result<bool, String> {
@@ -619,12 +619,12 @@ pub fn should_bootstrap_gpw_registry(
             .as_deref()
             .is_some_and(|value| value.trim().chars().count() >= 3);
 
-    if !matches!(input.exchange.trim().to_uppercase().as_str(), "GPW" | "NC") || !has_lookup_value {
+    if !has_lookup_value {
         return Ok(false);
     }
 
     state
-        .gpw_company_registry_needs_bootstrap_refresh()
+        .company_directories_need_bootstrap_refresh()
         .map_err(|error| error.to_string())
 }
 
@@ -705,8 +705,8 @@ pub fn refresh_company_directories_for_trigger(
 
 #[cfg(test)]
 mod tests {
-    use super::refresh_source_for_trigger;
-    use crate::storage::{open_in_memory_database, AppState};
+    use super::{refresh_source_for_trigger, should_bootstrap_company_directories};
+    use crate::storage::{open_in_memory_database, AppState, CompanyLookupInput};
 
     #[test]
     fn failed_source_refresh_records_lightweight_diagnostics_when_enabled() {
@@ -730,5 +730,43 @@ mod tests {
             .metadata
             .to_string()
             .contains("Unknown source adapter")));
+    }
+
+    #[test]
+    fn company_directory_bootstrap_is_not_limited_to_current_exchange_codes() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let should_bootstrap = should_bootstrap_company_directories(
+            &CompanyLookupInput {
+                exchange: "XETRA".to_owned(),
+                ticker: Some("SAP".to_owned()),
+                display_name: None,
+                isin: None,
+            },
+            &state,
+        )
+        .expect("bootstrap decision should succeed");
+
+        assert!(should_bootstrap);
+    }
+
+    #[test]
+    fn company_directory_bootstrap_requires_a_lookup_value() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+
+        let should_bootstrap = should_bootstrap_company_directories(
+            &CompanyLookupInput {
+                exchange: "XETRA".to_owned(),
+                ticker: None,
+                display_name: Some("SA".to_owned()),
+                isin: None,
+            },
+            &state,
+        )
+        .expect("bootstrap decision should succeed");
+
+        assert!(!should_bootstrap);
     }
 }

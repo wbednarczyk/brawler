@@ -221,10 +221,11 @@ pub(super) fn lookup_company_registry(
                 "
                 SELECT exchange, ticker, qualified_ticker, display_name, COALESCE(isin, '')
                 FROM company_registry_entries
-                WHERE exchange = ?1
-                    AND ticker = ?2
+                WHERE ticker = ?2
                     AND active = 1
-                ORDER BY qualified_ticker
+                ORDER BY
+                    CASE WHEN exchange = ?1 THEN 0 ELSE 1 END,
+                    qualified_ticker
                 LIMIT 1
                 ",
                 params![exchange, ticker],
@@ -240,10 +241,11 @@ pub(super) fn lookup_company_registry(
                 "
                 SELECT exchange, ticker, qualified_ticker, display_name, COALESCE(isin, '')
                 FROM company_registry_entries
-                WHERE exchange = ?1
-                    AND isin = ?2
+                WHERE isin = ?2
                     AND active = 1
-                ORDER BY qualified_ticker
+                ORDER BY
+                    CASE WHEN exchange = ?1 THEN 0 ELSE 1 END,
+                    qualified_ticker
                 LIMIT 1
                 ",
                 params![exchange, isin],
@@ -262,10 +264,11 @@ pub(super) fn lookup_company_registry(
                 "
                 SELECT exchange, ticker, qualified_ticker, display_name, COALESCE(isin, '')
                 FROM company_registry_entries
-                WHERE exchange = ?1
-                    AND UPPER(display_name) LIKE '%' || ?2 || '%'
+                WHERE UPPER(display_name) LIKE '%' || ?2 || '%'
                     AND active = 1
-                ORDER BY qualified_ticker
+                ORDER BY
+                    CASE WHEN exchange = ?1 THEN 0 ELSE 1 END,
+                    qualified_ticker
                 LIMIT 1
                 ",
                 params![exchange, display_name],
@@ -278,7 +281,7 @@ pub(super) fn lookup_company_registry(
     Ok(None)
 }
 
-pub(super) fn gpw_company_registry_needs_bootstrap_refresh(
+pub(super) fn company_directories_need_bootstrap_refresh(
     connection: &Connection,
 ) -> StorageResult<bool> {
     let stale_required_directories: i64 = connection.query_row(
@@ -287,7 +290,6 @@ pub(super) fn gpw_company_registry_needs_bootstrap_refresh(
         FROM source_adapters
         WHERE source_type = 'company_registry'
             AND enabled = 1
-            AND id IN (?1, ?2)
             AND NOT EXISTS (
                 SELECT 1
                 FROM company_registry_entries
@@ -295,14 +297,14 @@ pub(super) fn gpw_company_registry_needs_bootstrap_refresh(
                     AND company_registry_entries.active = 1
             )
         ",
-        params![GPW_REGISTRY_ADAPTER_ID, NEWCONNECT_DIRECTORY_ADAPTER_ID],
+        [],
         |row| row.get(0),
     )?;
 
     Ok(stale_required_directories > 0)
 }
 
-pub(super) fn gpw_company_registry_is_stale(
+pub(super) fn company_directories_are_stale(
     connection: &Connection,
     stale_after_seconds: i64,
 ) -> StorageResult<bool> {
@@ -314,7 +316,6 @@ pub(super) fn gpw_company_registry_is_stale(
             FROM source_adapters
             WHERE source_type = 'company_registry'
                 AND enabled = 1
-                AND id IN (?2, ?3)
                 AND (
                     last_success_at IS NULL
                     OR COALESCE(
@@ -324,11 +325,7 @@ pub(super) fn gpw_company_registry_is_stale(
                 )
         )
         ",
-        params![
-            stale_after_seconds,
-            GPW_REGISTRY_ADAPTER_ID,
-            NEWCONNECT_DIRECTORY_ADAPTER_ID
-        ],
+        params![stale_after_seconds],
         |row| row.get(0),
     )?;
 

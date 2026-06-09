@@ -4,6 +4,22 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### Patch 0.24.1: Multi-registry company directory hardening
+
+Intent: make NewConnect and future company-directory sources work through shared company lookup, company creation, and company-owned workflows without hard-coded GPW/NC assumptions.
+
+Delivered:
+
+- Fixed company lookup and Companies UI add flow so NewConnect companies can be added from lookup results.
+- Generalized company-directory bootstrap and stale checks to all enabled `company_registry` adapters.
+- Generalized public-media matching to all tracked companies.
+- Added an exchange-aware source-listing matching helper for future report/event adapters.
+- Added regression coverage for future exchange lookup/create, Companies UI add, watchlists, notebooks, manual events, import/export, media matching, and source-listing matching.
+- Documented the checklist for adding the next company-directory source.
+- Bumped app version to `0.24.1`.
+
+ADR checkpoint: no new ADR required; this hardens the existing source-directory and modularity decisions.
+
 ### M24: Modularization readiness and research workspace architecture
 
 Intent: refactor the boundaries required before research-workspace feature implementation, without adding visible research-workspace features or unrelated broad cleanup.

@@ -21,6 +21,8 @@ type CompanyControllerInput = {
   setAddingRegistryTicker: Dispatch<SetStateAction<string | null>>;
   setCompaniesError: Dispatch<SetStateAction<string | null>>;
   setCompanyForm: Dispatch<SetStateAction<CompanyForm>>;
+  setCompanyListSearch: Dispatch<SetStateAction<string>>;
+  setCompanyWatchlistFilter: Dispatch<SetStateAction<string>>;
   setLookupStatus: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyRegistryTicker: Dispatch<SetStateAction<string | null>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
@@ -41,6 +43,8 @@ export function useCompanyController({
   setAddingRegistryTicker,
   setCompaniesError,
   setCompanyForm,
+  setCompanyListSearch,
+  setCompanyWatchlistFilter,
   setLookupStatus,
   setSelectedCompanyRegistryTicker,
   setWatchlistsError,
@@ -155,6 +159,8 @@ export function useCompanyController({
           displayName: "",
           isin: "",
         });
+        setCompanyListSearch("");
+        setCompanyWatchlistFilter("all");
         setCompaniesError(null);
         refreshCompanies();
         refreshDatabaseStatus();
@@ -177,6 +183,8 @@ export function useCompanyController({
       lei: null,
     })
       .then(() => {
+        setCompanyListSearch("");
+        setCompanyWatchlistFilter("all");
         setCompaniesError(null);
         return Promise.all([
           refreshCompanies(),
