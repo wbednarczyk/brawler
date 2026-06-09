@@ -414,19 +414,15 @@ export function useAppViewModel({
       .map((value) => value.trim().toLowerCase())
       .filter((value) => value.length >= 2);
 
-    const formExchange = companyForm.exchange.trim().toUpperCase();
     if (searchTerms.length === 0) {
       return [];
     }
 
     return companyRegistryEntries
       .filter((entry) => {
-        if (formExchange && entry.exchange.toUpperCase() !== formExchange) {
-          return false;
-        }
-
         return searchTerms.some((term) =>
           [
+            entry.exchange,
             entry.ticker,
             entry.qualifiedTicker,
             entry.displayName,
@@ -440,7 +436,6 @@ export function useAppViewModel({
       .slice(0, 5);
   }, [
     companyForm.displayName,
-    companyForm.exchange,
     companyForm.isin,
     companyForm.ticker,
     companyRegistryEntries,

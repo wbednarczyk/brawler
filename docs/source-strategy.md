@@ -145,9 +145,22 @@ M22 directory decisions:
 
 - `company_registry_entries` supports multiple directory sources through `source_adapter_id`, `exchange`, `ticker`, `qualified_ticker`, active state, and source URL.
 - GPW main market and NewConnect use separate source adapters behind the same company-directory interface.
+- Company lookup/autocomplete searches all active company-directory entries. The user-entered exchange only prefers a matching exchange when duplicate tickers exist; it is not a hard filter that can hide companies from another supported registry.
+- Directory bootstrap and stale checks apply to all enabled `company_registry` adapters, not a hard-coded list of exchanges.
 - `company_source_ids` does not need a schema change for NewConnect because the directory cache is keyed by exchange-qualified ticker and ISIN.
 - The source adapter read model distinguishes company-directory sources through `source_type = company_registry`.
 - NewConnect required one new adapter registration migration and one source adapter implementation over the existing tables.
+
+When adding the next company-directory source:
+
+- Register a separate `source_adapters` row with `source_type = company_registry` and the supported market in `source_adapter_markets`.
+- Store refreshed directory rows in `company_registry_entries` with the source adapter ID, exchange, ticker, qualified ticker, display name, authoritative identifier when available, source URL, fetched timestamp, and active state.
+- Keep directory rows separated by source adapter in Sources while keeping lookup/autocomplete shared across all active company-directory entries.
+- Do not hard-code the new exchange in lookup, company creation, ticker rendering, import/export, watchlist membership, or normal UI filters.
+- Wire the new directory into the company-directory refresh boundary; an enabled directory source without a refresh implementation should fail tests because stale/bootstrap checks will keep seeing it as incomplete.
+- If duplicate tickers can exist across exchanges, keep user-selected exchange as a preference only; exact authoritative identifiers should still be able to resolve the intended row.
+- Add or update parser/refresh tests for the new directory, storage lookup/create tests for its exchange, Companies UI lookup/suggestion/add tests, and Sources UI tests if the new source is visible.
+- Re-run source matching checks if any feed, report, event, or media adapter should use the new directory for ticker/ISIN matching.
 
 ## Detail Fetching
 

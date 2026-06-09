@@ -134,6 +134,7 @@ Rules:
 - User-created companies are stored in `companies` and must not be overwritten silently by directory refresh.
 - Feed matching should resolve source identifiers to ticker through this cache before using ISIN fallback.
 - Multiple company-directory sources are supported. GPW main market uses `GPW:<ticker>` and NewConnect uses `NC:<ticker>` behind the same directory boundary.
+- Company lookup and autocomplete search all active company-directory records. The exchange typed in the Companies form is used to prefer a match when the same ticker exists on multiple exchanges, but it must not hide companies from other registries.
 - Slow refresh cadence is expected, initially daily or weekly.
 
 ### Feed Items

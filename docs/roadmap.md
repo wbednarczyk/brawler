@@ -934,6 +934,24 @@ Exit criteria:
 - docs/contracts/data model/UI architecture are updated enough that future agents can implement without rediscovering the model
 - ADR checkpoint is complete
 
+## Patch 0.24.1: Multi-Registry Company Directory Hardening
+
+Status: completed in `0.24.1`.
+
+Goal: make the company-directory, lookup, company-add, and company-owned workflow paths work for NewConnect and any later company registry source without GPW/NC-specific assumptions.
+
+Included:
+
+- company lookup searches all active company-directory entries, with selected exchange used only as a duplicate-ticker preference
+- company creation from lookup works for NewConnect and future exchange-qualified tickers
+- company-directory bootstrap and stale checks apply to all enabled `company_registry` source adapters
+- media matching considers all tracked companies instead of only GPW companies
+- source-listing matching has a reusable exchange-aware registry lookup helper for future report/event adapters
+- regression tests cover future exchange behavior for lookup, company creation, watchlists, notebooks, manual events, import/export, media matching, source-listing matching, and Companies UI add flow
+- source strategy documents the checklist for adding the next company-directory source
+
+ADR checkpoint: no new ADR required; this hardens the M22/M24 source and modularity decisions without changing the durable architecture.
+
 ## Future: Research Workspace Implementation Sequence
 
 M24 creates the research/evidence boundary but does not add visible research-workspace features. The recommended follow-up sequence is:

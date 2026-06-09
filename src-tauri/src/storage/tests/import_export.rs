@@ -11,6 +11,22 @@ fn tracked_company(ticker: &str, name: &str) -> NewCompany {
     }
 }
 
+fn tracked_company_on_exchange(
+    exchange: &str,
+    ticker: &str,
+    name: &str,
+    isin: Option<&str>,
+) -> NewCompany {
+    NewCompany {
+        exchange: exchange.to_owned(),
+        ticker: ticker.to_owned(),
+        display_name: name.to_owned(),
+        isin: isin.map(str::to_owned),
+        cik: None,
+        lei: None,
+    }
+}
+
 #[test]
 fn research_data_round_trips_companies_watchlists_and_notebooks() {
     let source = AppState::new(open_in_memory_database().expect("database should open"));
@@ -80,6 +96,68 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
         .expect("notes should list");
     assert_eq!(imported_notes.len(), 1);
     assert_eq!(imported_notes[0].tags, vec!["claim", "release"]);
+}
+
+#[test]
+fn research_data_round_trips_future_exchange_companies_watchlists_and_notebooks() {
+    let source = AppState::new(open_in_memory_database().expect("database should open"));
+    let sap = source
+        .create_company(tracked_company_on_exchange(
+            "XETRA",
+            "SAP",
+            "SAP SE",
+            Some("DE0007164600"),
+        ))
+        .expect("future exchange company should create");
+    let watchlist = source
+        .create_watchlist(NewWatchlist {
+            name: "Europe".to_owned(),
+            description: Some("European companies".to_owned()),
+        })
+        .expect("watchlist should create");
+    source
+        .add_company_to_watchlist(WatchlistCompanyInput {
+            watchlist_id: watchlist.id.clone(),
+            company_id: sap.id.clone(),
+        })
+        .expect("membership should create");
+    source
+        .create_notebook_entry(NewNotebookEntry {
+            company_id: sap.id.clone(),
+            title: "Cloud margin checkpoint".to_owned(),
+            body: "Track margin commentary next quarter.".to_owned(),
+            body_format: Some("markdown".to_owned()),
+            tags: vec!["margin".to_owned()],
+            kind: "manual".to_owned(),
+            claim_status: None,
+            event_date: None,
+            follow_up_after: None,
+            follow_up_date: Some("2026-09-30".to_owned()),
+            origins: vec![],
+        })
+        .expect("note should create");
+
+    let export = source
+        .export_research_data()
+        .expect("research data should export");
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+
+    target
+        .apply_research_import(&export.contents)
+        .expect("future exchange research import should apply");
+
+    let imported_companies = target.list_companies().expect("companies should list");
+    assert_eq!(imported_companies.len(), 1);
+    assert_eq!(imported_companies[0].qualified_ticker, "XETRA:SAP");
+    let imported_memberships = target
+        .list_watchlist_memberships()
+        .expect("memberships should list");
+    assert_eq!(imported_memberships.len(), 1);
+    let imported_notes = target
+        .list_notebook_entries(&imported_companies[0].id)
+        .expect("notes should list");
+    assert_eq!(imported_notes.len(), 1);
+    assert_eq!(imported_notes[0].title, "Cloud margin checkpoint");
 }
 
 #[test]

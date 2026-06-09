@@ -25,7 +25,9 @@ pub fn lookup_company(
     let first_result = state
         .lookup_company(input.clone())
         .map_err(|error| error.to_string())?;
-    if first_result.is_some() || !source_refresh::should_bootstrap_gpw_registry(&input, &state)? {
+    if first_result.is_some()
+        || !source_refresh::should_bootstrap_company_directories(&input, &state)?
+    {
         return Ok(first_result);
     }
 

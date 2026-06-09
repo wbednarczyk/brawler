@@ -1312,8 +1312,9 @@ Initial `list_company_registry_entries` behavior:
 
 Initial `lookup_company` behavior:
 
-- Looks up companies from the local `company_registry_entries` cache for supported directory exchanges, initially `GPW` and `NC`.
+- Looks up companies from the local `company_registry_entries` cache across all active supported company-directory sources, initially GPW main market and NewConnect.
 - Uses exact ticker first, exact ISIN second, and company-name search only for company-form lookup/enrichment.
+- The submitted exchange is a disambiguation preference, not a hard filter. If the form still says `GPW` and the ticker exists only in NewConnect, lookup returns the `NC:<ticker>` result and fills the form with `NC`.
 - If a supported directory lookup misses while the required directory cache is empty, the command may refresh required company directories once and retry the lookup.
 - Feed/source matching remains stricter than form lookup: ticker first, ISIN-to-ticker registry resolution second, exact ISIN fallback, and no silent company-name matching.
 

@@ -163,16 +163,16 @@ impl AppState {
         companies::lookup_company(&connection, input)
     }
 
-    pub fn gpw_company_registry_needs_bootstrap_refresh(&self) -> StorageResult<bool> {
+    pub fn company_directories_need_bootstrap_refresh(&self) -> StorageResult<bool> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
-        companies::gpw_company_registry_needs_bootstrap_refresh(&connection)
+        companies::company_directories_need_bootstrap_refresh(&connection)
     }
 
-    pub fn gpw_company_registry_is_stale(&self, stale_after_seconds: i64) -> StorageResult<bool> {
+    pub fn company_directories_are_stale(&self, stale_after_seconds: i64) -> StorageResult<bool> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
-        companies::gpw_company_registry_is_stale(&connection, stale_after_seconds)
+        companies::company_directories_are_stale(&connection, stale_after_seconds)
     }
 
     pub fn refresh_gpw_company_registry(

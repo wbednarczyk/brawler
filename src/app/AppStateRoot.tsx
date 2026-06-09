@@ -585,6 +585,8 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setAddingRegistryTicker,
     setCompaniesError,
     setCompanyForm,
+    setCompanyListSearch,
+    setCompanyWatchlistFilter,
     setLookupStatus,
     setSelectedCompanyRegistryTicker,
     setWatchlistsError,

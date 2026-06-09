@@ -1,4 +1,4 @@
-use super::companies::gpw_company_registry_is_stale;
+use super::companies::company_directories_are_stale;
 use super::migrations::{apply_migrations, database_status};
 use super::sources::{media_duplicate_signature, MediaMatchCompany};
 use super::*;

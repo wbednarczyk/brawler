@@ -38,6 +38,45 @@ fn creates_watchlist_and_assigns_company() {
 }
 
 #[test]
+fn watchlist_memberships_accept_future_exchange_companies() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let company = state
+        .create_company(NewCompany {
+            exchange: "XETRA".to_owned(),
+            ticker: "SAP".to_owned(),
+            display_name: "SAP SE".to_owned(),
+            isin: Some("DE0007164600".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("future exchange company should be created");
+    let watchlist = state
+        .create_watchlist(NewWatchlist {
+            name: "Europe".to_owned(),
+            description: None,
+        })
+        .expect("watchlist should be created");
+
+    state
+        .add_company_to_watchlist(WatchlistCompanyInput {
+            watchlist_id: watchlist.id.clone(),
+            company_id: company.id.clone(),
+        })
+        .expect("future exchange company should be assigned");
+
+    let memberships = state
+        .list_watchlist_memberships()
+        .expect("memberships should list");
+    let watchlists = state.list_watchlists().expect("watchlists should list");
+
+    assert_eq!(memberships.len(), 1);
+    assert_eq!(memberships[0].company_id, company.id);
+    assert_eq!(watchlists[0].company_count, 1);
+}
+
+#[test]
 fn lists_watchlist_memberships() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
