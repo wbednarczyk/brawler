@@ -2,7 +2,7 @@
 
 This document captures day-1 operating rules for Brawler. It complements the product, architecture, and roadmap docs by defining how the project should be maintained.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Radicle/Radboard Tracking](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Release Workflow](release-workflow.md), [Roadmap](roadmap.md), and [Radicle/Radboard Tracking](kanban.md).
 
 ## Real Feature Completion
 
@@ -125,6 +125,7 @@ Modularity, extensibility, pluggability, and configurability are first-class des
 
 Rules:
 
+- Keep business logic in backend/domain boundaries. React should remain a presentation and thin-controller layer that renders backend read models, captures user intent, and calls typed commands; it should not own cross-domain aggregation, review semantics, entitlement decisions, source matching, import/export planning, provider behavior, or other durable product rules.
 - Before non-trivial implementation work, identify the owning domain and layer using [Modularization Design](modularization-design.md).
 - New features should define clear boundaries for providers, sources, credentials, models, settings, collectors, renderers/exporters, storage-facing operations, and user-visible workflow options.
 - Design modules around stable internal contracts so future implementations can be added as adapters or plugins where a real extension path is plausible.
@@ -301,7 +302,7 @@ Rules:
 
 ## Versioning And Releases
 
-Brawler uses SemVer-style `0.x.y` versions from the first scaffold.
+Brawler uses SemVer-style `0.x.y` versions from the first scaffold. The detailed release workflow lives in [Release Workflow](release-workflow.md).
 
 Initial version mapping:
 
@@ -313,11 +314,12 @@ Initial version mapping:
 
 Rules:
 
+- New commits use Conventional Commits and should pass the repo-local `commit-msg` hook.
 - Every completed milestone bumps the minor version before the milestone branch is handed back for commit/merge.
 - Milestone closure must update the app version consistently in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
 - Radicle/Radboard cleanup is the final closure step after the version bump and final validation: mark completed tasks and the completed epic solved, leaving abandoned work closed only when it is intentionally won't-fix.
 - Patch versions are for fixes.
-- Git tags mark meaningful build candidates.
+- Git tags mark meaningful build candidates. Historical release tags may be created after auditing exact release commits; old commit messages are not rewritten.
 - Public release automation waits until packaging is ready.
-- A changelog starts once code exists.
+- `CHANGELOG.md` records release history. Entries through `0.24.1` are curated from [Kanban Archive](kanban-archive.md); future entries are generated with `git-cliff` from Conventional Commits and may be edited for clarity.
 - `1.0.0` requires stable enough behavior for external users.

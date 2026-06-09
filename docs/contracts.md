@@ -1094,6 +1094,37 @@ Initial research evidence item shape:
 }
 ```
 
+Initial company timeline result shape:
+
+```json
+{
+  "items": [
+    {
+      "id": "evidence_feed_01",
+      "evidenceType": "feed_item",
+      "sourceDomain": "feed",
+      "sourceId": "feed_01",
+      "companyId": "company_gpw_cdr",
+      "occurredAt": "2026-05-28T12:04:52Z",
+      "title": "Current report title",
+      "summary": "Short source or AI-supported summary",
+      "sourceUrl": "https://www.gpw.pl/komunikaty",
+      "attribution": "GPW",
+      "trustCategory": "official_report",
+      "reviewState": {
+        "changedSinceCompanyReview": true,
+        "changedSinceWatchlistReview": true
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "changedSinceReview": 1,
+    "lastReviewedAt": null
+  }
+}
+```
+
 Initial evidence types:
 
 - `feed_item`
@@ -1123,6 +1154,7 @@ Rules:
 - Existing domain tables remain the source of truth.
 - The research boundary returns read models assembled from existing domains first.
 - React consumes research read models for timelines and review workflows instead of assembling them from many unrelated APIs.
+- Timeline summary and review counts are backend-owned. The frontend may format and display them, but should not reimplement changed-since-review or cross-domain aggregation rules.
 - Stored timeline/evidence projections are deferred until performance or review semantics require them.
 - Review checkpoints are durable research-owned state.
 - Evidence links are durable research-owned relationships between existing domain entities.
@@ -1167,7 +1199,7 @@ Initial review checkpoint shape:
 
 Initial research command candidates:
 
-- `list_research_evidence(input)`
+- `list_research_evidence(input)`, returning a timeline result with `items` and backend-owned `summary`
 - `list_company_timeline(companyId)`
 - `list_watchlist_timeline(watchlistId)`
 - `mark_research_scope_reviewed(input)`

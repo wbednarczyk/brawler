@@ -2,7 +2,7 @@
 
 This document defines how Brawler should be built, checked, and tested during development.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Roadmap](roadmap.md), [Kanban](kanban.md), [Live Smoke Tests](live-smoke-tests.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Release Workflow](release-workflow.md), [Roadmap](roadmap.md), [Kanban](kanban.md), [Live Smoke Tests](live-smoke-tests.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
 
 ## Goals
 
@@ -47,6 +47,7 @@ Recommended workflow:
 - Runtime logs are local JSON Lines files under the app data logs directory. Settings controls the normal log level and rotation limits. Development runs may override these with `BRAWLER_LOG_LEVEL`, `BRAWLER_LOG_MAX_FILES`, and `BRAWLER_LOG_MAX_FILE_MEGABYTES`.
 - Local metrics are Developer-mode-only snapshots available through Diagnostics. They are collected on demand from local state plus process-lifetime runtime counters and are not telemetry.
 - When closing a milestone, bump the app minor version in all package manifests before handing the branch back for commit/merge.
+- Release workflow guardrails live in [Release Workflow](release-workflow.md). Use `make install-git-hooks` once per checkout and `make release-check` before release workflow or milestone closure changes are handed back.
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.
 - From that Windows checkout, run `scripts/windows/dev.ps1` to start Tauri dev mode.
@@ -128,6 +129,9 @@ Recommended command grouping once code exists:
 - `cargo fmt --check`: Rust formatting check
 - `nix develop`: enter the reproducible development shell
 - `nix flake check`: run Nix-defined checks once they exist
+- `make install-git-hooks`: configure the checkout to use repo-local Git hooks
+- `make release-check`: validate commit-message, version-sync, and changelog-generation guardrails
+- `make changelog`: generate future changelog entries with git-cliff
 
 Optional later convenience wrappers:
 

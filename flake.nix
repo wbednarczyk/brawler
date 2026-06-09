@@ -39,6 +39,7 @@
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             cargo-watch
+            git-cliff
             nodejs_22
             pkg-config
             rustToolchain

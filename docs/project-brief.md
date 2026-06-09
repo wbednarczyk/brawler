@@ -29,6 +29,7 @@ Planning and workflow:
 - [Radicle/Radboard Tracking](kanban.md): pointer to active Radicle issue tracking and board labels.
 - [Kanban Archive](kanban-archive.md): completed-card history.
 - [Engineering Workflow](engineering-workflow.md): local commands, Nix, WSL/Windows split, CI, quality gates, and packaging posture.
+- [Release Workflow](release-workflow.md): SemVer policy, Conventional Commits, local commit hooks, git-cliff changelog generation, and retroactive tag policy.
 - [Live Smoke Tests](live-smoke-tests.md): opt-in real-provider validation procedures.
 - [Licensing Strategy Assessment](licensing-strategy.md): current licensing and monetization options, M17 friend-test gate implications, and future ADR triggers.
 - [License Operations](license-operations.md): owner-only local license key generation, activation, manual gate testing, and licensing architecture notes.

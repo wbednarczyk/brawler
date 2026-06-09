@@ -389,6 +389,7 @@ Rules:
 - Do not add visible Research Workspace placeholders before the feature is implemented.
 - Future research views consume backend-owned evidence and timeline read models.
 - Research views should not independently call Inbox, Notebooks, Events, Transcripts, Sources, and AI APIs to assemble timelines.
+- Research summary counts, changed-since-review state, and timeline filtering semantics belong to backend read models. The UI displays the result and captures user intent.
 - Review actions update research-owned review checkpoints.
 - Evidence-link interactions use typed research links while preserving existing notebook origin links.
 - AI brief UI must show citations and provenance enough for source-grounded review, without presenting buy/sell/hold recommendations.

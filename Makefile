@@ -10,7 +10,7 @@ APP_VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null)
 WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 
-.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -20,6 +20,10 @@ help:
 	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
 	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
 	@printf "  make build               Build the frontend inside nix develop\n"
+	@printf "  make install-git-hooks   Install repo-local commit message hooks\n"
+	@printf "  make release-check       Validate release workflow guardrails\n"
+	@printf "  make changelog           Generate future changelog entries with git-cliff\n"
+	@printf "  make changelog-check     Validate git-cliff changelog generation\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
 	@printf "  make license-keygen-author\n"
@@ -72,6 +76,25 @@ frontend-check:
 
 rust-check:
 	$(NIX) npm run check:rust
+
+install-git-hooks:
+	git config core.hooksPath .githooks
+	@printf "Installed repo-local git hooks from .githooks\n"
+
+commit-msg-check:
+	$(NIX) npm run release:commit-msg-check
+
+version-check:
+	$(NIX) npm run release:version-check
+
+changelog:
+	$(NIX) git-cliff --config cliff.toml --tag "v$(APP_VERSION)" --prepend CHANGELOG.md
+
+changelog-check:
+	$(NIX) npm run release:changelog-check
+
+release-check:
+	$(NIX) npm run release:check
 
 license-keygen-author:
 	$(NIX) node scripts/licensing/generate-ed25519-key.mjs
