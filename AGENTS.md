@@ -10,7 +10,7 @@ Always read:
 
 - [docs/project-brief.md](docs/project-brief.md) for product intent and the documentation map.
 - [docs/project-practices.md](docs/project-practices.md) for standing operating rules.
-- The active work item in [docs/kanban.md](docs/kanban.md).
+- The active Radicle issue, epic, or task being implemented. Use [docs/kanban.md](docs/kanban.md) for the Radicle/Radboard tracking pointer.
 
 Then read only the relevant canonical references for the work being done:
 
@@ -43,7 +43,10 @@ Then read only the relevant canonical references for the work being done:
 - AI output is decision support only. Do not phrase generated analysis as buy/sell/hold advice.
 - Secrets must use the OS keychain in runtime code. `.env` is only for development and tests.
 - Use strict Tauri permissions: typed commands only, no arbitrary shell execution, no broad filesystem access.
-- Docs, ADRs, and contracts are canonical; GitHub Issues are implementation tracking only.
+- Docs, ADRs, and contracts are canonical; Radicle/Radboard issues are active project tracking only.
+- Radicle is used for private project tracking only. Do not publish, seed, unblock public seeding, change visibility to public, or use `rad init` without `--private`.
+- Use Radboard labels with repeated flags only: `epic`, `parent:<epic-hex7>`, `milestone:v0.x.0`, `state:*`, `priority:critical|high|medium|low`, `blocked:*`, and project labels such as `area:research-workspace`.
+- Create a Radicle issue for every bug that is reported or discovered and will not be fixed immediately in the current work. Use the plain `bug` label with state, priority, and area labels; link it with `parent:<epic-hex7>` or `blocked:<bug-hex7>` when relevant.
 - Keep runtime dependency additions conservative and explain why they are needed.
 - Local build/test commands are primary. GitHub Actions should mirror local commands, not introduce CI-only build logic.
 - Use Nix from the first scaffold. Local commands should run inside `nix develop`; do not store secrets in Nix files or `.envrc`.

@@ -2,7 +2,7 @@
 
 This document captures day-1 operating rules for Brawler. It complements the product, architecture, and roadmap docs by defining how the project should be maintained.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Kanban](kanban.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Roadmap](roadmap.md), and [Radicle/Radboard Tracking](kanban.md).
 
 ## Real Feature Completion
 
@@ -23,14 +23,16 @@ Every new milestone starts with explicit task planning and architecture decision
 
 Rules:
 
-- At the start of each milestone, break the milestone into the concrete tasks needed to deliver it and record the active task breakdown in [Kanban](kanban.md).
+- At the start of each milestone, break the milestone into the concrete tasks needed to deliver it and record the active task breakdown in Radicle issues for Radboard.
+- Radboard milestones are version targets such as `milestone:v0.25.0`; epics are major capability slices marked with the `epic` label; tasks are reviewable work slices linked to an epic with `parent:<epic-hex7>`.
+- Use repeated Radicle label flags, not comma-separated labels. For example: `--labels epic --labels milestone:v0.25.0 --labels area:research-workspace`.
 - Present the important architecture decisions to the user before implementation. Keep each decision short, explain the practical options and tradeoffs, and require explicit user answers.
 - Do not guess on architecture. If ownership boundaries, storage shape, provider model, security posture, UI placement, configuration, persistence, background-job behavior, observability, or release impact are unclear, ask until the decision is clear enough to implement.
 - Architecture decisions must be settled before code changes for that milestone begin, except for small discovery spikes that are explicitly framed as research.
 - Agents may implement all approved milestone tasks, but milestone closure is a separate manual signoff step. Do not move a milestone to Done, mark the roadmap status completed, or perform the milestone version bump until the user explicitly approves closure.
-- After user signoff, milestone closure ends with kanban cleanup: after the version bump and final validation are complete, move already finished milestone cards from [Kanban](kanban.md) to [Kanban Archive](kanban-archive.md) so `kanban.md` stays focused on active work.
+- After user signoff, milestone closure ends with Radicle/Radboard cleanup: after the version bump and final validation are complete, mark completed task issues and the completed epic as solved with `rad issue state --solved`. Do not use `--closed` for completed work; Radicle closed means abandoned or won't-fix.
 - If the milestone description is missing something that would materially improve the application, its maintainability, or its user-facing workflow, propose it to the user instead of silently ignoring it.
-- Once decisions are made, update roadmap, kanban, contracts, architecture docs, or ADRs as needed before or alongside implementation so later agents inherit the decision.
+- Once decisions are made, update roadmap, Radicle issues, contracts, architecture docs, or ADRs as needed before or alongside implementation so later agents inherit the decision.
 
 ## ADR Hygiene
 
@@ -43,7 +45,7 @@ Rules:
 - If the task only implements an already documented decision, no new ADR is needed.
 - Milestone closure should include an ADR checkpoint: explicitly confirm that no ADR is needed, or list the ADRs added/updated.
 - Prefer short ADRs that capture context, decision, and consequences over duplicating roadmap tasks or implementation details.
-- Do not bury new durable decisions only in roadmap, kanban, code comments, or commit messages.
+- Do not bury new durable decisions only in roadmap, Radicle issues, code comments, or commit messages.
 
 ## License Posture
 
@@ -150,7 +152,7 @@ Rules:
 - Mutating actions should provide quick visual feedback.
 - Buttons and controls should communicate intent through position, label, icon, color, and state.
 - Dense investor workflows must remain scannable and keyboard/mouse efficient.
-- Temporary UX shortcuts are allowed during early scaffolding, but known UX debt should be recorded in docs or Kanban.
+- Temporary UX shortcuts are allowed during early scaffolding, but known UX debt should be recorded in docs or Radicle/Radboard.
 - Responsiveness is part of correctness: common actions should feel immediate even when background work is pending.
 
 ## Security Baseline
@@ -205,18 +207,23 @@ Rules:
 - Full SQLite backup may be documented as a power-user option.
 - Cloud backup/sync requires a separate design discussion before implementation.
 
-## GitHub Workflow
+## Radicle/Radboard Workflow
 
 Brawler uses a hybrid workflow.
 
 Rules:
 
 - Docs, ADRs, and contracts are canonical for product and architecture decisions.
-- `docs/kanban.md` remains the high-level planning board.
-- GitHub Issues may track implementation tasks once useful.
-- PRs should reference an issue or Kanban card.
+- Radicle issues rendered by Radboard are the active planning board.
+- Radboard milestones track app version targets. Radboard epics track major capability slices. Radboard tasks track reviewable implementation work.
+- Deferred bugs are tracked as Radicle issues so they are visible in Radboard. If a bug is reported or discovered and will not be fixed immediately in the current work, create a bug issue before moving on.
+- Bug issues use the plain `bug` label plus `state:*`, `priority:*`, and an `area:*` label when the owning area is clear. Add `milestone:v0.x.0` when the fix is targeted for a version.
+- Bugs discovered inside an active epic may also use `parent:<epic-hex7>` so they appear under the relevant epic. Otherwise, keep them as standalone bug issues.
+- If a deferred bug blocks active work, add `blocked:<bug-hex7>` to the blocked task or epic after creating the bug issue.
+- Bugs fixed immediately in the same work item do not require a separate Radicle issue, but the final summary should mention the bug and the verification performed.
+- PRs or patches should reference a Radicle issue when implementation begins.
 - Behavior changes must update docs/contracts in the same PR.
-- Important decisions must not live only in GitHub issue or PR comments.
+- Important decisions must not live only in Radicle issue, patch, or PR comments.
 
 ## Product Scope And Tradeoff Communication
 
@@ -308,7 +315,7 @@ Rules:
 
 - Every completed milestone bumps the minor version before the milestone branch is handed back for commit/merge.
 - Milestone closure must update the app version consistently in `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
-- Kanban cleanup is the final closure step after the version bump and final validation: move completed milestone content out of [Kanban](kanban.md) into [Kanban Archive](kanban-archive.md).
+- Radicle/Radboard cleanup is the final closure step after the version bump and final validation: mark completed tasks and the completed epic solved, leaving abandoned work closed only when it is intentionally won't-fix.
 - Patch versions are for fixes.
 - Git tags mark meaningful build candidates.
 - Public release automation waits until packaging is ready.

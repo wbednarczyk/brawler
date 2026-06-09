@@ -26,7 +26,7 @@ Contracts and data:
 Planning and workflow:
 
 - [Roadmap](roadmap.md): milestone intent and exit criteria.
-- [Kanban](kanban.md): active work only.
+- [Radicle/Radboard Tracking](kanban.md): pointer to active Radicle issue tracking and board labels.
 - [Kanban Archive](kanban-archive.md): completed-card history.
 - [Engineering Workflow](engineering-workflow.md): local commands, Nix, WSL/Windows split, CI, quality gates, and packaging posture.
 - [Live Smoke Tests](live-smoke-tests.md): opt-in real-provider validation procedures.

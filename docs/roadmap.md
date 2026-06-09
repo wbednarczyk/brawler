@@ -2,7 +2,7 @@
 
 This roadmap turns the current product and architecture plan into implementation milestones. It is intentionally milestone-based instead of date-based.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Kanban](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Radicle/Radboard Tracking](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
 
 ## Roadmap Principles
 
@@ -930,7 +930,7 @@ Exit criteria:
 - required research-workspace readiness refactors are completed before feature implementation starts
 - recommended architecture is recorded with options, tradeoffs, and accepted decisions
 - user explicitly approves any remaining architecture decisions before implementation milestones are created
-- roadmap and Kanban contain the resulting implementation sequence
+- roadmap and Radicle/Radboard contain the resulting implementation sequence
 - docs/contracts/data model/UI architecture are updated enough that future agents can implement without rediscovering the model
 - ADR checkpoint is complete
 
