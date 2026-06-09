@@ -1,0 +1,488 @@
+use super::sources;
+use super::*;
+
+const EVIDENCE_TYPES: &[&str] = &[
+    "feed_item",
+    "notebook_entry",
+    "claim",
+    "transcript_segment",
+    "company_event",
+    "ai_analysis",
+];
+
+const RELATION_TYPES: &[&str] = &[
+    "originates_from",
+    "cites",
+    "supports",
+    "contradicts",
+    "updates",
+    "follows_up",
+    "answers",
+    "related",
+];
+
+pub(super) fn list_research_evidence(
+    connection: &Connection,
+    input: ResearchEvidenceInput,
+) -> StorageResult<Vec<ResearchEvidenceItem>> {
+    let limit = input.limit.unwrap_or(100).clamp(1, 500);
+    let company_checkpoint = input
+        .company_id
+        .as_deref()
+        .and_then(|company_id| review_checkpoint_timestamp(connection, "company", company_id).ok())
+        .flatten();
+    let watchlist_checkpoint = input
+        .watchlist_id
+        .as_deref()
+        .and_then(|watchlist_id| {
+            review_checkpoint_timestamp(connection, "watchlist", watchlist_id).ok()
+        })
+        .flatten();
+
+    let mut statement = connection.prepare(
+        "
+        WITH scope_companies AS (
+            SELECT companies.id AS company_id
+            FROM companies
+            WHERE (?1 IS NULL OR companies.id = ?1)
+                AND (
+                    ?2 IS NULL
+                    OR companies.id IN (
+                        SELECT company_id
+                        FROM watchlist_companies
+                        WHERE watchlist_id = ?2
+                    )
+                )
+        ),
+        evidence AS (
+            SELECT
+                'evidence_feed_' || feed_items.id AS id,
+                'feed_item' AS evidence_type,
+                'feed' AS source_domain,
+                feed_items.id AS source_id,
+                feed_item_companies.company_id AS company_id,
+                COALESCE(feed_items.published_at, feed_items.fetched_at) AS occurred_at,
+                feed_items.title AS title,
+                NULLIF(feed_items.summary, '') AS summary,
+                feed_items.source_url AS source_url,
+                COALESCE(feed_items.attribution, feed_items.source_name) AS attribution,
+                CASE
+                    WHEN lower(feed_items.type) IN ('official_report', 'official report') THEN 'official_report'
+                    WHEN lower(feed_items.type) IN ('public_media', 'public media') THEN 'public_media'
+                    ELSE 'unknown'
+                END AS trust_category
+            FROM feed_items
+            JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
+            JOIN scope_companies ON scope_companies.company_id = feed_item_companies.company_id
+
+            UNION ALL
+
+            SELECT
+                'evidence_note_' || notebook_entries.id AS id,
+                CASE
+                    WHEN notebook_entries.kind = 'claim' OR notebook_entries.claim_status IS NOT NULL
+                    THEN 'claim'
+                    ELSE 'notebook_entry'
+                END AS evidence_type,
+                'notebooks' AS source_domain,
+                notebook_entries.id AS source_id,
+                notebook_entries.company_id AS company_id,
+                COALESCE(notebook_entries.event_date, notebook_entries.updated_at, notebook_entries.created_at) AS occurred_at,
+                notebook_entries.title AS title,
+                NULL AS summary,
+                NULL AS source_url,
+                NULL AS attribution,
+                'user_note' AS trust_category
+            FROM notebook_entries
+            JOIN scope_companies ON scope_companies.company_id = notebook_entries.company_id
+
+            UNION ALL
+
+            SELECT
+                'evidence_event_' || company_events.id AS id,
+                'company_event' AS evidence_type,
+                'events' AS source_domain,
+                company_events.id AS source_id,
+                company_events.company_id AS company_id,
+                company_events.event_date AS occurred_at,
+                company_events.title AS title,
+                company_events.event_type AS summary,
+                company_events.source_url AS source_url,
+                company_events.attribution AS attribution,
+                CASE
+                    WHEN company_events.manual = 1 THEN 'user_note'
+                    ELSE 'market_calendar'
+                END AS trust_category
+            FROM company_events
+            JOIN scope_companies ON scope_companies.company_id = company_events.company_id
+
+            UNION ALL
+
+            SELECT
+                'evidence_transcript_segment_' || transcript_segments.id AS id,
+                'transcript_segment' AS evidence_type,
+                'transcripts' AS source_domain,
+                transcript_segments.id AS source_id,
+                transcript_segments.company_id AS company_id,
+                transcript_segments.created_at AS occurred_at,
+                COALESCE(transcript_segments.speaker, 'Transcript segment') AS title,
+                substr(transcript_segments.text, 1, 240) AS summary,
+                transcript_jobs.source_url AS source_url,
+                transcript_jobs.provider_id AS attribution,
+                'transcript' AS trust_category
+            FROM transcript_segments
+            JOIN transcript_jobs ON transcript_jobs.id = transcript_segments.transcript_job_id
+            JOIN scope_companies ON scope_companies.company_id = transcript_segments.company_id
+
+            UNION ALL
+
+            SELECT
+                'evidence_ai_analysis_' || ai_analysis_results.id AS id,
+                'ai_analysis' AS evidence_type,
+                'ai_analysis' AS source_domain,
+                ai_analysis_results.id AS source_id,
+                feed_item_companies.company_id AS company_id,
+                ai_analysis_results.created_at AS occurred_at,
+                'AI analysis' AS title,
+                ai_analysis_results.summary AS summary,
+                feed_items.source_url AS source_url,
+                ai_analysis_results.provider_id AS attribution,
+                'ai_generated' AS trust_category
+            FROM ai_analysis_results
+            JOIN feed_items ON feed_items.id = ai_analysis_results.feed_item_id
+            JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
+            JOIN scope_companies ON scope_companies.company_id = feed_item_companies.company_id
+        )
+        SELECT
+            id,
+            evidence_type,
+            source_domain,
+            source_id,
+            company_id,
+            occurred_at,
+            title,
+            summary,
+            source_url,
+            attribution,
+            trust_category
+        FROM evidence
+        ORDER BY datetime(occurred_at) DESC, id
+        LIMIT ?3
+        ",
+    )?;
+
+    let rows = statement.query_map(
+        params![input.company_id, input.watchlist_id, limit],
+        |row| {
+            let occurred_at: String = row.get(5)?;
+            Ok(ResearchEvidenceItem {
+                id: row.get(0)?,
+                evidence_type: row.get(1)?,
+                source_domain: row.get(2)?,
+                source_id: row.get(3)?,
+                company_id: row.get(4)?,
+                review_state: ResearchEvidenceReviewState {
+                    changed_since_company_review: changed_since_checkpoint(
+                        &occurred_at,
+                        company_checkpoint.as_deref(),
+                    ),
+                    changed_since_watchlist_review: changed_since_checkpoint(
+                        &occurred_at,
+                        watchlist_checkpoint.as_deref(),
+                    ),
+                },
+                occurred_at,
+                title: row.get(6)?,
+                summary: row.get(7)?,
+                source_url: row.get(8)?,
+                attribution: row.get(9)?,
+                trust_category: row.get(10)?,
+            })
+        },
+    )?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+pub(super) fn mark_research_scope_reviewed(
+    connection: &Connection,
+    input: ResearchReviewCheckpointInput,
+) -> StorageResult<ResearchReviewCheckpoint> {
+    let scope_type = input.scope_type.trim().to_owned();
+    let scope_id = input.scope_id.trim().to_owned();
+    validate_review_scope(connection, &scope_type, &scope_id)?;
+    let reviewed_at = input
+        .reviewed_at
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .map(Ok)
+        .unwrap_or_else(|| sources::current_timestamp(connection))?;
+    let id = research_review_checkpoint_id(&scope_type, &scope_id);
+
+    connection.execute(
+        "
+        INSERT INTO research_review_checkpoints (
+            id,
+            scope_type,
+            scope_id,
+            reviewed_at
+        ) VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(scope_type, scope_id) DO UPDATE SET
+            reviewed_at = excluded.reviewed_at,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![id, scope_type, scope_id, reviewed_at],
+    )?;
+
+    get_research_review_checkpoint(connection, &id)
+}
+
+pub(super) fn list_research_review_state(
+    connection: &Connection,
+    input: ResearchReviewCheckpointInput,
+) -> StorageResult<Option<ResearchReviewCheckpoint>> {
+    validate_review_scope(connection, input.scope_type.trim(), input.scope_id.trim())?;
+
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                scope_type,
+                scope_id,
+                reviewed_at,
+                created_at,
+                updated_at
+            FROM research_review_checkpoints
+            WHERE scope_type = ?1 AND scope_id = ?2
+            ",
+            params![input.scope_type.trim(), input.scope_id.trim()],
+            research_review_checkpoint_from_row,
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+pub(super) fn create_evidence_link(
+    connection: &Connection,
+    input: NewEvidenceLink,
+) -> StorageResult<EvidenceLink> {
+    let from_type = input.from_type.trim().to_owned();
+    let from_id = input.from_id.trim().to_owned();
+    let to_type = input.to_type.trim().to_owned();
+    let to_id = input.to_id.trim().to_owned();
+    let relation_type = input.relation_type.trim().to_owned();
+
+    validate_allowed_research_value("evidence_type", &from_type, EVIDENCE_TYPES)?;
+    validate_allowed_research_value("evidence_type", &to_type, EVIDENCE_TYPES)?;
+    validate_allowed_research_value("relation_type", &relation_type, RELATION_TYPES)?;
+    validate_evidence_reference(connection, &from_type, &from_id)?;
+    validate_evidence_reference(connection, &to_type, &to_id)?;
+
+    let id = evidence_link_id(&from_type, &from_id, &to_type, &to_id, &relation_type);
+
+    connection.execute(
+        "
+        INSERT OR IGNORE INTO evidence_links (
+            id,
+            from_type,
+            from_id,
+            to_type,
+            to_id,
+            relation_type
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        ",
+        params![id, from_type, from_id, to_type, to_id, relation_type],
+    )?;
+
+    get_evidence_link(connection, &id)
+}
+
+pub(super) fn delete_evidence_link(connection: &Connection, id: &str) -> StorageResult<()> {
+    connection.execute("DELETE FROM evidence_links WHERE id = ?1", [id.trim()])?;
+
+    Ok(())
+}
+
+fn get_research_review_checkpoint(
+    connection: &Connection,
+    id: &str,
+) -> StorageResult<ResearchReviewCheckpoint> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                scope_type,
+                scope_id,
+                reviewed_at,
+                created_at,
+                updated_at
+            FROM research_review_checkpoints
+            WHERE id = ?1
+            ",
+            [id],
+            research_review_checkpoint_from_row,
+        )
+        .map_err(StorageError::from)
+}
+
+fn research_review_checkpoint_from_row(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ResearchReviewCheckpoint> {
+    Ok(ResearchReviewCheckpoint {
+        id: row.get(0)?,
+        scope_type: row.get(1)?,
+        scope_id: row.get(2)?,
+        reviewed_at: row.get(3)?,
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
+
+fn get_evidence_link(connection: &Connection, id: &str) -> StorageResult<EvidenceLink> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                from_type,
+                from_id,
+                to_type,
+                to_id,
+                relation_type,
+                created_at
+            FROM evidence_links
+            WHERE id = ?1
+            ",
+            [id],
+            |row| {
+                Ok(EvidenceLink {
+                    id: row.get(0)?,
+                    from_type: row.get(1)?,
+                    from_id: row.get(2)?,
+                    to_type: row.get(3)?,
+                    to_id: row.get(4)?,
+                    relation_type: row.get(5)?,
+                    created_at: row.get(6)?,
+                })
+            },
+        )
+        .map_err(StorageError::from)
+}
+
+fn review_checkpoint_timestamp(
+    connection: &Connection,
+    scope_type: &str,
+    scope_id: &str,
+) -> StorageResult<Option<String>> {
+    connection
+        .query_row(
+            "
+            SELECT reviewed_at
+            FROM research_review_checkpoints
+            WHERE scope_type = ?1 AND scope_id = ?2
+            ",
+            params![scope_type, scope_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(StorageError::from)
+}
+
+fn validate_review_scope(
+    connection: &Connection,
+    scope_type: &str,
+    scope_id: &str,
+) -> StorageResult<()> {
+    match scope_type {
+        "company" => validate_reference_exists(connection, "companies", scope_id),
+        "watchlist" => validate_reference_exists(connection, "watchlists", scope_id),
+        _ => Err(StorageError::InvalidResearchValue {
+            key: "scope_type",
+            value: scope_type.to_owned(),
+        }),
+    }
+}
+
+fn validate_evidence_reference(
+    connection: &Connection,
+    evidence_type: &str,
+    evidence_id: &str,
+) -> StorageResult<()> {
+    match evidence_type {
+        "feed_item" => validate_reference_exists(connection, "feed_items", evidence_id),
+        "notebook_entry" | "claim" => {
+            validate_reference_exists(connection, "notebook_entries", evidence_id)
+        }
+        "transcript_segment" => {
+            validate_reference_exists(connection, "transcript_segments", evidence_id)
+        }
+        "company_event" => validate_reference_exists(connection, "company_events", evidence_id),
+        "ai_analysis" => validate_reference_exists(connection, "ai_analysis_results", evidence_id),
+        _ => Err(StorageError::InvalidResearchValue {
+            key: "evidence_type",
+            value: evidence_type.to_owned(),
+        }),
+    }
+}
+
+fn validate_reference_exists(
+    connection: &Connection,
+    table_name: &str,
+    id: &str,
+) -> StorageResult<()> {
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM {table_name} WHERE id = ?1)");
+    let exists: bool = connection.query_row(&sql, [id], |row| row.get(0))?;
+
+    if exists {
+        Ok(())
+    } else {
+        Err(StorageError::MissingResearchReference {
+            table: table_name.to_owned(),
+            id: id.to_owned(),
+        })
+    }
+}
+
+fn validate_allowed_research_value(
+    field_name: &str,
+    value: &str,
+    allowed_values: &[&str],
+) -> StorageResult<()> {
+    if allowed_values.contains(&value) {
+        Ok(())
+    } else {
+        Err(StorageError::InvalidResearchValue {
+            key: match field_name {
+                "evidence_type" => "evidence_type",
+                "relation_type" => "relation_type",
+                _ => "unknown",
+            },
+            value: value.to_owned(),
+        })
+    }
+}
+
+fn changed_since_checkpoint(occurred_at: &str, checkpoint: Option<&str>) -> bool {
+    checkpoint
+        .map(|reviewed_at| occurred_at > reviewed_at)
+        .unwrap_or(true)
+}
+
+fn research_review_checkpoint_id(scope_type: &str, scope_id: &str) -> String {
+    format!("review_{scope_type}_{scope_id}")
+}
+
+fn evidence_link_id(
+    from_type: &str,
+    from_id: &str,
+    to_type: &str,
+    to_id: &str,
+    relation_type: &str,
+) -> String {
+    format!("evidence_link_{from_type}_{from_id}_{relation_type}_{to_type}_{to_id}")
+}

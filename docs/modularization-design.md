@@ -383,6 +383,7 @@ The broad M13 modularization effort is complete. Future work should treat this d
 
 Further extraction is still expected during normal feature work when a module gains a new reason to change. Good future extraction triggers include:
 
+- A cross-domain research workspace needs to aggregate feed items, notes, claims, transcripts, events, AI outputs, sources, review state, and evidence links without coupling screens directly to storage tables or unrelated app controllers.
 - A new app workflow adds state that can be isolated into a controller or view-model helper.
 - A screen adds a second complex panel, editor, or row/detail pattern.
 - A storage domain adds enough independent behavior to justify a focused helper/test module.
@@ -396,3 +397,81 @@ Known acceptable large files after M13:
 - Storage domain modules such as `storage/sources.rs` and `storage/transcripts.rs` while they remain domain-focused.
 
 If any of these start mixing layers or unrelated domains, split the new responsibility during the feature slice that introduces the pressure.
+
+## M24 Large-File Responsibility Audit
+
+M24 reviewed the large/coordinating files in light of the research-workspace roadmap. The rule remains responsibility-first: line count is a signal to inspect, not a reason to split by itself.
+
+Required M24 extractions completed:
+
+- `src/api/types.ts`: research/evidence DTOs moved to `src/api/researchTypes.ts` instead of expanding the generic API type bucket.
+- `src/api/`: research command calls added as `src/api/research.ts`.
+- `src-tauri/src/storage/mod.rs`: kept as the storage facade, with research behavior extracted to `src-tauri/src/storage/research.rs`.
+- `src-tauri/src/commands/`: research commands added as `src-tauri/src/commands/research.rs`.
+- `src-tauri/src/storage/tests/`: research boundary tests added as `src-tauri/src/storage/tests/research.rs`.
+
+Deferred until feature pressure:
+
+- `src/app/AppStateRoot.tsx`: still an app state/composition root. Do not split for M24 because no visible research UI/state was added. M25 should add a focused research controller/view-model instead of placing company timeline/review state directly in `AppStateRoot`.
+- `src/test/appWorkflowHarness.tsx`: keep as the current app workflow harness. Split only when new research UI workflow tests make setup or test-data ownership harder to reason about.
+- `src-tauri/src/storage/import_export.rs`: defer. M24 research-owned durable state is not exported by M20 files until a visible research workflow makes it normal user-owned data.
+- `CompanyWorkspace.tsx` and `NotebooksScreen.tsx`: defer. M25/M27 can extract research-facing timeline, review, or evidence-link UI components when those visible workflows are implemented.
+
+No action in M24:
+
+- `src-tauri/src/lib.rs` and `src-tauri/src/commands/mod.rs`: remain registration facades. Adding the research command module did not introduce mixed runtime behavior.
+- `src-tauri/src/storage/sources.rs`, `src-tauri/src/storage/transcripts.rs`, source adapter modules, and source tests: still domain-owned and outside M24 research/evidence foundation scope.
+- `src-tauri/src/storage/metrics.rs`: cohesive observability domain, unrelated to research-workspace readiness.
+
+Future trigger:
+
+- If a future feature needs stored timeline/evidence projections, add the projection implementation behind the existing research/evidence API rather than moving aggregation into screens or broadening the storage facade.
+
+## Research Workspace Readiness Check
+
+Before implementing the future research-workspace direction, run a focused modularization readiness check. The check should decide whether the existing boundaries can support a shared research evidence model, timeline/read model, review workflow, research questions, claim expansion, source-grounded AI briefs, digests, reminders, and evidence links.
+
+Areas to inspect:
+
+- frontend app state and view-model ownership, especially whether `AppStateRoot` should compose a new research controller instead of owning research workflow state directly
+- frontend API DTO ownership, especially whether research evidence/timeline/review types should live outside the generic `src/api/types.ts` file
+- screen ownership between Companies, Notebooks, Events, Inbox, Sources, and a future Research/Review surface
+- Rust command ownership for research evidence, review state, links, questions, reminders, and generated briefs
+- storage ownership for cross-domain evidence/read models versus existing feed, notebook, event, transcript, and AI-analysis tables
+- import/export, backup, retention, and migration impact for new research-workspace entities
+- AI brief boundaries for evidence collection, prompt/building, provider execution, citation mapping, rendering, and persistence
+- test ownership for evidence aggregation, review state, linking integrity, citation grounding, and real-browser workflow/layout coverage
+
+The output should be a refactor-before-feature decision list:
+
+- required before research workspace implementation
+- can be folded into the first feature slice
+- defer until concrete pressure appears
+- no action needed because the current boundary is already sufficient
+
+### Accepted M24 Research Boundary
+
+ADR 0022 accepts a dedicated research/evidence boundary before user-facing research-workspace features are implemented.
+
+Frontend ownership:
+
+- Research-workspace aggregation belongs in a focused frontend domain/API/controller boundary, not directly in `AppStateRoot` or individual screens.
+- Research/evidence DTOs should live in focused modules rather than expanding `src/api/types.ts`.
+- Screens should consume research read models and render them; they should not independently call multiple unrelated domain APIs to assemble timelines.
+
+Rust ownership:
+
+- Research/evidence commands should be thin wrappers around a dedicated research/evidence domain boundary.
+- Existing domain storage modules remain the canonical owners of feed items, notebook entries, transcript segments, events, AI analysis results, companies, watchlists, and source state.
+- The research/evidence boundary owns cross-domain read models, review checkpoints, evidence links, and later AI brief/read-model orchestration.
+
+Storage posture:
+
+- Canonical domain tables remain the source of truth.
+- Durable cross-domain concepts such as review checkpoints and typed evidence links may get their own storage surfaces.
+- Full stored timeline/evidence projections are deferred until performance, review semantics, sync, or import/export requirements prove they are needed. If added later, they must stay behind the research API so frontend ownership does not change.
+
+AI brief posture:
+
+- AI research briefs are dedicated entities with citations and provider/model/prompt provenance, not ordinary notebook entries.
+- Generation should stay split across evidence collection, prompt/context building, provider job execution, citation mapping, rendering, and persistence.

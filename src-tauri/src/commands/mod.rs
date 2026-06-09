@@ -10,6 +10,7 @@ pub mod licensing;
 pub mod logs;
 pub mod metrics;
 pub mod notebooks;
+pub mod research;
 pub mod settings;
 pub mod sources;
 pub mod transcripts;

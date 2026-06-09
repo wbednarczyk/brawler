@@ -24,6 +24,10 @@ pub enum StorageError {
     InvalidLicenseValue { key: &'static str, value: String },
     #[error("invalid source value for {key}: {value}")]
     InvalidSourceValue { key: &'static str, value: String },
+    #[error("invalid research value for {key}: {value}")]
+    InvalidResearchValue { key: &'static str, value: String },
+    #[error("missing research reference for {table}: {id}")]
+    MissingResearchReference { table: String, id: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

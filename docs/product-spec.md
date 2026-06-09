@@ -236,6 +236,10 @@ Candidate capabilities:
 
 This direction should not be implemented as ten separate isolated screens. Before implementation, a dedicated planning milestone should define a shared research evidence model, timeline/read-model boundary, review-session model, evidence-linking model, AI brief-building boundary, storage implications, and import/export impact. Existing notebooks, claims, feed items, transcripts, and future events should plug into this model through stable contracts instead of direct cross-screen coupling.
 
+M24 accepts that research-workspace features should be built on a dedicated research/evidence boundary. Existing feed items, notebook entries, claims, transcript segments, events, AI analysis results, watchlists, and sources remain canonical in their owning domains. Research views consume backend-owned evidence and timeline read models rather than independently combining unrelated screen APIs. Durable research-owned state starts with review checkpoints and typed evidence links; full stored timeline projections wait until performance or review semantics require them.
+
+AI research briefs are separate research entities with citations and provider/model/prompt provenance. They are not ordinary notebook entries, though a future workflow may let the user create a note from a brief or selected excerpt.
+
 ### Terminal Interface
 
 A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.

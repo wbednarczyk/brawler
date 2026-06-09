@@ -4,6 +4,38 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M24: Modularization readiness and research workspace architecture
+
+Intent: refactor the boundaries required before research-workspace feature implementation, without adding visible research-workspace features or unrelated broad cleanup.
+
+Delivered:
+
+- Added [ADR 0022](adr/0022-research-evidence-read-model-boundary.md) for the durable research/evidence read-model boundary.
+- Added focused frontend research API/type modules: `src/api/research.ts` and `src/api/researchTypes.ts`.
+- Added Rust research command and storage modules: `src-tauri/src/commands/research.rs` and `src-tauri/src/storage/research.rs`.
+- Added migration `0030_research_evidence_boundary.sql` for durable review checkpoints and typed evidence links.
+- Added backend-owned research evidence/timeline read models assembled from canonical domain tables.
+- Kept full stored timeline/evidence projections deferred behind the research API until performance or review semantics require them.
+- Added typed commands for research evidence, company/watchlist timelines, review checkpoints, and evidence links.
+- Added storage tests for evidence aggregation, review-state updates, watchlist review state, idempotent links, and missing-reference validation.
+- Recorded the large-file responsibility audit with split/defer/no-action decisions.
+- Updated product spec, contracts, data model, UI information architecture, modularization design, AI analysis framework, roadmap, and Kanban.
+- Added the post-M24 research implementation sequence as M25-M29 backlog cards.
+- Bumped app version to `0.24.0`.
+
+ADR checkpoint: Added [ADR 0022](adr/0022-research-evidence-read-model-boundary.md).
+
+Validation:
+
+- User manually signed off M24 closure.
+- `rtk npm run typecheck` passed.
+- `rtk npm test -- --run` passed.
+- `rtk npm run build` passed.
+- `rtk cargo fmt --check` passed.
+- `rtk cargo clippy --all-targets -- -D warnings` passed.
+- `rtk cargo test` passed.
+- `rtk git diff --check` passed.
+
 ### M23: Browser UI regression testing assessment and first Playwright slice
 
 Intent: add a small opt-in Playwright browser UI regression smoke path focused on layout problems that Vitest/jsdom cannot reliably detect.

@@ -151,6 +151,79 @@ pub struct UnmatchedSourceItem {
     pub fetched_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchEvidenceInput {
+    pub company_id: Option<String>,
+    pub watchlist_id: Option<String>,
+    pub limit: Option<i64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchEvidenceItem {
+    pub id: String,
+    pub evidence_type: String,
+    pub source_domain: String,
+    pub source_id: String,
+    pub company_id: String,
+    pub occurred_at: String,
+    pub title: String,
+    pub summary: Option<String>,
+    pub source_url: Option<String>,
+    pub attribution: Option<String>,
+    pub trust_category: String,
+    pub review_state: ResearchEvidenceReviewState,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchEvidenceReviewState {
+    pub changed_since_company_review: bool,
+    pub changed_since_watchlist_review: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchReviewCheckpointInput {
+    pub scope_type: String,
+    pub scope_id: String,
+    pub reviewed_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchReviewCheckpoint {
+    pub id: String,
+    pub scope_type: String,
+    pub scope_id: String,
+    pub reviewed_at: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewEvidenceLink {
+    pub from_type: String,
+    pub from_id: String,
+    pub to_type: String,
+    pub to_id: String,
+    pub relation_type: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceLink {
+    pub id: String,
+    pub from_type: String,
+    pub from_id: String,
+    pub to_type: String,
+    pub to_id: String,
+    pub relation_type: String,
+    pub created_at: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotebookEntry {

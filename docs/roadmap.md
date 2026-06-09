@@ -861,11 +861,11 @@ Exit criteria:
 - existing Vitest/jsdom tests remain the fast default workflow suite
 - validation evidence includes existing frontend checks plus the new opt-in browser smoke
 
-## Milestone 24: Research Workspace Architecture
+## Milestone 24: Modularization Readiness And Research Workspace Architecture
 
-Status: planned.
+Status: completed in `0.24.0`.
 
-Goal: plan the next product-differentiation layer before implementation so future company timelines, review workflows, research questions, claim tracking, AI briefs, digests, source trust signals, reminders, and evidence links are built on one coherent model.
+Goal: refactor the boundaries required for the next product-differentiation layer, then plan the research-workspace architecture before user-facing implementation so future company timelines, review workflows, research questions, claim tracking, AI briefs, digests, source trust signals, reminders, and evidence links are built on one coherent model.
 
 Context:
 
@@ -873,6 +873,11 @@ Brawler should grow toward a personal research memory system for public companie
 
 Included:
 
+- audit current frontend, Rust, storage, source, AI, import/export, and test boundaries against the research-workspace roadmap
+- map cross-domain pressure points for feed items, notes, claims, transcripts, events, AI outputs, watchlists, sources, retention, import/export, and future backup/sync
+- assess current large/coordinating files by responsibility rather than line count, including `AppStateRoot`, frontend API DTOs, storage facade, import/export storage, company workspace, notebooks, source rows/adapters, and shared test harnesses
+- complete the extractions that must happen before research-workspace feature work, while leaving unrelated cleanup to future feature slices
+- define and execute a refactor sequence for approved research-workspace readiness work, keeping pure extraction separate from user-facing behavior changes
 - group the research-workspace candidates into cohesive implementation milestones
 - design a shared research evidence model for feed items, official reports, media items, notes, claims, transcripts, events, questions, reminders, AI briefs, and digests
 - decide timeline/read-model ownership for aggregating evidence across domains
@@ -882,7 +887,7 @@ Included:
 - define source quality/trust signal vocabulary suitable for normal UI
 - assess storage, import/export, backup, retention, migration, and test impact
 - decide which existing modules are extensible enough and which boundaries need refactoring before feature implementation
-- add or update an ADR if the research evidence model becomes a durable architecture boundary
+- capture the durable research/evidence boundary in ADR 0022
 
 Candidate capabilities to organize:
 
@@ -900,26 +905,68 @@ Candidate capabilities to organize:
 Not in scope:
 
 - implementing the research workspace features
+- broad line-count-driven cleanup without a research-workspace reason
+- schema migrations or behavior changes unless the approved architecture requires a preparatory refactor milestone
 - adding AI-generated briefs before evidence and citation boundaries are clear
 - adding generic portfolio tracking, trading signals, technical charts, or market dashboard features
 
-Architecture decisions to make:
+Accepted architecture decisions:
 
-- Evidence model: extend existing domain tables with a shared read model, add a dedicated evidence table, or build a hybrid projection.
-- Timeline ownership: frontend aggregation, backend read model, or stored projection.
-- Review state: per-company, per-watchlist, per-source-item, per-evidence-item, or layered.
-- Linking model: typed links table, embedded origin references, or hybrid.
-- AI output persistence: notebook-like entries, dedicated brief entities, or generated-on-demand snapshots.
-- Reminder model: derived from claims/events only, explicit reminder entities, or both.
-- Source trust vocabulary: fixed system taxonomy, user-editable labels, or adapter-provided defaults with user override.
+- Refactor timing: M24 refactors everything required for research-workspace readiness, but does not perform unrelated line-count cleanup.
+- Frontend domain ownership: research-workspace aggregation gets a dedicated frontend domain/API/controller boundary.
+- Backend domain ownership: Rust gets a dedicated research/evidence command and domain boundary while canonical domain storage remains owned by existing modules.
+- DTO ownership: research-workspace API types move into focused modules instead of expanding `src/api/types.ts`.
+- Evidence model: hybrid model with canonical domain tables as source of truth, typed evidence read models and links for cross-domain behavior, and stored projections deferred until needed.
+- Timeline ownership: backend read models own timeline aggregation first; stored projections remain a later implementation detail behind the same boundary.
+- Review state: layered model using company/watchlist checkpoints, existing item-level state, and future evidence-level state only where needed.
+- Linking model: typed evidence links alongside existing origin references.
+- AI output persistence: AI research briefs are dedicated entities with provenance and citations, not ordinary notebook entries.
+- Reminder model: decide during M24 whether first implementation needs explicit reminder entities or can derive reminders from claims/events until pressure appears.
+- Source trust vocabulary: start with fixed app-owned taxonomy suitable for normal UI; user-editable labels can be added later if there is product pressure.
 
 Exit criteria:
 
-- recommended architecture is recorded with options and tradeoffs
-- user explicitly approves the architecture decisions before implementation milestones are created
+- modularization readiness findings are recorded with required/refactor-later/no-action recommendations
+- required research-workspace readiness refactors are completed before feature implementation starts
+- recommended architecture is recorded with options, tradeoffs, and accepted decisions
+- user explicitly approves any remaining architecture decisions before implementation milestones are created
 - roadmap and Kanban contain the resulting implementation sequence
 - docs/contracts/data model/UI architecture are updated enough that future agents can implement without rediscovering the model
 - ADR checkpoint is complete
+
+## Future: Research Workspace Implementation Sequence
+
+M24 creates the research/evidence boundary but does not add visible research-workspace features. The recommended follow-up sequence is:
+
+1. Company evidence timeline and review checkpoints.
+   - First visible research slice.
+   - Shows a company-scoped evidence timeline using the backend research read model.
+   - Adds review actions based on company review checkpoints and changed-since-review state.
+   - Keeps source items, notes, claims, events, transcripts, and AI analysis in their owning domains.
+
+2. Watchlist review mode.
+   - Builds on the same evidence read model for all companies in a watchlist.
+   - Guides review company-by-company using unread items, upcoming events, open claims, and changed-since-review state.
+   - Uses watchlist review checkpoints without adding alert placeholders.
+
+3. Research questions and evidence-linking workflow.
+   - Adds user-visible research questions or threads per company.
+   - Uses typed evidence links for question-to-evidence, claim-to-evidence, event-to-claim, and related-item relationships.
+   - Keeps existing notebook origins as provenance rather than replacing them.
+
+4. AI research briefs.
+   - Adds source-grounded company/watchlist briefs after evidence collection and citation mapping are stable.
+   - Persists briefs as dedicated entities with citations, provider/model/prompt provenance, and regeneration semantics.
+   - Allows explicit note creation from selected brief excerpts later, but does not store briefs as ordinary notes.
+
+5. Event-aware reminders and personal research digest.
+   - Adds reminders once claim/event/question pressure is visible in the workflow.
+   - Adds daily or weekly digest generation after company and watchlist review semantics are proven.
+   - Reuses the research evidence boundary and AI brief collector/renderer surfaces.
+
+6. Stored timeline/evidence projections only if needed.
+   - If live read-model aggregation becomes too slow or review semantics require snapshots, add stored projections behind the existing research API.
+   - Projection rows must be rebuildable or have explicit import/export and backup policy.
 
 ## Future: Release Packaging And Distribution Hardening
 

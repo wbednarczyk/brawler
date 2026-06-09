@@ -370,6 +370,29 @@ Global search should eventually cover:
 
 V1 keeps search scoped to the workspace that owns the result list. Inbox owns feed-item search inside its filter toolbar, Companies owns company-list search, and Notebooks owns note filtering. The top toolbar must not show a search box until a true cross-workspace result model exists.
 
+## Future Research Workspace
+
+Purpose: provide source-grounded company and watchlist review surfaces once the research/evidence boundary exists.
+
+Candidate regions:
+
+- company or watchlist selector
+- evidence timeline
+- changed-since-review summary
+- open claims and research questions
+- upcoming events and reminder pressure
+- AI research brief panel with citations
+- related evidence links
+
+Rules:
+
+- Do not add visible Research Workspace placeholders before the feature is implemented.
+- Future research views consume backend-owned evidence and timeline read models.
+- Research views should not independently call Inbox, Notebooks, Events, Transcripts, Sources, and AI APIs to assemble timelines.
+- Review actions update research-owned review checkpoints.
+- Evidence-link interactions use typed research links while preserving existing notebook origin links.
+- AI brief UI must show citations and provenance enough for source-grounded review, without presenting buy/sell/hold recommendations.
+
 ## Responsive Behavior
 
 The primary target is desktop. The first implementation should still avoid layouts that break at narrow widths:

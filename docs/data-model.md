@@ -336,6 +336,79 @@ Rules:
 - AI output must not contain buy/sell/hold recommendations.
 - Source references are required.
 
+### Research Evidence Boundary
+
+Supports future company timelines, watchlist review, changed-since-review views, evidence links, research questions, reminders, AI briefs, and digests.
+
+M24 uses a hybrid model governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md):
+
+- existing domain tables remain canonical
+- research evidence and timeline views are read models assembled from canonical domains first
+- durable cross-domain state gets explicit research-owned tables
+- full stored evidence/timeline projections are deferred until performance or review semantics require them
+
+Likely durable tables:
+
+- `research_review_checkpoints`
+- `evidence_links`
+- future `ai_research_briefs`
+- future `ai_research_brief_citations`
+- future `research_questions`
+- future `research_reminders`
+
+Recommended `research_review_checkpoints` fields:
+
+- `id`
+- `scope_type`
+- `scope_id`
+- `reviewed_at`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Initial `scope_type` values are `company` and `watchlist`.
+- `scope_id` references the owning company or watchlist ID according to `scope_type`.
+- Review checkpoints support "last reviewed" and "changed since review" read models.
+- Feed read/unread and saved state remain in the feed domain.
+- Future evidence-level review state should be added only when a concrete workflow needs it.
+
+Recommended `evidence_links` fields:
+
+- `id`
+- `from_type`
+- `from_id`
+- `to_type`
+- `to_id`
+- `relation_type`
+- `created_at`
+
+Rules:
+
+- Evidence links relate existing domain entities without moving their canonical data.
+- Existing notebook origin rows remain provenance records and are not replaced by `evidence_links`.
+- Evidence links may connect source items, notebook entries, claims, events, transcript segments, AI analysis results, future research questions, future reminders, future briefs, and future digests.
+- Initial relation types include `originates_from`, `cites`, `supports`, `contradicts`, `updates`, `follows_up`, `answers`, and `related`.
+- Link validation should reject unknown entity types and dangling references when practical.
+
+Future AI research brief tables should preserve:
+
+- provider ID
+- model
+- prompt version
+- evidence collector version
+- generated timestamp
+- rendered content
+- citation links back to evidence items
+- status/error state if generation is asynchronous
+
+Rules:
+
+- AI research briefs are not notebook entries.
+- A later workflow may let the user create a notebook entry from a brief or selected excerpt.
+- Generated briefs must cite source evidence and keep buy/sell/hold recommendation guardrails.
+- Import/export, backup, retention, and migrations must treat research-owned durable state explicitly.
+
 ### Jobs
 
 Supports Sources screen, background ingestion, manual refresh, and transcript processing status.

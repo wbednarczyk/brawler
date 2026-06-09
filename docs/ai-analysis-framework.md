@@ -27,6 +27,7 @@ The app should analyze local source material as decision support only. Analysis 
 - No hosted services, telemetry, remote logs, or cloud queues.
 - No attachment ingestion or transcript-segment analysis in the first M13 slice.
 - No post-generation recommendation-language validator in M13.
+- No research brief generation in M13. Future research briefs are governed by the research/evidence boundary and are not stored as ordinary notebook entries.
 
 ## Rust Ownership
 
@@ -80,6 +81,21 @@ The implementation should not copy another product's visual design directly. The
 6. Storage persists job status and, on success, result fields plus source references.
 7. UI polls or refreshes through typed commands and renders queued/running/succeeded/failed states.
 8. User can retry a failed analysis job from visible UI.
+
+## Future Research Brief Boundary
+
+Future company/watchlist research briefs should reuse the provider-neutral AI posture without turning feed-item analysis into a catch-all module.
+
+Expected ownership:
+
+- evidence collection belongs to the research/evidence domain
+- prompt/context building belongs to a research brief builder
+- provider execution uses the provider/job boundary
+- citation mapping links generated claims back to research evidence
+- rendering converts the stored brief into UI-facing read models
+- persistence stores brief provenance, rendered content, citations, provider ID, model, prompt version, and generation timestamps
+
+Research briefs are dedicated entities. They may be converted into notebook entries through an explicit user action later, but they are not notebook entries by default.
 
 ## Initial Commands
 

@@ -1068,6 +1068,115 @@ Rules:
 - `set_gemini_transcription_api_key(apiKey)` stores or replaces only the Gemini YouTube transcription API key.
 - `clear_gemini_transcription_api_key()` removes only the OS-keychain Gemini YouTube transcription API key and must not mutate `.env` or process environment values.
 
+## Research Evidence Boundary
+
+The research workspace uses a dedicated research/evidence boundary governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md). It is a cross-domain read-model boundary, not a replacement for existing domain contracts.
+
+Initial research evidence item shape:
+
+```json
+{
+  "id": "evidence_feed_01",
+  "evidenceType": "feed_item",
+  "sourceDomain": "feed",
+  "sourceId": "feed_01",
+  "companyId": "company_gpw_cdr",
+  "occurredAt": "2026-05-28T12:04:52Z",
+  "title": "Current report title",
+  "summary": "Short source or AI-supported summary",
+  "sourceUrl": "https://www.gpw.pl/komunikaty",
+  "attribution": "GPW",
+  "trustCategory": "official_report",
+  "reviewState": {
+    "changedSinceCompanyReview": true,
+    "changedSinceWatchlistReview": true
+  }
+}
+```
+
+Initial evidence types:
+
+- `feed_item`
+- `notebook_entry`
+- `claim`
+- `transcript_segment`
+- `company_event`
+- `ai_analysis`
+- future `research_question`
+- future `reminder`
+- future `ai_brief`
+- future `digest`
+
+Initial trust categories:
+
+- `official_report`
+- `company_publication`
+- `public_media`
+- `market_calendar`
+- `transcript`
+- `user_note`
+- `ai_generated`
+- `unknown`
+
+Rules:
+
+- Existing domain tables remain the source of truth.
+- The research boundary returns read models assembled from existing domains first.
+- React consumes research read models for timelines and review workflows instead of assembling them from many unrelated APIs.
+- Stored timeline/evidence projections are deferred until performance or review semantics require them.
+- Review checkpoints are durable research-owned state.
+- Evidence links are durable research-owned relationships between existing domain entities.
+- Existing notebook origins remain provenance records and are not replaced by evidence links.
+- Normal UI labels must use product language for trust categories. Developer-only surfaces may show implementation identifiers.
+
+Initial evidence link shape:
+
+```json
+{
+  "id": "evidence_link_01",
+  "fromType": "notebook_entry",
+  "fromId": "note_01",
+  "toType": "feed_item",
+  "toId": "feed_01",
+  "relationType": "cites",
+  "createdAt": "2026-05-28T13:20:00Z"
+}
+```
+
+Initial relation types:
+
+- `originates_from`
+- `cites`
+- `supports`
+- `contradicts`
+- `updates`
+- `follows_up`
+- `answers`
+- `related`
+
+Initial review checkpoint shape:
+
+```json
+{
+  "id": "review_company_gpw_cdr",
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr",
+  "reviewedAt": "2026-06-08T10:00:00Z"
+}
+```
+
+Initial research command candidates:
+
+- `list_research_evidence(input)`
+- `list_company_timeline(companyId)`
+- `list_watchlist_timeline(watchlistId)`
+- `mark_research_scope_reviewed(input)`
+- `list_research_review_state(input)`
+- `create_evidence_link(input)`
+- `delete_evidence_link(id)`
+
+These command names may be refined during implementation, but the ownership boundary should remain stable.
+
 ## UI-Facing Command Boundaries
 
 Initial Tauri command groups:
@@ -1086,6 +1195,13 @@ Initial Tauri command groups:
 - `update_feed_item`
 - `prune_old_feed_items`
 - `delete_unsaved_feed_items`
+- `list_research_evidence`
+- `list_company_timeline`
+- `list_watchlist_timeline`
+- `mark_research_scope_reviewed`
+- `list_research_review_state`
+- `create_evidence_link`
+- `delete_evidence_link`
 - `start_ai_analysis`
 - `list_ai_analysis`
 - `retry_ai_analysis`
@@ -1161,6 +1277,7 @@ Rules:
 - Notebook entries import for existing or included companies. Duplicate notebook entry IDs are skipped with preview warnings.
 - Notebook origins preserve source URL and label metadata even when referenced feed/transcript records are not part of M20 export.
 - Provider secrets, API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are excluded.
+- M24 research-owned durable state, such as review checkpoints and evidence links, is not part of the M20 import/export file until a visible research workflow creates that state for normal users. The first research-workspace feature that makes those records user-owned must add an explicit import/export section or record a deliberate exclusion.
 
 Initial `refresh_gpw_company_registry` behavior:
 

@@ -4,26 +4,77 @@ Active work only. Completed-card history lives in [Kanban Archive](kanban-archiv
 
 ## Backlog
 
-### M24: Research workspace architecture
+### M25: Company evidence timeline and review checkpoints
 
-Intent: plan the future research-workspace feature family before implementation so company timelines, review mode, claim tracking, research questions, AI briefs, digests, source trust signals, reminders, and evidence links share one coherent model.
+Intent: implement the first visible research-workspace slice using the M24 research/evidence boundary.
 
 Acceptance criteria:
 
-- Candidate capabilities are grouped into cohesive implementation milestones instead of ten isolated screens.
-- A shared research evidence model is designed for feed items, reports, media items, notes, claims, transcripts, events, questions, reminders, AI briefs, and digests.
-- Timeline/read-model ownership is decided so UI screens can aggregate evidence without coupling directly to unrelated storage tables.
-- Review workflow semantics are defined, including "last reviewed", "changed since review", company review, and watchlist review.
-- Evidence-linking semantics are defined for source-to-note, source-to-claim, event-to-claim, question-to-evidence, AI-brief citations, and digest citations.
-- AI brief generation boundaries are planned as pluggable evidence collector, prompt/builder, provider, renderer, and storage surfaces.
-- Source quality/trust signal vocabulary is defined without exposing implementation language in normal UI.
-- Storage, import/export, backup, retention, and migration impacts are assessed.
-- Architectural decisions are captured in an ADR if the model becomes a durable product boundary.
-- Resulting implementation milestones are added to roadmap/kanban only after the architecture is clear.
+- A company-scoped evidence timeline combines feed items, notes, claims, events, transcripts, and AI analysis through backend research read models.
+- Company review checkpoints drive "changed since review" state.
+- Existing source items, notes, claims, events, transcripts, and AI analysis remain canonical in their owning domains.
+- No stored timeline projection is added unless performance evidence requires it.
 
-Docs/contracts touched: product spec, roadmap, contracts, data model, UI information architecture, modularization design, AI analysis framework, possibly ADR.
+Docs/contracts touched: product spec, UI information architecture, contracts, data model.
 
-Test expectations: no feature implementation in this milestone; future tests should cover evidence aggregation, review-state updates, linking integrity, AI citation grounding, and UI workflow regressions.
+Test expectations: research read-model tests, company timeline UI workflow tests, and browser layout smoke update if a new screen/panel is added.
+
+### M26: Watchlist review mode
+
+Intent: guide review across all companies in a watchlist using the same evidence/read-model boundary.
+
+Acceptance criteria:
+
+- Watchlist review mode uses watchlist-scoped evidence and review checkpoints.
+- Review flow groups or sequences companies without hiding unread items, upcoming events, open claims, or changed-since-review evidence.
+- The workflow does not add alert placeholders.
+
+Docs/contracts touched: product spec, UI information architecture, contracts.
+
+Test expectations: watchlist review-state tests and UI workflow tests.
+
+### M27: Research questions and evidence links
+
+Intent: add user-visible research questions/threads and typed evidence-link workflows.
+
+Acceptance criteria:
+
+- Research questions can be linked to source items, notes, claims, events, transcripts, and AI outputs.
+- Typed evidence links support question-to-evidence, claim-to-evidence, event-to-claim, and related-item workflows.
+- Existing notebook origins remain provenance records and are not replaced.
+
+Docs/contracts touched: product spec, contracts, data model, UI flows.
+
+Test expectations: storage link validation tests, question workflow tests, and import/export policy tests if questions become exportable user data.
+
+### M28: AI research briefs
+
+Intent: generate source-grounded company/watchlist research briefs after evidence collection and citation mapping are stable.
+
+Acceptance criteria:
+
+- Brief generation uses collector, prompt/context builder, provider job, citation mapper, renderer, and persistence boundaries.
+- Briefs persist as dedicated entities with provider/model/prompt provenance and citations.
+- Briefs do not produce buy/sell/hold recommendations.
+- Creating a notebook note from a brief remains an explicit user action.
+
+Docs/contracts touched: AI analysis framework, product spec, contracts, data model.
+
+Test expectations: collector tests, provider-job tests with mocked provider, citation-grounding tests, and UI workflow tests.
+
+### M29: Event-aware reminders and research digest
+
+Intent: add reminders and digest generation once company/watchlist review semantics are proven.
+
+Acceptance criteria:
+
+- Reminders reuse claims, events, questions, and evidence links instead of creating a separate disconnected task system.
+- Personal digest generation uses the research evidence boundary and cites source evidence.
+- Stored projections are added only if live read-model aggregation proves too slow or semantically insufficient.
+
+Docs/contracts touched: product spec, contracts, data model, AI analysis framework.
+
+Test expectations: reminder storage/read-model tests, digest citation tests, and import/export policy tests.
 
 ### Design feed retention policy
 

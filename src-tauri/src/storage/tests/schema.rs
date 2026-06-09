@@ -10,7 +10,7 @@ fn creates_clean_database_with_initial_schema() {
         })
         .expect("schema_migrations should exist");
 
-    assert_eq!(migration_count, 29);
+    assert_eq!(migration_count, 30);
 
     let company_table_exists: bool = connection
         .query_row(
@@ -53,6 +53,32 @@ fn creates_clean_database_with_initial_schema() {
         .expect("license metadata table lookup should work");
 
     assert!(license_metadata_table_exists);
+
+    let research_review_checkpoints_table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(
+                    SELECT 1
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'research_review_checkpoints'
+                )",
+            [],
+            |row| row.get(0),
+        )
+        .expect("research review checkpoint table lookup should work");
+    let evidence_links_table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(
+                    SELECT 1
+                    FROM sqlite_master
+                    WHERE type = 'table' AND name = 'evidence_links'
+                )",
+            [],
+            |row| row.get(0),
+        )
+        .expect("evidence links table lookup should work");
+
+    assert!(research_review_checkpoints_table_exists);
+    assert!(evidence_links_table_exists);
 }
 
 #[test]
@@ -181,7 +207,7 @@ fn reports_database_status() {
     let connection = open_in_memory_database().expect("database should initialize");
     let status = database_status(&connection).expect("status should be available");
 
-    assert_eq!(status.applied_migrations, 29);
+    assert_eq!(status.applied_migrations, 30);
     assert_eq!(status.companies, 0);
     assert_eq!(status.source_adapters, 12);
     assert_eq!(status.settings, 17);

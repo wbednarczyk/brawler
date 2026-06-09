@@ -45,6 +45,7 @@ mod metrics;
 mod migrations;
 mod notebooks;
 mod registry;
+mod research;
 mod settings;
 mod sources;
 mod transcripts;
@@ -299,6 +300,45 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         feed::list_unmatched_source_items(&connection, adapter_id)
+    }
+
+    pub fn list_research_evidence(
+        &self,
+        input: ResearchEvidenceInput,
+    ) -> StorageResult<Vec<ResearchEvidenceItem>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::list_research_evidence(&connection, input)
+    }
+
+    pub fn mark_research_scope_reviewed(
+        &self,
+        input: ResearchReviewCheckpointInput,
+    ) -> StorageResult<ResearchReviewCheckpoint> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::mark_research_scope_reviewed(&connection, input)
+    }
+
+    pub fn list_research_review_state(
+        &self,
+        input: ResearchReviewCheckpointInput,
+    ) -> StorageResult<Option<ResearchReviewCheckpoint>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::list_research_review_state(&connection, input)
+    }
+
+    pub fn create_evidence_link(&self, input: NewEvidenceLink) -> StorageResult<EvidenceLink> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::create_evidence_link(&connection, input)
+    }
+
+    pub fn delete_evidence_link(&self, id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::delete_evidence_link(&connection, id)
     }
 
     pub fn ingest_gpw_report_listings(

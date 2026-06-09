@@ -72,6 +72,13 @@ pub fn run() {
             commands::feed::update_feed_item_state,
             commands::feed::prune_old_feed_items,
             commands::feed::delete_unsaved_feed_items,
+            commands::research::list_research_evidence,
+            commands::research::list_company_timeline,
+            commands::research::list_watchlist_timeline,
+            commands::research::mark_research_scope_reviewed,
+            commands::research::list_research_review_state,
+            commands::research::create_evidence_link,
+            commands::research::delete_evidence_link,
             commands::ai_analysis::start_ai_analysis,
             commands::ai_analysis::list_ai_analysis,
             commands::ai_analysis::retry_ai_analysis,
@@ -139,7 +146,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.23.0");
+        assert_eq!(response.version, "0.24.0");
     }
 
     #[test]
