@@ -343,7 +343,7 @@ Sections:
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
 - Import and Export: export/import research data, export/import safe preferences, preview import changes before applying them
-- License: local author/friend-test license status, safe metadata, replace, and clear controls
+- License: optional local entitlement status, safe metadata, replace, and clear controls
 - Privacy: local data location, provider data disclosure
 - About: app name, app version, license status
 

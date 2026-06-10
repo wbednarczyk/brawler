@@ -32,13 +32,11 @@ make package-windows-smoke-run
 - Start the same executable again from the same folder.
 - Confirm the data is still present.
 
-## License Gate
+## Entitlement Settings
 
-- Start with no accepted license on a fresh machine or fresh user profile.
-- Confirm normal navigation is gated.
-- Enter a valid author license and confirm the app unlocks.
-- Clear or replace the license through Settings when testing alternate states.
-- Enter a valid friend-test license and confirm the app unlocks.
+- Start with no accepted entitlement on a fresh machine or fresh user profile.
+- Confirm normal navigation remains available.
+- Clear or replace entitlement data through Settings when testing alternate states.
 - Try an obviously invalid token and confirm the error is clear and recoverable.
 
 ## Primary Workflow

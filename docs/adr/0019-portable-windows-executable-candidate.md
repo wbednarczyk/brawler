@@ -29,6 +29,6 @@ The portable app should keep its data with the executable so the candidate behav
 
 - The first personal-use candidate stays simple to build, copy, and test.
 - The artifact is not a polished public release. It may trigger Windows trust warnings until code signing is added later.
-- The executable may not run on Windows machines missing a suitable WebView2 runtime. If that becomes a real friend-test blocker, a later release-packaging milestone should choose between fixed WebView2 bundling and installer packaging.
+- The executable may not run on Windows machines missing a suitable WebView2 runtime. If that becomes a real external-testing blocker, a later release-packaging milestone should choose between fixed WebView2 bundling and installer packaging.
 - Keeping portable data next to the executable makes backup and movement more understandable for the candidate, but the folder must remain writable.
 - Future installer packaging must explicitly choose whether to use OS app-data or portable data mode; the code now has a boundary for that choice.

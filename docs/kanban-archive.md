@@ -211,11 +211,11 @@ Validation:
 - Frontend typecheck/test/build passed.
 - Rust fmt, clippy, and tests passed.
 
-### M17: Implement v1 friend-test license gate
+### M17: Implement local entitlement gate
 
 Delivered:
 
-- Added ADR 0017 for the local author/friend-test license gate.
+- Added ADR 0017 for the local entitlement gate.
 - Added extensible license parsing, verification, entitlement policy, OS keychain storage, redacted metadata, typed commands, UI gate/settings flows, owner tooling, and license operations docs.
 - Bumped app version to `0.17.0`.
 

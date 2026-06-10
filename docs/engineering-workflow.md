@@ -432,7 +432,7 @@ Minimum gate for packaging:
 - Rust command boundary works
 - local database opens
 - primary screen renders
-- packaged friend-test builds enforce the local license gate before normal navigation
+- packaged builds keep normal open-core navigation available and preserve optional entitlement workflows
 
 ## GitHub Actions Design
 

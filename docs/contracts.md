@@ -896,9 +896,9 @@ Rules:
 - Diagnostics may expose a full in-app log viewer, copy-redacted-log action, log status, and open-logs-folder action only while Developer mode is active.
 - React may call typed commands for log status, redacted log reads, and opening the app-owned logs directory. It must not receive arbitrary filesystem browsing capability.
 
-## Licensing
+## Entitlements
 
-M17 exposed a local signed entitlement gate for author and friend-test builds. Public-opening work keeps the entitlement module but makes the open desktop core usable without a license token. The module does not add hosted activation, billing, telemetry, or cloud accounts.
+Brawler keeps a local entitlement module for optional or future gated capabilities. Public-opening work makes the open desktop core usable without a license token. The module does not add hosted activation, billing, telemetry, or cloud accounts.
 
 License status read model:
 
@@ -908,15 +908,15 @@ License status read model:
   "canUseApp": true,
   "reason": null,
   "license": {
-    "licenseId": "lic_author_001",
-    "holder": "Project Author",
-    "channel": "author",
-    "edition": "author",
-    "features": ["*"],
+    "licenseId": "lic_example_001",
+    "holder": "Example User",
+    "channel": "example",
+    "edition": "example",
+    "features": ["example_feature"],
     "issuedAt": "2026-06-01T00:00:00Z",
     "expiresAt": "2099-01-01T00:00:00Z",
     "appVersionRange": "*",
-    "keyId": "owner_author_2026_06"
+    "keyId": "example_key"
   },
   "checkedAt": "2026-06-04T10:00:00Z"
 }
@@ -942,10 +942,9 @@ Rules:
 
 - Normal app navigation requires `canUseApp = true`; public-opening policy sets `canUseApp = true` for missing, invalid, expired, wrong-version, unsupported-version, and storage-error entitlement states so the open core remains usable.
 - Missing, malformed, tampered, expired, unsupported-version, unsupported-channel, and storage-error states must remain recoverable through Settings.
-- Supported M17 channels are `author` and `friend_test`; unsupported channels are invalid for this build.
-- Author tokens require `edition: "author"`, `features: ["*"]`, and the author signing key id.
-- Friend-test tokens require `channel: "friend_test"` and the friend-test signing key id.
-- M17 author and friend-test tokens are not app-version bounded; `appVersionRange` remains compatibility metadata and is `*` for generated M17 tokens.
+- Supported channels are build-policy specific; unsupported channels are invalid for that build.
+- Public-opening entitlement tokens are optional for normal open-core use.
+- `appVersionRange` remains compatibility metadata and may be `*` for channels that are not app-version bounded.
 - Future entitlement channels may opt into app-version limits through the existing `appVersionRange` policy path.
 - `submit_license_key` validates the token offline before saving it. Invalid replacement attempts must not overwrite an existing valid key.
 - The raw license token is treated as a bearer secret and stored through the OS keychain.

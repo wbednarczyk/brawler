@@ -23,6 +23,11 @@ Brawler is local-first:
 
 Radicle is the canonical public forge once the project is published there. GitHub is intended to act as a read-only mirror and backup copy.
 
+Radicle publication is in progress:
+
+- RID: `rad:z3yTYrLFsFx5qcPtV3XiFYFBpQWuh`
+- Planned public seed: `seed.mikolajczyk.org:8776`
+
 Until public Radicle publication is complete, repository location and mirror details may change.
 
 ## Build And Test

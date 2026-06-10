@@ -1,10 +1,11 @@
 # Radicle/Radboard Tracking
 
-Active planning has moved from this file to private Radicle issues rendered by Radboard.
+Active planning has moved from this file to Radicle issues rendered by Radboard.
 
 - Radicle repository: `rad:z3yTYrLFsFx5qcPtV3XiFYFBpQWuh`
-- Visibility: opening posture in progress; Radicle remains canonical
-- Public seeding policy: publish only after explicit owner signoff
+- Visibility: opening posture in progress; Radicle remains canonical after publication
+- Planned public seed: `seed.mikolajczyk.org:8776`
+- Public seeding policy: publish and seed only after explicit owner signoff
 - Radboard milestones: app version labels such as `milestone:v0.25.0`
 - Radboard epics: major capability issues labeled `epic`
 - Radboard tasks: reviewable work-slice issues linked to epics with `parent:<epic-hex7>`

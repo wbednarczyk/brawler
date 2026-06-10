@@ -271,7 +271,7 @@ This is not part of v1 and requires separate design work for:
 - encryption and key management
 - conflict resolution
 - offline-first behavior
-- subscription or monetization implications
+- product, distribution, or support implications
 - mobile UX scope versus desktop parity
 - privacy policy and data deletion guarantees
 

@@ -19,7 +19,7 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 - Prefer lean, behavior-focused tests over broad brittle suites.
 - Keep secrets in the OS keychain and non-secret settings in SQLite.
 - Use SemVer-style `0.x.y` versions from the first scaffold.
-- The local entitlement module supports author/friend-test licenses and future gated entitlements, but normal open-core desktop use does not require a license key.
+- The local entitlement module supports optional and future gated entitlements, but normal open-core desktop use does not require a license key.
 
 ## Milestone 0: Planning Baseline
 
@@ -598,27 +598,27 @@ Non-goals:
 
 ## Milestone 17: V1 Friend-Test License Gate
 
-Goal: add a lightweight local license-key gate before any v1 friend-test artifact is distributed, plus an author-only license path that exercises the same gate. Public-opening work later changed the entitlement policy so normal open-core desktop use no longer requires a license key.
+Goal: add a lightweight local entitlement module. Public-opening work later changed the entitlement policy so normal open-core desktop use no longer requires a license key.
 
 Status: completed in `0.17.0`.
 
 Included:
 
-- ADR for the v1 friend-test licensing posture and threat model
-- offline signed author and friend-test license-key validation
-- separate author and friend-test signing keys with embedded public verification material
+- ADR for the local entitlement posture and threat model
+- offline signed entitlement validation
+- embedded public verification material
 - license entry and status UI in first-run flow or Settings
 - local storage for accepted license state without storing private signing material
 - app access gate when no valid license exists, superseded by the later open-core policy that keeps normal desktop use available without a license key
 - clear expired, invalid, tampered, and unsupported-version states
-- release-owner workflow and local automation for generating author and friend-test keys outside the app repository
+- release-owner workflow and local automation for generating entitlement material outside the app repository
 
 Exit criteria:
 
-- author/friend-test entitlement validation works offline; normal open-core desktop use is no longer blocked by missing license state after public-opening work
+- entitlement validation works offline; normal open-core desktop use is no longer blocked by missing license state after public-opening work
 - license verification works offline and does not require cloud accounts, telemetry, hosted activation, or billing infrastructure
 - the app embeds only public verification material; private signing material remains outside the repo and build outputs
-- tests cover valid author, valid all-version friend-test, missing, expired, tampered, unsupported-channel, and unsupported-version licenses
+- tests cover valid, missing, expired, tampered, unsupported-channel, and unsupported-version entitlement states
 - logs, settings export, and diagnostics do not leak license private signing material or full license secrets
 - user-facing copy makes license status understandable without implying investment advice, account sync, or cloud activation
 
@@ -754,7 +754,7 @@ Exit criteria:
 - the candidate artifact includes the runtime pieces needed by a normal Windows 10/11 machine, or documents any unavoidable prerequisite explicitly
 - portable app data is stored in the same folder tree as the executable
 - portable app data survives restart and moving the portable app folder when OS-keychain secrets are re-entered as needed
-- packaged app keeps normal open-core use available without a license key and still validates author/friend-test entitlement tokens offline
+- packaged app keeps normal open-core use available without a license key and still validates optional entitlement tokens offline
 - primary workflows pass smoke testing
 - portable package creation can be run from the documented local command path
 - known limitations are documented
