@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.5 - 2026-06-10
+
+
+
+### Bug Fixes
+
+- publish changelog entries as GitHub release notes
+
+
 ## v0.28.4 - 2026-06-10
 
 
