@@ -330,6 +330,7 @@ Implementation direction:
 - Build AppImage through the host Ubuntu toolchain. The AppImage bundler uses `linuxdeploy` runtime dependency discovery, which is fragile against Nix-store WebKitGTK paths.
 - Set `APPIMAGE_EXTRACT_AND_RUN=1` for AppImage packaging, including GitHub Actions, so downloaded linuxdeploy AppImages self-extract instead of relying on FUSE availability on the runner.
 - Collect release artifacts under `release-artifacts` with names such as `brawler-0.28.0-linux-amd64.deb`, `brawler-0.28.0-linux-amd64.rpm`, and `brawler-0.28.0-linux-amd64.AppImage`.
+- GitHub release packaging caches npm package data, Cargo registry/git data, `src-tauri/target`, and `.xwin-cache`. Cache keys must stay lockfile-driven to avoid stale dependency reuse.
 - Treat AppImage as the Arch-friendly artifact until native Pacman packaging is explicitly designed.
 - Linux release builds store runtime data under `~/.brawler`.
 - Installed Linux packages must not write runtime data beside package-managed executable paths.

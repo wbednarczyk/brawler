@@ -48,9 +48,30 @@ jobs:
         with:
           node-version: "22"
           cache: "npm"
+          cache-dependency-path: package-lock.json
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry and build outputs
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
+      - name: Cache cargo-xwin SDK data
+        uses: actions/cache@v4
+        with:
+          path: .xwin-cache
+          key: ${{ runner.os }}-xwin-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-xwin-
 
       - name: Install host packaging prerequisites
         run: |
