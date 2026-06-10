@@ -12,7 +12,7 @@ WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -26,6 +26,8 @@ help:
 	@printf "  make release-check       Validate release workflow guardrails\n"
 	@printf "  make changelog           Generate future changelog entries with git-cliff\n"
 	@printf "  make changelog-check     Validate git-cliff changelog generation\n"
+	@printf "  make release-notes TAG=vX.Y.Z\n"
+	@printf "                            Print the changelog entry used for GitHub Release notes\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
 	@printf "  make license-keygen-author\n"
@@ -100,6 +102,10 @@ changelog:
 
 changelog-check:
 	$(NIX) npm run release:changelog-check
+
+release-notes:
+	@test -n "$(TAG)" || { printf "Usage: make release-notes TAG=vX.Y.Z\n" >&2; exit 64; }
+	@scripts/release/extract-changelog-entry.sh "$(TAG)" CHANGELOG.md
 
 release-check:
 	$(NIX) npm run release:check

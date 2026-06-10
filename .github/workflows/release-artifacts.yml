@@ -116,15 +116,21 @@ jobs:
       - name: List release artifacts
         run: find release-artifacts -maxdepth 1 -type f -print -exec file {} \;
 
+      - name: Prepare GitHub Release notes
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: scripts/release/extract-changelog-entry.sh "$TAG" CHANGELOG.md > release-notes.md
+
       - name: Create or update GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$TAG" --notes-file release-notes.md
             gh release upload "$TAG" release-artifacts/* --clobber
           else
             gh release create "$TAG" release-artifacts/* \
               --title "$TAG" \
-              --notes "Brawler release artifacts for $TAG. See CHANGELOG.md in this tag for release notes."
+              --notes-file release-notes.md
           fi

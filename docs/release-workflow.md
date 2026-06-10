@@ -129,7 +129,11 @@ git push rad vX.Y.Z
 
 `origin` is the GitHub source mirror/backup and public binary mirror. `rad` is the Radicle forge remote. Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
 
+The project owner grants standing permission for agents to run release-scoped `gh release ...` commands and release-scoped `git add`, `git commit`, `git tag`, and `git push` commands without asking for a separate approval prompt every time. This standing permission applies only inside the documented Brawler release workflow after the owner has asked to close, wrap up, or release a milestone, epic, or patch. It does not apply to normal feature work, unrelated commits, branch operations, merges, rebases, history rewrites, repository settings, Radicle publication/seeding policy, or new remotes.
+
 Pushing a `v*` tag to `origin` triggers the GitHub Release artifact workflow. The workflow runs on standard `ubuntu-latest`, builds Linux `amd64` `.deb`, `.rpm`, and `.AppImage` artifacts, builds the Windows `x64` portable zip through the Linux `cargo-xwin` path, and uploads those files to the matching GitHub Release. GitHub Releases are the durable public binary download surface; Actions artifacts are temporary workflow outputs only.
+
+GitHub Release notes are generated from the matching `CHANGELOG.md` section for the tag being packaged. The workflow fails if the checked-out tag does not contain a changelog entry for that tag, because release assets should not be published with stale or generic notes.
 
 GitHub Release artifacts are binary mirrors. Radicle remains canonical for source, issues, and patches.
 
@@ -138,6 +142,7 @@ Commands:
 ```bash
 make changelog
 make changelog-check
+make release-notes TAG=vX.Y.Z
 make package-release-artifacts
 ```
 

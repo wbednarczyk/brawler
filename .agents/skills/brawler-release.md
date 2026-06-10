@@ -14,6 +14,18 @@ The normal workflow is:
 
 Do not merge, publish, seed publicly, or rewrite history unless the user explicitly asks for that operation.
 
+## Standing Release Permissions
+
+The project owner grants standing permission for agents to run these commands unattended when they are part of this Brawler release workflow:
+
+- any `gh release ...` command
+- `git add` for release wrap-up files
+- `git commit` for the single release commit
+- `git tag` for the matching release tag
+- `git push` for syncing the release commit and tag to the existing `origin` and `rad` remotes
+
+This permission is narrow. It applies only after the user has asked to close, wrap up, or release a milestone/epic/patch and only for release-scoped work. It does not authorize feature commits, unrelated file staging, branch manipulation, merges, rebases, history rewrites, repository setting changes, publication/seeding policy changes, or new remotes.
+
 ## Preconditions
 
 Before making release changes:
