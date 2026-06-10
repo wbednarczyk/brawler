@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.1 - 2026-06-10
+
+
+
+### Bug Fixes
+
+- allow AppImage packaging without FUSE
+
+
 ## v0.28.0 - 2026-06-10
 
 
