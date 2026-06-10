@@ -1,0 +1,109 @@
+@media (max-width: 980px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar,
+  .sidebar-resizer {
+    display: none;
+  }
+
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-pane dl {
+    grid-template-columns: 1fr;
+  }
+
+  .notebook-workspace,
+  .notebooks-screen,
+  .settings-layout,
+  .import-export-grid,
+  .notebook-form-grid,
+  .notebook-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .notebooks-screen,
+  .settings-layout {
+    overflow: auto;
+  }
+
+  .notebooks-company-nav,
+  .notebooks-notes-list,
+  .notebooks-detail-pane,
+  .settings-subnav,
+  .settings-tab-panel {
+    overflow: visible;
+  }
+
+  .notebooks-resizer {
+    display: none;
+  }
+}
+
+@media (max-width: 680px) {
+  .topbar,
+  .panel-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .topbar-actions {
+    justify-content: space-between;
+  }
+
+  .company-form {
+    grid-template-columns: 1fr;
+  }
+
+  .subsection-header,
+  .watchlist-form,
+  .watchlist-detail-header,
+  .watchlist-detail-actions,
+  .watchlist-rename-form,
+  .watchlist-add-panel-header,
+  .company-workspace-header,
+  .company-workspace-header-side,
+  .company-row,
+  .company-row-context,
+  .company-row-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .watchlists-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .watchlist-member-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .watchlist-member-row > span:nth-child(3) {
+    display: none;
+  }
+
+  .company-list-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .company-row {
+    grid-template-columns: 1fr;
+  }
+
+  .company-row-context {
+    justify-self: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .membership-list {
+    justify-content: flex-start;
+  }
+
+  .segmented-control button {
+    min-width: 0;
+    flex: 1;
+  }
+}

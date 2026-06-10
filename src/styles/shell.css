@@ -1,0 +1,316 @@
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width, 190px) 8px minmax(0, 1fr);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 10px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border-right: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 8px;
+}
+
+.brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--primary) 50%, var(--border));
+  border-radius: 8px;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+  font-weight: 800;
+}
+
+.brand-title {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.brand-subtitle {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.nav-list {
+  display: grid;
+  gap: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--muted);
+  background: transparent;
+  text-align: left;
+}
+
+.nav-item span:not(.nav-badge) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nav-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  min-height: 18px;
+  margin-left: auto;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--secondary) 58%, var(--border));
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--secondary) 24%, var(--surface-raised));
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.nav-item-active,
+.nav-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
+}
+
+.sidebar-footer {
+  margin-top: auto;
+}
+
+.sidebar-resizer {
+  align-self: stretch;
+  width: 8px;
+  min-height: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.sidebar-resizer::before {
+  display: block;
+  width: 2px;
+  height: 100%;
+  min-height: 72px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 68%, transparent);
+  content: "";
+}
+
+.sidebar-resizer:hover::before,
+.sidebar-resizer:focus-visible::before {
+  background: color-mix(in srgb, var(--primary) 72%, var(--border));
+}
+
+.sidebar-resizer:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.version-label {
+  display: inline-flex;
+  padding: 0 4px;
+  color: color-mix(in srgb, var(--muted) 86%, transparent);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.status-dot,
+.unread-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.status-ok {
+  background: var(--success);
+}
+
+.status-warn {
+  background: var(--warning);
+}
+
+.status-danger {
+  background: var(--danger);
+}
+
+.workspace {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16px;
+  min-height: 68px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(520px, 100%);
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.search-box input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  outline: none;
+}
+
+.search-box input::placeholder {
+  color: var(--muted);
+}
+
+.search-box .field-clear-button {
+  position: static;
+  flex: 0 0 auto;
+  transform: none;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.icon-button,
+.source-status-pill,
+.theme-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+}
+
+.source-status-pill {
+  gap: 7px;
+  min-width: 126px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.source-status-pill strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.source-status-pill:not(:disabled):hover {
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--border));
+  color: var(--text);
+}
+
+.source-status-pill-ok strong {
+  color: var(--success);
+}
+
+.source-status-pill-warn strong {
+  color: var(--warning);
+}
+
+.source-status-pill-danger strong {
+  color: var(--danger);
+}
+
+.source-refresh-button-danger {
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--border));
+  color: var(--danger);
+}
+
+.topbar-action-success {
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border));
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+}
+
+.icon-button {
+  width: 40px;
+}
+
+.icon-button-spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+.icon-button-success {
+  border-color: color-mix(in srgb, var(--success) 58%, var(--border));
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 10%, var(--surface));
+}
+
+.theme-control {
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.theme-control select {
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  outline: none;
+}
+
+.content-grid {
+  display: grid;
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) 10px var(--detail-pane-width, 360px);
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  padding: 22px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.content-grid-single {
+  grid-template-columns: minmax(0, 1fr);
+}

@@ -1,0 +1,70 @@
+.ticker-label.ticker-label {
+  --ticker-symbol-color: color-mix(in srgb, var(--accent) 64%, var(--highlight));
+
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: baseline;
+  gap: 0;
+  width: auto;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  color: var(--ticker-symbol-color);
+  background: transparent;
+  box-shadow: none;
+  font-size: inherit;
+  font-variant-numeric: tabular-nums;
+  font-weight: 760;
+  line-height: inherit;
+  text-decoration: none;
+  text-overflow: clip;
+  text-transform: none;
+  vertical-align: baseline;
+  white-space: nowrap;
+}
+
+.ticker-label.ticker-label .ticker-exchange,
+.ticker-label.ticker-label .ticker-separator,
+.ticker-label.ticker-label .ticker-symbol {
+  display: inline;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-decoration: none;
+  text-overflow: clip;
+  text-transform: none;
+  white-space: inherit;
+}
+
+.ticker-label.ticker-label .ticker-exchange {
+  color: var(--ticker-exchange-color);
+}
+
+.ticker-label.ticker-label .ticker-separator {
+  color: color-mix(in srgb, var(--muted) 78%, var(--ticker-symbol-color));
+}
+
+.ticker-label.ticker-label .ticker-symbol {
+  color: var(--ticker-symbol-color);
+}
+
+.ticker-label.ticker-label .ticker-exchange::before,
+.ticker-label.ticker-label .ticker-symbol::before {
+  content: attr(data-label);
+}
+
+.ticker-label.ticker-label .ticker-separator::before {
+  content: ":";
+}

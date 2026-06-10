@@ -1,0 +1,74 @@
+.company-row p,
+.company-row span,
+.empty-state {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.company-feed-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px dashed color-mix(in srgb, var(--primary) 32%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
+}
+
+.company-feed-empty strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.company-feed-empty p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.membership-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.membership-chip,
+.membership-empty {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.membership-chip {
+  border: 1px solid color-mix(in srgb, var(--primary) 58%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface-raised));
+  font-weight: 700;
+}
+
+.membership-link {
+  cursor: pointer;
+}
+
+.membership-link:hover,
+.membership-link:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 82%, var(--border));
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 24%, var(--surface-raised));
+}
+
+.membership-link:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.membership-empty {
+  border: 1px solid var(--border);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}

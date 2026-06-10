@@ -1,0 +1,49 @@
+{
+  "name": "brawler",
+  "private": true,
+  "version": "0.27.0",
+  "license": "MPL-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "dev:vite": "vite --host 0.0.0.0",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src",
+    "test:browser:install": "playwright install chromium",
+    "test:browser": "playwright test",
+    "test:watch": "vitest",
+    "release:commit-msg-check": "scripts/release/check-commit-message-validator.sh",
+    "release:version-check": "scripts/release/check-version-sync.sh",
+    "release:changelog-check": "git-cliff --config cliff.toml --strip header HEAD..HEAD",
+    "release:check": "npm run release:commit-msg-check && npm run release:version-check && npm run release:changelog-check",
+    "check:frontend": "npm run typecheck && npm run test && npm run build",
+    "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
+    "check": "npm run check:frontend && npm run check:rust"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "@tauri-apps/plugin-fs": "^2.5.1",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tauri-apps/cli": "^2.0.0",
+    "@testing-library/jest-dom": "^6.4.8",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/user-event": "^14.5.2",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "jsdom": "^24.1.1",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,236 @@
+SHELL := /usr/bin/env bash
+.DEFAULT_GOAL := help
+
+NIX := nix develop -c
+NIX_WINDOWS := nix develop .\#windows-cross -c
+WINDOWS_TARGET := x86_64-pc-windows-msvc
+WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
+WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
+APP_VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null)
+WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
+WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
+
+.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+
+help:
+	@printf "Brawler developer commands\n\n"
+	@printf "  make install             Install npm dependencies inside nix develop\n"
+	@printf "  make check               Run the full local automated check suite inside nix develop\n"
+	@printf "  make test                Run frontend tests inside nix develop\n"
+	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
+	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
+	@printf "  make build               Build the frontend inside nix develop\n"
+	@printf "  make install-git-hooks   Install repo-local commit message hooks\n"
+	@printf "  make release-check       Validate release workflow guardrails\n"
+	@printf "  make changelog           Generate future changelog entries with git-cliff\n"
+	@printf "  make changelog-check     Validate git-cliff changelog generation\n"
+	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
+	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
+	@printf "  make license-keygen-author\n"
+	@printf "                            Generate the external author Ed25519 key if missing\n"
+	@printf "  make license-author      Generate an author license token under private/licenses\n"
+	@printf "  make license-friend HOLDER=\"Friend Name\"\n"
+	@printf "                            Generate a friend-test license token under private/licenses\n"
+	@printf "  make smoke-gemini-transcript\n"
+	@printf "                            Opt-in live Gemini YouTube transcript smoke test\n"
+	@printf "  make smoke-gemini-analysis\n"
+	@printf "                            Opt-in live Gemini feed-item analysis smoke test\n"
+	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
+	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
+	@printf "  make package-windows-from-linux\n"
+	@printf "                            Build versioned portable Windows executable from Linux/WSL\n"
+	@printf "  make package-windows-smoke-run\n"
+	@printf "                            Launch the latest portable Windows executable copied by packaging\n"
+	@printf "  make windows-package     Build and copy the packaged Windows app via PowerShell\n"
+	@printf "  make windows-test-help   Explain the recommended native Windows sanity-check path\n"
+
+install:
+	$(NIX) npm ci
+
+dev:
+	$(NIX) npm run dev
+
+frontend-preview:
+	$(NIX) npm run preview -- --host 0.0.0.0
+
+build:
+	$(NIX) npm run build
+
+check:
+	$(NIX) npm run check
+
+test:
+	$(NIX) npm run test
+
+ui-smoke-install:
+	$(NIX) npm run test:browser:install
+
+ui-smoke:
+	$(NIX) npm run test:browser
+
+typecheck:
+	$(NIX) npm run typecheck
+
+frontend-check:
+	$(NIX) npm run check:frontend
+
+rust-check:
+	$(NIX) npm run check:rust
+
+install-git-hooks:
+	git config core.hooksPath .githooks
+	@printf "Installed repo-local git hooks from .githooks\n"
+
+commit-msg-check:
+	$(NIX) npm run release:commit-msg-check
+
+version-check:
+	$(NIX) npm run release:version-check
+
+changelog:
+	$(NIX) git-cliff --config cliff.toml --unreleased --tag "v$(APP_VERSION)" --prepend CHANGELOG.md
+
+changelog-check:
+	$(NIX) npm run release:changelog-check
+
+release-check:
+	$(NIX) npm run release:check
+
+license-keygen-author:
+	$(NIX) node scripts/licensing/generate-ed25519-key.mjs
+
+license-author:
+	@OUT_PATH="$${OUT:-private/licenses/author.txt}"; \
+	$(NIX) node scripts/licensing/generate-license.mjs --type author --out "$$OUT_PATH"
+
+license-friend:
+	@if [ -z "$${HOLDER:-}" ]; then \
+		printf "HOLDER is required. Example: make license-friend HOLDER=\"Friend Name\"\n"; \
+		exit 1; \
+	fi
+	@OUT_PATH="$${OUT:-private/licenses/friend-$$(printf "%s" "$$HOLDER" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alnum:]' '-' | sed 's/^-//; s/-$$//').txt}"; \
+	ARGS=(--type friend --holder "$$HOLDER" --out "$$OUT_PATH"); \
+	if [ -n "$${EXPIRES_AT:-}" ]; then ARGS+=(--expires-at "$$EXPIRES_AT"); fi; \
+	if [ -n "$${FEATURES:-}" ]; then ARGS+=(--features "$$FEATURES"); fi; \
+	$(NIX) node scripts/licensing/generate-license.mjs "$${ARGS[@]}"
+
+smoke-gemini-transcript:
+	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \
+		printf "GEMINI_API_KEY is required for the live Gemini smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_SMOKE_YOUTUBE_URL:-}" ]; then \
+		printf "BRAWLER_GEMINI_SMOKE_YOUTUBE_URL is required for the live Gemini smoke test.\n"; \
+		exit 1; \
+	fi
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_transcribes_youtube_url -- --ignored --nocapture
+
+smoke-gemini-analysis:
+	@if [ -z "$${GEMINI_API_KEY:-}" ]; then \
+		printf "GEMINI_API_KEY is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL:-}" ]; then \
+		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_SOURCE_URL is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE:-}" ]; then \
+		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_TITLE is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	@if [ -z "$${BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY:-}" ]; then \
+		printf "BRAWLER_GEMINI_ANALYSIS_SMOKE_BODY is required for the live Gemini analysis smoke test.\n"; \
+		exit 1; \
+	fi
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_gemini_analyzes_feed_item -- --ignored --nocapture
+
+smoke-keyring:
+	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture
+
+flake-check:
+	nix flake check --no-build
+
+tauri-build:
+	$(NIX) npm run tauri -- build
+
+package-windows-from-linux:
+	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	@if [ ! -f "$(WINDOWS_EXE)" ]; then \
+		printf "Expected Windows executable not found: $(WINDOWS_EXE)\n"; \
+		exit 1; \
+	fi
+	@if command -v powershell.exe >/dev/null 2>&1; then \
+		powershell.exe -ExecutionPolicy Bypass -Command '$$ErrorActionPreference = "SilentlyContinue"; Get-Process | Where-Object { $$_.ProcessName -like "brawler*" } | Stop-Process -Force; exit 0'; \
+	fi
+	@mkdir -p "$(WINDOWS_OUT_DIR)"
+	@rm -f "$(WINDOWS_OUT_DIR)/brawler.exe"
+	@cp -f "$(WINDOWS_EXE)" "$(WINDOWS_ARTIFACT)"
+	@printf "Copied portable Windows executable to %s\n" "$(WINDOWS_ARTIFACT)"
+
+package-windows-smoke-run:
+	@if [ ! -f "$(WINDOWS_ARTIFACT)" ]; then \
+		printf "Expected portable Windows executable not found: $(WINDOWS_ARTIFACT)\n"; \
+		printf "Run 'make package-windows-from-linux' first.\n"; \
+		exit 1; \
+	fi
+	@if command -v powershell.exe >/dev/null 2>&1; then \
+		EXE_WIN="$$(wslpath -w "$(WINDOWS_ARTIFACT)")"; \
+		DIR_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)")"; \
+		powershell.exe -ExecutionPolicy Bypass -Command "Start-Process -FilePath '$$EXE_WIN' -WorkingDirectory '$$DIR_WIN'" ; \
+	else \
+		printf "powershell.exe not found; cannot launch the Windows executable from this environment.\n"; \
+		exit 1; \
+	fi
+
+windows-package:
+	@if ! command -v powershell.exe >/dev/null 2>&1; then \
+		printf "powershell.exe not found. This target is intended for WSL on Windows.\n"; \
+		exit 1; \
+	fi
+	@SCRIPT="$$(wslpath -w scripts/windows/package.ps1)"; \
+	ARGS=(); \
+	if [ -n "$${BRAWLER_WINDOWS_REPO:-}" ]; then ARGS+=("-WindowsRepo" "$$(wslpath -w "$$BRAWLER_WINDOWS_REPO")"); fi; \
+	if [ -n "$${BRAWLER_WINDOWS_OUT:-}" ]; then ARGS+=("-OutputDir" "$$(wslpath -w "$$BRAWLER_WINDOWS_OUT")"); fi; \
+	powershell.exe -ExecutionPolicy Bypass -File "$$SCRIPT" "$${ARGS[@]}" -NoRun
+
+windows-package-no-run:
+	@if ! command -v powershell.exe >/dev/null 2>&1; then \
+		printf "powershell.exe not found. This target is intended for WSL on Windows.\n"; \
+		exit 1; \
+	fi
+	@SCRIPT="$$(wslpath -w scripts/windows/package.ps1)"; \
+	ARGS=(); \
+	if [ -n "$${BRAWLER_WINDOWS_REPO:-}" ]; then ARGS+=("-WindowsRepo" "$$(wslpath -w "$$BRAWLER_WINDOWS_REPO")"); fi; \
+	if [ -n "$${BRAWLER_WINDOWS_OUT:-}" ]; then ARGS+=("-OutputDir" "$$(wslpath -w "$$BRAWLER_WINDOWS_OUT")"); fi; \
+	powershell.exe -ExecutionPolicy Bypass -File "$$SCRIPT" "$${ARGS[@]}" -NoRun
+
+windows-test-help:
+	@printf "Windows hands-on sanity testing\n\n"
+	@printf "WSL without GUI should run automated checks only:\n"
+	@printf "  make check\n"
+	@printf "  make build\n\n"
+	@printf "For complete packaged app testing from WSL, use the default D:\\Brawler checkout and run:\n"
+	@printf "  make package-windows-from-linux\n"
+	@printf "  make package-windows-smoke-run\n\n"
+	@printf "Fallback if cross-building does not work yet:\n"
+	@printf "  make windows-package\n"
+	@printf "  make windows-package-no-run\n\n"
+	@printf "Override with BRAWLER_WINDOWS_REPO and BRAWLER_WINDOWS_OUT when needed.\n\n"
+	@printf "For native dev-mode testing, use a Windows checkout or worktree and run:\n"
+	@printf "  powershell -ExecutionPolicy Bypass -File scripts/windows/dev.ps1\n\n"
+	@printf "Why: a Tauri build from WSL is a Linux app. It is not a Windows .exe, and mixing\n"
+	@printf "Windows and Linux node_modules/target directories in one working tree causes churn.\n\n"
+	@printf "For a quick non-native UI preview from WSL, run:\n"
+	@printf "  make build\n"
+	@printf "  make frontend-preview\n"
+	@printf "Then open the printed localhost URL in Windows. Tauri APIs are not validated there.\n"
+
+open-project-windows:
+	@if command -v explorer.exe >/dev/null 2>&1; then explorer.exe .; else printf "explorer.exe not found. This target is intended for WSL on Windows.\n"; fi
+
+open-dist-windows:
+	@if [ -d dist ]; then \
+		if command -v explorer.exe >/dev/null 2>&1; then explorer.exe dist; else printf "explorer.exe not found. This target is intended for WSL on Windows.\n"; fi; \
+	else \
+		printf "dist/ does not exist. Run 'make build' first.\n"; \
+	fi

@@ -1,0 +1,48 @@
+# git-cliff configuration for Brawler.
+# Historical entries before v0.25.0 are curated from docs/kanban-archive.md.
+# Future entries are generated from Conventional Commits.
+
+[changelog]
+header = "# Changelog\n\n"
+body = """
+{% if version %}\
+## {{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## Unreleased
+{% endif %}
+
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group }}
+{% for commit in commits %}
+- {{ commit.message | split(pat="\n") | first | trim }}
+{% endfor %}
+
+{% endfor %}\
+"""
+trim = true
+footer = ""
+postprocessors = []
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_preprocessors = []
+commit_parsers = [
+  { message = "^feat", group = "Features" },
+  { message = "^fix", group = "Bug Fixes" },
+  { message = "^perf", group = "Performance" },
+  { message = "^refactor", group = "Changed" },
+  { message = "^docs\\(public\\)", group = "Changed" },
+  { message = "^docs", skip = true },
+  { message = "^test", skip = true },
+  { message = "^build", skip = true },
+  { message = "^ci", skip = true },
+  { message = "^chore", skip = true },
+  { message = "^style", skip = true },
+]
+protect_breaking_commits = true
+filter_commits = false
+tag_pattern = "v[0-9].*"
+topo_order = false
+sort_commits = "oldest"

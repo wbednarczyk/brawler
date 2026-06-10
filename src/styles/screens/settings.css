@@ -1,0 +1,354 @@
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.22fr) minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding: 18px;
+}
+
+.settings-subnav {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.settings-subnav button {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  text-align: left;
+}
+
+.settings-subnav button:hover,
+.settings-subnav button:focus-visible,
+.settings-subnav-active {
+  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
+}
+
+.settings-subnav-active {
+  box-shadow: inset 3px 0 0 var(--primary);
+}
+
+.settings-tab-panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.settings-group {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-group h2 {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 750;
+}
+
+.settings-row label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-row select {
+  min-width: 180px;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.credential-form {
+  display: grid;
+  gap: 8px;
+}
+
+.credential-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.credential-form input,
+.credential-form textarea {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: inherit;
+}
+
+.credential-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.credential-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-link-button {
+  width: fit-content;
+}
+
+.settings-summary {
+  display: grid;
+  gap: 3px;
+  min-width: 130px;
+  min-height: 50px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.settings-summary span,
+.settings-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.settings-summary strong,
+.settings-grid dd {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.settings-grid div {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.settings-grid dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.import-export-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 12px;
+}
+
+.import-export-panel,
+.import-export-summary {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.import-export-panel {
+  align-content: start;
+}
+
+.import-export-panel h3 {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.import-export-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.import-export-actions .compact-button {
+  width: auto;
+  white-space: nowrap;
+}
+
+.import-export-summary {
+  gap: 8px;
+  padding: 10px;
+  background: color-mix(in srgb, var(--surface-raised) 74%, var(--surface));
+}
+
+.import-export-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.import-export-summary-grid div {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.import-export-summary-grid dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.import-export-summary-grid dd {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.import-export-messages {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  padding-right: 4px;
+  max-height: 140px;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.import-export-empty {
+  padding: 8px 0;
+}
+
+.import-export-apply {
+  justify-self: stretch;
+}
+
+.shortcut-reference-list {
+  display: grid;
+  gap: 12px;
+}
+
+.shortcut-reference-group {
+  display: grid;
+  gap: 8px;
+}
+
+.shortcut-reference-group h3 {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.shortcut-reference-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.shortcut-reference-row {
+  display: grid;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.shortcut-reference-row-conflict {
+  border-color: var(--danger);
+}
+
+.shortcut-reference-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.shortcut-reference-controls {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.shortcut-reference-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.shortcut-reference-controls input[type="text"],
+.shortcut-reference-controls input:not([type]) {
+  width: 42px;
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.shortcut-reference-grid kbd {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.shortcut-conflict-note {
+  color: var(--danger);
+}
