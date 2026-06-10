@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.3 - 2026-06-10
+
+
+
+### Bug Fixes
+
+- install AppImage runtime tools
+
+
 ## v0.28.1 - 2026-06-10
 
 
