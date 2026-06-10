@@ -13,7 +13,8 @@ make package-release-artifacts
 The Linux packaging path requires both the Nix environment and host Ubuntu
 Tauri prerequisites. `.deb` and `.rpm` are built through Nix; AppImage is built
 through the host Ubuntu toolchain because the AppImage bundler must discover
-runtime WebKitGTK libraries.
+runtime WebKitGTK libraries. AppImage packaging sets `APPIMAGE_EXTRACT_AND_RUN=1`
+so downloaded linuxdeploy AppImages do not require FUSE support on CI runners.
 
 Expected files under `release-artifacts`:
 
