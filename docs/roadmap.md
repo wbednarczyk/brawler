@@ -1042,7 +1042,7 @@ Exit criteria:
 
 Goal: publish practical public release binaries from standard Linux infrastructure while keeping Radicle as the canonical forge.
 
-Status: planned.
+Status: completed in `0.28.0`.
 
 Included:
 

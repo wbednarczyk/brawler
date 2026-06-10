@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.0 - 2026-06-10
+
+
+
+### Features
+
+- add cross-platform release artifacts
+
+
 ## v0.27.0 - 2026-06-10
 
 

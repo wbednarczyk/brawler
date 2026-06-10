@@ -4,6 +4,40 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M28: Cross-platform release artifacts
+
+Intent: publish practical public release binaries from standard Linux infrastructure while keeping Radicle as the canonical forge.
+
+Delivered:
+
+- Added Linux `amd64` release artifact targets for `.deb`, `.rpm`, and `.AppImage`.
+- Added a Windows `x64` portable zip artifact target built from Linux/WSL with `cargo-xwin`.
+- Added a tag-triggered GitHub Release workflow on `ubuntu-latest` that publishes release artifacts for `v*` tags.
+- Kept Radicle as the canonical source forge while using GitHub Releases as the public binary mirror.
+- Set Linux release-build runtime data to `~/.brawler`.
+- Kept Windows portable runtime data beside `brawler.exe` in `data/`.
+- Documented the release artifact ADR, packaging smoke checks, Makefile targets, and future macOS/native package extension points.
+- Cleaned active Radboard titles so epics use `epic: <title>` and active tasks use meaningful action-oriented names without milestone numbering prefixes.
+- Bumped app version to `0.28.0`.
+
+ADR checkpoint: Added [ADR 0024](adr/0024-cross-platform-release-artifacts.md).
+
+Validation:
+
+- `make package-release-artifacts` passed.
+- `make check` passed.
+- `make release-check` passed.
+- Artifact inspection passed for `.deb`, `.rpm`, `.AppImage`, and Windows portable zip contents.
+
+Deferred:
+
+- native Pacman package generation
+- Windows installer packaging
+- code signing
+- package repositories
+- macOS and macOS arm64 packaging
+- paid or larger CI runners
+
 ### M25: Company evidence timeline and release workflow
 
 Intent: deliver the first visible Research workspace slice and make release/version workflow predictable for future milestones.

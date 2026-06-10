@@ -16,15 +16,7 @@ Active planning has moved from this file to Radicle issues rendered by Radboard.
 
 Current milestone epics:
 
-- `7674eb9` - epic: Cross-platform release artifacts (`milestone:v0.28.0`)
-
-Current milestone tasks:
-
-- `3933869` - Add Linux package artifact targets
-- `9302b40` - Add Windows portable zip artifact target
-- `990f812` - Publish release artifacts from GitHub tags
-- `e01a895` - Document release artifact policy and smoke checks
-- `b068e1f` - Clean up Radboard title conventions
+- none; the last completed milestone is archived in [Kanban Archive](kanban-archive.md)
 
 Current research-workspace sequence:
 
