@@ -329,7 +329,7 @@ Implementation direction:
 - Build `.deb` and `.rpm` through the Nix-wrapped Tauri bundling path.
 - Build AppImage through the host Ubuntu toolchain. The AppImage bundler uses `linuxdeploy` runtime dependency discovery, which is fragile against Nix-store WebKitGTK paths.
 - Set `APPIMAGE_EXTRACT_AND_RUN=1` for AppImage packaging, including GitHub Actions, so downloaded linuxdeploy AppImages can self-extract instead of relying only on FUSE availability on the runner.
-- Install the host AppImage runtime tools in GitHub Actions, including `libfuse2t64`, `squashfs-tools`, `desktop-file-utils`, and `appstream`; the Tauri AppImage bundler downloads and executes linuxdeploy AppImages at packaging time.
+- Install the host AppImage runtime tools in GitHub Actions, including `libfuse2t64`, `librsvg2-dev`, `squashfs-tools`, `desktop-file-utils`, and `appstream`; the Tauri AppImage bundler downloads and executes linuxdeploy AppImages at packaging time, and the GTK linuxdeploy plugin requires `librsvg-2.0.pc`.
 - Collect release artifacts under `release-artifacts` with names such as `brawler-0.28.0-linux-amd64.deb`, `brawler-0.28.0-linux-amd64.rpm`, and `brawler-0.28.0-linux-amd64.AppImage`.
 - GitHub release packaging caches npm package data, Cargo registry/git data, `src-tauri/target`, and `.xwin-cache`. Cache keys must stay lockfile-driven to avoid stale dependency reuse.
 - Treat AppImage as the Arch-friendly artifact until native Pacman packaging is explicitly designed.

@@ -15,8 +15,8 @@ Tauri prerequisites. `.deb` and `.rpm` are built through Nix; AppImage is built
 through the host Ubuntu toolchain because the AppImage bundler must discover
 runtime WebKitGTK libraries. AppImage packaging sets `APPIMAGE_EXTRACT_AND_RUN=1`
 so downloaded linuxdeploy AppImages can self-extract, and the GitHub workflow
-installs `libfuse2t64`, `squashfs-tools`, `desktop-file-utils`, and `appstream`
-for linuxdeploy/runtime compatibility.
+installs `libfuse2t64`, `librsvg2-dev`, `squashfs-tools`, `desktop-file-utils`,
+and `appstream` for linuxdeploy/runtime compatibility.
 The GitHub release workflow also caches npm package data, Cargo registry/git
 data, `src-tauri/target`, and `.xwin-cache` to keep repeated release packaging
 runs practical.
