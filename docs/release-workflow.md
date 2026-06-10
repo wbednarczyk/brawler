@@ -108,6 +108,8 @@ Agents own changelog updates during milestone and patch closure. The project own
    - run release and relevant validation checks
    - update Radicle/Radboard issue state
    - create the final release commit
+   - create the matching annotated release tag
+   - push the release commit and tag to both `origin` and `rad`
 5. The release commit message is:
 
    ```text
@@ -115,6 +117,17 @@ Agents own changelog updates during milestone and patch closure. The project own
    ```
 
 Do not use `make changelog` as proof of uncommitted feature work. If the feature work is still uncommitted, the agent should stop closure and ask the project owner to commit it first.
+
+Release remote sync updates both project remotes:
+
+```bash
+git push origin master
+git push origin vX.Y.Z
+git push rad master
+git push rad vX.Y.Z
+```
+
+`origin` is the GitHub read-only mirror/backup. `rad` is the Radicle forge remote. Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
 
 Commands:
 

@@ -10,8 +10,9 @@ The normal workflow is:
 2. The user explicitly asks the agent to wrap up or close the milestone.
 3. The agent performs release-only changes and may create exactly one release commit.
 4. The agent creates the matching annotated release tag for that release commit.
+5. After the release commit and tag are verified, the agent syncs both canonical/mirror remotes when the user has asked to complete the release.
 
-Do not merge, push, publish, seed publicly, or rewrite history unless the user explicitly asks for that operation.
+Do not merge, publish, seed publicly, or rewrite history unless the user explicitly asks for that operation.
 
 ## Preconditions
 
@@ -76,7 +77,7 @@ Then run the relevant project checks with RTK-filtered commands unless the relea
 
 If only docs changed after checks, rerun only checks affected by later edits.
 
-## Release Commit And Tag
+## Release Commit, Tag, And Remote Sync
 
 During explicit milestone closure, the agent may create exactly one release commit limited to release wrap-up files: version files, `CHANGELOG.md`, roadmap/kanban docs, and release metadata.
 
@@ -94,7 +95,16 @@ After the release commit is created, create the matching annotated release tag o
 git tag -a vX.Y.Z -m "vX.Y.Z"
 ```
 
-Do not push the commit or tag unless the user explicitly asks.
+After the release commit and tag are created and validated, sync both remotes:
+
+```bash
+git push origin master
+git push origin vX.Y.Z
+git push rad master
+git push rad vX.Y.Z
+```
+
+`origin` is the GitHub read-only mirror/backup. `rad` is the Radicle forge remote. These pushes update existing remotes only; they are not permission to publish, seed publicly, change Radicle visibility, or change GitHub repository settings.
 
 ## Guardrails
 
@@ -102,4 +112,4 @@ Do not push the commit or tag unless the user explicitly asks.
 - Do not use `cargo set-version` unless the user explicitly approves adding that workflow.
 - Keep `package-lock.json` changes limited to the root package version fields unless dependencies changed separately.
 - If a version assertion test fails, update the expected Brawler version rather than weakening the test.
-- Do not push, merge, publish, seed publicly, or rewrite history unless the user explicitly asks.
+- Do not merge, publish, seed publicly, change repository visibility, or rewrite history unless the user explicitly asks.
