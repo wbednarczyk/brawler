@@ -34,32 +34,40 @@
             "x86_64-pc-windows-msvc"
           ];
         };
+        linuxNativeLibraries = with pkgs; [
+          atk
+          cairo
+          gdk-pixbuf
+          glib
+          gtk3
+          libsoup_3
+          openssl
+          pango
+          webkitgtk_4_1
+        ];
+        linuxLibraryPath = pkgs.lib.makeLibraryPath linuxNativeLibraries;
       in
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
             cargo-watch
+            dpkg
+            file
             git-cliff
             nodejs_22
             pkg-config
+            rpm
             rustToolchain
             sqlite
+            zip
             webkitgtk_4_1
           ];
 
-          buildInputs = with pkgs; [
-            atk
-            cairo
-            gdk-pixbuf
-            glib
-            gtk3
-            libsoup_3
-            openssl
-            pango
-          ];
+          buildInputs = linuxNativeLibraries;
 
           shellHook = ''
             export RUST_BACKTRACE=1
+            export LD_LIBRARY_PATH="${linuxLibraryPath}:''${LD_LIBRARY_PATH:-}"
             echo "Brawler dev shell"
             echo "  npm install       # after scaffold dependency changes"
             echo "  npm run dev       # start Tauri dev app"
@@ -71,6 +79,7 @@
           packages = with pkgs; [
             cargo-xwin
             clang
+            file
             imagemagick
             lld
             llvm
@@ -78,6 +87,7 @@
             nsis
             pkg-config
             rustWindowsToolchain
+            zip
           ];
 
           shellHook = ''

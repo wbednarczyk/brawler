@@ -104,7 +104,9 @@ git push rad master
 git push rad vX.Y.Z
 ```
 
-`origin` is the GitHub read-only mirror/backup. `rad` is the Radicle forge remote. These pushes update existing remotes only; they are not permission to publish, seed publicly, change Radicle visibility, or change GitHub repository settings.
+`origin` is the GitHub source mirror/backup and public binary mirror. `rad` is the Radicle forge remote. Pushing the `vX.Y.Z` tag to `origin` triggers the GitHub Release artifact workflow, which builds and uploads release binaries through Makefile packaging targets.
+
+These pushes update existing remotes only; they are not permission to publish, seed publicly, change Radicle visibility, or change GitHub repository settings.
 
 ## Guardrails
 

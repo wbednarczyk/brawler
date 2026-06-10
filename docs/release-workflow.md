@@ -127,13 +127,18 @@ git push rad master
 git push rad vX.Y.Z
 ```
 
-`origin` is the GitHub read-only mirror/backup. `rad` is the Radicle forge remote. Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
+`origin` is the GitHub source mirror/backup and public binary mirror. `rad` is the Radicle forge remote. Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
+
+Pushing a `v*` tag to `origin` triggers the GitHub Release artifact workflow. The workflow runs on standard `ubuntu-latest`, builds Linux `amd64` `.deb`, `.rpm`, and `.AppImage` artifacts, builds the Windows `x64` portable zip through the Linux `cargo-xwin` path, and uploads those files to the matching GitHub Release. GitHub Releases are the durable public binary download surface; Actions artifacts are temporary workflow outputs only.
+
+GitHub Release artifacts are binary mirrors. Radicle remains canonical for source, issues, and patches.
 
 Commands:
 
 ```bash
 make changelog
 make changelog-check
+make package-release-artifacts
 ```
 
 `git-cliff` is provided by:

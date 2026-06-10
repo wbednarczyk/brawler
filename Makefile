@@ -4,13 +4,15 @@ SHELL := /usr/bin/env bash
 NIX := nix develop -c
 NIX_WINDOWS := nix develop .\#windows-cross -c
 WINDOWS_TARGET := x86_64-pc-windows-msvc
+RELEASE_OUT_DIR ?= release-artifacts
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
 APP_VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null)
 WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
+WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 
-.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-windows-from-linux package-windows-smoke-run windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-check license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -37,8 +39,14 @@ help:
 	@printf "                            Opt-in live Gemini feed-item analysis smoke test\n"
 	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
 	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
+	@printf "  make package-linux-amd64\n"
+	@printf "                            Build Linux .deb, .rpm, and AppImage release artifacts\n"
 	@printf "  make package-windows-from-linux\n"
 	@printf "                            Build versioned portable Windows executable from Linux/WSL\n"
+	@printf "  make package-windows-portable-zip\n"
+	@printf "                            Build zipped portable Windows release artifact from Linux/WSL\n"
+	@printf "  make package-release-artifacts\n"
+	@printf "                            Build Linux and Windows release artifacts under release-artifacts\n"
 	@printf "  make package-windows-smoke-run\n"
 	@printf "                            Launch the latest portable Windows executable copied by packaging\n"
 	@printf "  make windows-package     Build and copy the packaged Windows app via PowerShell\n"
@@ -153,6 +161,11 @@ flake-check:
 tauri-build:
 	$(NIX) npm run tauri -- build
 
+package-linux-amd64:
+	$(NIX) npm run tauri -- build --bundles deb,rpm
+	npm run tauri -- build --bundles appimage
+	$(NIX) scripts/release/collect-linux-artifacts.sh "$(APP_VERSION)" "$(RELEASE_OUT_DIR)"
+
 package-windows-from-linux:
 	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
 	@if [ ! -f "$(WINDOWS_EXE)" ]; then \
@@ -166,6 +179,12 @@ package-windows-from-linux:
 	@rm -f "$(WINDOWS_OUT_DIR)/brawler.exe"
 	@cp -f "$(WINDOWS_EXE)" "$(WINDOWS_ARTIFACT)"
 	@printf "Copied portable Windows executable to %s\n" "$(WINDOWS_ARTIFACT)"
+
+package-windows-portable-zip:
+	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	$(NIX_WINDOWS) scripts/release/package-windows-portable-zip.sh "$(APP_VERSION)" "$(WINDOWS_EXE)" "$(RELEASE_OUT_DIR)"
+
+package-release-artifacts: package-linux-amd64 package-windows-portable-zip
 
 package-windows-smoke-run:
 	@if [ ! -f "$(WINDOWS_ARTIFACT)" ]; then \

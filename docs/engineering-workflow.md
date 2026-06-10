@@ -51,7 +51,11 @@ Recommended workflow:
 - Use `make frontend-preview` only for quick browser-based layout checks from Windows; this does not validate Tauri APIs.
 - Use a native Windows checkout or Git worktree for frequent hands-on desktop testing.
 - From that Windows checkout, run `scripts/windows/dev.ps1` to start Tauri dev mode.
-- The M21 portable executable path is `make package-windows-from-linux`: build the versioned portable Windows executable from the Linux/WSL Nix environment and copy it to a Windows test directory.
+- Linux release artifacts are built with `make package-linux-amd64`, which produces versioned `.deb`, `.rpm`, and `.AppImage` files under `release-artifacts`.
+- The Linux target intentionally uses a split packaging path: `.deb` and `.rpm` are built through the Nix-wrapped Tauri command, while AppImage is built through the host Ubuntu toolchain because `linuxdeploy` dependency discovery does not reliably resolve WebKitGTK from the Nix store.
+- Windows portable release artifacts are built with `make package-windows-portable-zip`, which uses the Linux/WSL `cargo-xwin` path and produces a versioned portable zip under `release-artifacts`.
+- `make package-release-artifacts` builds the Linux artifacts and Windows portable zip for release publication.
+- The M21 portable executable path is still available as `make package-windows-from-linux`: build the versioned portable Windows executable from the Linux/WSL Nix environment and copy it to a Windows test directory.
 - Launch the copied portable executable separately with `make package-windows-smoke-run`.
 - `make windows-package` remains a fallback that triggers a native Windows package build, but it requires Windows Node/Rust/MSVC tooling.
 
@@ -253,6 +257,9 @@ Recommended WSL commands:
 - `make dev`: start Tauri dev mode inside `nix develop`, only useful when Linux GUI forwarding exists
 - `make frontend-preview`: serve the frontend preview to a Windows browser; not a native Tauri test
 - `make package-windows-from-linux`: target for building the versioned portable Windows executable from Linux/WSL
+- `make package-linux-amd64`: target for building versioned Linux `.deb`, `.rpm`, and `.AppImage` release artifacts
+- `make package-windows-portable-zip`: target for building the Windows portable release zip from Linux/WSL
+- `make package-release-artifacts`: target for building all current public release artifacts
 - `make package-windows-smoke-run`: launch the latest copied portable Windows executable for manual smoke testing
 - `make windows-package`: fallback target that calls Windows PowerShell to build and copy the native packaged Windows app from the default `D:\Brawler` checkout
 - `make windows-package-no-run`: compatibility alias for the fallback build-and-copy behavior
@@ -292,6 +299,7 @@ When using fallback `make windows-package` from WSL, `BRAWLER_WINDOWS_REPO` and 
 Portable Windows-from-Linux packaging target:
 
 - `package-windows-from-linux`
+- `package-windows-portable-zip`
 
 Implementation direction:
 
@@ -299,6 +307,7 @@ Implementation direction:
 - Include the Rust `x86_64-pc-windows-msvc` target, `cargo-xwin`, NSIS, LLVM/LLD, Clang, Node, npm, and Tauri CLI prerequisites.
 - Run the Tauri build from Linux with a Windows target and `--no-bundle`.
 - Copy the resulting portable executable to `D:\Brawler\Builds\latest` with a versioned name such as `brawler-0.21.0-windows-x64-portable.exe`.
+- Package public Windows release artifacts as a versioned zip containing `brawler.exe` and `README-portable-windows.txt`.
 - Stop already-running copied `brawler*` processes before replacing the portable artifact.
 - Launch the copied executable through `powershell.exe` only through `make package-windows-smoke-run`.
 - Treat Windows installer generation as a later target; the first Windows-from-Linux loop validates the runnable `.exe`.
@@ -309,6 +318,20 @@ Portable Windows data policy:
 - Development builds keep using the OS app-data directory.
 - Runtime secrets continue to use the OS keychain and may need to be re-entered when a portable folder is moved to another machine or user profile.
 - The portable executable relies on the system WebView2 runtime. Bundling a fixed WebView2 runtime or producing an installer is deferred.
+
+Linux release packaging targets:
+
+- `package-linux-amd64`
+- `package-release-artifacts`
+
+Implementation direction:
+
+- Build `.deb` and `.rpm` through the Nix-wrapped Tauri bundling path.
+- Build AppImage through the host Ubuntu toolchain. The AppImage bundler uses `linuxdeploy` runtime dependency discovery, which is fragile against Nix-store WebKitGTK paths.
+- Collect release artifacts under `release-artifacts` with names such as `brawler-0.28.0-linux-amd64.deb`, `brawler-0.28.0-linux-amd64.rpm`, and `brawler-0.28.0-linux-amd64.AppImage`.
+- Treat AppImage as the Arch-friendly artifact until native Pacman packaging is explicitly designed.
+- Linux release builds store runtime data under `~/.brawler`.
+- Installed Linux packages must not write runtime data beside package-managed executable paths.
 
 ## Lean Testing Strategy
 

@@ -1038,46 +1038,80 @@ Exit criteria:
 - open-core license posture is explicit and consistent across public repo metadata
 - automated release and application checks pass
 
+## Milestone 28: Cross-Platform Release Artifacts
+
+Goal: publish practical public release binaries from standard Linux infrastructure while keeping Radicle as the canonical forge.
+
+Status: planned.
+
+Included:
+
+- Linux `amd64` release packages: `.deb`, `.rpm`, and `.AppImage`
+- zipped Windows `x64` portable executable built from Linux with `cargo-xwin`
+- GitHub Release artifact workflow triggered by pushed `v*` tags on standard `ubuntu-latest`
+- GitHub Releases as the public binary mirror
+- Radicle retained as canonical source, issue, and patch forge
+- Linux release-build data location set to `~/.brawler`
+- Windows portable release-build data location kept as `data/` next to the executable
+- release artifact naming policy for Linux and Windows assets
+- packaging smoke-test documentation for Linux packages, Linux AppImage, and Windows portable zip
+- Radboard cleanup so active epic titles use `epic: <title>` without numeric prefixes
+
+Deferred:
+
+- native Pacman package generation
+- Windows installer packaging
+- code signing
+- package repositories
+- macOS and macOS arm64 packaging
+- paid or larger CI runners
+
+Exit criteria:
+
+- `make package-linux-amd64` builds and collects versioned `.deb`, `.rpm`, and `.AppImage` artifacts
+- `make package-windows-portable-zip` builds a versioned Windows portable zip from Linux
+- GitHub Actions release workflow uses only `ubuntu-latest` and uploads all release artifacts to the matching GitHub Release for `v*` tags
+- Linux release builds use `~/.brawler` for app data
+- Windows portable zip contains only `brawler.exe` and a portable readme
+- smoke-test docs cover expected install/run and data-location checks
+- ADR 0024 records the release artifact policy
+- automated validation and available packaging smoke checks pass
+
 ## Future: Research Workspace Implementation Sequence
 
 M25 delivered the first company-scoped Research screen and M26 delivered watchlist review mode. The recommended follow-up sequence is:
 
-1. Watchlist review mode.
-   - Builds on the same evidence read model for all companies in a watchlist.
-   - Guides review company-by-company using unread items, upcoming events, open claims, and changed-since-review state.
-   - Uses watchlist review checkpoints without adding alert placeholders.
-
-2. Research questions and evidence-linking workflow.
+1. Research questions and evidence-linking workflow.
    - Adds user-visible research questions or threads per company.
    - Uses typed evidence links for question-to-evidence, claim-to-evidence, event-to-claim, and related-item relationships.
    - Keeps existing notebook origins as provenance rather than replacing them.
 
-3. AI research briefs.
+2. AI research briefs.
    - Adds source-grounded company/watchlist briefs after evidence collection and citation mapping are stable.
    - Persists briefs as dedicated entities with citations, provider/model/prompt provenance, and regeneration semantics.
    - Allows explicit note creation from selected brief excerpts later, but does not store briefs as ordinary notes.
 
-4. Event-aware reminders and personal research digest.
+3. Event-aware reminders and personal research digest.
    - Adds reminders once claim/event/question pressure is visible in the workflow.
    - Adds daily or weekly digest generation after company and watchlist review semantics are proven.
    - Reuses the research evidence boundary and AI brief collector/renderer surfaces.
 
-5. Stored timeline/evidence projections only if needed.
+4. Stored timeline/evidence projections only if needed.
    - If live read-model aggregation becomes too slow or review semantics require snapshots, add stored projections behind the existing research API.
    - Projection rows must be rebuildable or have explicit import/export and backup policy.
 
 ## Future: Release Packaging And Distribution Hardening
 
-Goal: add release-grade distribution paths after the portable Windows executable candidate is proven.
+Goal: harden distribution after the first public Linux and Windows release artifacts are proven.
 
 Candidate scope:
 
 - Windows installer packaging
-- manual GitHub Actions packaging workflow
-- artifact retention and naming policy
 - app version/about screen
-- release notes or changelog workflow
 - optional tag-driven release candidate workflow
+- native Pacman packaging if AppImage is not enough for Arch users
+- code signing
+- package repositories
 
 Not scheduled.
 

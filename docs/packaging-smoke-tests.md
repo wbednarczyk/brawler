@@ -1,57 +1,109 @@
 # Packaging Smoke Tests
 
-Use this checklist for M21 portable Windows executable candidates.
+Use this checklist for public release artifact candidates.
 
 ## Build
 
-From WSL:
+Build all current release artifacts from WSL/Linux:
+
+```bash
+make package-release-artifacts
+```
+
+The Linux packaging path requires both the Nix environment and host Ubuntu
+Tauri prerequisites. `.deb` and `.rpm` are built through Nix; AppImage is built
+through the host Ubuntu toolchain because the AppImage bundler must discover
+runtime WebKitGTK libraries.
+
+Expected files under `release-artifacts`:
+
+- `brawler-<version>-linux-amd64.deb`
+- `brawler-<version>-linux-amd64.rpm`
+- `brawler-<version>-linux-amd64.AppImage`
+- `brawler-<version>-windows-x64-portable.zip`
+
+Build only Linux artifacts:
+
+```bash
+make package-linux-amd64
+```
+
+Build only the Windows portable zip:
+
+```bash
+make package-windows-portable-zip
+```
+
+The older Windows copy-and-run smoke path remains available:
 
 ```bash
 make package-windows-from-linux
-```
-
-Expected result:
-
-- a versioned executable is copied to `D:\Brawler\Builds\latest` by default
-- the artifact name follows `brawler-<version>-windows-x64-portable.exe`
-- packaging does not launch the app automatically
-
-Launch the copied artifact:
-
-```bash
 make package-windows-smoke-run
 ```
 
-## Portable Data
+## Linux AppImage
 
-- Start the executable from its output folder.
-- Confirm a `data` folder is created next to the executable.
+- Mark the AppImage executable if needed: `chmod +x release-artifacts/brawler-<version>-linux-amd64.AppImage`.
+- Start the AppImage in a Linux desktop environment.
+- Confirm the app window opens and normal open-core navigation is available.
+- Confirm `~/.brawler` is created after startup.
+- Confirm `~/.brawler/brawler.sqlite3` is created after startup.
+- Create or import a small company/watchlist/notebook sample.
+- Close and reopen the AppImage.
+- Confirm the data is still present.
+
+## Linux Deb
+
+- Inspect package metadata before installation:
+
+  ```bash
+  dpkg-deb --info release-artifacts/brawler-<version>-linux-amd64.deb
+  dpkg-deb --contents release-artifacts/brawler-<version>-linux-amd64.deb
+  ```
+
+- If testing on a disposable Debian/Ubuntu environment, install the package and start Brawler from the desktop menu or command line.
+- Confirm runtime data is written under `~/.brawler`, not under a package-managed install path.
+
+## Linux Rpm
+
+- Inspect package metadata before installation:
+
+  ```bash
+  rpm -qip release-artifacts/brawler-<version>-linux-amd64.rpm
+  rpm -qlp release-artifacts/brawler-<version>-linux-amd64.rpm
+  ```
+
+- If testing on a disposable RPM-based environment, install the package and start Brawler from the desktop menu or command line.
+- Confirm runtime data is written under `~/.brawler`, not under a package-managed install path.
+
+## Windows Portable Zip
+
+- Extract `brawler-<version>-windows-x64-portable.zip` into a writable folder.
+- Confirm the zip contains only:
+  - `brawler.exe`
+  - `README-portable-windows.txt`
+- Start `brawler.exe` from the extracted folder.
+- Confirm a `data` folder is created next to `brawler.exe`.
 - Confirm `data/brawler.sqlite3` is created after startup.
 - Create or import a small company/watchlist/notebook sample.
 - Close the app.
 - Start the same executable again from the same folder.
 - Confirm the data is still present.
 
-## Entitlement Settings
-
-- Start with no accepted entitlement on a fresh machine or fresh user profile.
-- Confirm normal navigation remains available.
-- Clear or replace entitlement data through Settings when testing alternate states.
-- Try an obviously invalid token and confirm the error is clear and recoverable.
-
 ## Primary Workflow
 
-- Open Inbox, Companies, Watchlists, Notebooks, Events, Sources, and Settings.
+- Open Inbox, Companies, Watchlists, Notebooks, Events, Sources, Research, and Settings.
 - Add a tracked company.
 - Create a watchlist and add the company to it.
 - Create a notebook entry.
 - Export research data and settings.
-- Import the exported research data into a fresh portable data folder.
+- Import the exported research data into a fresh data folder.
 - Confirm source refresh commands still return a visible status or recoverable error.
 
 ## Known Candidate Limitations
 
-- The executable is unsigned and may show Windows unknown-publisher or SmartScreen warnings.
-- The executable relies on the system WebView2 runtime.
-- The portable data folder must be writable.
-- Secrets remain in the OS keychain and may need to be re-entered after moving the portable folder to another Windows user profile or machine.
+- Artifacts are unsigned and may show operating-system trust warnings.
+- Windows portable builds rely on the system WebView2 runtime.
+- Linux packages depend on the system WebKitGTK stack expected by Tauri.
+- The Windows portable folder and Linux `~/.brawler` directory must be writable.
+- Secrets remain in the OS keychain and may need to be re-entered after moving a portable folder to another Windows user profile or machine.

@@ -25,6 +25,7 @@ Rules:
 
 - At the start of each milestone, break the milestone into the concrete tasks needed to deliver it and record the active task breakdown in Radicle issues for Radboard.
 - Radboard milestones are version targets such as `milestone:v0.25.0`; epics are major capability slices marked with the `epic` label; tasks are reviewable work slices linked to an epic with `parent:<epic-hex7>`.
+- Radboard issue titles should be meaningful without milestone numbering. Use `epic: <capability>` for epic titles and plain action-oriented titles for tasks. Do not prefix titles with `E##`, `M##`, or similar numbering; version targeting belongs in `milestone:*` labels.
 - Use repeated Radicle label flags, not comma-separated labels. For example: `--labels epic --labels milestone:v0.25.0 --labels area:research-workspace`.
 - Present the important architecture decisions to the user before implementation. Keep each decision short, explain the practical options and tradeoffs, and require explicit user answers.
 - Do not guess on architecture. If ownership boundaries, storage shape, provider model, security posture, UI placement, configuration, persistence, background-job behavior, observability, or release impact are unclear, ask until the decision is clear enough to implement.
