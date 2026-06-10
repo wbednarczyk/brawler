@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.4 - 2026-06-10
+
+
+
+### Bug Fixes
+
+- install minimal AppImage prerequisites
+
+
 ## v0.28.3 - 2026-06-10
 
 
