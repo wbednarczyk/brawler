@@ -163,7 +163,7 @@ tauri-build:
 
 package-linux-amd64:
 	$(NIX) npm run tauri -- build --bundles deb,rpm
-	APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri -- build --bundles appimage
+	APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri -- build --bundles appimage --verbose
 	$(NIX) scripts/release/collect-linux-artifacts.sh "$(APP_VERSION)" "$(RELEASE_OUT_DIR)"
 
 package-windows-from-linux:
