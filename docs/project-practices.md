@@ -152,7 +152,9 @@ Rules:
 - Prefer direct row interaction for list/detail workflows. When a row opens more context, clicking the row should expand details inline near that row, and clicking the same row again should collapse it when that behavior is natural.
 - Avoid adding explicit row-level buttons for primary open/inspect behavior when the whole row can safely be the target. Keep buttons for secondary actions such as delete, source links, or explicit state changes.
 - Mutating actions should provide quick visual feedback.
+- App-owned user objects should have an explicit delete/remove workflow unless deletion does not make product sense or a feature contract explicitly excludes it. Delete behavior must be typed, confirmed when destructive, and must clean up dependent links or memberships without deleting unrelated canonical objects.
 - Buttons and controls should communicate intent through position, label, icon, color, and state.
+- Multi-panel workspaces should expose visible, keyboard-accessible resize handles for important column/pane widths unless the layout is intentionally fixed and that decision is documented.
 - Dense investor workflows must remain scannable and keyboard/mouse efficient.
 - Temporary UX shortcuts are allowed during early scaffolding, but known UX debt should be recorded in docs or Radicle/Radboard.
 - Responsiveness is part of correctness: common actions should feel immediate even when background work is pending.

@@ -157,3 +157,58 @@ export type EvidenceLinkListInput = {
   endpointType: ResearchEvidenceType;
   endpointId: string;
 };
+
+export type ResearchBriefScopeInput = {
+  scopeType: ResearchReviewScopeType;
+  scopeId: string;
+};
+
+export type ResearchBriefJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+
+export type ResearchBriefCitation = {
+  id: string;
+  briefId: string;
+  citationKey: string;
+  evidenceType: ResearchEvidenceType;
+  evidenceId: string;
+  label: string;
+  snippet: string | null;
+  createdAt: string;
+};
+
+export type ResearchBrief = {
+  id: string;
+  jobId: string;
+  scopeType: ResearchReviewScopeType;
+  scopeId: string;
+  providerId: string;
+  model: string;
+  promptVersion: string;
+  evidenceCollectorVersion: string;
+  rendererVersion: string;
+  title: string;
+  summary: string;
+  contentMarkdown: string;
+  language: string | null;
+  generatedAt: string;
+  createdAt: string;
+  citations: ResearchBriefCitation[];
+};
+
+export type ResearchBriefJob = {
+  id: string;
+  scopeType: ResearchReviewScopeType;
+  scopeId: string;
+  providerId: string;
+  model: string;
+  promptVersion: string;
+  evidenceCollectorVersion: string;
+  rendererVersion: string;
+  status: ResearchBriefJobStatus;
+  errorCode: string | null;
+  error: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  brief: ResearchBrief | null;
+};

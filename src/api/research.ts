@@ -5,6 +5,8 @@ import type {
   NewResearchQuestion,
   NewEvidenceLink,
   ResearchEvidenceInput,
+  ResearchBriefJob,
+  ResearchBriefScopeInput,
   ResearchQuestion,
   ResearchQuestionListInput,
   ResearchQuestionUpdate,
@@ -45,6 +47,10 @@ export function updateResearchQuestion(input: ResearchQuestionUpdate) {
   return callCommand<ResearchQuestion>("update_research_question", { input });
 }
 
+export function deleteResearchQuestion(id: string) {
+  return callCommand<void>("delete_research_question", { id });
+}
+
 export function createEvidenceLink(input: NewEvidenceLink) {
   return callCommand<EvidenceLink>("create_evidence_link", { input });
 }
@@ -55,4 +61,12 @@ export function listEvidenceLinks(input: EvidenceLinkListInput) {
 
 export function deleteEvidenceLink(id: string) {
   return callCommand<void>("delete_evidence_link", { id });
+}
+
+export function startResearchBrief(input: ResearchBriefScopeInput) {
+  return callCommand<ResearchBriefJob>("start_research_brief", { input });
+}
+
+export function listResearchBriefs(input: ResearchBriefScopeInput) {
+  return callCommand<ResearchBriefJob[]>("list_research_briefs", { input });
 }

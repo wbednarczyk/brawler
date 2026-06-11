@@ -15,6 +15,7 @@ mod import_export;
 mod licensing;
 mod notebooks;
 mod research;
+mod research_briefs;
 mod schema;
 mod settings;
 mod source_registry;

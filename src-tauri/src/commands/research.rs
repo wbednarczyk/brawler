@@ -1,4 +1,8 @@
-use crate::{app_state, storage};
+use crate::{
+    app_state, jobs,
+    providers::analysis::{TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID},
+    storage,
+};
 
 #[tauri::command]
 pub fn list_research_evidence(
@@ -93,6 +97,16 @@ pub fn update_research_question(
 }
 
 #[tauri::command]
+pub fn delete_research_question(
+    id: String,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<(), String> {
+    state
+        .delete_research_question(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn create_evidence_link(
     input: storage::NewEvidenceLink,
     state: tauri::State<'_, app_state::AppState>,
@@ -120,4 +134,53 @@ pub fn delete_evidence_link(
     state
         .delete_evidence_link(&id)
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn start_research_brief(
+    input: storage::ResearchBriefScopeInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ResearchBriefJob, String> {
+    let settings = state.get_settings().map_err(|error| error.to_string())?;
+    let provider_id = settings
+        .ai_providers
+        .general_analysis_provider
+        .as_deref()
+        .unwrap_or(TEST_SAMPLE_ANALYSIS_PROVIDER_ID)
+        .to_owned();
+    let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
+        TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
+    } else {
+        settings.ai_providers.general_analysis_model
+    };
+    let job = state
+        .create_research_brief_job(storage::NewResearchBriefJob {
+            scope_type: input.scope_type,
+            scope_id: input.scope_id,
+            provider_id,
+            model,
+        })
+        .map_err(|error| error.to_string())?;
+
+    spawn_research_brief_job(state.inner().clone(), job.id.clone());
+
+    Ok(job)
+}
+
+#[tauri::command]
+pub fn list_research_briefs(
+    input: storage::ResearchBriefScopeInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::ResearchBriefJob>, String> {
+    state
+        .list_research_brief_jobs(input)
+        .map_err(|error| error.to_string())
+}
+
+fn spawn_research_brief_job(state: app_state::AppState, job_id: String) {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = jobs::research_briefs::run_research_brief_job(&state, &job_id) {
+            let _ = state.mark_research_brief_job_failed(&job_id, "unknown", &error);
+        }
+    });
 }

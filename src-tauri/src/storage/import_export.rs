@@ -43,6 +43,8 @@ pub struct ImportExportSummary {
     pub notebook_entries: usize,
     pub research_questions: usize,
     pub evidence_links: usize,
+    pub ai_research_briefs: usize,
+    pub ai_research_brief_citations: usize,
     pub settings: usize,
 }
 
@@ -69,6 +71,10 @@ pub struct ImportApplySummary {
     pub research_questions_merged: usize,
     pub evidence_links_created: usize,
     pub evidence_links_skipped: usize,
+    pub ai_research_briefs_created: usize,
+    pub ai_research_briefs_skipped: usize,
+    pub ai_research_brief_citations_created: usize,
+    pub ai_research_brief_citations_skipped: usize,
     pub settings_updated: usize,
 }
 
@@ -94,6 +100,10 @@ struct ResearchExportDocument {
     research_questions: Vec<ExportResearchQuestion>,
     #[serde(default)]
     evidence_links: Vec<ExportEvidenceLink>,
+    #[serde(default)]
+    ai_research_briefs: Vec<ExportAiResearchBrief>,
+    #[serde(default)]
+    ai_research_brief_citations: Vec<ExportAiResearchBriefCitation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -179,6 +189,40 @@ struct ExportEvidenceLink {
     created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportAiResearchBrief {
+    id: String,
+    job_id: String,
+    scope_type: String,
+    scope_id: String,
+    scope_company_qualified_ticker: Option<String>,
+    provider_id: String,
+    model: String,
+    prompt_version: String,
+    evidence_collector_version: String,
+    renderer_version: String,
+    title: String,
+    summary: String,
+    content_markdown: String,
+    language: Option<String>,
+    generated_at: String,
+    created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportAiResearchBriefCitation {
+    id: String,
+    brief_id: String,
+    citation_key: String,
+    evidence_type: String,
+    evidence_id: String,
+    label: String,
+    snippet: Option<String>,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsExportDocument {
@@ -215,6 +259,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let notebook_entries = export_notebook_entries(connection)?;
     let research_questions = export_research_questions(connection)?;
     let evidence_links = export_evidence_links(connection)?;
+    let ai_research_briefs = export_ai_research_briefs(connection)?;
+    let ai_research_brief_citations = export_ai_research_brief_citations(connection)?;
     let exported_at = now_rfc3339()?;
 
     let document = ResearchExportDocument {
@@ -227,6 +273,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "notebooks".to_owned(),
             "research_questions".to_owned(),
             "evidence_links".to_owned(),
+            "ai_research_briefs".to_owned(),
         ],
         companies,
         watchlists,
@@ -234,6 +281,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         notebook_entries,
         research_questions,
         evidence_links,
+        ai_research_briefs,
+        ai_research_brief_citations,
     };
     let summary = ImportExportSummary {
         companies: document.companies.len(),
@@ -242,6 +291,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         notebook_entries: document.notebook_entries.len(),
         research_questions: document.research_questions.len(),
         evidence_links: document.evidence_links.len(),
+        ai_research_briefs: document.ai_research_briefs.len(),
+        ai_research_brief_citations: document.ai_research_brief_citations.len(),
         settings: 0,
     };
 
@@ -585,6 +636,103 @@ fn plan_research_import(
         summary.evidence_links_created += 1;
     }
 
+    let existing_brief_ids = existing_ids(connection, "ai_research_briefs").unwrap_or_default();
+    let imported_brief_ids = document
+        .ai_research_briefs
+        .iter()
+        .map(|brief| brief.id.clone())
+        .collect::<HashSet<_>>();
+    for brief in &document.ai_research_briefs {
+        if existing_brief_ids.contains(&brief.id) {
+            summary.ai_research_briefs_skipped += 1;
+            warnings.push(format!(
+                "Research brief {} already exists and will be skipped",
+                brief.id
+            ));
+            continue;
+        }
+        if brief.scope_type == "company" {
+            let Some(company_ticker) = brief.scope_company_qualified_ticker.as_deref() else {
+                errors.push(format!(
+                    "Research brief {} is missing company scope ticker",
+                    brief.id
+                ));
+                continue;
+            };
+            let company_ticker = company_ticker.trim().to_uppercase();
+            if !imported_company_tickers.contains(&company_ticker)
+                && !existing_companies.contains_key(&company_ticker)
+            {
+                errors.push(format!(
+                    "Research brief {} references missing company {}",
+                    brief.id, company_ticker
+                ));
+                continue;
+            }
+        } else if brief.scope_type != "watchlist" {
+            errors.push(format!(
+                "Research brief {} has unsupported scope {}",
+                brief.id, brief.scope_type
+            ));
+            continue;
+        } else if !imported_watchlist_ids.contains(&brief.scope_id)
+            && !existing_watchlist_ids.contains(&brief.scope_id)
+        {
+            errors.push(format!(
+                "Research brief {} references missing watchlist {}",
+                brief.id, brief.scope_id
+            ));
+            continue;
+        }
+
+        if brief.title.trim().is_empty()
+            || brief.summary.trim().is_empty()
+            || brief.content_markdown.trim().is_empty()
+        {
+            errors.push(format!("Research brief {} is missing content", brief.id));
+            continue;
+        }
+        summary.ai_research_briefs_created += 1;
+    }
+
+    let existing_citation_ids =
+        existing_ids(connection, "ai_research_brief_citations").unwrap_or_default();
+    for citation in &document.ai_research_brief_citations {
+        if existing_citation_ids.contains(&citation.id) {
+            summary.ai_research_brief_citations_skipped += 1;
+            warnings.push(format!(
+                "Research brief citation {} already exists and will be skipped",
+                citation.id
+            ));
+            continue;
+        }
+        if !imported_brief_ids.contains(&citation.brief_id)
+            && !existing_brief_ids.contains(&citation.brief_id)
+        {
+            summary.ai_research_brief_citations_skipped += 1;
+            warnings.push(format!(
+                "Research brief citation {} references unavailable brief and will be skipped",
+                citation.id
+            ));
+            continue;
+        }
+        if !imported_or_existing_evidence_reference(
+            connection,
+            &citation.evidence_type,
+            &citation.evidence_id,
+            &imported_note_ids,
+            &imported_question_ids,
+        ) {
+            summary.ai_research_brief_citations_skipped += 1;
+            warnings.push(format!(
+                "Research brief citation {} references unavailable evidence and will be skipped",
+                citation.id
+            ));
+            continue;
+        }
+        summary.ai_research_brief_citations_created += 1;
+    }
+
     ImportPreview {
         valid: errors.is_empty(),
         summary,
@@ -676,6 +824,10 @@ fn apply_watchlists_notebooks_questions(
     summary.research_questions_merged = 0;
     summary.evidence_links_created = 0;
     summary.evidence_links_skipped = 0;
+    summary.ai_research_briefs_created = 0;
+    summary.ai_research_briefs_skipped = 0;
+    summary.ai_research_brief_citations_created = 0;
+    summary.ai_research_brief_citations_skipped = 0;
     let existing_watchlist_ids_by_name = existing_watchlist_ids_by_name(connection)?;
     let mut watchlist_id_map = HashMap::<String, String>::new();
 
@@ -924,6 +1076,154 @@ fn apply_watchlists_notebooks_questions(
         }
     }
 
+    for brief in &document.ai_research_briefs {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ai_research_briefs WHERE id = ?1)",
+            [&brief.id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            summary.ai_research_briefs_skipped += 1;
+            continue;
+        }
+
+        let scope_id = if brief.scope_type == "company" {
+            let company_ticker = brief
+                .scope_company_qualified_ticker
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_uppercase();
+            company_id_by_ticker
+                .get(&company_ticker)
+                .ok_or_else(|| StorageError::InvalidSettingValue {
+                    key: "import_export",
+                    value: format!("missing brief company {company_ticker}"),
+                })?
+                .to_owned()
+        } else if brief.scope_type == "watchlist" {
+            watchlist_id_map
+                .get(&brief.scope_id)
+                .map(String::as_str)
+                .unwrap_or(brief.scope_id.trim())
+                .to_owned()
+        } else {
+            summary.ai_research_briefs_skipped += 1;
+            continue;
+        };
+
+        connection.execute(
+            "
+            INSERT INTO ai_research_brief_jobs (
+                id,
+                scope_type,
+                scope_id,
+                provider_id,
+                model,
+                prompt_version,
+                evidence_collector_version,
+                renderer_version,
+                status,
+                created_at,
+                started_at,
+                finished_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'succeeded', ?9, ?9, ?9)
+            ON CONFLICT(id) DO NOTHING
+            ",
+            params![
+                brief.job_id.trim(),
+                brief.scope_type.trim(),
+                scope_id,
+                brief.provider_id.trim(),
+                brief.model.trim(),
+                brief.prompt_version.trim(),
+                brief.evidence_collector_version.trim(),
+                brief.renderer_version.trim(),
+                brief.created_at.trim(),
+            ],
+        )?;
+
+        connection.execute(
+            "
+            INSERT INTO ai_research_briefs (
+                id,
+                job_id,
+                scope_type,
+                scope_id,
+                provider_id,
+                model,
+                prompt_version,
+                evidence_collector_version,
+                renderer_version,
+                title,
+                summary,
+                content_markdown,
+                language,
+                generated_at,
+                created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            ",
+            params![
+                brief.id.trim(),
+                brief.job_id.trim(),
+                brief.scope_type.trim(),
+                scope_id,
+                brief.provider_id.trim(),
+                brief.model.trim(),
+                brief.prompt_version.trim(),
+                brief.evidence_collector_version.trim(),
+                brief.renderer_version.trim(),
+                brief.title.trim(),
+                brief.summary.trim(),
+                brief.content_markdown.trim(),
+                empty_string_to_none(brief.language.clone()),
+                brief.generated_at.trim(),
+                brief.created_at.trim(),
+            ],
+        )?;
+        summary.ai_research_briefs_created += 1;
+    }
+
+    for citation in &document.ai_research_brief_citations {
+        if !evidence_reference_exists_for_import(
+            connection,
+            &citation.evidence_type,
+            &citation.evidence_id,
+        )? {
+            summary.ai_research_brief_citations_skipped += 1;
+            continue;
+        }
+        let inserted = connection.execute(
+            "
+            INSERT OR IGNORE INTO ai_research_brief_citations (
+                id,
+                brief_id,
+                citation_key,
+                evidence_type,
+                evidence_id,
+                label,
+                snippet,
+                created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            ",
+            params![
+                citation.id.trim(),
+                citation.brief_id.trim(),
+                citation.citation_key.trim(),
+                citation.evidence_type.trim(),
+                citation.evidence_id.trim(),
+                citation.label.trim(),
+                citation.snippet.clone(),
+                citation.created_at.trim(),
+            ],
+        )?;
+        if inserted == 0 {
+            summary.ai_research_brief_citations_skipped += 1;
+        } else {
+            summary.ai_research_brief_citations_created += 1;
+        }
+    }
+
     Ok(summary)
 }
 
@@ -1115,6 +1415,93 @@ fn export_evidence_links(connection: &Connection) -> StorageResult<Vec<ExportEvi
             to_id: row.get(4)?,
             relation_type: row.get(5)?,
             created_at: row.get(6)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn export_ai_research_briefs(connection: &Connection) -> StorageResult<Vec<ExportAiResearchBrief>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            ai_research_briefs.id,
+            ai_research_briefs.job_id,
+            ai_research_briefs.scope_type,
+            ai_research_briefs.scope_id,
+            companies.qualified_ticker,
+            ai_research_briefs.provider_id,
+            ai_research_briefs.model,
+            ai_research_briefs.prompt_version,
+            ai_research_briefs.evidence_collector_version,
+            ai_research_briefs.renderer_version,
+            ai_research_briefs.title,
+            ai_research_briefs.summary,
+            ai_research_briefs.content_markdown,
+            ai_research_briefs.language,
+            ai_research_briefs.generated_at,
+            ai_research_briefs.created_at
+        FROM ai_research_briefs
+        LEFT JOIN companies
+            ON ai_research_briefs.scope_type = 'company'
+            AND companies.id = ai_research_briefs.scope_id
+        ORDER BY datetime(ai_research_briefs.generated_at) DESC, ai_research_briefs.id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportAiResearchBrief {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            scope_type: row.get(2)?,
+            scope_id: row.get(3)?,
+            scope_company_qualified_ticker: row.get(4)?,
+            provider_id: row.get(5)?,
+            model: row.get(6)?,
+            prompt_version: row.get(7)?,
+            evidence_collector_version: row.get(8)?,
+            renderer_version: row.get(9)?,
+            title: row.get(10)?,
+            summary: row.get(11)?,
+            content_markdown: row.get(12)?,
+            language: row.get(13)?,
+            generated_at: row.get(14)?,
+            created_at: row.get(15)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn export_ai_research_brief_citations(
+    connection: &Connection,
+) -> StorageResult<Vec<ExportAiResearchBriefCitation>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            brief_id,
+            citation_key,
+            evidence_type,
+            evidence_id,
+            label,
+            snippet,
+            created_at
+        FROM ai_research_brief_citations
+        ORDER BY brief_id, citation_key, id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportAiResearchBriefCitation {
+            id: row.get(0)?,
+            brief_id: row.get(1)?,
+            citation_key: row.get(2)?,
+            evidence_type: row.get(3)?,
+            evidence_id: row.get(4)?,
+            label: row.get(5)?,
+            snippet: row.get(6)?,
+            created_at: row.get(7)?,
         })
     })?;
 

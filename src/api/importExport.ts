@@ -5,6 +5,10 @@ export type ImportExportSummary = {
   watchlists: number;
   memberships: number;
   notebookEntries: number;
+  researchQuestions: number;
+  evidenceLinks: number;
+  aiResearchBriefs: number;
+  aiResearchBriefCitations: number;
   settings: number;
 };
 
@@ -16,6 +20,14 @@ export type ImportApplySummary = {
   membershipsCreated: number;
   notebookEntriesCreated: number;
   notebookEntriesSkipped: number;
+  researchQuestionsCreated: number;
+  researchQuestionsMerged: number;
+  evidenceLinksCreated: number;
+  evidenceLinksSkipped: number;
+  aiResearchBriefsCreated: number;
+  aiResearchBriefsSkipped: number;
+  aiResearchBriefCitationsCreated: number;
+  aiResearchBriefCitationsSkipped: number;
   settingsUpdated: number;
 };
 

@@ -1232,6 +1232,14 @@ Initial research question update input:
 }
 ```
 
+Initial research question deletion input:
+
+```json
+{
+  "id": "research_question_company_gpw_cdr_01"
+}
+```
+
 Initial research question statuses:
 
 - `open`
@@ -1245,6 +1253,86 @@ Rules:
 - The storage and command shape keeps `scopeType` open for later watchlist-scoped questions, but normal UI must not expose watchlist question creation until that workflow is designed.
 - A research question appears in the research evidence timeline as `evidenceType: "research_question"` so it can be reviewed and linked like other evidence.
 - Question-to-evidence relationships use typed `evidence_links` with `fromType: "research_question"` and the target evidence type/id.
+- Deleting a research question removes that question and any evidence links attached to it. It must not delete linked feed items, notes, events, transcript segments, AI analysis, or other canonical evidence objects.
+
+Initial AI research brief job shape:
+
+```json
+{
+  "id": "research_brief_job_01",
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr",
+  "providerId": "provider_gemini",
+  "model": "gemini-2.5-flash",
+  "promptVersion": "m30.research_brief.v1",
+  "evidenceCollectorVersion": "m30.collector.v1",
+  "rendererVersion": "m30.renderer.v1",
+  "status": "queued",
+  "errorCode": null,
+  "error": null,
+  "createdAt": "2026-06-11T10:00:00Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "brief": null
+}
+```
+
+Initial AI research brief shape:
+
+```json
+{
+  "id": "research_brief_company_gpw_cdr_01",
+  "jobId": "research_brief_job_01",
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr",
+  "providerId": "provider_gemini",
+  "model": "gemini-2.5-flash",
+  "promptVersion": "m30.research_brief.v1",
+  "evidenceCollectorVersion": "m30.collector.v1",
+  "rendererVersion": "m30.renderer.v1",
+  "title": "CD Projekt research brief",
+  "summary": "Neutral source-grounded summary.",
+  "contentMarkdown": "Rendered brief content with citation markers.",
+  "language": "en",
+  "generatedAt": "2026-06-11T10:03:00Z",
+  "createdAt": "2026-06-11T10:03:00Z",
+  "citations": [
+    {
+      "id": "research_brief_citation_01",
+      "briefId": "research_brief_company_gpw_cdr_01",
+      "citationKey": "E1",
+      "evidenceType": "feed_item",
+      "evidenceId": "feed_01",
+      "label": "Current report title",
+      "snippet": "Short cited snippet or evidence label"
+    }
+  ]
+}
+```
+
+Initial AI research brief input shape:
+
+```json
+{
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr"
+}
+```
+
+Rules:
+
+- Initial `scopeType` values are `company` and `watchlist`.
+- AI research brief generation is explicit and on-demand only.
+- Brief jobs use the existing provider-neutral AI configuration and credential boundary.
+- Brief generation is asynchronous and must not block the UI.
+- Allowed job statuses begin with `queued`, `running`, `succeeded`, `failed`, and `cancelled`.
+- Briefs are immutable snapshots. Regeneration creates a new job and, on success, a new brief.
+- Briefs are dedicated research-owned entities, not notebook entries.
+- Briefs must not include buy/sell/hold recommendations or personalized portfolio advice.
+- Brief content must cite research evidence through citation keys mapped back to typed evidence items.
+- Citations store evidence references and short labels/snippets only; full copied source bodies should not be duplicated into citation rows.
+- Normal UI must show citations and enough provider/model/prompt provenance for source-grounded review without exposing implementation identifiers.
+- Creating a notebook note from a brief remains a separate explicit workflow and is not automatic.
 
 Initial relation types:
 
@@ -1278,6 +1366,7 @@ Initial research command candidates:
 - `list_research_questions(input)`
 - `create_research_question(input)`
 - `update_research_question(input)`
+- `delete_research_question(id)`
 - `list_evidence_links(input)`
 - `create_evidence_link(input)`
 - `delete_evidence_link(id)`
@@ -1310,6 +1399,7 @@ Initial Tauri command groups:
 - `list_research_questions`
 - `create_research_question`
 - `update_research_question`
+- `delete_research_question`
 - `list_evidence_links`
 - `create_evidence_link`
 - `delete_evidence_link`
@@ -1357,11 +1447,15 @@ Research-data export returns a JSON document:
   "schemaVersion": 1,
   "exportedAt": "2026-06-05T12:00:00Z",
   "appVersion": "0.20.0",
-  "sections": ["companies", "watchlists", "notebooks"],
+  "sections": ["companies", "watchlists", "notebooks", "research"],
   "companies": [],
   "watchlists": [],
   "memberships": [],
-  "notebookEntries": []
+  "notebookEntries": [],
+  "researchQuestions": [],
+  "evidenceLinks": [],
+  "aiResearchBriefs": [],
+  "aiResearchBriefCitations": []
 }
 ```
 
@@ -1378,7 +1472,7 @@ Typed commands:
 
 Rules:
 
-- Research-data JSON includes companies, watchlists, memberships, notebook entries, research questions, and evidence links.
+- Research-data JSON includes companies, watchlists, memberships, notebook entries, research questions, evidence links, AI research briefs, and AI research brief citations.
 - Settings YAML includes only allowlisted non-secret settings.
 - Import preview validates schema version, references, setting keys, setting values, and duplicate note behavior before apply.
 - Apply must reject invalid preview states and must be transactional for each import operation.

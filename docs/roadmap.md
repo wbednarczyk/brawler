@@ -1105,21 +1105,59 @@ Exit criteria:
 - research import/export includes questions and evidence links
 - automated validation passes
 
+## Milestone 30: AI Research Briefs
+
+Goal: generate source-grounded company and watchlist research briefs inside the Research workspace while preserving the backend-owned research/evidence boundary.
+
+Status: planned in Radicle epic `feaf0ea`.
+
+Planned scope:
+
+- company and watchlist brief generation from backend-collected research evidence
+- dedicated brief, brief-job, and citation persistence
+- immutable brief snapshots; regeneration creates a new brief instead of overwriting prior research
+- provider-neutral AI execution through the existing AI analysis provider boundary
+- backend prompt/context builder with citation-keyed evidence input
+- citation mapper that links generated claims back to research evidence items
+- backend renderer/read model for UI display
+- compact Research UI for generating, viewing, and reviewing brief citations/provenance
+- research import/export coverage for briefs and citations
+- collector, provider-job, citation-grounding, storage, and UI workflow tests
+
+Architecture decisions:
+
+- Brief generation is explicit and on-demand only.
+- Company and watchlist briefs are both in scope.
+- Briefs are dedicated research entities, not notebook entries.
+- The initial provider configuration reuses existing general AI provider/model settings.
+- Evidence collection uses a backend-owned default collector for the selected scope, not frontend-assembled evidence.
+- Provider output should be structured into sections with citation IDs, then rendered by the backend.
+- Citation storage keeps evidence references and short citation labels/snippets, not full copied source text.
+- Creating notebook notes from briefs remains out of scope for this milestone; no automatic note creation is allowed.
+- Briefs and citations are durable user-owned research data and are included in research import/export.
+
+Exit criteria:
+
+- A user can generate a company-scoped brief from the Research screen.
+- A user can generate a watchlist-scoped brief from the Research screen.
+- Generated briefs persist with provider ID, model, prompt version, evidence collector version, renderer version, timestamps, status, and citations.
+- Brief output is source-grounded and shows citations in normal UI.
+- Brief output does not present buy/sell/hold recommendations.
+- Brief generation remains non-blocking and status updates without manual refresh.
+- Regenerating a brief creates a new snapshot.
+- Research import/export includes briefs and citations.
+- Automated validation passes.
+
 ## Future: Research Workspace Implementation Sequence
 
-M25 delivered the first company-scoped Research screen, M26 delivered watchlist review mode, and M29 delivered research questions plus evidence links. The recommended follow-up sequence is:
+M25 delivered the first company-scoped Research screen, M26 delivered watchlist review mode, M29 delivered research questions plus evidence links, and M30 is planned for AI research briefs. The recommended follow-up sequence after M30 is:
 
-1. AI research briefs.
-   - Adds source-grounded company/watchlist briefs after evidence collection and citation mapping are stable.
-   - Persists briefs as dedicated entities with citations, provider/model/prompt provenance, and regeneration semantics.
-   - Allows explicit note creation from selected brief excerpts later, but does not store briefs as ordinary notes.
-
-2. Event-aware reminders and personal research digest.
+1. Event-aware reminders and personal research digest.
    - Adds reminders once claim/event/question pressure is visible in the workflow.
    - Adds daily or weekly digest generation after company and watchlist review semantics are proven.
    - Reuses the research evidence boundary and AI brief collector/renderer surfaces.
 
-3. Stored timeline/evidence projections only if needed.
+2. Stored timeline/evidence projections only if needed.
    - If live read-model aggregation becomes too slow or review semantics require snapshots, add stored projections behind the existing research API.
    - Projection rows must be rebuildable or have explicit import/export and backup policy.
 

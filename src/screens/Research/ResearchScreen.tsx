@@ -1,7 +1,9 @@
-import { ArrowRight, CheckCheck, ExternalLink, Link, RefreshCw, X } from "lucide-react";
+import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
+import { ArrowRight, CheckCheck, ExternalLink, Link, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import type {
   EvidenceLink,
+  ResearchBriefJob,
   ResearchEvidenceItem,
   ResearchEvidenceType,
   ResearchQuestion,
@@ -42,10 +44,12 @@ type ResearchScreenProps = {
   questionTitle: string;
   questionBody: string;
   questionLinks: EvidenceLink[];
+  briefJobs: ResearchBriefJob[];
   error: string | null;
   loading: boolean;
   reviewInFlight: boolean;
   questionInFlight: boolean;
+  briefInFlight: boolean;
   setMode: (mode: ResearchMode) => void;
   setSelectedCompanyId: (companyId: string | null) => void;
   setSelectedWatchlistId: (watchlistId: string | null) => void;
@@ -61,8 +65,10 @@ type ResearchScreenProps = {
   markReviewed: () => void;
   createQuestion: () => void;
   updateQuestionStatus: (questionId: string, status: ResearchQuestionStatus) => void;
+  deleteQuestion: (questionId: string) => void;
   linkEvidence: (item: ResearchEvidenceItem) => void;
   unlinkEvidence: (linkId: string) => void;
+  startBrief: () => void;
   openEvidence: (item: ResearchEvidenceItem) => void;
   openEvidenceUrl: (url: string) => void;
   formatTimestamp: (value: string | null | undefined) => string;
@@ -85,10 +91,12 @@ export function ResearchScreen({
   questionTitle,
   questionBody,
   questionLinks,
+  briefJobs,
   error,
   loading,
   reviewInFlight,
   questionInFlight,
+  briefInFlight,
   setMode,
   setSelectedCompanyId,
   setSelectedWatchlistId,
@@ -104,13 +112,25 @@ export function ResearchScreen({
   markReviewed,
   createQuestion,
   updateQuestionStatus,
+  deleteQuestion,
   linkEvidence,
   unlinkEvidence,
+  startBrief,
   openEvidence,
   openEvidenceUrl,
   formatTimestamp,
 }: ResearchScreenProps) {
   const { text } = useLocale();
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  const resizeStartRef = useRef<{
+    handle: "watchlistQueue" | "brief";
+    clientX: number;
+    watchlistQueueWidth: number;
+    briefPanelWidth: number;
+  } | null>(null);
+  const [watchlistQueueWidth, setWatchlistQueueWidth] = useState(220);
+  const [briefPanelWidth, setBriefPanelWidth] = useState<number | null>(null);
+  const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
   const selectedCompany = companies.find((company) => company.id === selectedCompanyId) ?? null;
   const selectedWatchlist = watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? null;
   const watchlistCompanyIds = selectedWatchlistId
@@ -126,6 +146,20 @@ export function ResearchScreen({
   const selectedEvidenceTypeSet = new Set(selectedEvidenceTypes);
   const items = timeline?.items ?? [];
   const selectedQuestion = questions.find((question) => question.id === selectedQuestionId) ?? null;
+  const latestBriefJob = briefJobs[0] ?? null;
+  const latestBrief = latestBriefJob?.brief ?? null;
+  const briefRunning = briefJobs.some((job) => job.status === "queued" || job.status === "running");
+  const latestBriefTitle =
+    mode === "company" && selectedCompany
+      ? `${text("Investor research brief")}: ${selectedCompany.displayName}`
+      : mode === "watchlist" && selectedWatchlist
+        ? `${text("Investor research brief")}: ${selectedWatchlist.name}`
+        : text("Investor research brief");
+  const latestBriefParagraphs =
+    latestBrief?.contentMarkdown
+      .split(/\n+/)
+      .map((line) => line.replace(/^##\s*/, "").trim())
+      .filter(Boolean) ?? [];
   const linkedEvidenceKeys = new Set(
     questionLinks.map((link) =>
       link.fromType === "research_question"
@@ -137,6 +171,161 @@ export function ResearchScreen({
     mode === "watchlist" && selectedWatchlistCompany
       ? items.filter((item) => item.companyId === selectedWatchlistCompany.id)
       : items;
+  const researchLayoutStyle = {
+    "--research-watchlist-queue-width": `${watchlistQueueWidth}px`,
+    ...(briefPanelWidth === null ? {} : { "--research-brief-panel-width": `${briefPanelWidth}px` }),
+  } as CSSProperties;
+
+  function clampPanelWidth(width: number, minWidth: number, maxShare: number) {
+    const workspaceWidth = workspaceRef.current?.getBoundingClientRect().width ?? 0;
+    const maxWidth = workspaceWidth > 0 ? Math.max(minWidth, workspaceWidth * maxShare) : minWidth * 2;
+
+    return Math.round(Math.min(Math.max(width, minWidth), maxWidth));
+  }
+
+  function startResearchResize(handle: "watchlistQueue" | "brief", event: PointerEvent<HTMLDivElement>) {
+    resizeStartRef.current = {
+      handle,
+      clientX: event.clientX,
+      watchlistQueueWidth,
+      briefPanelWidth: briefPanelWidth ?? 520,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function resizeResearchPanels(event: PointerEvent<HTMLDivElement>) {
+    const resizeStart = resizeStartRef.current;
+
+    if (!resizeStart || !event.currentTarget.hasPointerCapture(event.pointerId)) {
+      return;
+    }
+
+    const delta = event.clientX - resizeStart.clientX;
+
+    if (resizeStart.handle === "watchlistQueue") {
+      setWatchlistQueueWidth(clampPanelWidth(resizeStart.watchlistQueueWidth + delta, 180, 0.28));
+      return;
+    }
+
+    setBriefPanelWidth(clampPanelWidth(resizeStart.briefPanelWidth - delta, 420, 0.5));
+  }
+
+  function stopResearchResize(event: PointerEvent<HTMLDivElement>) {
+    resizeStartRef.current = null;
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function resizeResearchPanelWithKeyboard(
+    handle: "watchlistQueue" | "brief",
+    event: KeyboardEvent<HTMLDivElement>,
+  ) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+
+    event.preventDefault();
+    const delta = event.key === "ArrowRight" ? 24 : -24;
+
+    if (handle === "watchlistQueue") {
+      setWatchlistQueueWidth((current) => clampPanelWidth(current + delta, 180, 0.28));
+      return;
+    }
+
+    setBriefPanelWidth((current) => clampPanelWidth((current ?? 520) - delta, 420, 0.5));
+  }
+
+  function openCitationEvidence(evidenceType: ResearchEvidenceType, evidenceId: string) {
+    const item = items.find(
+      (current) => current.evidenceType === evidenceType && current.sourceId === evidenceId,
+    );
+
+    if (item) {
+      openEvidence(item);
+    }
+  }
+
+  function isCitationOpenable(evidenceType: ResearchEvidenceType, evidenceId: string) {
+    return items.some((item) => item.evidenceType === evidenceType && item.sourceId === evidenceId);
+  }
+
+  function openQuestionDialog() {
+    setQuestionTitle("");
+    setQuestionBody("");
+    setQuestionDialogOpen(true);
+  }
+
+  function submitQuestionDialog() {
+    createQuestion();
+    setQuestionDialogOpen(false);
+  }
+
+  const briefSection = (
+    <section className="research-briefs" aria-label={text("AI research briefs")}>
+      <div className="research-section-heading">
+        <h2>{text("AI research briefs")}</h2>
+        <span>{briefJobs.length}</span>
+      </div>
+      <div className="research-brief-actions">
+        <Button
+          className="compact-button"
+          disabled={
+            briefInFlight ||
+            briefRunning ||
+            (mode === "company" ? !selectedCompany : !selectedWatchlist)
+          }
+          onClick={startBrief}
+        >
+          <Sparkles size={15} />
+          {briefRunning ? text("Generating") : text("Generate brief")}
+        </Button>
+      </div>
+      {latestBrief ? (
+        <article className="research-brief-card">
+          <div className="research-brief-card-header">
+            <div>
+              <h3>{latestBriefTitle}</h3>
+              <p className="research-brief-summary">{latestBrief.summary}</p>
+            </div>
+            <span>{formatTimestamp(latestBrief.generatedAt)}</span>
+          </div>
+          <div className="research-brief-content">
+            {latestBriefParagraphs.map((line, index) => (
+              <p key={`${latestBrief.id}-${index}`}>{line}</p>
+            ))}
+          </div>
+          <details className="research-brief-citations">
+            <summary>{text("Citations")} ({latestBrief.citations.length})</summary>
+            <div className="research-brief-citation-list">
+              {latestBrief.citations.map((citation) => (
+                <button
+                  className="research-brief-citation"
+                  disabled={!isCitationOpenable(citation.evidenceType, citation.evidenceId)}
+                  key={citation.id}
+                  type="button"
+                  onClick={() => openCitationEvidence(citation.evidenceType, citation.evidenceId)}
+                >
+                  <strong>{citation.citationKey}</strong>
+                  {citation.label}
+                </button>
+              ))}
+            </div>
+          </details>
+          <div className="research-brief-provenance">
+            <span>{text("Generated")} {formatTimestamp(latestBrief.generatedAt)}</span>
+            <span>{text(formatAiProvider(latestBrief.providerId))}</span>
+            <span>{latestBrief.model}</span>
+          </div>
+        </article>
+      ) : latestBriefJob?.status === "failed" ? (
+        <p className="error-text">{latestBriefJob.error ?? text("Research brief failed")}</p>
+      ) : (
+        <EmptyState>{text("No research brief generated yet.")}</EmptyState>
+      )}
+    </section>
+  );
   const companySummaryById = new Map(
     (timeline?.summary.companySummaries ?? []).map((summary) => [summary.companyId, summary]),
   );
@@ -163,18 +352,18 @@ export function ResearchScreen({
         </div>
       </div>
 
-      <div className="research-workspace">
+      <div className="research-workspace" ref={workspaceRef}>
         <section className="research-toolbar" aria-label={text("Research filters")}>
           <div className="research-mode-switch" aria-label={text("Research mode")}>
             <button
-              className={mode === "company" ? "research-filter active" : "research-filter"}
+              className={mode === "company" ? "research-mode-option active" : "research-mode-option"}
               type="button"
               onClick={() => setMode("company")}
             >
               {text("Company")}
             </button>
             <button
-              className={mode === "watchlist" ? "research-filter active" : "research-filter"}
+              className={mode === "watchlist" ? "research-mode-option active" : "research-mode-option"}
               type="button"
               onClick={() => setMode("watchlist")}
             >
@@ -293,161 +482,249 @@ export function ResearchScreen({
 
         {error ? <p className="error-text">{text("Research timeline failed")}: {error}</p> : null}
 
-        {mode === "company" ? (
-          <section className="research-questions" aria-label={text("Research questions")}>
-            <div className="research-questions-list">
-              <div className="research-section-heading">
-                <h2>{text("Research questions")}</h2>
-                <span>{questions.length}</span>
-              </div>
-              {questions.map((question) => (
-                <button
-                  className={question.id === selectedQuestionId ? "research-question-row selected" : "research-question-row"}
-                  key={question.id}
-                  type="button"
-                  onClick={() => setSelectedQuestionId(question.id)}
-                >
-                  <strong>{question.title}</strong>
-                  <span>{text(formatQuestionStatus(question.status))}</span>
-                </button>
-              ))}
-              {questions.length === 0 ? <EmptyState>{text("No research questions yet.")}</EmptyState> : null}
-            </div>
+        <div className="research-main-layout" style={researchLayoutStyle}>
+          <div className={mode === "watchlist" ? "research-main-stack watchlist" : "research-main-stack company"}>
+            {mode === "company" ? (
+              <section className="research-questions" aria-label={text("Research questions")}>
+                <div className="research-question-strip">
+                  <div className="research-section-heading">
+                    <h2>{text("Research questions")}</h2>
+                    <span>{questions.length}</span>
+                  </div>
+                  <Button className="compact-button" disabled={!selectedCompany} onClick={openQuestionDialog}>
+                    <Plus size={15} />
+                    {text("Add question")}
+                  </Button>
+                </div>
+                <div className="research-question-card-list">
+                  {questions.map((question) => (
+                    <div
+                      className={question.id === selectedQuestionId ? "research-question-row selected" : "research-question-row"}
+                      key={question.id}
+                    >
+                      <button
+                        className="research-question-row-main"
+                        type="button"
+                        onClick={() => setSelectedQuestionId(question.id)}
+                      >
+                        <strong>{question.title}</strong>
+                        <span>{text(formatQuestionStatus(question.status))}</span>
+                      </button>
+                      <button
+                        aria-label={text("Delete research question")}
+                        className="research-question-delete"
+                        disabled={questionInFlight}
+                        title={text("Delete research question")}
+                        type="button"
+                        onClick={() => deleteQuestion(question.id)}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                  {questions.length === 0 ? <EmptyState>{text("No research questions yet.")}</EmptyState> : null}
+                </div>
+                {selectedQuestion ? (
+                  <div className="research-active-question">
+                    <div className="research-active-question-main">
+                      <span>{text("Active question")}</span>
+                      <strong>{selectedQuestion.title}</strong>
+                      {selectedQuestion.body ? <p>{selectedQuestion.body}</p> : null}
+                      <div className="research-linked-evidence">
+                        <span>{text("Linked evidence")}</span>
+                        {questionLinks.map((link) => (
+                          <button key={link.id} type="button" onClick={() => unlinkEvidence(link.id)}>
+                            <X size={13} />
+                            {text(formatEvidenceType(link.fromType === "research_question" ? link.toType : link.fromType))}
+                          </button>
+                        ))}
+                        {questionLinks.length === 0 ? <small>{text("No linked evidence yet.")}</small> : null}
+                      </div>
+                    </div>
+                    <div className="research-question-actions">
+                      <Button
+                        className="compact-button"
+                        disabled={questionInFlight || selectedQuestion.status === "answered"}
+                        onClick={() => updateQuestionStatus(selectedQuestion.id, "answered")}
+                      >
+                        {text("Answered")}
+                      </Button>
+                      <Button
+                        className="compact-button"
+                        disabled={questionInFlight || selectedQuestion.status === "closed"}
+                        onClick={() => updateQuestionStatus(selectedQuestion.id, "closed")}
+                      >
+                        {text("Close")}
+                      </Button>
+                      <Button
+                        className="compact-button"
+                        disabled={questionInFlight || selectedQuestion.status === "open"}
+                        onClick={() => updateQuestionStatus(selectedQuestion.id, "open")}
+                      >
+                        {text("Reopen")}
+                      </Button>
+                      <Button className="compact-button" onClick={() => setSelectedQuestionId(null)}>
+                        {text("Clear selection")}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
 
-            <div className="research-question-detail">
-              <form
-                className="research-question-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  createQuestion();
-                }}
-              >
+            <div className={mode === "watchlist" ? "research-review-layout" : "research-review-region"}>
+              {mode === "watchlist" ? (
+                <>
+                  <section className="research-company-queue" aria-label={text("Watchlist company review queue")}>
+                    {watchlistCompanies.map((company) => {
+                      const summary = companySummaryById.get(company.id);
+                      const isSelected = selectedWatchlistCompanyId === company.id;
+
+                      return (
+                        <button
+                          className={isSelected ? "research-company-queue-row selected" : "research-company-queue-row"}
+                          key={company.id}
+                          type="button"
+                          onClick={() => setSelectedWatchlistCompanyId(company.id)}
+                        >
+                          <span>
+                            <TickerLabel value={company.qualifiedTicker} />
+                            <strong>{company.displayName}</strong>
+                          </span>
+                          <span>
+                            {summary?.changedSinceReview ? (
+                              <strong>{summary.changedSinceReview}</strong>
+                            ) : (
+                              <strong>0</strong>
+                            )}
+                            {text("Changed")}
+                          </span>
+                        </button>
+                      );
+                    })}
+                    {mode === "watchlist" && watchlistCompanies.length === 0 ? (
+                      <EmptyState>{text("Selected watchlist has no companies.")}</EmptyState>
+                    ) : null}
+                  </section>
+                  <div
+                    aria-label={text("Resize watchlist company list")}
+                    aria-orientation="vertical"
+                    aria-valuemax={360}
+                    aria-valuemin={180}
+                    aria-valuenow={watchlistQueueWidth}
+                    className="research-resizer"
+                    onKeyDown={(event) => resizeResearchPanelWithKeyboard("watchlistQueue", event)}
+                    onPointerDown={(event) => startResearchResize("watchlistQueue", event)}
+                    onPointerMove={resizeResearchPanels}
+                    onPointerUp={stopResearchResize}
+                    role="separator"
+                    tabIndex={0}
+                    title={text("Drag to resize watchlist company list")}
+                  />
+                </>
+              ) : null}
+
+              <section className="research-timeline" aria-label={text("Evidence timeline")}>
+                {visibleItems.map((item) => (
+                  <EvidenceRow
+                    changed={mode === "watchlist"
+                      ? item.reviewState.changedSinceWatchlistReview
+                      : item.reviewState.changedSinceCompanyReview}
+                    formatTimestamp={formatTimestamp}
+                    item={item}
+                    key={item.id}
+                    onOpen={openEvidence}
+                    onOpenUrl={openEvidenceUrl}
+                    onLink={linkEvidence}
+                    canLink={Boolean(
+                      selectedQuestion &&
+                        !(item.evidenceType === "research_question" && item.sourceId === selectedQuestion.id) &&
+                        !linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`),
+                    )}
+                    text={text}
+                  />
+                ))}
+                {visibleItems.length === 0 ? (
+                  <EmptyState>
+                    {companies.length === 0
+                      ? text("No companies tracked yet.")
+                      : text("No evidence for selected filters.")}
+                  </EmptyState>
+                ) : null}
+              </section>
+            </div>
+          </div>
+
+          <div
+            aria-label={text("Resize AI research brief panel")}
+            aria-orientation="vertical"
+            aria-valuemax={720}
+            aria-valuemin={420}
+            aria-valuenow={briefPanelWidth ?? 520}
+            className="research-resizer"
+            onKeyDown={(event) => resizeResearchPanelWithKeyboard("brief", event)}
+            onPointerDown={(event) => startResearchResize("brief", event)}
+            onPointerMove={resizeResearchPanels}
+            onPointerUp={stopResearchResize}
+            role="separator"
+            tabIndex={0}
+            title={text("Drag to resize AI research brief panel")}
+          />
+          <aside className="research-aside">
+            {briefSection}
+          </aside>
+        </div>
+        {questionDialogOpen ? (
+          <div className="research-dialog-backdrop" role="presentation">
+            <form
+              aria-label={text("Add research question")}
+              className="research-question-dialog"
+              role="dialog"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitQuestionDialog();
+              }}
+            >
+              <div className="research-dialog-header">
+                <h2>{text("Add research question")}</h2>
+                <button
+                  aria-label={text("Close")}
+                  className="research-question-delete"
+                  type="button"
+                  onClick={() => setQuestionDialogOpen(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <label>
+                <span>{text("Question title")}</span>
                 <input
                   aria-label={text("Question title")}
                   placeholder={text("Question title")}
                   value={questionTitle}
                   onChange={(event) => setQuestionTitle(event.target.value)}
                 />
+              </label>
+              <label>
+                <span>{text("Question context")}</span>
                 <textarea
                   aria-label={text("Question context")}
                   placeholder={text("Question context")}
                   value={questionBody}
                   onChange={(event) => setQuestionBody(event.target.value)}
                 />
-                <Button className="compact-button" disabled={questionInFlight || !questionTitle.trim()} type="submit">
-                  {text("Add question")}
+              </label>
+              <div className="research-dialog-actions">
+                <Button className="compact-button" type="button" onClick={() => setQuestionDialogOpen(false)}>
+                  {text("Cancel")}
                 </Button>
-              </form>
-
-              {selectedQuestion ? (
-                <div className="research-selected-question">
-                  <div>
-                    <h3>{selectedQuestion.title}</h3>
-                    {selectedQuestion.body ? <p>{selectedQuestion.body}</p> : null}
-                  </div>
-                  <div className="research-question-actions">
-                    <Button
-                      className="compact-button"
-                      disabled={questionInFlight || selectedQuestion.status === "answered"}
-                      onClick={() => updateQuestionStatus(selectedQuestion.id, "answered")}
-                    >
-                      {text("Answered")}
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      disabled={questionInFlight || selectedQuestion.status === "closed"}
-                      onClick={() => updateQuestionStatus(selectedQuestion.id, "closed")}
-                    >
-                      {text("Close")}
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      disabled={questionInFlight || selectedQuestion.status === "open"}
-                      onClick={() => updateQuestionStatus(selectedQuestion.id, "open")}
-                    >
-                      {text("Reopen")}
-                    </Button>
-                  </div>
-                  <div className="research-linked-evidence">
-                    <span>{text("Linked evidence")}</span>
-                    {questionLinks.map((link) => (
-                      <button key={link.id} type="button" onClick={() => unlinkEvidence(link.id)}>
-                        <X size={13} />
-                        {text(formatEvidenceType(link.fromType === "research_question" ? link.toType : link.fromType))}
-                      </button>
-                    ))}
-                    {questionLinks.length === 0 ? <small>{text("No linked evidence yet.")}</small> : null}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </section>
+                <Button className="compact-button" disabled={questionInFlight || !questionTitle.trim()} type="submit">
+                  {text("Save question")}
+                </Button>
+              </div>
+            </form>
+          </div>
         ) : null}
-
-        <div className={mode === "watchlist" ? "research-review-layout" : undefined}>
-          {mode === "watchlist" ? (
-            <section className="research-company-queue" aria-label={text("Watchlist company review queue")}>
-              {watchlistCompanies.map((company) => {
-                const summary = companySummaryById.get(company.id);
-                const isSelected = selectedWatchlistCompanyId === company.id;
-
-                return (
-                  <button
-                    className={isSelected ? "research-company-queue-row selected" : "research-company-queue-row"}
-                    key={company.id}
-                    type="button"
-                    onClick={() => setSelectedWatchlistCompanyId(company.id)}
-                  >
-                    <span>
-                      <TickerLabel value={company.qualifiedTicker} />
-                      <strong>{company.displayName}</strong>
-                    </span>
-                    <span>
-                      {summary?.changedSinceReview ? (
-                        <strong>{summary.changedSinceReview}</strong>
-                      ) : (
-                        <strong>0</strong>
-                      )}
-                      {text("Changed")}
-                    </span>
-                  </button>
-                );
-              })}
-              {mode === "watchlist" && watchlistCompanies.length === 0 ? (
-                <EmptyState>{text("Selected watchlist has no companies.")}</EmptyState>
-              ) : null}
-            </section>
-          ) : null}
-
-          <section className="research-timeline" aria-label={text("Evidence timeline")}>
-            {visibleItems.map((item) => (
-              <EvidenceRow
-                changed={mode === "watchlist"
-                  ? item.reviewState.changedSinceWatchlistReview
-                  : item.reviewState.changedSinceCompanyReview}
-                formatTimestamp={formatTimestamp}
-                item={item}
-                key={item.id}
-                onOpen={openEvidence}
-                onOpenUrl={openEvidenceUrl}
-                onLink={linkEvidence}
-                canLink={Boolean(
-                  selectedQuestion &&
-                    !(item.evidenceType === "research_question" && item.sourceId === selectedQuestion.id) &&
-                    !linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`),
-                )}
-                text={text}
-              />
-            ))}
-            {visibleItems.length === 0 ? (
-              <EmptyState>
-                {companies.length === 0
-                  ? text("No companies tracked yet.")
-                  : text("No evidence for selected filters.")}
-              </EmptyState>
-            ) : null}
-          </section>
-        </div>
       </div>
     </section>
   );

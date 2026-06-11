@@ -1,4 +1,4 @@
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
 import {
   expect,
   invoke,
@@ -110,9 +110,10 @@ describe("Research screen workflows", () => {
       expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
     });
 
+    await user.click(screen.getByRole("button", { name: "Add question" }));
     await user.type(screen.getByLabelText("Question title"), "What changed in the report?");
     await user.type(screen.getByLabelText("Question context"), "Track the source report and notes.");
-    await user.click(screen.getByRole("button", { name: "Add question" }));
+    await user.click(screen.getByRole("button", { name: "Save question" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("create_research_question", {
@@ -156,8 +157,9 @@ describe("Research screen workflows", () => {
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Research" }));
-    await user.type(screen.getByLabelText("Question title"), "Should backlog normalize?");
     await user.click(screen.getByRole("button", { name: "Add question" }));
+    await user.type(screen.getByLabelText("Question title"), "Should backlog normalize?");
+    await user.click(screen.getByRole("button", { name: "Save question" }));
 
     await waitFor(() => {
       expect(screen.getAllByText("Should backlog normalize?").length).toBeGreaterThan(0);
@@ -176,6 +178,29 @@ describe("Research screen workflows", () => {
     expect(
       within(researchRegion).getByText("Current report placeholder for watchlist company"),
     ).toBeInTheDocument();
+  });
+
+  it("confirms and deletes a selected research question", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
+    });
+
+    await user.click(screen.getByRole("button", { name: "Delete research question" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_research_question", {
+        id: "research_question_company_gpw_cdr_margin",
+      });
+    });
+    expect(confirm).toHaveBeenCalledWith('Delete research question "Will margins recover?"?');
+
+    confirm.mockRestore();
   });
 
   it("loads watchlist evidence and can explicitly cascade review to member companies", async () => {
@@ -215,5 +240,68 @@ describe("Research screen workflows", () => {
         }),
       });
     });
+  });
+
+  it("generates and displays a cited AI research brief", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    expect(screen.getByText("No research brief generated yet.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Generate brief" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("start_research_brief", {
+        input: {
+          scopeType: "company",
+          scopeId: "company_gpw_cdr",
+        },
+      });
+    });
+
+    expect(await screen.findByText("Investor research brief: CD PROJEKT S.A.")).toBeInTheDocument();
+    expect(screen.queryByText(/company_gpw_cdr/i)).not.toBeInTheDocument();
+    expect(screen.getByText("Source-grounded brief summary.")).toBeInTheDocument();
+    expect(screen.getByText("Citations (1)")).toBeInTheDocument();
+    expect(screen.getAllByText("Current report placeholder for watchlist company").length).toBeGreaterThan(0);
+  });
+
+  it("opens cited evidence from an AI research brief", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    await user.click(screen.getByRole("button", { name: "Generate brief" }));
+
+    await user.click(await screen.findByText("Citations (1)"));
+    await user.click(screen.getByRole("button", { name: /E1 Current report placeholder/ }));
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Inbox company")).toHaveValue("GPW:CDR");
+  });
+
+  it("resizes research split panels with keyboard controls", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    const briefResizer = screen.getByRole("separator", { name: "Resize AI research brief panel" });
+    expect(briefResizer).toHaveAttribute("aria-valuenow", "520");
+
+    briefResizer.focus();
+    await user.keyboard("{ArrowLeft}");
+    expect(briefResizer).toHaveAttribute("aria-valuenow", "544");
+
+    await user.click(screen.getByRole("button", { name: "Watchlist" }));
+    const queueResizer = screen.getByRole("separator", { name: "Resize watchlist company list" });
+    expect(queueResizer).toHaveAttribute("aria-valuenow", "220");
+
+    queueResizer.focus();
+    await user.keyboard("{ArrowRight}");
+    expect(queueResizer).toHaveAttribute("aria-valuenow", "244");
   });
 });

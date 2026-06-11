@@ -163,6 +163,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "research_questions",
         sql: include_str!("../../migrations/0031_research_questions.sql"),
     },
+    Migration {
+        version: 32,
+        name: "ai_research_briefs",
+        sql: include_str!("../../migrations/0032_ai_research_briefs.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

@@ -416,22 +416,62 @@ Rules:
 - Questions may be linked to feed items, notebook entries, claims, events, transcript segments, AI analysis, and other accepted evidence through `evidence_links`.
 - Company-scoped questions appear in the backend research timeline as `research_question` evidence items.
 
-Future AI research brief tables should preserve:
+Initial `ai_research_brief_jobs` fields:
 
-- provider ID
-- model
-- prompt version
-- evidence collector version
-- generated timestamp
-- rendered content
-- citation links back to evidence items
-- status/error state if generation is asynchronous
+- `id`
+- `scope_type`
+- `scope_id`
+- `provider_id`
+- `model`
+- `prompt_version`
+- `evidence_collector_version`
+- `renderer_version`
+- `status`
+- `error_code`
+- `error`
+- `created_at`
+- `started_at`
+- `finished_at`
+
+Initial `ai_research_briefs` fields:
+
+- `id`
+- `job_id`
+- `scope_type`
+- `scope_id`
+- `provider_id`
+- `model`
+- `prompt_version`
+- `evidence_collector_version`
+- `renderer_version`
+- `title`
+- `summary`
+- `content_markdown`
+- `language`
+- `generated_at`
+- `created_at`
+
+Initial `ai_research_brief_citations` fields:
+
+- `id`
+- `brief_id`
+- `citation_key`
+- `evidence_type`
+- `evidence_id`
+- `label`
+- `snippet`
+- `created_at`
 
 Rules:
 
 - AI research briefs are not notebook entries.
-- A later workflow may let the user create a notebook entry from a brief or selected excerpt.
+- Initial `scope_type` values are `company` and `watchlist`.
+- Brief generation is explicit and asynchronous.
+- Brief jobs use the provider-neutral AI settings and credential boundary.
+- Briefs are immutable snapshots. Regeneration creates a new successful brief instead of overwriting the previous one.
+- A later workflow may let the user create a notebook entry from a brief or selected excerpt, but no note is created automatically.
 - Generated briefs must cite source evidence and keep buy/sell/hold recommendation guardrails.
+- Citation rows link generated content back to research evidence items and should not duplicate full source bodies.
 - Import/export, backup, retention, and migrations must treat research-owned durable state explicitly.
 
 ### Jobs
@@ -688,7 +728,7 @@ M20 import/export documents are portable files, not runtime tables.
 
 Rules:
 
-- Research data is exported as JSON with schema version, export timestamp, app version, companies, watchlists, memberships, notebook entries, research questions, and evidence links.
+- Research data is exported as JSON with schema version, export timestamp, app version, companies, watchlists, memberships, notebook entries, research questions, evidence links, AI research briefs, and brief citations.
 - Settings are exported as YAML with schema version, export timestamp, app version, and allowlisted non-secret settings.
 - Import validates documents before any storage change.
 - Research import applies through existing SQLite tables inside one transaction.

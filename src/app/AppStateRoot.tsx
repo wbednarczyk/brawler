@@ -373,10 +373,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     researchQuestionTitle,
     researchQuestionBody,
     researchQuestionLinks,
+    researchBriefJobs,
     researchError,
     researchLoading,
     researchReviewInFlight,
     researchQuestionInFlight,
+    researchBriefInFlight,
     setResearchMode,
     setSelectedResearchCompanyId,
     setSelectedResearchWatchlistId,
@@ -392,8 +394,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     markResearchReviewed,
     createResearchQuestion,
     updateResearchQuestionStatus,
+    deleteResearchQuestion,
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
+    startResearchBrief,
   } = useResearchController({
     activeSection,
     companies,
@@ -1487,10 +1491,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               questionTitle={researchQuestionTitle}
               questionBody={researchQuestionBody}
               questionLinks={researchQuestionLinks}
+              briefJobs={researchBriefJobs}
               error={researchError}
               loading={researchLoading}
               reviewInFlight={researchReviewInFlight}
               questionInFlight={researchQuestionInFlight}
+              briefInFlight={researchBriefInFlight}
               setMode={setResearchMode}
               setSelectedCompanyId={setSelectedResearchCompanyId}
               setSelectedWatchlistId={setSelectedResearchWatchlistId}
@@ -1514,11 +1520,17 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               updateQuestionStatus={(questionId, status) => {
                 void updateResearchQuestionStatus(questionId, status);
               }}
+              deleteQuestion={(questionId) => {
+                void deleteResearchQuestion(questionId);
+              }}
               linkEvidence={(item) => {
                 void linkEvidenceToSelectedQuestion(item);
               }}
               unlinkEvidence={(linkId) => {
                 void unlinkEvidenceFromSelectedQuestion(linkId);
+              }}
+              startBrief={() => {
+                void startResearchBrief();
               }}
               openEvidence={openResearchEvidence}
               openEvidenceUrl={openExternalUrl}

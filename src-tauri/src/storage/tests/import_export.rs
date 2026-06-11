@@ -73,6 +73,7 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
             body: Some("Use future reports to answer this.".to_owned()),
         })
         .expect("research question should create");
+    let link_target_note_id = note.id.clone();
     source
         .create_evidence_link(NewEvidenceLink {
             from_type: "research_question".to_owned(),
@@ -82,6 +83,30 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
             relation_type: "related".to_owned(),
         })
         .expect("question link should create");
+    let brief_job = source
+        .create_research_brief_job(NewResearchBriefJob {
+            scope_type: "company".to_owned(),
+            scope_id: cdr.id.clone(),
+            provider_id: "test_sample".to_owned(),
+            model: "test-sample-analysis-v1".to_owned(),
+        })
+        .expect("brief job should create");
+    source
+        .complete_research_brief_job(CompletedResearchBrief {
+            job_id: brief_job.id,
+            title: "CDR research brief".to_owned(),
+            summary: "Brief summary.".to_owned(),
+            content_markdown: "## What changed\n\nNotebook evidence changed. [E1]".to_owned(),
+            language: Some("en".to_owned()),
+            citations: vec![NewResearchBriefCitation {
+                citation_key: "E1".to_owned(),
+                evidence_type: "notebook_entry".to_owned(),
+                evidence_id: link_target_note_id,
+                label: "Management claim".to_owned(),
+                snippet: Some("Company expects release progress.".to_owned()),
+            }],
+        })
+        .expect("brief should complete");
 
     let export = source
         .export_research_data()
@@ -92,6 +117,8 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert_eq!(export.summary.notebook_entries, 1);
     assert_eq!(export.summary.research_questions, 1);
     assert_eq!(export.summary.evidence_links, 1);
+    assert_eq!(export.summary.ai_research_briefs, 1);
+    assert_eq!(export.summary.ai_research_brief_citations, 1);
 
     let target = AppState::new(open_in_memory_database().expect("database should open"));
     let preview = target
@@ -104,6 +131,8 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert_eq!(preview.summary.notebook_entries_created, 1);
     assert_eq!(preview.summary.research_questions_created, 1);
     assert_eq!(preview.summary.evidence_links_created, 1);
+    assert_eq!(preview.summary.ai_research_briefs_created, 1);
+    assert_eq!(preview.summary.ai_research_brief_citations_created, 1);
 
     target
         .apply_research_import(&export.contents)
@@ -137,6 +166,22 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
         .expect("evidence links should list");
     assert_eq!(imported_links.len(), 1);
     assert_eq!(imported_links[0].relation_type, "related");
+    let imported_briefs = target
+        .list_research_brief_jobs(ResearchBriefScopeInput {
+            scope_type: "company".to_owned(),
+            scope_id: imported_companies[0].id.clone(),
+        })
+        .expect("research briefs should list");
+    assert_eq!(imported_briefs.len(), 1);
+    assert_eq!(
+        imported_briefs[0]
+            .brief
+            .as_ref()
+            .expect("brief should restore")
+            .citations
+            .len(),
+        1
+    );
 }
 
 #[test]

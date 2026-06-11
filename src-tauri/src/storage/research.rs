@@ -521,6 +521,23 @@ pub(super) fn update_research_question(
     get_research_question(connection, &input.id)
 }
 
+pub(super) fn delete_research_question(connection: &Connection, id: &str) -> StorageResult<()> {
+    let id = id.trim();
+    get_research_question(connection, id)?;
+
+    connection.execute(
+        "
+        DELETE FROM evidence_links
+        WHERE (from_type = 'research_question' AND from_id = ?1)
+            OR (to_type = 'research_question' AND to_id = ?1)
+        ",
+        [id],
+    )?;
+    connection.execute("DELETE FROM research_questions WHERE id = ?1", [id])?;
+
+    Ok(())
+}
+
 pub(super) fn list_evidence_links(
     connection: &Connection,
     input: EvidenceLinkListInput,

@@ -1,4 +1,4 @@
-use crate::storage::FeedItem;
+use crate::storage::{FeedItem, ResearchEvidenceItem};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -22,6 +22,38 @@ pub struct AnalysisProviderOutput {
 pub struct AnalysisSourceReference {
     pub source_url: String,
     pub label: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResearchBriefRequest {
+    pub scope_type: String,
+    pub scope_id: String,
+    pub evidence_items: Vec<ResearchEvidenceItem>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResearchBriefProviderOutput {
+    pub title: String,
+    pub summary: String,
+    pub sections: Vec<ResearchBriefSectionOutput>,
+    pub language: Option<String>,
+    pub citations: Vec<ResearchBriefCitationOutput>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResearchBriefSectionOutput {
+    pub heading: String,
+    pub body: String,
+    pub citation_keys: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResearchBriefCitationOutput {
+    pub citation_key: String,
+    pub evidence_type: String,
+    pub evidence_id: String,
+    pub label: String,
+    pub snippet: Option<String>,
 }
 
 #[derive(Debug, Error)]
@@ -63,4 +95,9 @@ pub trait AiAnalysisProvider {
         &self,
         request: &AnalysisRequest,
     ) -> Result<AnalysisProviderOutput, AnalysisProviderError>;
+
+    fn generate_research_brief(
+        &self,
+        request: &ResearchBriefRequest,
+    ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError>;
 }

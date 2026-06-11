@@ -3,6 +3,7 @@ import * as researchApi from "../api/research";
 import type { Company, Watchlist, WatchlistMembership } from "../api/types";
 import type {
   EvidenceLink,
+  ResearchBriefJob,
   ResearchEvidenceItem,
   ResearchEvidenceType,
   ResearchQuestion,
@@ -43,10 +44,12 @@ export function useResearchController({
   const [researchQuestionTitle, setResearchQuestionTitle] = useState("");
   const [researchQuestionBody, setResearchQuestionBody] = useState("");
   const [researchQuestionLinks, setResearchQuestionLinks] = useState<EvidenceLink[]>([]);
+  const [researchBriefJobs, setResearchBriefJobs] = useState<ResearchBriefJob[]>([]);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchReviewInFlight, setResearchReviewInFlight] = useState(false);
   const [researchQuestionInFlight, setResearchQuestionInFlight] = useState(false);
+  const [researchBriefInFlight, setResearchBriefInFlight] = useState(false);
 
   useEffect(() => {
     textRef.current = text;
@@ -210,6 +213,24 @@ export function useResearchController({
     };
   }, [selectedResearchQuestionId]);
 
+  const refreshResearchBriefs = useCallback(async () => {
+    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
+    if (!scopeId) {
+      setResearchBriefJobs([]);
+      return;
+    }
+
+    try {
+      const jobs = await researchApi.listResearchBriefs({
+        scopeType: researchMode,
+        scopeId,
+      });
+      setResearchBriefJobs(jobs);
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research briefs failed"));
+    }
+  }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
+
   useEffect(() => {
     if (activeSection !== "Research") {
       return;
@@ -217,6 +238,29 @@ export function useResearchController({
 
     void refreshResearchTimeline();
   }, [activeSection, refreshResearchTimeline]);
+
+  useEffect(() => {
+    if (activeSection !== "Research") {
+      return;
+    }
+
+    void refreshResearchBriefs();
+  }, [activeSection, refreshResearchBriefs]);
+
+  useEffect(() => {
+    if (activeSection !== "Research") {
+      return;
+    }
+    if (!researchBriefJobs.some((job) => job.status === "queued" || job.status === "running")) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshResearchBriefs();
+    }, 1500);
+
+    return () => window.clearInterval(intervalId);
+  }, [activeSection, refreshResearchBriefs, researchBriefJobs]);
 
   function toggleResearchEvidenceType(evidenceType: ResearchEvidenceType) {
     setResearchEvidenceTypes((current) =>
@@ -312,6 +356,33 @@ export function useResearchController({
     }
   }
 
+  async function deleteResearchQuestion(questionId: string) {
+    if (researchQuestionInFlight) {
+      return;
+    }
+
+    const question = researchQuestions.find((current) => current.id === questionId);
+    const questionLabel = question?.title ?? textRef.current("this question");
+    const confirmed = window.confirm(`${textRef.current("Delete research question")} "${questionLabel}"?`);
+    if (!confirmed) {
+      return;
+    }
+
+    setResearchQuestionInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.deleteResearchQuestion(questionId);
+      setResearchQuestionLinks([]);
+      await refreshResearchQuestions();
+      await refreshResearchTimeline();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research question delete failed"));
+    } finally {
+      setResearchQuestionInFlight(false);
+    }
+  }
+
   async function linkEvidenceToSelectedQuestion(item: ResearchEvidenceItem) {
     if (!selectedResearchQuestionId || researchQuestionInFlight) {
       return;
@@ -362,6 +433,28 @@ export function useResearchController({
     }
   }
 
+  async function startResearchBrief() {
+    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
+    if (!scopeId || researchBriefInFlight) {
+      return;
+    }
+
+    setResearchBriefInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.startResearchBrief({
+        scopeType: researchMode,
+        scopeId,
+      });
+      await refreshResearchBriefs();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research brief failed"));
+    } finally {
+      setResearchBriefInFlight(false);
+    }
+  }
+
   return {
     researchMode,
     selectedResearchCompanyId,
@@ -376,10 +469,12 @@ export function useResearchController({
     researchQuestionTitle,
     researchQuestionBody,
     researchQuestionLinks,
+    researchBriefJobs,
     researchError,
     researchLoading,
     researchReviewInFlight,
     researchQuestionInFlight,
+    researchBriefInFlight,
     setResearchMode: setResearchModeAndReset,
     setSelectedResearchCompanyId,
     setSelectedResearchWatchlistId,
@@ -393,11 +488,14 @@ export function useResearchController({
     clearResearchEvidenceTypes,
     refreshResearchTimeline,
     refreshResearchQuestions,
+    refreshResearchBriefs,
     markResearchReviewed,
     createResearchQuestion,
     updateResearchQuestionStatus,
+    deleteResearchQuestion,
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
+    startResearchBrief,
   };
 }
 

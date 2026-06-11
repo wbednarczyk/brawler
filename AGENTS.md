@@ -77,3 +77,46 @@ Then read only the relevant canonical references for the work being done:
 ## Repository Notes
 
 The root `.agents/skills/` directory stores repository-owned, agent-neutral workflows. The root `.codex/skills/` directory may contain Codex-specific entrypoints that delegate to those shared workflows. This `AGENTS.md` file remains the primary repo-level instruction source.
+
+<!-- repoctx:start -->
+# repoctx
+
+`repoctx` is an indexed code-navigation CLI. Use it for structural
+questions about symbols, definitions, source windows, and file outlines.
+Keep the repository's RTK-first workflow for broad text search, whole-file
+reads, diffs, and build/test commands. The index is built incrementally
+over Tree-sitter parses across nine languages (Go, Rust, TypeScript, TSX,
+JavaScript, Python, JSON, YAML, TOML, Markdown).
+
+Read commands auto-build the index on first run; nothing to set up.
+
+## When to prefer which command
+
+- **`/usr/local/bin/repoctx symbols <substring>`** — case-insensitive substring
+  search across every indexed symbol. Use it to explore (`--kind`,
+  `--lang`, `--limit` narrow the result set).
+- **`/usr/local/bin/repoctx definition <name>`** — exact-name lookup limited to
+  definition kinds (`function`, `method`, `class`, `interface`, `type`,
+  `module`, `macro`, `constant`). Prefer over `symbols` when you know
+  the identifier — answers the "where is X defined" question without
+  field/variable noise.
+- **`/usr/local/bin/repoctx context <symbol>`** — exact-name match plus the
+  source window around each hit (`--context` lines either side, default
+  5; `--limit` matches, default 3). One call returns "where + what",
+  beating a `definition` + `Read` round trip.
+- **`/usr/local/bin/repoctx outline <file>`** — document-symbol tree for a single
+  file. Prefer over reading the whole file when you only need the
+  structure.
+- **`/usr/local/bin/repoctx status`** — file/symbol counts + staleness. Cheap
+  one-line health check before deeper work.
+- **`/usr/local/bin/repoctx gain`** — surface how many navigation tokens
+  `repoctx` has saved across recent invocations.
+
+## Output
+
+All commands default to TOON for piped reads (token-efficient) and human
+for TTYs. Pass `--json` when the caller is `jq` or `serde_json`.
+
+Run commands from the repository root.
+
+<!-- repoctx:end -->

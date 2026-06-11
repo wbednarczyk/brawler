@@ -82,9 +82,9 @@ The implementation should not copy another product's visual design directly. The
 7. UI polls or refreshes through typed commands and renders queued/running/succeeded/failed states.
 8. User can retry a failed analysis job from visible UI.
 
-## Future Research Brief Boundary
+## M30 Research Brief Boundary
 
-Future company/watchlist research briefs should reuse the provider-neutral AI posture without turning feed-item analysis into a catch-all module.
+Company/watchlist research briefs reuse the provider-neutral AI posture without turning feed-item analysis into a catch-all module.
 
 Expected ownership:
 
@@ -96,6 +96,18 @@ Expected ownership:
 - persistence stores brief provenance, rendered content, citations, provider ID, model, prompt version, and generation timestamps
 
 Research briefs are dedicated entities. They may be converted into notebook entries through an explicit user action later, but they are not notebook entries by default.
+
+M30 accepted implementation decisions:
+
+- Brief generation is explicit and on-demand only.
+- Both company and watchlist brief scopes are in scope.
+- The initial provider configuration reuses the existing general analysis provider/model settings.
+- Evidence collection uses a backend-owned default collector for the selected scope.
+- Provider output should be structured into sections with citation IDs, then rendered by the backend.
+- Briefs are immutable snapshots. Regeneration creates a new brief.
+- Citations store evidence references and short labels/snippets only, not full copied source bodies.
+- Briefs and citations are durable research data and are included in research import/export.
+- Creating notebook notes from briefs remains out of scope for M30 and must never happen automatically.
 
 ## Initial Commands
 

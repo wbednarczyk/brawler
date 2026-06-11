@@ -38,3 +38,6 @@ Thumbs.db
 
 # local only env vars with credentials
 .env.local
+
+# repoctx
+.repoctx

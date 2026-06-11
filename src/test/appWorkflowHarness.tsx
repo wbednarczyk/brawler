@@ -20,6 +20,7 @@ import type {
 } from "../api/types";
 import type {
   EvidenceLink,
+  ResearchBriefJob,
   ResearchEvidenceInput,
   ResearchEvidenceItem,
   ResearchQuestion,
@@ -1000,6 +1001,7 @@ export const appTestState = {
   researchEvidenceItemsResponse: initialResearchEvidenceItems,
   researchQuestionsResponse: initialResearchQuestions,
   evidenceLinksResponse: [] as EvidenceLink[],
+  researchBriefJobsResponse: [] as ResearchBriefJob[],
   researchReviewCheckpointResponse: null as ResearchReviewCheckpoint | null,
   companyEventsResponse: initialCompanyEvents,
   transcriptJobsResponse: initialTranscriptJobs,
@@ -1081,6 +1083,7 @@ beforeEach(() => {
   appTestState.researchEvidenceItemsResponse = initialResearchEvidenceItems;
   appTestState.researchQuestionsResponse = initialResearchQuestions;
   appTestState.evidenceLinksResponse = [];
+  appTestState.researchBriefJobsResponse = [];
   appTestState.researchReviewCheckpointResponse = null;
   appTestState.companyEventsResponse = initialCompanyEvents;
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
@@ -1298,6 +1301,22 @@ beforeEach(() => {
       return Promise.resolve(appTestState.researchQuestionsResponse.find((question) => question.id === input.id));
     }
 
+    if (command === "delete_research_question") {
+      const { id } = args as { id: string };
+      appTestState.researchQuestionsResponse = appTestState.researchQuestionsResponse.filter(
+        (question) => question.id !== id,
+      );
+      appTestState.researchEvidenceItemsResponse = appTestState.researchEvidenceItemsResponse.filter(
+        (item) => !(item.evidenceType === "research_question" && item.sourceId === id),
+      );
+      appTestState.evidenceLinksResponse = appTestState.evidenceLinksResponse.filter(
+        (link) =>
+          !(link.fromType === "research_question" && link.fromId === id) &&
+          !(link.toType === "research_question" && link.toId === id),
+      );
+      return Promise.resolve();
+    }
+
     if (command === "list_evidence_links") {
       const { input } = args as { input: { endpointType: string; endpointId: string } };
       return Promise.resolve(
@@ -1339,6 +1358,68 @@ beforeEach(() => {
       return Promise.resolve();
     }
 
+    if (command === "list_research_briefs") {
+      const { input } = args as { input: { scopeType: "company" | "watchlist"; scopeId: string } };
+      return Promise.resolve(
+        appTestState.researchBriefJobsResponse.filter(
+          (job) => job.scopeType === input.scopeType && job.scopeId === input.scopeId,
+        ),
+      );
+    }
+
+    if (command === "start_research_brief") {
+      const { input } = args as { input: { scopeType: "company" | "watchlist"; scopeId: string } };
+      const now = "2026-06-05T10:20:00Z";
+      const id = `research_brief_job_${input.scopeType}_${input.scopeId}_${appTestState.researchBriefJobsResponse.length + 1}`;
+      const created: ResearchBriefJob = {
+        id,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        providerId: "test_sample",
+        model: "test-sample-analysis-v1",
+        promptVersion: "m30.research_brief.v1",
+        evidenceCollectorVersion: "m30.collector.v1",
+        rendererVersion: "m30.renderer.v1",
+        status: "succeeded",
+        errorCode: null,
+        error: null,
+        createdAt: now,
+        startedAt: now,
+        finishedAt: now,
+        brief: {
+          id: `research_brief_${input.scopeType}_${input.scopeId}_${appTestState.researchBriefJobsResponse.length + 1}`,
+          jobId: id,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          providerId: "test_sample",
+          model: "test-sample-analysis-v1",
+          promptVersion: "m30.research_brief.v1",
+          evidenceCollectorVersion: "m30.collector.v1",
+          rendererVersion: "m30.renderer.v1",
+          title: "Generated research brief",
+          summary: "Source-grounded brief summary.",
+          contentMarkdown: "## What changed\n\nReview cited evidence together. [E1]",
+          language: "en",
+          generatedAt: now,
+          createdAt: now,
+          citations: [
+            {
+              id: "research_brief_citation_1",
+              briefId: `research_brief_${input.scopeType}_${input.scopeId}_1`,
+              citationKey: "E1",
+              evidenceType: "feed_item",
+              evidenceId: "feed_sample_cdr_report",
+              label: "Current report placeholder for watchlist company",
+              snippet: "Sample official report used to validate research timeline rendering.",
+              createdAt: now,
+            },
+          ],
+        },
+      };
+      appTestState.researchBriefJobsResponse = [created, ...appTestState.researchBriefJobsResponse];
+      return Promise.resolve(created);
+    }
+
     if (command === "export_research_data") {
       return Promise.resolve({
         fileName: "brawler-research-data-2026-06-05.json",
@@ -1351,6 +1432,11 @@ beforeEach(() => {
           notebookEntries: appTestState.notebookEntriesResponse.length,
           researchQuestions: appTestState.researchQuestionsResponse.length,
           evidenceLinks: appTestState.evidenceLinksResponse.length,
+          aiResearchBriefs: appTestState.researchBriefJobsResponse.filter((job) => job.brief).length,
+          aiResearchBriefCitations: appTestState.researchBriefJobsResponse.reduce(
+            (total, job) => total + (job.brief?.citations.length ?? 0),
+            0,
+          ),
           settings: 0,
         },
       });
@@ -1371,6 +1457,10 @@ beforeEach(() => {
           researchQuestionsMerged: 0,
           evidenceLinksCreated: 0,
           evidenceLinksSkipped: 0,
+          aiResearchBriefsCreated: 0,
+          aiResearchBriefsSkipped: 0,
+          aiResearchBriefCitationsCreated: 0,
+          aiResearchBriefCitationsSkipped: 0,
           settingsUpdated: 0,
         },
         warnings: [],
@@ -1392,6 +1482,10 @@ beforeEach(() => {
           researchQuestionsMerged: 0,
           evidenceLinksCreated: 0,
           evidenceLinksSkipped: 0,
+          aiResearchBriefsCreated: 0,
+          aiResearchBriefsSkipped: 0,
+          aiResearchBriefCitationsCreated: 0,
+          aiResearchBriefCitationsSkipped: 0,
           settingsUpdated: 0,
         },
         warnings: [],

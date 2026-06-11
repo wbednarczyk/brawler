@@ -46,6 +46,7 @@ mod migrations;
 mod notebooks;
 mod registry;
 mod research;
+mod research_briefs;
 mod settings;
 mod sources;
 mod transcripts;
@@ -64,6 +65,12 @@ pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
 pub use migrations::{open_database, open_in_memory_database};
+pub use research_briefs::{
+    CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
+    ResearchBriefCitation, ResearchBriefEvidenceContext, ResearchBriefJob, ResearchBriefScopeInput,
+    RESEARCH_BRIEF_COLLECTOR_VERSION, RESEARCH_BRIEF_PROMPT_VERSION,
+    RESEARCH_BRIEF_RENDERER_VERSION,
+};
 pub use settings::{
     AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
 };
@@ -356,6 +363,12 @@ impl AppState {
         research::update_research_question(&connection, input)
     }
 
+    pub fn delete_research_question(&self, id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::delete_research_question(&connection, id)
+    }
+
     pub fn create_evidence_link(&self, input: NewEvidenceLink) -> StorageResult<EvidenceLink> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
@@ -375,6 +388,65 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         research::delete_evidence_link(&connection, id)
+    }
+
+    pub fn create_research_brief_job(
+        &self,
+        input: NewResearchBriefJob,
+    ) -> StorageResult<ResearchBriefJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::create_research_brief_job(&connection, input)
+    }
+
+    pub fn list_research_brief_jobs(
+        &self,
+        input: ResearchBriefScopeInput,
+    ) -> StorageResult<Vec<ResearchBriefJob>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::list_research_brief_jobs(&connection, input)
+    }
+
+    pub fn get_research_brief_job(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::get_research_brief_job(&connection, job_id)
+    }
+
+    pub fn collect_research_brief_evidence(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ResearchBriefEvidenceContext> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::collect_research_brief_evidence(&connection, job_id)
+    }
+
+    pub fn mark_research_brief_job_running(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::mark_research_brief_job_running(&connection, job_id)
+    }
+
+    pub fn complete_research_brief_job(
+        &self,
+        input: CompletedResearchBrief,
+    ) -> StorageResult<ResearchBriefJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::complete_research_brief_job(&connection, input)
+    }
+
+    pub fn mark_research_brief_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<ResearchBriefJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_briefs::mark_research_brief_job_failed(&connection, job_id, error_code, error)
     }
 
     pub fn ingest_gpw_report_listings(

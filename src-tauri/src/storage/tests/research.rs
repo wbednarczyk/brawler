@@ -147,6 +147,69 @@ fn updates_research_question_status() {
 }
 
 #[test]
+fn deletes_research_question_and_its_evidence_links() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .ingest_gpw_report_listings(&[sample_cdr_listing()])
+        .expect("test listing should ingest");
+    let feed_item = state
+        .list_feed_items()
+        .expect("feed items should list")
+        .pop()
+        .expect("feed item should exist");
+    let question = state
+        .create_research_question(NewResearchQuestion {
+            scope_type: "company".to_owned(),
+            scope_id: company.id.clone(),
+            title: "Can this question be removed?".to_owned(),
+            body: None,
+        })
+        .expect("research question should create");
+
+    state
+        .create_evidence_link(NewEvidenceLink {
+            from_type: "research_question".to_owned(),
+            from_id: question.id.clone(),
+            to_type: "feed_item".to_owned(),
+            to_id: feed_item.id,
+            relation_type: "related".to_owned(),
+        })
+        .expect("question evidence link should create");
+
+    state
+        .delete_research_question(&question.id)
+        .expect("research question should delete");
+
+    let questions = state
+        .list_research_questions(ResearchQuestionListInput {
+            scope_type: Some("company".to_owned()),
+            scope_id: Some(company.id.clone()),
+            status: None,
+        })
+        .expect("research questions should list");
+    let links = state.list_evidence_links(EvidenceLinkListInput {
+        endpoint_type: "research_question".to_owned(),
+        endpoint_id: question.id,
+    });
+    let timeline = state
+        .list_research_evidence(ResearchEvidenceInput {
+            company_id: Some(company.id),
+            watchlist_id: None,
+            evidence_types: Some(vec!["research_question".to_owned()]),
+            changed_since_review_only: Some(false),
+            limit: Some(100),
+        })
+        .expect("research question evidence should list");
+
+    assert!(questions.is_empty());
+    assert!(links.is_err());
+    assert!(timeline.items.is_empty());
+}
+
+#[test]
 fn rejects_visible_watchlist_question_scope_until_ui_support_exists() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

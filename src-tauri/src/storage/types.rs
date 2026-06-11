@@ -161,14 +161,14 @@ pub struct ResearchEvidenceInput {
     pub limit: Option<i64>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchTimelineResult {
     pub items: Vec<ResearchEvidenceItem>,
     pub summary: ResearchTimelineSummary,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchTimelineSummary {
     pub total: usize,
@@ -179,7 +179,7 @@ pub struct ResearchTimelineSummary {
     pub company_summaries: Vec<ResearchCompanyTimelineSummary>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchCompanyTimelineSummary {
     pub company_id: String,
@@ -188,7 +188,7 @@ pub struct ResearchCompanyTimelineSummary {
     pub last_reviewed_at: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceItem {
     pub id: String,
@@ -205,7 +205,7 @@ pub struct ResearchEvidenceItem {
     pub review_state: ResearchEvidenceReviewState,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceReviewState {
     pub changed_since_company_review: bool,

@@ -5,7 +5,8 @@ use std::time::Duration;
 
 use super::types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
-    AnalysisSourceReference,
+    AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
+    ResearchBriefRequest, ResearchBriefSectionOutput,
 };
 
 pub const DEFAULT_GEMINI_ANALYSIS_MODEL: &str = "gemini-2.5-flash";
@@ -134,6 +135,23 @@ where
         let output_text = extract_gemini_analysis_text(&response)?;
         parse_gemini_analysis_output(&output_text)
     }
+
+    fn generate_research_brief(
+        &self,
+        request: &ResearchBriefRequest,
+    ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
+        let api_key = self
+            .api_key
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(AnalysisProviderError::ProviderNotConfigured)?;
+        let gemini_request = gemini_research_brief_request(request);
+        let response = self
+            .client
+            .generate_content(&self.model, api_key, &gemini_request)?;
+        let output_text = extract_gemini_analysis_text(&response)?;
+        parse_gemini_research_brief_output(&output_text)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -202,6 +220,37 @@ struct GeminiAnalysisSourceReferenceJson {
     label: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiResearchBriefJson {
+    title: String,
+    summary: String,
+    #[serde(default)]
+    sections: Vec<GeminiResearchBriefSectionJson>,
+    language: Option<String>,
+    #[serde(default)]
+    citations: Vec<GeminiResearchBriefCitationJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiResearchBriefSectionJson {
+    heading: String,
+    body: String,
+    #[serde(default)]
+    citation_keys: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeminiResearchBriefCitationJson {
+    citation_key: String,
+    evidence_type: String,
+    evidence_id: String,
+    label: String,
+    snippet: Option<String>,
+}
+
 fn gemini_analysis_request(request: &AnalysisRequest) -> GeminiAnalysisGenerateContentRequest {
     let item = &request.feed_item;
     let custom_question = request
@@ -240,6 +289,54 @@ Language: {language}",
         attribution = item.attribution,
         source_url = item.source_url,
         language = item.language,
+    );
+
+    GeminiAnalysisGenerateContentRequest {
+        contents: vec![GeminiAnalysisContent {
+            parts: vec![GeminiAnalysisPart::Text { text: prompt }],
+        }],
+        generation_config: GeminiAnalysisGenerationConfig {
+            response_mime_type: "application/json".to_owned(),
+        },
+    }
+}
+
+fn gemini_research_brief_request(
+    request: &ResearchBriefRequest,
+) -> GeminiAnalysisGenerateContentRequest {
+    let evidence = request
+        .evidence_items
+        .iter()
+        .take(120)
+        .enumerate()
+        .map(|(index, item)| {
+            format!(
+                "E{index}: evidenceType={evidence_type}; evidenceId={evidence_id}; companyId={company_id}; occurredAt={occurred_at}; title={title}; summary={summary}; sourceUrl={source_url}; attribution={attribution}; trust={trust}",
+                index = index + 1,
+                evidence_type = item.evidence_type,
+                evidence_id = item.source_id,
+                company_id = item.company_id,
+                occurred_at = item.occurred_at,
+                title = item.title,
+                summary = item.summary.as_deref().unwrap_or(""),
+                source_url = item.source_url.as_deref().unwrap_or(""),
+                attribution = item.attribution.as_deref().unwrap_or(""),
+                trust = item.trust_category,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt = format!(
+        "Create a source-grounded investor research brief for the selected {scope_type}. \
+Return only JSON with this exact shape: \
+{{\"title\":\"...\",\"summary\":\"...\",\"sections\":[{{\"heading\":\"...\",\"body\":\"...\",\"citationKeys\":[\"E1\"]}}],\"language\":\"en\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"feed_item\",\"evidenceId\":\"feed_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
+Use only the evidence below. Every material claim in every section must cite one or more evidence keys. \
+Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
+Scope type: {scope_type}\n\
+Scope id: {scope_id}\n\
+Evidence:\n{evidence}",
+        scope_type = request.scope_type,
+        scope_id = request.scope_id,
     );
 
     GeminiAnalysisGenerateContentRequest {
@@ -330,6 +427,87 @@ fn parse_gemini_analysis_output(
             .filter(|tag| !tag.is_empty())
             .collect(),
         source_references,
+    })
+}
+
+fn parse_gemini_research_brief_output(
+    text: &str,
+) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
+    let json_text = extract_json_object(text);
+    let parsed: GeminiResearchBriefJson = serde_json::from_str(json_text).map_err(|error| {
+        AnalysisProviderError::ParseError(format!("Gemini research brief JSON: {error}"))
+    })?;
+
+    let title = parsed.title.trim().to_owned();
+    let summary = parsed.summary.trim().to_owned();
+    if title.is_empty() || summary.is_empty() {
+        return Err(AnalysisProviderError::ParseError(
+            "Gemini research brief did not include usable title and summary".to_owned(),
+        ));
+    }
+
+    let sections = parsed
+        .sections
+        .into_iter()
+        .filter_map(|section| {
+            let heading = section.heading.trim().to_owned();
+            let body = section.body.trim().to_owned();
+            let citation_keys = section
+                .citation_keys
+                .into_iter()
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+                .collect::<Vec<_>>();
+            if heading.is_empty() || body.is_empty() {
+                None
+            } else {
+                Some(ResearchBriefSectionOutput {
+                    heading,
+                    body,
+                    citation_keys,
+                })
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let citations = parsed
+        .citations
+        .into_iter()
+        .filter_map(|citation| {
+            let citation_key = citation.citation_key.trim().to_owned();
+            let evidence_type = citation.evidence_type.trim().to_owned();
+            let evidence_id = citation.evidence_id.trim().to_owned();
+            let label = citation.label.trim().to_owned();
+            if citation_key.is_empty()
+                || evidence_type.is_empty()
+                || evidence_id.is_empty()
+                || label.is_empty()
+            {
+                None
+            } else {
+                Some(ResearchBriefCitationOutput {
+                    citation_key,
+                    evidence_type,
+                    evidence_id,
+                    label,
+                    snippet: clean_optional_string(citation.snippet),
+                })
+            }
+        })
+        .collect::<Vec<_>>();
+
+    if sections.is_empty() || citations.is_empty() {
+        return Err(AnalysisProviderError::ParseError(
+            "Gemini research brief did not include sections and citations".to_owned(),
+        ));
+    }
+
+    Ok(ResearchBriefProviderOutput {
+        title,
+        summary,
+        sections,
+        language: clean_optional_string(parsed.language),
+        citations,
     })
 }
 
