@@ -387,6 +387,54 @@ fn media_ingestion_matches_tracked_companies_from_future_exchanges() {
 }
 
 #[test]
+fn bankier_rss_ingestion_does_not_match_company_name_inside_unrelated_words() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CMP".to_owned(),
+            display_name: "COMP S.A.".to_owned(),
+            isin: Some("PLCMP0000017".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("company should create");
+
+    let result = state
+        .ingest_bankier_rss_items(&[BankierRssItem {
+            title: "Feerum wybrane do realizacji projektu Dandara w Egipcie za 15,4 mln USD"
+                .to_owned(),
+            link: "https://www.bankier.pl/wiadomosc/Feerum-wybrane-do-realizacji-projektu-Dandara-w-Egipcie-za-15-4-mln-USD-9149454.html"
+                .to_owned(),
+            summary: "Lokalnym partnerem jest The Egyptian Holding Company for Silos and Storage."
+                .to_owned(),
+            published_at: Some("2026-06-11T08:34:00+02:00".to_owned()),
+            fetched_at: "2026-06-11T08:40:00Z".to_owned(),
+            dedupe_key: "bankier-market-rss:feerum-dandara-9149454".to_owned(),
+        }])
+        .expect("RSS item should ingest");
+
+    assert_eq!(result.items_matched, 0);
+    assert_eq!(result.items_unmatched, 1);
+    assert!(state
+        .list_feed_items()
+        .expect("feed items should list")
+        .is_empty());
+
+    let unmatched = state
+        .list_unmatched_source_items(BANKIER_RSS_ADAPTER_ID)
+        .expect("unmatched RSS item should be diagnosable");
+
+    assert_eq!(unmatched.len(), 1);
+    assert_eq!(
+        unmatched[0].title,
+        "Feerum wybrane do realizacji projektu Dandara w Egipcie za 15,4 mln USD"
+    );
+}
+
+#[test]
 fn bankier_rss_ingestion_updates_existing_item_by_source_url() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

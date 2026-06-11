@@ -993,7 +993,7 @@ pub(super) fn find_companies_for_media_item(
             let company_name = normalized_company_name_signal(&company.display_name);
             let ticker = company.ticker.to_uppercase();
 
-            (!company_name.is_empty() && haystack.contains(&company_name))
+            (!company_name.is_empty() && normalized_text_contains_phrase(&tokens, &company_name))
                 || (ticker.chars().count() >= 3 && tokens.iter().any(|token| *token == ticker))
         })
         .cloned()
@@ -1040,6 +1040,17 @@ pub(super) fn normalized_company_name_signal(value: &str) -> String {
     } else {
         normalized
     }
+}
+
+pub(super) fn normalized_text_contains_phrase(tokens: &[&str], phrase: &str) -> bool {
+    let phrase_tokens = phrase.split_whitespace().collect::<Vec<_>>();
+    if phrase_tokens.is_empty() || phrase_tokens.len() > tokens.len() {
+        return false;
+    }
+
+    tokens
+        .windows(phrase_tokens.len())
+        .any(|window| window == phrase_tokens.as_slice())
 }
 
 pub(super) fn normalize_media_match_text(value: &str) -> String {
