@@ -65,9 +65,15 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 16px;
   padding: 18px;
   border-bottom: 1px solid var(--border);
+}
+
+.panel-header > div:first-child {
+  min-width: min(260px, 100%);
+  max-width: 62ch;
 }
 
 h1,

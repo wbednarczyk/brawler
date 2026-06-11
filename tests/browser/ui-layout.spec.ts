@@ -53,6 +53,37 @@ test.describe("browser UI regression smoke", () => {
     await expect(page.getByLabel("Company list search")).toBeInViewport();
   });
 
+  test("keeps Inbox readable at a narrow desktop package window", async ({ page }) => {
+    await page.setViewportSize({ width: 1008, height: 796 });
+    await openApp(page);
+
+    const contentGrid = page.locator(".content-grid");
+    const feedPanel = page.getByRole("region", { name: "Inbox" });
+    const detailPane = page.getByLabel("Feed item details");
+    const statusFilter = page.getByLabel("Feed status filter");
+    const filterReset = page.getByLabel("Inbox filter reset");
+    const filterToolbar = page.getByLabel("Inbox filters");
+
+    await expect(feedPanel).toBeVisible();
+    await expect(detailPane).toBeVisible();
+    await expect(statusFilter).toBeVisible();
+    await expect(filterReset).toBeVisible();
+
+    expect((await expectBox(feedPanel)).width).toBeGreaterThanOrEqual(450);
+    expect((await expectBox(detailPane)).width).toBeGreaterThanOrEqual(300);
+    await expectNoHorizontalOverflow(feedPanel);
+    await expectNoHorizontalOverflow(filterReset);
+    await expectNoHorizontalOverflow(filterToolbar);
+
+    const gridScroll = await contentGrid.evaluate((element) => ({
+      clientWidth: element.clientWidth,
+      overflowX: window.getComputedStyle(element).overflowX,
+      scrollWidth: element.scrollWidth,
+    }));
+    expect(gridScroll.overflowX).toBe("auto");
+    expect(gridScroll.scrollWidth).toBeGreaterThanOrEqual(gridScroll.clientWidth);
+  });
+
   test("keeps notebook panes independently usable", async ({ page }) => {
     await openApp(page);
     await navButton(page, "Notebooks").click();
@@ -138,4 +169,13 @@ async function expectScrollable(locator: Locator) {
 
   expect(["auto", "scroll"]).toContain(scroll.overflowY);
   expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+}
+
+async function expectNoHorizontalOverflow(locator: Locator) {
+  const overflow = await locator.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+  }));
+
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
 }

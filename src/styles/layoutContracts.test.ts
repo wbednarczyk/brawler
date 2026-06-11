@@ -64,16 +64,23 @@ describe("layout scroll contracts", () => {
   });
 
   it("keeps Inbox feed and detail panes as independent scroll regions", () => {
+    const contentGridRule = ruleFor(shellCss, ".content-grid");
+    const panelHeaderRule = ruleFor(layoutCss, ".panel-header");
     const feedPanelRule = ruleFor(layoutCss, ".feed-panel");
     const feedListRule = ruleFor(controlsCss, ".feed-list");
+    const filterResetRule = ruleFor(controlsCss, ".filter-reset-row");
     const detailPaneRule = ruleFor(inboxCss, ".detail-pane");
 
+    expect(contentGridRule).toContain("grid-template-columns: minmax(460px, 1fr) 10px var(--detail-pane-width, 360px)");
+    expect(contentGridRule).toContain("overflow: auto hidden");
+    expect(panelHeaderRule).toContain("flex-wrap: wrap");
     expect(feedPanelRule).toContain("display: flex");
     expect(feedPanelRule).toContain("flex-direction: column");
     expect(feedPanelRule).toContain("overflow: hidden");
     expect(feedListRule).toContain("flex: 1");
     expect(feedListRule).toContain("min-height: 0");
     expect(feedListRule).toContain("overflow: auto");
+    expect(filterResetRule).toContain("flex-wrap: wrap");
     expect(detailPaneRule).toContain("height: 100%");
     expect(detailPaneRule).toContain("min-height: 0");
     expect(detailPaneRule).toContain("overflow: auto");

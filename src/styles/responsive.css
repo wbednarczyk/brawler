@@ -10,6 +10,7 @@
 
   .content-grid {
     grid-template-columns: 1fr;
+    overflow: hidden;
   }
 
   .detail-pane dl {

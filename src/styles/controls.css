@@ -1,5 +1,6 @@
 .segmented-control {
   display: flex;
+  flex: 0 0 auto;
   min-height: 36px;
   padding: 3px;
   border: 1px solid var(--border);
@@ -36,7 +37,8 @@
 .filter-reset-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 14px;
   padding: 6px 18px;
   border-bottom: 1px solid var(--border);
@@ -53,6 +55,7 @@
 .inbox-review-summary {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   min-height: 28px;
   color: var(--muted);

@@ -302,13 +302,14 @@
 .content-grid {
   display: grid;
   align-items: stretch;
-  grid-template-columns: minmax(0, 1fr) 10px var(--detail-pane-width, 360px);
+  grid-template-columns: minmax(460px, 1fr) 10px var(--detail-pane-width, 360px);
   grid-auto-rows: minmax(0, 1fr);
   gap: 12px;
   padding: 22px;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: auto hidden;
+  overscroll-behavior: contain;
 }
 
 .content-grid-single {
