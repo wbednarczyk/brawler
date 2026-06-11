@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "brawler"
-version = "0.28.8"
+version = "0.29.0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",

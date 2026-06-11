@@ -16,11 +16,10 @@ Active planning has moved from this file to Radicle issues rendered by Radboard.
 
 Current milestone epics:
 
-- none; the last completed milestone is archived in [Kanban Archive](kanban-archive.md)
+- `feaf0ea` - epic: AI research briefs (`milestone:v0.30.0`)
 
 Current research-workspace sequence:
 
-- `7e9eb1b` - epic: Research questions and evidence links (`milestone:v0.29.0`)
 - `feaf0ea` - epic: AI research briefs (`milestone:v0.30.0`)
 - `0f17877` - epic: Event-aware reminders and research digest (`milestone:v0.31.0`)
 

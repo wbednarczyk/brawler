@@ -4,6 +4,32 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### M29: Research questions and evidence links
+
+Intent: add durable company-scoped research questions and typed evidence-link workflows inside the Research workspace.
+
+Delivered:
+
+- Added durable research questions stored outside notebooks.
+- Added company-scoped question creation inside the Research screen.
+- Added question status workflow for open, answered, closed, and reopen states.
+- Represented research questions as timeline evidence items.
+- Added selected-question evidence linking and unlinking from visible Research rows.
+- Added backend validation for question-to-evidence links.
+- Added research import/export support for questions and evidence links.
+- Added regression coverage for question creation, linking, import/export, and question-row navigation.
+- Updated docs, contracts, data model, UI architecture, and ADR checkpoint notes.
+- Bumped app version to `0.29.0`.
+
+ADR checkpoint: Updated [ADR 0022](adr/0022-research-evidence-read-model-boundary.md); no new ADR required because the work implements the accepted research/evidence boundary.
+
+Validation:
+
+- `make check` passed.
+- `rtk npm test -- ResearchScreen.test.tsx --run` passed.
+- `rtk npm run typecheck` passed.
+- `git diff --check` passed.
+
 ### M28: Cross-platform release artifacts
 
 Intent: publish practical public release binaries from standard Linux infrastructure while keeping Radicle as the canonical forge.

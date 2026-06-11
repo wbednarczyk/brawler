@@ -1077,26 +1077,49 @@ Exit criteria:
 - ADR 0024 records the release artifact policy
 - automated validation and available packaging smoke checks pass
 
+## Milestone 29: Research Questions And Evidence Links
+
+Goal: add durable company-scoped research questions and typed evidence-link workflows inside the Research workspace.
+
+Status: completed in `0.29.0`.
+
+Included:
+
+- durable research questions stored outside notebooks
+- company-scoped question creation in the Research screen
+- question status workflow with open, answered, closed, and reopen states
+- research questions represented as timeline evidence items
+- selected-question evidence linking and unlinking from visible Research rows
+- backend validation for question-to-evidence links
+- research import/export coverage for questions and evidence links
+- regression coverage for question creation, linking, import/export, and question-row navigation
+- docs, contracts, data model, UI architecture, and ADR checkpoint updates
+
+Exit criteria:
+
+- Research questions can be created for the selected company
+- questions appear in the Research evidence timeline
+- selecting a question enables linking visible evidence rows to that question
+- question-row navigation stays inside Research and does not disturb the evidence timeline
+- linked evidence can be reviewed and removed from the selected question
+- research import/export includes questions and evidence links
+- automated validation passes
+
 ## Future: Research Workspace Implementation Sequence
 
-M25 delivered the first company-scoped Research screen and M26 delivered watchlist review mode. The recommended follow-up sequence is:
+M25 delivered the first company-scoped Research screen, M26 delivered watchlist review mode, and M29 delivered research questions plus evidence links. The recommended follow-up sequence is:
 
-1. Research questions and evidence-linking workflow.
-   - Adds user-visible research questions or threads per company.
-   - Uses typed evidence links for question-to-evidence, claim-to-evidence, event-to-claim, and related-item relationships.
-   - Keeps existing notebook origins as provenance rather than replacing them.
-
-2. AI research briefs.
+1. AI research briefs.
    - Adds source-grounded company/watchlist briefs after evidence collection and citation mapping are stable.
    - Persists briefs as dedicated entities with citations, provider/model/prompt provenance, and regeneration semantics.
    - Allows explicit note creation from selected brief excerpts later, but does not store briefs as ordinary notes.
 
-3. Event-aware reminders and personal research digest.
+2. Event-aware reminders and personal research digest.
    - Adds reminders once claim/event/question pressure is visible in the workflow.
    - Adds daily or weekly digest generation after company and watchlist review semantics are proven.
    - Reuses the research evidence boundary and AI brief collector/renderer surfaces.
 
-4. Stored timeline/evidence projections only if needed.
+3. Stored timeline/evidence projections only if needed.
    - If live read-model aggregation becomes too slow or review semantics require snapshots, add stored projections behind the existing research API.
    - Projection rows must be rebuildable or have explicit import/export and backup policy.
 
