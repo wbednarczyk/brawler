@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.6 - 2026-06-11
+
+
+
+### Bug Fixes
+
+- repair WSL Linux startup and artifact collection
+
+
 ## v0.28.5 - 2026-06-10
 
 
