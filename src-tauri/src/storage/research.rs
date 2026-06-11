@@ -8,6 +8,7 @@ const EVIDENCE_TYPES: &[&str] = &[
     "transcript_segment",
     "company_event",
     "ai_analysis",
+    "research_question",
 ];
 
 const RELATION_TYPES: &[&str] = &[
@@ -20,6 +21,8 @@ const RELATION_TYPES: &[&str] = &[
     "answers",
     "related",
 ];
+
+const RESEARCH_QUESTION_STATUSES: &[&str] = &["open", "answered", "closed"];
 
 pub(super) fn list_research_evidence(
     connection: &Connection,
@@ -179,6 +182,24 @@ pub(super) fn list_research_evidence(
             JOIN feed_items ON feed_items.id = ai_analysis_results.feed_item_id
             JOIN feed_item_companies ON feed_item_companies.feed_item_id = feed_items.id
             JOIN scope_companies ON scope_companies.company_id = feed_item_companies.company_id
+
+            UNION ALL
+
+            SELECT
+                'evidence_research_question_' || research_questions.id AS id,
+                'research_question' AS evidence_type,
+                'research' AS source_domain,
+                research_questions.id AS source_id,
+                research_questions.scope_id AS company_id,
+                COALESCE(research_questions.closed_at, research_questions.updated_at, research_questions.created_at) AS occurred_at,
+                research_questions.title AS title,
+                NULLIF(research_questions.body, '') AS summary,
+                NULL AS source_url,
+                NULL AS attribution,
+                'user_note' AS trust_category
+            FROM research_questions
+            JOIN scope_companies ON scope_companies.company_id = research_questions.scope_id
+            WHERE research_questions.scope_type = 'company'
         )
         SELECT
             id,
@@ -356,6 +377,181 @@ pub(super) fn delete_evidence_link(connection: &Connection, id: &str) -> Storage
     Ok(())
 }
 
+pub(super) fn list_research_questions(
+    connection: &Connection,
+    input: ResearchQuestionListInput,
+) -> StorageResult<Vec<ResearchQuestion>> {
+    let scope_type = empty_string_to_none(input.scope_type);
+    let scope_id = empty_string_to_none(input.scope_id);
+    let status = empty_string_to_none(input.status);
+
+    if let Some(scope_type) = scope_type.as_deref() {
+        validate_allowed_research_value("scope_type", scope_type, &["company", "watchlist"])?;
+    }
+    if let Some(status) = status.as_deref() {
+        validate_allowed_research_value("question_status", status, RESEARCH_QUESTION_STATUSES)?;
+    }
+    if let (Some(scope_type), Some(scope_id)) = (scope_type.as_deref(), scope_id.as_deref()) {
+        validate_review_scope(connection, scope_type, scope_id)?;
+    }
+
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            scope_type,
+            scope_id,
+            title,
+            body,
+            status,
+            closed_at,
+            created_at,
+            updated_at
+        FROM research_questions
+        WHERE (?1 IS NULL OR scope_type = ?1)
+            AND (?2 IS NULL OR scope_id = ?2)
+            AND (?3 IS NULL OR status = ?3)
+        ORDER BY
+            CASE status
+                WHEN 'open' THEN 0
+                WHEN 'answered' THEN 1
+                ELSE 2
+            END,
+            datetime(updated_at) DESC,
+            title COLLATE NOCASE
+        ",
+    )?;
+    let rows = statement.query_map(
+        params![scope_type, scope_id, status],
+        research_question_from_row,
+    )?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+pub(super) fn create_research_question(
+    connection: &Connection,
+    input: NewResearchQuestion,
+) -> StorageResult<ResearchQuestion> {
+    let scope_type = input.scope_type.trim().to_owned();
+    let scope_id = input.scope_id.trim().to_owned();
+    let title = input.title.trim().to_owned();
+    let body = input
+        .body
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or("")
+        .to_owned();
+
+    if title.is_empty() {
+        return Err(StorageError::InvalidResearchValue {
+            key: "title",
+            value: title,
+        });
+    }
+    validate_visible_question_scope(connection, &scope_type, &scope_id)?;
+    let id = next_research_question_id(connection, &scope_type, &scope_id, &title)?;
+
+    connection.execute(
+        "
+        INSERT INTO research_questions (
+            id,
+            scope_type,
+            scope_id,
+            title,
+            body,
+            status
+        ) VALUES (?1, ?2, ?3, ?4, ?5, 'open')
+        ",
+        params![id, scope_type, scope_id, title, body],
+    )?;
+
+    get_research_question(connection, &id)
+}
+
+pub(super) fn update_research_question(
+    connection: &Connection,
+    input: ResearchQuestionUpdate,
+) -> StorageResult<ResearchQuestion> {
+    let id = input.id.trim().to_owned();
+    let current = get_research_question(connection, &id)?;
+    let title = input
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&current.title)
+        .to_owned();
+    let body = input
+        .body
+        .as_deref()
+        .map(str::trim)
+        .unwrap_or(&current.body)
+        .to_owned();
+    let status = input
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(&current.status)
+        .to_owned();
+    validate_allowed_research_value("question_status", &status, RESEARCH_QUESTION_STATUSES)?;
+    let closed_at = if status == "closed" || status == "answered" {
+        current
+            .closed_at
+            .or_else(|| sources::current_timestamp(connection).ok())
+    } else {
+        None
+    };
+
+    connection.execute(
+        "
+        UPDATE research_questions
+        SET title = ?2,
+            body = ?3,
+            status = ?4,
+            closed_at = ?5,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![id, title, body, status, closed_at],
+    )?;
+
+    get_research_question(connection, &input.id)
+}
+
+pub(super) fn list_evidence_links(
+    connection: &Connection,
+    input: EvidenceLinkListInput,
+) -> StorageResult<Vec<EvidenceLink>> {
+    let endpoint_type = input.endpoint_type.trim().to_owned();
+    let endpoint_id = input.endpoint_id.trim().to_owned();
+    validate_allowed_research_value("evidence_type", &endpoint_type, EVIDENCE_TYPES)?;
+    validate_evidence_reference(connection, &endpoint_type, &endpoint_id)?;
+
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            from_type,
+            from_id,
+            to_type,
+            to_id,
+            relation_type,
+            created_at
+        FROM evidence_links
+        WHERE (from_type = ?1 AND from_id = ?2)
+            OR (to_type = ?1 AND to_id = ?2)
+        ORDER BY datetime(created_at) DESC, id
+        ",
+    )?;
+    let rows = statement.query_map(params![endpoint_type, endpoint_id], evidence_link_from_row)?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
 fn get_research_review_checkpoint(
     connection: &Connection,
     id: &str,
@@ -408,19 +604,58 @@ fn get_evidence_link(connection: &Connection, id: &str) -> StorageResult<Evidenc
             WHERE id = ?1
             ",
             [id],
-            |row| {
-                Ok(EvidenceLink {
-                    id: row.get(0)?,
-                    from_type: row.get(1)?,
-                    from_id: row.get(2)?,
-                    to_type: row.get(3)?,
-                    to_id: row.get(4)?,
-                    relation_type: row.get(5)?,
-                    created_at: row.get(6)?,
-                })
-            },
+            evidence_link_from_row,
         )
         .map_err(StorageError::from)
+}
+
+fn evidence_link_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EvidenceLink> {
+    Ok(EvidenceLink {
+        id: row.get(0)?,
+        from_type: row.get(1)?,
+        from_id: row.get(2)?,
+        to_type: row.get(3)?,
+        to_id: row.get(4)?,
+        relation_type: row.get(5)?,
+        created_at: row.get(6)?,
+    })
+}
+
+fn get_research_question(connection: &Connection, id: &str) -> StorageResult<ResearchQuestion> {
+    connection
+        .query_row(
+            "
+            SELECT
+                id,
+                scope_type,
+                scope_id,
+                title,
+                body,
+                status,
+                closed_at,
+                created_at,
+                updated_at
+            FROM research_questions
+            WHERE id = ?1
+            ",
+            [id.trim()],
+            research_question_from_row,
+        )
+        .map_err(StorageError::from)
+}
+
+fn research_question_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ResearchQuestion> {
+    Ok(ResearchQuestion {
+        id: row.get(0)?,
+        scope_type: row.get(1)?,
+        scope_id: row.get(2)?,
+        title: row.get(3)?,
+        body: row.get(4)?,
+        status: row.get(5)?,
+        closed_at: row.get(6)?,
+        created_at: row.get(7)?,
+        updated_at: row.get(8)?,
+    })
 }
 
 fn review_checkpoint_timestamp(
@@ -552,11 +787,29 @@ fn validate_evidence_reference(
         }
         "company_event" => validate_reference_exists(connection, "company_events", evidence_id),
         "ai_analysis" => validate_reference_exists(connection, "ai_analysis_results", evidence_id),
+        "research_question" => {
+            validate_reference_exists(connection, "research_questions", evidence_id)
+        }
         _ => Err(StorageError::InvalidResearchValue {
             key: "evidence_type",
             value: evidence_type.to_owned(),
         }),
     }
+}
+
+fn validate_visible_question_scope(
+    connection: &Connection,
+    scope_type: &str,
+    scope_id: &str,
+) -> StorageResult<()> {
+    if scope_type != "company" {
+        return Err(StorageError::InvalidResearchValue {
+            key: "scope_type",
+            value: scope_type.to_owned(),
+        });
+    }
+
+    validate_review_scope(connection, scope_type, scope_id)
 }
 
 fn validate_reference_exists(
@@ -589,6 +842,8 @@ fn validate_allowed_research_value(
             key: match field_name {
                 "evidence_type" => "evidence_type",
                 "relation_type" => "relation_type",
+                "scope_type" => "scope_type",
+                "question_status" => "question_status",
                 _ => "unknown",
             },
             value: value.to_owned(),
@@ -624,4 +879,34 @@ fn evidence_link_id(
     relation_type: &str,
 ) -> String {
     format!("evidence_link_{from_type}_{from_id}_{relation_type}_{to_type}_{to_id}")
+}
+
+fn next_research_question_id(
+    connection: &Connection,
+    scope_type: &str,
+    scope_id: &str,
+    title: &str,
+) -> StorageResult<String> {
+    let base_id = format!(
+        "research_question_{}_{}_{}",
+        slug_part(scope_type),
+        slug_part(scope_id),
+        slug_part(title)
+    );
+    let mut candidate = base_id.clone();
+    let mut suffix = 2;
+
+    while reference_exists(connection, "research_questions", &candidate)? {
+        candidate = format!("{base_id}_{suffix}");
+        suffix += 1;
+    }
+
+    Ok(candidate)
+}
+
+fn reference_exists(connection: &Connection, table_name: &str, id: &str) -> StorageResult<bool> {
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM {table_name} WHERE id = ?1)");
+    connection
+        .query_row(&sql, [id], |row| row.get(0))
+        .map_err(StorageError::from)
 }

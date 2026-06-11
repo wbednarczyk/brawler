@@ -1,8 +1,11 @@
-import { ArrowRight, CheckCheck, ExternalLink, RefreshCw } from "lucide-react";
+import { ArrowRight, CheckCheck, ExternalLink, Link, RefreshCw, X } from "lucide-react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import type {
+  EvidenceLink,
   ResearchEvidenceItem,
   ResearchEvidenceType,
+  ResearchQuestion,
+  ResearchQuestionStatus,
   ResearchTimelineResult,
   ResearchTrustCategory,
 } from "../../api/researchTypes";
@@ -34,19 +37,32 @@ type ResearchScreenProps = {
   selectedEvidenceTypes: ResearchEvidenceType[];
   changedOnly: boolean;
   timeline: ResearchTimelineResult | null;
+  questions: ResearchQuestion[];
+  selectedQuestionId: string | null;
+  questionTitle: string;
+  questionBody: string;
+  questionLinks: EvidenceLink[];
   error: string | null;
   loading: boolean;
   reviewInFlight: boolean;
+  questionInFlight: boolean;
   setMode: (mode: ResearchMode) => void;
   setSelectedCompanyId: (companyId: string | null) => void;
   setSelectedWatchlistId: (watchlistId: string | null) => void;
   setSelectedWatchlistCompanyId: (companyId: string | null) => void;
+  setSelectedQuestionId: (questionId: string | null) => void;
+  setQuestionTitle: (title: string) => void;
+  setQuestionBody: (body: string) => void;
   setCascadeToCompanies: (cascade: boolean) => void;
   setChangedOnly: (changedOnly: boolean) => void;
   toggleEvidenceType: (evidenceType: ResearchEvidenceType) => void;
   clearEvidenceTypes: () => void;
   refreshTimeline: () => void;
   markReviewed: () => void;
+  createQuestion: () => void;
+  updateQuestionStatus: (questionId: string, status: ResearchQuestionStatus) => void;
+  linkEvidence: (item: ResearchEvidenceItem) => void;
+  unlinkEvidence: (linkId: string) => void;
   openEvidence: (item: ResearchEvidenceItem) => void;
   openEvidenceUrl: (url: string) => void;
   formatTimestamp: (value: string | null | undefined) => string;
@@ -64,19 +80,32 @@ export function ResearchScreen({
   selectedEvidenceTypes,
   changedOnly,
   timeline,
+  questions,
+  selectedQuestionId,
+  questionTitle,
+  questionBody,
+  questionLinks,
   error,
   loading,
   reviewInFlight,
+  questionInFlight,
   setMode,
   setSelectedCompanyId,
   setSelectedWatchlistId,
   setSelectedWatchlistCompanyId,
+  setSelectedQuestionId,
+  setQuestionTitle,
+  setQuestionBody,
   setCascadeToCompanies,
   setChangedOnly,
   toggleEvidenceType,
   clearEvidenceTypes,
   refreshTimeline,
   markReviewed,
+  createQuestion,
+  updateQuestionStatus,
+  linkEvidence,
+  unlinkEvidence,
   openEvidence,
   openEvidenceUrl,
   formatTimestamp,
@@ -96,6 +125,14 @@ export function ResearchScreen({
     watchlistCompanies.find((company) => company.id === selectedWatchlistCompanyId) ?? null;
   const selectedEvidenceTypeSet = new Set(selectedEvidenceTypes);
   const items = timeline?.items ?? [];
+  const selectedQuestion = questions.find((question) => question.id === selectedQuestionId) ?? null;
+  const linkedEvidenceKeys = new Set(
+    questionLinks.map((link) =>
+      link.fromType === "research_question"
+        ? `${link.toType}:${link.toId}`
+        : `${link.fromType}:${link.fromId}`,
+    ),
+  );
   const visibleItems =
     mode === "watchlist" && selectedWatchlistCompany
       ? items.filter((item) => item.companyId === selectedWatchlistCompany.id)
@@ -256,6 +293,97 @@ export function ResearchScreen({
 
         {error ? <p className="error-text">{text("Research timeline failed")}: {error}</p> : null}
 
+        {mode === "company" ? (
+          <section className="research-questions" aria-label={text("Research questions")}>
+            <div className="research-questions-list">
+              <div className="research-section-heading">
+                <h2>{text("Research questions")}</h2>
+                <span>{questions.length}</span>
+              </div>
+              {questions.map((question) => (
+                <button
+                  className={question.id === selectedQuestionId ? "research-question-row selected" : "research-question-row"}
+                  key={question.id}
+                  type="button"
+                  onClick={() => setSelectedQuestionId(question.id)}
+                >
+                  <strong>{question.title}</strong>
+                  <span>{text(formatQuestionStatus(question.status))}</span>
+                </button>
+              ))}
+              {questions.length === 0 ? <EmptyState>{text("No research questions yet.")}</EmptyState> : null}
+            </div>
+
+            <div className="research-question-detail">
+              <form
+                className="research-question-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  createQuestion();
+                }}
+              >
+                <input
+                  aria-label={text("Question title")}
+                  placeholder={text("Question title")}
+                  value={questionTitle}
+                  onChange={(event) => setQuestionTitle(event.target.value)}
+                />
+                <textarea
+                  aria-label={text("Question context")}
+                  placeholder={text("Question context")}
+                  value={questionBody}
+                  onChange={(event) => setQuestionBody(event.target.value)}
+                />
+                <Button className="compact-button" disabled={questionInFlight || !questionTitle.trim()} type="submit">
+                  {text("Add question")}
+                </Button>
+              </form>
+
+              {selectedQuestion ? (
+                <div className="research-selected-question">
+                  <div>
+                    <h3>{selectedQuestion.title}</h3>
+                    {selectedQuestion.body ? <p>{selectedQuestion.body}</p> : null}
+                  </div>
+                  <div className="research-question-actions">
+                    <Button
+                      className="compact-button"
+                      disabled={questionInFlight || selectedQuestion.status === "answered"}
+                      onClick={() => updateQuestionStatus(selectedQuestion.id, "answered")}
+                    >
+                      {text("Answered")}
+                    </Button>
+                    <Button
+                      className="compact-button"
+                      disabled={questionInFlight || selectedQuestion.status === "closed"}
+                      onClick={() => updateQuestionStatus(selectedQuestion.id, "closed")}
+                    >
+                      {text("Close")}
+                    </Button>
+                    <Button
+                      className="compact-button"
+                      disabled={questionInFlight || selectedQuestion.status === "open"}
+                      onClick={() => updateQuestionStatus(selectedQuestion.id, "open")}
+                    >
+                      {text("Reopen")}
+                    </Button>
+                  </div>
+                  <div className="research-linked-evidence">
+                    <span>{text("Linked evidence")}</span>
+                    {questionLinks.map((link) => (
+                      <button key={link.id} type="button" onClick={() => unlinkEvidence(link.id)}>
+                        <X size={13} />
+                        {text(formatEvidenceType(link.fromType === "research_question" ? link.toType : link.fromType))}
+                      </button>
+                    ))}
+                    {questionLinks.length === 0 ? <small>{text("No linked evidence yet.")}</small> : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+
         <div className={mode === "watchlist" ? "research-review-layout" : undefined}>
           {mode === "watchlist" ? (
             <section className="research-company-queue" aria-label={text("Watchlist company review queue")}>
@@ -302,6 +430,12 @@ export function ResearchScreen({
                 key={item.id}
                 onOpen={openEvidence}
                 onOpenUrl={openEvidenceUrl}
+                onLink={linkEvidence}
+                canLink={Boolean(
+                  selectedQuestion &&
+                    !(item.evidenceType === "research_question" && item.sourceId === selectedQuestion.id) &&
+                    !linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`),
+                )}
                 text={text}
               />
             ))}
@@ -326,6 +460,8 @@ type EvidenceRowProps = {
   formatTimestamp: (value: string | null | undefined) => string;
   onOpen: (item: ResearchEvidenceItem) => void;
   onOpenUrl: (url: string) => void;
+  onLink: (item: ResearchEvidenceItem) => void;
+  canLink: boolean;
 };
 
 function EvidenceRow({
@@ -335,6 +471,8 @@ function EvidenceRow({
   formatTimestamp,
   onOpen,
   onOpenUrl,
+  onLink,
+  canLink,
 }: EvidenceRowProps) {
   return (
     <article className="research-evidence-row">
@@ -353,6 +491,11 @@ function EvidenceRow({
         ) : null}
       </div>
       <div className="research-evidence-actions">
+        {canLink ? (
+          <Button className="icon-button" onClick={() => onLink(item)} title={text("Link evidence")}>
+            <Link size={16} />
+          </Button>
+        ) : null}
         <Button className="icon-button" onClick={() => onOpen(item)} title={text("Open evidence")}>
           <ArrowRight size={16} />
         </Button>
@@ -364,6 +507,17 @@ function EvidenceRow({
       </div>
     </article>
   );
+}
+
+function formatQuestionStatus(status: ResearchQuestionStatus) {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "answered":
+      return "Answered";
+    case "closed":
+      return "Closed";
+  }
 }
 
 function formatEvidenceTitle(item: ResearchEvidenceItem) {

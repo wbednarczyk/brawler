@@ -2,8 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as researchApi from "../api/research";
 import type { Company, Watchlist, WatchlistMembership } from "../api/types";
 import type {
+  EvidenceLink,
   ResearchEvidenceItem,
   ResearchEvidenceType,
+  ResearchQuestion,
+  ResearchQuestionStatus,
   ResearchTimelineResult,
 } from "../api/researchTypes";
 import type { Section } from "./navigation";
@@ -35,9 +38,15 @@ export function useResearchController({
   const [researchEvidenceTypes, setResearchEvidenceTypes] = useState<ResearchEvidenceType[]>([]);
   const [researchChangedOnly, setResearchChangedOnly] = useState(false);
   const [researchTimeline, setResearchTimeline] = useState<ResearchTimelineResult | null>(null);
+  const [researchQuestions, setResearchQuestions] = useState<ResearchQuestion[]>([]);
+  const [selectedResearchQuestionId, setSelectedResearchQuestionId] = useState<string | null>(null);
+  const [researchQuestionTitle, setResearchQuestionTitle] = useState("");
+  const [researchQuestionBody, setResearchQuestionBody] = useState("");
+  const [researchQuestionLinks, setResearchQuestionLinks] = useState<EvidenceLink[]>([]);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchReviewInFlight, setResearchReviewInFlight] = useState(false);
+  const [researchQuestionInFlight, setResearchQuestionInFlight] = useState(false);
 
   useEffect(() => {
     textRef.current = text;
@@ -140,6 +149,67 @@ export function useResearchController({
     selectedResearchWatchlistId,
   ]);
 
+  const refreshResearchQuestions = useCallback(async () => {
+    if (researchMode !== "company" || !selectedResearchCompanyId) {
+      setResearchQuestions([]);
+      setSelectedResearchQuestionId(null);
+      setResearchQuestionLinks([]);
+      return;
+    }
+
+    try {
+      const questions = await researchApi.listResearchQuestions({
+        scopeType: "company",
+        scopeId: selectedResearchCompanyId,
+        status: null,
+      });
+      setResearchQuestions(questions);
+      setSelectedResearchQuestionId((current) =>
+        current && questions.some((question) => question.id === current)
+          ? current
+          : questions[0]?.id ?? null,
+      );
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research questions failed"));
+    }
+  }, [researchMode, selectedResearchCompanyId]);
+
+  useEffect(() => {
+    if (activeSection !== "Research") {
+      return;
+    }
+
+    void refreshResearchQuestions();
+  }, [activeSection, refreshResearchQuestions]);
+
+  useEffect(() => {
+    if (!selectedResearchQuestionId) {
+      setResearchQuestionLinks([]);
+      return;
+    }
+
+    let cancelled = false;
+    researchApi
+      .listEvidenceLinks({
+        endpointType: "research_question",
+        endpointId: selectedResearchQuestionId,
+      })
+      .then((links) => {
+        if (!cancelled) {
+          setResearchQuestionLinks(links);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setResearchError(error instanceof Error ? error.message : textRef.current("Research links failed"));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedResearchQuestionId]);
+
   useEffect(() => {
     if (activeSection !== "Research") {
       return;
@@ -192,6 +262,106 @@ export function useResearchController({
     }
   }
 
+  async function createResearchQuestion() {
+    if (researchMode !== "company" || !selectedResearchCompanyId || researchQuestionInFlight) {
+      return;
+    }
+    const title = researchQuestionTitle.trim();
+    if (!title) {
+      return;
+    }
+
+    setResearchQuestionInFlight(true);
+    setResearchError(null);
+
+    try {
+      const question = await researchApi.createResearchQuestion({
+        scopeType: "company",
+        scopeId: selectedResearchCompanyId,
+        title,
+        body: researchQuestionBody.trim() || null,
+      });
+      setResearchQuestionTitle("");
+      setResearchQuestionBody("");
+      setSelectedResearchQuestionId(question.id);
+      await refreshResearchQuestions();
+      await refreshResearchTimeline();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research question save failed"));
+    } finally {
+      setResearchQuestionInFlight(false);
+    }
+  }
+
+  async function updateResearchQuestionStatus(questionId: string, status: ResearchQuestionStatus) {
+    if (researchQuestionInFlight) {
+      return;
+    }
+
+    setResearchQuestionInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.updateResearchQuestion({ id: questionId, status });
+      await refreshResearchQuestions();
+      await refreshResearchTimeline();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research question update failed"));
+    } finally {
+      setResearchQuestionInFlight(false);
+    }
+  }
+
+  async function linkEvidenceToSelectedQuestion(item: ResearchEvidenceItem) {
+    if (!selectedResearchQuestionId || researchQuestionInFlight) {
+      return;
+    }
+    if (item.evidenceType === "research_question" && item.sourceId === selectedResearchQuestionId) {
+      return;
+    }
+
+    setResearchQuestionInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.createEvidenceLink({
+        fromType: "research_question",
+        fromId: selectedResearchQuestionId,
+        toType: item.evidenceType,
+        toId: item.sourceId,
+        relationType: "related",
+      });
+      setResearchQuestionLinks(
+        await researchApi.listEvidenceLinks({
+          endpointType: "research_question",
+          endpointId: selectedResearchQuestionId,
+        }),
+      );
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Evidence link failed"));
+    } finally {
+      setResearchQuestionInFlight(false);
+    }
+  }
+
+  async function unlinkEvidenceFromSelectedQuestion(linkId: string) {
+    if (researchQuestionInFlight) {
+      return;
+    }
+
+    setResearchQuestionInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.deleteEvidenceLink(linkId);
+      setResearchQuestionLinks((current) => current.filter((link) => link.id !== linkId));
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Evidence unlink failed"));
+    } finally {
+      setResearchQuestionInFlight(false);
+    }
+  }
+
   return {
     researchMode,
     selectedResearchCompanyId,
@@ -201,19 +371,33 @@ export function useResearchController({
     researchEvidenceTypes,
     researchChangedOnly,
     researchTimeline,
+    researchQuestions,
+    selectedResearchQuestionId,
+    researchQuestionTitle,
+    researchQuestionBody,
+    researchQuestionLinks,
     researchError,
     researchLoading,
     researchReviewInFlight,
+    researchQuestionInFlight,
     setResearchMode: setResearchModeAndReset,
     setSelectedResearchCompanyId,
     setSelectedResearchWatchlistId,
     setSelectedResearchWatchlistCompanyId,
+    setSelectedResearchQuestionId,
+    setResearchQuestionTitle,
+    setResearchQuestionBody,
     setResearchCascadeToCompanies,
     setResearchChangedOnly,
     toggleResearchEvidenceType,
     clearResearchEvidenceTypes,
     refreshResearchTimeline,
+    refreshResearchQuestions,
     markResearchReviewed,
+    createResearchQuestion,
+    updateResearchQuestionStatus,
+    linkEvidenceToSelectedQuestion,
+    unlinkEvidenceFromSelectedQuestion,
   };
 }
 

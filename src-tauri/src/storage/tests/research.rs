@@ -60,6 +60,116 @@ fn lists_company_evidence_from_canonical_domains() {
 }
 
 #[test]
+fn creates_company_research_question_and_lists_it_as_evidence() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let question = state
+        .create_research_question(NewResearchQuestion {
+            scope_type: "company".to_owned(),
+            scope_id: company.id.clone(),
+            title: "Will margins recover after the new contract?".to_owned(),
+            body: Some("Track future reports and management comments.".to_owned()),
+        })
+        .expect("research question should create");
+
+    assert_eq!(question.scope_type, "company");
+    assert_eq!(question.scope_id, company.id);
+    assert_eq!(question.status, "open");
+
+    let questions = state
+        .list_research_questions(ResearchQuestionListInput {
+            scope_type: Some("company".to_owned()),
+            scope_id: Some(company.id.clone()),
+            status: Some("open".to_owned()),
+        })
+        .expect("research questions should list");
+
+    assert_eq!(questions.len(), 1);
+    assert_eq!(questions[0].id, question.id);
+
+    let timeline = state
+        .list_research_evidence(ResearchEvidenceInput {
+            company_id: Some(company.id.clone()),
+            watchlist_id: None,
+            evidence_types: Some(vec!["research_question".to_owned()]),
+            changed_since_review_only: None,
+            limit: None,
+        })
+        .expect("research question evidence should list");
+
+    assert_eq!(timeline.summary.total, 1);
+    assert_eq!(timeline.items[0].evidence_type, "research_question");
+    assert_eq!(timeline.items[0].source_id, question.id);
+    assert_eq!(timeline.items[0].company_id, company.id);
+    assert_eq!(timeline.items[0].trust_category, "user_note");
+}
+
+#[test]
+fn updates_research_question_status() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+    let question = state
+        .create_research_question(NewResearchQuestion {
+            scope_type: "company".to_owned(),
+            scope_id: company.id,
+            title: "What changed?".to_owned(),
+            body: None,
+        })
+        .expect("research question should create");
+
+    let answered = state
+        .update_research_question(ResearchQuestionUpdate {
+            id: question.id.clone(),
+            title: None,
+            body: Some("Answer is now known.".to_owned()),
+            status: Some("answered".to_owned()),
+        })
+        .expect("research question should update");
+
+    assert_eq!(answered.status, "answered");
+    assert_eq!(answered.body, "Answer is now known.");
+    assert!(answered.closed_at.is_some());
+
+    let reopened = state
+        .update_research_question(ResearchQuestionUpdate {
+            id: question.id,
+            title: None,
+            body: None,
+            status: Some("open".to_owned()),
+        })
+        .expect("research question should reopen");
+
+    assert_eq!(reopened.status, "open");
+    assert_eq!(reopened.closed_at, None);
+}
+
+#[test]
+fn rejects_visible_watchlist_question_scope_until_ui_support_exists() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let watchlist = state
+        .create_watchlist(NewWatchlist {
+            name: "Research list".to_owned(),
+            description: None,
+        })
+        .expect("watchlist should create");
+
+    let error = state
+        .create_research_question(NewResearchQuestion {
+            scope_type: "watchlist".to_owned(),
+            scope_id: watchlist.id,
+            title: "Watchlist-wide question".to_owned(),
+            body: None,
+        })
+        .expect_err("watchlist question should be deferred");
+
+    assert!(error.to_string().contains("invalid research value"));
+}
+
+#[test]
 fn review_checkpoints_drive_changed_since_review_state() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -407,6 +517,60 @@ fn creates_idempotent_typed_evidence_links() {
     state
         .delete_evidence_link(&first.id)
         .expect("evidence link should delete");
+}
+
+#[test]
+fn creates_and_lists_question_to_evidence_links() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .ingest_gpw_report_listings(&[sample_cdr_listing()])
+        .expect("test listing should ingest");
+    let feed_item = state
+        .list_feed_items()
+        .expect("feed items should list")
+        .pop()
+        .expect("feed item should exist");
+    let question = state
+        .create_research_question(NewResearchQuestion {
+            scope_type: "company".to_owned(),
+            scope_id: company.id,
+            title: "Does the report answer the margin question?".to_owned(),
+            body: None,
+        })
+        .expect("research question should create");
+
+    let first = state
+        .create_evidence_link(NewEvidenceLink {
+            from_type: "research_question".to_owned(),
+            from_id: question.id.clone(),
+            to_type: "feed_item".to_owned(),
+            to_id: feed_item.id.clone(),
+            relation_type: "answers".to_owned(),
+        })
+        .expect("question evidence link should create");
+    let second = state
+        .create_evidence_link(NewEvidenceLink {
+            from_type: "research_question".to_owned(),
+            from_id: question.id.clone(),
+            to_type: "feed_item".to_owned(),
+            to_id: feed_item.id,
+            relation_type: "answers".to_owned(),
+        })
+        .expect("duplicate question evidence link should return existing link");
+    let links = state
+        .list_evidence_links(EvidenceLinkListInput {
+            endpoint_type: "research_question".to_owned(),
+            endpoint_id: question.id,
+        })
+        .expect("question evidence links should list");
+
+    assert_eq!(first.id, second.id);
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0].id, first.id);
+    assert_eq!(links[0].relation_type, "answers");
 }
 
 #[test]

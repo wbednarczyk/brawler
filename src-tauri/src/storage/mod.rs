@@ -329,10 +329,46 @@ impl AppState {
         research::list_research_review_state(&connection, input)
     }
 
+    pub fn list_research_questions(
+        &self,
+        input: ResearchQuestionListInput,
+    ) -> StorageResult<Vec<ResearchQuestion>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::list_research_questions(&connection, input)
+    }
+
+    pub fn create_research_question(
+        &self,
+        input: NewResearchQuestion,
+    ) -> StorageResult<ResearchQuestion> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::create_research_question(&connection, input)
+    }
+
+    pub fn update_research_question(
+        &self,
+        input: ResearchQuestionUpdate,
+    ) -> StorageResult<ResearchQuestion> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::update_research_question(&connection, input)
+    }
+
     pub fn create_evidence_link(&self, input: NewEvidenceLink) -> StorageResult<EvidenceLink> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         research::create_evidence_link(&connection, input)
+    }
+
+    pub fn list_evidence_links(
+        &self,
+        input: EvidenceLinkListInput,
+    ) -> StorageResult<Vec<EvidenceLink>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research::list_evidence_links(&connection, input)
     }
 
     pub fn delete_evidence_link(&self, id: &str) -> StorageResult<()> {

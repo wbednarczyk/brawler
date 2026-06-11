@@ -19,8 +19,10 @@ import type {
   WatchlistMembership,
 } from "../api/types";
 import type {
+  EvidenceLink,
   ResearchEvidenceInput,
   ResearchEvidenceItem,
+  ResearchQuestion,
   ResearchReviewCheckpoint,
 } from "../api/researchTypes";
 
@@ -201,6 +203,20 @@ const initialResearchEvidenceItems: ResearchEvidenceItem[] = [
       changedSinceCompanyReview: false,
       changedSinceWatchlistReview: false,
     },
+  },
+];
+
+const initialResearchQuestions: ResearchQuestion[] = [
+  {
+    id: "research_question_company_gpw_cdr_margin",
+    scopeType: "company",
+    scopeId: "company_gpw_cdr",
+    title: "Will margins recover?",
+    body: "Track management comments and follow-up reports.",
+    status: "open",
+    closedAt: null,
+    createdAt: "2026-06-01T10:00:00Z",
+    updatedAt: "2026-06-01T10:00:00Z",
   },
 ];
 
@@ -982,6 +998,8 @@ export const appTestState = {
   companiesResponse: initialCompanies,
   feedItemsResponse: initialFeedItems,
   researchEvidenceItemsResponse: initialResearchEvidenceItems,
+  researchQuestionsResponse: initialResearchQuestions,
+  evidenceLinksResponse: [] as EvidenceLink[],
   researchReviewCheckpointResponse: null as ResearchReviewCheckpoint | null,
   companyEventsResponse: initialCompanyEvents,
   transcriptJobsResponse: initialTranscriptJobs,
@@ -1061,6 +1079,8 @@ beforeEach(() => {
   appTestState.companiesResponse = initialCompanies;
   appTestState.feedItemsResponse = initialFeedItems;
   appTestState.researchEvidenceItemsResponse = initialResearchEvidenceItems;
+  appTestState.researchQuestionsResponse = initialResearchQuestions;
+  appTestState.evidenceLinksResponse = [];
   appTestState.researchReviewCheckpointResponse = null;
   appTestState.companyEventsResponse = initialCompanyEvents;
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
@@ -1204,6 +1224,121 @@ beforeEach(() => {
       return Promise.resolve(appTestState.researchReviewCheckpointResponse);
     }
 
+    if (command === "list_research_questions") {
+      const { input } = args as {
+        input: { scopeType?: string | null; scopeId?: string | null; status?: string | null };
+      };
+      return Promise.resolve(
+        appTestState.researchQuestionsResponse.filter((question) => {
+          const scopeMatches = !input.scopeType || question.scopeType === input.scopeType;
+          const idMatches = !input.scopeId || question.scopeId === input.scopeId;
+          const statusMatches = !input.status || question.status === input.status;
+          return scopeMatches && idMatches && statusMatches;
+        }),
+      );
+    }
+
+    if (command === "create_research_question") {
+      const { input } = args as {
+        input: { scopeType: "company" | "watchlist"; scopeId: string; title: string; body?: string | null };
+      };
+      const now = "2026-06-05T10:00:00Z";
+      const created: ResearchQuestion = {
+        id: `research_question_${input.scopeType}_${input.scopeId}_${appTestState.researchQuestionsResponse.length + 1}`,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        title: input.title,
+        body: input.body ?? "",
+        status: "open",
+        closedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      appTestState.researchQuestionsResponse = [...appTestState.researchQuestionsResponse, created];
+      appTestState.researchEvidenceItemsResponse = [
+        {
+          id: `evidence_research_question_${created.id}`,
+          evidenceType: "research_question",
+          sourceDomain: "research",
+          sourceId: created.id,
+          companyId: created.scopeId,
+          occurredAt: created.updatedAt,
+          title: created.title,
+          summary: created.body || null,
+          sourceUrl: null,
+          attribution: null,
+          trustCategory: "user_note",
+          reviewState: {
+            changedSinceCompanyReview: true,
+            changedSinceWatchlistReview: true,
+          },
+        },
+        ...appTestState.researchEvidenceItemsResponse,
+      ];
+      return Promise.resolve(created);
+    }
+
+    if (command === "update_research_question") {
+      const { input } = args as {
+        input: { id: string; title?: string | null; body?: string | null; status?: "open" | "answered" | "closed" | null };
+      };
+      const updatedAt = "2026-06-05T10:10:00Z";
+      appTestState.researchQuestionsResponse = appTestState.researchQuestionsResponse.map((question) =>
+        question.id === input.id
+          ? {
+              ...question,
+              title: input.title ?? question.title,
+              body: input.body ?? question.body,
+              status: input.status ?? question.status,
+              closedAt: input.status && input.status !== "open" ? updatedAt : input.status === "open" ? null : question.closedAt,
+              updatedAt,
+            }
+          : question,
+      );
+      return Promise.resolve(appTestState.researchQuestionsResponse.find((question) => question.id === input.id));
+    }
+
+    if (command === "list_evidence_links") {
+      const { input } = args as { input: { endpointType: string; endpointId: string } };
+      return Promise.resolve(
+        appTestState.evidenceLinksResponse.filter(
+          (link) =>
+            (link.fromType === input.endpointType && link.fromId === input.endpointId) ||
+            (link.toType === input.endpointType && link.toId === input.endpointId),
+        ),
+      );
+    }
+
+    if (command === "create_evidence_link") {
+      const { input } = args as {
+        input: Omit<EvidenceLink, "id" | "createdAt">;
+      };
+      const existing = appTestState.evidenceLinksResponse.find(
+        (link) =>
+          link.fromType === input.fromType &&
+          link.fromId === input.fromId &&
+          link.toType === input.toType &&
+          link.toId === input.toId &&
+          link.relationType === input.relationType,
+      );
+      if (existing) {
+        return Promise.resolve(existing);
+      }
+      const created: EvidenceLink = {
+        ...input,
+        id: `evidence_link_${appTestState.evidenceLinksResponse.length + 1}`,
+        createdAt: "2026-06-05T10:15:00Z",
+      };
+      appTestState.evidenceLinksResponse = [...appTestState.evidenceLinksResponse, created];
+      return Promise.resolve(created);
+    }
+
+    if (command === "delete_evidence_link") {
+      const { id } = args as { id: string };
+      appTestState.evidenceLinksResponse = appTestState.evidenceLinksResponse.filter((link) => link.id !== id);
+      return Promise.resolve();
+    }
+
     if (command === "export_research_data") {
       return Promise.resolve({
         fileName: "brawler-research-data-2026-06-05.json",
@@ -1214,6 +1349,8 @@ beforeEach(() => {
           watchlists: appTestState.watchlistsResponse.length,
           memberships: appTestState.watchlistMembershipsResponse.length,
           notebookEntries: appTestState.notebookEntriesResponse.length,
+          researchQuestions: appTestState.researchQuestionsResponse.length,
+          evidenceLinks: appTestState.evidenceLinksResponse.length,
           settings: 0,
         },
       });
@@ -1230,6 +1367,10 @@ beforeEach(() => {
           membershipsCreated: 1,
           notebookEntriesCreated: 1,
           notebookEntriesSkipped: 0,
+          researchQuestionsCreated: 1,
+          researchQuestionsMerged: 0,
+          evidenceLinksCreated: 0,
+          evidenceLinksSkipped: 0,
           settingsUpdated: 0,
         },
         warnings: [],
@@ -1247,6 +1388,10 @@ beforeEach(() => {
           membershipsCreated: 1,
           notebookEntriesCreated: 1,
           notebookEntriesSkipped: 0,
+          researchQuestionsCreated: 1,
+          researchQuestionsMerged: 0,
+          evidenceLinksCreated: 0,
+          evidenceLinksSkipped: 0,
           settingsUpdated: 0,
         },
         warnings: [],

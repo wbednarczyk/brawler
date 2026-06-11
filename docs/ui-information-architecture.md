@@ -393,6 +393,8 @@ Rules:
 - M26 Research adds a Company/Watchlist mode switch in the same screen, not a separate screen.
 - Watchlist mode uses a left-side member-company review queue and a right-side evidence timeline for the selected member company.
 - Watchlist review defaults to updating the watchlist checkpoint only. The optional cascade to member-company checkpoints must be an explicit user action and backend command input.
+- M29 Research adds a company-scoped Questions panel in the same Research screen. The user creates, selects, answers, closes, reopens, and links questions to evidence without leaving the research context.
+- The selected research question controls link actions on evidence rows. Evidence rows may show a compact link action only when a selected question can link to that evidence item.
 - Future research views consume backend-owned evidence and timeline read models.
 - Research views should not independently call Inbox, Notebooks, Events, Transcripts, Sources, and AI APIs to assemble timelines.
 - Research summary counts, changed-since-review state, and timeline filtering semantics belong to backend read models. The UI displays the result and captures user intent.

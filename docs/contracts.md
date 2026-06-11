@@ -1147,7 +1147,7 @@ Initial evidence types:
 - `transcript_segment`
 - `company_event`
 - `ai_analysis`
-- future `research_question`
+- `research_question`
 - future `reminder`
 - future `ai_brief`
 - future `digest`
@@ -1194,6 +1194,58 @@ Initial evidence link shape:
 }
 ```
 
+Initial research question shape:
+
+```json
+{
+  "id": "research_question_company_gpw_cdr_01",
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr",
+  "title": "Will margins recover?",
+  "body": "Track source reports and follow-up notes.",
+  "status": "open",
+  "closedAt": null,
+  "createdAt": "2026-06-11T10:00:00Z",
+  "updatedAt": "2026-06-11T10:00:00Z"
+}
+```
+
+Initial research question input:
+
+```json
+{
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr",
+  "title": "Will margins recover?",
+  "body": "Track source reports and follow-up notes."
+}
+```
+
+Initial research question update input:
+
+```json
+{
+  "id": "research_question_company_gpw_cdr_01",
+  "title": "Will margins recover after cost cuts?",
+  "body": "Track next two reports.",
+  "status": "answered"
+}
+```
+
+Initial research question statuses:
+
+- `open`
+- `answered`
+- `closed`
+
+Rules:
+
+- Research questions are durable research-owned entities, not notebook entries.
+- The first visible workflow supports company-scoped questions only.
+- The storage and command shape keeps `scopeType` open for later watchlist-scoped questions, but normal UI must not expose watchlist question creation until that workflow is designed.
+- A research question appears in the research evidence timeline as `evidenceType: "research_question"` so it can be reviewed and linked like other evidence.
+- Question-to-evidence relationships use typed `evidence_links` with `fromType: "research_question"` and the target evidence type/id.
+
 Initial relation types:
 
 - `originates_from`
@@ -1223,6 +1275,10 @@ Initial research command candidates:
 - `list_watchlist_timeline(watchlistId)`
 - `mark_research_scope_reviewed(input)`
 - `list_research_review_state(input)`
+- `list_research_questions(input)`
+- `create_research_question(input)`
+- `update_research_question(input)`
+- `list_evidence_links(input)`
 - `create_evidence_link(input)`
 - `delete_evidence_link(id)`
 
@@ -1251,6 +1307,10 @@ Initial Tauri command groups:
 - `list_watchlist_timeline`
 - `mark_research_scope_reviewed`
 - `list_research_review_state`
+- `list_research_questions`
+- `create_research_question`
+- `update_research_question`
+- `list_evidence_links`
 - `create_evidence_link`
 - `delete_evidence_link`
 - `start_ai_analysis`
@@ -1318,7 +1378,7 @@ Typed commands:
 
 Rules:
 
-- Research-data JSON includes companies, watchlists, memberships, and notebook entries.
+- Research-data JSON includes companies, watchlists, memberships, notebook entries, research questions, and evidence links.
 - Settings YAML includes only allowlisted non-secret settings.
 - Import preview validates schema version, references, setting keys, setting values, and duplicate note behavior before apply.
 - Apply must reject invalid preview states and must be transactional for each import operation.
@@ -1328,7 +1388,7 @@ Rules:
 - Notebook entries import for existing or included companies. Duplicate notebook entry IDs are skipped with preview warnings.
 - Notebook origins preserve source URL and label metadata even when referenced feed/transcript records are not part of M20 export.
 - Provider secrets, API keys, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are excluded.
-- M24 research-owned durable state, such as review checkpoints and evidence links, is not part of the M20 import/export file until a visible research workflow creates that state for normal users. The first research-workspace feature that makes those records user-owned must add an explicit import/export section or record a deliberate exclusion.
+- Review checkpoints are excluded from research import/export because they are local review-progress state. Research questions and evidence links are included because they are user-owned research content.
 
 Initial `refresh_gpw_company_registry` behavior:
 

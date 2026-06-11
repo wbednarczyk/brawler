@@ -100,6 +100,84 @@ describe("Research screen workflows", () => {
     });
   });
 
+  it("creates a research question and links selected evidence", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    await waitFor(() => {
+      expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
+    });
+
+    await user.type(screen.getByLabelText("Question title"), "What changed in the report?");
+    await user.type(screen.getByLabelText("Question context"), "Track the source report and notes.");
+    await user.click(screen.getByRole("button", { name: "Add question" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_research_question", {
+        input: {
+          scopeType: "company",
+          scopeId: "company_gpw_cdr",
+          title: "What changed in the report?",
+          body: "Track the source report and notes.",
+        },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText("What changed in the report?").length).toBeGreaterThan(0);
+    });
+
+    const researchRegion = await screen.findByLabelText("Evidence timeline");
+    const feedEvidenceTitle = within(researchRegion).getByText(
+      "Current report placeholder for watchlist company",
+    );
+    const feedEvidenceRow = feedEvidenceTitle.closest("article");
+    expect(feedEvidenceRow).not.toBeNull();
+    await user.click(within(feedEvidenceRow as HTMLElement).getByTitle("Link evidence"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_evidence_link", {
+        input: {
+          fromType: "research_question",
+          fromId: expect.stringContaining("research_question_company_"),
+          toType: "feed_item",
+          toId: "feed_sample_cdr_report",
+          relationType: "related",
+        },
+      });
+    });
+    expect(screen.getByText("Linked evidence")).toBeInTheDocument();
+  });
+
+  it("opens research question evidence inside Research instead of Notebooks", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    await user.type(screen.getByLabelText("Question title"), "Should backlog normalize?");
+    await user.click(screen.getByRole("button", { name: "Add question" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Should backlog normalize?").length).toBeGreaterThan(0);
+    });
+
+    const researchRegion = await screen.findByLabelText("Evidence timeline");
+    const questionEvidenceTitle = within(researchRegion).getByText("Should backlog normalize?");
+    const questionEvidenceRow = questionEvidenceTitle.closest("article");
+    expect(questionEvidenceRow).not.toBeNull();
+
+    await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
+
+    expect(screen.getByRole("heading", { name: "Research" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Notebooks" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Should backlog normalize?").length).toBeGreaterThan(0);
+    expect(
+      within(researchRegion).getByText("Current report placeholder for watchlist company"),
+    ).toBeInTheDocument();
+  });
+
   it("loads watchlist evidence and can explicitly cascade review to member companies", async () => {
     const user = userEvent.setup();
 

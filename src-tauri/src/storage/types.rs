@@ -254,6 +254,53 @@ pub struct EvidenceLink {
     pub created_at: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchQuestionListInput {
+    pub scope_type: Option<String>,
+    pub scope_id: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewResearchQuestion {
+    pub scope_type: String,
+    pub scope_id: String,
+    pub title: String,
+    pub body: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchQuestionUpdate {
+    pub id: String,
+    pub title: Option<String>,
+    pub body: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResearchQuestion {
+    pub id: String,
+    pub scope_type: String,
+    pub scope_id: String,
+    pub title: String,
+    pub body: String,
+    pub status: String,
+    pub closed_at: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EvidenceLinkListInput {
+    pub endpoint_type: String,
+    pub endpoint_id: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotebookEntry {

@@ -352,9 +352,9 @@ Likely durable tables:
 
 - `research_review_checkpoints`
 - `evidence_links`
+- `research_questions`
 - future `ai_research_briefs`
 - future `ai_research_brief_citations`
-- future `research_questions`
 - future `research_reminders`
 
 Recommended `research_review_checkpoints` fields:
@@ -390,9 +390,31 @@ Rules:
 
 - Evidence links relate existing domain entities without moving their canonical data.
 - Existing notebook origin rows remain provenance records and are not replaced by `evidence_links`.
-- Evidence links may connect source items, notebook entries, claims, events, transcript segments, AI analysis results, future research questions, future reminders, future briefs, and future digests.
+- Evidence links may connect source items, notebook entries, claims, events, transcript segments, AI analysis results, research questions, future reminders, future briefs, and future digests.
 - Initial relation types include `originates_from`, `cites`, `supports`, `contradicts`, `updates`, `follows_up`, `answers`, and `related`.
 - Link validation should reject unknown entity types and dangling references when practical.
+
+Recommended `research_questions` fields:
+
+- `id`
+- `scope_type`
+- `scope_id`
+- `title`
+- `body`
+- `status`
+- `closed_at`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Initial `scope_type` values are `company` and `watchlist`, but visible v1 question creation is company-scoped first.
+- `scope_id` references the owning company or watchlist according to `scope_type`.
+- Initial `status` values are `open`, `answered`, and `closed`.
+- `closed_at` is set when status becomes `closed` and cleared when a closed question is reopened.
+- Research questions are research-owned records, not notebook entries.
+- Questions may be linked to feed items, notebook entries, claims, events, transcript segments, AI analysis, and other accepted evidence through `evidence_links`.
+- Company-scoped questions appear in the backend research timeline as `research_question` evidence items.
 
 Future AI research brief tables should preserve:
 
@@ -666,7 +688,7 @@ M20 import/export documents are portable files, not runtime tables.
 
 Rules:
 
-- Research data is exported as JSON with schema version, export timestamp, app version, companies, watchlists, memberships, and notebook entries.
+- Research data is exported as JSON with schema version, export timestamp, app version, companies, watchlists, memberships, notebook entries, research questions, and evidence links.
 - Settings are exported as YAML with schema version, export timestamp, app version, and allowlisted non-secret settings.
 - Import validates documents before any storage change.
 - Research import applies through existing SQLite tables inside one transaction.

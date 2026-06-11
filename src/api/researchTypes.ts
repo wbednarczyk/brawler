@@ -117,3 +117,43 @@ export type EvidenceLink = NewEvidenceLink & {
   id: string;
   createdAt: string;
 };
+
+export type ResearchQuestionStatus = "open" | "answered" | "closed";
+export type ResearchQuestionScopeType = "company" | "watchlist";
+
+export type ResearchQuestion = {
+  id: string;
+  scopeType: ResearchQuestionScopeType;
+  scopeId: string;
+  title: string;
+  body: string;
+  status: ResearchQuestionStatus;
+  closedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ResearchQuestionListInput = {
+  scopeType?: ResearchQuestionScopeType | null;
+  scopeId?: string | null;
+  status?: ResearchQuestionStatus | null;
+};
+
+export type NewResearchQuestion = {
+  scopeType: ResearchQuestionScopeType;
+  scopeId: string;
+  title: string;
+  body?: string | null;
+};
+
+export type ResearchQuestionUpdate = {
+  id: string;
+  title?: string | null;
+  body?: string | null;
+  status?: ResearchQuestionStatus | null;
+};
+
+export type EvidenceLinkListInput = {
+  endpointType: ResearchEvidenceType;
+  endpointId: string;
+};

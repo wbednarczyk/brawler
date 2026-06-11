@@ -45,7 +45,7 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
             company_id: cdr.id.clone(),
         })
         .expect("membership should create");
-    source
+    let note = source
         .create_notebook_entry(NewNotebookEntry {
             company_id: cdr.id.clone(),
             title: "Management claim".to_owned(),
@@ -65,6 +65,23 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
             }],
         })
         .expect("note should create");
+    let question = source
+        .create_research_question(NewResearchQuestion {
+            scope_type: "company".to_owned(),
+            scope_id: cdr.id.clone(),
+            title: "Will management deliver the release progress?".to_owned(),
+            body: Some("Use future reports to answer this.".to_owned()),
+        })
+        .expect("research question should create");
+    source
+        .create_evidence_link(NewEvidenceLink {
+            from_type: "research_question".to_owned(),
+            from_id: question.id.clone(),
+            to_type: "notebook_entry".to_owned(),
+            to_id: note.id,
+            relation_type: "related".to_owned(),
+        })
+        .expect("question link should create");
 
     let export = source
         .export_research_data()
@@ -73,6 +90,8 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert_eq!(export.summary.watchlists, 1);
     assert_eq!(export.summary.memberships, 1);
     assert_eq!(export.summary.notebook_entries, 1);
+    assert_eq!(export.summary.research_questions, 1);
+    assert_eq!(export.summary.evidence_links, 1);
 
     let target = AppState::new(open_in_memory_database().expect("database should open"));
     let preview = target
@@ -83,6 +102,8 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
     assert_eq!(preview.summary.watchlists_created, 1);
     assert_eq!(preview.summary.memberships_created, 1);
     assert_eq!(preview.summary.notebook_entries_created, 1);
+    assert_eq!(preview.summary.research_questions_created, 1);
+    assert_eq!(preview.summary.evidence_links_created, 1);
 
     target
         .apply_research_import(&export.contents)
@@ -96,6 +117,26 @@ fn research_data_round_trips_companies_watchlists_and_notebooks() {
         .expect("notes should list");
     assert_eq!(imported_notes.len(), 1);
     assert_eq!(imported_notes[0].tags, vec!["claim", "release"]);
+    let imported_questions = target
+        .list_research_questions(ResearchQuestionListInput {
+            scope_type: Some("company".to_owned()),
+            scope_id: Some(imported_companies[0].id.clone()),
+            status: None,
+        })
+        .expect("research questions should list");
+    assert_eq!(imported_questions.len(), 1);
+    assert_eq!(
+        imported_questions[0].title,
+        "Will management deliver the release progress?"
+    );
+    let imported_links = target
+        .list_evidence_links(EvidenceLinkListInput {
+            endpoint_type: "research_question".to_owned(),
+            endpoint_id: imported_questions[0].id.clone(),
+        })
+        .expect("evidence links should list");
+    assert_eq!(imported_links.len(), 1);
+    assert_eq!(imported_links[0].relation_type, "related");
 }
 
 #[test]

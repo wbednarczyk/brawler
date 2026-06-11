@@ -244,6 +244,8 @@ The M25 review action is a single company-level `Mark reviewed` action. It store
 
 M26 adds watchlist review mode inside the same Research screen. The user can switch between company and watchlist review, select a watchlist, and work through member companies using a compact company queue with backend-owned changed evidence counts. Marking a watchlist reviewed updates only the watchlist checkpoint by default. The UI exposes an explicit option to also mark current member companies reviewed, but the cascade behavior is owned by the backend command.
 
+M29 adds company-scoped research questions inside the Research screen. A question is a durable research-owned item with title, optional context, and `open`, `answered`, or `closed` status. The user can select a company, create questions for that company, select a question, and link visible evidence rows to it through typed evidence links. Questions are shown in the company evidence timeline and imported/exported with research data. Watchlist-scoped questions remain a backend-compatible extension point, but normal UI creates company questions only until a dedicated watchlist-question workflow is designed.
+
 AI research briefs are separate research entities with citations and provider/model/prompt provenance. They are not ordinary notebook entries, though a future workflow may let the user create a note from a brief or selected excerpt.
 
 ### Terminal Interface

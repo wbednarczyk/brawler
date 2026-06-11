@@ -368,19 +368,32 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     researchEvidenceTypes,
     researchChangedOnly,
     researchTimeline,
+    researchQuestions,
+    selectedResearchQuestionId,
+    researchQuestionTitle,
+    researchQuestionBody,
+    researchQuestionLinks,
     researchError,
     researchLoading,
     researchReviewInFlight,
+    researchQuestionInFlight,
     setResearchMode,
     setSelectedResearchCompanyId,
     setSelectedResearchWatchlistId,
     setSelectedResearchWatchlistCompanyId,
+    setSelectedResearchQuestionId,
+    setResearchQuestionTitle,
+    setResearchQuestionBody,
     setResearchCascadeToCompanies,
     setResearchChangedOnly,
     toggleResearchEvidenceType,
     clearResearchEvidenceTypes,
     refreshResearchTimeline,
     markResearchReviewed,
+    createResearchQuestion,
+    updateResearchQuestionStatus,
+    linkEvidenceToSelectedQuestion,
+    unlinkEvidenceFromSelectedQuestion,
   } = useResearchController({
     activeSection,
     companies,
@@ -1082,10 +1095,21 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
         setActiveSection("Inbox");
         break;
       case "notebooks":
-      case "research":
         setSelectedNotebookCompanyId(item.companyId);
         setSelectedNotebookScreenEntryId(item.sourceId);
         setActiveSection("Notebooks");
+        break;
+      case "research":
+        if (item.evidenceType === "research_question") {
+          if (researchMode !== "company") {
+            setResearchMode("company");
+          }
+          if (selectedResearchCompanyId !== item.companyId) {
+            setSelectedResearchCompanyId(item.companyId);
+          }
+          setSelectedResearchQuestionId(item.sourceId);
+        }
+        setActiveSection("Research");
         break;
       case "events":
         setCompanyEventCompanyFilter(item.companyId);
@@ -1458,13 +1482,22 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               selectedEvidenceTypes={researchEvidenceTypes}
               changedOnly={researchChangedOnly}
               timeline={researchTimeline}
+              questions={researchQuestions}
+              selectedQuestionId={selectedResearchQuestionId}
+              questionTitle={researchQuestionTitle}
+              questionBody={researchQuestionBody}
+              questionLinks={researchQuestionLinks}
               error={researchError}
               loading={researchLoading}
               reviewInFlight={researchReviewInFlight}
+              questionInFlight={researchQuestionInFlight}
               setMode={setResearchMode}
               setSelectedCompanyId={setSelectedResearchCompanyId}
               setSelectedWatchlistId={setSelectedResearchWatchlistId}
               setSelectedWatchlistCompanyId={setSelectedResearchWatchlistCompanyId}
+              setSelectedQuestionId={setSelectedResearchQuestionId}
+              setQuestionTitle={setResearchQuestionTitle}
+              setQuestionBody={setResearchQuestionBody}
               setCascadeToCompanies={setResearchCascadeToCompanies}
               setChangedOnly={setResearchChangedOnly}
               toggleEvidenceType={toggleResearchEvidenceType}
@@ -1474,6 +1507,18 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               }}
               markReviewed={() => {
                 void markResearchReviewed();
+              }}
+              createQuestion={() => {
+                void createResearchQuestion();
+              }}
+              updateQuestionStatus={(questionId, status) => {
+                void updateResearchQuestionStatus(questionId, status);
+              }}
+              linkEvidence={(item) => {
+                void linkEvidenceToSelectedQuestion(item);
+              }}
+              unlinkEvidence={(linkId) => {
+                void unlinkEvidenceFromSelectedQuestion(linkId);
               }}
               openEvidence={openResearchEvidence}
               openEvidenceUrl={openExternalUrl}

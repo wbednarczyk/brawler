@@ -41,6 +41,8 @@ pub struct ImportExportSummary {
     pub watchlists: usize,
     pub memberships: usize,
     pub notebook_entries: usize,
+    pub research_questions: usize,
+    pub evidence_links: usize,
     pub settings: usize,
 }
 
@@ -63,6 +65,10 @@ pub struct ImportApplySummary {
     pub memberships_created: usize,
     pub notebook_entries_created: usize,
     pub notebook_entries_skipped: usize,
+    pub research_questions_created: usize,
+    pub research_questions_merged: usize,
+    pub evidence_links_created: usize,
+    pub evidence_links_skipped: usize,
     pub settings_updated: usize,
 }
 
@@ -84,6 +90,10 @@ struct ResearchExportDocument {
     watchlists: Vec<ExportWatchlist>,
     memberships: Vec<ExportMembership>,
     notebook_entries: Vec<ExportNotebookEntry>,
+    #[serde(default)]
+    research_questions: Vec<ExportResearchQuestion>,
+    #[serde(default)]
+    evidence_links: Vec<ExportEvidenceLink>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,6 +152,33 @@ struct ExportNotebookOrigin {
     label: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportResearchQuestion {
+    id: String,
+    scope_type: String,
+    scope_id: String,
+    scope_company_qualified_ticker: Option<String>,
+    title: String,
+    body: String,
+    status: String,
+    closed_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportEvidenceLink {
+    id: String,
+    from_type: String,
+    from_id: String,
+    to_type: String,
+    to_id: String,
+    relation_type: String,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsExportDocument {
@@ -176,6 +213,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let watchlists = export_watchlists(connection)?;
     let memberships = export_memberships(connection)?;
     let notebook_entries = export_notebook_entries(connection)?;
+    let research_questions = export_research_questions(connection)?;
+    let evidence_links = export_evidence_links(connection)?;
     let exported_at = now_rfc3339()?;
 
     let document = ResearchExportDocument {
@@ -186,17 +225,23 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "companies".to_owned(),
             "watchlists".to_owned(),
             "notebooks".to_owned(),
+            "research_questions".to_owned(),
+            "evidence_links".to_owned(),
         ],
         companies,
         watchlists,
         memberships,
         notebook_entries,
+        research_questions,
+        evidence_links,
     };
     let summary = ImportExportSummary {
         companies: document.companies.len(),
         watchlists: document.watchlists.len(),
         memberships: document.memberships.len(),
         notebook_entries: document.notebook_entries.len(),
+        research_questions: document.research_questions.len(),
+        evidence_links: document.evidence_links.len(),
         settings: 0,
     };
 
@@ -235,7 +280,7 @@ pub(super) fn apply_research_import(
 
     let transaction = connection.transaction()?;
     let company_id_by_ticker = apply_companies(&transaction, &document.companies)?;
-    let summary = apply_watchlists_notebooks(
+    let summary = apply_watchlists_notebooks_questions(
         &transaction,
         &document,
         &company_id_by_ticker,
@@ -415,6 +460,11 @@ fn plan_research_import(
     }
 
     let existing_note_ids = existing_ids(connection, "notebook_entries").unwrap_or_default();
+    let imported_note_ids = document
+        .notebook_entries
+        .iter()
+        .map(|entry| entry.id.clone())
+        .collect::<HashSet<_>>();
     for entry in &document.notebook_entries {
         if existing_note_ids.contains(&entry.id) {
             summary.notebook_entries_skipped += 1;
@@ -451,6 +501,88 @@ fn plan_research_import(
             ));
         }
         summary.notebook_entries_created += 1;
+    }
+
+    let existing_question_ids = existing_ids(connection, "research_questions").unwrap_or_default();
+    let imported_question_ids = document
+        .research_questions
+        .iter()
+        .map(|question| question.id.clone())
+        .collect::<HashSet<_>>();
+    for question in &document.research_questions {
+        if question.id.trim().is_empty() || question.title.trim().is_empty() {
+            errors.push("Research question id and title are required".to_owned());
+            continue;
+        }
+        if question.scope_type != "company" {
+            errors.push(format!(
+                "Research question {} has unsupported scope {}",
+                question.id, question.scope_type
+            ));
+            continue;
+        }
+        let Some(company_ticker) = question.scope_company_qualified_ticker.as_deref() else {
+            errors.push(format!(
+                "Research question {} is missing company scope ticker",
+                question.id
+            ));
+            continue;
+        };
+        let company_ticker = company_ticker.trim().to_uppercase();
+        if !imported_company_tickers.contains(&company_ticker)
+            && !existing_companies.contains_key(&company_ticker)
+        {
+            errors.push(format!(
+                "Research question {} references missing company {}",
+                question.id, company_ticker
+            ));
+            continue;
+        }
+        if !["open", "answered", "closed"].contains(&question.status.as_str()) {
+            errors.push(format!(
+                "Research question {} has unsupported status {}",
+                question.id, question.status
+            ));
+            continue;
+        }
+        if existing_question_ids.contains(&question.id) {
+            summary.research_questions_merged += 1;
+        } else {
+            summary.research_questions_created += 1;
+        }
+    }
+
+    let existing_link_ids = existing_ids(connection, "evidence_links").unwrap_or_default();
+    for link in &document.evidence_links {
+        if existing_link_ids.contains(&link.id) {
+            summary.evidence_links_skipped += 1;
+            warnings.push(format!(
+                "Evidence link {} already exists and will be skipped",
+                link.id
+            ));
+            continue;
+        }
+        if !imported_or_existing_evidence_reference(
+            connection,
+            &link.from_type,
+            &link.from_id,
+            &imported_note_ids,
+            &imported_question_ids,
+        ) || !imported_or_existing_evidence_reference(
+            connection,
+            &link.to_type,
+            &link.to_id,
+            &imported_note_ids,
+            &imported_question_ids,
+        ) {
+            summary.evidence_links_skipped += 1;
+            warnings.push(format!(
+                "Evidence link {} references unavailable evidence and will be skipped",
+                link.id
+            ));
+            continue;
+        }
+        summary.evidence_links_created += 1;
     }
 
     ImportPreview {
@@ -531,7 +663,7 @@ fn apply_companies(
     Ok(company_id_by_ticker)
 }
 
-fn apply_watchlists_notebooks(
+fn apply_watchlists_notebooks_questions(
     connection: &Connection,
     document: &ResearchExportDocument,
     company_id_by_ticker: &HashMap<String, String>,
@@ -540,6 +672,10 @@ fn apply_watchlists_notebooks(
     summary.memberships_created = 0;
     summary.notebook_entries_created = 0;
     summary.notebook_entries_skipped = 0;
+    summary.research_questions_created = 0;
+    summary.research_questions_merged = 0;
+    summary.evidence_links_created = 0;
+    summary.evidence_links_skipped = 0;
     let existing_watchlist_ids_by_name = existing_watchlist_ids_by_name(connection)?;
     let mut watchlist_id_map = HashMap::<String, String>::new();
 
@@ -690,6 +826,104 @@ fn apply_watchlists_notebooks(
         summary.notebook_entries_created += 1;
     }
 
+    for question in &document.research_questions {
+        let scope_id = if question.scope_type == "company" {
+            let company_ticker = question
+                .scope_company_qualified_ticker
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_uppercase();
+            company_id_by_ticker
+                .get(&company_ticker)
+                .ok_or_else(|| StorageError::InvalidSettingValue {
+                    key: "import_export",
+                    value: format!("missing question company {company_ticker}"),
+                })?
+                .to_owned()
+        } else {
+            question.scope_id.trim().to_owned()
+        };
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM research_questions WHERE id = ?1)",
+            [&question.id],
+            |row| row.get(0),
+        )?;
+        connection.execute(
+            "
+            INSERT INTO research_questions (
+                id,
+                scope_type,
+                scope_id,
+                title,
+                body,
+                status,
+                closed_at,
+                created_at,
+                updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            ON CONFLICT(id) DO UPDATE SET
+                title = excluded.title,
+                body = excluded.body,
+                status = excluded.status,
+                closed_at = excluded.closed_at,
+                updated_at = excluded.updated_at
+            ",
+            params![
+                question.id.trim(),
+                question.scope_type.trim(),
+                scope_id,
+                question.title.trim(),
+                question.body.trim(),
+                question.status.trim(),
+                empty_string_to_none(question.closed_at.clone()),
+                question.created_at.trim(),
+                question.updated_at.trim(),
+            ],
+        )?;
+        if exists {
+            summary.research_questions_merged += 1;
+        } else {
+            summary.research_questions_created += 1;
+        }
+    }
+
+    for link in &document.evidence_links {
+        if !evidence_reference_exists_for_import(connection, &link.from_type, &link.from_id)?
+            || !evidence_reference_exists_for_import(connection, &link.to_type, &link.to_id)?
+        {
+            summary.evidence_links_skipped += 1;
+            continue;
+        }
+        let inserted = connection.execute(
+            "
+            INSERT OR IGNORE INTO evidence_links (
+                id,
+                from_type,
+                from_id,
+                to_type,
+                to_id,
+                relation_type,
+                created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            ",
+            params![
+                link.id.trim(),
+                link.from_type.trim(),
+                link.from_id.trim(),
+                link.to_type.trim(),
+                link.to_id.trim(),
+                link.relation_type.trim(),
+                link.created_at.trim(),
+            ],
+        )?;
+        if inserted == 0 {
+            summary.evidence_links_skipped += 1;
+        } else {
+            summary.evidence_links_created += 1;
+        }
+    }
+
     Ok(summary)
 }
 
@@ -812,6 +1046,82 @@ fn export_notebook_origins(
     rows.collect::<Result<Vec<_>, _>>()
 }
 
+fn export_research_questions(
+    connection: &Connection,
+) -> StorageResult<Vec<ExportResearchQuestion>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            research_questions.id,
+            research_questions.scope_type,
+            research_questions.scope_id,
+            companies.qualified_ticker,
+            research_questions.title,
+            research_questions.body,
+            research_questions.status,
+            research_questions.closed_at,
+            research_questions.created_at,
+            research_questions.updated_at
+        FROM research_questions
+        LEFT JOIN companies
+            ON research_questions.scope_type = 'company'
+            AND companies.id = research_questions.scope_id
+        ORDER BY research_questions.scope_type,
+            COALESCE(companies.qualified_ticker, research_questions.scope_id),
+            research_questions.updated_at DESC,
+            research_questions.id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportResearchQuestion {
+            id: row.get(0)?,
+            scope_type: row.get(1)?,
+            scope_id: row.get(2)?,
+            scope_company_qualified_ticker: row.get(3)?,
+            title: row.get(4)?,
+            body: row.get(5)?,
+            status: row.get(6)?,
+            closed_at: row.get(7)?,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn export_evidence_links(connection: &Connection) -> StorageResult<Vec<ExportEvidenceLink>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            from_type,
+            from_id,
+            to_type,
+            to_id,
+            relation_type,
+            created_at
+        FROM evidence_links
+        ORDER BY datetime(created_at) DESC, id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportEvidenceLink {
+            id: row.get(0)?,
+            from_type: row.get(1)?,
+            from_id: row.get(2)?,
+            to_type: row.get(3)?,
+            to_id: row.get(4)?,
+            relation_type: row.get(5)?,
+            created_at: row.get(6)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
 fn existing_companies_by_ticker(connection: &Connection) -> StorageResult<HashMap<String, String>> {
     let mut statement = connection.prepare("SELECT qualified_ticker, id FROM companies")?;
     let rows = statement.query_map([], |row| {
@@ -862,6 +1172,54 @@ fn existing_memberships(connection: &Connection) -> StorageResult<HashSet<(Strin
     })?;
 
     rows.collect::<Result<HashSet<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn imported_or_existing_evidence_reference(
+    connection: &Connection,
+    evidence_type: &str,
+    evidence_id: &str,
+    imported_note_ids: &HashSet<String>,
+    imported_question_ids: &HashSet<String>,
+) -> bool {
+    match evidence_type {
+        "notebook_entry" | "claim" if imported_note_ids.contains(evidence_id) => true,
+        "research_question" if imported_question_ids.contains(evidence_id) => true,
+        _ => evidence_reference_exists_for_import(connection, evidence_type, evidence_id)
+            .unwrap_or(false),
+    }
+}
+
+fn evidence_reference_exists_for_import(
+    connection: &Connection,
+    evidence_type: &str,
+    evidence_id: &str,
+) -> StorageResult<bool> {
+    match evidence_type {
+        "feed_item" => table_reference_exists(connection, "feed_items", evidence_id),
+        "notebook_entry" | "claim" => {
+            table_reference_exists(connection, "notebook_entries", evidence_id)
+        }
+        "transcript_segment" => {
+            table_reference_exists(connection, "transcript_segments", evidence_id)
+        }
+        "company_event" => table_reference_exists(connection, "company_events", evidence_id),
+        "ai_analysis" => table_reference_exists(connection, "ai_analysis_results", evidence_id),
+        "research_question" => {
+            table_reference_exists(connection, "research_questions", evidence_id)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn table_reference_exists(
+    connection: &Connection,
+    table_name: &str,
+    id: &str,
+) -> StorageResult<bool> {
+    let sql = format!("SELECT EXISTS(SELECT 1 FROM {table_name} WHERE id = ?1)");
+    connection
+        .query_row(&sql, [id], |row| row.get(0))
         .map_err(StorageError::from)
 }
 

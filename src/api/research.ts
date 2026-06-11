@@ -1,8 +1,13 @@
 import { callCommand } from "./tauri";
 import type {
   EvidenceLink,
+  EvidenceLinkListInput,
+  NewResearchQuestion,
   NewEvidenceLink,
   ResearchEvidenceInput,
+  ResearchQuestion,
+  ResearchQuestionListInput,
+  ResearchQuestionUpdate,
   ResearchTimelineResult,
   ResearchReviewCheckpoint,
   ResearchReviewCheckpointInput,
@@ -28,8 +33,24 @@ export function listResearchReviewState(input: ResearchReviewCheckpointInput) {
   return callCommand<ResearchReviewCheckpoint | null>("list_research_review_state", { input });
 }
 
+export function listResearchQuestions(input: ResearchQuestionListInput) {
+  return callCommand<ResearchQuestion[]>("list_research_questions", { input });
+}
+
+export function createResearchQuestion(input: NewResearchQuestion) {
+  return callCommand<ResearchQuestion>("create_research_question", { input });
+}
+
+export function updateResearchQuestion(input: ResearchQuestionUpdate) {
+  return callCommand<ResearchQuestion>("update_research_question", { input });
+}
+
 export function createEvidenceLink(input: NewEvidenceLink) {
   return callCommand<EvidenceLink>("create_evidence_link", { input });
+}
+
+export function listEvidenceLinks(input: EvidenceLinkListInput) {
+  return callCommand<EvidenceLink[]>("list_evidence_links", { input });
 }
 
 export function deleteEvidenceLink(id: string) {

@@ -158,6 +158,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "research_evidence_boundary",
         sql: include_str!("../../migrations/0030_research_evidence_boundary.sql"),
     },
+    Migration {
+        version: 31,
+        name: "research_questions",
+        sql: include_str!("../../migrations/0031_research_questions.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -179,6 +184,11 @@ pub(super) fn database_status(connection: &Connection) -> StorageResult<Database
         source_adapters: count_rows(connection, "source_adapters")?,
         settings: count_rows(connection, "settings")?,
     })
+}
+
+#[cfg(test)]
+pub(super) fn expected_migration_count() -> i64 {
+    MIGRATIONS.len() as i64
 }
 
 pub(super) fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {

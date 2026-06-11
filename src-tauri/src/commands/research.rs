@@ -63,12 +63,52 @@ pub fn list_research_review_state(
 }
 
 #[tauri::command]
+pub fn list_research_questions(
+    input: storage::ResearchQuestionListInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::ResearchQuestion>, String> {
+    state
+        .list_research_questions(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_research_question(
+    input: storage::NewResearchQuestion,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ResearchQuestion, String> {
+    state
+        .create_research_question(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_research_question(
+    input: storage::ResearchQuestionUpdate,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ResearchQuestion, String> {
+    state
+        .update_research_question(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn create_evidence_link(
     input: storage::NewEvidenceLink,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<storage::EvidenceLink, String> {
     state
         .create_evidence_link(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_evidence_links(
+    input: storage::EvidenceLinkListInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::EvidenceLink>, String> {
+    state
+        .list_evidence_links(input)
         .map_err(|error| error.to_string())
 }
 
