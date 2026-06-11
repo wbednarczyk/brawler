@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.28.7 - 2026-06-11
+
+
+
+### Bug Fixes
+
+- isolate Nix wrappers from inherited library paths for local windows build
+
+- prevent Inbox layout collapse on narrow desktop windows
+
+
 ## v0.28.6 - 2026-06-11
 
 
