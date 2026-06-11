@@ -1,8 +1,8 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-NIX := nix develop -c
-NIX_WINDOWS := nix develop .\#windows-cross -c
+NIX := env -u LD_LIBRARY_PATH nix develop -c
+NIX_WINDOWS := env -u LD_LIBRARY_PATH nix develop .\#windows-cross -c
 WINDOWS_TARGET := x86_64-pc-windows-msvc
 RELEASE_OUT_DIR ?= release-artifacts
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest

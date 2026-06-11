@@ -55,6 +55,7 @@ Recommended workflow:
 - The Linux target intentionally uses a split packaging path: `.deb` and `.rpm` are built through the Nix-wrapped Tauri command, while AppImage is built through the host Ubuntu toolchain because `linuxdeploy` dependency discovery does not reliably resolve WebKitGTK from the Nix store.
 - Linux runtime startup contains a WSL-only WebKitGTK compatibility fallback for WSLg/EGL startup failures. This should keep `.deb`, `.rpm`, AppImage, desktop launch, and terminal launch behavior consistent without changing native Linux defaults.
 - Windows portable release artifacts are built with `make package-windows-portable-zip`, which uses the Linux/WSL `cargo-xwin` path and produces a versioned portable zip under `release-artifacts`.
+- Makefile targets that enter `nix develop` clear inherited `LD_LIBRARY_PATH` before launching Nix. This prevents stale libraries from an outer shell from breaking the Nix executable before the intended dev shell is created.
 - `make package-release-artifacts` builds the Linux artifacts and Windows portable zip for release publication.
 - The M21 portable executable path is still available as `make package-windows-from-linux`: build the versioned portable Windows executable from the Linux/WSL Nix environment and copy it to a Windows test directory.
 - Launch the copied portable executable separately with `make package-windows-smoke-run`.
