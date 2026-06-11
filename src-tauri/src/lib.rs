@@ -22,6 +22,8 @@ pub mod commands;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    configure_linux_webkit_runtime_environment();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -125,6 +127,41 @@ pub fn run() {
         .expect("failed to run Brawler application");
 }
 
+#[cfg(target_os = "linux")]
+fn configure_linux_webkit_runtime_environment() {
+    if should_disable_webkit_dmabuf_renderer(
+        std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some(),
+        std::env::var_os("WSL_INTEROP").is_some(),
+        std::env::var_os("WSL_DISTRO_NAME").is_some(),
+        std::fs::read_to_string("/proc/sys/kernel/osrelease")
+            .ok()
+            .as_deref(),
+    ) {
+        std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn configure_linux_webkit_runtime_environment() {}
+
+#[cfg(target_os = "linux")]
+fn should_disable_webkit_dmabuf_renderer(
+    already_configured: bool,
+    has_wsl_interop: bool,
+    has_wsl_distro_name: bool,
+    kernel_osrelease: Option<&str>,
+) -> bool {
+    !already_configured
+        && (has_wsl_interop
+            || has_wsl_distro_name
+            || kernel_osrelease
+                .map(|release| {
+                    let release = release.to_ascii_lowercase();
+                    release.contains("microsoft") || release.contains("wsl")
+                })
+                .unwrap_or(false))
+}
+
 fn developer_mode_requested_from_environment() -> bool {
     developer_mode_requested_from_value(std::env::var("BRAWLER_DEVELOPER_MODE").ok().as_deref())
 }
@@ -159,5 +196,39 @@ mod tests {
         assert!(!super::developer_mode_requested_from_value(Some("off")));
         assert!(!super::developer_mode_requested_from_value(Some("false")));
         assert!(!super::developer_mode_requested_from_value(None));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn disables_webkit_dmabuf_renderer_on_wsl_when_unconfigured() {
+        assert!(super::should_disable_webkit_dmabuf_renderer(
+            false, true, false, None
+        ));
+        assert!(super::should_disable_webkit_dmabuf_renderer(
+            false, false, true, None
+        ));
+        assert!(super::should_disable_webkit_dmabuf_renderer(
+            false,
+            false,
+            false,
+            Some("6.6.87.2-microsoft-standard-WSL2")
+        ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn keeps_webkit_dmabuf_renderer_default_outside_wsl_or_when_configured() {
+        assert!(!super::should_disable_webkit_dmabuf_renderer(
+            false,
+            false,
+            false,
+            Some("6.8.0-60-generic")
+        ));
+        assert!(!super::should_disable_webkit_dmabuf_renderer(
+            true,
+            true,
+            true,
+            Some("6.6.87.2-microsoft-standard-WSL2")
+        ));
     }
 }

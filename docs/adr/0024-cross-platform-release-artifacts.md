@@ -25,6 +25,7 @@ The project already has a Windows portable executable path built from Linux/WSL 
 - `.deb` and `.rpm` packaging use the Nix-wrapped Tauri build path. AppImage packaging uses the host Ubuntu toolchain because the AppImage bundler depends on `linuxdeploy` runtime dependency discovery, which does not reliably resolve WebKitGTK libraries from the Nix store.
 - Windows portable release builds keep using `data/` next to the executable.
 - Linux release builds use `~/.brawler` for local runtime data. Installed Linux packages must not try to write user data beside `/usr/bin`, `/opt`, or another package-managed location.
+- Linux runtime startup sets a WSL-only WebKitGTK compatibility fallback before the webview starts: when WSL is detected and the user has not already configured `WEBKIT_DISABLE_DMABUF_RENDERER`, Brawler sets it to `1`. This avoids known WSLg/EGL startup failures while preserving default WebKitGTK behavior on normal Linux desktops and preserving explicit user overrides.
 - AppImage is the Arch-friendly artifact for now. Native Pacman packaging is deferred until there is enough demand to justify a separate package adapter.
 - macOS and macOS arm64 packaging remain out of scope, but the workflow should keep platform jobs separable so a later macOS job can be added without changing artifact semantics.
 
@@ -34,4 +35,5 @@ The project already has a Windows portable executable path built from Linux/WSL 
 - GitHub Actions usage stays on standard public-repo Linux runners and avoids paid Windows/macOS runners.
 - Linux packaging now has a real installable package path, while Arch users can use AppImage until native Pacman packaging is designed.
 - Linux and Windows data-location policies intentionally differ because installed packages and portable executables have different filesystem constraints.
+- WSL can run the Linux packages for smoke testing, but it remains a compatibility environment. Native Linux desktops are still the main target for Linux GUI behavior, and Windows remains the primary hands-on runtime target for the project owner.
 - Future code signing, Windows installers, package repositories, native Pacman packaging, and macOS distribution remain separate decisions.

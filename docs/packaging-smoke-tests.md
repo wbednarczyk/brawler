@@ -67,8 +67,10 @@ make package-windows-smoke-run
   dpkg-deb --contents release-artifacts/brawler-<version>-linux-amd64.deb
   ```
 
+- Confirm the package metadata `Version` matches the artifact file version.
 - If testing on a disposable Debian/Ubuntu environment, install the package and start Brawler from the desktop menu or command line.
 - Confirm runtime data is written under `~/.brawler`, not under a package-managed install path.
+- On WSL/WSLg, command-line startup should not abort with `Could not create default EGL display: EGL_BAD_PARAMETER`. Brawler applies a WSL-only WebKitGTK compatibility fallback before startup; if startup still fails, capture the terminal output and confirm whether `WEBKIT_DISABLE_DMABUF_RENDERER=1 brawler` changes the behavior.
 
 ## Linux Rpm
 
@@ -79,6 +81,7 @@ make package-windows-smoke-run
   rpm -qlp release-artifacts/brawler-<version>-linux-amd64.rpm
   ```
 
+- Confirm the package metadata version matches the artifact file version.
 - If testing on a disposable RPM-based environment, install the package and start Brawler from the desktop menu or command line.
 - Confirm runtime data is written under `~/.brawler`, not under a package-managed install path.
 
