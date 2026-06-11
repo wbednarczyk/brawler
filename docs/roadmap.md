@@ -1109,7 +1109,7 @@ Exit criteria:
 
 Goal: generate source-grounded company and watchlist research briefs inside the Research workspace while preserving the backend-owned research/evidence boundary.
 
-Status: planned in Radicle epic `feaf0ea`.
+Status: completed in `0.30.0`.
 
 Planned scope:
 

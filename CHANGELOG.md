@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.30.0 - 2026-06-11
+
+
+
+### Features
+
+- add AI briefs and improve research question workflow
+
+
 ## v0.29.0 - 2026-06-11
 
 
