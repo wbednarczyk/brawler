@@ -118,6 +118,25 @@ Agents own changelog updates during milestone and patch closure. The project own
 
 Do not use `make changelog` as proof of uncommitted feature work. If the feature work is still uncommitted, the agent should stop closure and ask the project owner to commit it first.
 
+After milestone docs and Radicle/Radboard state have been handled, the mechanical release commit can be made with:
+
+```bash
+make release VERSION=X.Y.Z
+```
+
+This target:
+
+- rejects unexpected dirty files outside the release file allowlist
+- bumps synchronized version files
+- generates `CHANGELOG.md` through `make changelog`
+- runs `make release-check`
+- runs `make check`
+- commits release files with `chore(release): bump version to X.Y.Z`
+- creates annotated tag `vX.Y.Z`
+- pushes `master` and the tag to both `origin` and `rad`
+
+The target does not infer milestone scope, update roadmap text, archive kanban entries, or close Radicle issues. Those remain explicit closure tasks before running the target.
+
 Release remote sync updates both project remotes:
 
 ```bash

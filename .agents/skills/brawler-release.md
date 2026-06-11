@@ -8,7 +8,7 @@ The normal workflow is:
 
 1. The user commits feature work.
 2. The user explicitly asks the agent to wrap up or close the milestone.
-3. The agent performs release-only changes and may create exactly one release commit.
+3. The agent performs release-only documentation and tracking closure, then may create exactly one release commit.
 4. The agent creates the matching annotated release tag for that release commit.
 5. After the release commit and tag are verified, the agent syncs both canonical/mirror remotes when the user has asked to complete the release.
 
@@ -71,6 +71,16 @@ make changelog
 ```
 
 After running the target, review the generated output for obviously broken formatting or incorrect release boundaries. If the Makefile-generated output is wrong, fix the release tooling or ask the user before manually curating the changelog.
+
+After milestone docs and Radicle/Radboard issue state are updated, prefer the Makefile release target for the mechanical release commit/tag/push:
+
+```bash
+make release VERSION=X.Y.Z
+```
+
+That target bumps synchronized version files, runs `make changelog`, runs `make release-check`, runs `make check`, stages release files, creates `chore(release): bump version to X.Y.Z`, creates annotated tag `vX.Y.Z`, and pushes `master` plus the tag to both `origin` and `rad`.
+
+Do not use the target before completing scope-specific closure work that it cannot infer, such as roadmap text, kanban archive entries, and Radicle/Radboard issue state.
 
 ## Validation
 
