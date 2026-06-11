@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.28.8 - 2026-06-11
+
+
+
+### Bug Fixes
+
+- avoid weak substring matches for media companies
+
+
 ## v0.28.7 - 2026-06-11
 
 
