@@ -26,6 +26,9 @@ Current milestone epics:
 - `75001e4` - epic: Report-season cockpit (`milestone:v0.40.0`)
 - `b7a54ba` - epic: Cross-company KPI comparison (`milestone:v0.41.0`)
 - `ebbcb29` - epic: Re-invent the notebook panel (`milestone:v0.42.0`)
+- `7cba98b` - epic: Story clustering across sources (`milestone:v0.43.0`)
+- `db6be22` - epic: Report-over-report diff (`milestone:v0.44.0`)
+- `df178f4` - epic: Feed triage mode and command palette (`milestone:v0.45.0`)
 
 Current fundamentals sequence:
 
@@ -40,6 +43,13 @@ Current research-leverage sequence:
 - v0.39.0 tracks management claims from reports and transcripts with due periods, verdicts, and KPI-backed verification.
 - v0.40.0 ships the report-season cockpit: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
 - v0.41.0 adds cross-company KPI comparison with side-by-side tables and multi-series trend charts.
+
+Current time-saver sequence:
+
+- v0.43.0 clusters near-duplicate multi-source coverage into single stories with the official source ranked first.
+- v0.44.0 diffs consecutive periodic reports section by section with a cited AI delta summary.
+- v0.45.0 ships keyboard feed triage and a global command palette over search, navigation, and actions.
+- Company history backfill on track ships earlier, inside v0.34.0.
 
 Backlog items folded into milestones: portalanaliz.pl source study and README polish into v0.34.0; Claude provider and AI waiting animation into v0.35.0; feed retention policy design into v0.37.0; ChatGPT provider and Investing.com RSS assessment into v0.38.0. Deliberately unscheduled: X.com and Google Finance studies, Perplexity provider, terminal interface, mobile clients, and the Windows taskbar indicator remain plain backlog until product pressure appears.
 
