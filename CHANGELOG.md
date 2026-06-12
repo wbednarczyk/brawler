@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.32.0 - 2026-06-12
+
+
+
+### Changed
+
+- introduce shared UI primitives
+
+- expand shared UI primitive foundation
+
+
 ## v0.31.1 - 2026-06-12
 
 
