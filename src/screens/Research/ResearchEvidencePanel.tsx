@@ -1,0 +1,150 @@
+import type { KeyboardEvent, PointerEvent } from "react";
+import type { Company } from "../../api/types";
+import type {
+  ResearchEvidenceItem,
+  ResearchQuestion,
+} from "../../api/researchTypes";
+import type { ResearchMode } from "../../app/useResearchController";
+import { TickerLabel } from "../../shared/components/TickerLabel";
+import { EmptyState, SectionHeader } from "../../ui";
+import { EvidenceRow } from "./EvidenceRow";
+
+type CompanySummary = {
+  changedSinceReview: number;
+};
+
+type ResearchEvidencePanelProps = {
+  mode: ResearchMode;
+  companiesCount: number;
+  visibleItems: ResearchEvidenceItem[];
+  watchlistCompanies: Company[];
+  selectedWatchlistCompanyId: string | null;
+  watchlistQueueWidth: number;
+  companySummaryById: Map<string, CompanySummary>;
+  selectedQuestion: ResearchQuestion | null;
+  linkedEvidenceKeys: Set<string>;
+  setSelectedWatchlistCompanyId: (companyId: string | null) => void;
+  resizeResearchPanelWithKeyboard: (
+    handle: "watchlistQueue" | "brief",
+    event: KeyboardEvent<HTMLDivElement>,
+  ) => void;
+  startResearchResize: (handle: "watchlistQueue" | "brief", event: PointerEvent<HTMLDivElement>) => void;
+  resizeResearchPanels: (event: PointerEvent<HTMLDivElement>) => void;
+  stopResearchResize: (event: PointerEvent<HTMLDivElement>) => void;
+  openEvidence: (item: ResearchEvidenceItem) => void;
+  openEvidenceUrl: (url: string) => void;
+  linkEvidence: (item: ResearchEvidenceItem) => void;
+  formatTimestamp: (value: string | null | undefined) => string;
+  text: (value: string) => string;
+};
+
+export function ResearchEvidencePanel({
+  mode,
+  companiesCount,
+  visibleItems,
+  watchlistCompanies,
+  selectedWatchlistCompanyId,
+  watchlistQueueWidth,
+  companySummaryById,
+  selectedQuestion,
+  linkedEvidenceKeys,
+  setSelectedWatchlistCompanyId,
+  resizeResearchPanelWithKeyboard,
+  startResearchResize,
+  resizeResearchPanels,
+  stopResearchResize,
+  openEvidence,
+  openEvidenceUrl,
+  linkEvidence,
+  formatTimestamp,
+  text,
+}: ResearchEvidencePanelProps) {
+  return (
+    <div className={mode === "watchlist" ? "research-review-layout" : "research-review-region"}>
+      {mode === "watchlist" ? (
+        <>
+          <section className="research-company-queue" aria-label={text("Watchlist company review queue")}>
+            {watchlistCompanies.map((company) => {
+              const summary = companySummaryById.get(company.id);
+              const isSelected = selectedWatchlistCompanyId === company.id;
+
+              return (
+                <button
+                  className={isSelected ? "research-company-queue-row selected" : "research-company-queue-row"}
+                  key={company.id}
+                  type="button"
+                  onClick={() => setSelectedWatchlistCompanyId(company.id)}
+                >
+                  <span>
+                    <TickerLabel value={company.qualifiedTicker} />
+                    <strong>{company.displayName}</strong>
+                  </span>
+                  <span>
+                    {summary?.changedSinceReview ? <strong>{summary.changedSinceReview}</strong> : <strong>0</strong>}
+                    {text("Changed")}
+                  </span>
+                </button>
+              );
+            })}
+            {watchlistCompanies.length === 0 ? (
+              <EmptyState>{text("Selected watchlist has no companies.")}</EmptyState>
+            ) : null}
+          </section>
+          <div
+            aria-label={text("Resize watchlist company list")}
+            aria-orientation="vertical"
+            aria-valuemax={360}
+            aria-valuemin={180}
+            aria-valuenow={watchlistQueueWidth}
+            className="research-resizer"
+            onKeyDown={(event) => resizeResearchPanelWithKeyboard("watchlistQueue", event)}
+            onPointerDown={(event) => startResearchResize("watchlistQueue", event)}
+            onPointerMove={resizeResearchPanels}
+            onPointerUp={stopResearchResize}
+            role="separator"
+            tabIndex={0}
+            title={text("Drag to resize watchlist company list")}
+          />
+        </>
+      ) : null}
+
+      <section className="research-timeline-shell" aria-label={text("Evidence timeline")}>
+        <SectionHeader
+          className="research-section-evidence"
+          description={text("Source items, notes, events, transcripts, and AI analysis for this scope.")}
+          meta={visibleItems.length}
+          title={text("Evidence")}
+          variant="accent"
+        />
+        <div className="research-timeline">
+          {visibleItems.map((item) => (
+            <EvidenceRow
+              changed={
+                mode === "watchlist"
+                  ? item.reviewState.changedSinceWatchlistReview
+                  : item.reviewState.changedSinceCompanyReview
+              }
+              formatTimestamp={formatTimestamp}
+              item={item}
+              key={item.id}
+              onOpen={openEvidence}
+              onOpenUrl={openEvidenceUrl}
+              onLink={linkEvidence}
+              canLink={Boolean(
+                selectedQuestion &&
+                  !(item.evidenceType === "research_question" && item.sourceId === selectedQuestion.id) &&
+                  !linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`),
+              )}
+              text={text}
+            />
+          ))}
+          {visibleItems.length === 0 ? (
+            <EmptyState>
+              {companiesCount === 0 ? text("No companies tracked yet.") : text("No evidence for selected filters.")}
+            </EmptyState>
+          ) : null}
+        </div>
+      </section>
+    </div>
+  );
+}
