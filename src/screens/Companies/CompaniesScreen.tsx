@@ -1,9 +1,9 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { LocateFixed, Plus, Search, Trash2 } from "lucide-react";
+import { LocateFixed, Plus, Trash2 } from "lucide-react";
 import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ClearButton, DenseRow, EmptyState, PanelHeader } from "../../ui";
+import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, SearchField } from "../../ui";
 import type {
   MarkdownNoteBodyProps,
   NotebookDateLikeFieldProps,
@@ -280,19 +280,16 @@ export function CompaniesScreen({
                 </form>
 
                 <div className="company-list-toolbar" aria-label={text("Company list search")}>
-                  <label className="registry-search-field">
-                    <Search size={15} />
-                    <input
-                      aria-label={text("Search tracked companies")}
-                      onChange={(event) => setCompanyListSearch(event.target.value)}
-                      placeholder={text("Search tracked companies")}
-                      type="text"
-                      value={companyListSearch}
-                    />
-                    {companyListSearch.trim().length > 0 ? (
-                      <ClearButton label={text("Clear company search")} onClick={() => setCompanyListSearch("")} />
-                    ) : null}
-                  </label>
+                  <SearchField
+                    ariaLabel={text("Search tracked companies")}
+                    className="registry-search-field"
+                    clearLabel={text("Clear company search")}
+                    onChange={setCompanyListSearch}
+                    onClear={() => setCompanyListSearch("")}
+                    placeholder={text("Search tracked companies")}
+                    type="text"
+                    value={companyListSearch}
+                  />
                   <label className="company-list-filter">
                     {text("Watchlist")}
                     <select

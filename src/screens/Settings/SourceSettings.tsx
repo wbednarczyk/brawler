@@ -1,6 +1,6 @@
 import type { FeedPruneResult, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { FieldRow, SelectField } from "../../ui";
+import { FieldRow, InfoGrid, SelectField } from "../../ui";
 
 type SourceSettingsProps = {
   feedPruneRetentionDays: number;
@@ -38,42 +38,36 @@ export function SourceSettings({
             <option value={3600}>1 hour</option>
           </SelectField>
         </FieldRow>
-        <dl className="settings-grid">
-          <div>
-            <dt>{text("Poll interval")}</dt>
-            <dd>{formatPollInterval(settings?.pollIntervalSeconds ?? 900)}</dd>
-          </div>
-        </dl>
+        <InfoGrid
+          className="settings-grid"
+          items={[
+            {
+              label: text("Poll interval"),
+              value: formatPollInterval(settings?.pollIntervalSeconds ?? 900),
+            },
+          ]}
+        />
       </section>
 
       <section className="settings-group" aria-labelledby="settings-cleanup-title">
         <h2 id="settings-cleanup-title">{t("settings.feedCleanup.title")}</h2>
-        <dl className="settings-grid">
-          <div>
-            <dt>{text("Feed cleanup")}</dt>
-            <dd>{text("On")}</dd>
-          </div>
-          <div>
-            <dt>{text("Feed retention")}</dt>
-            <dd>{feedPruneRetentionDays} {text("days")}</dd>
-          </div>
-          <div>
-            <dt>{text("Cleanup interval")}</dt>
-            <dd>{text("Daily")}</dd>
-          </div>
-          <div>
-            <dt>{text("Last cleanup")}</dt>
-            <dd>{formatTimestamp(feedPruneResult?.prunedAt, text("Not run this session"))}</dd>
-          </div>
-          <div>
-            <dt>{text("Last cleanup deleted")}</dt>
-            <dd>{feedPruneResult ? feedPruneResult.itemsDeleted : text("Not run this session")}</dd>
-          </div>
-          <div>
-            <dt>{text("Protected feed items")}</dt>
-            <dd>{text("Saved")}</dd>
-          </div>
-        </dl>
+        <InfoGrid
+          className="settings-grid"
+          items={[
+            { label: text("Feed cleanup"), value: text("On") },
+            { label: text("Feed retention"), value: `${feedPruneRetentionDays} ${text("days")}` },
+            { label: text("Cleanup interval"), value: text("Daily") },
+            {
+              label: text("Last cleanup"),
+              value: formatTimestamp(feedPruneResult?.prunedAt, text("Not run this session")),
+            },
+            {
+              label: text("Last cleanup deleted"),
+              value: feedPruneResult ? feedPruneResult.itemsDeleted : text("Not run this session"),
+            },
+            { label: text("Protected feed items"), value: text("Saved") },
+          ]}
+        />
       </section>
 
     </>

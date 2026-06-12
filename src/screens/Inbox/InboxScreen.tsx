@@ -7,13 +7,22 @@ import {
   Plus,
   RefreshCw,
   Save,
-  Search,
   Trash2,
   X,
 } from "lucide-react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, StatusChip } from "../../ui";
+import {
+  Button,
+  DenseRow,
+  EmptyState,
+  FilterToolbar,
+  PanelHeader,
+  SearchField,
+  SegmentedControl,
+  SegmentedControlOption,
+  StatusChip,
+} from "../../ui";
 import { InboxDetailPane } from "./InboxDetailPane";
 import type { InboxScreenProps } from "./inboxTypes";
 
@@ -85,32 +94,20 @@ export function InboxScreen({
           description={t("inbox.description")}
           titleId="inbox-title"
           actions={
-            <div className="segmented-control" aria-label={text("Feed status filter")}>
-              <button
-                type="button"
-                className={inboxStatusFilter === "all" ? "segment-active" : undefined}
-                onClick={() => setInboxStatusFilter("all")}
-              >
+            <SegmentedControl ariaLabel={text("Feed status filter")}>
+              <SegmentedControlOption active={inboxStatusFilter === "all"} onClick={() => setInboxStatusFilter("all")}>
                 <Inbox size={14} />
                 {text("All")}
-              </button>
-              <button
-                type="button"
-                className={inboxStatusFilter === "unread" ? "segment-active" : undefined}
-                onClick={() => setInboxStatusFilter("unread")}
-              >
+              </SegmentedControlOption>
+              <SegmentedControlOption active={inboxStatusFilter === "unread"} onClick={() => setInboxStatusFilter("unread")}>
                 <Mail size={14} />
                 {text("Unread")}
-              </button>
-              <button
-                type="button"
-                className={inboxStatusFilter === "saved" ? "segment-active" : undefined}
-                onClick={() => setInboxStatusFilter("saved")}
-              >
+              </SegmentedControlOption>
+              <SegmentedControlOption active={inboxStatusFilter === "saved"} onClick={() => setInboxStatusFilter("saved")}>
                 <Save size={14} />
                 {text("Saved")}
-              </button>
-            </div>
+              </SegmentedControlOption>
+            </SegmentedControl>
           }
         />
 
@@ -144,23 +141,22 @@ export function InboxScreen({
           </Button>
         </div>
 
-        <div className="filter-toolbar" aria-label={text("Inbox filters")}>
+        <FilterToolbar ariaLabel={text("Inbox filters")}>
           <label className="inbox-search-field">
             {text("Search")}
-            <span className="search-box">
-              <Search size={16} aria-hidden="true" />
-              <input
-                aria-label={t("app.search.ariaLabel")}
-                data-inbox-search-input="true"
-                placeholder={t("app.search.placeholder")}
-                type="text"
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-              {searchQuery.trim().length > 0 ? (
-                <ClearButton label={text("Clear inbox search")} onClick={() => setSearchQuery("")} />
-              ) : null}
-            </span>
+            <SearchField
+              ariaLabel={t("app.search.ariaLabel")}
+              as="span"
+              className="search-box"
+              clearLabel={text("Clear inbox search")}
+              iconSize={16}
+              inputProps={{ "data-inbox-search-input": "true" }}
+              onChange={setSearchQuery}
+              onClear={() => setSearchQuery("")}
+              placeholder={t("app.search.placeholder")}
+              type="text"
+              value={searchQuery}
+            />
           </label>
           <label>
             {text("Watchlist")}
@@ -222,7 +218,7 @@ export function InboxScreen({
               ))}
             </select>
           </label>
-        </div>
+        </FilterToolbar>
 
         <div className="feed-list" aria-label={text("Feed items")}>
           {filteredFeedItems.map((item) => (

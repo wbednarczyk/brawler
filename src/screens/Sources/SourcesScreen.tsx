@@ -1,6 +1,6 @@
 import { CheckCircle2, RefreshCw } from "lucide-react";
 import { useLocale } from "../../shared/locale";
-import { Button, EmptyState, PanelHeader } from "../../ui";
+import { Button, EmptyState, InfoGrid, PanelHeader } from "../../ui";
 import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 import type { SourcesScreenProps } from "./sourceTypes";
@@ -129,34 +129,42 @@ export function SourcesScreen({
               <h2>{text("Developer refresh summary")}</h2>
               <span>{text("Latest manual or scheduled source run")}</span>
             </div>
-            <dl className="source-status-grid source-refresh-summary" aria-label={text("Last source refresh summary")}>
-              <div>
-                <dt>{text("Fetched")}</dt>
-                <dd aria-label={text("Fetched source items")}>{sourceRefreshResult.itemsFetched}</dd>
-              </div>
-              <div>
-                <dt>{text("Created")}</dt>
-                <dd aria-label={text("Created source items")}>{sourceRefreshResult.itemsCreated}</dd>
-              </div>
-              <div>
-                <dt>{text("Matched")}</dt>
-                <dd aria-label={text("Matched source items")}>{sourceRefreshResult.itemsMatched}</dd>
-              </div>
-              <div>
-                <dt>{text("Unmatched")}</dt>
-                <dd aria-label={text("Unmatched source items")}>{sourceRefreshResult.itemsUnmatched}</dd>
-              </div>
-              <div>
-                <dt>{text("Details")}</dt>
-                <dd aria-label={text("Stored source detail bodies")}>
-                  {sourceRefreshResult.detailItemsStored}/{sourceRefreshResult.detailItemsAttempted}
-                </dd>
-              </div>
-              <div>
-                <dt>{text("Detail failures")}</dt>
-                <dd aria-label={text("Failed source detail bodies")}>{sourceRefreshResult.detailItemsFailed}</dd>
-              </div>
-            </dl>
+            <InfoGrid
+              ariaLabel={text("Last source refresh summary")}
+              className="source-status-grid source-refresh-summary"
+              items={[
+                {
+                  label: text("Fetched"),
+                  value: sourceRefreshResult.itemsFetched,
+                  valueAriaLabel: text("Fetched source items"),
+                },
+                {
+                  label: text("Created"),
+                  value: sourceRefreshResult.itemsCreated,
+                  valueAriaLabel: text("Created source items"),
+                },
+                {
+                  label: text("Matched"),
+                  value: sourceRefreshResult.itemsMatched,
+                  valueAriaLabel: text("Matched source items"),
+                },
+                {
+                  label: text("Unmatched"),
+                  value: sourceRefreshResult.itemsUnmatched,
+                  valueAriaLabel: text("Unmatched source items"),
+                },
+                {
+                  label: text("Details"),
+                  value: `${sourceRefreshResult.detailItemsStored}/${sourceRefreshResult.detailItemsAttempted}`,
+                  valueAriaLabel: text("Stored source detail bodies"),
+                },
+                {
+                  label: text("Detail failures"),
+                  value: sourceRefreshResult.detailItemsFailed,
+                  valueAriaLabel: text("Failed source detail bodies"),
+                },
+              ]}
+            />
           </section>
         ) : null}
       </div>

@@ -1,6 +1,6 @@
 import { BookOpenText, Save, Trash2, X } from "lucide-react";
 import type { NotebookEntry } from "../../api/types";
-import { Button, ChipList, StatusPill } from "../../ui";
+import { ActionRow, Button, ChipList, InfoGrid, StatusPill } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
@@ -58,7 +58,7 @@ export function NotebookEntryEditor({
                 }
               />
             </label>
-            <div className="notebook-detail-actions">
+            <ActionRow className="notebook-detail-actions">
               <Button
                 className="compact-button"
                 onClick={deleteNotebookScreenEntry}
@@ -87,7 +87,7 @@ export function NotebookEntryEditor({
                 <Save size={15} />
                 {text("Save")}
               </Button>
-            </div>
+            </ActionRow>
           </div>
           <textarea
             aria-label={text("Notebook screen selected body")}
@@ -200,29 +200,21 @@ export function NotebookEntryEditor({
           <span className="membership-empty">{text("No tags")}</span>
         ) : null}
       </ChipList>
-      <dl className="metadata-grid notebook-entry-meta">
-        <div>
-          <dt>{text("Status")}</dt>
-          <dd>{selectedNotebookScreenEntry.claimStatus ?? text("Not set")}</dd>
-        </div>
-        <div>
-          <dt>{text("Follow-up quarter")}</dt>
-          <dd>{selectedNotebookScreenEntry.followUpAfter ?? text("Not set")}</dd>
-        </div>
-        <div>
-          <dt>{text("Follow-up date")}</dt>
-          <dd>{selectedNotebookScreenEntry.followUpDate ?? text("Not set")}</dd>
-        </div>
-        <div>
-          <dt>{text("Origin")}</dt>
-          <dd>
-            {renderNotebookOrigins(
+      <InfoGrid
+        className="metadata-grid notebook-entry-meta"
+        items={[
+          { label: text("Status"), value: selectedNotebookScreenEntry.claimStatus ?? text("Not set") },
+          { label: text("Follow-up quarter"), value: selectedNotebookScreenEntry.followUpAfter ?? text("Not set") },
+          { label: text("Follow-up date"), value: selectedNotebookScreenEntry.followUpDate ?? text("Not set") },
+          {
+            label: text("Origin"),
+            value: renderNotebookOrigins(
               selectedNotebookScreenEntry.origins,
               selectedNotebookScreenEntry.companyId,
-            )}
-          </dd>
-        </div>
-      </dl>
+            ),
+          },
+        ]}
+      />
     </form>
   );
 }

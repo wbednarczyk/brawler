@@ -271,8 +271,7 @@
 
 .research-ai-mode-card p,
 .research-ai-mode-kicker,
-.research-ai-output-heading p,
-.research-section-title p {
+.research-ai-output-heading p {
   margin: 0;
   color: var(--muted);
   font-size: 11px;
@@ -489,78 +488,25 @@
   background: color-mix(in srgb, var(--primary) 18%, transparent);
 }
 
-.research-section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.research-section-heading-strong {
-  align-items: flex-start;
-  position: relative;
-  margin: -2px -2px 0;
-  border: 1px solid color-mix(in srgb, var(--research-section-accent, var(--primary)) 18%, transparent);
-  border-radius: 7px;
-  padding: 7px 9px 7px 11px;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--research-section-accent, var(--primary)) 15%, transparent),
-    color-mix(in srgb, var(--surface-raised) 62%, transparent)
-  );
-}
-
-.research-section-heading-strong::before {
-  position: absolute;
-  top: 7px;
-  bottom: 7px;
-  left: 4px;
-  width: 3px;
-  border-radius: 999px;
-  background: var(--research-section-accent, var(--primary));
-  content: "";
-}
-
-.research-section-title {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-}
-
-.research-section-heading h2,
 .research-active-question strong,
 .research-dialog-header h2 {
   font-size: 14px;
 }
 
-.research-section-heading-strong h2 {
-  color: var(--research-section-accent, var(--primary));
-}
-
 .research-section-ai {
-  --research-section-accent: var(--highlight);
+  --section-accent: var(--highlight);
 }
 
 .research-section-review {
-  --research-section-accent: var(--primary);
+  --section-accent: var(--primary);
 }
 
 .research-section-questions {
-  --research-section-accent: var(--accent);
+  --section-accent: var(--accent);
 }
 
 .research-section-evidence {
-  --research-section-accent: var(--secondary);
-}
-
-.research-section-heading span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.research-section-action {
-  margin-left: auto;
+  --section-accent: var(--secondary);
 }
 
 .research-question-strip {

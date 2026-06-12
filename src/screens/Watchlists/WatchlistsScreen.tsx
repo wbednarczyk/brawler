@@ -1,9 +1,9 @@
-import { Check, Edit3, Plus, Search, Trash2, X } from "lucide-react";
+import { Check, Edit3, Plus, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ClearButton, DenseRow, EmptyState, PanelHeader } from "../../ui";
+import { ActionRow, Button, DenseRow, EmptyState, PanelHeader, SearchField } from "../../ui";
 
 type WatchlistsScreenProps = {
   companies: Company[];
@@ -167,19 +167,16 @@ export function WatchlistsScreen({
 
       <div className="watchlists-workspace">
         <div className="watchlists-sidebar">
-          <label className="registry-search-field">
-            <Search size={15} />
-            <input
-              aria-label={text("Search watchlists")}
-              onChange={(event) => setWatchlistSearch(event.target.value)}
-              placeholder={text("Search watchlists")}
-              type="text"
-              value={watchlistSearch}
-            />
-            {watchlistSearch.trim().length > 0 ? (
-              <ClearButton label={text("Clear watchlist search")} onClick={() => setWatchlistSearch("")} />
-            ) : null}
-          </label>
+          <SearchField
+            ariaLabel={text("Search watchlists")}
+            className="registry-search-field"
+            clearLabel={text("Clear watchlist search")}
+            onChange={setWatchlistSearch}
+            onClear={() => setWatchlistSearch("")}
+            placeholder={text("Search watchlists")}
+            type="text"
+            value={watchlistSearch}
+          />
           <div className="watchlist-list" aria-label={text("Watchlists")}>
             {filteredWatchlists.map((watchlist) => (
               <button
@@ -235,7 +232,7 @@ export function WatchlistsScreen({
                   </div>
                 )}
                 {!isRenameOpen ? (
-                  <div className="watchlist-detail-actions">
+                  <ActionRow className="watchlist-detail-actions">
                     <Button onClick={() => setAddOpen((current) => !current)} type="button" variant="primary">
                       <Plus size={14} />
                       {text("Add companies")}
@@ -255,7 +252,7 @@ export function WatchlistsScreen({
                       <Trash2 size={14} />
                       {text("Delete")}
                     </Button>
-                  </div>
+                  </ActionRow>
                 ) : null}
               </div>
 
@@ -285,19 +282,16 @@ export function WatchlistsScreen({
                       </Button>
                     </div>
                   </div>
-                  <label className="registry-search-field">
-                    <Search size={15} />
-                    <input
-                      aria-label={text("Search tracked companies to add")}
-                      onChange={(event) => setWatchlistCompanySearch(event.target.value)}
-                      placeholder={text("Search tracked companies")}
-                      type="text"
-                      value={watchlistCompanySearch}
-                    />
-                    {watchlistCompanySearch.trim().length > 0 ? (
-                      <ClearButton label={text("Clear company search")} onClick={() => setWatchlistCompanySearch("")} />
-                    ) : null}
-                  </label>
+                  <SearchField
+                    ariaLabel={text("Search tracked companies to add")}
+                    className="registry-search-field"
+                    clearLabel={text("Clear company search")}
+                    onChange={setWatchlistCompanySearch}
+                    onClear={() => setWatchlistCompanySearch("")}
+                    placeholder={text("Search tracked companies")}
+                    type="text"
+                    value={watchlistCompanySearch}
+                  />
                   <div className="watchlist-picker-list">
                     {availableCompanies.map((company) => (
                       <button

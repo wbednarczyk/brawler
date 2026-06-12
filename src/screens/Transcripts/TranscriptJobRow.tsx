@@ -2,7 +2,7 @@ import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ChipList, DenseRow, StatusPill } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, InfoGrid, StatusPill } from "../../ui";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
 import { TranscriptSegmentReview } from "./TranscriptSegmentReview";
@@ -231,24 +231,18 @@ export function TranscriptJobRow({
               <p className="error-text">{transcriptDescriptionError}</p>
             ) : null}
           </div>
-          <dl className="source-status-grid source-status-detail">
-            <div>
-              <dt>{text("Company")}</dt>
-              <dd>{job.company ? <TickerLabel exposeText={false} value={job.company} /> : text("Unlinked")}</dd>
-            </div>
-            <div>
-              <dt>{text("Status")}</dt>
-              <dd>{formatTranscriptStatus(job.status)}</dd>
-            </div>
-            <div>
-              <dt>{text("Source")}</dt>
-              <dd>{job.sourceUrl}</dd>
-            </div>
-            <div>
-              <dt>{text("Selected")}</dt>
-              <dd>{selectedTranscriptSegmentIds.length}</dd>
-            </div>
-          </dl>
+          <InfoGrid
+            className="source-status-grid source-status-detail"
+            items={[
+              {
+                label: text("Company"),
+                value: job.company ? <TickerLabel exposeText={false} value={job.company} /> : text("Unlinked"),
+              },
+              { label: text("Status"), value: formatTranscriptStatus(job.status) },
+              { label: text("Source"), value: job.sourceUrl },
+              { label: text("Selected"), value: selectedTranscriptSegmentIds.length },
+            ]}
+          />
           {job.status === "failed" ? (
             <div className="transcript-error-panel" aria-label={text("Transcript job error")}>
               <strong>{job.errorCode ? formatEnumLabel(job.errorCode) : text("Transcript job failed")}</strong>
@@ -307,7 +301,7 @@ export function TranscriptJobRow({
             toggleTranscriptSegment={toggleTranscriptSegment}
           />
           {job.status === "completed" && transcriptSegments.length > 0 ? (
-            <div className="transcript-note-actions">
+            <ActionRow className="transcript-note-actions">
               <Button
                 className="compact-button"
                 disabled={!job.companyId || selectedTranscriptSegmentIds.length === 0}
@@ -323,7 +317,7 @@ export function TranscriptJobRow({
                 {text("Create company note draft")}
               </Button>
               {transcriptNoteError ? <p className="error-text">{transcriptNoteError}</p> : null}
-            </div>
+            </ActionRow>
           ) : null}
           {isTranscriptNoteDraftOpen ? (
             <TranscriptNoteDraft

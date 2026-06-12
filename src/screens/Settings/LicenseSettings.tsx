@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { KeyRound, Save, Trash2 } from "lucide-react";
 import type { LicenseStatus } from "../../api/types";
-import { Button } from "../../ui";
+import { ActionRow, Button, InfoGrid } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type LicenseSettingsProps = {
@@ -30,24 +30,15 @@ export function LicenseSettings({
     <section className="settings-group" aria-labelledby="settings-license-title">
       <h2 id="settings-license-title">{text("License")}</h2>
 
-      <dl className="settings-grid">
-        <div>
-          <dt>{text("Status")}</dt>
-          <dd>{formatLicenseStatus(licenseStatus)}</dd>
-        </div>
-        <div>
-          <dt>{text("Holder")}</dt>
-          <dd>{license?.holder ?? text("Not available")}</dd>
-        </div>
-        <div>
-          <dt>{text("Channel")}</dt>
-          <dd>{license?.channel ?? text("Not available")}</dd>
-        </div>
-        <div>
-          <dt>{text("Expires")}</dt>
-          <dd>{license?.expiresAt ?? text("Not available")}</dd>
-        </div>
-      </dl>
+      <InfoGrid
+        className="settings-grid"
+        items={[
+          { label: text("Status"), value: formatLicenseStatus(licenseStatus) },
+          { label: text("Holder"), value: license?.holder ?? text("Not available") },
+          { label: text("Channel"), value: license?.channel ?? text("Not available") },
+          { label: text("Expires"), value: license?.expiresAt ?? text("Not available") },
+        ]}
+      />
 
       <form className="credential-form" onSubmit={onSubmitLicenseKey}>
         <label>
@@ -61,7 +52,7 @@ export function LicenseSettings({
             onChange={(event) => onLicenseKeyDraftChange(event.target.value)}
           />
         </label>
-        <div className="credential-actions">
+        <ActionRow className="credential-actions">
           <Button
             disabled={licenseInFlight || !licenseKeyDraft.trim()}
             type="submit"
@@ -78,7 +69,7 @@ export function LicenseSettings({
             <Trash2 size={14} />
             {text("Clear license")}
           </Button>
-        </div>
+        </ActionRow>
       </form>
 
       {licenseStatus?.reason ? <p className="settings-note">{licenseStatus.reason}</p> : null}

@@ -30,7 +30,7 @@ import type { ResearchMode } from "../../app/useResearchController";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { formatAiProvider, formatCompanyEventType } from "../../shared/formatting/labels";
 import { useLocale } from "../../shared/locale";
-import { Button, DenseRow, EmptyState, PanelHeader } from "../../ui";
+import { ActionRow, Button, DenseRow, EmptyState, PanelHeader, SectionHeader } from "../../ui";
 
 const evidenceTypeOptions: Array<{ value: ResearchEvidenceType; label: string }> = [
   { value: "feed_item", label: "Feed items" },
@@ -324,13 +324,13 @@ export function ResearchScreen({
   const aiPanelDisabled = mode === "company" ? !selectedCompany : !selectedWatchlist;
   const aiResearchSection = (
     <section className="research-ai-panel" aria-label={text("AI research")}>
-      <div className="research-section-heading research-section-heading-strong research-section-ai">
-        <div className="research-section-title">
-          <h2>{text("AI research")}</h2>
-          <p>{text("Generate either a review checkpoint or a source-grounded research summary.")}</p>
-        </div>
-        <span>{aiOutputCount}</span>
-      </div>
+      <SectionHeader
+        className="research-section-ai"
+        description={text("Generate either a review checkpoint or a source-grounded research summary.")}
+        meta={aiOutputCount}
+        title={text("AI research")}
+        variant="accent"
+      />
       <div className="research-ai-modes" aria-label={text("AI research modes")}>
         <div className="research-ai-mode-card">
           <div>
@@ -481,7 +481,7 @@ export function ResearchScreen({
         description={text("Company evidence timeline and review checkpoint.")}
         titleId="research-title"
         actions={
-          <div className="research-header-actions">
+          <ActionRow className="research-header-actions">
             <Button className="compact-button" disabled={loading} onClick={refreshTimeline}>
               <RefreshCw size={15} />
               {loading ? text("Refreshing") : text("Refresh")}
@@ -490,7 +490,7 @@ export function ResearchScreen({
               <CheckCheck size={15} />
               {reviewInFlight ? text("Marking reviewed") : text("Mark reviewed")}
             </Button>
-          </div>
+          </ActionRow>
         }
       />
 
@@ -627,21 +627,23 @@ export function ResearchScreen({
         <div className="research-main-layout" style={researchLayoutStyle}>
           <div className={mode === "watchlist" ? "research-main-stack watchlist" : "research-main-stack company"}>
             <section className="research-reminders" aria-label={text("Research reminders")}>
-              <div className="research-section-heading research-section-heading-strong research-section-review">
-                <div className="research-section-title">
-                  <h2>{text("Review queue")}</h2>
-                  <p>{text("Items that need a concrete follow-up action.")}</p>
-                </div>
-                <span>{reminders.length}</span>
-                <Button
-                  className="compact-button research-section-action"
-                  disabled={reminderInFlight || (mode === "company" ? !selectedCompany : !selectedWatchlist)}
-                  onClick={openReminderDialog}
-                >
-                  <Plus size={14} />
-                  {text("Add reminder")}
-                </Button>
-              </div>
+              <SectionHeader
+                actions={
+                  <Button
+                    className="compact-button"
+                    disabled={reminderInFlight || (mode === "company" ? !selectedCompany : !selectedWatchlist)}
+                    onClick={openReminderDialog}
+                  >
+                    <Plus size={14} />
+                    {text("Add reminder")}
+                  </Button>
+                }
+                className="research-section-review"
+                description={text("Items that need a concrete follow-up action.")}
+                meta={reminders.length}
+                title={text("Review queue")}
+                variant="accent"
+              />
               <div className="research-reminder-list">
                 {reminders.slice(0, 6).map((reminder) => (
                   <article className="research-reminder-row" key={reminder.id}>
@@ -651,7 +653,7 @@ export function ResearchScreen({
                       {reminder.dueAt ? <time dateTime={reminder.dueAt}>{formatTimestamp(reminder.dueAt)}</time> : null}
                       {reminder.status !== "open" ? <em>{text(formatReminderStatus(reminder.status))}</em> : null}
                     </div>
-                    <div className="research-reminder-actions">
+                    <ActionRow className="research-reminder-actions">
                       {reminder.status === "open" ? (
                         <>
                           <Button
@@ -689,7 +691,7 @@ export function ResearchScreen({
                       >
                         <Trash2 size={15} />
                       </Button>
-                    </div>
+                    </ActionRow>
                   </article>
                 ))}
                 {reminders.length === 0 ? <EmptyState>{text("No research reminders.")}</EmptyState> : null}
@@ -698,13 +700,13 @@ export function ResearchScreen({
             {mode === "company" ? (
               <section className="research-questions" aria-label={text("Research questions")}>
                 <div className="research-question-strip">
-                  <div className="research-section-heading research-section-heading-strong research-section-questions">
-                    <div className="research-section-title">
-                      <h2>{text("Research questions")}</h2>
-                      <p>{text("Open questions you are actively tracking.")}</p>
-                    </div>
-                    <span>{questions.length}</span>
-                  </div>
+                  <SectionHeader
+                    className="research-section-questions"
+                    description={text("Open questions you are actively tracking.")}
+                    meta={questions.length}
+                    title={text("Research questions")}
+                    variant="accent"
+                  />
                   <Button className="compact-button" disabled={!selectedCompany} onClick={openQuestionDialog}>
                     <Plus size={15} />
                     {text("Add question")}
@@ -839,13 +841,13 @@ export function ResearchScreen({
               ) : null}
 
               <section className="research-timeline-shell" aria-label={text("Evidence timeline")}>
-                <div className="research-section-heading research-section-heading-strong research-section-evidence">
-                  <div className="research-section-title">
-                    <h2>{text("Evidence")}</h2>
-                    <p>{text("Source items, notes, events, transcripts, and AI analysis for this scope.")}</p>
-                  </div>
-                  <span>{visibleItems.length}</span>
-                </div>
+                <SectionHeader
+                  className="research-section-evidence"
+                  description={text("Source items, notes, events, transcripts, and AI analysis for this scope.")}
+                  meta={visibleItems.length}
+                  title={text("Evidence")}
+                  variant="accent"
+                />
                 <div className="research-timeline">
                   {visibleItems.map((item) => (
                     <EvidenceRow

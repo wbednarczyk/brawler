@@ -1,6 +1,6 @@
 import { CalendarDays, ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
-import { Button, EmptyState } from "../../ui";
+import { Button, EmptyState, InfoGrid } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
@@ -93,32 +93,17 @@ export function EventListView({
 
             {isSelected ? (
               <div className="event-detail-panel" aria-label={text("Event details")}>
-                <dl className="metadata-grid">
-                  <div>
-                    <dt>{text("Company")}</dt>
-                    <dd><TickerLabel value={event.company} /></dd>
-                  </div>
-                  <div>
-                    <dt>{text("Type")}</dt>
-                    <dd>{formatCompanyEventType(event.eventType)}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Status")}</dt>
-                    <dd>{formatCompanyEventStatus(event.status)}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Source")}</dt>
-                    <dd>{formatCompanyEventSourceType(event.sourceType)}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Attribution")}</dt>
-                    <dd>{event.attribution ?? text("Not set")}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Fetched")}</dt>
-                    <dd>{formatTimestamp(event.fetchedAt, text("Not fetched"))}</dd>
-                  </div>
-                </dl>
+                <InfoGrid
+                  className="metadata-grid"
+                  items={[
+                    { label: text("Company"), value: <TickerLabel value={event.company} /> },
+                    { label: text("Type"), value: formatCompanyEventType(event.eventType) },
+                    { label: text("Status"), value: formatCompanyEventStatus(event.status) },
+                    { label: text("Source"), value: formatCompanyEventSourceType(event.sourceType) },
+                    { label: text("Attribution"), value: event.attribution ?? text("Not set") },
+                    { label: text("Fetched"), value: formatTimestamp(event.fetchedAt, text("Not fetched")) },
+                  ]}
+                />
                 {event.sourceUrl ? (
                   <Button
                     className="compact-button"

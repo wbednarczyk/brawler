@@ -1,5 +1,5 @@
 import { BookOpenText, Building2, ExternalLink, FileText, Mail, MailOpen, Save } from "lucide-react";
-import { Button } from "../../ui";
+import { ActionRow, Button, InfoGrid } from "../../ui";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
@@ -66,22 +66,21 @@ export function InboxDetailPane({
       {selectedFeedItem ? (
         <>
           <h2>{selectedFeedItem.title}</h2>
-          <dl className="detail-context" aria-label={text("Feed item context")}>
-            <div>
-              <dt>{text("Company")}</dt>
-              <dd>
-                <TickerLabel value={selectedFeedItem.company} />
-              </dd>
-            </div>
-            <div>
-              <dt>{text("Source URL")}</dt>
-              <dd>
-                <a href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
-                  {selectedFeedItem.sourceUrl}
-                </a>
-              </dd>
-            </div>
-          </dl>
+          <InfoGrid
+            ariaLabel={text("Feed item context")}
+            className="detail-context"
+            items={[
+              { label: text("Company"), value: <TickerLabel value={selectedFeedItem.company} /> },
+              {
+                label: text("Source URL"),
+                value: (
+                  <a href={selectedFeedItem.sourceUrl} rel="noreferrer" target="_blank">
+                    {selectedFeedItem.sourceUrl}
+                  </a>
+                ),
+              },
+            ]}
+          />
           <section className="feed-body-section" aria-label={text("Feed summary")}>
             <div className="feed-body-heading">
               <span>{text("Summary")}</span>
@@ -101,7 +100,7 @@ export function InboxDetailPane({
               </p>
             )}
           </details>
-          <div className="detail-actions" aria-label={text("Feed item actions")}>
+          <ActionRow className="detail-actions" ariaLabel={text("Feed item actions")}>
             <Button
               className="compact-button"
               onClick={() =>
@@ -144,7 +143,7 @@ export function InboxDetailPane({
                 {text("Note")}
               </Button>
             ) : null}
-          </div>
+          </ActionRow>
           {pdfAttachments.length > 0 ? (
             <div className="feed-attachment-list" aria-label={text("Feed attachments")}>
               <span className="feed-attachment-heading">{text("Attachments")}</span>
@@ -171,16 +170,14 @@ export function InboxDetailPane({
             onStart={startFeedItemAiAnalysis}
             onRetry={retryFeedItemAiAnalysis}
           />
-          <dl className="detail-pane-footer-meta" aria-label={text("Feed item timestamps")}>
-            <div>
-              <dt>{text("Published")}</dt>
-              <dd>{formatTimestamp(selectedFeedItem.publishedAt, text("Unknown"))}</dd>
-            </div>
-            <div>
-              <dt>{text("Fetched")}</dt>
-              <dd>{formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown"))}</dd>
-            </div>
-          </dl>
+          <InfoGrid
+            ariaLabel={text("Feed item timestamps")}
+            className="detail-pane-footer-meta"
+            items={[
+              { label: text("Published"), value: formatTimestamp(selectedFeedItem.publishedAt, text("Unknown")) },
+              { label: text("Fetched"), value: formatTimestamp(selectedFeedItem.fetchedAt, text("Unknown")) },
+            ]}
+          />
         </>
       ) : (
         <>

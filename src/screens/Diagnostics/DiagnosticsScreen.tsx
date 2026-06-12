@@ -13,7 +13,7 @@ import type {
   MetricSample,
   SourceAdapter,
 } from "../../api/types";
-import { Button, EmptyState, PanelHeader } from "../../ui";
+import { ActionRow, Button, EmptyState, FilterToolbar, InfoGrid, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 const eventLimit = 200;
@@ -245,12 +245,12 @@ export function DiagnosticsScreen({
         description={t("diagnostics.description")}
         titleId="diagnostics-title"
         actions={
-          <div className="diagnostics-actions">
+          <ActionRow className="diagnostics-actions">
             <Button className="compact-button" disabled={inFlight} onClick={onDisableDeveloperMode} variant="ghost">
               <ShieldAlert size={15} />
               {text("Disable Developer mode")}
             </Button>
-          </div>
+          </ActionRow>
         }
       />
       <p className="settings-note">
@@ -280,7 +280,7 @@ export function DiagnosticsScreen({
           {eventsSectionOpen ? (
             <div className="diagnostics-section-body">
               <div className="diagnostics-section-toolbar">
-                <div className="filter-toolbar diagnostics-filter-toolbar" aria-label={text("Diagnostic filters")}>
+                <FilterToolbar ariaLabel={text("Diagnostic filters")} className="diagnostics-filter-toolbar">
                   <label>
                     {text("Module")}
                     <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}>
@@ -305,8 +305,8 @@ export function DiagnosticsScreen({
                       ))}
                     </select>
                   </label>
-                </div>
-                <div className="diagnostics-actions">
+                </FilterToolbar>
+                <ActionRow className="diagnostics-actions">
                   <Button className="compact-button" disabled={inFlight} onClick={refreshDiagnostics}>
                     <RefreshCw size={15} />
                     {inFlight ? text("Loading") : text("Refresh")}
@@ -319,7 +319,7 @@ export function DiagnosticsScreen({
                     <Trash2 size={15} />
                     {text("Clear")}
                   </Button>
-                </div>
+                </ActionRow>
               </div>
               <div className="diagnostics-list" aria-label={text("Diagnostic events")}>
                 {filteredEvents.map((event) => {
@@ -343,16 +343,13 @@ export function DiagnosticsScreen({
                       </button>
                       {expanded ? (
                         <div className="diagnostic-event-detail">
-                          <dl className="settings-grid">
-                            <div>
-                              <dt>{text("Scope")}</dt>
-                              <dd>{formatScope(event)}</dd>
-                            </div>
-                            <div>
-                              <dt>{text("Created")}</dt>
-                              <dd>{event.createdAt}</dd>
-                            </div>
-                          </dl>
+                          <InfoGrid
+                            className="settings-grid"
+                            items={[
+                              { label: text("Scope"), value: formatScope(event) },
+                              { label: text("Created"), value: event.createdAt },
+                            ]}
+                          />
                           <pre>{JSON.stringify(event.metadata, null, 2)}</pre>
                         </div>
                       ) : null}
@@ -398,16 +395,13 @@ export function DiagnosticsScreen({
                       <time>{adapter.healthStatus}</time>
                     </div>
                     <div className="diagnostic-event-detail">
-                      <dl className="settings-grid">
-                        <div>
-                          <dt>{text("URL")}</dt>
-                          <dd>{adapter.sourceUrl}</dd>
-                        </div>
-                        <div>
-                          <dt>{text("Policy")}</dt>
-                          <dd>{adapter.policyNote}</dd>
-                        </div>
-                      </dl>
+                      <InfoGrid
+                        className="settings-grid"
+                        items={[
+                          { label: text("URL"), value: adapter.sourceUrl },
+                          { label: text("Policy"), value: adapter.policyNote },
+                        ]}
+                      />
                     </div>
                   </article>
                 ))}
@@ -436,22 +430,19 @@ export function DiagnosticsScreen({
           {metricsSectionOpen ? (
             <div className="diagnostics-section-body">
               <div className="diagnostics-section-toolbar">
-                <dl className="settings-grid diagnostics-log-status">
-                  <div>
-                    <dt>{text("Collected")}</dt>
-                    <dd>{metricsSnapshot?.collectedAt ?? text("Unknown")}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Samples")}</dt>
-                    <dd>{metricsSnapshot?.samples.length ?? 0}</dd>
-                  </div>
-                </dl>
-                <div className="diagnostics-actions">
+                <InfoGrid
+                  className="settings-grid diagnostics-log-status"
+                  items={[
+                    { label: text("Collected"), value: metricsSnapshot?.collectedAt ?? text("Unknown") },
+                    { label: text("Samples"), value: metricsSnapshot?.samples.length ?? 0 },
+                  ]}
+                />
+                <ActionRow className="diagnostics-actions">
                   <Button className="compact-button" disabled={metricsInFlight} onClick={refreshMetrics}>
                     <RefreshCw size={15} />
                     {metricsInFlight ? text("Loading") : text("Refresh metrics")}
                   </Button>
-                </div>
+                </ActionRow>
               </div>
               <div className="diagnostics-metrics-list" aria-label={text("Local metrics")}>
                 {metricGroups.map((group) => (
@@ -492,25 +483,19 @@ export function DiagnosticsScreen({
           {logsSectionOpen ? (
             <div className="diagnostics-section-body">
               <div className="diagnostics-section-toolbar">
-                <dl className="settings-grid diagnostics-log-status">
-                  <div>
-                    <dt>{text("Directory")}</dt>
-                    <dd>{logStatus?.logsDir ?? text("Unknown")}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Level")}</dt>
-                    <dd>{logStatus?.level ?? "info"}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Current file")}</dt>
-                    <dd>{formatBytes(logStatus?.currentFileBytes ?? 0)}</dd>
-                  </div>
-                  <div>
-                    <dt>{text("Rotation")}</dt>
-                    <dd>{logStatus ? `${logStatus.maxFiles} x ${formatBytes(logStatus.maxFileBytes)}` : text("Unknown")}</dd>
-                  </div>
-                </dl>
-                <div className="diagnostics-actions">
+                <InfoGrid
+                  className="settings-grid diagnostics-log-status"
+                  items={[
+                    { label: text("Directory"), value: logStatus?.logsDir ?? text("Unknown") },
+                    { label: text("Level"), value: logStatus?.level ?? "info" },
+                    { label: text("Current file"), value: formatBytes(logStatus?.currentFileBytes ?? 0) },
+                    {
+                      label: text("Rotation"),
+                      value: logStatus ? `${logStatus.maxFiles} x ${formatBytes(logStatus.maxFileBytes)}` : text("Unknown"),
+                    },
+                  ]}
+                />
+                <ActionRow className="diagnostics-actions">
                   <Button className="compact-button" disabled={logsInFlight} onClick={refreshLogs}>
                     <RefreshCw size={15} />
                     {logsInFlight ? text("Loading") : text("Refresh logs")}
@@ -523,7 +508,7 @@ export function DiagnosticsScreen({
                     <FolderOpen size={15} />
                     {text("Open logs folder")}
                   </Button>
-                </div>
+                </ActionRow>
               </div>
               <div className="diagnostics-log-viewer" aria-label={text("Runtime log entries")}>
                 {logEntries.map((entry) => (

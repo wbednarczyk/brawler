@@ -1,8 +1,8 @@
-import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
+import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw } from "lucide-react";
 import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger, UnmatchedSourceItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ChipList, ClearButton, DenseRow, StatusPill } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, InfoGrid, SearchField, StatusPill } from "../../ui";
 import {
   formatSourceHealth,
   formatSourceLastResult,
@@ -132,60 +132,36 @@ export function SourceAdapterRow({
           {sourceRefreshError && sourceAdapterRefreshInFlight === null ? (
             <span className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</span>
           ) : null}
-          <dl className="source-status-grid source-status-detail">
-            <div>
-              <dt>{text("Scheduler")}</dt>
-              <dd>{text(formatSourceScheduler(adapter))}</dd>
-            </div>
-            <div>
-              <dt>{text("Next poll")}</dt>
-              <dd>{formatNextRefresh(adapter)}</dd>
-            </div>
-            <div>
-              <dt>{text("Last attempt")}</dt>
-              <dd>{formatTimestamp(adapter.lastAttemptAt, text("Never"))}</dd>
-            </div>
-            <div>
-              <dt>{text("Last trigger")}</dt>
-              <dd>{text(formatSourceTrigger(adapter))}</dd>
-            </div>
-            <div>
-              <dt>{text("Last success")}</dt>
-              <dd>{formatTimestamp(adapter.lastSuccessAt, text("Never"))}</dd>
-            </div>
-            <div>
-              <dt>{text("Last error")}</dt>
-              <dd>{formatTimestamp(adapter.lastErrorAt, text("None"))}</dd>
-            </div>
-            <div>
-              <dt>{text(sourceLastResultLabel(adapter))}</dt>
-              <dd>{text(formatSourceLastResult(adapter))}</dd>
-            </div>
-            {isCompanyDirectorySource ? null : (
-              <div>
-                <dt>{text("Detail warning")}</dt>
-                <dd>{adapter.lastDetailWarning ?? text("None")}</dd>
-              </div>
-            )}
-            <div>
-              <dt>{text("Status")}</dt>
-              <dd>{text(formatSourceHealth(adapter))}</dd>
-            </div>
-            <div>
-              <dt>{text("Source page")}</dt>
-              <dd>
-                <Button
-                  aria-label={`${text("Open source page for")} ${adapter.displayName}`}
-                  className="source-page-link"
-                  onClick={() => openExternalUrl(adapter.sourceUrl)}
-                  variant="minimal"
-                >
-                  <ExternalLink size={14} />
-                  {text("Open source page")}
-                </Button>
-              </dd>
-            </div>
-          </dl>
+          <InfoGrid
+            className="source-status-grid source-status-detail"
+            items={[
+              { label: text("Scheduler"), value: text(formatSourceScheduler(adapter)) },
+              { label: text("Next poll"), value: formatNextRefresh(adapter) },
+              { label: text("Last attempt"), value: formatTimestamp(adapter.lastAttemptAt, text("Never")) },
+              { label: text("Last trigger"), value: text(formatSourceTrigger(adapter)) },
+              { label: text("Last success"), value: formatTimestamp(adapter.lastSuccessAt, text("Never")) },
+              { label: text("Last error"), value: formatTimestamp(adapter.lastErrorAt, text("None")) },
+              { label: text(sourceLastResultLabel(adapter)), value: text(formatSourceLastResult(adapter)) },
+              ...(isCompanyDirectorySource
+                ? []
+                : [{ label: text("Detail warning"), value: adapter.lastDetailWarning ?? text("None") }]),
+              { label: text("Status"), value: text(formatSourceHealth(adapter)) },
+              {
+                label: text("Source page"),
+                value: (
+                  <Button
+                    aria-label={`${text("Open source page for")} ${adapter.displayName}`}
+                    className="source-page-link"
+                    onClick={() => openExternalUrl(adapter.sourceUrl)}
+                    variant="minimal"
+                  >
+                    <ExternalLink size={14} />
+                    {text("Open source page")}
+                  </Button>
+                ),
+              },
+            ]}
+          />
           {isCompanyDirectorySource ? (
             <RegistrySourcePanel
               addingRegistryTicker={addingRegistryTicker}
@@ -245,7 +221,7 @@ function RegistrySourcePanel({
 
   return (
     <>
-      <div className="source-registry-actions" aria-label={text("Company directory refresh")}>
+      <ActionRow className="source-registry-actions" ariaLabel={text("Company directory refresh")}>
         <Button
           className="compact-button"
           disabled={registryRefreshState === "refreshing"}
@@ -262,7 +238,7 @@ function RegistrySourcePanel({
         {registryRefreshError ? (
           <span className="error-text">{text("Company directory refresh failed")}: {registryRefreshError}</span>
         ) : null}
-      </div>
+      </ActionRow>
       <div className="source-collapsible-panel" aria-label={text("Company directory entries")}>
         <button
           aria-expanded={isCompanyRegistryListExpanded}
@@ -278,19 +254,15 @@ function RegistrySourcePanel({
         </button>
         {isCompanyRegistryListExpanded ? (
           <div className="source-registry-list">
-            <label className="registry-search-field">
-              <Search size={15} />
-              <input
-                aria-label={text("Search company directory")}
-                onChange={(event) => setCompanyRegistrySearch(event.target.value)}
-                placeholder={text("Search ticker, company, ISIN")}
-                type="search"
-                value={companyRegistrySearch}
-              />
-              {companyRegistrySearch.trim().length > 0 ? (
-                <ClearButton label={text("Clear company directory search")} onClick={() => setCompanyRegistrySearch("")} />
-              ) : null}
-            </label>
+            <SearchField
+              ariaLabel={text("Search company directory")}
+              className="registry-search-field"
+              clearLabel={text("Clear company directory search")}
+              onChange={setCompanyRegistrySearch}
+              onClear={() => setCompanyRegistrySearch("")}
+              placeholder={text("Search ticker, company, ISIN")}
+              value={companyRegistrySearch}
+            />
             <span className="source-registry-count">
               {filteredCompanyRegistryEntries.length}/{companyRegistryEntries.length} {text("companies")}
             </span>

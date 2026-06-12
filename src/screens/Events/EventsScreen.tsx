@@ -8,7 +8,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { Button, PanelHeader } from "../../ui";
+import { ActionRow, Button, FilterToolbar, PanelHeader, SegmentedControl, SegmentedControlOption } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { EventListView } from "./EventListView";
 import type { EventsScreenProps } from "./eventTypes";
@@ -105,19 +105,18 @@ export function EventsScreen({
         }
       />
 
-      <div className="filter-toolbar events-filter-toolbar" aria-label={text("Event view mode")}>
-        <div className="segmented-control" role="group" aria-label={text("Event layout")}>
+      <FilterToolbar ariaLabel={text("Event view mode")} className="events-filter-toolbar">
+        <SegmentedControl ariaLabel={text("Event layout")}>
           {(["week", "list"] as const).map((viewMode) => (
-            <button
-              className={companyEventViewMode === viewMode ? "segment-active" : ""}
+            <SegmentedControlOption
+              active={companyEventViewMode === viewMode}
               key={viewMode}
               onClick={() => setCompanyEventViewMode(viewMode)}
-              type="button"
             >
               {viewMode === "week" ? text("Week") : text("List")}
-            </button>
+            </SegmentedControlOption>
           ))}
-        </div>
+        </SegmentedControl>
         {companyEventViewMode === "week" ? (
           <div className="week-toolbar" aria-label={text("Week navigation")}>
             <Button
@@ -152,18 +151,17 @@ export function EventsScreen({
             </Button>
           </div>
         ) : (
-          <div className="segmented-control" role="group" aria-label={text("Event date range")}>
+          <SegmentedControl ariaLabel={text("Event date range")}>
             {(["upcoming", "historical", "all"] as const).map((mode) => (
-              <button
-                className={companyEventMode === mode ? "segment-active" : ""}
+              <SegmentedControlOption
+                active={companyEventMode === mode}
                 key={mode}
                 onClick={() => setCompanyEventMode(mode)}
-                type="button"
               >
                 {mode === "upcoming" ? text("Upcoming") : mode === "historical" ? text("History") : text("All")}
-              </button>
+              </SegmentedControlOption>
             ))}
-          </div>
+          </SegmentedControl>
         )}
         <label>
           {text("Watchlist")}
@@ -256,7 +254,7 @@ export function EventsScreen({
           <X size={15} />
           {text("Clear filters")}
         </Button>
-      </div>
+      </FilterToolbar>
 
       {isCompanyEventComposerOpen ? (
         <div className="event-composer" aria-label={text("Create manual event")}>
@@ -374,13 +372,13 @@ export function EventsScreen({
               />
             </label>
           </div>
-          <div className="event-composer-actions">
+          <ActionRow className="event-composer-actions">
             {companyEventCreateError ? <p className="error-text">{text(companyEventCreateError)}</p> : null}
             <Button className="compact-button" onClick={createCompanyEvent} variant="primary">
               <Save size={15} />
               {text("Save")}
             </Button>
-          </div>
+          </ActionRow>
         </div>
       ) : null}
 

@@ -1,5 +1,6 @@
 import type { CredentialStatus, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
+import { InfoGrid } from "../../ui";
 
 type TranscriptRuntimeStripProps = {
   geminiCredentialStatus: CredentialStatus | null;
@@ -17,19 +18,14 @@ export function TranscriptRuntimeStrip({
   const { text } = useLocale();
 
   return (
-    <dl className="transcript-runtime-strip" aria-label={text("Transcript runtime settings")}>
-      <div>
-        <dt>{text("Provider")}</dt>
-        <dd>{formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider)}</dd>
-      </div>
-      <div>
-        <dt>{text("Credentials")}</dt>
-        <dd>{formatCredentialConfigured(geminiCredentialStatus)}</dd>
-      </div>
-      <div>
-        <dt>{text("Timeout")}</dt>
-        <dd>{settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s</dd>
-      </div>
-    </dl>
+    <InfoGrid
+      ariaLabel={text("Transcript runtime settings")}
+      className="transcript-runtime-strip"
+      items={[
+        { label: text("Provider"), value: formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider) },
+        { label: text("Credentials"), value: formatCredentialConfigured(geminiCredentialStatus) },
+        { label: text("Timeout"), value: `${settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s` },
+      ]}
+    />
   );
 }

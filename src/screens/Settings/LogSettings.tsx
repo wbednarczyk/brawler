@@ -1,6 +1,6 @@
 import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { FieldRow, SelectField } from "../../ui";
+import { FieldRow, InfoGrid, SelectField } from "../../ui";
 
 type LogSettingsProps = {
   settings: UserSettings | null;
@@ -69,18 +69,16 @@ export function LogSettings({
           ))}
         </SelectField>
       </FieldRow>
-      <dl className="settings-grid">
-        <div>
-          <dt>{text("Current level")}</dt>
-          <dd>{settings?.logs.level ?? "info"}</dd>
-        </div>
-        <div>
-          <dt>{text("Rotation")}</dt>
-          <dd>
-            {settings?.logs.maxFiles ?? 5} x {formatBytes(settings?.logs.maxFileBytes ?? 5_242_880)}
-          </dd>
-        </div>
-      </dl>
+      <InfoGrid
+        className="settings-grid"
+        items={[
+          { label: text("Current level"), value: settings?.logs.level ?? "info" },
+          {
+            label: text("Rotation"),
+            value: `${settings?.logs.maxFiles ?? 5} x ${formatBytes(settings?.logs.maxFileBytes ?? 5_242_880)}`,
+          },
+        ]}
+      />
     </section>
   );
 }

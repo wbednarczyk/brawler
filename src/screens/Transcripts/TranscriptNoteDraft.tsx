@@ -1,6 +1,6 @@
 import { Save, X } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
-import { Button } from "../../ui";
+import { ActionRow, Button } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import type { TranscriptsScreenProps } from "./transcriptTypes";
 
@@ -119,12 +119,12 @@ export function TranscriptNoteDraft({
           onChange={(event) => updateTranscriptNoteForm("body", event.target.value)}
         />
       </label>
-      <div className="event-composer-actions">
+      <ActionRow className="event-composer-actions">
         <Button className="compact-button" disabled={transcriptNoteSaveInFlight === job.id} type="submit" variant="primary">
           <Save size={15} />
           {transcriptNoteSaveInFlight === job.id ? text("Saving") : text("Save")}
         </Button>
-      </div>
+      </ActionRow>
     </form>
   );
 }

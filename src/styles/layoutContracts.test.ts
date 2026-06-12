@@ -199,6 +199,8 @@ describe("layout scroll contracts", () => {
   it("keeps shared subnav labels intrinsic and prevents horizontal scrolling", () => {
     const panelRule = ruleFor(uiCss, ".ui-panel");
     const panelHeaderRule = ruleFor(uiCss, ".ui-panel-header");
+    const segmentedControlRule = ruleFor(controlsCss, ".segmented-control");
+    const segmentedControlButtonRule = ruleFor(controlsCss, ".segmented-control button");
     const subnavRule = ruleFor(uiCss, ".ui-subnav");
     const itemRule = ruleFor(uiCss, ".ui-subnav-item");
     const itemLabelRule = ruleFor(uiCss, ".ui-subnav-item span");
@@ -220,10 +222,17 @@ describe("layout scroll contracts", () => {
     const fieldClearRule = ruleFor(uiCss, ".field-clear-button");
     const emptyStateRule = ruleFor(uiCss, ".empty-state");
     const emptyStateActionsRule = ruleFor(uiCss, ".empty-state-actions");
+    const sectionHeaderRule = ruleFor(uiCss, ".ui-section-header");
+    const sectionHeaderAccentRule = ruleFor(uiCss, ".ui-section-header-accent");
+    const sectionTitleRule = ruleFor(uiCss, ".ui-section-title");
+    const sectionActionsRule = ruleFor(uiCss, ".ui-section-header-actions");
+    const infoGridRule = ruleFor(uiCss, ".ui-info-grid");
 
     expect(panelRule).toContain("display: flex");
     expect(panelRule).toContain("overflow: hidden");
     expect(panelHeaderRule).toContain("flex-wrap: wrap");
+    expect(segmentedControlRule).toContain("display: flex");
+    expect(segmentedControlButtonRule).toContain("min-width: 72px");
     expect(subnavRule).toContain("width: max-content");
     expect(subnavRule).toContain("overflow-x: hidden");
     expect(subnavRule).toContain("overflow-y: auto");
@@ -249,5 +258,11 @@ describe("layout scroll contracts", () => {
     expect(emptyStateRule).toContain("justify-content: space-between");
     expect(emptyStateRule).toContain("background: var(--surface-raised)");
     expect(emptyStateActionsRule).toContain("justify-content: flex-end");
+    expect(sectionHeaderRule).toContain("justify-content: space-between");
+    expect(sectionHeaderRule).toContain("min-width: 0");
+    expect(sectionHeaderAccentRule).toContain("var(--section-accent, var(--primary))");
+    expect(sectionTitleRule).toContain("min-width: 0");
+    expect(sectionActionsRule).toContain("margin-left: auto");
+    expect(infoGridRule).toContain("min-width: 0");
   });
 });

@@ -13,7 +13,7 @@ import {
   type ImportApplySummary,
   type ImportPreview,
 } from "../../api/importExport";
-import { Button } from "../../ui";
+import { ActionRow, Button, InfoGrid } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ImportKind = "research" | "settings";
@@ -186,7 +186,7 @@ function WorkflowPanel({
         <p className="settings-note">{description}</p>
       </div>
 
-      <div className="import-export-actions">
+      <ActionRow className="import-export-actions">
         <Button className="compact-button" onClick={onExport} variant="primary">{exportLabel}</Button>
         <Button className="compact-button" onClick={() => inputRef.current?.click()}>{importLabel}</Button>
         <input
@@ -197,7 +197,7 @@ function WorkflowPanel({
           type="file"
           onChange={(event) => onFileSelected(event.target.files?.[0] ?? null)}
         />
-      </div>
+      </ActionRow>
 
       {state.inFlight ? <p className="settings-note">{text("Working")}</p> : null}
       {state.preview ? <PreviewSummary preview={state.preview} /> : null}
@@ -287,14 +287,12 @@ function SummaryGrid({ summary }: { summary: ImportApplySummary }) {
   ] as const;
 
   return (
-    <dl className="import-export-summary-grid">
-      {items.filter(([, value]) => value > 0).map(([label, value]) => (
-        <div key={label}>
-          <dt>{label}</dt>
-          <dd>{value}</dd>
-        </div>
-      ))}
-    </dl>
+    <InfoGrid
+      className="import-export-summary-grid"
+      items={items
+        .filter(([, value]) => value > 0)
+        .map(([label, value]) => ({ label, value }))}
+    />
   );
 }
 

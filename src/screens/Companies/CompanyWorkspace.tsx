@@ -15,7 +15,18 @@ import type { Company } from "../../api/types";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ChipList, DenseRow, EmptyState, StatusChip, StatusPill } from "../../ui";
+import {
+  ActionRow,
+  Button,
+  ChipList,
+  DenseRow,
+  EmptyState,
+  InfoGrid,
+  SegmentedControl,
+  SegmentedControlOption,
+  StatusChip,
+  StatusPill,
+} from "../../ui";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
 
 type CompanyWorkspaceProps = Pick<
@@ -146,7 +157,7 @@ export function CompanyWorkspace({
         </div>
       </div>
     
-      <div className="segmented-control company-tabs" aria-label={text("Company workspace tabs")}>
+      <SegmentedControl ariaLabel={text("Company workspace tabs")} className="company-tabs">
         {(["Feed", "Notebook", "Claims", "Transcripts", "Metadata"] as const).map(
           (tab) => {
             const TabIcon =
@@ -161,19 +172,14 @@ export function CompanyWorkspace({
                       : FileText;
     
             return (
-              <button
-                className={companyWorkspaceTab === tab ? "segment-active" : undefined}
-                key={tab}
-                onClick={() => setCompanyWorkspaceTab(tab)}
-                type="button"
-              >
+              <SegmentedControlOption active={companyWorkspaceTab === tab} key={tab} onClick={() => setCompanyWorkspaceTab(tab)}>
                 <TabIcon size={14} />
                 {text(tab)}
-              </button>
+              </SegmentedControlOption>
             );
           },
         )}
-      </div>
+      </SegmentedControl>
     
       {companyWorkspaceTab === "Feed" ? (
         <div
@@ -242,7 +248,7 @@ export function CompanyWorkspace({
                       )}
                     </details>
                   </div>
-                  <div className="detail-actions" aria-label={text("Company feed item actions")}>
+                  <ActionRow className="detail-actions" ariaLabel={text("Company feed item actions")}>
                     <Button
                       className="compact-button"
                       onClick={() =>
@@ -294,33 +300,24 @@ export function CompanyWorkspace({
                       <ExternalLink size={15} />
                       {text("Open source")}
                     </a>
-                  </div>
-                  <dl className="metadata-grid">
-                    <div>
-                      <dt>{text("Source")}</dt>
-                      <dd>{selectedCompanyFeedItem.source}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Type")}</dt>
-                      <dd>{selectedCompanyFeedItem.type}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Published")}</dt>
-                      <dd>{formatTimestamp(selectedCompanyFeedItem.publishedAt, text("Unknown"))}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Fetched")}</dt>
-                      <dd>{formatTimestamp(selectedCompanyFeedItem.fetchedAt, text("Unknown"))}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Attribution")}</dt>
-                      <dd>{selectedCompanyFeedItem.attribution}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Language")}</dt>
-                      <dd>{selectedCompanyFeedItem.language}</dd>
-                    </div>
-                  </dl>
+                  </ActionRow>
+                  <InfoGrid
+                    className="metadata-grid"
+                    items={[
+                      { label: text("Source"), value: selectedCompanyFeedItem.source },
+                      { label: text("Type"), value: selectedCompanyFeedItem.type },
+                      {
+                        label: text("Published"),
+                        value: formatTimestamp(selectedCompanyFeedItem.publishedAt, text("Unknown")),
+                      },
+                      {
+                        label: text("Fetched"),
+                        value: formatTimestamp(selectedCompanyFeedItem.fetchedAt, text("Unknown")),
+                      },
+                      { label: text("Attribution"), value: selectedCompanyFeedItem.attribution },
+                      { label: text("Language"), value: selectedCompanyFeedItem.language },
+                    ]}
+                  />
                   {selectedCompanyFeedItem.attachments.length > 0 ? (
                     <div className="feed-attachment-list" aria-label={text("Company feed attachments")}>
                       {selectedCompanyFeedItem.attachments.map((attachment) => (
@@ -532,7 +529,7 @@ export function CompanyWorkspace({
                           }
                         />
                       </label>
-                      <div className="notebook-detail-actions">
+                      <ActionRow className="notebook-detail-actions">
                         <Button
                           className="compact-button"
                           onClick={cancelNotebookEdit}
@@ -553,7 +550,7 @@ export function CompanyWorkspace({
                           <Save size={15} />
                           {text("Save")}
                         </Button>
-                      </div>
+                      </ActionRow>
                     </div>
                     <textarea
                       aria-label={text("Selected notebook body")}
@@ -657,28 +654,19 @@ export function CompanyWorkspace({
                       <span className="membership-empty">{text("No tags")}</span>
                     ) : null}
                   </ChipList>
-                  <dl className="metadata-grid notebook-entry-meta">
-                    <div>
-                      <dt>{text("Status")}</dt>
-                      <dd>{selectedNotebookEntry.claimStatus ?? text("Not set")}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Event")}</dt>
-                      <dd>{selectedNotebookEntry.eventDate ?? text("Not set")}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Follow-up quarter")}</dt>
-                      <dd>{selectedNotebookEntry.followUpAfter ?? text("Not set")}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Follow-up date")}</dt>
-                      <dd>{selectedNotebookEntry.followUpDate ?? text("Not set")}</dd>
-                    </div>
-                    <div>
-                      <dt>{text("Origin")}</dt>
-                      <dd>{renderNotebookOrigins(selectedNotebookEntry.origins, selectedNotebookEntry.companyId)}</dd>
-                    </div>
-                  </dl>
+                  <InfoGrid
+                    className="metadata-grid notebook-entry-meta"
+                    items={[
+                      { label: text("Status"), value: selectedNotebookEntry.claimStatus ?? text("Not set") },
+                      { label: text("Event"), value: selectedNotebookEntry.eventDate ?? text("Not set") },
+                      { label: text("Follow-up quarter"), value: selectedNotebookEntry.followUpAfter ?? text("Not set") },
+                      { label: text("Follow-up date"), value: selectedNotebookEntry.followUpDate ?? text("Not set") },
+                      {
+                        label: text("Origin"),
+                        value: renderNotebookOrigins(selectedNotebookEntry.origins, selectedNotebookEntry.companyId),
+                      },
+                    ]}
+                  />
                 </>
               ) : null}
             </form>
@@ -766,24 +754,15 @@ export function CompanyWorkspace({
                       </div>
                     </div>
                     <MarkdownNoteBody body={entry.body} />
-                    <dl className="metadata-grid notebook-entry-meta">
-                      <div>
-                        <dt>{text("Event")}</dt>
-                        <dd>{entry.eventDate ?? text("Not set")}</dd>
-                      </div>
-                      <div>
-                        <dt>{text("Follow-up quarter")}</dt>
-                        <dd>{entry.followUpAfter ?? text("Not set")}</dd>
-                      </div>
-                      <div>
-                        <dt>{text("Follow-up date")}</dt>
-                        <dd>{entry.followUpDate ?? text("Not set")}</dd>
-                      </div>
-                      <div>
-                        <dt>{text("Origin")}</dt>
-                        <dd>{renderNotebookOrigins(entry.origins, entry.companyId)}</dd>
-                      </div>
-                    </dl>
+                    <InfoGrid
+                      className="metadata-grid notebook-entry-meta"
+                      items={[
+                        { label: text("Event"), value: entry.eventDate ?? text("Not set") },
+                        { label: text("Follow-up quarter"), value: entry.followUpAfter ?? text("Not set") },
+                        { label: text("Follow-up date"), value: entry.followUpDate ?? text("Not set") },
+                        { label: text("Origin"), value: renderNotebookOrigins(entry.origins, entry.companyId) },
+                      ]}
+                    />
                   </div>
                 ) : null}
               </div>
@@ -805,32 +784,21 @@ export function CompanyWorkspace({
       ) : null}
     
       {companyWorkspaceTab === "Metadata" ? (
-        <dl className="company-tab-panel metadata-grid" aria-label={text("Company metadata")}>
-          <div>
-            <dt>{text("Qualified ticker")}</dt>
-            <dd><TickerLabel value={selectedCompany.qualifiedTicker} /></dd>
-          </div>
-          <div>
-            <dt>{text("Exchange")}</dt>
-            <dd>{selectedCompany.exchange}</dd>
-          </div>
-          <div>
-            <dt>{text("Ticker")}</dt>
-            <dd>{selectedCompany.ticker}</dd>
-          </div>
-          <div>
-            <dt>ISIN</dt>
-            <dd>{selectedCompany.isin ?? text("Not set")}</dd>
-          </div>
-          <div>
-            <dt>CIK</dt>
-            <dd>{selectedCompany.cik ?? text("Not set")}</dd>
-          </div>
-          <div>
-            <dt>LEI</dt>
-            <dd>{selectedCompany.lei ?? text("Not set")}</dd>
-          </div>
-        </dl>
+        <InfoGrid
+          ariaLabel={text("Company metadata")}
+          className="company-tab-panel metadata-grid"
+          items={[
+            {
+              label: text("Qualified ticker"),
+              value: <TickerLabel value={selectedCompany.qualifiedTicker} />,
+            },
+            { label: text("Exchange"), value: selectedCompany.exchange },
+            { label: text("Ticker"), value: selectedCompany.ticker },
+            { label: "ISIN", value: selectedCompany.isin ?? text("Not set") },
+            { label: "CIK", value: selectedCompany.cik ?? text("Not set") },
+            { label: "LEI", value: selectedCompany.lei ?? text("Not set") },
+          ]}
+        />
       ) : null}
     </section>
   );

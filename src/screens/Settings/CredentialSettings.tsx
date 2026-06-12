@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { ExternalLink, Save, Trash2 } from "lucide-react";
 import type { CredentialStatus } from "../../api/types";
-import { Button } from "../../ui";
+import { ActionRow, Button, InfoGrid } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type CredentialSettingsProps = {
@@ -34,16 +34,19 @@ export function CredentialSettings({
   return (
     <section className="settings-group" aria-labelledby="settings-credentials-title">
       <h2 id="settings-credentials-title">{t("settings.credentials.title")}</h2>
-      <dl className="settings-grid">
-        <div>
-          <dt>{text("Credential status")}</dt>
-          <dd>{text(formatCredentialConfigured(geminiCredentialStatus))}</dd>
-        </div>
-        <div>
-          <dt>{text("Credential kind")}</dt>
-          <dd>{text(formatCredentialKind(geminiCredentialStatus?.secretKind))}</dd>
-        </div>
-      </dl>
+      <InfoGrid
+        className="settings-grid"
+        items={[
+          {
+            label: text("Credential status"),
+            value: text(formatCredentialConfigured(geminiCredentialStatus)),
+          },
+          {
+            label: text("Credential kind"),
+            value: text(formatCredentialKind(geminiCredentialStatus?.secretKind)),
+          },
+        ]}
+      />
       <form className="credential-form" onSubmit={onSaveGeminiApiKey}>
         <label>
           {t("settings.credentials.geminiApiKey")}
@@ -56,7 +59,7 @@ export function CredentialSettings({
             onChange={(event) => onGeminiApiKeyDraftChange(event.target.value)}
           />
         </label>
-        <div className="credential-actions">
+        <ActionRow className="credential-actions">
           <Button
             disabled={geminiCredentialInFlight || !geminiApiKeyDraft.trim()}
             type="submit"
@@ -73,7 +76,7 @@ export function CredentialSettings({
             <Trash2 size={14} />
             {t("settings.credentials.clear")}
           </Button>
-        </div>
+        </ActionRow>
       </form>
       <Button
         className="settings-link-button"
