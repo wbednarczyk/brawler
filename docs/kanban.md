@@ -13,10 +13,19 @@ Active planning has moved from this file to Radicle issues rendered by Radboard.
 - Shared research-workspace label: `area:research-workspace`
 - Shared release-workflow label: `area:release-workflow`
 - Shared packaging label: `area:packaging`
+- Shared fundamentals label: `area:fundamentals`
 
 Current milestone epics:
 
-- None active.
+- `eca2082` - epic: Financial facts foundation (`milestone:v0.34.0`)
+- `9879941` - epic: AI KPI extraction with confirmation (`milestone:v0.35.0`)
+- `8505350` - epic: Fundamentals panel and KPI charts (`milestone:v0.36.0`)
+
+Current fundamentals sequence:
+
+- v0.34.0 establishes the financial facts data model, report document persistence (ESPI/EBI attachments and user-supplied PDF URLs), and manual KPI entry.
+- v0.35.0 adds AI KPI extraction through the provider boundary with mandatory per-fact user confirmation.
+- v0.36.0 ships the fundamentals panel, custom per-company KPIs, KPI trend charts via shared SVG primitives, and export/import.
 
 Current research-workspace sequence:
 
