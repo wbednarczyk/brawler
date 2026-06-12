@@ -1,10 +1,13 @@
-use quick_xml::escape::{resolve_xml_entity, unescape};
-use quick_xml::events::{BytesCData, BytesRef, BytesText, Event};
+use quick_xml::events::Event;
 use quick_xml::name::QName;
 use quick_xml::Reader;
 use thiserror::Error;
-use time::{format_description::well_known::Rfc2822, format_description::well_known::Rfc3339};
+use time::format_description::well_known::Rfc3339;
 
+use super::parsing::{
+    decode_xml_cdata_value, decode_xml_reference_value, decode_xml_text_value,
+    parse_rfc2822_timestamp, slug_part,
+};
 use super::USER_AGENT;
 
 pub const ADAPTER_ID: &str = "gpw-market-events-rss";
@@ -131,34 +134,22 @@ pub fn parse_market_events(
     Ok(items)
 }
 
-fn decode_text_value(text: BytesText<'_>) -> Result<String, GpwMarketEventsParseError> {
-    let decoded = text
-        .decode()
-        .map_err(|error| GpwMarketEventsParseError::Xml(error.to_string()))?;
-    unescape_text_value(&decoded)
+fn decode_text_value(
+    text: quick_xml::events::BytesText<'_>,
+) -> Result<String, GpwMarketEventsParseError> {
+    decode_xml_text_value(text).map_err(GpwMarketEventsParseError::Xml)
 }
 
-fn decode_cdata_value(text: BytesCData<'_>) -> Result<String, GpwMarketEventsParseError> {
-    let decoded = text
-        .decode()
-        .map_err(|error| GpwMarketEventsParseError::Xml(error.to_string()))?;
-    unescape_text_value(&decoded)
+fn decode_cdata_value(
+    text: quick_xml::events::BytesCData<'_>,
+) -> Result<String, GpwMarketEventsParseError> {
+    decode_xml_cdata_value(text).map_err(GpwMarketEventsParseError::Xml)
 }
 
-fn decode_reference_value(reference: BytesRef<'_>) -> Result<String, GpwMarketEventsParseError> {
-    let decoded = reference
-        .decode()
-        .map_err(|error| GpwMarketEventsParseError::Xml(error.to_string()))?;
-
-    Ok(resolve_xml_entity(&decoded)
-        .map(str::to_owned)
-        .unwrap_or_else(|| format!("&{decoded};")))
-}
-
-fn unescape_text_value(value: &str) -> Result<String, GpwMarketEventsParseError> {
-    unescape(value)
-        .map(|value| value.into_owned())
-        .map_err(|error| GpwMarketEventsParseError::Xml(error.to_string()))
+fn decode_reference_value(
+    reference: quick_xml::events::BytesRef<'_>,
+) -> Result<String, GpwMarketEventsParseError> {
+    decode_xml_reference_value(reference).map_err(GpwMarketEventsParseError::Xml)
 }
 
 #[derive(Debug, Default)]
@@ -243,10 +234,7 @@ impl RawRssItem {
 }
 
 fn parse_event_date(value: &str) -> Option<String> {
-    time::OffsetDateTime::parse(value, &Rfc2822)
-        .ok()
-        .and_then(|timestamp| timestamp.format(&Rfc3339).ok())
-        .map(|timestamp| timestamp.chars().take(10).collect())
+    parse_rfc2822_timestamp(value).map(|timestamp| timestamp.chars().take(10).collect())
 }
 
 fn classify_event_type(event_label: &str) -> String {
@@ -268,24 +256,6 @@ fn should_insert_text_separator(existing: &str, incoming: &str) -> bool {
     !existing.is_empty()
         && !existing.ends_with(char::is_whitespace)
         && !incoming.starts_with(char::is_whitespace)
-}
-
-fn slug_part(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(char::to_lowercase)
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
 }
 
 #[cfg(test)]

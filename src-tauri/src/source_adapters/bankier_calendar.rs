@@ -3,6 +3,7 @@ use thiserror::Error;
 use time::{format_description::well_known::Rfc3339, Date, Month, OffsetDateTime, Time, UtcOffset};
 use url::Url;
 
+use super::parsing::{normalize_polish, polish_slug_part as slug_part};
 use super::USER_AGENT;
 
 pub const ADAPTER_ID: &str = "bankier-kalendarium-html";
@@ -282,40 +283,6 @@ fn classify_event_type(category: &str) -> String {
         _ => "other_market_event",
     }
     .to_owned()
-}
-
-fn slug_part(value: &str) -> String {
-    normalize_polish(value)
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join("-")
-}
-
-fn normalize_polish(value: &str) -> String {
-    value
-        .trim()
-        .chars()
-        .map(|character| match character {
-            'ą' | 'Ą' => 'a',
-            'ć' | 'Ć' => 'c',
-            'ę' | 'Ę' => 'e',
-            'ł' | 'Ł' => 'l',
-            'ń' | 'Ń' => 'n',
-            'ó' | 'Ó' => 'o',
-            'ś' | 'Ś' => 's',
-            'ż' | 'Ż' | 'ź' | 'Ź' => 'z',
-            other => other.to_lowercase().next().unwrap_or(other),
-        })
-        .collect::<String>()
 }
 
 #[cfg(test)]

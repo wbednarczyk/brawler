@@ -1,3 +1,4 @@
+use super::parsing::slug_part;
 use super::USER_AGENT;
 use scraper::{Html, Selector};
 use serde::Deserialize;
@@ -560,24 +561,6 @@ fn extract_between<'a>(value: &'a str, prefix: &str, suffix: &str) -> Option<&'a
     let start = value.find(prefix)? + prefix.len();
     let end = value[start..].find(suffix)? + start;
     Some(&value[start..end])
-}
-
-fn slug_part(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(char::to_lowercase)
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
 }
 
 #[cfg(test)]

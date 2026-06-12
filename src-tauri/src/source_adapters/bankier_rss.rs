@@ -1,11 +1,13 @@
-use quick_xml::escape::{resolve_xml_entity, unescape};
-use quick_xml::events::{BytesCData, BytesRef, BytesText, Event};
+use quick_xml::events::Event;
 use quick_xml::name::QName;
 use quick_xml::Reader;
 use thiserror::Error;
-use time::{format_description::well_known::Rfc2822, format_description::well_known::Rfc3339};
-use url::Url;
+use time::format_description::well_known::Rfc3339;
 
+use super::parsing::{
+    decode_xml_cdata_value, decode_xml_reference_value, decode_xml_text_value, first_non_empty,
+    normalize_link_without_tracking, parse_rfc2822_timestamp, slug_part, strip_html,
+};
 use super::USER_AGENT;
 
 pub const ADAPTER_ID: &str = "bankier-market-rss";
@@ -164,34 +166,22 @@ pub fn parse_channel_rss_items(
     Ok(items)
 }
 
-fn decode_text_value(text: BytesText<'_>) -> Result<String, BankierRssParseError> {
-    let decoded = text
-        .decode()
-        .map_err(|error| BankierRssParseError::Xml(error.to_string()))?;
-    unescape_text_value(&decoded)
+fn decode_text_value(
+    text: quick_xml::events::BytesText<'_>,
+) -> Result<String, BankierRssParseError> {
+    decode_xml_text_value(text).map_err(BankierRssParseError::Xml)
 }
 
-fn decode_cdata_value(text: BytesCData<'_>) -> Result<String, BankierRssParseError> {
-    let decoded = text
-        .decode()
-        .map_err(|error| BankierRssParseError::Xml(error.to_string()))?;
-    unescape_text_value(&decoded)
+fn decode_cdata_value(
+    text: quick_xml::events::BytesCData<'_>,
+) -> Result<String, BankierRssParseError> {
+    decode_xml_cdata_value(text).map_err(BankierRssParseError::Xml)
 }
 
-fn decode_reference_value(reference: BytesRef<'_>) -> Result<String, BankierRssParseError> {
-    let decoded = reference
-        .decode()
-        .map_err(|error| BankierRssParseError::Xml(error.to_string()))?;
-
-    Ok(resolve_xml_entity(&decoded)
-        .map(str::to_owned)
-        .unwrap_or_else(|| format!("&{decoded};")))
-}
-
-fn unescape_text_value(value: &str) -> Result<String, BankierRssParseError> {
-    unescape(value)
-        .map(|value| value.into_owned())
-        .map_err(|error| BankierRssParseError::Xml(error.to_string()))
+fn decode_reference_value(
+    reference: quick_xml::events::BytesRef<'_>,
+) -> Result<String, BankierRssParseError> {
+    decode_xml_reference_value(reference).map_err(BankierRssParseError::Xml)
 }
 
 #[derive(Debug, Default)]
@@ -240,8 +230,8 @@ impl RawRssItem {
             return None;
         }
 
-        let link = normalize_rss_link(raw_link);
-        let published_at = parse_pub_date(self.pub_date.trim());
+        let link = normalize_link_without_tracking(raw_link);
+        let published_at = parse_rfc2822_timestamp(self.pub_date.trim());
         let dedupe_seed = first_non_empty([self.guid.trim(), link.as_str(), title]);
         let dedupe_key = format!("{}:{}", channel.adapter_id, slug_part(dedupe_seed));
 
@@ -256,32 +246,6 @@ impl RawRssItem {
     }
 }
 
-fn normalize_rss_link(value: &str) -> String {
-    let Ok(mut url) = Url::parse(value) else {
-        return value.to_owned();
-    };
-
-    url.set_fragment(None);
-
-    let retained_query_pairs = url
-        .query_pairs()
-        .filter(|(key, _)| !key.to_ascii_lowercase().starts_with("utm_"))
-        .map(|(key, value)| (key.into_owned(), value.into_owned()))
-        .collect::<Vec<_>>();
-
-    url.set_query(None);
-
-    if !retained_query_pairs.is_empty() {
-        url.query_pairs_mut().extend_pairs(
-            retained_query_pairs
-                .iter()
-                .map(|(key, value)| (&**key, &**value)),
-        );
-    }
-
-    url.to_string()
-}
-
 fn should_insert_text_separator(current: &str, next: &str) -> bool {
     if current.is_empty()
         || current.ends_with(['\'', '(', '['])
@@ -294,60 +258,6 @@ fn should_insert_text_separator(current: &str, next: &str) -> bool {
     }
 
     !(current.ends_with('"') && current.matches('"').count() % 2 == 1)
-}
-
-fn parse_pub_date(value: &str) -> Option<String> {
-    if value.is_empty() {
-        return None;
-    }
-
-    time::OffsetDateTime::parse(value, &Rfc2822)
-        .ok()
-        .and_then(|timestamp| timestamp.format(&Rfc3339).ok())
-}
-
-fn first_non_empty<'a>(values: impl IntoIterator<Item = &'a str>) -> &'a str {
-    values
-        .into_iter()
-        .find(|value| !value.trim().is_empty())
-        .unwrap_or("missing")
-}
-
-fn strip_html(value: &str) -> String {
-    let mut output = String::new();
-    let mut in_tag = false;
-
-    for character in value.chars() {
-        match character {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => output.push(character),
-            _ => {}
-        }
-    }
-
-    let stripped = output.split_whitespace().collect::<Vec<_>>().join(" ");
-    unescape(&stripped)
-        .map(|value| value.into_owned())
-        .unwrap_or(stripped)
-}
-
-fn slug_part(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(char::to_lowercase)
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
 }
 
 #[cfg(test)]

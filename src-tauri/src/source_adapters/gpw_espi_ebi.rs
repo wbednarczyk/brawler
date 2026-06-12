@@ -5,6 +5,7 @@ use time::{
     PrimitiveDateTime, UtcOffset,
 };
 
+use super::parsing::slug_part;
 use super::USER_AGENT;
 
 pub const ADAPTER_ID: &str = "gpw-espi-ebi";
@@ -572,24 +573,6 @@ fn build_dedupe_key(
             slug_part(title)
         )
     }
-}
-
-fn slug_part(value: &str) -> String {
-    value
-        .chars()
-        .flat_map(char::to_lowercase)
-        .map(|character| {
-            if character.is_ascii_alphanumeric() {
-                character
-            } else {
-                '-'
-            }
-        })
-        .collect::<String>()
-        .split('-')
-        .filter(|part| !part.is_empty())
-        .collect::<Vec<_>>()
-        .join("-")
 }
 
 #[cfg(test)]
