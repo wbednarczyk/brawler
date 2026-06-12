@@ -1,7 +1,6 @@
 import { X } from "lucide-react";
 import type { TranscriptJob, TranscriptSegment } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
+import { Button, EmptyState } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import {
   highlightSearchMatch,

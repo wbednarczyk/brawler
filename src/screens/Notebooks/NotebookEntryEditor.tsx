@@ -1,7 +1,6 @@
 import { BookOpenText, Save, Trash2, X } from "lucide-react";
 import type { NotebookEntry } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { StatusPill } from "../../shared/components/StatusPill";
+import { Button, ChipList, StatusPill } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
@@ -193,17 +192,14 @@ export function NotebookEntryEditor({
           />
         </>
       )}
-      <div
-        className="source-chip-list"
-        aria-label={`${text("Tags for")} ${selectedNotebookScreenEntry.title}`}
-      >
+      <ChipList ariaLabel={`${text("Tags for")} ${selectedNotebookScreenEntry.title}`}>
         {selectedNotebookScreenEntry.tags.map((tag) => (
           <StatusPill key={tag}>{tag}</StatusPill>
         ))}
         {selectedNotebookScreenEntry.tags.length === 0 ? (
           <span className="membership-empty">{text("No tags")}</span>
         ) : null}
-      </div>
+      </ChipList>
       <dl className="metadata-grid notebook-entry-meta">
         <div>
           <dt>{text("Status")}</dt>

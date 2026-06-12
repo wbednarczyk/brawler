@@ -1,6 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
+import { Button, EmptyState, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { TranscriptJobComposer } from "./TranscriptJobComposer";
 import { TranscriptJobRow } from "./TranscriptJobRow";
@@ -64,21 +63,22 @@ export function TranscriptsScreen({
 
   return (
     <section className="feed-panel transcripts-panel" aria-labelledby="transcripts-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="transcripts-title">{t("transcripts.title")}</h1>
-          <p>{t("transcripts.description")}</p>
-        </div>
-        <Button
-          className="compact-button"
-          onClick={() => {
-            void refreshTranscriptJobs();
-          }}
-        >
-          <RefreshCw size={15} />
-          {t("action.refreshJobs")}
-        </Button>
-      </div>
+      <PanelHeader
+        title={t("transcripts.title")}
+        description={t("transcripts.description")}
+        titleId="transcripts-title"
+        actions={
+          <Button
+            className="compact-button"
+            onClick={() => {
+              void refreshTranscriptJobs();
+            }}
+          >
+            <RefreshCw size={15} />
+            {t("action.refreshJobs")}
+          </Button>
+        }
+      />
 
       <TranscriptRuntimeStrip
         geminiCredentialStatus={geminiCredentialStatus}

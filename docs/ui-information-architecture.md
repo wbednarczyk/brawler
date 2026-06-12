@@ -46,6 +46,26 @@ Shell behavior:
 - Normal user-facing UI copy should use product terms and avoid implementation details such as SQLite, Tauri, database engine, internal adapter, module, collector, schema, or command boundary. Technical terms are reserved for Developer Diagnostics and owner/developer docs.
 - Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with explicit known-exchange colors plus deterministic fallback palette colors for future exchanges. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
 
+## Reusable UI Foundation
+
+Shared app UI primitives live under `src/ui`. Screens should use these primitives for recurring visual and interaction patterns before adding screen-local variants.
+
+Initial primitive families:
+
+- navigation: subnavigation and later sidebar-like section menus
+- fields: field rows, select fields, text fields, and action rows
+- buttons: standard button variants and icon-only affordances
+- surfaces: panels, section headers, empty states, and repeated cards
+- status: badges, pills, counters, and compact metadata chips
+- lists: dense selectable row shells and row action clusters
+- confirmations and disclosures: inline confirmation prompts and expandable row/detail wrappers during compatibility migration
+
+The primitive APIs should remain Brawler-owned and semantic. If a future UI framework is adopted, screens should not be rewritten to framework-specific components directly; the framework should be wrapped behind the existing `src/ui` boundary where practical. This keeps the app extensible while allowing the current implementation to stay plain CSS and lightweight.
+
+Migration is incremental. New screens should use shared primitives from the start. Existing screens should be moved view by view, starting with the areas that have caused repeated layout or consistency defects.
+
+Dense list rows should share state behavior before sharing body layout. The reusable row shell owns selected, unread, disabled, hover, and focus treatment. Row body structure stays screen-owned until a specific row family proves reusable enough to migrate. This avoids hiding domain differences between feed evidence, companies, sources, transcripts, events, shortcuts, and settings forms behind one generic component.
+
 ## Inbox Screen
 
 Purpose: fast daily notes work of new reports and news.

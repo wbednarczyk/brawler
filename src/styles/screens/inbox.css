@@ -12,27 +12,10 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
-  cursor: pointer;
 }
 
 .company-feed-row.unread {
   background: color-mix(in srgb, var(--primary) 7%, transparent);
-}
-
-.company-feed-row:hover,
-.company-feed-row:focus-visible,
-.company-feed-row-selected {
-  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
-  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
-}
-
-.company-feed-row-selected {
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-
-.company-feed-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
-  outline-offset: 2px;
 }
 
 .company-feed-row h3 {
@@ -386,39 +369,15 @@ summary.feed-body-heading::before {
   font-size: 12px;
 }
 
-.danger-button {
-  color: var(--danger);
-}
-
-.danger-button:hover {
-  border-color: color-mix(in srgb, var(--danger) 58%, var(--border));
-  background: color-mix(in srgb, var(--danger) 12%, var(--surface-raised));
-}
-
-.empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 18px;
-  background: var(--surface-raised);
-}
-
-.empty-state-actions {
-  display: inline-flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
 .feed-row {
   display: flex;
   align-items: center;
   gap: 14px;
   min-height: 86px;
   padding: 14px 18px;
+  border: 0;
   border-bottom: 1px solid var(--border);
-  cursor: pointer;
+  border-radius: 0;
 }
 
 .feed-row:last-child {
@@ -427,21 +386,6 @@ summary.feed-body-heading::before {
 
 .feed-row.unread {
   background: color-mix(in srgb, var(--primary) 7%, transparent);
-}
-
-.feed-row:hover,
-.feed-row:focus-visible,
-.feed-row-selected {
-  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
-}
-
-.feed-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
-  outline-offset: -2px;
-}
-
-.feed-row-selected {
-  box-shadow: inset 3px 0 0 var(--primary);
 }
 
 .feed-row-main {
@@ -556,18 +500,6 @@ summary.feed-body-heading::before {
 .unread-dot {
   background: var(--secondary);
   box-shadow: 0 0 16px color-mix(in srgb, var(--secondary) 70%, transparent);
-}
-
-.saved-pill {
-  display: inline-flex;
-  align-items: center;
-  min-height: 24px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--border));
-  border-radius: 8px;
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-raised));
-  font-size: 12px;
 }
 
 .inbox-search-field {

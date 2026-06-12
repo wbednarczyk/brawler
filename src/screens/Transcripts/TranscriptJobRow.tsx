@@ -1,9 +1,8 @@
 import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { StatusPill } from "../../shared/components/StatusPill";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ChipList, DenseRow, StatusPill } from "../../ui";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
 import { TranscriptSegmentReview } from "./TranscriptSegmentReview";
@@ -129,7 +128,7 @@ export function TranscriptJobRow({
   
   return (
     <div className="source-row-block" key={job.id}>
-      <article
+      <DenseRow
         className={[
           "source-row",
           "transcript-row",
@@ -141,6 +140,7 @@ export function TranscriptJobRow({
         onClick={() => toggleTranscriptJob(job)}
         onKeyDown={(event) => toggleTranscriptJobFromKeyboard(event, job)}
         role="button"
+        selected={isTranscriptJobSelected}
         tabIndex={0}
       >
         <div className="source-row-main">
@@ -163,11 +163,11 @@ export function TranscriptJobRow({
             {formatAiProvider(job.providerId)} ·{" "}
             {formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel)}
           </p>
-          <div className="source-chip-list" aria-label={`${text("Transcript job metadata for")} ${job.id}`}>
+          <ChipList ariaLabel={`${text("Transcript job metadata for")} ${job.id}`}>
             <StatusPill>{formatTranscriptStatus(job.companyResolutionStatus)}</StatusPill>
             <StatusPill>{job.sourceType}</StatusPill>
             {job.errorCode ? <StatusPill>{formatEnumLabel(job.errorCode)}</StatusPill> : null}
-          </div>
+          </ChipList>
         </div>
         <div className="source-row-status">
           <span>{formatTranscriptStatus(job.status)}</span>
@@ -201,7 +201,7 @@ export function TranscriptJobRow({
             <Trash2 size={15} />
           </Button>
         </div>
-      </article>
+      </DenseRow>
       {isTranscriptJobSelected ? (
         <div className="transcript-detail-panel" aria-label={text("Transcript job details")}>
           <div className="transcript-description-editor" aria-label={text("Transcript description editor")}>

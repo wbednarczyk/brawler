@@ -11,10 +11,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, StatusChip } from "../../ui";
 import { InboxDetailPane } from "./InboxDetailPane";
 import type { InboxScreenProps } from "./inboxTypes";
 
@@ -81,38 +80,39 @@ export function InboxScreen({
   return (
     <>
       <section className="feed-panel" aria-labelledby="inbox-title">
-        <div className="panel-header">
-          <div>
-            <h1 id="inbox-title">{t("inbox.title")}</h1>
-            <p>{t("inbox.description")}</p>
-          </div>
-          <div className="segmented-control" aria-label={text("Feed status filter")}>
-            <button
-              type="button"
-              className={inboxStatusFilter === "all" ? "segment-active" : undefined}
-              onClick={() => setInboxStatusFilter("all")}
-            >
-              <Inbox size={14} />
-              {text("All")}
-            </button>
-            <button
-              type="button"
-              className={inboxStatusFilter === "unread" ? "segment-active" : undefined}
-              onClick={() => setInboxStatusFilter("unread")}
-            >
-              <Mail size={14} />
-              {text("Unread")}
-            </button>
-            <button
-              type="button"
-              className={inboxStatusFilter === "saved" ? "segment-active" : undefined}
-              onClick={() => setInboxStatusFilter("saved")}
-            >
-              <Save size={14} />
-              {text("Saved")}
-            </button>
-          </div>
-        </div>
+        <PanelHeader
+          title={t("inbox.title")}
+          description={t("inbox.description")}
+          titleId="inbox-title"
+          actions={
+            <div className="segmented-control" aria-label={text("Feed status filter")}>
+              <button
+                type="button"
+                className={inboxStatusFilter === "all" ? "segment-active" : undefined}
+                onClick={() => setInboxStatusFilter("all")}
+              >
+                <Inbox size={14} />
+                {text("All")}
+              </button>
+              <button
+                type="button"
+                className={inboxStatusFilter === "unread" ? "segment-active" : undefined}
+                onClick={() => setInboxStatusFilter("unread")}
+              >
+                <Mail size={14} />
+                {text("Unread")}
+              </button>
+              <button
+                type="button"
+                className={inboxStatusFilter === "saved" ? "segment-active" : undefined}
+                onClick={() => setInboxStatusFilter("saved")}
+              >
+                <Save size={14} />
+                {text("Saved")}
+              </button>
+            </div>
+          }
+        />
 
         <div className="filter-reset-row" aria-label={text("Inbox filter reset")}>
           <div className="inbox-review-summary" aria-label={text("Inbox review summary")}>
@@ -158,15 +158,7 @@ export function InboxScreen({
                 onChange={(event) => setSearchQuery(event.target.value)}
               />
               {searchQuery.trim().length > 0 ? (
-                <button
-                  aria-label={text("Clear inbox search")}
-                  className="field-clear-button"
-                  onClick={() => setSearchQuery("")}
-                  title={text("Clear inbox search")}
-                  type="button"
-                >
-                  <X size={13} />
-                </button>
+                <ClearButton label={text("Clear inbox search")} onClick={() => setSearchQuery("")} />
               ) : null}
             </span>
           </label>
@@ -234,7 +226,7 @@ export function InboxScreen({
 
         <div className="feed-list" aria-label={text("Feed items")}>
           {filteredFeedItems.map((item) => (
-            <article
+            <DenseRow
               aria-label={`${text("Select feed item")}: ${item.title}`}
               aria-current={selectedFeedItem?.id === item.id ? "true" : undefined}
               className={[
@@ -251,8 +243,10 @@ export function InboxScreen({
               onDoubleClick={() => toggleFeedItemReadState(item)}
               onKeyDown={(event) => selectFeedItemFromKeyboard(event, item)}
               role="button"
+              selected={selectedFeedItem?.id === item.id}
               tabIndex={0}
               title={text("Select feed item")}
+              unread={item.unread}
             >
               <div className="feed-row-main">
                 <div className="feed-row-topline">
@@ -266,9 +260,9 @@ export function InboxScreen({
                 <h2>{item.title}</h2>
                 <p>{feedItemSummary(item)}</p>
               </div>
-              {item.saved ? <span className="saved-pill">{text("Saved")}</span> : null}
+              {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
               {item.unread ? <span className="unread-dot" title={text("Unread")} /> : null}
-            </article>
+            </DenseRow>
           ))}
           {inboxEmptyState ? (
             <EmptyState wrapText={false}>

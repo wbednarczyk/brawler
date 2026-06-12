@@ -13,7 +13,7 @@ import {
   type ImportApplySummary,
   type ImportPreview,
 } from "../../api/importExport";
-import { Button } from "../../shared/components/Button";
+import { Button } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ImportKind = "research" | "settings";

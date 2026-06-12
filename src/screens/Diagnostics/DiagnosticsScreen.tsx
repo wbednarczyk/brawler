@@ -13,8 +13,7 @@ import type {
   MetricSample,
   SourceAdapter,
 } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
+import { Button, EmptyState, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 const eventLimit = 200;
@@ -241,18 +240,19 @@ export function DiagnosticsScreen({
 
   return (
     <section className="feed-panel diagnostics-panel" aria-labelledby="diagnostics-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="diagnostics-title">{t("diagnostics.title")}</h1>
-          <p>{t("diagnostics.description")}</p>
-        </div>
-        <div className="diagnostics-actions">
-          <Button className="compact-button" disabled={inFlight} onClick={onDisableDeveloperMode} variant="ghost">
-            <ShieldAlert size={15} />
-            {text("Disable Developer mode")}
-          </Button>
-        </div>
-      </div>
+      <PanelHeader
+        title={t("diagnostics.title")}
+        description={t("diagnostics.description")}
+        titleId="diagnostics-title"
+        actions={
+          <div className="diagnostics-actions">
+            <Button className="compact-button" disabled={inFlight} onClick={onDisableDeveloperMode} variant="ghost">
+              <ShieldAlert size={15} />
+              {text("Disable Developer mode")}
+            </Button>
+          </div>
+        }
+      />
       <p className="settings-note">
         {text("Developer mode is active. Diagnostics remain local-only.")}
       </p>

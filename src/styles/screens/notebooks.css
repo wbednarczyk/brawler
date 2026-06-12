@@ -68,17 +68,6 @@
   text-align: left;
 }
 
-.notebooks-company-row:has(.notebooks-company-select:hover),
-.notebooks-company-row:has(.notebooks-company-select:focus-visible),
-.notebooks-company-row-selected {
-  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
-  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
-}
-
-.notebooks-company-row-selected {
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-
 .notebooks-company-select {
   display: flex;
   align-items: center;
@@ -293,17 +282,8 @@
   font-size: 18px;
 }
 
-.minimal-button {
-  width: fit-content;
-  padding: 0;
-  border: 0;
-  color: var(--muted);
-  background: transparent;
-  font-size: 11px;
-}
-
-.minimal-button:hover,
-.minimal-button:focus-visible {
+.notebooks-draft-header .minimal-button:hover,
+.notebooks-draft-header .minimal-button:focus-visible {
   color: var(--danger);
 }
 

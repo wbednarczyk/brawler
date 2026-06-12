@@ -46,7 +46,7 @@
 
 @media (max-width: 680px) {
   .topbar,
-  .panel-header {
+  .ui-panel-header {
     align-items: stretch;
     flex-direction: column;
   }

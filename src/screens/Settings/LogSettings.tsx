@@ -1,5 +1,6 @@
 import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
+import { FieldRow, SelectField } from "../../ui";
 
 type LogSettingsProps = {
   settings: UserSettings | null;
@@ -30,50 +31,44 @@ export function LogSettings({
     <section className="settings-group" aria-labelledby="settings-logs-title">
       <h2 id="settings-logs-title">{text("Logs")}</h2>
       <p className="settings-note">{text("Local JSON logs only. No telemetry or remote upload.")}</p>
-      <div className="settings-row">
-        <label>
-          {text("Log level")}
-          <select
-            aria-label={text("Log level")}
-            value={settings?.logs.level ?? "info"}
-            onChange={(event) => onLogLevelChange(event.target.value)}
-          >
-            {logLevels.map((level) => (
-              <option key={level} value={level}>
-                {level}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {text("Log files")}
-          <select
-            aria-label={text("Log file count")}
-            value={settings?.logs.maxFiles ?? 5}
-            onChange={(event) => onLogMaxFilesChange(Number(event.target.value))}
-          >
-            {logFileCounts.map((count) => (
-              <option key={count} value={count}>
-                {count}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {text("Log file size")}
-          <select
-            aria-label={text("Log file size")}
-            value={settings?.logs.maxFileBytes ?? 5_242_880}
-            onChange={(event) => onLogMaxFileBytesChange(Number(event.target.value))}
-          >
-            {logFileSizes.map((size) => (
-              <option key={size.value} value={size.value}>
-                {size.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <FieldRow>
+        <SelectField
+          aria-label={text("Log level")}
+          label={text("Log level")}
+          value={settings?.logs.level ?? "info"}
+          onChange={(event) => onLogLevelChange(event.target.value)}
+        >
+          {logLevels.map((level) => (
+            <option key={level} value={level}>
+              {level}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField
+          aria-label={text("Log file count")}
+          label={text("Log files")}
+          value={settings?.logs.maxFiles ?? 5}
+          onChange={(event) => onLogMaxFilesChange(Number(event.target.value))}
+        >
+          {logFileCounts.map((count) => (
+            <option key={count} value={count}>
+              {count}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField
+          aria-label={text("Log file size")}
+          label={text("Log file size")}
+          value={settings?.logs.maxFileBytes ?? 5_242_880}
+          onChange={(event) => onLogMaxFileBytesChange(Number(event.target.value))}
+        >
+          {logFileSizes.map((size) => (
+            <option key={size.value} value={size.value}>
+              {size.label}
+            </option>
+          ))}
+        </SelectField>
+      </FieldRow>
       <dl className="settings-grid">
         <div>
           <dt>{text("Current level")}</dt>

@@ -79,17 +79,6 @@
   padding-top: 0;
 }
 
-.source-row:hover,
-.source-row:focus-visible,
-.source-row-selected {
-  border-color: color-mix(in srgb, var(--primary) 52%, var(--border));
-  background: color-mix(in srgb, var(--primary) 9%, var(--surface));
-}
-
-.source-row-selected {
-  box-shadow: inset 3px 0 0 var(--primary);
-}
-
 .sources-layout .source-row-selected {
   border-color: color-mix(in srgb, var(--primary) 76%, var(--border));
   background:
@@ -105,18 +94,9 @@
     inset 0 1px 0 color-mix(in srgb, var(--text) 7%, transparent);
 }
 
-.source-row-disabled {
-  opacity: 0.76;
-}
-
 .source-row-disabled .source-title-line h2,
 .source-row-disabled .source-row-status span {
   color: var(--muted);
-}
-
-.source-row:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
-  outline-offset: 2px;
 }
 
 .source-row-main {
@@ -168,19 +148,12 @@
   font-size: 12px;
 }
 
-.source-chip-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.sources-layout .source-chip-list {
+.sources-layout .ui-chip-list {
   flex: 0 0 auto;
   margin-top: 0;
 }
 
-.sources-layout .membership-chip,
+.sources-layout .ui-status-pill,
 .sources-layout .membership-empty {
   min-height: 18px;
   padding: 0 5px;

@@ -12,12 +12,10 @@ import {
   X,
 } from "lucide-react";
 import type { Company } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
-import { StatusPill } from "../../shared/components/StatusPill";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ChipList, DenseRow, EmptyState, StatusChip, StatusPill } from "../../ui";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
 
 type CompanyWorkspaceProps = Pick<
@@ -185,7 +183,7 @@ export function CompanyWorkspace({
         >
           {selectedCompanyFeedItems.map((item) => (
             <div className="company-feed-row-block" key={item.id}>
-              <article
+              <DenseRow
                 aria-label={`${text("Open company feed item")}: ${item.title}`}
                 className={[
                   "company-feed-row",
@@ -201,8 +199,10 @@ export function CompanyWorkspace({
                 onClick={() => toggleCompanyFeedItem(item)}
                 onKeyDown={(event) => selectCompanyFeedItemFromKeyboard(event, item)}
                 role="button"
+                selected={selectedCompanyFeedItem?.id === item.id}
                 tabIndex={0}
                 title={text("Open company feed item details")}
+                unread={item.unread}
               >
                 <div className="feed-row-main">
                   <div className="feed-meta">
@@ -213,9 +213,9 @@ export function CompanyWorkspace({
                   <h3>{item.title}</h3>
                   <p>{feedItemSummary(item)}</p>
                 </div>
-                {item.saved ? <span className="saved-pill">{text("Saved")}</span> : null}
+                {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
                 {item.unread ? <span className="unread-dot" title={text("Unread")} /> : null}
-              </article>
+              </DenseRow>
     
               {selectedCompanyFeedItem?.id === item.id ? (
                 <aside className="company-feed-detail" aria-label={text("Company feed item details")}>
@@ -649,17 +649,14 @@ export function CompanyWorkspace({
               )}
               {selectedNotebookEntry ? (
                 <>
-                  <div
-                    className="source-chip-list"
-                    aria-label={`${text("Tags for")} ${selectedNotebookEntry.title}`}
-                  >
+                  <ChipList ariaLabel={`${text("Tags for")} ${selectedNotebookEntry.title}`}>
                     {selectedNotebookEntry.tags.map((tag) => (
                       <StatusPill key={tag}>{tag}</StatusPill>
                     ))}
                     {selectedNotebookEntry.tags.length === 0 ? (
                       <span className="membership-empty">{text("No tags")}</span>
                     ) : null}
-                  </div>
+                  </ChipList>
                   <dl className="metadata-grid notebook-entry-meta">
                     <div>
                       <dt>{text("Status")}</dt>

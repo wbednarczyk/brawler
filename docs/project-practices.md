@@ -106,6 +106,21 @@ Rules:
 - OpenTelemetry-compatible naming/structure is acceptable when cheap, but do not add OpenTelemetry dependencies, exporters, or compatibility-only code unless a later implementation proves the overhead is low.
 - Telemetry or remote reporting requires a future ADR.
 
+## Reusable UI Foundation
+
+Brawler UI should be built from shared app-owned primitives before screen-local styling is introduced.
+
+Rules:
+
+- Reusable UI primitives live under `src/ui` and are imported through that module boundary.
+- Use shared primitives for recurring menus, subnavigation, panels, section headers, rows, fields, buttons, badges, pills, empty states, and list affordances unless a concrete screen-specific exception is justified.
+- Primitive APIs should be semantic and app-facing, with a narrow `className` escape hatch when needed. Avoid exposing implementation-specific framework details in screen code.
+- Keep primitive implementations framework-replaceable. If a future library such as Radix is adopted for behavior or accessibility, wrap it behind the existing Brawler primitive API instead of importing the library directly throughout screens.
+- Prefer incremental screen-by-screen migration. When touching a screen near repeated UI structure, extract or reuse the relevant primitive instead of adding another local variant.
+- Shared UI CSS belongs in reusable style files such as `src/styles/ui.css`; screen CSS should only describe screen layout and genuinely local composition.
+- Reusable primitives need focused regression coverage for layout rules that have failed before, especially horizontal overflow, long localized labels, active states, and dense desktop behavior.
+- Dense row reuse should start with the row shell and state behavior. Do not force unrelated row bodies into one generic component; migrate compatible row families deliberately when the shared API remains clearer than screen-local markup.
+
 ## Dependency Policy
 
 Brawler uses a conservative dependency policy.

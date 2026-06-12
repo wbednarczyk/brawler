@@ -1,5 +1,6 @@
 import type { FeedPruneResult, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
+import { FieldRow, SelectField } from "../../ui";
 
 type SourceSettingsProps = {
   feedPruneRetentionDays: number;
@@ -24,21 +25,19 @@ export function SourceSettings({
     <>
       <section className="settings-group" aria-labelledby="settings-sources-title">
         <h2 id="settings-sources-title">{t("settings.sources.title")}</h2>
-        <div className="settings-row">
-          <label>
-            {text("Poll interval")}
-            <select
-              aria-label={text("Settings source poll interval")}
-              value={settings?.pollIntervalSeconds ?? 900}
-              onChange={(event) => onPollIntervalChange(Number(event.target.value))}
-            >
-              <option value={300}>5 min</option>
-              <option value={900}>15 min</option>
-              <option value={1800}>30 min</option>
-              <option value={3600}>1 hour</option>
-            </select>
-          </label>
-        </div>
+        <FieldRow>
+          <SelectField
+            aria-label={text("Settings source poll interval")}
+            label={text("Poll interval")}
+            value={settings?.pollIntervalSeconds ?? 900}
+            onChange={(event) => onPollIntervalChange(Number(event.target.value))}
+          >
+            <option value={300}>5 min</option>
+            <option value={900}>15 min</option>
+            <option value={1800}>30 min</option>
+            <option value={3600}>1 hour</option>
+          </SelectField>
+        </FieldRow>
         <dl className="settings-grid">
           <div>
             <dt>{text("Poll interval")}</dt>

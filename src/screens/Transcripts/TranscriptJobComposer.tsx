@@ -1,6 +1,6 @@
 import { CheckCircle2, Plus } from "lucide-react";
 import type { Company } from "../../api/types";
-import { Button } from "../../shared/components/Button";
+import { Button } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { transcriptUrlValidationMessage } from "./transcriptHelpers";

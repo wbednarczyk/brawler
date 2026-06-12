@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { KeyRound, Save, Trash2 } from "lucide-react";
 import type { LicenseStatus } from "../../api/types";
-import { Button } from "../../shared/components/Button";
+import { Button } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type LicenseSettingsProps = {

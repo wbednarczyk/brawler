@@ -1,9 +1,8 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { LocateFixed, Plus, Save, X } from "lucide-react";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ClearButton, DenseRow, EmptyState, PanelHeader } from "../../ui";
 import { NotebookEntryEditor } from "./NotebookEntryEditor";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
@@ -130,12 +129,11 @@ export function NotebooksScreen({
 
   return (
     <section className="feed-panel" aria-labelledby="notebooks-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="notebooks-title">{t("notebooks.title")}</h1>
-          <p>{t("notebooks.description")}</p>
-        </div>
-      </div>
+      <PanelHeader
+        title={t("notebooks.title")}
+        description={t("notebooks.description")}
+        titleId="notebooks-title"
+      />
 
       <div
         className="notebooks-screen"
@@ -152,7 +150,7 @@ export function NotebooksScreen({
             ).length;
 
             return (
-              <div
+              <DenseRow
                 className={[
                   "notebooks-company-row",
                   selectedNotebookScreenCompany?.id === company.id
@@ -161,7 +159,9 @@ export function NotebooksScreen({
                 ]
                   .filter(Boolean)
                   .join(" ")}
+                interactive={false}
                 key={company.id}
+                selected={selectedNotebookScreenCompany?.id === company.id}
               >
                 <button
                   aria-label={`${text("Open notebook company")}: ${company.qualifiedTicker}`}
@@ -213,7 +213,7 @@ export function NotebooksScreen({
                 >
                   <LocateFixed size={14} />
                 </button>
-              </div>
+              </DenseRow>
             );
           })}
           {companies.length === 0 ? (
@@ -355,16 +355,7 @@ export function NotebooksScreen({
                   onChange={(event) => setNotebookScreenTagFilter(event.target.value)}
                 />
                 {notebookScreenTagFilter.trim().length > 0 ? (
-                  <button
-                    aria-label={text("Clear notebook tag filter")}
-                    className="field-clear-button"
-                    onClick={() => setNotebookScreenTagFilter("")}
-                    onMouseDown={(event) => event.preventDefault()}
-                    title={text("Clear notebook tag filter")}
-                    type="button"
-                  >
-                    <X size={13} />
-                  </button>
+                  <ClearButton label={text("Clear notebook tag filter")} onClick={() => setNotebookScreenTagFilter("")} />
                 ) : null}
               </span>
             </label>

@@ -1,7 +1,6 @@
 import { CalendarDays, ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
+import { Button, EmptyState } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";

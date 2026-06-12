@@ -1,6 +1,5 @@
 .company-row p,
-.company-row span,
-.empty-state {
+.company-row span {
   color: var(--muted);
   font-size: 13px;
 }

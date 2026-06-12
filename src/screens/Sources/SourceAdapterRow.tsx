@@ -1,9 +1,8 @@
-import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw, Search, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw, Search } from "lucide-react";
 import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger, UnmatchedSourceItem } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { StatusPill } from "../../shared/components/StatusPill";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ChipList, ClearButton, DenseRow, StatusPill } from "../../ui";
 import {
   formatSourceHealth,
   formatSourceLastResult,
@@ -76,14 +75,16 @@ export function SourceAdapterRow({
 
   return (
     <div className="source-row-block">
-      <article
+      <DenseRow
         aria-label={`${text("Open source")}: ${adapter.displayName}`}
         className={["source-row", adapter.enabled ? "" : "source-row-disabled", selected ? "source-row-selected" : ""]
           .filter(Boolean)
           .join(" ")}
+        disabled={!adapter.enabled}
         onClick={() => toggleSourceAdapter(adapter.id)}
         onKeyDown={toggleSourceAdapterFromKeyboard}
         role="button"
+        selected={selected}
         tabIndex={0}
         title={`${text("Open")} ${adapter.displayName} ${text("details")}`}
       >
@@ -96,14 +97,14 @@ export function SourceAdapterRow({
             <h2>{adapter.displayName}</h2>
           </div>
           <p>{text(formatSourceSubtitle(adapter))}</p>
-          <div className="source-chip-list" aria-label={`${text("Markets for")} ${adapter.displayName}`}>
+          <ChipList ariaLabel={`${text("Markets for")} ${adapter.displayName}`}>
             {adapter.markets.map((market) => (
               <StatusPill key={market}>{market}</StatusPill>
             ))}
             {adapter.markets.length === 0 ? (
               <span className="membership-empty">{text("No markets")}</span>
             ) : null}
-          </div>
+          </ChipList>
         </div>
         <div className="source-row-status">
           <span className={`source-health source-health-${adapter.healthStatus}`}>
@@ -125,7 +126,7 @@ export function SourceAdapterRow({
             </label>
           ) : null}
         </div>
-      </article>
+      </DenseRow>
       {selected ? (
         <div className="source-detail-panel" aria-label={text("Source details")}>
           {sourceRefreshError && sourceAdapterRefreshInFlight === null ? (
@@ -287,16 +288,7 @@ function RegistrySourcePanel({
                 value={companyRegistrySearch}
               />
               {companyRegistrySearch.trim().length > 0 ? (
-                <button
-                  aria-label={text("Clear company directory search")}
-                  className="field-clear-button"
-                  onClick={() => setCompanyRegistrySearch("")}
-                  onMouseDown={(event) => event.preventDefault()}
-                  title={text("Clear company directory search")}
-                  type="button"
-                >
-                  <X size={13} />
-                </button>
+                <ClearButton label={text("Clear company directory search")} onClick={() => setCompanyRegistrySearch("")} />
               ) : null}
             </label>
             <span className="source-registry-count">

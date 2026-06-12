@@ -1,10 +1,9 @@
 import { Check, Edit3, Plus, Search, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ClearButton, DenseRow, EmptyState, PanelHeader } from "../../ui";
 
 type WatchlistsScreenProps = {
   companies: Company[];
@@ -145,25 +144,26 @@ export function WatchlistsScreen({
 
   return (
     <section className="feed-panel" aria-labelledby="watchlists-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="watchlists-title">{t("watchlists.title")}</h1>
-          <p>{t("watchlists.description")}</p>
-        </div>
-        <form className="watchlist-form" onSubmit={submitCreate}>
-          <input
-            aria-label={text("Watchlist name")}
-            placeholder="Main GPW"
-            value={watchlistName}
-            onChange={(event) => setWatchlistName(event.target.value)}
-            required
-          />
-          <Button type="submit" variant="primary">
-            <Plus size={16} />
-            {text("Create")}
-          </Button>
-        </form>
-      </div>
+      <PanelHeader
+        title={t("watchlists.title")}
+        description={t("watchlists.description")}
+        titleId="watchlists-title"
+        actions={
+          <form className="watchlist-form" onSubmit={submitCreate}>
+            <input
+              aria-label={text("Watchlist name")}
+              placeholder="Main GPW"
+              value={watchlistName}
+              onChange={(event) => setWatchlistName(event.target.value)}
+              required
+            />
+            <Button type="submit" variant="primary">
+              <Plus size={16} />
+              {text("Create")}
+            </Button>
+          </form>
+        }
+      />
 
       <div className="watchlists-workspace">
         <div className="watchlists-sidebar">
@@ -177,16 +177,7 @@ export function WatchlistsScreen({
               value={watchlistSearch}
             />
             {watchlistSearch.trim().length > 0 ? (
-              <button
-                aria-label={text("Clear watchlist search")}
-                className="field-clear-button"
-                onClick={() => setWatchlistSearch("")}
-                onMouseDown={(event) => event.preventDefault()}
-                title={text("Clear watchlist search")}
-                type="button"
-              >
-                <X size={13} />
-              </button>
+              <ClearButton label={text("Clear watchlist search")} onClick={() => setWatchlistSearch("")} />
             ) : null}
           </label>
           <div className="watchlist-list" aria-label={text("Watchlists")}>
@@ -304,16 +295,7 @@ export function WatchlistsScreen({
                       value={watchlistCompanySearch}
                     />
                     {watchlistCompanySearch.trim().length > 0 ? (
-                      <button
-                        aria-label={text("Clear company search")}
-                        className="field-clear-button"
-                        onClick={() => setWatchlistCompanySearch("")}
-                        onMouseDown={(event) => event.preventDefault()}
-                        title={text("Clear company search")}
-                        type="button"
-                      >
-                        <X size={13} />
-                      </button>
+                      <ClearButton label={text("Clear company search")} onClick={() => setWatchlistCompanySearch("")} />
                     ) : null}
                   </label>
                   <div className="watchlist-picker-list">
@@ -350,7 +332,7 @@ export function WatchlistsScreen({
                 </div>
                 <div className="watchlist-member-table">
                   {memberCompanies.map((company) => (
-                    <div className="watchlist-member-row" key={company.id}>
+                    <DenseRow className="watchlist-member-row" interactive={false} key={company.id}>
                       <TickerLabel value={company.qualifiedTicker} />
                       <span>{company.displayName}</span>
                       <span>{company.isin ?? text("No ISIN")}</span>
@@ -358,7 +340,7 @@ export function WatchlistsScreen({
                         <X size={14} />
                         {text("Remove")}
                       </Button>
-                    </div>
+                    </DenseRow>
                   ))}
                   {memberCompanies.length === 0 ? (
                     <EmptyState>{text("No companies in this watchlist.")}</EmptyState>

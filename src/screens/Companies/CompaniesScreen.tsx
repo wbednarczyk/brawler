@@ -1,10 +1,9 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { LocateFixed, Plus, Search, Trash2, X } from "lucide-react";
+import { LocateFixed, Plus, Search, Trash2 } from "lucide-react";
 import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { Button, ClearButton, DenseRow, EmptyState, PanelHeader } from "../../ui";
 import type {
   MarkdownNoteBodyProps,
   NotebookDateLikeFieldProps,
@@ -164,12 +163,11 @@ export function CompaniesScreen({
 
   return (
     <section className="feed-panel" aria-labelledby="companies-title">
-              <div className="panel-header">
-                <div>
-                  <h1 id="companies-title">{t("companies.title")}</h1>
-                  <p>{t("companies.description")}</p>
-                </div>
-              </div>
+              <PanelHeader
+                title={t("companies.title")}
+                description={t("companies.description")}
+                titleId="companies-title"
+              />
 
               <div className="companies-layout">
                 <form className="company-form" onSubmit={createCompany}>
@@ -185,16 +183,7 @@ export function CompaniesScreen({
                         onChange={(event) => updateCompanyForm("exchange", event.target.value)}
                       />
                       {companyForm.exchange.trim().toUpperCase() !== "GPW" ? (
-                        <button
-                          aria-label={text("Clear exchange")}
-                          className="field-clear-button"
-                          onClick={() => clearCompanyFormField("exchange")}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={text("Clear exchange")}
-                          type="button"
-                        >
-                          <X size={13} />
-                        </button>
+                        <ClearButton label={text("Clear exchange")} onClick={() => clearCompanyFormField("exchange")} />
                       ) : null}
                     </span>
                   </label>
@@ -212,16 +201,7 @@ export function CompaniesScreen({
                         placeholder="CDR"
                       />
                       {companyForm.ticker.trim().length > 0 ? (
-                        <button
-                          aria-label={text("Clear ticker")}
-                          className="field-clear-button"
-                          onClick={() => clearCompanyFormField("ticker")}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={text("Clear ticker")}
-                          type="button"
-                        >
-                          <X size={13} />
-                        </button>
+                        <ClearButton label={text("Clear ticker")} onClick={() => clearCompanyFormField("ticker")} />
                       ) : null}
                     </span>
                   </label>
@@ -239,16 +219,7 @@ export function CompaniesScreen({
                         placeholder="CD PROJEKT S.A."
                       />
                       {companyForm.displayName.trim().length > 0 ? (
-                        <button
-                          aria-label={text("Clear name")}
-                          className="field-clear-button"
-                          onClick={() => clearCompanyFormField("displayName")}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={text("Clear name")}
-                          type="button"
-                        >
-                          <X size={13} />
-                        </button>
+                        <ClearButton label={text("Clear name")} onClick={() => clearCompanyFormField("displayName")} />
                       ) : null}
                     </span>
                   </label>
@@ -265,16 +236,7 @@ export function CompaniesScreen({
                         placeholder="PLOPTTC00011"
                       />
                       {companyForm.isin.trim().length > 0 ? (
-                        <button
-                          aria-label={text("Clear ISIN")}
-                          className="field-clear-button"
-                          onClick={() => clearCompanyFormField("isin")}
-                          onMouseDown={(event) => event.preventDefault()}
-                          title={text("Clear ISIN")}
-                          type="button"
-                        >
-                          <X size={13} />
-                        </button>
+                        <ClearButton label={text("Clear ISIN")} onClick={() => clearCompanyFormField("isin")} />
                       ) : null}
                     </span>
                   </label>
@@ -328,16 +290,7 @@ export function CompaniesScreen({
                       value={companyListSearch}
                     />
                     {companyListSearch.trim().length > 0 ? (
-                      <button
-                        aria-label={text("Clear company search")}
-                        className="field-clear-button"
-                        onClick={() => setCompanyListSearch("")}
-                        onMouseDown={(event) => event.preventDefault()}
-                        title={text("Clear company search")}
-                        type="button"
-                      >
-                        <X size={13} />
-                      </button>
+                      <ClearButton label={text("Clear company search")} onClick={() => setCompanyListSearch("")} />
                     ) : null}
                   </label>
                   <label className="company-list-filter">
@@ -363,7 +316,7 @@ export function CompaniesScreen({
                 <div className="company-list" aria-label={text("Companies list")} data-company-list="true">
                   {filteredCompanies.map((company) => (
                     <div className="company-row-block" key={company.id}>
-                      <article
+                      <DenseRow
                         aria-label={`${text("Open")} ${company.qualifiedTicker} ${text("workspace")}`}
                         className={[
                           "company-row",
@@ -376,6 +329,7 @@ export function CompaniesScreen({
                         onClick={() => openCompanyWorkspace(company)}
                         onKeyDown={(event) => openCompanyWorkspaceFromKeyboard(event, company)}
                         role="button"
+                        selected={selectedCompany?.id === company.id}
                         tabIndex={0}
                         title={`${text("Open")} ${company.qualifiedTicker} ${text("workspace")}`}
                       >
@@ -414,7 +368,7 @@ export function CompaniesScreen({
                             </Button>
                           </div>
                         </div>
-                      </article>
+                      </DenseRow>
 
                       {selectedCompany?.id === company.id ? (
                         <CompanyWorkspace

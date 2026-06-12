@@ -1,6 +1,6 @@
 import { Save, X } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
-import { Button } from "../../shared/components/Button";
+import { Button } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import type { TranscriptsScreenProps } from "./transcriptTypes";
 

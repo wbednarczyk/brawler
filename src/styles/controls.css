@@ -140,38 +140,3 @@
   padding: 0;
   justify-content: center;
 }
-
-.field-with-clear {
-  position: relative;
-  display: block;
-}
-
-.field-with-clear input,
-.field-with-clear textarea {
-  padding-right: 34px;
-}
-
-.field-clear-button {
-  position: absolute;
-  top: 50%;
-  right: 6px;
-  display: inline-grid;
-  width: 22px;
-  height: 22px;
-  place-items: center;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  color: var(--muted);
-  background: transparent;
-  transform: translateY(-50%);
-  cursor: pointer;
-}
-
-.field-clear-button:hover,
-.field-clear-button:focus-visible {
-  border-color: var(--border);
-  color: var(--text);
-  background: color-mix(in srgb, var(--surface) 72%, transparent);
-  outline: none;
-}

@@ -27,11 +27,10 @@ import type {
   ResearchTrustCategory,
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { formatAiProvider, formatCompanyEventType } from "../../shared/formatting/labels";
 import { useLocale } from "../../shared/locale";
+import { Button, DenseRow, EmptyState, PanelHeader } from "../../ui";
 
 const evidenceTypeOptions: Array<{ value: ResearchEvidenceType; label: string }> = [
   { value: "feed_item", label: "Feed items" },
@@ -476,22 +475,24 @@ export function ResearchScreen({
 
   return (
     <section className="feed-panel research-panel" aria-labelledby="research-title">
-      <div className="panel-header research-header">
-        <div>
-          <h1 id="research-title">{text("Research")}</h1>
-          <p>{text("Company evidence timeline and review checkpoint.")}</p>
-        </div>
-        <div className="research-header-actions">
-          <Button className="compact-button" disabled={loading} onClick={refreshTimeline}>
-            <RefreshCw size={15} />
-            {loading ? text("Refreshing") : text("Refresh")}
-          </Button>
-          <Button className="compact-button" disabled={markReviewedDisabled} onClick={markReviewed}>
-            <CheckCheck size={15} />
-            {reviewInFlight ? text("Marking reviewed") : text("Mark reviewed")}
-          </Button>
-        </div>
-      </div>
+      <PanelHeader
+        className="research-header"
+        title={text("Research")}
+        description={text("Company evidence timeline and review checkpoint.")}
+        titleId="research-title"
+        actions={
+          <div className="research-header-actions">
+            <Button className="compact-button" disabled={loading} onClick={refreshTimeline}>
+              <RefreshCw size={15} />
+              {loading ? text("Refreshing") : text("Refresh")}
+            </Button>
+            <Button className="compact-button" disabled={markReviewedDisabled} onClick={markReviewed}>
+              <CheckCheck size={15} />
+              {reviewInFlight ? text("Marking reviewed") : text("Mark reviewed")}
+            </Button>
+          </div>
+        }
+      />
 
       <div className="research-workspace" ref={workspaceRef}>
         <section className="research-toolbar" aria-label={text("Research filters")}>
@@ -1034,7 +1035,7 @@ function EvidenceRow({
   canLink,
 }: EvidenceRowProps) {
   return (
-    <article className="research-evidence-row">
+    <DenseRow className="research-evidence-row" interactive={false}>
       <div className="research-evidence-marker" aria-hidden="true" />
       <div className="research-evidence-main">
         <div className="research-evidence-meta">
@@ -1064,7 +1065,7 @@ function EvidenceRow({
           </Button>
         ) : null}
       </div>
-    </article>
+    </DenseRow>
   );
 }
 

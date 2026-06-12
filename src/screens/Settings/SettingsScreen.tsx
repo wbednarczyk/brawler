@@ -20,6 +20,7 @@ import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import type { SettingsScreenProps } from "./settingsTypes";
 import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
+import { Panel, PanelHeader, Subnav } from "../../ui";
 
 type SettingsTab =
   | "appearance"
@@ -93,28 +94,25 @@ export function SettingsScreen({
     tab.labelKey ? t(tab.labelKey) : text(tab.labelText ?? "");
 
   return (
-    <section className="feed-panel" aria-labelledby="settings-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="settings-title">{t("settings.title")}</h1>
-          <p>{t("settings.description")}</p>
-        </div>
-      </div>
+    <Panel ariaLabelledBy="settings-title">
+      <PanelHeader
+        description={t("settings.description")}
+        title={t("settings.title")}
+        titleId="settings-title"
+      />
 
       <div className="settings-layout" aria-label={t("settings.applicationSettings")}>
-        <nav className="settings-subnav" aria-label={t("settings.sections")}>
-          {settingsTabs.map((tab) => (
-            <button
-              className={activeSettingsTab === tab.id ? "settings-subnav-active" : undefined}
-              key={tab.id}
-              onClick={() => setActiveSettingsTab(tab.id)}
-              type="button"
-            >
-              <tab.icon size={18} aria-hidden="true" />
-              <span>{tabLabel(tab)}</span>
-            </button>
-          ))}
-        </nav>
+        <Subnav
+          activeId={activeSettingsTab}
+          ariaLabel={t("settings.sections")}
+          className="settings-subnav"
+          items={settingsTabs.map((tab) => ({
+            id: tab.id,
+            icon: <tab.icon size={18} aria-hidden="true" />,
+            label: tabLabel(tab),
+          }))}
+          onSelect={setActiveSettingsTab}
+        />
 
         <div className="settings-tab-panel">
           {activeSettingsTab === "appearance" ? (
@@ -198,6 +196,6 @@ export function SettingsScreen({
           <p className="error-text">Settings command failed: {settingsError}</p>
         ) : null}
       </div>
-    </section>
+    </Panel>
   );
 }

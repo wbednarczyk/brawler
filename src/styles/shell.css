@@ -218,7 +218,6 @@
   gap: 10px;
 }
 
-.icon-button,
 .source-status-pill,
 .theme-control {
   display: inline-flex;
@@ -271,10 +270,6 @@
   border-color: color-mix(in srgb, var(--success) 58%, var(--border));
   color: var(--success);
   background: color-mix(in srgb, var(--success) 10%, var(--surface));
-}
-
-.icon-button {
-  width: 40px;
 }
 
 .icon-button-spinning svg {

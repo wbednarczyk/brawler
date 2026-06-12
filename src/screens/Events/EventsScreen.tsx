@@ -8,7 +8,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { Button } from "../../shared/components/Button";
+import { Button, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { EventListView } from "./EventListView";
 import type { EventsScreenProps } from "./eventTypes";
@@ -77,30 +77,33 @@ export function EventsScreen({
 
   return (
     <section className="feed-panel" aria-labelledby="events-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="events-title">{t("events.title")}</h1>
-          <p>{t("events.description")}</p>
-        </div>
-        <Button
-          className="compact-button"
-          disabled={sourceRefreshState === "refreshing"}
-          onClick={() => refreshEventSources("manual", companyEventWeekRange.start)}
-        >
-          {sourceRefreshState === "done" && selectedSourceAdapterId === "bankier-kalendarium-html" ? (
-            <CheckCircle2 size={15} />
-          ) : (
-            <RefreshCw size={15} />
-          )}
-          {sourceRefreshState === "refreshing" && sourceAdapterRefreshInFlight === "events"
-            ? t("events.action.refreshing")
-            : t("events.action.refreshSources")}
-        </Button>
-        <Button className="compact-button" onClick={openCompanyEventComposer} variant="primary">
-          <Plus size={15} />
-          {t("action.addEvent")}
-        </Button>
-      </div>
+      <PanelHeader
+        title={t("events.title")}
+        description={t("events.description")}
+        titleId="events-title"
+        actions={
+          <>
+            <Button
+              className="compact-button"
+              disabled={sourceRefreshState === "refreshing"}
+              onClick={() => refreshEventSources("manual", companyEventWeekRange.start)}
+            >
+              {sourceRefreshState === "done" && selectedSourceAdapterId === "bankier-kalendarium-html" ? (
+                <CheckCircle2 size={15} />
+              ) : (
+                <RefreshCw size={15} />
+              )}
+              {sourceRefreshState === "refreshing" && sourceAdapterRefreshInFlight === "events"
+                ? t("events.action.refreshing")
+                : t("events.action.refreshSources")}
+            </Button>
+            <Button className="compact-button" onClick={openCompanyEventComposer} variant="primary">
+              <Plus size={15} />
+              {t("action.addEvent")}
+            </Button>
+          </>
+        }
+      />
 
       <div className="filter-toolbar events-filter-toolbar" aria-label={text("Event view mode")}>
         <div className="segmented-control" role="group" aria-label={text("Event layout")}>

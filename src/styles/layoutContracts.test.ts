@@ -18,6 +18,7 @@ const researchCss = readStyle("screens/research.css");
 const responsiveCss = readStyle("responsive.css");
 const shellCss = readStyle("shell.css");
 const sourcesCss = readStyle("screens/sources.css");
+const uiCss = readStyle("ui.css");
 const watchlistsCss = readStyle("screens/watchlists.css");
 
 function ruleFor(css: string, selector: string) {
@@ -75,7 +76,7 @@ describe("layout scroll contracts", () => {
 
   it("keeps Inbox feed and detail panes as independent scroll regions", () => {
     const contentGridRule = ruleFor(shellCss, ".content-grid");
-    const panelHeaderRule = ruleFor(layoutCss, ".panel-header");
+    const panelHeaderRule = ruleFor(uiCss, ".ui-panel-header");
     const feedPanelRule = ruleFor(layoutCss, ".feed-panel");
     const feedListRule = ruleFor(controlsCss, ".feed-list");
     const filterResetRule = ruleFor(controlsCss, ".filter-reset-row");
@@ -164,7 +165,7 @@ describe("layout scroll contracts", () => {
     const rowMainRule = ruleFor(sourcesCss, ".source-row-main");
     const titleRule = ruleFor(sourcesCss, ".source-title-line h2");
     const subtitleRule = ruleFor(sourcesCss, ".source-row p");
-    const sourceChipListRule = ruleFor(sourcesCss, ".sources-layout .source-chip-list");
+    const sourceChipListRule = ruleFor(sourcesCss, ".sources-layout .ui-chip-list");
     const selectedSourceRule = ruleFor(sourcesCss, ".sources-layout .source-row-selected");
 
     expect(layoutRule).toContain("align-content: start");
@@ -193,5 +194,60 @@ describe("layout scroll contracts", () => {
     expect(narrowRule).toContain("grid-template-columns: minmax(0, 1fr)");
     expect(narrowRule).toContain(".research-main-layout > .research-resizer");
     expect(narrowRule).toContain("display: none");
+  });
+
+  it("keeps shared subnav labels intrinsic and prevents horizontal scrolling", () => {
+    const panelRule = ruleFor(uiCss, ".ui-panel");
+    const panelHeaderRule = ruleFor(uiCss, ".ui-panel-header");
+    const subnavRule = ruleFor(uiCss, ".ui-subnav");
+    const itemRule = ruleFor(uiCss, ".ui-subnav-item");
+    const itemLabelRule = ruleFor(uiCss, ".ui-subnav-item span");
+    const activeRule = ruleFor(uiCss, ".ui-subnav-item-active");
+    const chipRule = ruleFor(uiCss, ".ui-status-chip");
+    const accentChipRule = ruleFor(uiCss, ".ui-status-chip-accent");
+    const pillRule = ruleFor(uiCss, ".ui-status-pill");
+    const dangerPillRule = ruleFor(uiCss, ".ui-status-pill-danger");
+    const chipListRule = ruleFor(uiCss, ".ui-chip-list");
+    const denseRowRule = ruleFor(uiCss, ".ui-dense-row");
+    const interactiveDenseRowRule = ruleFor(uiCss, ".ui-dense-row-interactive");
+    const selectedDenseRowRule = ruleFor(uiCss, ".ui-dense-row-selected");
+    const unreadDenseRowRule = ruleFor(uiCss, ".ui-dense-row-unread");
+    const primaryButtonRule = ruleFor(uiCss, ".primary-button");
+    const secondaryButtonRule = ruleFor(uiCss, ".secondary-button");
+    const iconButtonRule = ruleFor(uiCss, ".icon-button");
+    const dangerButtonRule = ruleFor(uiCss, ".danger-button");
+    const compactButtonRule = ruleFor(uiCss, ".compact-button");
+    const fieldClearRule = ruleFor(uiCss, ".field-clear-button");
+    const emptyStateRule = ruleFor(uiCss, ".empty-state");
+    const emptyStateActionsRule = ruleFor(uiCss, ".empty-state-actions");
+
+    expect(panelRule).toContain("display: flex");
+    expect(panelRule).toContain("overflow: hidden");
+    expect(panelHeaderRule).toContain("flex-wrap: wrap");
+    expect(subnavRule).toContain("width: max-content");
+    expect(subnavRule).toContain("overflow-x: hidden");
+    expect(subnavRule).toContain("overflow-y: auto");
+    expect(itemRule).toContain("min-width: max-content");
+    expect(itemLabelRule).toContain("white-space: nowrap");
+    expect(activeRule).toContain("border-color: color-mix(in srgb, var(--primary) 52%, var(--border))");
+    expect(chipRule).toContain("white-space: nowrap");
+    expect(accentChipRule).toContain("color: var(--accent)");
+    expect(pillRule).toContain("font-weight: 700");
+    expect(dangerPillRule).toContain("color: var(--danger)");
+    expect(chipListRule).toContain("flex-wrap: wrap");
+    expect(denseRowRule).toContain("min-width: 0");
+    expect(interactiveDenseRowRule).toContain("cursor: pointer");
+    expect(selectedDenseRowRule).toContain("box-shadow: inset 3px 0 0 var(--primary)");
+    expect(unreadDenseRowRule).toContain("font-weight: 650");
+    expect(primaryButtonRule).toContain("background: color-mix(in srgb, var(--primary) 18%, var(--surface-raised))");
+    expect(secondaryButtonRule).toContain("border-color: color-mix(in srgb, var(--primary) 34%, var(--border))");
+    expect(iconButtonRule).toContain("width: 40px");
+    expect(dangerButtonRule).toContain("color: var(--danger)");
+    expect(compactButtonRule).toContain("min-height: 34px");
+    expect(fieldClearRule).toContain("position: absolute");
+    expect(fieldClearRule).toContain("border-radius: 999px");
+    expect(emptyStateRule).toContain("justify-content: space-between");
+    expect(emptyStateRule).toContain("background: var(--surface-raised)");
+    expect(emptyStateActionsRule).toContain("justify-content: flex-end");
   });
 });

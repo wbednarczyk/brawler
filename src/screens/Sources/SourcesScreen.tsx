@@ -1,7 +1,6 @@
 import { CheckCircle2, RefreshCw } from "lucide-react";
-import { Button } from "../../shared/components/Button";
-import { EmptyState } from "../../shared/components/EmptyState";
 import { useLocale } from "../../shared/locale";
+import { Button, EmptyState, PanelHeader } from "../../ui";
 import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 import type { SourcesScreenProps } from "./sourceTypes";
@@ -46,20 +45,21 @@ export function SourcesScreen({
 
   return (
     <section className="feed-panel" aria-labelledby="sources-title">
-      <div className="panel-header">
-        <div>
-          <h1 id="sources-title">{t("sources.title")}</h1>
-          <p>{t("sources.description")}</p>
-        </div>
-        <Button
-          className="compact-button"
-          disabled={sourceRefreshState === "refreshing"}
-          onClick={() => refreshSources("manual")}
-        >
-          {sourceRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
-          {sourceRefreshState === "refreshing" ? t("action.refreshing") : t("action.refreshSources")}
-        </Button>
-      </div>
+      <PanelHeader
+        title={t("sources.title")}
+        description={t("sources.description")}
+        titleId="sources-title"
+        actions={
+          <Button
+            className="compact-button"
+            disabled={sourceRefreshState === "refreshing"}
+            onClick={() => refreshSources("manual")}
+          >
+            {sourceRefreshState === "done" ? <CheckCircle2 size={15} /> : <RefreshCw size={15} />}
+            {sourceRefreshState === "refreshing" ? t("action.refreshing") : t("action.refreshSources")}
+          </Button>
+        }
+      />
 
       <div className="sources-layout" aria-label={text("Source list")}>
         {groupedAdapters.map((group) => (
