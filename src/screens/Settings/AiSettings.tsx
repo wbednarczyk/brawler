@@ -1,96 +1,28 @@
-import type { CredentialStatus, UserSettings } from "../../api/types";
+import type { UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 
 type AiSettingsProps = {
-  geminiCredentialStatus: CredentialStatus | null;
   settings: UserSettings | null;
   onYoutubeTranscriptionModelChange: (model: string) => void;
   onYoutubeTranscriptionTimeoutChange: (timeoutSeconds: number) => void;
   onGeneralAnalysisProviderChange: (provider: string) => void;
   onGeneralAnalysisModelChange: (model: string) => void;
   onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
-  formatAiProvider: (value: string | null | undefined) => string;
-  formatGeminiModel: (value: string | null | undefined) => string;
-  formatCredentialConfigured: (status: CredentialStatus | null) => string;
-  formatCredentialKind: (value: string | null | undefined) => string;
 };
 
 export function AiSettings({
-  geminiCredentialStatus,
   settings,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
   onGeneralAnalysisProviderChange,
   onGeneralAnalysisModelChange,
   onGeneralAnalysisTimeoutChange,
-  formatAiProvider,
-  formatGeminiModel,
-  formatCredentialConfigured,
-  formatCredentialKind,
 }: AiSettingsProps) {
   const { t, text } = useLocale();
 
   return (
     <section className="settings-group" aria-labelledby="settings-ai-title">
       <h2 id="settings-ai-title">{t("settings.ai.title")}</h2>
-      <dl className="settings-grid">
-        <div>
-          <dt>{text("YouTube transcription")}</dt>
-          <dd>{text(formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider))}</dd>
-        </div>
-        <div>
-          <dt>{text("YouTube transcription provider ID")}</dt>
-          <dd>{settings?.aiProviders.youtubeTranscriptionProvider ?? "provider_gemini"}</dd>
-        </div>
-        <div>
-          <dt>{text("YouTube transcription model")}</dt>
-          <dd>{text(formatGeminiModel(settings?.aiProviders.youtubeTranscriptionModel))}</dd>
-        </div>
-        <div>
-          <dt>{text("YouTube transcription timeout")}</dt>
-          <dd>{settings?.aiProviders.youtubeTranscriptionTimeoutSeconds ?? 300}s</dd>
-        </div>
-        <div>
-          <dt>{text("YouTube transcription credentials")}</dt>
-          <dd>{text(formatCredentialConfigured(geminiCredentialStatus))}</dd>
-        </div>
-        <div>
-          <dt>{text("Credential kind")}</dt>
-          <dd>{text(formatCredentialKind(geminiCredentialStatus?.secretKind))}</dd>
-        </div>
-        <div>
-          <dt>{text("YouTube transcription disclosure")}</dt>
-          <dd>{text("Starting a transcript job sends the YouTube URL and video content to Gemini.")}</dd>
-        </div>
-        <div>
-          <dt>{text("YouTube transcription scope")}</dt>
-          <dd>{text("Gemini is used only for YouTube transcription.")}</dd>
-        </div>
-        <div>
-          <dt>{text("General AI provider")}</dt>
-          <dd>{text(formatAiProvider(settings?.aiProviders.generalAnalysisProvider))}</dd>
-        </div>
-        <div>
-          <dt>{text("General AI model")}</dt>
-          <dd>{text(formatGeminiModel(settings?.aiProviders.generalAnalysisModel))}</dd>
-        </div>
-        <div>
-          <dt>{text("General AI timeout")}</dt>
-          <dd>{settings?.aiProviders.generalAnalysisTimeoutSeconds ?? 90}s</dd>
-        </div>
-        <div>
-          <dt>{text("General AI disclosure")}</dt>
-          <dd>
-            {text(
-              "Starting feed analysis sends the selected source text and metadata to the configured AI provider.",
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{text("AI analysis mode")}</dt>
-          <dd>{settings?.aiAnalysisMode ?? "source_grounded"}</dd>
-        </div>
-      </dl>
       <div className="settings-row">
         <label>
           {text("Gemini transcription model")}
@@ -105,10 +37,6 @@ export function AiSettings({
             <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
           </select>
         </label>
-        <div className="settings-summary">
-          <span>{text("Default")}</span>
-          <strong>{text("Cheapest supported")}</strong>
-        </div>
       </div>
       <div className="settings-row">
         <label>
@@ -125,10 +53,6 @@ export function AiSettings({
             <option value={600}>10 {text("minutes")}</option>
           </select>
         </label>
-        <div className="settings-summary">
-          <span>{text("Default")}</span>
-          <strong>5 {text("minutes")}</strong>
-        </div>
       </div>
       <div className="settings-row">
         <label>
@@ -142,10 +66,6 @@ export function AiSettings({
             <option value="provider_gemini">{text("Gemini")}</option>
           </select>
         </label>
-        <div className="settings-summary">
-          <span>{text("Scope")}</span>
-          <strong>{text("Source-grounded feed analysis")}</strong>
-        </div>
       </div>
       <div className="settings-row">
         <label>
@@ -161,10 +81,6 @@ export function AiSettings({
             <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
           </select>
         </label>
-        <div className="settings-summary">
-          <span>{text("Default")}</span>
-          <strong>Gemini 2.5 Flash</strong>
-        </div>
       </div>
       <div className="settings-row">
         <label>
@@ -181,10 +97,6 @@ export function AiSettings({
             <option value={600}>10 {text("minutes")}</option>
           </select>
         </label>
-        <div className="settings-summary">
-          <span>{text("Default")}</span>
-          <strong>90 {text("seconds")}</strong>
-        </div>
       </div>
     </section>
   );

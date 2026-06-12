@@ -1,4 +1,15 @@
 import { useState } from "react";
+import {
+  Bot,
+  Download,
+  FileKey2,
+  KeyRound,
+  Keyboard,
+  Logs,
+  Palette,
+  RadioTower,
+  type LucideIcon,
+} from "lucide-react";
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
@@ -21,15 +32,15 @@ type SettingsTab =
   | "license";
 
 const settingsTabs = [
-  { id: "appearance", labelKey: "settings.appearance.title" },
-  { id: "sources", labelKey: "settings.sources.title" },
-  { id: "ai", labelKey: "settings.ai.title" },
-  { id: "credentials", labelKey: "settings.credentials.title" },
-  { id: "importExport", labelKey: "settings.importExport.title" },
-  { id: "shortcuts", labelText: "Keyboard shortcuts" },
-  { id: "logs", labelText: "Logs" },
-  { id: "license", labelText: "License" },
-] satisfies Array<{ id: SettingsTab; labelKey?: LocaleKey; labelText?: string }>;
+  { id: "appearance", icon: Palette, labelKey: "settings.appearance.title" },
+  { id: "sources", icon: RadioTower, labelKey: "settings.sources.title" },
+  { id: "ai", icon: Bot, labelKey: "settings.ai.title" },
+  { id: "credentials", icon: KeyRound, labelKey: "settings.credentials.title" },
+  { id: "importExport", icon: Download, labelKey: "settings.importExport.title" },
+  { id: "shortcuts", icon: Keyboard, labelText: "Keyboard shortcuts" },
+  { id: "logs", icon: Logs, labelText: "Logs" },
+  { id: "license", icon: FileKey2, labelText: "License" },
+] satisfies Array<{ id: SettingsTab; icon: LucideIcon; labelKey?: LocaleKey; labelText?: string }>;
 
 export function SettingsScreen({
   theme,
@@ -72,8 +83,6 @@ export function SettingsScreen({
   onImportApplied,
   formatTimestamp,
   formatPollInterval,
-  formatAiProvider,
-  formatGeminiModel,
   formatCredentialConfigured,
   formatCredentialKind,
 }: SettingsScreenProps) {
@@ -101,7 +110,8 @@ export function SettingsScreen({
               onClick={() => setActiveSettingsTab(tab.id)}
               type="button"
             >
-              {tabLabel(tab)}
+              <tab.icon size={18} aria-hidden="true" />
+              <span>{tabLabel(tab)}</span>
             </button>
           ))}
         </nav>
@@ -111,7 +121,6 @@ export function SettingsScreen({
             <AppearanceSettings
               accentPalette={accentPalette}
               locale={locale}
-              settings={settings}
               theme={theme}
               onAccentPaletteChange={onAccentPaletteChange}
               onLocaleChange={onLocaleChange}
@@ -131,17 +140,12 @@ export function SettingsScreen({
           ) : null}
           {activeSettingsTab === "ai" ? (
             <AiSettings
-              geminiCredentialStatus={geminiCredentialStatus}
               settings={settings}
               onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
               onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
               onGeneralAnalysisProviderChange={onGeneralAnalysisProviderChange}
               onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
               onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
-              formatAiProvider={formatAiProvider}
-              formatGeminiModel={formatGeminiModel}
-              formatCredentialConfigured={formatCredentialConfigured}
-              formatCredentialKind={formatCredentialKind}
             />
           ) : null}
           {activeSettingsTab === "credentials" ? (

@@ -32,7 +32,7 @@ describe("Settings screen workflows", () => {
     const settingsRegion = await screen.findByLabelText("Application settings");
 
     expect(within(settingsRegion).getByRole("heading", { name: "Appearance" })).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("night-neon")).toBeInTheDocument();
+    expect(screen.getByLabelText("Settings palette")).toHaveValue("night-neon");
     expect(within(settingsRegion).getByRole("button", { name: "Sources" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("button", { name: "Import And Export" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("button", { name: "Keyboard shortcuts" })).toBeInTheDocument();
@@ -61,26 +61,16 @@ describe("Settings screen workflows", () => {
     await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
 
     expect(within(settingsRegion).getByRole("heading", { name: "AI" })).toBeInTheDocument();
-    expect(within(settingsRegion).getAllByText("Gemini").length).toBeGreaterThanOrEqual(1);
-    expect(within(settingsRegion).getByText("provider_gemini")).toBeInTheDocument();
-    expect(within(settingsRegion).getAllByText("Gemini 2.5 Flash-Lite").length).toBeGreaterThanOrEqual(1);
-    expect(within(settingsRegion).getByText("Cheapest supported")).toBeInTheDocument();
-    expect(within(settingsRegion).getAllByText("Not configured").length).toBeGreaterThanOrEqual(1);
-    expect(
-      within(settingsRegion).getByText(
-        "Starting a transcript job sends the YouTube URL and video content to Gemini.",
-      ),
-    ).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Gemini is used only for YouTube transcription.")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("YouTube transcription timeout")).toBeInTheDocument();
-    expect(within(settingsRegion).getAllByText("General AI model").length).toBeGreaterThanOrEqual(1);
-    expect(within(settingsRegion).getAllByText("General AI timeout").length).toBeGreaterThanOrEqual(1);
-    expect(
-      within(settingsRegion).getByText(
-        "Starting feed analysis sends the selected source text and metadata to the configured AI provider.",
-      ),
-    ).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Source-grounded feed analysis")).toBeInTheDocument();
+    expect(screen.getByLabelText("Gemini transcription model")).toHaveValue("gemini-2.5-flash");
+    expect(screen.getByLabelText("Gemini transcription timeout")).toHaveValue("300");
+    expect(screen.getByLabelText("General AI provider")).toHaveValue("");
+    expect(screen.getByLabelText("General AI model")).toHaveValue("gemini-2.5-flash");
+    expect(screen.getByLabelText("General AI timeout")).toHaveValue("90");
+    expect(within(settingsRegion).queryByText("provider_gemini")).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText("Cheapest supported")).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText("Source-grounded feed analysis")).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText("YouTube transcription provider ID")).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText("General AI disclosure")).not.toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "Credentials" }));
 

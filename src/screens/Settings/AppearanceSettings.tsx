@@ -1,9 +1,8 @@
-import type { AccentPalette, AppLocale, Theme, UserSettings } from "../../api/types";
+import type { AccentPalette, AppLocale, Theme } from "../../api/types";
 import { accentPaletteOptions } from "../../app/theme";
 import { localeDisplayName, supportedLocales, useLocale, type LocaleKey } from "../../shared/locale";
 
 type AppearanceSettingsProps = {
-  settings: UserSettings | null;
   theme: Theme;
   accentPalette: AccentPalette;
   locale: AppLocale;
@@ -14,7 +13,6 @@ type AppearanceSettingsProps = {
 };
 
 export function AppearanceSettings({
-  settings,
   theme,
   accentPalette,
   locale,
@@ -69,10 +67,6 @@ export function AppearanceSettings({
             ))}
           </select>
         </label>
-        <div className="settings-summary">
-          <span>{text("Active palette")}</span>
-          <strong>{settings?.accentPalette ?? "night-neon"}</strong>
-        </div>
       </div>
     </section>
   );
