@@ -1150,14 +1150,13 @@ Exit criteria:
 
 ## Future: Research Workspace Implementation Sequence
 
-M25 delivered the first company-scoped Research screen, M26 delivered watchlist review mode, M29 delivered research questions plus evidence links, and M30 is planned for AI research briefs. The recommended follow-up sequence after M30 is:
+M25 delivered the first company-scoped Research screen, M26 delivered watchlist review mode, M29 delivered research questions plus evidence links, M30 delivered AI research briefs, and M31 delivered event-aware reminders plus personal research digest generation.
 
-1. Event-aware reminders and personal research digest.
-   - Adds reminders once claim/event/question pressure is visible in the workflow.
-   - Adds daily or weekly digest generation after company and watchlist review semantics are proven.
-   - Reuses the research evidence boundary and AI brief collector/renderer surfaces.
+Status: event-aware reminders and personal research digest completed in `0.31.0`.
 
-2. Stored timeline/evidence projections only if needed.
+The recommended follow-up sequence after M31 is:
+
+1. Stored timeline/evidence projections only if needed.
    - If live read-model aggregation becomes too slow or review semantics require snapshots, add stored projections behind the existing research API.
    - Projection rows must be rebuildable or have explicit import/export and backup policy.
 

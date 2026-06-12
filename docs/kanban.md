@@ -16,11 +16,11 @@ Active planning has moved from this file to Radicle issues rendered by Radboard.
 
 Current milestone epics:
 
-- `0f17877` - epic: Event-aware reminders and research digest (`milestone:v0.31.0`)
+- None active.
 
 Current research-workspace sequence:
 
 - `feaf0ea` - epic: AI research briefs (`milestone:v0.30.0`, completed in `0.30.0`)
-- `0f17877` - epic: Event-aware reminders and research digest (`milestone:v0.31.0`)
+- `0f17877` - epic: Event-aware reminders and research digest (`milestone:v0.31.0`, completed in `0.31.0`)
 
 Use `rad issue list --all` or Radboard for active status. Create a Radicle issue for every reported or discovered bug that will not be fixed immediately. Historical completed-card context remains in [Kanban Archive](kanban-archive.md).

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.31.0 - 2026-06-12
+
+
+
+### Features
+
+- add event-aware reminders and AI digest workspace
+
+
 ## v0.30.0 - 2026-06-11
 
 
