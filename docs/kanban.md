@@ -20,12 +20,25 @@ Current milestone epics:
 - `eca2082` - epic: Financial facts foundation (`milestone:v0.34.0`)
 - `9879941` - epic: AI KPI extraction with confirmation (`milestone:v0.35.0`)
 - `8505350` - epic: Fundamentals panel and KPI charts (`milestone:v0.36.0`)
+- `2cc8bd6` - epic: Search and data safety hardening (`milestone:v0.37.0`)
+- `0e1d6c5` - epic: Typed ESPI event classification (`milestone:v0.38.0`)
+- `cbf6999` - epic: Management claims tracker (`milestone:v0.39.0`)
+- `75001e4` - epic: Report-season cockpit (`milestone:v0.40.0`)
+- `b7a54ba` - epic: Cross-company KPI comparison (`milestone:v0.41.0`)
 
 Current fundamentals sequence:
 
-- v0.34.0 establishes the financial facts data model, report document persistence (ESPI/EBI attachments and user-supplied PDF URLs), and manual KPI entry.
+- v0.34.0 establishes the financial facts data model, report document persistence (ESPI/EBI attachments and user-supplied PDF URLs), URL evidence capture, and manual KPI entry.
 - v0.35.0 adds AI KPI extraction through the provider boundary with mandatory per-fact user confirmation.
 - v0.36.0 ships the fundamentals panel, custom per-company KPIs, KPI trend charts via shared SVG primitives, and export/import.
+
+Current research-leverage sequence:
+
+- v0.37.0 hardens the corpus: FTS5 full-text search across all stored content and automatic local database backups with restore.
+- v0.38.0 classifies ESPI/EBI filings into typed company events (insider transactions, dividends, profit warnings, contracts, buybacks).
+- v0.39.0 tracks management claims from reports and transcripts with due periods, verdicts, and KPI-backed verification.
+- v0.40.0 ships the report-season cockpit: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
+- v0.41.0 adds cross-company KPI comparison with side-by-side tables and multi-series trend charts.
 
 Current research-workspace sequence:
 
