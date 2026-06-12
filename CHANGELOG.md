@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.33.0 - 2026-06-12
+
+
+
+### Changed
+
+- modularize import export backend
+
+- split workspace screen panels
+
+- split screen styling
+
+- extract feed company matching boundary
+
+- extract shared AI response helpers
+
+- extract parsing helpers
+
+- split translation resources
+
+- modularize app workflow harness
+
+
 ## v0.32.0 - 2026-06-12
 
 
