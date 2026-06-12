@@ -1,7 +1,11 @@
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use std::error::Error as StdError;
 use std::time::Duration;
+
+use crate::providers::common::{
+    clean_optional_string, describe_reqwest_error, effective_timeout_seconds, extract_json_object,
+    summarize_provider_error_body,
+};
 
 use super::types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
@@ -28,7 +32,8 @@ pub struct ReqwestGeminiAnalysisGenerateContentClient {
 
 impl ReqwestGeminiAnalysisGenerateContentClient {
     pub fn new(configured_timeout_seconds: u64) -> Result<Self, AnalysisProviderError> {
-        let timeout_seconds = effective_gemini_analysis_timeout_seconds(configured_timeout_seconds);
+        let timeout_seconds =
+            effective_timeout_seconds(GEMINI_ANALYSIS_TIMEOUT_ENV, configured_timeout_seconds);
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_seconds))
             .build()
@@ -438,7 +443,8 @@ fn extract_gemini_analysis_text(
 fn parse_gemini_analysis_output(
     text: &str,
 ) -> Result<AnalysisProviderOutput, AnalysisProviderError> {
-    let json_text = extract_json_object(text)?;
+    let json_text =
+        extract_json_object(text, "Gemini response").map_err(AnalysisProviderError::ParseError)?;
     let parsed: GeminiAnalysisJson = serde_json::from_str(json_text).map_err(|error| {
         AnalysisProviderError::ParseError(format!("Gemini analysis JSON: {error}"))
     })?;
@@ -499,7 +505,8 @@ fn parse_gemini_analysis_output(
 fn parse_gemini_research_brief_output(
     text: &str,
 ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
-    let json_text = extract_json_object(text)?;
+    let json_text =
+        extract_json_object(text, "Gemini response").map_err(AnalysisProviderError::ParseError)?;
     let parsed: GeminiResearchBriefJson = serde_json::from_str(json_text).map_err(|error| {
         AnalysisProviderError::ParseError(format!("Gemini research brief JSON: {error}"))
     })?;
@@ -577,112 +584,8 @@ fn parse_gemini_research_brief_output(
     })
 }
 
-fn extract_json_object(text: &str) -> Result<&str, AnalysisProviderError> {
-    let trimmed = text.trim();
-    if let Some(stripped) = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .and_then(|value| value.strip_suffix("```"))
-    {
-        return extract_json_object(stripped);
-    }
-
-    let Some(start) = trimmed.find('{') else {
-        return Err(AnalysisProviderError::ParseError(
-            "Gemini response did not include a JSON object".to_owned(),
-        ));
-    };
-
-    let mut depth = 0usize;
-    let mut in_string = false;
-    let mut escaped = false;
-    for (offset, character) in trimmed[start..].char_indices() {
-        if in_string {
-            if escaped {
-                escaped = false;
-                continue;
-            }
-            match character {
-                '\\' => escaped = true,
-                '"' => in_string = false,
-                _ => {}
-            }
-            continue;
-        }
-
-        match character {
-            '"' => in_string = true,
-            '{' => depth += 1,
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    let end = start + offset + character.len_utf8();
-                    return Ok(&trimmed[start..end]);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    Err(AnalysisProviderError::ParseError(
-        "Gemini response did not include a complete JSON object".to_owned(),
-    ))
-}
-
-fn clean_optional_string(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-}
-
-fn effective_gemini_analysis_timeout_seconds(configured_timeout_seconds: u64) -> u64 {
-    std::env::var(GEMINI_ANALYSIS_TIMEOUT_ENV)
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or_else(|| configured_timeout_seconds.max(1))
-}
-
-fn describe_reqwest_error(error: &reqwest::Error) -> String {
-    let mut details = vec![error.to_string()];
-    let mut kinds = Vec::new();
-
-    if error.is_timeout() {
-        kinds.push("timeout");
-    }
-    if error.is_connect() {
-        kinds.push("connect");
-    }
-    if error.is_request() {
-        kinds.push("request");
-    }
-    if error.is_body() {
-        kinds.push("body");
-    }
-    if error.is_decode() {
-        kinds.push("decode");
-    }
-    if error.is_status() {
-        kinds.push("status");
-    }
-    if !kinds.is_empty() {
-        details.push(format!("kind={}", kinds.join(",")));
-    }
-    if let Some(url) = error.url() {
-        details.push(format!("url={url}"));
-    }
-
-    let mut source = error.source();
-    while let Some(cause) = source {
-        details.push(format!("cause={cause}"));
-        source = cause.source();
-    }
-
-    details.join("; ")
-}
-
 fn map_gemini_analysis_http_error(status: u16, body: &str) -> AnalysisProviderError {
-    let cause = summarize_gemini_error_body(body);
+    let cause = summarize_provider_error_body(body);
     match status {
         401 | 403 => AnalysisProviderError::ProviderNotConfigured,
         429 => AnalysisProviderError::ProviderLimit,
@@ -697,37 +600,6 @@ fn map_gemini_analysis_http_error(status: u16, body: &str) -> AnalysisProviderEr
         )),
         _ => AnalysisProviderError::ProviderError(format!("Gemini error ({status}): {cause}")),
     }
-}
-
-fn summarize_gemini_error_body(body: &str) -> String {
-    #[derive(Deserialize)]
-    struct ErrorEnvelope {
-        error: Option<ErrorBody>,
-    }
-
-    #[derive(Deserialize)]
-    struct ErrorBody {
-        message: Option<String>,
-        status: Option<String>,
-    }
-
-    serde_json::from_str::<ErrorEnvelope>(body)
-        .ok()
-        .and_then(|envelope| envelope.error)
-        .map(|error| match (error.status, error.message) {
-            (Some(status), Some(message)) => format!("{status}: {message}"),
-            (Some(status), None) => status,
-            (None, Some(message)) => message,
-            (None, None) => "provider returned an error without a message".to_owned(),
-        })
-        .unwrap_or_else(|| {
-            let trimmed = body.trim();
-            if trimmed.is_empty() {
-                "provider returned an empty error body".to_owned()
-            } else {
-                trimmed.chars().take(500).collect()
-            }
-        })
 }
 
 #[cfg(test)]

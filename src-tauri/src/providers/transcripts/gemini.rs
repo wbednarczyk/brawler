@@ -1,8 +1,12 @@
 use crate::storage::TranscriptJob;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Deserializer, Serialize};
-use std::error::Error as StdError;
 use std::time::Duration;
+
+use crate::providers::common::{
+    clean_optional_string, describe_reqwest_error, effective_timeout_seconds, extract_json_object,
+    summarize_provider_error_body,
+};
 
 use super::types::{
     TranscriptProviderError, TranscriptProviderOutput, TranscriptSegmentDraft,
@@ -28,7 +32,8 @@ pub struct ReqwestGeminiGenerateContentClient {
 
 impl ReqwestGeminiGenerateContentClient {
     pub fn new(configured_timeout_seconds: u64) -> Result<Self, TranscriptProviderError> {
-        let timeout_seconds = effective_gemini_request_timeout_seconds(configured_timeout_seconds);
+        let timeout_seconds =
+            effective_timeout_seconds(GEMINI_REQUEST_TIMEOUT_ENV, configured_timeout_seconds);
         let client = Client::builder()
             .timeout(Duration::from_secs(timeout_seconds))
             .build()
@@ -38,14 +43,6 @@ impl ReqwestGeminiGenerateContentClient {
 
         Ok(Self { client })
     }
-}
-
-fn effective_gemini_request_timeout_seconds(configured_timeout_seconds: u64) -> u64 {
-    std::env::var(GEMINI_REQUEST_TIMEOUT_ENV)
-        .ok()
-        .and_then(|value| value.trim().parse::<u64>().ok())
-        .filter(|value| *value > 0)
-        .unwrap_or_else(|| configured_timeout_seconds.max(1))
 }
 
 impl GeminiGenerateContentClient for ReqwestGeminiGenerateContentClient {
@@ -80,44 +77,6 @@ impl GeminiGenerateContentClient for ReqwestGeminiGenerateContentClient {
             TranscriptProviderError::ParseError(format!("Gemini response JSON: {error}"))
         })
     }
-}
-
-fn describe_reqwest_error(error: &reqwest::Error) -> String {
-    let mut details = vec![error.to_string()];
-    let mut kinds = Vec::new();
-
-    if error.is_timeout() {
-        kinds.push("timeout");
-    }
-    if error.is_connect() {
-        kinds.push("connect");
-    }
-    if error.is_request() {
-        kinds.push("request");
-    }
-    if error.is_body() {
-        kinds.push("body");
-    }
-    if error.is_decode() {
-        kinds.push("decode");
-    }
-    if error.is_status() {
-        kinds.push("status");
-    }
-    if !kinds.is_empty() {
-        details.push(format!("kind={}", kinds.join(",")));
-    }
-    if let Some(url) = error.url() {
-        details.push(format!("url={url}"));
-    }
-
-    let mut source = error.source();
-    while let Some(cause) = source {
-        details.push(format!("cause={cause}"));
-        source = cause.source();
-    }
-
-    details.join("; ")
 }
 
 pub struct GeminiTranscriptProvider<C = ReqwestGeminiGenerateContentClient> {
@@ -328,7 +287,8 @@ fn extract_gemini_text(
 fn parse_gemini_transcript_segments(
     text: &str,
 ) -> Result<Vec<TranscriptSegmentDraft>, TranscriptProviderError> {
-    let json_text = extract_json_object(text);
+    let json_text = extract_json_object(text, "Gemini response")
+        .map_err(TranscriptProviderError::ParseError)?;
     let parsed: GeminiTranscriptJson = serde_json::from_str(json_text).map_err(|error| {
         TranscriptProviderError::ParseError(format!("Gemini transcript JSON: {error}"))
     })?;
@@ -354,25 +314,6 @@ fn parse_gemini_transcript_segments(
     Ok(segments)
 }
 
-fn extract_json_object(text: &str) -> &str {
-    let trimmed = text.trim();
-    if let Some(stripped) = trimmed
-        .strip_prefix("```json")
-        .or_else(|| trimmed.strip_prefix("```"))
-        .and_then(|value| value.strip_suffix("```"))
-    {
-        return stripped.trim();
-    }
-
-    trimmed
-}
-
-fn clean_optional_string(value: Option<String>) -> Option<String> {
-    value
-        .map(|value| value.trim().to_owned())
-        .filter(|value| !value.is_empty())
-}
-
 fn validate_youtube_url(source_url: &str) -> Result<(), TranscriptProviderError> {
     let url = url::Url::parse(source_url).map_err(|_| TranscriptProviderError::InvalidSourceUrl)?;
     let host = url
@@ -388,7 +329,7 @@ fn validate_youtube_url(source_url: &str) -> Result<(), TranscriptProviderError>
 }
 
 fn map_gemini_http_error(status: u16, body: &str) -> TranscriptProviderError {
-    let cause = summarize_gemini_error_body(body);
+    let cause = summarize_provider_error_body(body);
     match status {
         401 | 403 => TranscriptProviderError::ProviderNotConfigured,
         429 => TranscriptProviderError::ProviderLimit,
@@ -403,37 +344,6 @@ fn map_gemini_http_error(status: u16, body: &str) -> TranscriptProviderError {
         )),
         _ => TranscriptProviderError::ProviderError(format!("Gemini error ({status}): {cause}")),
     }
-}
-
-fn summarize_gemini_error_body(body: &str) -> String {
-    #[derive(Deserialize)]
-    struct ErrorEnvelope {
-        error: Option<ErrorBody>,
-    }
-
-    #[derive(Deserialize)]
-    struct ErrorBody {
-        message: Option<String>,
-        status: Option<String>,
-    }
-
-    serde_json::from_str::<ErrorEnvelope>(body)
-        .ok()
-        .and_then(|envelope| envelope.error)
-        .map(|error| match (error.status, error.message) {
-            (Some(status), Some(message)) => format!("{status}: {message}"),
-            (Some(status), None) => status,
-            (None, Some(message)) => message,
-            (None, None) => "provider returned an error without a message".to_owned(),
-        })
-        .unwrap_or_else(|| {
-            let trimmed = body.trim();
-            if trimmed.is_empty() {
-                "provider returned an empty error body".to_owned()
-            } else {
-                trimmed.chars().take(500).collect()
-            }
-        })
 }
 
 #[cfg(test)]
