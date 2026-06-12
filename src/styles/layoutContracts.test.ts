@@ -14,7 +14,11 @@ const eventsCss = readStyle("screens/events.css");
 const inboxCss = readStyle("screens/inbox.css");
 const layoutCss = readStyle("layout.css");
 const notebooksCss = readStyle("screens/notebooks.css");
-const researchCss = readStyle("screens/research.css");
+const researchCss = [
+  readStyle("screens/research-layout.css"),
+  readStyle("screens/research-components.css"),
+  readStyle("screens/research-responsive.css"),
+].join("\n");
 const responsiveCss = readStyle("responsive.css");
 const shellCss = readStyle("shell.css");
 const sourcesCss = readStyle("screens/sources.css");

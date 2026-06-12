@@ -9,7 +9,9 @@
 @import "./styles/screens/notebooks.css";
 @import "./styles/screens/companies.css";
 @import "./styles/screens/watchlists.css";
-@import "./styles/screens/research.css";
+@import "./styles/screens/research-layout.css";
+@import "./styles/screens/research-components.css";
+@import "./styles/screens/research-responsive.css";
 @import "./styles/rows.css";
 @import "./styles/screens/transcripts.css";
 @import "./styles/screens/sources.css";

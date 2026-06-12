@@ -1,0 +1,261 @@
+.research-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.research-workspace {
+  position: relative;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 12px;
+  min-height: 0;
+  padding: 14px 18px 18px;
+  overflow: hidden;
+}
+
+.research-toolbar,
+.research-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.research-company-picker {
+  display: grid;
+  gap: 5px;
+  min-width: min(360px, 100%);
+}
+
+.research-company-picker span,
+.research-summary span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.research-company-picker select {
+  min-height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  background: var(--surface-raised);
+}
+
+.research-filter-group {
+  display: flex;
+  flex: 1 1 360px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.research-filter {
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 999px;
+  padding: 0 10px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.research-filter:hover,
+.research-filter:focus-visible,
+.research-filter.active {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 13%, var(--surface-raised));
+}
+
+.research-filter-clear {
+  color: var(--primary);
+}
+
+.research-mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 999px;
+  padding: 3px;
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.research-mode-option {
+  min-height: 28px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.research-mode-option:hover,
+.research-mode-option:focus-visible {
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.research-mode-option.active {
+  border-color: color-mix(in srgb, var(--primary) 78%, var(--border));
+  color: var(--text);
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--primary) 34%, var(--surface-raised)),
+    color-mix(in srgb, var(--accent) 16%, var(--surface-raised))
+  );
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.research-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.research-summary {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
+}
+
+.research-summary > div {
+  display: grid;
+  gap: 3px;
+  min-width: 120px;
+}
+
+.research-summary strong {
+  font-size: 14px;
+}
+
+.research-summary-company {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: min(280px, 100%);
+}
+
+.research-main-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 10px minmax(360px, var(--research-brief-panel-width, 1fr));
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.research-main-stack {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.research-main-stack.company {
+  grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.research-main-stack.watchlist {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.research-aside {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.research-resizer {
+  align-self: stretch;
+  width: 10px;
+  min-height: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.research-resizer::before {
+  display: block;
+  width: 2px;
+  height: 100%;
+  min-height: 72px;
+  margin: 0 auto;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--border) 78%, transparent);
+  content: "";
+}
+
+.research-resizer:hover::before,
+.research-resizer:focus-visible::before {
+  background: color-mix(in srgb, var(--primary) 72%, var(--border));
+}
+
+.research-resizer:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+}
+
+.research-timeline-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 8px;
+  min-height: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
+  overflow: hidden;
+}
+
+.research-timeline {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.research-review-region {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.research-review-region > .research-timeline-shell {
+  height: 100%;
+}
+
+.research-review-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, var(--research-watchlist-queue-width, 220px)) 10px minmax(0, 1fr);
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.research-company-queue {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}

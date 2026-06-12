@@ -1,0 +1,115 @@
+@media (max-width: 1380px) {
+  .research-workspace {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .research-toolbar {
+    align-items: flex-start;
+  }
+
+  .research-company-picker {
+    flex: 1 1 100%;
+  }
+
+  .research-summary-company {
+    margin-left: 0;
+  }
+
+  .research-main-layout {
+    grid-template-columns: minmax(0, 1fr) 8px minmax(320px, 0.9fr);
+    gap: 8px;
+  }
+
+  .research-aside {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .research-active-question {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .research-question-actions {
+    justify-content: flex-start;
+  }
+
+  .research-reminders,
+  .research-questions,
+  .research-timeline-shell {
+    padding: 7px;
+  }
+
+  .research-reminder-list {
+    max-height: 104px;
+  }
+
+  .research-reminder-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    padding: 5px 6px;
+  }
+
+  .research-reminder-actions {
+    gap: 4px;
+  }
+
+  .research-question-card-list {
+    grid-auto-columns: minmax(180px, 260px);
+  }
+
+  .research-ai-modes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .research-ai-mode-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 1040px) {
+  .research-main-layout {
+    grid-template-columns: minmax(0, 1fr);
+    align-content: start;
+    overflow-y: auto;
+  }
+
+  .research-main-layout > .research-resizer {
+    display: none;
+  }
+
+  .research-aside {
+    grid-template-rows: minmax(360px, auto);
+    min-height: 360px;
+  }
+
+  .research-reminder-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .research-reminder-actions {
+    justify-content: flex-start;
+  }
+
+  .research-review-layout {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .research-review-layout > .research-resizer {
+    display: none;
+  }
+
+  .research-company-queue {
+    max-height: 180px;
+  }
+}
+
+@media (max-width: 900px) {
+  .research-questions,
+  .research-review-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .research-company-queue {
+    max-height: 220px;
+  }
+}
