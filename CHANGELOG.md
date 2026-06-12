@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.31.1 - 2026-06-12
+
+
+
+### Bug Fixes
+
+- polish settings navigation and AI options
+
+
 ## v0.31.0 - 2026-06-12
 
 
