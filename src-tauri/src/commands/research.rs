@@ -177,10 +177,99 @@ pub fn list_research_briefs(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command]
+pub fn list_research_reminders(
+    input: storage::ResearchReminderListInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::ResearchReminder>, String> {
+    state
+        .list_research_reminders(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn create_research_reminder(
+    input: storage::NewResearchReminder,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ResearchReminder, String> {
+    state
+        .create_research_reminder(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn update_research_reminder(
+    input: storage::ResearchReminderUpdate,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ResearchReminder, String> {
+    state
+        .update_research_reminder(input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn delete_research_reminder(
+    id: String,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<(), String> {
+    state
+        .delete_research_reminder(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn start_research_digest(
+    input: storage::ResearchDigestScopeInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ResearchDigestJob, String> {
+    let settings = state.get_settings().map_err(|error| error.to_string())?;
+    let provider_id = settings
+        .ai_providers
+        .general_analysis_provider
+        .as_deref()
+        .unwrap_or(TEST_SAMPLE_ANALYSIS_PROVIDER_ID)
+        .to_owned();
+    let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
+        TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
+    } else {
+        settings.ai_providers.general_analysis_model
+    };
+    let job = state
+        .create_research_digest_job(storage::NewResearchDigestJob {
+            scope_type: input.scope_type,
+            scope_id: input.scope_id,
+            provider_id,
+            model,
+        })
+        .map_err(|error| error.to_string())?;
+
+    spawn_research_digest_job(state.inner().clone(), job.id.clone());
+
+    Ok(job)
+}
+
+#[tauri::command]
+pub fn list_research_digests(
+    input: storage::ResearchDigestScopeInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::ResearchDigestJob>, String> {
+    state
+        .list_research_digest_jobs(input)
+        .map_err(|error| error.to_string())
+}
+
 fn spawn_research_brief_job(state: app_state::AppState, job_id: String) {
     tauri::async_runtime::spawn_blocking(move || {
         if let Err(error) = jobs::research_briefs::run_research_brief_job(&state, &job_id) {
             let _ = state.mark_research_brief_job_failed(&job_id, "unknown", &error);
+        }
+    });
+}
+
+fn spawn_research_digest_job(state: app_state::AppState, job_id: String) {
+    tauri::async_runtime::spawn_blocking(move || {
+        if let Err(error) = jobs::research_digests::run_research_digest_job(&state, &job_id) {
+            let _ = state.mark_research_digest_job_failed(&job_id, "unknown", &error);
         }
     });
 }

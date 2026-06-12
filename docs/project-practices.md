@@ -158,6 +158,7 @@ Rules:
 - Dense investor workflows must remain scannable and keyboard/mouse efficient.
 - Temporary UX shortcuts are allowed during early scaffolding, but known UX debt should be recorded in docs or Radicle/Radboard.
 - Responsiveness is part of correctness: common actions should feel immediate even when background work is pending.
+- Screens must be designed for real non-maximized desktop use. A key target is a 49-inch monitor split into three FancyZones-style regions where Brawler runs in a side region around 25% of the screen width; layouts should stack or simplify before controls become cramped, clipped, or horizontally unusable.
 
 ## Security Baseline
 
@@ -226,6 +227,7 @@ Rules:
 - If a deferred bug blocks active work, add `blocked:<bug-hex7>` to the blocked task or epic after creating the bug issue.
 - Bugs fixed immediately in the same work item do not require a separate Radicle issue, but the final summary should mention the bug and the verification performed.
 - PRs or patches should reference a Radicle issue when implementation begins.
+- Agents may run `rad issue ...` commands unattended for normal planning, bug tracking, task creation, labeling, and solved-state updates. This permission is limited to issue tracking and does not permit unattended Radicle publication, seeding, visibility, identity, node, or repository initialization operations.
 - Behavior changes must update docs/contracts in the same PR.
 - Important decisions must not live only in Radicle issue, patch, or PR comments.
 

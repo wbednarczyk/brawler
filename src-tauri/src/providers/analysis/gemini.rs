@@ -6,7 +6,7 @@ use std::time::Duration;
 use super::types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
     AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
-    ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchBriefRequest, ResearchBriefSectionOutput, ResearchDigestRequest,
 };
 
 pub const DEFAULT_GEMINI_ANALYSIS_MODEL: &str = "gemini-2.5-flash";
@@ -146,6 +146,23 @@ where
             .filter(|value| !value.trim().is_empty())
             .ok_or(AnalysisProviderError::ProviderNotConfigured)?;
         let gemini_request = gemini_research_brief_request(request);
+        let response = self
+            .client
+            .generate_content(&self.model, api_key, &gemini_request)?;
+        let output_text = extract_gemini_analysis_text(&response)?;
+        parse_gemini_research_brief_output(&output_text)
+    }
+
+    fn generate_research_digest(
+        &self,
+        request: &ResearchDigestRequest,
+    ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
+        let api_key = self
+            .api_key
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(AnalysisProviderError::ProviderNotConfigured)?;
+        let gemini_request = gemini_research_digest_request(request);
         let response = self
             .client
             .generate_content(&self.model, api_key, &gemini_request)?;
@@ -349,6 +366,55 @@ Evidence:\n{evidence}",
     }
 }
 
+fn gemini_research_digest_request(
+    request: &ResearchDigestRequest,
+) -> GeminiAnalysisGenerateContentRequest {
+    let evidence = request
+        .evidence_items
+        .iter()
+        .take(140)
+        .enumerate()
+        .map(|(index, item)| {
+            format!(
+                "E{index}: evidenceType={evidence_type}; evidenceId={evidence_id}; companyId={company_id}; occurredAt={occurred_at}; title={title}; summary={summary}; sourceUrl={source_url}; attribution={attribution}; trust={trust}",
+                index = index + 1,
+                evidence_type = item.evidence_type,
+                evidence_id = item.source_id,
+                company_id = item.company_id,
+                occurred_at = item.occurred_at,
+                title = item.title,
+                summary = item.summary.as_deref().unwrap_or(""),
+                source_url = item.source_url.as_deref().unwrap_or(""),
+                attribution = item.attribution.as_deref().unwrap_or(""),
+                trust = item.trust_category,
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let prompt = format!(
+        "Create a source-grounded research digest for the selected {scope_type}. \
+Focus on changed evidence, open reminders, upcoming review work, and unresolved questions. \
+Return only JSON with this exact shape: \
+{{\"title\":\"...\",\"summary\":\"...\",\"sections\":[{{\"heading\":\"...\",\"body\":\"...\",\"citationKeys\":[\"E1\"]}}],\"language\":\"en\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"feed_item\",\"evidenceId\":\"feed_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
+Use only the evidence below. Every material claim in every section must cite one or more evidence keys. \
+Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
+Scope type: {scope_type}\n\
+Scope id: {scope_id}\n\
+Evidence:\n{evidence}",
+        scope_type = request.scope_type,
+        scope_id = request.scope_id,
+    );
+
+    GeminiAnalysisGenerateContentRequest {
+        contents: vec![GeminiAnalysisContent {
+            parts: vec![GeminiAnalysisPart::Text { text: prompt }],
+        }],
+        generation_config: GeminiAnalysisGenerationConfig {
+            response_mime_type: "application/json".to_owned(),
+        },
+    }
+}
+
 fn extract_gemini_analysis_text(
     response: &GeminiAnalysisGenerateContentResponse,
 ) -> Result<String, AnalysisProviderError> {
@@ -372,7 +438,7 @@ fn extract_gemini_analysis_text(
 fn parse_gemini_analysis_output(
     text: &str,
 ) -> Result<AnalysisProviderOutput, AnalysisProviderError> {
-    let json_text = extract_json_object(text);
+    let json_text = extract_json_object(text)?;
     let parsed: GeminiAnalysisJson = serde_json::from_str(json_text).map_err(|error| {
         AnalysisProviderError::ParseError(format!("Gemini analysis JSON: {error}"))
     })?;
@@ -433,7 +499,7 @@ fn parse_gemini_analysis_output(
 fn parse_gemini_research_brief_output(
     text: &str,
 ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
-    let json_text = extract_json_object(text);
+    let json_text = extract_json_object(text)?;
     let parsed: GeminiResearchBriefJson = serde_json::from_str(json_text).map_err(|error| {
         AnalysisProviderError::ParseError(format!("Gemini research brief JSON: {error}"))
     })?;
@@ -511,17 +577,56 @@ fn parse_gemini_research_brief_output(
     })
 }
 
-fn extract_json_object(text: &str) -> &str {
+fn extract_json_object(text: &str) -> Result<&str, AnalysisProviderError> {
     let trimmed = text.trim();
     if let Some(stripped) = trimmed
         .strip_prefix("```json")
         .or_else(|| trimmed.strip_prefix("```"))
         .and_then(|value| value.strip_suffix("```"))
     {
-        return stripped.trim();
+        return extract_json_object(stripped);
     }
 
-    trimmed
+    let Some(start) = trimmed.find('{') else {
+        return Err(AnalysisProviderError::ParseError(
+            "Gemini response did not include a JSON object".to_owned(),
+        ));
+    };
+
+    let mut depth = 0usize;
+    let mut in_string = false;
+    let mut escaped = false;
+    for (offset, character) in trimmed[start..].char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+                continue;
+            }
+            match character {
+                '\\' => escaped = true,
+                '"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+
+        match character {
+            '"' => in_string = true,
+            '{' => depth += 1,
+            '}' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let end = start + offset + character.len_utf8();
+                    return Ok(&trimmed[start..end]);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Err(AnalysisProviderError::ParseError(
+        "Gemini response did not include a complete JSON object".to_owned(),
+    ))
 }
 
 fn clean_optional_string(value: Option<String>) -> Option<String> {
@@ -717,6 +822,38 @@ mod tests {
         .expect_err("source references are required");
 
         assert_eq!(error.code(), "parse_error");
+    }
+
+    #[test]
+    fn gemini_research_brief_parser_ignores_trailing_text_after_json() {
+        let output = parse_gemini_research_brief_output(
+            r#"
+            {"title":"Research brief","summary":"Summary with {brace} text.","sections":[{"heading":"What changed","body":"Body cites evidence.","citationKeys":["E1"]}],"language":"en","citations":[{"citationKey":"E1","evidenceType":"feed_item","evidenceId":"feed_01","label":"Report","snippet":"Snippet"}]}
+
+            I used the provided evidence only.
+            "#,
+        )
+        .expect("trailing text after the first complete JSON object should be ignored");
+
+        assert_eq!(output.title, "Research brief");
+        assert_eq!(output.summary, "Summary with {brace} text.");
+        assert_eq!(output.citations.len(), 1);
+    }
+
+    #[test]
+    fn gemini_research_brief_parser_handles_fenced_json_with_trailing_text() {
+        let output = parse_gemini_research_brief_output(
+            r#"
+            ```json
+            {"title":"Research brief","summary":"Summary.","sections":[{"heading":"What changed","body":"Body cites evidence.","citationKeys":["E1"]}],"language":"en","citations":[{"citationKey":"E1","evidenceType":"feed_item","evidenceId":"feed_01","label":"Report","snippet":"Snippet"}]}
+            ```
+
+            Done.
+            "#,
+        )
+        .expect("fenced JSON should parse even when the provider appends text");
+
+        assert_eq!(output.title, "Research brief");
     }
 
     #[test]

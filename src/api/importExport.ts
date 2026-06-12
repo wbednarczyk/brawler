@@ -9,6 +9,9 @@ export type ImportExportSummary = {
   evidenceLinks: number;
   aiResearchBriefs: number;
   aiResearchBriefCitations: number;
+  researchReminders: number;
+  aiResearchDigests: number;
+  aiResearchDigestCitations: number;
   settings: number;
 };
 
@@ -28,6 +31,12 @@ export type ImportApplySummary = {
   aiResearchBriefsSkipped: number;
   aiResearchBriefCitationsCreated: number;
   aiResearchBriefCitationsSkipped: number;
+  researchRemindersCreated: number;
+  researchRemindersSkipped: number;
+  aiResearchDigestsCreated: number;
+  aiResearchDigestsSkipped: number;
+  aiResearchDigestCitationsCreated: number;
+  aiResearchDigestCitationsSkipped: number;
   settingsUpdated: number;
 };
 

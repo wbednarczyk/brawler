@@ -32,6 +32,13 @@ pub struct ResearchBriefRequest {
 }
 
 #[derive(Debug, Clone)]
+pub struct ResearchDigestRequest {
+    pub scope_type: String,
+    pub scope_id: String,
+    pub evidence_items: Vec<ResearchEvidenceItem>,
+}
+
+#[derive(Debug, Clone)]
 pub struct ResearchBriefProviderOutput {
     pub title: String,
     pub summary: String,
@@ -99,5 +106,10 @@ pub trait AiAnalysisProvider {
     fn generate_research_brief(
         &self,
         request: &ResearchBriefRequest,
+    ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError>;
+
+    fn generate_research_digest(
+        &self,
+        request: &ResearchDigestRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError>;
 }

@@ -1,13 +1,28 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { ArrowRight, CheckCheck, ExternalLink, Link, Plus, RefreshCw, Sparkles, Trash2, X } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  CheckCheck,
+  Clock3,
+  ExternalLink,
+  Link,
+  Plus,
+  RefreshCw,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import type {
   EvidenceLink,
   ResearchBriefJob,
+  ResearchDigestJob,
   ResearchEvidenceItem,
   ResearchEvidenceType,
   ResearchQuestion,
   ResearchQuestionStatus,
+  ResearchReminder,
   ResearchTimelineResult,
   ResearchTrustCategory,
 } from "../../api/researchTypes";
@@ -45,11 +60,15 @@ type ResearchScreenProps = {
   questionBody: string;
   questionLinks: EvidenceLink[];
   briefJobs: ResearchBriefJob[];
+  digestJobs: ResearchDigestJob[];
+  reminders: ResearchReminder[];
   error: string | null;
   loading: boolean;
   reviewInFlight: boolean;
   questionInFlight: boolean;
   briefInFlight: boolean;
+  digestInFlight: boolean;
+  reminderInFlight: boolean;
   setMode: (mode: ResearchMode) => void;
   setSelectedCompanyId: (companyId: string | null) => void;
   setSelectedWatchlistId: (watchlistId: string | null) => void;
@@ -69,6 +88,12 @@ type ResearchScreenProps = {
   linkEvidence: (item: ResearchEvidenceItem) => void;
   unlinkEvidence: (linkId: string) => void;
   startBrief: () => void;
+  startDigest: () => void;
+  createReminder: (title: string, body: string, dueAt: string | null) => void;
+  completeReminder: (reminderId: string) => void;
+  snoozeReminder: (reminderId: string) => void;
+  reopenReminder: (reminderId: string) => void;
+  deleteReminder: (reminderId: string) => void;
   openEvidence: (item: ResearchEvidenceItem) => void;
   openEvidenceUrl: (url: string) => void;
   formatTimestamp: (value: string | null | undefined) => string;
@@ -92,11 +117,15 @@ export function ResearchScreen({
   questionBody,
   questionLinks,
   briefJobs,
+  digestJobs,
+  reminders,
   error,
   loading,
   reviewInFlight,
   questionInFlight,
   briefInFlight,
+  digestInFlight,
+  reminderInFlight,
   setMode,
   setSelectedCompanyId,
   setSelectedWatchlistId,
@@ -116,6 +145,12 @@ export function ResearchScreen({
   linkEvidence,
   unlinkEvidence,
   startBrief,
+  startDigest,
+  createReminder,
+  completeReminder,
+  snoozeReminder,
+  reopenReminder,
+  deleteReminder,
   openEvidence,
   openEvidenceUrl,
   formatTimestamp,
@@ -131,6 +166,10 @@ export function ResearchScreen({
   const [watchlistQueueWidth, setWatchlistQueueWidth] = useState(220);
   const [briefPanelWidth, setBriefPanelWidth] = useState<number | null>(null);
   const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
+  const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
+  const [reminderTitle, setReminderTitle] = useState("");
+  const [reminderBody, setReminderBody] = useState("");
+  const [reminderDueAt, setReminderDueAt] = useState("");
   const selectedCompany = companies.find((company) => company.id === selectedCompanyId) ?? null;
   const selectedWatchlist = watchlists.find((watchlist) => watchlist.id === selectedWatchlistId) ?? null;
   const watchlistCompanyIds = selectedWatchlistId
@@ -148,7 +187,10 @@ export function ResearchScreen({
   const selectedQuestion = questions.find((question) => question.id === selectedQuestionId) ?? null;
   const latestBriefJob = briefJobs[0] ?? null;
   const latestBrief = latestBriefJob?.brief ?? null;
+  const latestDigestJob = digestJobs[0] ?? null;
+  const latestDigest = latestDigestJob?.digest ?? null;
   const briefRunning = briefJobs.some((job) => job.status === "queued" || job.status === "running");
+  const digestRunning = digestJobs.some((job) => job.status === "queued" || job.status === "running");
   const latestBriefTitle =
     mode === "company" && selectedCompany
       ? `${text("Investor research brief")}: ${selectedCompany.displayName}`
@@ -157,6 +199,11 @@ export function ResearchScreen({
         : text("Investor research brief");
   const latestBriefParagraphs =
     latestBrief?.contentMarkdown
+      .split(/\n+/)
+      .map((line) => line.replace(/^##\s*/, "").trim())
+      .filter(Boolean) ?? [];
+  const latestDigestParagraphs =
+    latestDigest?.contentMarkdown
       .split(/\n+/)
       .map((line) => line.replace(/^##\s*/, "").trim())
       .filter(Boolean) ?? [];
@@ -262,68 +309,162 @@ export function ResearchScreen({
     setQuestionDialogOpen(false);
   }
 
-  const briefSection = (
-    <section className="research-briefs" aria-label={text("AI research briefs")}>
-      <div className="research-section-heading">
-        <h2>{text("AI research briefs")}</h2>
-        <span>{briefJobs.length}</span>
+  function openReminderDialog() {
+    setReminderTitle("");
+    setReminderBody("");
+    setReminderDueAt("");
+    setReminderDialogOpen(true);
+  }
+
+  function submitReminderDialog() {
+    createReminder(reminderTitle, reminderBody, reminderDueAt || null);
+    setReminderDialogOpen(false);
+  }
+
+  const aiOutputCount = briefJobs.length + digestJobs.length;
+  const aiPanelDisabled = mode === "company" ? !selectedCompany : !selectedWatchlist;
+  const aiResearchSection = (
+    <section className="research-ai-panel" aria-label={text("AI research")}>
+      <div className="research-section-heading research-section-heading-strong research-section-ai">
+        <div className="research-section-title">
+          <h2>{text("AI research")}</h2>
+          <p>{text("Generate either a review checkpoint or a source-grounded research summary.")}</p>
+        </div>
+        <span>{aiOutputCount}</span>
       </div>
-      <div className="research-brief-actions">
-        <Button
-          className="compact-button"
-          disabled={
-            briefInFlight ||
-            briefRunning ||
-            (mode === "company" ? !selectedCompany : !selectedWatchlist)
-          }
-          onClick={startBrief}
-        >
-          <Sparkles size={15} />
-          {briefRunning ? text("Generating") : text("Generate brief")}
-        </Button>
+      <div className="research-ai-modes" aria-label={text("AI research modes")}>
+        <div className="research-ai-mode-card">
+          <div>
+            <span className="research-ai-mode-kicker">{text("What needs attention")}</span>
+            <strong>{text("Digest")}</strong>
+            <p>{text("Summarizes open reminders and changed evidence for this research scope.")}</p>
+          </div>
+          <Button
+            className="compact-button"
+            disabled={digestInFlight || digestRunning || aiPanelDisabled}
+            onClick={startDigest}
+            title={text("Summarizes open reminders and changed evidence for this research scope.")}
+          >
+            <Sparkles size={15} />
+            {digestRunning ? text("Generating") : text("Generate digest")}
+          </Button>
+        </div>
+        <div className="research-ai-mode-card">
+          <div>
+            <span className="research-ai-mode-kicker">{text("Research summary")}</span>
+            <strong>{text("Brief")}</strong>
+            <p>{text("Creates a cited research snapshot from the selected evidence.")}</p>
+          </div>
+          <Button
+            className="compact-button"
+            disabled={briefInFlight || briefRunning || aiPanelDisabled}
+            onClick={startBrief}
+            title={text("Creates a cited research snapshot from the selected evidence.")}
+          >
+            <Sparkles size={15} />
+            {briefRunning ? text("Generating") : text("Generate brief")}
+          </Button>
+        </div>
       </div>
-      {latestBrief ? (
-        <article className="research-brief-card">
-          <div className="research-brief-card-header">
+      <div className="research-ai-output-list">
+        <section className="research-ai-output" aria-label={text("Digest output")}>
+          <div className="research-ai-output-heading">
             <div>
-              <h3>{latestBriefTitle}</h3>
-              <p className="research-brief-summary">{latestBrief.summary}</p>
+              <h3>{text("What needs attention")}</h3>
+              <p>{text("Reminder and changed-evidence checkpoint.")}</p>
             </div>
-            <span>{formatTimestamp(latestBrief.generatedAt)}</span>
+            <span>{digestJobs.length}</span>
           </div>
-          <div className="research-brief-content">
-            {latestBriefParagraphs.map((line, index) => (
-              <p key={`${latestBrief.id}-${index}`}>{line}</p>
-            ))}
-          </div>
-          <details className="research-brief-citations">
-            <summary>{text("Citations")} ({latestBrief.citations.length})</summary>
-            <div className="research-brief-citation-list">
-              {latestBrief.citations.map((citation) => (
-                <button
-                  className="research-brief-citation"
-                  disabled={!isCitationOpenable(citation.evidenceType, citation.evidenceId)}
-                  key={citation.id}
-                  type="button"
-                  onClick={() => openCitationEvidence(citation.evidenceType, citation.evidenceId)}
-                >
-                  <strong>{citation.citationKey}</strong>
-                  {citation.label}
-                </button>
-              ))}
+          {latestDigest ? (
+            <article className="research-brief-card">
+              <div className="research-brief-card-header">
+                <div>
+                  <h3>{latestDigest.title}</h3>
+                  <p className="research-brief-summary">{latestDigest.summary}</p>
+                </div>
+                <span>{formatTimestamp(latestDigest.generatedAt)}</span>
+              </div>
+              <div className="research-brief-content">
+                {latestDigestParagraphs.map((line, index) => (
+                  <p key={`${latestDigest.id}-${index}`}>{line}</p>
+                ))}
+              </div>
+              <details className="research-brief-citations">
+                <summary>{text("Citations")} ({latestDigest.citations.length})</summary>
+                <div className="research-brief-citation-list">
+                  {latestDigest.citations.map((citation) => (
+                    <button
+                      className="research-brief-citation"
+                      disabled={!isCitationOpenable(citation.evidenceType, citation.evidenceId)}
+                      key={citation.id}
+                      type="button"
+                      onClick={() => openCitationEvidence(citation.evidenceType, citation.evidenceId)}
+                    >
+                      <strong>{citation.citationKey}</strong>
+                      {citation.label}
+                    </button>
+                  ))}
+                </div>
+              </details>
+            </article>
+          ) : latestDigestJob?.status === "failed" ? (
+            <p className="error-text">{latestDigestJob.error ?? text("Research digest failed")}</p>
+          ) : (
+            <EmptyState>{text("No research digest generated yet.")}</EmptyState>
+          )}
+        </section>
+        <section className="research-ai-output" aria-label={text("Brief output")}>
+          <div className="research-ai-output-heading">
+            <div>
+              <h3>{text("Research summary")}</h3>
+              <p>{text("Source-grounded memo for the selected scope.")}</p>
             </div>
-          </details>
-          <div className="research-brief-provenance">
-            <span>{text("Generated")} {formatTimestamp(latestBrief.generatedAt)}</span>
-            <span>{text(formatAiProvider(latestBrief.providerId))}</span>
-            <span>{latestBrief.model}</span>
+            <span>{briefJobs.length}</span>
           </div>
-        </article>
-      ) : latestBriefJob?.status === "failed" ? (
-        <p className="error-text">{latestBriefJob.error ?? text("Research brief failed")}</p>
-      ) : (
-        <EmptyState>{text("No research brief generated yet.")}</EmptyState>
-      )}
+          {latestBrief ? (
+            <article className="research-brief-card">
+              <div className="research-brief-card-header">
+                <div>
+                  <h3>{latestBriefTitle}</h3>
+                  <p className="research-brief-summary">{latestBrief.summary}</p>
+                </div>
+                <span>{formatTimestamp(latestBrief.generatedAt)}</span>
+              </div>
+              <div className="research-brief-content">
+                {latestBriefParagraphs.map((line, index) => (
+                  <p key={`${latestBrief.id}-${index}`}>{line}</p>
+                ))}
+              </div>
+              <details className="research-brief-citations">
+                <summary>{text("Citations")} ({latestBrief.citations.length})</summary>
+                <div className="research-brief-citation-list">
+                  {latestBrief.citations.map((citation) => (
+                    <button
+                      className="research-brief-citation"
+                      disabled={!isCitationOpenable(citation.evidenceType, citation.evidenceId)}
+                      key={citation.id}
+                      type="button"
+                      onClick={() => openCitationEvidence(citation.evidenceType, citation.evidenceId)}
+                    >
+                      <strong>{citation.citationKey}</strong>
+                      {citation.label}
+                    </button>
+                  ))}
+                </div>
+              </details>
+              <div className="research-brief-provenance">
+                <span>{text("Generated")} {formatTimestamp(latestBrief.generatedAt)}</span>
+                <span>{text(formatAiProvider(latestBrief.providerId))}</span>
+                <span>{latestBrief.model}</span>
+              </div>
+            </article>
+          ) : latestBriefJob?.status === "failed" ? (
+            <p className="error-text">{latestBriefJob.error ?? text("Research brief failed")}</p>
+          ) : (
+            <EmptyState>{text("No research brief generated yet.")}</EmptyState>
+          )}
+        </section>
+      </div>
     </section>
   );
   const companySummaryById = new Map(
@@ -484,11 +625,83 @@ export function ResearchScreen({
 
         <div className="research-main-layout" style={researchLayoutStyle}>
           <div className={mode === "watchlist" ? "research-main-stack watchlist" : "research-main-stack company"}>
+            <section className="research-reminders" aria-label={text("Research reminders")}>
+              <div className="research-section-heading research-section-heading-strong research-section-review">
+                <div className="research-section-title">
+                  <h2>{text("Review queue")}</h2>
+                  <p>{text("Items that need a concrete follow-up action.")}</p>
+                </div>
+                <span>{reminders.length}</span>
+                <Button
+                  className="compact-button research-section-action"
+                  disabled={reminderInFlight || (mode === "company" ? !selectedCompany : !selectedWatchlist)}
+                  onClick={openReminderDialog}
+                >
+                  <Plus size={14} />
+                  {text("Add reminder")}
+                </Button>
+              </div>
+              <div className="research-reminder-list">
+                {reminders.slice(0, 6).map((reminder) => (
+                  <article className="research-reminder-row" key={reminder.id}>
+                    <div>
+                      <span>{text(formatReminderKind(reminder.reminderKind))}</span>
+                      <strong>{reminder.title}</strong>
+                      {reminder.dueAt ? <time dateTime={reminder.dueAt}>{formatTimestamp(reminder.dueAt)}</time> : null}
+                      {reminder.status !== "open" ? <em>{text(formatReminderStatus(reminder.status))}</em> : null}
+                    </div>
+                    <div className="research-reminder-actions">
+                      {reminder.status === "open" ? (
+                        <>
+                          <Button
+                            className="icon-button"
+                            disabled={reminderInFlight}
+                            onClick={() => completeReminder(reminder.id)}
+                            title={text("Complete reminder")}
+                          >
+                            <Check size={15} />
+                          </Button>
+                          <Button
+                            className="icon-button"
+                            disabled={reminderInFlight}
+                            onClick={() => snoozeReminder(reminder.id)}
+                            title={text("Snooze reminder")}
+                          >
+                            <Clock3 size={15} />
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          className="icon-button"
+                          disabled={reminderInFlight}
+                          onClick={() => reopenReminder(reminder.id)}
+                          title={text("Reopen reminder")}
+                        >
+                          <RotateCcw size={15} />
+                        </Button>
+                      )}
+                      <Button
+                        className="icon-button"
+                        disabled={reminderInFlight}
+                        onClick={() => deleteReminder(reminder.id)}
+                        title={text("Delete reminder")}
+                      >
+                        <Trash2 size={15} />
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+                {reminders.length === 0 ? <EmptyState>{text("No research reminders.")}</EmptyState> : null}
+              </div>
+            </section>
             {mode === "company" ? (
               <section className="research-questions" aria-label={text("Research questions")}>
                 <div className="research-question-strip">
-                  <div className="research-section-heading">
-                    <h2>{text("Research questions")}</h2>
+                  <div className="research-section-heading research-section-heading-strong research-section-questions">
+                    <div className="research-section-title">
+                      <h2>{text("Research questions")}</h2>
+                      <p>{text("Open questions you are actively tracking.")}</p>
+                    </div>
                     <span>{questions.length}</span>
                   </div>
                   <Button className="compact-button" disabled={!selectedCompany} onClick={openQuestionDialog}>
@@ -624,33 +837,42 @@ export function ResearchScreen({
                 </>
               ) : null}
 
-              <section className="research-timeline" aria-label={text("Evidence timeline")}>
-                {visibleItems.map((item) => (
-                  <EvidenceRow
-                    changed={mode === "watchlist"
-                      ? item.reviewState.changedSinceWatchlistReview
-                      : item.reviewState.changedSinceCompanyReview}
-                    formatTimestamp={formatTimestamp}
-                    item={item}
-                    key={item.id}
-                    onOpen={openEvidence}
-                    onOpenUrl={openEvidenceUrl}
-                    onLink={linkEvidence}
-                    canLink={Boolean(
-                      selectedQuestion &&
-                        !(item.evidenceType === "research_question" && item.sourceId === selectedQuestion.id) &&
-                        !linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`),
-                    )}
-                    text={text}
-                  />
-                ))}
-                {visibleItems.length === 0 ? (
-                  <EmptyState>
-                    {companies.length === 0
-                      ? text("No companies tracked yet.")
-                      : text("No evidence for selected filters.")}
-                  </EmptyState>
-                ) : null}
+              <section className="research-timeline-shell" aria-label={text("Evidence timeline")}>
+                <div className="research-section-heading research-section-heading-strong research-section-evidence">
+                  <div className="research-section-title">
+                    <h2>{text("Evidence")}</h2>
+                    <p>{text("Source items, notes, events, transcripts, and AI analysis for this scope.")}</p>
+                  </div>
+                  <span>{visibleItems.length}</span>
+                </div>
+                <div className="research-timeline">
+                  {visibleItems.map((item) => (
+                    <EvidenceRow
+                      changed={mode === "watchlist"
+                        ? item.reviewState.changedSinceWatchlistReview
+                        : item.reviewState.changedSinceCompanyReview}
+                      formatTimestamp={formatTimestamp}
+                      item={item}
+                      key={item.id}
+                      onOpen={openEvidence}
+                      onOpenUrl={openEvidenceUrl}
+                      onLink={linkEvidence}
+                      canLink={Boolean(
+                        selectedQuestion &&
+                          !(item.evidenceType === "research_question" && item.sourceId === selectedQuestion.id) &&
+                          !linkedEvidenceKeys.has(`${item.evidenceType}:${item.sourceId}`),
+                      )}
+                      text={text}
+                    />
+                  ))}
+                  {visibleItems.length === 0 ? (
+                    <EmptyState>
+                      {companies.length === 0
+                        ? text("No companies tracked yet.")
+                        : text("No evidence for selected filters.")}
+                    </EmptyState>
+                  ) : null}
+                </div>
               </section>
             </div>
           </div>
@@ -671,7 +893,7 @@ export function ResearchScreen({
             title={text("Drag to resize AI research brief panel")}
           />
           <aside className="research-aside">
-            {briefSection}
+            {aiResearchSection}
           </aside>
         </div>
         {questionDialogOpen ? (
@@ -720,6 +942,66 @@ export function ResearchScreen({
                 </Button>
                 <Button className="compact-button" disabled={questionInFlight || !questionTitle.trim()} type="submit">
                   {text("Save question")}
+                </Button>
+              </div>
+            </form>
+          </div>
+        ) : null}
+        {reminderDialogOpen ? (
+          <div className="research-dialog-backdrop" role="presentation">
+            <form
+              aria-label={text("Add research reminder")}
+              className="research-question-dialog"
+              role="dialog"
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitReminderDialog();
+              }}
+            >
+              <div className="research-dialog-header">
+                <h2>{text("Add research reminder")}</h2>
+                <button
+                  aria-label={text("Close")}
+                  className="research-question-delete"
+                  type="button"
+                  onClick={() => setReminderDialogOpen(false)}
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <label>
+                <span>{text("Reminder title")}</span>
+                <input
+                  aria-label={text("Reminder title")}
+                  placeholder={text("Reminder title")}
+                  value={reminderTitle}
+                  onChange={(event) => setReminderTitle(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>{text("Reminder notes")}</span>
+                <textarea
+                  aria-label={text("Reminder notes")}
+                  placeholder={text("Reminder notes")}
+                  value={reminderBody}
+                  onChange={(event) => setReminderBody(event.target.value)}
+                />
+              </label>
+              <label>
+                <span>{text("Due date")}</span>
+                <input
+                  aria-label={text("Due date")}
+                  type="datetime-local"
+                  value={reminderDueAt}
+                  onChange={(event) => setReminderDueAt(event.target.value)}
+                />
+              </label>
+              <div className="research-dialog-actions">
+                <Button className="compact-button" type="button" onClick={() => setReminderDialogOpen(false)}>
+                  {text("Cancel")}
+                </Button>
+                <Button className="compact-button" disabled={reminderInFlight || !reminderTitle.trim()} type="submit">
+                  {text("Save reminder")}
                 </Button>
               </div>
             </form>
@@ -789,11 +1071,37 @@ function EvidenceRow({
 function formatQuestionStatus(status: ResearchQuestionStatus) {
   switch (status) {
     case "open":
-      return "Open";
+      return "Status open";
     case "answered":
       return "Answered";
     case "closed":
       return "Closed";
+  }
+}
+
+function formatReminderKind(kind: ResearchReminder["reminderKind"]) {
+  switch (kind) {
+    case "claim_follow_up":
+      return "Claim follow-up";
+    case "event_review":
+      return "Event review";
+    case "question_review":
+      return "Question review";
+    case "manual_research":
+      return "Manual research";
+    case "digest_review":
+      return "Digest review";
+  }
+}
+
+function formatReminderStatus(status: ResearchReminder["status"]) {
+  switch (status) {
+    case "open":
+      return "Open";
+    case "completed":
+      return "Completed";
+    case "dismissed":
+      return "Dismissed";
   }
 }
 

@@ -374,11 +374,15 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     researchQuestionBody,
     researchQuestionLinks,
     researchBriefJobs,
+    researchDigestJobs,
+    researchReminders,
     researchError,
     researchLoading,
     researchReviewInFlight,
     researchQuestionInFlight,
     researchBriefInFlight,
+    researchDigestInFlight,
+    researchReminderInFlight,
     setResearchMode,
     setSelectedResearchCompanyId,
     setSelectedResearchWatchlistId,
@@ -398,6 +402,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
     startResearchBrief,
+  startResearchDigest,
+  createResearchReminder,
+  completeResearchReminder,
+  snoozeResearchReminder,
+  reopenResearchReminder,
+  deleteResearchReminder,
   } = useResearchController({
     activeSection,
     companies,
@@ -1492,11 +1502,15 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               questionBody={researchQuestionBody}
               questionLinks={researchQuestionLinks}
               briefJobs={researchBriefJobs}
+              digestJobs={researchDigestJobs}
+              reminders={researchReminders}
               error={researchError}
               loading={researchLoading}
               reviewInFlight={researchReviewInFlight}
               questionInFlight={researchQuestionInFlight}
               briefInFlight={researchBriefInFlight}
+              digestInFlight={researchDigestInFlight}
+              reminderInFlight={researchReminderInFlight}
               setMode={setResearchMode}
               setSelectedCompanyId={setSelectedResearchCompanyId}
               setSelectedWatchlistId={setSelectedResearchWatchlistId}
@@ -1531,6 +1545,24 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               }}
               startBrief={() => {
                 void startResearchBrief();
+              }}
+              startDigest={() => {
+                void startResearchDigest();
+              }}
+              createReminder={(title, body, dueAt) => {
+                void createResearchReminder(title, body, dueAt);
+              }}
+              completeReminder={(reminderId) => {
+                void completeResearchReminder(reminderId);
+              }}
+              snoozeReminder={(reminderId) => {
+                void snoozeResearchReminder(reminderId);
+              }}
+              reopenReminder={(reminderId) => {
+                void reopenResearchReminder(reminderId);
+              }}
+              deleteReminder={(reminderId) => {
+                void deleteResearchReminder(reminderId);
               }}
               openEvidence={openResearchEvidence}
               openEvidenceUrl={openExternalUrl}

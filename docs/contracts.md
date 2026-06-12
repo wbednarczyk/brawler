@@ -1148,9 +1148,9 @@ Initial evidence types:
 - `company_event`
 - `ai_analysis`
 - `research_question`
-- future `reminder`
-- future `ai_brief`
-- future `digest`
+- `reminder`
+- `ai_brief`
+- `digest`
 
 Initial trust categories:
 
@@ -1334,6 +1334,81 @@ Rules:
 - Normal UI must show citations and enough provider/model/prompt provenance for source-grounded review without exposing implementation identifiers.
 - Creating a notebook note from a brief remains a separate explicit workflow and is not automatic.
 
+Initial research reminder shape:
+
+```json
+{
+  "id": "research_reminder_company_gpw_cdr_001",
+  "scopeType": "company",
+  "scopeId": "company_gpw_cdr",
+  "companyId": "company_gpw_cdr",
+  "reminderKind": "claim_follow_up",
+  "sourceType": "claim",
+  "sourceId": "note_claim_01",
+  "title": "Review management claim",
+  "body": "Check whether the promised milestone was delivered.",
+  "dueAt": "2026-12-31T00:00:00Z",
+  "status": "open",
+  "snoozedUntil": null,
+  "completedAt": null,
+  "dismissedAt": null,
+  "createdAt": "2026-06-12T08:00:00Z",
+  "updatedAt": "2026-06-12T08:00:00Z"
+}
+```
+
+Initial reminder kinds:
+
+- `claim_follow_up`
+- `event_review`
+- `question_review`
+- `manual_research`
+- `digest_review`
+
+Initial reminder statuses:
+
+- `open`
+- `completed`
+- `dismissed`
+
+Rules:
+
+- Research reminders are research-owned records, not notebook entries and not a generic task system.
+- Reminders should link to canonical research evidence whenever possible.
+- The backend may derive reminders from open claims, scheduled events, and open research questions, then store durable reminder status.
+- Completing a reminder does not mark a company or watchlist reviewed by default.
+- Deleting a reminder must not delete the linked claim, event, question, note, feed item, or digest.
+
+Initial research digest job shape mirrors AI brief jobs but uses digest-specific versions:
+
+```json
+{
+  "id": "research_digest_job_01",
+  "scopeType": "watchlist",
+  "scopeId": "watchlist_main_gpw",
+  "providerId": "provider_gemini",
+  "model": "gemini-2.5-flash",
+  "promptVersion": "m31.research_digest.v1",
+  "evidenceCollectorVersion": "m31.digest_collector.v1",
+  "rendererVersion": "m31.digest_renderer.v1",
+  "status": "queued",
+  "errorCode": null,
+  "error": null,
+  "createdAt": "2026-06-12T08:00:00Z",
+  "startedAt": null,
+  "finishedAt": null,
+  "digest": null
+}
+```
+
+Research digest rules:
+
+- Initial digest scopes are `company` and `watchlist`.
+- Digest generation is explicit and on-demand.
+- Digest input collection is backend-owned and combines open reminders with changed research evidence.
+- Digest output is an immutable research-owned snapshot with citations.
+- Digest output must cite typed evidence and must not include buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.
+
 Initial relation types:
 
 - `originates_from`
@@ -1370,6 +1445,12 @@ Initial research command candidates:
 - `list_evidence_links(input)`
 - `create_evidence_link(input)`
 - `delete_evidence_link(id)`
+- `list_research_reminders(input)`
+- `create_research_reminder(input)`
+- `update_research_reminder(input)`
+- `delete_research_reminder(id)`
+- `start_research_digest(input)`
+- `list_research_digests(input)`
 
 These command names may be refined during implementation, but the ownership boundary should remain stable.
 
@@ -1403,6 +1484,12 @@ Initial Tauri command groups:
 - `list_evidence_links`
 - `create_evidence_link`
 - `delete_evidence_link`
+- `list_research_reminders`
+- `create_research_reminder`
+- `update_research_reminder`
+- `delete_research_reminder`
+- `start_research_digest`
+- `list_research_digests`
 - `start_ai_analysis`
 - `list_ai_analysis`
 - `retry_ai_analysis`

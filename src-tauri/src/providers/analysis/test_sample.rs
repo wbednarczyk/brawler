@@ -1,7 +1,7 @@
 use super::types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
     AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
-    ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchBriefRequest, ResearchBriefSectionOutput, ResearchDigestRequest,
 };
 
 pub const TEST_SAMPLE_ANALYSIS_PROVIDER_ID: &str = "test_sample";
@@ -94,6 +94,60 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
                 ResearchBriefSectionOutput {
                     heading: "Open checks".to_owned(),
                     body: "Verify management claims and upcoming events against the cited source material."
+                        .to_owned(),
+                    citation_keys,
+                },
+            ],
+            language: Some("en".to_owned()),
+            citations,
+        })
+    }
+
+    fn generate_research_digest(
+        &self,
+        request: &ResearchDigestRequest,
+    ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
+        let citations = request
+            .evidence_items
+            .iter()
+            .take(8)
+            .enumerate()
+            .map(|(index, item)| ResearchBriefCitationOutput {
+                citation_key: format!("E{}", index + 1),
+                evidence_type: item.evidence_type.clone(),
+                evidence_id: item.source_id.clone(),
+                label: item.title.clone(),
+                snippet: item.summary.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        if citations.is_empty() {
+            return Err(AnalysisProviderError::ParseError(
+                "research digest requires at least one evidence item".to_owned(),
+            ));
+        }
+
+        let citation_keys = citations
+            .iter()
+            .map(|citation| citation.citation_key.clone())
+            .collect::<Vec<_>>();
+
+        Ok(ResearchBriefProviderOutput {
+            title: format!("Research digest for {}", request.scope_id),
+            summary: format!(
+                "Deterministic digest for changed {} research evidence and open reminders.",
+                request.scope_type
+            ),
+            sections: vec![
+                ResearchBriefSectionOutput {
+                    heading: "Review queue".to_owned(),
+                    body: "Start with changed evidence and open reminders before marking the scope reviewed."
+                        .to_owned(),
+                    citation_keys: citation_keys.clone(),
+                },
+                ResearchBriefSectionOutput {
+                    heading: "Follow-ups".to_owned(),
+                    body: "Resolve stale claims, dated events, and open research questions against the cited evidence."
                         .to_owned(),
                     citation_keys,
                 },

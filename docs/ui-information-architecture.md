@@ -35,12 +35,14 @@ Shell behavior:
 - The top toolbar stays visible while the current workspace scrolls.
 - The app shell owns the viewport height; screens should use internal panel/list scroll areas instead of relying on page/body scrolling.
 - The browser page should not expose a global application scrollbar. The left navigation, top toolbar, and each screen's primary header or control bar should remain visible while long lists, detail panes, or subpanels scroll internally.
+- Desktop layouts must remain usable outside maximized windows, including a side-region window on an ultrawide monitor. Multi-column screens should stack or simplify around this size before text, buttons, filters, or panels become cramped.
 - The Inbox navigation item shows an unread count badge when unread feed items exist.
 - The top toolbar source health indicator summarizes locally registered sources and opens the Sources screen with the most relevant source expanded. Manual source refresh remains a separate disabled control until ingestion jobs exist.
 - Detail pane should be dismissible.
 - Empty states should offer direct actions and avoid marketing copy.
 - Common mutations should provide immediate visual confirmation without blocking the workflow.
 - Intuitive, responsive UX is a core product requirement for every screen.
+- Distinct spaces inside a view must be visually distinguishable at a glance. Prefer reusable section headers with a semantic color accent, compact title, and short supporting label over same-looking boxes stacked together. Color should clarify structure, not decorate randomly.
 - Normal user-facing UI copy should use product terms and avoid implementation details such as SQLite, Tauri, database engine, internal adapter, module, collector, schema, or command boundary. Technical terms are reserved for Developer Diagnostics and owner/developer docs.
 - Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with explicit known-exchange colors plus deterministic fallback palette colors for future exchanges. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
 
@@ -390,6 +392,7 @@ Rules:
 - M25 implements Research as a real top-level screen, scoped to a selected tracked company.
 - M25 Research shows a screen header with selected company context, last-reviewed state, total evidence count, changed-since-review count, evidence type filters, changed-only filter, and a `Mark reviewed` action.
 - M25 Research evidence rows are compact timeline rows with product-language type/trust labels, occurred timestamp, title, summary when available, changed-since-review state, and owning-domain/source actions where practical.
+- M31 Research shows open reminders and generated digest snapshots as real company/watchlist review tools. The screen receives reminder and digest read models from backend commands; it must not assemble digest inputs in React.
 - M26 Research adds a Company/Watchlist mode switch in the same screen, not a separate screen.
 - Watchlist mode uses a left-side member-company review queue and a right-side evidence timeline for the selected member company.
 - Watchlist review defaults to updating the watchlist checkpoint only. The optional cascade to member-company checkpoints must be an explicit user action and backend command input.

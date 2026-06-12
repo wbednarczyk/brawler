@@ -212,3 +212,75 @@ export type ResearchBriefJob = {
   finishedAt: string | null;
   brief: ResearchBrief | null;
 };
+
+export type ResearchReminderKind =
+  | "claim_follow_up"
+  | "event_review"
+  | "question_review"
+  | "manual_research"
+  | "digest_review";
+
+export type ResearchReminderStatus = "open" | "completed" | "dismissed";
+
+export type ResearchReminder = {
+  id: string;
+  scopeType: ResearchReviewScopeType;
+  scopeId: string;
+  companyId: string | null;
+  reminderKind: ResearchReminderKind;
+  sourceType: ResearchEvidenceType | null;
+  sourceId: string | null;
+  title: string;
+  body: string;
+  dueAt: string | null;
+  status: ResearchReminderStatus;
+  snoozedUntil: string | null;
+  completedAt: string | null;
+  dismissedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ResearchReminderListInput = {
+  scopeType: ResearchReviewScopeType;
+  scopeId: string;
+  status?: ResearchReminderStatus | null;
+};
+
+export type NewResearchReminder = {
+  scopeType: ResearchReviewScopeType;
+  scopeId: string;
+  companyId?: string | null;
+  reminderKind: ResearchReminderKind;
+  sourceType?: ResearchEvidenceType | null;
+  sourceId?: string | null;
+  title: string;
+  body?: string | null;
+  dueAt?: string | null;
+};
+
+export type ResearchReminderUpdate = {
+  id: string;
+  status?: ResearchReminderStatus | null;
+  dueAt?: string | null;
+  snoozedUntil?: string | null;
+};
+
+export type ResearchDigestScopeInput = ResearchBriefScopeInput;
+export type ResearchDigestJobStatus = ResearchBriefJobStatus;
+export type ResearchDigestCitation = {
+  id: string;
+  digestId: string;
+  citationKey: string;
+  evidenceType: ResearchEvidenceType;
+  evidenceId: string;
+  label: string;
+  snippet: string | null;
+  createdAt: string;
+};
+export type ResearchDigest = Omit<ResearchBrief, "citations"> & {
+  citations: ResearchDigestCitation[];
+};
+export type ResearchDigestJob = Omit<ResearchBriefJob, "brief"> & {
+  digest: ResearchDigest | null;
+};

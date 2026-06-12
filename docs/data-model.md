@@ -353,9 +353,11 @@ Likely durable tables:
 - `research_review_checkpoints`
 - `evidence_links`
 - `research_questions`
-- future `ai_research_briefs`
-- future `ai_research_brief_citations`
-- future `research_reminders`
+- `ai_research_briefs`
+- `ai_research_brief_citations`
+- `research_reminders`
+- `ai_research_digests`
+- `ai_research_digest_citations`
 
 Recommended `research_review_checkpoints` fields:
 
@@ -468,6 +470,41 @@ Rules:
 - Initial `scope_type` values are `company` and `watchlist`.
 - Brief generation is explicit and asynchronous.
 - Brief jobs use the provider-neutral AI settings and credential boundary.
+
+Initial `research_reminders` fields:
+
+- `id`
+- `scope_type`
+- `scope_id`
+- `company_id`
+- `reminder_kind`
+- `source_type`
+- `source_id`
+- `title`
+- `body`
+- `due_at`
+- `status`
+- `snoozed_until`
+- `completed_at`
+- `dismissed_at`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Reminder records are research-owned review pressure, not generic tasks.
+- Reminder `source_type` and `source_id` point to the canonical object when a reminder comes from a claim, event, question, digest, or other evidence.
+- Derived reminders may be synchronized from claims, events, and open research questions.
+- Completion and dismissal are stored on the reminder record and do not modify the linked source object by default.
+
+Initial `ai_research_digest_jobs`, `ai_research_digests`, and `ai_research_digest_citations` mirror the AI brief tables with digest-specific names and version fields.
+
+Rules:
+
+- Research digests are immutable generated snapshots.
+- Digest jobs use provider-neutral AI settings and credential boundaries.
+- Digest collection combines open reminders and changed research evidence.
+- Digest citations point to typed evidence references and do not store full source bodies.
 - Briefs are immutable snapshots. Regeneration creates a new successful brief instead of overwriting the previous one.
 - A later workflow may let the user create a notebook entry from a brief or selected excerpt, but no note is created automatically.
 - Generated briefs must cite source evidence and keep buy/sell/hold recommendation guardrails.

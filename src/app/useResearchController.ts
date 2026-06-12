@@ -4,10 +4,13 @@ import type { Company, Watchlist, WatchlistMembership } from "../api/types";
 import type {
   EvidenceLink,
   ResearchBriefJob,
+  ResearchDigestJob,
   ResearchEvidenceItem,
   ResearchEvidenceType,
+  ResearchReminderUpdate,
   ResearchQuestion,
   ResearchQuestionStatus,
+  ResearchReminder,
   ResearchTimelineResult,
 } from "../api/researchTypes";
 import type { Section } from "./navigation";
@@ -45,11 +48,15 @@ export function useResearchController({
   const [researchQuestionBody, setResearchQuestionBody] = useState("");
   const [researchQuestionLinks, setResearchQuestionLinks] = useState<EvidenceLink[]>([]);
   const [researchBriefJobs, setResearchBriefJobs] = useState<ResearchBriefJob[]>([]);
+  const [researchDigestJobs, setResearchDigestJobs] = useState<ResearchDigestJob[]>([]);
+  const [researchReminders, setResearchReminders] = useState<ResearchReminder[]>([]);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [researchLoading, setResearchLoading] = useState(false);
   const [researchReviewInFlight, setResearchReviewInFlight] = useState(false);
   const [researchQuestionInFlight, setResearchQuestionInFlight] = useState(false);
   const [researchBriefInFlight, setResearchBriefInFlight] = useState(false);
+  const [researchDigestInFlight, setResearchDigestInFlight] = useState(false);
+  const [researchReminderInFlight, setResearchReminderInFlight] = useState(false);
 
   useEffect(() => {
     textRef.current = text;
@@ -231,6 +238,43 @@ export function useResearchController({
     }
   }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
 
+  const refreshResearchReminders = useCallback(async () => {
+    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
+    if (!scopeId) {
+      setResearchReminders([]);
+      return;
+    }
+
+    try {
+      const reminders = await researchApi.listResearchReminders({
+        scopeType: researchMode,
+        scopeId,
+        status: null,
+      });
+      setResearchReminders(reminders);
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research reminders failed"));
+    }
+  }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
+
+  const refreshResearchDigests = useCallback(async () => {
+    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
+    if (!scopeId) {
+      setResearchDigestJobs([]);
+      return;
+    }
+
+    try {
+      const jobs = await researchApi.listResearchDigests({
+        scopeType: researchMode,
+        scopeId,
+      });
+      setResearchDigestJobs(jobs);
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research digest failed"));
+    }
+  }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
+
   useEffect(() => {
     if (activeSection !== "Research") {
       return;
@@ -245,22 +289,28 @@ export function useResearchController({
     }
 
     void refreshResearchBriefs();
-  }, [activeSection, refreshResearchBriefs]);
+    void refreshResearchReminders();
+    void refreshResearchDigests();
+  }, [activeSection, refreshResearchBriefs, refreshResearchDigests, refreshResearchReminders]);
 
   useEffect(() => {
     if (activeSection !== "Research") {
       return;
     }
-    if (!researchBriefJobs.some((job) => job.status === "queued" || job.status === "running")) {
+    if (
+      !researchBriefJobs.some((job) => job.status === "queued" || job.status === "running") &&
+      !researchDigestJobs.some((job) => job.status === "queued" || job.status === "running")
+    ) {
       return;
     }
 
     const intervalId = window.setInterval(() => {
       void refreshResearchBriefs();
+      void refreshResearchDigests();
     }, 1500);
 
     return () => window.clearInterval(intervalId);
-  }, [activeSection, refreshResearchBriefs, researchBriefJobs]);
+  }, [activeSection, refreshResearchBriefs, refreshResearchDigests, researchBriefJobs, researchDigestJobs]);
 
   function toggleResearchEvidenceType(evidenceType: ResearchEvidenceType) {
     setResearchEvidenceTypes((current) =>
@@ -299,6 +349,7 @@ export function useResearchController({
         cascadeToCompanies: researchMode === "watchlist" ? researchCascadeToCompanies : false,
       });
       await refreshResearchTimeline();
+      await refreshResearchReminders();
     } catch (error) {
       setResearchError(error instanceof Error ? error.message : textRef.current("Research review update failed"));
     } finally {
@@ -455,6 +506,135 @@ export function useResearchController({
     }
   }
 
+  async function startResearchDigest() {
+    const scope = activeResearchScope();
+    const scopeId = scope?.scopeId;
+    if (!scopeId || researchDigestInFlight) {
+      return;
+    }
+
+    setResearchDigestInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.startResearchDigest({
+        scopeType: scope.scopeType,
+        scopeId,
+      });
+      await refreshResearchDigests();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research digest failed"));
+    } finally {
+      setResearchDigestInFlight(false);
+    }
+  }
+
+  function activeResearchScope() {
+    const scopeId = researchMode === "company" ? selectedResearchCompanyId : selectedResearchWatchlistId;
+    if (!scopeId) {
+      return null;
+    }
+    return {
+      scopeType: researchMode,
+      scopeId,
+    };
+  }
+
+  async function completeResearchReminder(reminderId: string) {
+    await updateResearchReminder({ id: reminderId, status: "completed" });
+  }
+
+  async function snoozeResearchReminder(reminderId: string) {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    await updateResearchReminder({
+      id: reminderId,
+      status: "open",
+      snoozedUntil: tomorrow.toISOString(),
+    });
+  }
+
+  async function reopenResearchReminder(reminderId: string) {
+    await updateResearchReminder({
+      id: reminderId,
+      status: "open",
+      snoozedUntil: null,
+    });
+  }
+
+  async function updateResearchReminder(input: ResearchReminderUpdate) {
+    if (researchReminderInFlight) {
+      return;
+    }
+
+    setResearchReminderInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.updateResearchReminder(input);
+      await refreshResearchReminders();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research reminder update failed"));
+    } finally {
+      setResearchReminderInFlight(false);
+    }
+  }
+
+  async function deleteResearchReminder(reminderId: string) {
+    if (researchReminderInFlight) {
+      return;
+    }
+
+    const confirmed = window.confirm(textRef.current("Delete research reminder?"));
+    if (!confirmed) {
+      return;
+    }
+
+    setResearchReminderInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.deleteResearchReminder(reminderId);
+      await refreshResearchReminders();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research reminder delete failed"));
+    } finally {
+      setResearchReminderInFlight(false);
+    }
+  }
+
+  async function createResearchReminder(title: string, body: string, dueAt: string | null) {
+    if (researchReminderInFlight || !title.trim()) {
+      return;
+    }
+    const scope = activeResearchScope();
+    if (!scope) {
+      return;
+    }
+
+    setResearchReminderInFlight(true);
+    setResearchError(null);
+
+    try {
+      await researchApi.createResearchReminder({
+        scopeType: scope.scopeType,
+        scopeId: scope.scopeId,
+        companyId: scope.scopeType === "company" ? scope.scopeId : selectedResearchWatchlistCompanyId,
+        reminderKind: "manual_research",
+        sourceType: null,
+        sourceId: null,
+        title: title.trim(),
+        body: body.trim() || null,
+        dueAt: dueAt?.trim() ? new Date(dueAt).toISOString() : null,
+      });
+      await refreshResearchReminders();
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : textRef.current("Research reminder create failed"));
+    } finally {
+      setResearchReminderInFlight(false);
+    }
+  }
+
   return {
     researchMode,
     selectedResearchCompanyId,
@@ -470,11 +650,15 @@ export function useResearchController({
     researchQuestionBody,
     researchQuestionLinks,
     researchBriefJobs,
+    researchDigestJobs,
+    researchReminders,
     researchError,
     researchLoading,
     researchReviewInFlight,
     researchQuestionInFlight,
     researchBriefInFlight,
+    researchDigestInFlight,
+    researchReminderInFlight,
     setResearchMode: setResearchModeAndReset,
     setSelectedResearchCompanyId,
     setSelectedResearchWatchlistId,
@@ -489,6 +673,8 @@ export function useResearchController({
     refreshResearchTimeline,
     refreshResearchQuestions,
     refreshResearchBriefs,
+    refreshResearchReminders,
+    refreshResearchDigests,
     markResearchReviewed,
     createResearchQuestion,
     updateResearchQuestionStatus,
@@ -496,6 +682,12 @@ export function useResearchController({
     linkEvidenceToSelectedQuestion,
     unlinkEvidenceFromSelectedQuestion,
     startResearchBrief,
+    startResearchDigest,
+    createResearchReminder,
+    completeResearchReminder,
+    snoozeResearchReminder,
+    reopenResearchReminder,
+    deleteResearchReminder,
   };
 }
 

@@ -12,5 +12,5 @@ pub use test_sample::{
 pub use types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
     AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
-    ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchBriefRequest, ResearchBriefSectionOutput, ResearchDigestRequest,
 };

@@ -5,11 +5,17 @@ import type {
   NewResearchQuestion,
   NewEvidenceLink,
   ResearchEvidenceInput,
+  NewResearchReminder,
   ResearchBriefJob,
   ResearchBriefScopeInput,
+  ResearchDigestJob,
+  ResearchDigestScopeInput,
   ResearchQuestion,
   ResearchQuestionListInput,
   ResearchQuestionUpdate,
+  ResearchReminder,
+  ResearchReminderListInput,
+  ResearchReminderUpdate,
   ResearchTimelineResult,
   ResearchReviewCheckpoint,
   ResearchReviewCheckpointInput,
@@ -69,4 +75,28 @@ export function startResearchBrief(input: ResearchBriefScopeInput) {
 
 export function listResearchBriefs(input: ResearchBriefScopeInput) {
   return callCommand<ResearchBriefJob[]>("list_research_briefs", { input });
+}
+
+export function listResearchReminders(input: ResearchReminderListInput) {
+  return callCommand<ResearchReminder[]>("list_research_reminders", { input });
+}
+
+export function createResearchReminder(input: NewResearchReminder) {
+  return callCommand<ResearchReminder>("create_research_reminder", { input });
+}
+
+export function updateResearchReminder(input: ResearchReminderUpdate) {
+  return callCommand<ResearchReminder>("update_research_reminder", { input });
+}
+
+export function deleteResearchReminder(id: string) {
+  return callCommand<void>("delete_research_reminder", { id });
+}
+
+export function startResearchDigest(input: ResearchDigestScopeInput) {
+  return callCommand<ResearchDigestJob>("start_research_digest", { input });
+}
+
+export function listResearchDigests(input: ResearchDigestScopeInput) {
+  return callCommand<ResearchDigestJob[]>("list_research_digests", { input });
 }

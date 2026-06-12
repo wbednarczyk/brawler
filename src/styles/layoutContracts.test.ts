@@ -14,6 +14,7 @@ const eventsCss = readStyle("screens/events.css");
 const inboxCss = readStyle("screens/inbox.css");
 const layoutCss = readStyle("layout.css");
 const notebooksCss = readStyle("screens/notebooks.css");
+const researchCss = readStyle("screens/research.css");
 const responsiveCss = readStyle("responsive.css");
 const shellCss = readStyle("shell.css");
 const sourcesCss = readStyle("screens/sources.css");
@@ -30,6 +31,15 @@ function ruleFor(css: string, selector: string) {
     .map((match) => match.groups?.body ?? "");
 
   return rules.join("\n");
+}
+
+function mediaBlock(css: string, query: string) {
+  const start = css.indexOf(`@media ${query}`);
+  if (start === -1) {
+    return "";
+  }
+  const nextMedia = css.indexOf("@media ", start + 1);
+  return nextMedia === -1 ? css.slice(start) : css.slice(start, nextMedia);
 }
 
 describe("layout scroll contracts", () => {
@@ -170,5 +180,18 @@ describe("layout scroll contracts", () => {
     expect(selectedSourceRule).toContain("border-color: color-mix(in srgb, var(--primary) 76%, var(--border))");
     expect(selectedSourceRule).toContain("linear-gradient");
     expect(selectedSourceRule).toContain("0 0 0 1px color-mix(in srgb, var(--primary) 24%, transparent)");
+  });
+
+  it("keeps Research usable in side-zone width windows", () => {
+    const sideZoneRule = mediaBlock(researchCss, "(max-width: 1380px)");
+    const narrowRule = mediaBlock(researchCss, "(max-width: 1040px)");
+
+    expect(sideZoneRule).toContain(
+      "grid-template-columns: minmax(0, 1fr) 8px minmax(320px, 0.9fr)",
+    );
+    expect(sideZoneRule).not.toContain(".research-main-layout > .research-resizer");
+    expect(narrowRule).toContain("grid-template-columns: minmax(0, 1fr)");
+    expect(narrowRule).toContain(".research-main-layout > .research-resizer");
+    expect(narrowRule).toContain("display: none");
   });
 });

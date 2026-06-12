@@ -47,6 +47,8 @@ mod notebooks;
 mod registry;
 mod research;
 mod research_briefs;
+mod research_digests;
+mod research_reminders;
 mod settings;
 mod sources;
 mod transcripts;
@@ -70,6 +72,15 @@ pub use research_briefs::{
     ResearchBriefCitation, ResearchBriefEvidenceContext, ResearchBriefJob, ResearchBriefScopeInput,
     RESEARCH_BRIEF_COLLECTOR_VERSION, RESEARCH_BRIEF_PROMPT_VERSION,
     RESEARCH_BRIEF_RENDERER_VERSION,
+};
+pub use research_digests::{
+    completed_digest_from_provider_output, CompletedResearchDigest, NewResearchDigestJob,
+    ResearchDigest, ResearchDigestCitation, ResearchDigestEvidenceContext, ResearchDigestJob,
+    ResearchDigestScopeInput, RESEARCH_DIGEST_COLLECTOR_VERSION, RESEARCH_DIGEST_PROMPT_VERSION,
+    RESEARCH_DIGEST_RENDERER_VERSION,
+};
+pub use research_reminders::{
+    NewResearchReminder, ResearchReminder, ResearchReminderListInput, ResearchReminderUpdate,
 };
 pub use settings::{
     AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
@@ -390,6 +401,39 @@ impl AppState {
         research::delete_evidence_link(&connection, id)
     }
 
+    pub fn list_research_reminders(
+        &self,
+        input: ResearchReminderListInput,
+    ) -> StorageResult<Vec<ResearchReminder>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_reminders::list_research_reminders(&connection, input)
+    }
+
+    pub fn create_research_reminder(
+        &self,
+        input: NewResearchReminder,
+    ) -> StorageResult<ResearchReminder> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_reminders::create_research_reminder(&connection, input)
+    }
+
+    pub fn update_research_reminder(
+        &self,
+        input: ResearchReminderUpdate,
+    ) -> StorageResult<ResearchReminder> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_reminders::update_research_reminder(&connection, input)
+    }
+
+    pub fn delete_research_reminder(&self, id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_reminders::delete_research_reminder(&connection, id)
+    }
+
     pub fn create_research_brief_job(
         &self,
         input: NewResearchBriefJob,
@@ -447,6 +491,68 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         research_briefs::mark_research_brief_job_failed(&connection, job_id, error_code, error)
+    }
+
+    pub fn create_research_digest_job(
+        &self,
+        input: NewResearchDigestJob,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::create_research_digest_job(&connection, input)
+    }
+
+    pub fn list_research_digest_jobs(
+        &self,
+        input: ResearchDigestScopeInput,
+    ) -> StorageResult<Vec<ResearchDigestJob>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::list_research_digest_jobs(&connection, input)
+    }
+
+    pub fn get_research_digest_job(&self, job_id: &str) -> StorageResult<ResearchDigestJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::get_research_digest_job(&connection, job_id)
+    }
+
+    pub fn collect_research_digest_evidence(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ResearchDigestEvidenceContext> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::collect_research_digest_evidence(&connection, job_id)
+    }
+
+    pub fn mark_research_digest_job_running(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::mark_research_digest_job_running(&connection, job_id)
+    }
+
+    pub fn complete_research_digest_job(
+        &self,
+        input: CompletedResearchDigest,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::complete_research_digest_job(&connection, input)
+    }
+
+    pub fn mark_research_digest_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        research_digests::mark_research_digest_job_failed(&connection, job_id, error_code, error)
     }
 
     pub fn ingest_gpw_report_listings(

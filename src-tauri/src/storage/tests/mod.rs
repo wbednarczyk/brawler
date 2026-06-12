@@ -16,6 +16,7 @@ mod licensing;
 mod notebooks;
 mod research;
 mod research_briefs;
+mod research_reminders;
 mod schema;
 mod settings;
 mod source_registry;

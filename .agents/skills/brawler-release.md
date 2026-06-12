@@ -24,6 +24,7 @@ The project owner grants standing permission for agents to run these commands un
 - `git commit ...` for the single release commit
 - `git tag ...` for the matching release tag
 - `git push ...` for syncing the release commit and tag to the existing `origin` and `rad` remotes
+- any `rad issue ...` command for release-scoped Radicle/Radboard task and epic state updates
 - tag replacement commands, such as deleting/recreating a local tag or pushing an updated tag, only when the user explicitly asks to overwrite or repair an existing release tag
 
 This permission is narrow. It applies only after the user has asked to close, wrap up, or release a milestone/epic/patch and only for release-scoped work. It does not authorize feature commits, unrelated file staging, branch manipulation, merges, rebases, history rewrites, force pushes unrelated to an explicitly requested release tag repair, repository setting changes, publication/seeding policy changes, or new remotes.

@@ -45,6 +45,9 @@ pub struct ImportExportSummary {
     pub evidence_links: usize,
     pub ai_research_briefs: usize,
     pub ai_research_brief_citations: usize,
+    pub research_reminders: usize,
+    pub ai_research_digests: usize,
+    pub ai_research_digest_citations: usize,
     pub settings: usize,
 }
 
@@ -75,6 +78,12 @@ pub struct ImportApplySummary {
     pub ai_research_briefs_skipped: usize,
     pub ai_research_brief_citations_created: usize,
     pub ai_research_brief_citations_skipped: usize,
+    pub research_reminders_created: usize,
+    pub research_reminders_skipped: usize,
+    pub ai_research_digests_created: usize,
+    pub ai_research_digests_skipped: usize,
+    pub ai_research_digest_citations_created: usize,
+    pub ai_research_digest_citations_skipped: usize,
     pub settings_updated: usize,
 }
 
@@ -104,6 +113,12 @@ struct ResearchExportDocument {
     ai_research_briefs: Vec<ExportAiResearchBrief>,
     #[serde(default)]
     ai_research_brief_citations: Vec<ExportAiResearchBriefCitation>,
+    #[serde(default)]
+    research_reminders: Vec<ExportResearchReminder>,
+    #[serde(default)]
+    ai_research_digests: Vec<ExportAiResearchDigest>,
+    #[serde(default)]
+    ai_research_digest_citations: Vec<ExportAiResearchDigestCitation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -223,6 +238,62 @@ struct ExportAiResearchBriefCitation {
     created_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportResearchReminder {
+    id: String,
+    scope_type: String,
+    scope_id: String,
+    scope_company_qualified_ticker: Option<String>,
+    company_qualified_ticker: Option<String>,
+    reminder_kind: String,
+    source_type: Option<String>,
+    source_id: Option<String>,
+    title: String,
+    body: String,
+    due_at: Option<String>,
+    status: String,
+    snoozed_until: Option<String>,
+    completed_at: Option<String>,
+    dismissed_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportAiResearchDigest {
+    id: String,
+    job_id: String,
+    scope_type: String,
+    scope_id: String,
+    scope_company_qualified_ticker: Option<String>,
+    provider_id: String,
+    model: String,
+    prompt_version: String,
+    evidence_collector_version: String,
+    renderer_version: String,
+    title: String,
+    summary: String,
+    content_markdown: String,
+    language: Option<String>,
+    generated_at: String,
+    created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportAiResearchDigestCitation {
+    id: String,
+    digest_id: String,
+    citation_key: String,
+    evidence_type: String,
+    evidence_id: String,
+    label: String,
+    snippet: Option<String>,
+    created_at: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SettingsExportDocument {
@@ -261,6 +332,9 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let evidence_links = export_evidence_links(connection)?;
     let ai_research_briefs = export_ai_research_briefs(connection)?;
     let ai_research_brief_citations = export_ai_research_brief_citations(connection)?;
+    let research_reminders = export_research_reminders(connection)?;
+    let ai_research_digests = export_ai_research_digests(connection)?;
+    let ai_research_digest_citations = export_ai_research_digest_citations(connection)?;
     let exported_at = now_rfc3339()?;
 
     let document = ResearchExportDocument {
@@ -274,6 +348,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "research_questions".to_owned(),
             "evidence_links".to_owned(),
             "ai_research_briefs".to_owned(),
+            "research_reminders".to_owned(),
+            "ai_research_digests".to_owned(),
         ],
         companies,
         watchlists,
@@ -283,6 +359,9 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         evidence_links,
         ai_research_briefs,
         ai_research_brief_citations,
+        research_reminders,
+        ai_research_digests,
+        ai_research_digest_citations,
     };
     let summary = ImportExportSummary {
         companies: document.companies.len(),
@@ -293,6 +372,9 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         evidence_links: document.evidence_links.len(),
         ai_research_briefs: document.ai_research_briefs.len(),
         ai_research_brief_citations: document.ai_research_brief_citations.len(),
+        research_reminders: document.research_reminders.len(),
+        ai_research_digests: document.ai_research_digests.len(),
+        ai_research_digest_citations: document.ai_research_digest_citations.len(),
         settings: 0,
     };
 
@@ -733,6 +815,192 @@ fn plan_research_import(
         summary.ai_research_brief_citations_created += 1;
     }
 
+    let existing_reminder_ids = existing_ids(connection, "research_reminders").unwrap_or_default();
+    let imported_reminder_ids = document
+        .research_reminders
+        .iter()
+        .map(|reminder| reminder.id.clone())
+        .collect::<HashSet<_>>();
+    for reminder in &document.research_reminders {
+        if existing_reminder_ids.contains(&reminder.id) {
+            summary.research_reminders_skipped += 1;
+            warnings.push(format!(
+                "Research reminder {} already exists and will be skipped",
+                reminder.id
+            ));
+            continue;
+        }
+        if reminder.id.trim().is_empty() || reminder.title.trim().is_empty() {
+            errors.push("Research reminder id and title are required".to_owned());
+            continue;
+        }
+        if ![
+            "claim_follow_up",
+            "event_review",
+            "question_review",
+            "manual_research",
+            "digest_review",
+        ]
+        .contains(&reminder.reminder_kind.as_str())
+        {
+            errors.push(format!(
+                "Research reminder {} has unsupported kind {}",
+                reminder.id, reminder.reminder_kind
+            ));
+            continue;
+        }
+        if !["open", "completed", "dismissed"].contains(&reminder.status.as_str()) {
+            errors.push(format!(
+                "Research reminder {} has unsupported status {}",
+                reminder.id, reminder.status
+            ));
+            continue;
+        }
+        if reminder.scope_type == "company" {
+            let Some(company_ticker) = reminder.scope_company_qualified_ticker.as_deref() else {
+                errors.push(format!(
+                    "Research reminder {} is missing company scope ticker",
+                    reminder.id
+                ));
+                continue;
+            };
+            let company_ticker = company_ticker.trim().to_uppercase();
+            if !imported_company_tickers.contains(&company_ticker)
+                && !existing_companies.contains_key(&company_ticker)
+            {
+                errors.push(format!(
+                    "Research reminder {} references missing company {}",
+                    reminder.id, company_ticker
+                ));
+                continue;
+            }
+        } else if reminder.scope_type != "watchlist" {
+            errors.push(format!(
+                "Research reminder {} has unsupported scope {}",
+                reminder.id, reminder.scope_type
+            ));
+            continue;
+        } else if !imported_watchlist_ids.contains(&reminder.scope_id)
+            && !existing_watchlist_ids.contains(&reminder.scope_id)
+        {
+            errors.push(format!(
+                "Research reminder {} references missing watchlist {}",
+                reminder.id, reminder.scope_id
+            ));
+            continue;
+        }
+        if let Some(company_ticker) = reminder.company_qualified_ticker.as_deref() {
+            let company_ticker = company_ticker.trim().to_uppercase();
+            if !imported_company_tickers.contains(&company_ticker)
+                && !existing_companies.contains_key(&company_ticker)
+            {
+                errors.push(format!(
+                    "Research reminder {} references missing company {}",
+                    reminder.id, company_ticker
+                ));
+                continue;
+            }
+        }
+        summary.research_reminders_created += 1;
+    }
+
+    let existing_digest_ids = existing_ids(connection, "ai_research_digests").unwrap_or_default();
+    let imported_digest_ids = document
+        .ai_research_digests
+        .iter()
+        .map(|digest| digest.id.clone())
+        .collect::<HashSet<_>>();
+    for digest in &document.ai_research_digests {
+        if existing_digest_ids.contains(&digest.id) {
+            summary.ai_research_digests_skipped += 1;
+            warnings.push(format!(
+                "Research digest {} already exists and will be skipped",
+                digest.id
+            ));
+            continue;
+        }
+        if digest.scope_type == "company" {
+            let Some(company_ticker) = digest.scope_company_qualified_ticker.as_deref() else {
+                errors.push(format!(
+                    "Research digest {} is missing company scope ticker",
+                    digest.id
+                ));
+                continue;
+            };
+            let company_ticker = company_ticker.trim().to_uppercase();
+            if !imported_company_tickers.contains(&company_ticker)
+                && !existing_companies.contains_key(&company_ticker)
+            {
+                errors.push(format!(
+                    "Research digest {} references missing company {}",
+                    digest.id, company_ticker
+                ));
+                continue;
+            }
+        } else if digest.scope_type != "watchlist" {
+            errors.push(format!(
+                "Research digest {} has unsupported scope {}",
+                digest.id, digest.scope_type
+            ));
+            continue;
+        } else if !imported_watchlist_ids.contains(&digest.scope_id)
+            && !existing_watchlist_ids.contains(&digest.scope_id)
+        {
+            errors.push(format!(
+                "Research digest {} references missing watchlist {}",
+                digest.id, digest.scope_id
+            ));
+            continue;
+        }
+        if digest.title.trim().is_empty()
+            || digest.summary.trim().is_empty()
+            || digest.content_markdown.trim().is_empty()
+        {
+            errors.push(format!("Research digest {} is missing content", digest.id));
+            continue;
+        }
+        summary.ai_research_digests_created += 1;
+    }
+
+    let existing_digest_citation_ids =
+        existing_ids(connection, "ai_research_digest_citations").unwrap_or_default();
+    for citation in &document.ai_research_digest_citations {
+        if existing_digest_citation_ids.contains(&citation.id) {
+            summary.ai_research_digest_citations_skipped += 1;
+            warnings.push(format!(
+                "Research digest citation {} already exists and will be skipped",
+                citation.id
+            ));
+            continue;
+        }
+        if !imported_digest_ids.contains(&citation.digest_id)
+            && !existing_digest_ids.contains(&citation.digest_id)
+        {
+            summary.ai_research_digest_citations_skipped += 1;
+            warnings.push(format!(
+                "Research digest citation {} references unavailable digest and will be skipped",
+                citation.id
+            ));
+            continue;
+        }
+        if !imported_or_existing_evidence_reference_with_reminders(
+            connection,
+            &citation.evidence_type,
+            &citation.evidence_id,
+            &imported_note_ids,
+            &imported_question_ids,
+            &imported_reminder_ids,
+        ) {
+            summary.ai_research_digest_citations_skipped += 1;
+            warnings.push(format!(
+                "Research digest citation {} references unavailable evidence and will be skipped",
+                citation.id
+            ));
+            continue;
+        }
+        summary.ai_research_digest_citations_created += 1;
+    }
+
     ImportPreview {
         valid: errors.is_empty(),
         summary,
@@ -828,6 +1096,12 @@ fn apply_watchlists_notebooks_questions(
     summary.ai_research_briefs_skipped = 0;
     summary.ai_research_brief_citations_created = 0;
     summary.ai_research_brief_citations_skipped = 0;
+    summary.research_reminders_created = 0;
+    summary.research_reminders_skipped = 0;
+    summary.ai_research_digests_created = 0;
+    summary.ai_research_digests_skipped = 0;
+    summary.ai_research_digest_citations_created = 0;
+    summary.ai_research_digest_citations_skipped = 0;
     let existing_watchlist_ids_by_name = existing_watchlist_ids_by_name(connection)?;
     let mut watchlist_id_map = HashMap::<String, String>::new();
 
@@ -1224,6 +1498,239 @@ fn apply_watchlists_notebooks_questions(
         }
     }
 
+    for reminder in &document.research_reminders {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM research_reminders WHERE id = ?1)",
+            [&reminder.id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            summary.research_reminders_skipped += 1;
+            continue;
+        }
+
+        let scope_id = if reminder.scope_type == "company" {
+            let company_ticker = reminder
+                .scope_company_qualified_ticker
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_uppercase();
+            company_id_by_ticker
+                .get(&company_ticker)
+                .ok_or_else(|| StorageError::InvalidSettingValue {
+                    key: "import_export",
+                    value: format!("missing reminder company scope {company_ticker}"),
+                })?
+                .to_owned()
+        } else if reminder.scope_type == "watchlist" {
+            watchlist_id_map
+                .get(&reminder.scope_id)
+                .map(String::as_str)
+                .unwrap_or(reminder.scope_id.trim())
+                .to_owned()
+        } else {
+            summary.research_reminders_skipped += 1;
+            continue;
+        };
+        let company_id = match reminder.company_qualified_ticker.as_deref() {
+            Some(ticker) if !ticker.trim().is_empty() => company_id_by_ticker
+                .get(&ticker.trim().to_uppercase())
+                .cloned(),
+            _ => None,
+        };
+
+        connection.execute(
+            "
+            INSERT INTO research_reminders (
+                id,
+                scope_type,
+                scope_id,
+                company_id,
+                reminder_kind,
+                source_type,
+                source_id,
+                title,
+                body,
+                due_at,
+                status,
+                snoozed_until,
+                completed_at,
+                dismissed_at,
+                created_at,
+                updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+            ",
+            params![
+                reminder.id.trim(),
+                reminder.scope_type.trim(),
+                scope_id,
+                company_id,
+                reminder.reminder_kind.trim(),
+                empty_string_to_none(reminder.source_type.clone()),
+                empty_string_to_none(reminder.source_id.clone()),
+                reminder.title.trim(),
+                reminder.body.trim(),
+                empty_string_to_none(reminder.due_at.clone()),
+                reminder.status.trim(),
+                empty_string_to_none(reminder.snoozed_until.clone()),
+                empty_string_to_none(reminder.completed_at.clone()),
+                empty_string_to_none(reminder.dismissed_at.clone()),
+                reminder.created_at.trim(),
+                reminder.updated_at.trim(),
+            ],
+        )?;
+        summary.research_reminders_created += 1;
+    }
+
+    for digest in &document.ai_research_digests {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ai_research_digests WHERE id = ?1)",
+            [&digest.id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            summary.ai_research_digests_skipped += 1;
+            continue;
+        }
+
+        let scope_id = if digest.scope_type == "company" {
+            let company_ticker = digest
+                .scope_company_qualified_ticker
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .to_uppercase();
+            company_id_by_ticker
+                .get(&company_ticker)
+                .ok_or_else(|| StorageError::InvalidSettingValue {
+                    key: "import_export",
+                    value: format!("missing digest company {company_ticker}"),
+                })?
+                .to_owned()
+        } else if digest.scope_type == "watchlist" {
+            watchlist_id_map
+                .get(&digest.scope_id)
+                .map(String::as_str)
+                .unwrap_or(digest.scope_id.trim())
+                .to_owned()
+        } else {
+            summary.ai_research_digests_skipped += 1;
+            continue;
+        };
+
+        connection.execute(
+            "
+            INSERT INTO ai_research_digest_jobs (
+                id,
+                scope_type,
+                scope_id,
+                provider_id,
+                model,
+                prompt_version,
+                evidence_collector_version,
+                renderer_version,
+                status,
+                created_at,
+                started_at,
+                finished_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'succeeded', ?9, ?9, ?9)
+            ON CONFLICT(id) DO NOTHING
+            ",
+            params![
+                digest.job_id.trim(),
+                digest.scope_type.trim(),
+                scope_id,
+                digest.provider_id.trim(),
+                digest.model.trim(),
+                digest.prompt_version.trim(),
+                digest.evidence_collector_version.trim(),
+                digest.renderer_version.trim(),
+                digest.created_at.trim(),
+            ],
+        )?;
+
+        connection.execute(
+            "
+            INSERT INTO ai_research_digests (
+                id,
+                job_id,
+                scope_type,
+                scope_id,
+                provider_id,
+                model,
+                prompt_version,
+                evidence_collector_version,
+                renderer_version,
+                title,
+                summary,
+                content_markdown,
+                language,
+                generated_at,
+                created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+            ",
+            params![
+                digest.id.trim(),
+                digest.job_id.trim(),
+                digest.scope_type.trim(),
+                scope_id,
+                digest.provider_id.trim(),
+                digest.model.trim(),
+                digest.prompt_version.trim(),
+                digest.evidence_collector_version.trim(),
+                digest.renderer_version.trim(),
+                digest.title.trim(),
+                digest.summary.trim(),
+                digest.content_markdown.trim(),
+                empty_string_to_none(digest.language.clone()),
+                digest.generated_at.trim(),
+                digest.created_at.trim(),
+            ],
+        )?;
+        summary.ai_research_digests_created += 1;
+    }
+
+    for citation in &document.ai_research_digest_citations {
+        if !evidence_reference_exists_for_import(
+            connection,
+            &citation.evidence_type,
+            &citation.evidence_id,
+        )? {
+            summary.ai_research_digest_citations_skipped += 1;
+            continue;
+        }
+        let inserted = connection.execute(
+            "
+            INSERT OR IGNORE INTO ai_research_digest_citations (
+                id,
+                digest_id,
+                citation_key,
+                evidence_type,
+                evidence_id,
+                label,
+                snippet,
+                created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            ",
+            params![
+                citation.id.trim(),
+                citation.digest_id.trim(),
+                citation.citation_key.trim(),
+                citation.evidence_type.trim(),
+                citation.evidence_id.trim(),
+                citation.label.trim(),
+                citation.snippet.clone(),
+                citation.created_at.trim(),
+            ],
+        )?;
+        if inserted == 0 {
+            summary.ai_research_digest_citations_skipped += 1;
+        } else {
+            summary.ai_research_digest_citations_created += 1;
+        }
+    }
+
     Ok(summary)
 }
 
@@ -1509,6 +2016,154 @@ fn export_ai_research_brief_citations(
         .map_err(StorageError::from)
 }
 
+fn export_research_reminders(
+    connection: &Connection,
+) -> StorageResult<Vec<ExportResearchReminder>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            research_reminders.id,
+            research_reminders.scope_type,
+            research_reminders.scope_id,
+            scope_companies.qualified_ticker,
+            reminder_companies.qualified_ticker,
+            research_reminders.reminder_kind,
+            research_reminders.source_type,
+            research_reminders.source_id,
+            research_reminders.title,
+            research_reminders.body,
+            research_reminders.due_at,
+            research_reminders.status,
+            research_reminders.snoozed_until,
+            research_reminders.completed_at,
+            research_reminders.dismissed_at,
+            research_reminders.created_at,
+            research_reminders.updated_at
+        FROM research_reminders
+        LEFT JOIN companies AS scope_companies
+            ON research_reminders.scope_type = 'company'
+            AND scope_companies.id = research_reminders.scope_id
+        LEFT JOIN companies AS reminder_companies
+            ON reminder_companies.id = research_reminders.company_id
+        ORDER BY datetime(COALESCE(research_reminders.due_at, research_reminders.updated_at)) DESC,
+            research_reminders.id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportResearchReminder {
+            id: row.get(0)?,
+            scope_type: row.get(1)?,
+            scope_id: row.get(2)?,
+            scope_company_qualified_ticker: row.get(3)?,
+            company_qualified_ticker: row.get(4)?,
+            reminder_kind: row.get(5)?,
+            source_type: row.get(6)?,
+            source_id: row.get(7)?,
+            title: row.get(8)?,
+            body: row.get(9)?,
+            due_at: row.get(10)?,
+            status: row.get(11)?,
+            snoozed_until: row.get(12)?,
+            completed_at: row.get(13)?,
+            dismissed_at: row.get(14)?,
+            created_at: row.get(15)?,
+            updated_at: row.get(16)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn export_ai_research_digests(
+    connection: &Connection,
+) -> StorageResult<Vec<ExportAiResearchDigest>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            ai_research_digests.id,
+            ai_research_digests.job_id,
+            ai_research_digests.scope_type,
+            ai_research_digests.scope_id,
+            companies.qualified_ticker,
+            ai_research_digests.provider_id,
+            ai_research_digests.model,
+            ai_research_digests.prompt_version,
+            ai_research_digests.evidence_collector_version,
+            ai_research_digests.renderer_version,
+            ai_research_digests.title,
+            ai_research_digests.summary,
+            ai_research_digests.content_markdown,
+            ai_research_digests.language,
+            ai_research_digests.generated_at,
+            ai_research_digests.created_at
+        FROM ai_research_digests
+        LEFT JOIN companies
+            ON ai_research_digests.scope_type = 'company'
+            AND companies.id = ai_research_digests.scope_id
+        ORDER BY datetime(ai_research_digests.generated_at) DESC, ai_research_digests.id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportAiResearchDigest {
+            id: row.get(0)?,
+            job_id: row.get(1)?,
+            scope_type: row.get(2)?,
+            scope_id: row.get(3)?,
+            scope_company_qualified_ticker: row.get(4)?,
+            provider_id: row.get(5)?,
+            model: row.get(6)?,
+            prompt_version: row.get(7)?,
+            evidence_collector_version: row.get(8)?,
+            renderer_version: row.get(9)?,
+            title: row.get(10)?,
+            summary: row.get(11)?,
+            content_markdown: row.get(12)?,
+            language: row.get(13)?,
+            generated_at: row.get(14)?,
+            created_at: row.get(15)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn export_ai_research_digest_citations(
+    connection: &Connection,
+) -> StorageResult<Vec<ExportAiResearchDigestCitation>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id,
+            digest_id,
+            citation_key,
+            evidence_type,
+            evidence_id,
+            label,
+            snippet,
+            created_at
+        FROM ai_research_digest_citations
+        ORDER BY digest_id, citation_key, id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportAiResearchDigestCitation {
+            id: row.get(0)?,
+            digest_id: row.get(1)?,
+            citation_key: row.get(2)?,
+            evidence_type: row.get(3)?,
+            evidence_id: row.get(4)?,
+            label: row.get(5)?,
+            snippet: row.get(6)?,
+            created_at: row.get(7)?,
+        })
+    })?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
 fn existing_companies_by_ticker(connection: &Connection) -> StorageResult<HashMap<String, String>> {
     let mut statement = connection.prepare("SELECT qualified_ticker, id FROM companies")?;
     let rows = statement.query_map([], |row| {
@@ -1577,6 +2232,26 @@ fn imported_or_existing_evidence_reference(
     }
 }
 
+fn imported_or_existing_evidence_reference_with_reminders(
+    connection: &Connection,
+    evidence_type: &str,
+    evidence_id: &str,
+    imported_note_ids: &HashSet<String>,
+    imported_question_ids: &HashSet<String>,
+    imported_reminder_ids: &HashSet<String>,
+) -> bool {
+    match evidence_type {
+        "reminder" if imported_reminder_ids.contains(evidence_id) => true,
+        _ => imported_or_existing_evidence_reference(
+            connection,
+            evidence_type,
+            evidence_id,
+            imported_note_ids,
+            imported_question_ids,
+        ),
+    }
+}
+
 fn evidence_reference_exists_for_import(
     connection: &Connection,
     evidence_type: &str,
@@ -1595,6 +2270,8 @@ fn evidence_reference_exists_for_import(
         "research_question" => {
             table_reference_exists(connection, "research_questions", evidence_id)
         }
+        "reminder" => table_reference_exists(connection, "research_reminders", evidence_id),
+        "digest" => table_reference_exists(connection, "ai_research_digests", evidence_id),
         _ => Ok(false),
     }
 }

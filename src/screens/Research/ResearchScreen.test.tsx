@@ -41,8 +41,10 @@ describe("Research screen workflows", () => {
     expect(screen.getByText("Gemini")).toBeInTheDocument();
     expect(screen.queryByText("shareholder_meeting")).not.toBeInTheDocument();
     expect(screen.queryByText("provider_gemini")).not.toBeInTheDocument();
-    expect(screen.getByText("Evidence")).toBeInTheDocument();
-    expect(screen.getByText("Last reviewed")).toBeInTheDocument();
+    const reviewSummary = screen.getByLabelText("Research review summary");
+    expect(within(reviewSummary).getByText("Evidence")).toBeInTheDocument();
+    expect(within(reviewSummary).getByText("Last reviewed")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Evidence" })).toBeInTheDocument();
     expect(within(researchRegion).getAllByRole("article")).toHaveLength(4);
 
     await waitFor(() => {
@@ -249,6 +251,9 @@ describe("Research screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Research" }));
     expect(screen.getByText("No research brief generated yet.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AI research" })).toBeInTheDocument();
+    expect(screen.getAllByText("What needs attention").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Research summary").length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole("button", { name: "Generate brief" }));
 
@@ -266,6 +271,101 @@ describe("Research screen workflows", () => {
     expect(screen.getByText("Source-grounded brief summary.")).toBeInTheDocument();
     expect(screen.getByText("Citations (1)")).toBeInTheDocument();
     expect(screen.getAllByText("Current report placeholder for watchlist company").length).toBeGreaterThan(0);
+  });
+
+  it("shows open research reminders and completes one", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+
+    expect(await screen.findByText("Review open claim follow-up")).toBeInTheDocument();
+    await user.click(screen.getByTitle("Snooze reminder"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_research_reminder", {
+        input: expect.objectContaining({
+          id: "research_reminder_claim_follow_up",
+          status: "open",
+        }),
+      });
+    });
+
+    await user.click(screen.getByTitle("Complete reminder"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_research_reminder", {
+        input: {
+          id: "research_reminder_claim_follow_up",
+          status: "completed",
+        },
+      });
+    });
+
+    await user.click(await screen.findByTitle("Reopen reminder"));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("update_research_reminder", {
+        input: {
+          id: "research_reminder_claim_follow_up",
+          status: "open",
+          snoozedUntil: null,
+        },
+      });
+    });
+  });
+
+  it("creates a manual research reminder", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    await user.click(screen.getByRole("button", { name: "Add reminder" }));
+    await user.type(screen.getByLabelText("Reminder title"), "Check next report");
+    await user.type(screen.getByLabelText("Reminder notes"), "Look for margin commentary.");
+    await user.click(screen.getByRole("button", { name: "Save reminder" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("create_research_reminder", {
+        input: {
+          scopeType: "company",
+          scopeId: "company_gpw_cdr",
+          companyId: "company_gpw_cdr",
+          reminderKind: "manual_research",
+          sourceType: null,
+          sourceId: null,
+          title: "Check next report",
+          body: "Look for margin commentary.",
+          dueAt: null,
+        },
+      });
+    });
+  });
+
+  it("generates and displays an event-aware research digest", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Research" }));
+    expect(screen.getByText("No research digest generated yet.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Generate digest" }));
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("start_research_digest", {
+        input: {
+          scopeType: "company",
+          scopeId: "company_gpw_cdr",
+        },
+      });
+    });
+
+    expect(await screen.findByText("Open reminders and changed evidence to review.")).toBeInTheDocument();
+    expect(screen.getAllByText("What needs attention").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Citations (1)").length).toBeGreaterThan(0);
   });
 
   it("opens cited evidence from an AI research brief", async () => {

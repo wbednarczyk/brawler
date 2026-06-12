@@ -21,9 +21,11 @@ import type {
 import type {
   EvidenceLink,
   ResearchBriefJob,
+  ResearchDigestJob,
   ResearchEvidenceInput,
   ResearchEvidenceItem,
   ResearchQuestion,
+  ResearchReminder,
   ResearchReviewCheckpoint,
 } from "../api/researchTypes";
 
@@ -1002,6 +1004,8 @@ export const appTestState = {
   researchQuestionsResponse: initialResearchQuestions,
   evidenceLinksResponse: [] as EvidenceLink[],
   researchBriefJobsResponse: [] as ResearchBriefJob[],
+  researchDigestJobsResponse: [] as ResearchDigestJob[],
+  researchRemindersResponse: [] as ResearchReminder[],
   researchReviewCheckpointResponse: null as ResearchReviewCheckpoint | null,
   companyEventsResponse: initialCompanyEvents,
   transcriptJobsResponse: initialTranscriptJobs,
@@ -1084,6 +1088,27 @@ beforeEach(() => {
   appTestState.researchQuestionsResponse = initialResearchQuestions;
   appTestState.evidenceLinksResponse = [];
   appTestState.researchBriefJobsResponse = [];
+  appTestState.researchDigestJobsResponse = [];
+  appTestState.researchRemindersResponse = [
+    {
+      id: "research_reminder_claim_follow_up",
+      scopeType: "company",
+      scopeId: "company_gpw_cdr",
+      companyId: "company_gpw_cdr",
+      reminderKind: "claim_follow_up",
+      sourceType: "claim",
+      sourceId: "note_company_gpw_cdr_follow_up",
+      title: "Review open claim follow-up",
+      body: "Check whether management delivered.",
+      dueAt: "2026-06-08T10:00:00Z",
+      status: "open",
+      snoozedUntil: null,
+      completedAt: null,
+      dismissedAt: null,
+      createdAt: "2026-06-01T10:00:00Z",
+      updatedAt: "2026-06-01T10:00:00Z",
+    },
+  ];
   appTestState.researchReviewCheckpointResponse = null;
   appTestState.companyEventsResponse = initialCompanyEvents;
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
@@ -1420,6 +1445,161 @@ beforeEach(() => {
       return Promise.resolve(created);
     }
 
+    if (command === "list_research_reminders") {
+      const { input } = args as { input: { scopeType: "company" | "watchlist"; scopeId: string; status?: string | null } };
+      return Promise.resolve(
+        appTestState.researchRemindersResponse.filter((reminder) => {
+          const scopeMatches =
+            reminder.scopeType === input.scopeType && reminder.scopeId === input.scopeId;
+          const companyInWatchlist =
+            input.scopeType === "watchlist" &&
+            appTestState.watchlistMembershipsResponse.some(
+              (membership) =>
+                membership.watchlistId === input.scopeId && membership.companyId === reminder.companyId,
+            );
+          const statusMatches = !input.status || reminder.status === input.status;
+          return (scopeMatches || companyInWatchlist) && statusMatches;
+        }),
+      );
+    }
+
+    if (command === "update_research_reminder") {
+      const { input } = args as {
+        input: {
+          id: string;
+          status?: "open" | "completed" | "dismissed" | null;
+          snoozedUntil?: string | null;
+          completedAt?: string | null;
+          dismissedAt?: string | null;
+        };
+      };
+      appTestState.researchRemindersResponse = appTestState.researchRemindersResponse.map((reminder) =>
+        reminder.id === input.id
+          ? {
+              ...reminder,
+              status: input.status ?? reminder.status,
+              completedAt:
+                input.completedAt !== undefined
+                  ? input.completedAt
+                  : input.status === "completed"
+                    ? "2026-06-05T10:25:00Z"
+                    : reminder.completedAt,
+              snoozedUntil: input.snoozedUntil === undefined ? reminder.snoozedUntil : input.snoozedUntil,
+              dismissedAt: input.dismissedAt === undefined ? reminder.dismissedAt : input.dismissedAt,
+              updatedAt: "2026-06-05T10:25:00Z",
+            }
+          : reminder,
+      );
+      return Promise.resolve(appTestState.researchRemindersResponse.find((reminder) => reminder.id === input.id));
+    }
+
+    if (command === "create_research_reminder") {
+      const { input } = args as {
+        input: {
+          scopeType: "company" | "watchlist";
+          scopeId: string;
+          companyId?: string | null;
+          reminderKind: "manual_research";
+          sourceType?: ResearchReminder["sourceType"];
+          sourceId?: string | null;
+          title: string;
+          body?: string | null;
+          dueAt?: string | null;
+        };
+      };
+      const now = "2026-06-05T10:30:00Z";
+      const created: ResearchReminder = {
+        id: `research_reminder_manual_${appTestState.researchRemindersResponse.length + 1}`,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        companyId: input.companyId ?? null,
+        reminderKind: input.reminderKind,
+        sourceType: input.sourceType ?? null,
+        sourceId: input.sourceId ?? null,
+        title: input.title,
+        body: input.body ?? "",
+        dueAt: input.dueAt ?? null,
+        status: "open",
+        snoozedUntil: null,
+        completedAt: null,
+        dismissedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      appTestState.researchRemindersResponse = [created, ...appTestState.researchRemindersResponse];
+      return Promise.resolve(created);
+    }
+
+    if (command === "delete_research_reminder") {
+      const { id } = args as { id: string };
+      appTestState.researchRemindersResponse = appTestState.researchRemindersResponse.filter(
+        (reminder) => reminder.id !== id,
+      );
+      return Promise.resolve(undefined);
+    }
+
+    if (command === "list_research_digests") {
+      const { input } = args as { input: { scopeType: "company" | "watchlist"; scopeId: string } };
+      return Promise.resolve(
+        appTestState.researchDigestJobsResponse.filter(
+          (job) => job.scopeType === input.scopeType && job.scopeId === input.scopeId,
+        ),
+      );
+    }
+
+    if (command === "start_research_digest") {
+      const { input } = args as { input: { scopeType: "company" | "watchlist"; scopeId: string } };
+      const now = "2026-06-05T10:30:00Z";
+      const id = `research_digest_job_${input.scopeType}_${input.scopeId}_${appTestState.researchDigestJobsResponse.length + 1}`;
+      const created: ResearchDigestJob = {
+        id,
+        scopeType: input.scopeType,
+        scopeId: input.scopeId,
+        providerId: "test_sample",
+        model: "test-sample-analysis-v1",
+        promptVersion: "m31.research_digest.v1",
+        evidenceCollectorVersion: "m31.digest_collector.v1",
+        rendererVersion: "m31.digest_renderer.v1",
+        status: "succeeded",
+        errorCode: null,
+        error: null,
+        createdAt: now,
+        startedAt: now,
+        finishedAt: now,
+        digest: {
+          id: `research_digest_${input.scopeType}_${input.scopeId}_1`,
+          jobId: id,
+          scopeType: input.scopeType,
+          scopeId: input.scopeId,
+          providerId: "test_sample",
+          model: "test-sample-analysis-v1",
+          promptVersion: "m31.research_digest.v1",
+          evidenceCollectorVersion: "m31.digest_collector.v1",
+          rendererVersion: "m31.digest_renderer.v1",
+          title: "Research digest",
+          summary: "Open reminders and changed evidence to review.",
+          contentMarkdown: "## Today's review\n\nStart with open reminders. [E1]",
+          language: "en",
+          generatedAt: now,
+          createdAt: now,
+          citations: [
+            {
+              id: "research_digest_citation_1",
+              digestId: `research_digest_${input.scopeType}_${input.scopeId}_1`,
+              citationKey: "E1",
+              evidenceType: "feed_item",
+              evidenceId: "feed_sample_cdr_report",
+              label: "Current report placeholder for watchlist company",
+              snippet: "Sample official report used to validate research digest rendering.",
+              createdAt: now,
+            },
+          ],
+        },
+      };
+      appTestState.researchDigestJobsResponse = [created, ...appTestState.researchDigestJobsResponse];
+      return Promise.resolve(created);
+    }
+
     if (command === "export_research_data") {
       return Promise.resolve({
         fileName: "brawler-research-data-2026-06-05.json",
@@ -1435,6 +1615,12 @@ beforeEach(() => {
           aiResearchBriefs: appTestState.researchBriefJobsResponse.filter((job) => job.brief).length,
           aiResearchBriefCitations: appTestState.researchBriefJobsResponse.reduce(
             (total, job) => total + (job.brief?.citations.length ?? 0),
+            0,
+          ),
+          researchReminders: appTestState.researchRemindersResponse.length,
+          aiResearchDigests: appTestState.researchDigestJobsResponse.filter((job) => job.digest).length,
+          aiResearchDigestCitations: appTestState.researchDigestJobsResponse.reduce(
+            (total, job) => total + (job.digest?.citations.length ?? 0),
             0,
           ),
           settings: 0,
@@ -1461,6 +1647,12 @@ beforeEach(() => {
           aiResearchBriefsSkipped: 0,
           aiResearchBriefCitationsCreated: 0,
           aiResearchBriefCitationsSkipped: 0,
+          researchRemindersCreated: 0,
+          researchRemindersSkipped: 0,
+          aiResearchDigestsCreated: 0,
+          aiResearchDigestsSkipped: 0,
+          aiResearchDigestCitationsCreated: 0,
+          aiResearchDigestCitationsSkipped: 0,
           settingsUpdated: 0,
         },
         warnings: [],
@@ -1486,6 +1678,12 @@ beforeEach(() => {
           aiResearchBriefsSkipped: 0,
           aiResearchBriefCitationsCreated: 0,
           aiResearchBriefCitationsSkipped: 0,
+          researchRemindersCreated: 0,
+          researchRemindersSkipped: 0,
+          aiResearchDigestsCreated: 0,
+          aiResearchDigestsSkipped: 0,
+          aiResearchDigestCitationsCreated: 0,
+          aiResearchDigestCitationsSkipped: 0,
           settingsUpdated: 0,
         },
         warnings: [],
@@ -1502,6 +1700,13 @@ beforeEach(() => {
           watchlists: 0,
           memberships: 0,
           notebookEntries: 0,
+          researchQuestions: 0,
+          evidenceLinks: 0,
+          aiResearchBriefs: 0,
+          aiResearchBriefCitations: 0,
+          researchReminders: 0,
+          aiResearchDigests: 0,
+          aiResearchDigestCitations: 0,
           settings: 15,
         },
       });
