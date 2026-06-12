@@ -32,6 +32,7 @@ Rules:
 - Architecture decisions must be settled before code changes for that milestone begin, except for small discovery spikes that are explicitly framed as research.
 - Agents may implement all approved milestone tasks, but milestone closure is a separate manual signoff step. Do not move a milestone to Done, mark the roadmap status completed, or perform the milestone version bump until the user explicitly approves closure.
 - After user signoff, milestone closure ends with Radicle/Radboard cleanup: after the version bump and final validation are complete, mark completed task issues and the completed epic as solved with `rad issue state --solved`. Do not use `--closed` for completed work; Radicle closed means abandoned or won't-fix.
+- After finishing an epic implementation and before moving on, agents should propose a commit message for the current uncommitted change set as a copy-pasteable `git add ... && git commit ...` command.
 - If the milestone description is missing something that would materially improve the application, its maintainability, or its user-facing workflow, propose it to the user instead of silently ignoring it.
 - Once decisions are made, update roadmap, Radicle issues, contracts, architecture docs, or ADRs as needed before or alongside implementation so later agents inherit the decision.
 

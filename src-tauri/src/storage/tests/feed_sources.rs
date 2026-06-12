@@ -1,5 +1,5 @@
 use super::common::*;
-use super::sources::find_company_for_exchange_listing;
+use super::feed_matching::find_company_for_exchange_listing;
 use super::*;
 
 #[test]

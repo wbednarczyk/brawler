@@ -1,6 +1,6 @@
 use super::companies::company_directories_are_stale;
+use super::feed_matching::{media_duplicate_signature, MediaMatchCompany};
 use super::migrations::{apply_migrations, database_status, expected_migration_count};
-use super::sources::{media_duplicate_signature, MediaMatchCompany};
 use super::*;
 
 const PORTAL_ANALIZ_ADAPTER_ID: &str = "portal-analiz";

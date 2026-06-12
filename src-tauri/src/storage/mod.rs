@@ -39,6 +39,7 @@ mod diagnostics;
 mod error;
 mod events;
 mod feed;
+mod feed_matching;
 mod import_export;
 mod licensing;
 mod metrics;
@@ -625,7 +626,7 @@ impl AppState {
     pub fn tracks_gpw_listing_company(&self, ticker: &str, isin: &str) -> StorageResult<bool> {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
-        Ok(sources::find_company_for_gpw_listing(&connection, ticker, isin)?.is_some())
+        Ok(feed_matching::find_company_for_gpw_listing(&connection, ticker, isin)?.is_some())
     }
 
     pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {

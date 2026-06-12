@@ -1,3 +1,4 @@
+use super::feed_matching::normalize_media_character;
 use super::*;
 use super::{companies, sources, watchlists};
 
@@ -589,7 +590,7 @@ pub(super) fn bankier_calendar_symbol_matches_company_name(
 pub(super) fn normalize_calendar_match_text(value: &str) -> String {
     value
         .chars()
-        .map(sources::normalize_media_character)
+        .map(normalize_media_character)
         .map(|character| {
             if character.is_alphanumeric() {
                 character
