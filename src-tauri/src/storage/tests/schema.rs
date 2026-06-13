@@ -180,7 +180,7 @@ fn seeds_default_settings_and_source_adapters() {
 
     assert_eq!(theme, "dark");
     assert_eq!(locale, "en");
-    assert_eq!(general_analysis_model, "gemini-2.5-flash");
+    assert_eq!(general_analysis_model, "gemini-3.5-flash");
     assert_eq!(developer_mode, "false");
     assert_eq!(log_level, "info");
     assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), false));

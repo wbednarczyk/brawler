@@ -183,6 +183,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "report_documents",
         sql: include_str!("../../migrations/0035_report_documents.sql"),
     },
+    Migration {
+        version: 36,
+        name: "multi_provider_ai_defaults",
+        sql: include_str!("../../migrations/0036_multi_provider_ai_defaults.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

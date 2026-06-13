@@ -22,16 +22,19 @@ fn reads_default_settings_from_sqlite() {
     );
     assert_eq!(
         settings.ai_providers.youtube_transcription_model,
-        "gemini-2.5-flash"
+        "gemini-3.5-flash"
     );
     assert_eq!(
         settings.ai_providers.youtube_transcription_timeout_seconds,
         300
     );
-    assert!(settings.ai_providers.general_analysis_provider.is_none());
+    assert_eq!(
+        settings.ai_providers.general_analysis_provider.as_deref(),
+        Some("provider_gemini")
+    );
     assert_eq!(
         settings.ai_providers.general_analysis_model,
-        "gemini-2.5-flash"
+        "gemini-3.5-flash"
     );
     assert_eq!(settings.ai_providers.general_analysis_timeout_seconds, 90);
     assert_eq!(settings.ai_analysis_mode, "source_grounded");

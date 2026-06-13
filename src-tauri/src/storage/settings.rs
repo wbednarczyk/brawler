@@ -207,10 +207,13 @@ pub(crate) fn update_settings(
     }
 
     if let Some(general_analysis_provider) = input.general_analysis_provider {
+        let mut allowed_providers = vec![""];
+        allowed_providers
+            .extend(crate::providers::analysis::registry::selectable_analysis_provider_ids());
         validate_allowed_setting(
             "general_analysis_provider",
             &general_analysis_provider,
-            &["", "provider_gemini"],
+            &allowed_providers,
         )?;
         update_setting(
             connection,
@@ -223,12 +226,7 @@ pub(crate) fn update_settings(
         validate_allowed_setting(
             "general_analysis_model",
             &general_analysis_model,
-            &[
-                "gemini-2.5-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-3.1-flash-lite",
-                "gemini-3.5-flash",
-            ],
+            &crate::providers::analysis::registry::analysis_model_ids(),
         )?;
         update_setting(
             connection,

@@ -102,22 +102,16 @@ fn settings_to_update(settings: ExportSettings) -> StorageResult<SettingsUpdate>
         )?;
     }
     if let Some(provider) = settings.general_analysis_provider.as_deref() {
-        validate_allowed_import_setting(
-            "general_analysis_provider",
-            provider,
-            &["", "provider_gemini"],
-        )?;
+        let mut allowed_providers = vec![""];
+        allowed_providers
+            .extend(crate::providers::analysis::registry::selectable_analysis_provider_ids());
+        validate_allowed_import_setting("general_analysis_provider", provider, &allowed_providers)?;
     }
     if let Some(model) = settings.general_analysis_model.as_deref() {
         validate_allowed_import_setting(
             "general_analysis_model",
             model,
-            &[
-                "gemini-2.5-flash-lite",
-                "gemini-2.5-flash",
-                "gemini-3.1-flash-lite",
-                "gemini-3.5-flash",
-            ],
+            &crate::providers::analysis::registry::analysis_model_ids(),
         )?;
     }
     if let Some(value) = settings.general_analysis_timeout_seconds {
