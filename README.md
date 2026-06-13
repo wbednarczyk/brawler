@@ -17,12 +17,9 @@ that **never leaves your computer**.
 
 </div>
 
-<!--
-  📸 Vibe tip: a single screenshot or short GIF of the Inbox/Companies view
-  belongs right here — it is the biggest single upgrade to this page.
-  Drop one at docs/assets/screenshot.png and swap the comment below for:
-  <p align="center"><img src="docs/assets/screenshot.png" alt="Brawler" width="820"></p>
--->
+<p align="center">
+  <img src="docs/assets/screenshot.png" alt="Brawler — Inbox feed with AI analysis panel" width="820">
+</p>
 
 ---
 
