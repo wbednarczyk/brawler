@@ -823,6 +823,7 @@ export function CompanyWorkspace({
 
       {companyWorkspaceTab === "Fundamentals" ? (
         <FundamentalsPanel
+          companyId={selectedCompany.id}
           financialPeriods={financialPeriods}
           financialFacts={financialFacts}
           kpiDefinitions={kpiDefinitions}

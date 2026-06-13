@@ -32,6 +32,31 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       return Promise.resolve(appTestState.companiesResponse);
     }
 
+    // v0.36 KPI extraction + IR resolution + report documents (benign defaults;
+    // specific tests stub these via their own mocks where behavior matters).
+    if (command === "list_report_documents") {
+      return Promise.resolve([]);
+    }
+    if (command === "list_kpi_extraction") {
+      return Promise.resolve([]);
+    }
+    if (command === "get_company_ir_reports_url") {
+      return Promise.resolve(null);
+    }
+    if (command === "set_company_ir_reports_url") {
+      return Promise.resolve((args as { url: string | null }).url ?? null);
+    }
+    if (
+      command === "start_kpi_extraction" ||
+      command === "retry_kpi_extraction" ||
+      command === "confirm_kpi_proposal" ||
+      command === "reject_kpi_proposal" ||
+      command === "resolve_ir_report" ||
+      command === "capture_report_document"
+    ) {
+      return Promise.resolve(null);
+    }
+
     if (command === "lookup_company") {
       const input = (args as {
         input: {

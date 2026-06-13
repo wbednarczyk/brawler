@@ -784,4 +784,31 @@ export const plText: Record<string, string> = {
   "Working week events": "Wydarzenia dni roboczych",
   "Weekend events": "Wydarzenia weekendowe",
   "Weekend": "Weekend",
+  "AI KPI extraction": "Ekstrakcja KPI przez AI",
+  "Extract reported KPIs from this report; confirm each value before it is saved.":
+    "Wyodrębnij raportowane KPI z tego raportu; potwierdź każdą wartość przed zapisaniem.",
+  "Track this company to extract KPIs from its reports.":
+    "Dodaj tę spółkę do obserwowanych, aby wyodrębniać KPI z jej raportów.",
+  "Extract from attachment": "Wyodrębnij z załącznika",
+  "Fetch report from IR page": "Pobierz raport ze strony relacji inwestorskich",
+  "Paste a report PDF URL": "Wklej adres URL PDF raportu",
+  "Report PDF URL": "Adres URL PDF raportu",
+  "Capture & extract": "Pobierz i wyodrębnij",
+  "Extract KPIs": "Wyodrębnij KPI",
+  "Stored report documents": "Zapisane dokumenty raportów",
+  "Pick the report on the IR page:": "Wybierz raport na stronie relacji inwestorskich:",
+  "No report links found on the IR page.":
+    "Nie znaleziono linków do raportów na stronie relacji inwestorskich.",
+  "Use this": "Użyj tego",
+  "Proposed KPI values": "Proponowane wartości KPI",
+  "No KPI values were proposed.": "Nie zaproponowano żadnych wartości KPI.",
+  "Suggested KPI": "Sugerowane KPI",
+  "Track as new KPI": "Śledź jako nowe KPI",
+  "Confirm": "Potwierdź",
+  "Reject": "Odrzuć",
+  "KPI extraction failed.": "Ekstrakcja KPI nie powiodła się.",
+  "Investor relations reports page": "Strona raportów relacji inwestorskich",
+  "Used to fetch reports when a filing has no attachment. The URL rarely changes.":
+    "Używana do pobierania raportów, gdy komunikat nie ma załącznika. Adres URL rzadko się zmienia.",
+  "IR reports page URL": "Adres URL strony raportów RI",
 };

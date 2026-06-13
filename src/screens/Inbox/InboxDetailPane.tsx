@@ -1,6 +1,7 @@
 import { BookOpenText, Building2, ExternalLink, FileText, Mail, MailOpen, Save } from "lucide-react";
 import { ActionRow, Button, InfoGrid } from "../../ui";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
+import { FeedKpiExtractionPanel } from "../../shared/components/FeedKpiExtractionPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { InboxScreenProps } from "./inboxTypes";
@@ -170,6 +171,12 @@ export function InboxDetailPane({
             onStart={startFeedItemAiAnalysis}
             onRetry={retryFeedItemAiAnalysis}
           />
+          {pdfAttachments.length > 0 || /report|raport/i.test(selectedFeedItem.type) ? (
+            <FeedKpiExtractionPanel
+              feedItem={selectedFeedItem}
+              providerConfigured={aiAnalysisProviderConfigured}
+            />
+          ) : null}
           <InfoGrid
             ariaLabel={text("Feed item timestamps")}
             className="detail-pane-footer-meta"

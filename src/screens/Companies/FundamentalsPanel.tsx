@@ -1,6 +1,7 @@
 import { Plus, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { useLocale } from "../../shared/locale";
+import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
 import { ActionRow, Button, DenseRow, EmptyState, InfoGrid } from "../../ui";
 import type {
   FinancialFactForm,
@@ -8,6 +9,7 @@ import type {
 } from "../../app/useFundamentalsController";
 
 type FundamentalsPanelProps = {
+  companyId: string;
   financialPeriods: FinancialPeriod[];
   financialFacts: FinancialFact[];
   kpiDefinitions: KpiDefinition[];
@@ -27,6 +29,7 @@ type FundamentalsPanelProps = {
 };
 
 export function FundamentalsPanel({
+  companyId,
   financialPeriods,
   financialFacts,
   kpiDefinitions,
@@ -72,6 +75,8 @@ export function FundamentalsPanel({
       {fundamentalsError ? (
         <p className="error-text">{text("Fundamentals command failed")}: {fundamentalsError}</p>
       ) : null}
+
+      <CompanyIrReportsUrlField companyId={companyId} />
 
       {/* Create Financial Period Section */}
       <section className="fundamentals-section" aria-label={text("Create reporting period")}>
