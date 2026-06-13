@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::storage::{CompanyLookupResult, TranscriptJob};
 use thiserror::Error;
 
@@ -51,9 +53,10 @@ impl TranscriptProviderError {
     }
 }
 
-pub trait VideoTranscriptProvider {
+#[async_trait]
+pub trait VideoTranscriptProvider: Send + Sync {
     fn provider_id(&self) -> &'static str;
-    fn transcribe(
+    async fn transcribe(
         &self,
         job: &TranscriptJob,
     ) -> Result<TranscriptProviderOutput, TranscriptProviderError>;

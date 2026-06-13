@@ -1,4 +1,5 @@
-use reqwest::blocking::Client;
+use async_trait::async_trait;
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -17,8 +18,9 @@ pub const DEFAULT_GEMINI_ANALYSIS_MODEL: &str = "gemini-2.5-flash";
 const GEMINI_ANALYSIS_TIMEOUT_SECONDS: u64 = 90;
 const GEMINI_ANALYSIS_TIMEOUT_ENV: &str = "BRAWLER_GEMINI_ANALYSIS_TIMEOUT_SECONDS";
 
-pub trait GeminiAnalysisGenerateContentClient {
-    fn generate_content(
+#[async_trait]
+pub trait GeminiAnalysisGenerateContentClient: Send + Sync {
+    async fn generate_content(
         &self,
         model: &str,
         api_key: &str,
@@ -43,8 +45,9 @@ impl ReqwestGeminiAnalysisGenerateContentClient {
     }
 }
 
+#[async_trait]
 impl GeminiAnalysisGenerateContentClient for ReqwestGeminiAnalysisGenerateContentClient {
-    fn generate_content(
+    async fn generate_content(
         &self,
         model: &str,
         api_key: &str,
@@ -59,10 +62,12 @@ impl GeminiAnalysisGenerateContentClient for ReqwestGeminiAnalysisGenerateConten
             .header("x-goog-api-key", api_key)
             .json(request)
             .send()
+            .await
             .map_err(|error| AnalysisProviderError::NetworkError(describe_reqwest_error(&error)))?;
         let status = response.status();
         let body = response
             .text()
+            .await
             .map_err(|error| AnalysisProviderError::NetworkError(describe_reqwest_error(&error)))?;
 
         if !status.is_success() {
@@ -112,6 +117,7 @@ where
     }
 }
 
+#[async_trait]
 impl<C> AiAnalysisProvider for GeminiAnalysisProvider<C>
 where
     C: GeminiAnalysisGenerateContentClient,
@@ -124,7 +130,7 @@ where
         &self.model
     }
 
-    fn analyze(
+    async fn analyze(
         &self,
         request: &AnalysisRequest,
     ) -> Result<AnalysisProviderOutput, AnalysisProviderError> {
@@ -136,12 +142,13 @@ where
         let gemini_request = gemini_analysis_request(request);
         let response = self
             .client
-            .generate_content(&self.model, api_key, &gemini_request)?;
+            .generate_content(&self.model, api_key, &gemini_request)
+            .await?;
         let output_text = extract_gemini_analysis_text(&response)?;
         parse_gemini_analysis_output(&output_text)
     }
 
-    fn generate_research_brief(
+    async fn generate_research_brief(
         &self,
         request: &ResearchBriefRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
@@ -153,12 +160,13 @@ where
         let gemini_request = gemini_research_brief_request(request);
         let response = self
             .client
-            .generate_content(&self.model, api_key, &gemini_request)?;
+            .generate_content(&self.model, api_key, &gemini_request)
+            .await?;
         let output_text = extract_gemini_analysis_text(&response)?;
         parse_gemini_research_brief_output(&output_text)
     }
 
-    fn generate_research_digest(
+    async fn generate_research_digest(
         &self,
         request: &ResearchDigestRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
@@ -170,7 +178,8 @@ where
         let gemini_request = gemini_research_digest_request(request);
         let response = self
             .client
-            .generate_content(&self.model, api_key, &gemini_request)?;
+            .generate_content(&self.model, api_key, &gemini_request)
+            .await?;
         let output_text = extract_gemini_analysis_text(&response)?;
         parse_gemini_research_brief_output(&output_text)
     }
@@ -615,8 +624,13 @@ mod tests {
         response_text: String,
     }
 
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        tauri::async_runtime::block_on(future)
+    }
+
+    #[async_trait]
     impl GeminiAnalysisGenerateContentClient for MockGeminiAnalysisClient {
-        fn generate_content(
+        async fn generate_content(
             &self,
             model: &str,
             api_key: &str,
@@ -654,8 +668,7 @@ mod tests {
                 response_text: "{}".to_owned(),
             },
         );
-        let error = provider
-            .analyze(&sample_request())
+        let error = block_on(provider.analyze(&sample_request()))
             .expect_err("unconfigured Gemini should fail");
 
         assert_eq!(provider.provider_id(), "provider_gemini");
@@ -672,8 +685,7 @@ mod tests {
             },
         );
 
-        let output = provider
-            .analyze(&sample_request())
+        let output = block_on(provider.analyze(&sample_request()))
             .expect("mock Gemini response should parse");
 
         assert_eq!(output.summary, "Revenue improved.");
@@ -797,7 +809,7 @@ mod tests {
                 .unwrap_or_else(|_| "default_summary".to_owned()),
             custom_question,
         };
-        let output = provider.analyze(&request).map_err(|error| {
+        let output = block_on(provider.analyze(&request)).map_err(|error| {
             format!(
                 "live Gemini analysis failed: model={model}, code={}, error={error}",
                 error.code()

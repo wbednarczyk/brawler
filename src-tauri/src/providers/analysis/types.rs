@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::storage::{FeedItem, ResearchEvidenceItem};
 use thiserror::Error;
 
@@ -95,20 +97,21 @@ impl AnalysisProviderError {
     }
 }
 
-pub trait AiAnalysisProvider {
+#[async_trait]
+pub trait AiAnalysisProvider: Send + Sync {
     fn provider_id(&self) -> &'static str;
     fn model(&self) -> &str;
-    fn analyze(
+    async fn analyze(
         &self,
         request: &AnalysisRequest,
     ) -> Result<AnalysisProviderOutput, AnalysisProviderError>;
 
-    fn generate_research_brief(
+    async fn generate_research_brief(
         &self,
         request: &ResearchBriefRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError>;
 
-    fn generate_research_digest(
+    async fn generate_research_digest(
         &self,
         request: &ResearchDigestRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError>;

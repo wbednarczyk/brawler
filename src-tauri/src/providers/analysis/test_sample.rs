@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use super::types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
     AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
@@ -9,6 +11,7 @@ pub const TEST_SAMPLE_ANALYSIS_MODEL: &str = "test-sample-analysis-v1";
 
 pub struct TestSampleAnalysisProvider;
 
+#[async_trait]
 impl AiAnalysisProvider for TestSampleAnalysisProvider {
     fn provider_id(&self) -> &'static str {
         TEST_SAMPLE_ANALYSIS_PROVIDER_ID
@@ -18,7 +21,7 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
         TEST_SAMPLE_ANALYSIS_MODEL
     }
 
-    fn analyze(
+    async fn analyze(
         &self,
         request: &AnalysisRequest,
     ) -> Result<AnalysisProviderOutput, AnalysisProviderError> {
@@ -49,7 +52,7 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
         })
     }
 
-    fn generate_research_brief(
+    async fn generate_research_brief(
         &self,
         request: &ResearchBriefRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
@@ -103,7 +106,7 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
         })
     }
 
-    fn generate_research_digest(
+    async fn generate_research_digest(
         &self,
         request: &ResearchDigestRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
@@ -170,30 +173,29 @@ mod tests {
     #[test]
     fn test_sample_provider_returns_source_grounded_output() {
         let provider = TestSampleAnalysisProvider;
-        let output = provider
-            .analyze(&AnalysisRequest {
-                feed_item: FeedItem {
-                    id: "feed_1".to_owned(),
-                    company: "GPW:CDR".to_owned(),
-                    item_type: "official_report".to_owned(),
-                    source: "Bankier Company Komunikaty".to_owned(),
-                    time: "2026-06-03T10:00:00Z".to_owned(),
-                    title: "Quarterly report".to_owned(),
-                    unread: true,
-                    saved: false,
-                    source_url: "https://example.com/report".to_owned(),
-                    language: "en".to_owned(),
-                    published_at: "2026-06-03T10:00:00Z".to_owned(),
-                    fetched_at: "2026-06-03T10:05:00Z".to_owned(),
-                    attribution: "Bankier".to_owned(),
-                    summary: "Summary".to_owned(),
-                    body_text: "Body".to_owned(),
-                    attachments: Vec::new(),
-                },
-                prompt_preset_id: "default_summary".to_owned(),
-                custom_question: None,
-            })
-            .expect("test provider should produce output");
+        let output = tauri::async_runtime::block_on(provider.analyze(&AnalysisRequest {
+            feed_item: FeedItem {
+                id: "feed_1".to_owned(),
+                company: "GPW:CDR".to_owned(),
+                item_type: "official_report".to_owned(),
+                source: "Bankier Company Komunikaty".to_owned(),
+                time: "2026-06-03T10:00:00Z".to_owned(),
+                title: "Quarterly report".to_owned(),
+                unread: true,
+                saved: false,
+                source_url: "https://example.com/report".to_owned(),
+                language: "en".to_owned(),
+                published_at: "2026-06-03T10:00:00Z".to_owned(),
+                fetched_at: "2026-06-03T10:05:00Z".to_owned(),
+                attribution: "Bankier".to_owned(),
+                summary: "Summary".to_owned(),
+                body_text: "Body".to_owned(),
+                attachments: Vec::new(),
+            },
+            prompt_preset_id: "default_summary".to_owned(),
+            custom_question: None,
+        }))
+        .expect("test provider should produce output");
 
         assert_eq!(provider.provider_id(), "test_sample");
         assert_eq!(provider.model(), "test-sample-analysis-v1");

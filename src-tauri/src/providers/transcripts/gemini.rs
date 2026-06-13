@@ -1,6 +1,8 @@
-use crate::storage::TranscriptJob;
-use reqwest::blocking::Client;
+use async_trait::async_trait;
+use reqwest::Client;
 use serde::{Deserialize, Deserializer, Serialize};
+
+use crate::storage::TranscriptJob;
 use std::time::Duration;
 
 use crate::providers::common::{
@@ -17,8 +19,9 @@ pub const DEFAULT_GEMINI_TRANSCRIPTION_MODEL: &str = "gemini-2.5-flash";
 const GEMINI_REQUEST_TIMEOUT_SECONDS: u64 = 300;
 const GEMINI_REQUEST_TIMEOUT_ENV: &str = "BRAWLER_GEMINI_REQUEST_TIMEOUT_SECONDS";
 
-pub trait GeminiGenerateContentClient {
-    fn generate_content(
+#[async_trait]
+pub trait GeminiGenerateContentClient: Send + Sync {
+    async fn generate_content(
         &self,
         model: &str,
         api_key: &str,
@@ -45,8 +48,9 @@ impl ReqwestGeminiGenerateContentClient {
     }
 }
 
+#[async_trait]
 impl GeminiGenerateContentClient for ReqwestGeminiGenerateContentClient {
-    fn generate_content(
+    async fn generate_content(
         &self,
         model: &str,
         api_key: &str,
@@ -61,11 +65,12 @@ impl GeminiGenerateContentClient for ReqwestGeminiGenerateContentClient {
             .header("x-goog-api-key", api_key)
             .json(request)
             .send()
+            .await
             .map_err(|error| {
                 TranscriptProviderError::NetworkError(describe_reqwest_error(&error))
             })?;
         let status = response.status();
-        let body = response.text().map_err(|error| {
+        let body = response.text().await.map_err(|error| {
             TranscriptProviderError::NetworkError(describe_reqwest_error(&error))
         })?;
 
@@ -116,6 +121,7 @@ where
     }
 }
 
+#[async_trait]
 impl<C> VideoTranscriptProvider for GeminiTranscriptProvider<C>
 where
     C: GeminiGenerateContentClient,
@@ -124,7 +130,7 @@ where
         "provider_gemini"
     }
 
-    fn transcribe(
+    async fn transcribe(
         &self,
         job: &TranscriptJob,
     ) -> Result<TranscriptProviderOutput, TranscriptProviderError> {
@@ -137,7 +143,8 @@ where
         let request = gemini_transcript_request(&job.source_url);
         let response = self
             .client
-            .generate_content(&self.model, api_key, &request)?;
+            .generate_content(&self.model, api_key, &request)
+            .await?;
         let output_text = extract_gemini_text(&response)?;
         let segments = parse_gemini_transcript_segments(&output_text)?;
 
@@ -357,8 +364,13 @@ mod tests {
         response_text: String,
     }
 
+    fn block_on<F: std::future::Future>(future: F) -> F::Output {
+        tauri::async_runtime::block_on(future)
+    }
+
+    #[async_trait]
     impl GeminiGenerateContentClient for MockGeminiClient {
-        fn generate_content(
+        async fn generate_content(
             &self,
             model: &str,
             api_key: &str,
@@ -435,9 +447,9 @@ mod tests {
                 response_text: "{}".to_owned(),
             },
         );
-        let error = provider
-            .transcribe(&sample_job("https://www.youtube.com/watch?v=sample"))
-            .expect_err("unconfigured Gemini should fail");
+        let error =
+            block_on(provider.transcribe(&sample_job("https://www.youtube.com/watch?v=sample")))
+                .expect_err("unconfigured Gemini should fail");
 
         assert_eq!(provider.provider_id(), "provider_gemini");
         assert_eq!(error.code(), "provider_not_configured");
@@ -453,9 +465,9 @@ mod tests {
             },
         );
 
-        let output = provider
-            .transcribe(&sample_job("https://www.youtube.com/watch?v=sample"))
-            .expect("mock Gemini response should parse");
+        let output =
+            block_on(provider.transcribe(&sample_job("https://www.youtube.com/watch?v=sample")))
+                .expect("mock Gemini response should parse");
 
         assert_eq!(output.segments.len(), 1);
         assert_eq!(output.segments[0].start_seconds, Some(1));
@@ -477,8 +489,7 @@ mod tests {
                 response_text: "{}".to_owned(),
             },
         );
-        let error = provider
-            .transcribe(&sample_job("https://example.com/video"))
+        let error = block_on(provider.transcribe(&sample_job("https://example.com/video")))
             .expect_err("non-YouTube URL should be rejected");
 
         assert_eq!(error.code(), "invalid_source_url");
@@ -525,14 +536,12 @@ mod tests {
             GEMINI_REQUEST_TIMEOUT_SECONDS as i64,
         )
         .map_err(|error| format!("live Gemini provider should initialize: {error}"))?;
-        let output = provider
-            .transcribe(&sample_job(&source_url))
-            .map_err(|error| {
-                format!(
-                    "live Gemini transcript failed: model={model}, code={}, error={error}",
-                    error.code()
-                )
-            })?;
+        let output = block_on(provider.transcribe(&sample_job(&source_url))).map_err(|error| {
+            format!(
+                "live Gemini transcript failed: model={model}, code={}, error={error}",
+                error.code()
+            )
+        })?;
 
         assert!(
             !output.segments.is_empty(),

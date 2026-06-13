@@ -1,3 +1,5 @@
+use async_trait::async_trait;
+
 use crate::storage::TranscriptJob;
 
 use super::types::{
@@ -7,12 +9,13 @@ use super::types::{
 
 pub struct TestSampleTranscriptProvider;
 
+#[async_trait]
 impl VideoTranscriptProvider for TestSampleTranscriptProvider {
     fn provider_id(&self) -> &'static str {
         "test_sample"
     }
 
-    fn transcribe(
+    async fn transcribe(
         &self,
         job: &TranscriptJob,
     ) -> Result<TranscriptProviderOutput, TranscriptProviderError> {
@@ -72,9 +75,10 @@ mod tests {
     #[test]
     fn test_sample_provider_returns_segments() {
         let provider = TestSampleTranscriptProvider;
-        let output = provider
-            .transcribe(&sample_job("https://www.youtube.com/watch?v=sample"))
-            .expect("sample provider should return transcript segments");
+        let output = tauri::async_runtime::block_on(
+            provider.transcribe(&sample_job("https://www.youtube.com/watch?v=sample")),
+        )
+        .expect("sample provider should return transcript segments");
 
         assert_eq!(provider.provider_id(), "test_sample");
         assert_eq!(output.segments.len(), 2);

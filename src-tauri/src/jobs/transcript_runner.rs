@@ -47,7 +47,7 @@ pub fn run_video_transcript_job(
         .mark_transcript_job_running(job_id)
         .map_err(|error| error.to_string())?;
 
-    match provider.transcribe(&job) {
+    match tauri::async_runtime::block_on(provider.transcribe(&job)) {
         Ok(output) => {
             for segment in output.segments {
                 state

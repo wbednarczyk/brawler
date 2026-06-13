@@ -39,11 +39,13 @@ pub fn run_research_digest_job(
         .mark_research_digest_job_running(job_id)
         .map_err(|error| error.to_string())?;
 
-    let output = match provider.generate_research_digest(&ResearchDigestRequest {
-        scope_type: context.scope_type,
-        scope_id: context.scope_id,
-        evidence_items: context.evidence_items.clone(),
-    }) {
+    let output = match tauri::async_runtime::block_on(provider.generate_research_digest(
+        &ResearchDigestRequest {
+            scope_type: context.scope_type,
+            scope_id: context.scope_id,
+            evidence_items: context.evidence_items.clone(),
+        },
+    )) {
         Ok(output) => output,
         Err(error) => {
             return state

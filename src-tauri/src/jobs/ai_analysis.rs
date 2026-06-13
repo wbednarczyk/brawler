@@ -126,7 +126,7 @@ pub fn run_ai_analysis_job(
         }),
     );
 
-    match provider.analyze(&request) {
+    match tauri::async_runtime::block_on(provider.analyze(&request)) {
         Ok(output) => {
             log::info!(
                 "module=ai_analysis stage=response_received jobId={} providerId={} model={}",
