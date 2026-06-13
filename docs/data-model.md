@@ -511,6 +511,46 @@ Rules:
 - Citation rows link generated content back to research evidence items and should not duplicate full source bodies.
 - Import/export, backup, retention, and migrations must treat research-owned durable state explicitly.
 
+### Company Fundamentals
+
+Report-derived fundamentals follow [ADR 0027](adr/0027-company-fundamentals-scope.md). The KPI side is a three-layer model — catalog (`kpi_definitions`), relevance (`kpi_relevance`), facts (`financial_facts`) — plus `financial_periods` and company-level discriminators. Migration `0034_company_fundamentals.sql`.
+
+Company columns added to `companies`:
+
+- `statement_type`: `industrial` (default) | `bank` | `insurer` | `specialty_finance` | `reit` — selects which canonical packs apply.
+- `reporting_standard`: `ifrs` (default) | `us_gaap` | `local`.
+- `fiscal_year_end_month`: integer 1–12 (default 12) for non-calendar fiscal years.
+
+`financial_periods`:
+
+- `id`, `company_id` → `companies(id)`, `fiscal_year`, `period_type` (fiscal label: `FY`, `H1`, `H2`, `Q1`–`Q4`, `9M`, `M01`–`M12`), `period_end_date`, `report_evidence_ref` (soft reference to a report document/feed item; FK tightened in a later milestone).
+- Unique on `(company_id, fiscal_year, period_type)`.
+
+`kpi_definitions` (catalog — what a metric *is*):
+
+- `scope`: `canonical` (app-owned, global) | `sector` (shared within a `sector`) | `company` (bespoke, set `company_id`).
+- `metric_key`, `label`, `value_kind` (`monetary` | `percentage` | `ratio` | `count` | `physical` | `duration`), `unit` (typed: `PLN`/`EUR`/`t`/`m2`/`shares`/`per_share`/`years`/…), `computation` (`reported` | `derived`), `formula` (for derived, over other metric keys), `display_format`.
+- Unique on `(metric_key, scope, IFNULL(company_id,''), IFNULL(sector,''))`.
+- Seeded packs: universal, industrial, cash flow, capital efficiency (derived), and sector packs `insurance`, `banking`, `specialty_finance`, `reit`.
+
+`kpi_relevance` (selection over time — which KPIs matter for a company):
+
+- `company_id`, `definition_id`, `status` (`active` | `archived`), `source` (`user` | `agent` | `sector`), `rank` (`primary` | `secondary`), `first_seen_period`, `last_seen_period`. Unique on `(company_id, definition_id)`.
+
+`financial_facts` (values — reference a definition, never the relevance profile):
+
+- `value_numeric`: decimal-exact text in base units, signed (parsed with `rust_decimal`); `as_reported_value`/`as_reported_scale` keep the source form (e.g. "245 253 tys. zł").
+- Dimensions: `currency`, `statement_basis` (`consolidated`/`standalone`), `attribution` (`total`/`owners_of_parent`/`nci`), `variant` (`reported`/`adjusted`/`constant_currency`/`continuing`/`discontinued`/`net_of_cancellations`/`lifo_ccs`), `measure_window` (`flow`/`point_in_time`/`trailing`/`cumulative`/`duration`), `data_quality` (`final`/`estimated`), `reporting_standard` (override).
+- Provenance: `extraction_method` (`manual`/`ai_extracted`/`api`/`derived`), `confidence`, `confirmation_state` (`confirmed`/`pending`/`auto_unreviewed`), `supersedes_id` (final supersedes estimate, history kept), `source_document_ref`.
+- Unique on `(period_id, definition_id, statement_basis, attribution, variant, measure_window, data_quality)` so estimate and final coexist.
+
+Rules:
+
+- Derived metrics (margins, FCF, ROE/ROIC, net-debt/EBITDA) are computed at read time from confirmed facts (TTM where conventional); unavailable when an input is missing.
+- A fact may exist for a KPI not yet active in the relevance profile (agent-extracted, awaiting curation).
+- Industry-specific classified stocks (reserves with proven/probable, 1P/2P/3P categories) are modeled as company-scoped custom KPIs, not core enums.
+- Import/export, retention, and backup must treat fundamentals as owner durable state.
+
 ### Jobs
 
 Supports Sources screen, background ingestion, manual refresh, and transcript processing status.
