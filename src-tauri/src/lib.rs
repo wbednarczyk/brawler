@@ -47,6 +47,10 @@ pub fn run() {
                 })?;
             log::info!("local logging initialized at {}", logs_dir.display());
 
+            // One-key-per-provider migration (ADR 0028): drop legacy purpose-scoped
+            // keychain entries so no orphaned secrets linger. Best-effort, no fallback.
+            providers::credentials::clear_legacy_credentials();
+
             app.manage(state);
 
             Ok(())
@@ -150,9 +154,9 @@ pub fn run() {
             commands::settings::update_settings,
             commands::settings::disable_developer_mode,
             commands::settings::unlock_developer_mode,
-            commands::credentials::get_gemini_transcription_credential_status,
-            commands::credentials::set_gemini_transcription_api_key,
-            commands::credentials::clear_gemini_transcription_api_key
+            commands::credentials::get_provider_credential_status,
+            commands::credentials::set_provider_api_key,
+            commands::credentials::clear_provider_api_key
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Brawler application");

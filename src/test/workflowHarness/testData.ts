@@ -648,11 +648,10 @@ shortcutBindings: {},
 
 export const initialGeminiCredentialStatus = {
 providerId: "provider_gemini",
-purpose: "youtube_transcription",
 secretKind: "api_key",
 configured: false,
 storage: "not_configured",
-label: "Gemini YouTube transcription API key",
+label: "Gemini API key",
 devFallbackAvailable: false,
 error: null as string | null,
 };

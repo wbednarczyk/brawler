@@ -2,16 +2,32 @@ use serde::Serialize;
 use thiserror::Error;
 
 const APP_SERVICE: &str = "brawler";
-const GEMINI_TRANSCRIPTION_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
-const GEMINI_TRANSCRIPTION_ACCOUNT: &str = "provider_gemini:youtube_transcription:api_key";
-const GEMINI_GENERAL_ANALYSIS_TARGET: &str = GEMINI_TRANSCRIPTION_TARGET;
-const GEMINI_GENERAL_ANALYSIS_ACCOUNT: &str = GEMINI_TRANSCRIPTION_ACCOUNT;
-const GEMINI_TRANSCRIPTION_ENV_VAR: &str = "GEMINI_API_KEY";
+
+// One API-key credential per provider. Purpose (analysis vs transcription) is a
+// usage decided by settings, not part of the credential's identity (ADR 0028).
+const GEMINI_TARGET: &str = "brawler/provider_gemini/api_key";
+const GEMINI_ACCOUNT: &str = "provider_gemini:api_key";
+const GEMINI_ENV_VAR: &str = "GEMINI_API_KEY";
+
+const ANTHROPIC_TARGET: &str = "brawler/provider_anthropic/api_key";
+const ANTHROPIC_ACCOUNT: &str = "provider_anthropic:api_key";
+const ANTHROPIC_ENV_VAR: &str = "ANTHROPIC_API_KEY";
+
+const OPENAI_TARGET: &str = "brawler/provider_openai/api_key";
+const OPENAI_ACCOUNT: &str = "provider_openai:api_key";
+const OPENAI_ENV_VAR: &str = "OPENAI_API_KEY";
+
+// Legacy purpose-scoped entries removed in ADR 0028. They are best-effort
+// cleared once so no orphaned secrets linger; we never read or fall back to them.
+const LEGACY_GEMINI_PURPOSE_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
+const LEGACY_GEMINI_PURPOSE_ACCOUNT: &str = "provider_gemini:youtube_transcription:api_key";
 
 #[derive(Debug, Error)]
 pub enum CredentialError {
     #[error("credential value is required")]
     EmptySecret,
+    #[error("unknown AI provider: {0}")]
+    UnknownProvider(String),
     #[error("credential backend did not persist the saved value")]
     PersistenceVerificationFailed,
     #[error("credential backend unavailable: {0}")]
@@ -21,7 +37,6 @@ pub enum CredentialError {
 #[derive(Clone, Debug)]
 pub struct CredentialDescriptor {
     pub provider_id: &'static str,
-    pub purpose: &'static str,
     pub secret_kind: &'static str,
     pub label: &'static str,
     target: &'static str,
@@ -33,7 +48,6 @@ pub struct CredentialDescriptor {
 #[serde(rename_all = "camelCase")]
 pub struct CredentialStatus {
     pub provider_id: &'static str,
-    pub purpose: &'static str,
     pub secret_kind: &'static str,
     pub configured: bool,
     pub storage: &'static str,
@@ -42,50 +56,83 @@ pub struct CredentialStatus {
     pub error: Option<String>,
 }
 
-pub fn gemini_transcription_descriptor() -> CredentialDescriptor {
-    CredentialDescriptor {
-        provider_id: "provider_gemini",
-        purpose: "youtube_transcription",
-        secret_kind: "api_key",
-        label: "Gemini YouTube transcription API key",
-        target: GEMINI_TRANSCRIPTION_TARGET,
-        account: GEMINI_TRANSCRIPTION_ACCOUNT,
-        development_env_var: Some(GEMINI_TRANSCRIPTION_ENV_VAR),
+/// The provider ids that authenticate with a single OS-keychain API key.
+pub fn credentialed_provider_ids() -> &'static [&'static str] {
+    &["provider_gemini", "provider_anthropic", "provider_openai"]
+}
+
+/// Resolve the credential descriptor for a provider id, if it uses a credential.
+pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDescriptor> {
+    match provider_id {
+        "provider_gemini" => Some(CredentialDescriptor {
+            provider_id: "provider_gemini",
+            secret_kind: "api_key",
+            label: "Gemini API key",
+            target: GEMINI_TARGET,
+            account: GEMINI_ACCOUNT,
+            development_env_var: Some(GEMINI_ENV_VAR),
+        }),
+        "provider_anthropic" => Some(CredentialDescriptor {
+            provider_id: "provider_anthropic",
+            secret_kind: "api_key",
+            label: "Anthropic (Claude) API key",
+            target: ANTHROPIC_TARGET,
+            account: ANTHROPIC_ACCOUNT,
+            development_env_var: Some(ANTHROPIC_ENV_VAR),
+        }),
+        "provider_openai" => Some(CredentialDescriptor {
+            provider_id: "provider_openai",
+            secret_kind: "api_key",
+            label: "OpenAI API key",
+            target: OPENAI_TARGET,
+            account: OPENAI_ACCOUNT,
+            development_env_var: Some(OPENAI_ENV_VAR),
+        }),
+        _ => None,
     }
 }
 
-pub fn gemini_general_analysis_descriptor() -> CredentialDescriptor {
-    CredentialDescriptor {
-        provider_id: "provider_gemini",
-        purpose: "general_analysis",
-        secret_kind: "api_key",
-        label: "Gemini general analysis API key",
-        target: GEMINI_GENERAL_ANALYSIS_TARGET,
-        account: GEMINI_GENERAL_ANALYSIS_ACCOUNT,
-        development_env_var: Some(GEMINI_TRANSCRIPTION_ENV_VAR),
-    }
+/// Read the credential status for a provider, or `None` if the id is keyless.
+pub fn provider_credential_status(provider_id: &str) -> Option<CredentialStatus> {
+    provider_credential_descriptor(provider_id).map(|descriptor| credential_status(&descriptor))
 }
 
-pub fn get_gemini_transcription_credential_status() -> CredentialStatus {
-    credential_status(&gemini_transcription_descriptor())
-}
-
-pub fn set_gemini_transcription_api_key(
+/// Store the API key for a provider in the OS keychain.
+pub fn set_provider_api_key(
+    provider_id: &str,
     api_key: &str,
 ) -> Result<CredentialStatus, CredentialError> {
-    set_credential_secret(&gemini_transcription_descriptor(), api_key)
+    let descriptor = provider_credential_descriptor(provider_id)
+        .ok_or_else(|| CredentialError::UnknownProvider(provider_id.to_owned()))?;
+    set_credential_secret(&descriptor, api_key)
 }
 
-pub fn clear_gemini_transcription_api_key() -> Result<CredentialStatus, CredentialError> {
-    clear_credential_secret(&gemini_transcription_descriptor())
+/// Clear the stored API key for a provider.
+pub fn clear_provider_api_key(provider_id: &str) -> Result<CredentialStatus, CredentialError> {
+    let descriptor = provider_credential_descriptor(provider_id)
+        .ok_or_else(|| CredentialError::UnknownProvider(provider_id.to_owned()))?;
+    clear_credential_secret(&descriptor)
 }
 
-pub fn read_gemini_transcription_api_key() -> Result<Option<String>, CredentialError> {
-    read_credential_secret(&gemini_transcription_descriptor())
+/// Read the configured API key for a provider (keychain, then dev env fallback).
+/// Returns `Ok(None)` for keyless providers and for configured providers with no key.
+pub fn read_provider_api_key(provider_id: &str) -> Result<Option<String>, CredentialError> {
+    match provider_credential_descriptor(provider_id) {
+        Some(descriptor) => read_credential_secret(&descriptor),
+        None => Ok(None),
+    }
 }
 
-pub fn read_gemini_general_analysis_api_key() -> Result<Option<String>, CredentialError> {
-    read_credential_secret(&gemini_general_analysis_descriptor())
+/// Best-effort, one-time removal of legacy purpose-scoped keychain entries
+/// replaced by the one-key-per-provider model. Errors are ignored.
+pub fn clear_legacy_credentials() {
+    if let Ok(entry) = keyring::Entry::new_with_target(
+        LEGACY_GEMINI_PURPOSE_TARGET,
+        APP_SERVICE,
+        LEGACY_GEMINI_PURPOSE_ACCOUNT,
+    ) {
+        let _ = entry.delete_credential();
+    }
 }
 
 fn credential_status(descriptor: &CredentialDescriptor) -> CredentialStatus {
@@ -217,7 +264,6 @@ fn status(
 ) -> CredentialStatus {
     CredentialStatus {
         provider_id: descriptor.provider_id,
-        purpose: descriptor.purpose,
         secret_kind: descriptor.secret_kind,
         configured,
         storage,
@@ -233,19 +279,41 @@ mod tests {
 
     #[test]
     fn empty_secret_is_rejected_before_keychain_access() {
-        let error = set_credential_secret(&gemini_transcription_descriptor(), "   ")
+        let error = set_provider_api_key("provider_gemini", "   ")
             .expect_err("empty secret should be rejected");
 
         assert!(matches!(error, CredentialError::EmptySecret));
     }
 
     #[test]
+    fn unknown_provider_is_rejected() {
+        let error = set_provider_api_key("provider_unknown", "key")
+            .expect_err("unknown provider should be rejected");
+
+        assert!(matches!(error, CredentialError::UnknownProvider(_)));
+        assert!(provider_credential_status("provider_unknown").is_none());
+        assert_eq!(
+            read_provider_api_key("test_sample").expect("keyless read is ok"),
+            None
+        );
+    }
+
+    #[test]
+    fn descriptors_exist_for_all_credentialed_providers() {
+        for provider_id in credentialed_provider_ids() {
+            let descriptor = provider_credential_descriptor(provider_id)
+                .unwrap_or_else(|| panic!("descriptor missing for {provider_id}"));
+            assert_eq!(descriptor.secret_kind, "api_key");
+            assert_eq!(&descriptor.provider_id, provider_id);
+        }
+    }
+
+    #[test]
     fn descriptor_exposes_non_secret_metadata() {
-        let descriptor = gemini_transcription_descriptor();
+        let descriptor = provider_credential_descriptor("provider_gemini").expect("gemini exists");
         let status = status(&descriptor, true, "os_keychain", false, None);
 
         assert_eq!(status.provider_id, "provider_gemini");
-        assert_eq!(status.purpose, "youtube_transcription");
         assert_eq!(status.secret_kind, "api_key");
         assert_eq!(status.storage, "os_keychain");
         assert!(status.configured);
@@ -254,7 +322,8 @@ mod tests {
 
     #[test]
     fn verified_save_status_rejects_missing_read_back_secret() {
-        let error = verified_save_status(&gemini_transcription_descriptor(), None)
+        let descriptor = provider_credential_descriptor("provider_gemini").expect("gemini exists");
+        let error = verified_save_status(&descriptor, None)
             .expect_err("missing read-back secret should fail verification");
 
         assert!(matches!(
@@ -265,11 +334,9 @@ mod tests {
 
     #[test]
     fn verified_save_status_reports_os_keychain_when_read_back_succeeds() {
-        let status = verified_save_status(
-            &gemini_transcription_descriptor(),
-            Some("test-secret".to_owned()),
-        )
-        .expect("read-back secret should verify persistence");
+        let descriptor = provider_credential_descriptor("provider_anthropic").expect("exists");
+        let status = verified_save_status(&descriptor, Some("test-secret".to_owned()))
+            .expect("read-back secret should verify persistence");
 
         assert!(status.configured);
         assert_eq!(status.storage, "os_keychain");
@@ -278,8 +345,8 @@ mod tests {
 
     #[test]
     #[ignore = "live keyring smoke test; writes to the real OS credential store and restores the previous Gemini key"]
-    fn live_keyring_persists_gemini_transcription_secret() -> Result<(), String> {
-        let descriptor = gemini_transcription_descriptor();
+    fn live_keyring_persists_provider_secret() -> Result<(), String> {
+        let descriptor = provider_credential_descriptor("provider_gemini").expect("gemini exists");
         let original = read_os_keychain_secret(&descriptor).map_err(|error| error.to_string())?;
         let smoke_secret = std::env::var("BRAWLER_KEYRING_SMOKE_SECRET")
             .unwrap_or_else(|_| "brawler-keyring-smoke-secret".to_owned());

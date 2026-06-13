@@ -32,12 +32,7 @@ pub fn analysis_provider_requires_credential(provider_id: &str) -> bool {
 /// Returns `None` for keyless providers (the test sample) and for configured
 /// providers whose key is not set.
 pub fn read_analysis_provider_api_key(provider_id: &str) -> Option<String> {
-    match provider_id {
-        GEMINI_ANALYSIS_PROVIDER_ID => {
-            credentials::read_gemini_general_analysis_api_key().unwrap_or(None)
-        }
-        _ => None,
-    }
+    credentials::read_provider_api_key(provider_id).unwrap_or(None)
 }
 
 /// Build a boxed analysis provider for the given id, credential, model, and timeout.

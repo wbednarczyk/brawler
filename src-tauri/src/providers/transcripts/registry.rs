@@ -21,7 +21,8 @@ pub fn build_transcript_provider(
     match provider_id {
         TEST_SAMPLE_TRANSCRIPT_PROVIDER_ID => Ok(Box::new(TestSampleTranscriptProvider)),
         GEMINI_TRANSCRIPT_PROVIDER_ID => {
-            let api_key = credentials::read_gemini_transcription_api_key().unwrap_or(None);
+            let api_key =
+                credentials::read_provider_api_key(GEMINI_TRANSCRIPT_PROVIDER_ID).unwrap_or(None);
             Ok(Box::new(
                 GeminiTranscriptProvider::live(api_key, model.to_owned(), timeout_seconds)
                     .map_err(|error| error.to_string())?,

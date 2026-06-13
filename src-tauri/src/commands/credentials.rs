@@ -5,19 +5,27 @@ use crate::{app_state, providers::credentials, storage};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct SetGeminiTranscriptionApiKeyInput {
+pub struct ProviderCredentialInput {
+    provider_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetProviderApiKeyInput {
+    provider_id: String,
     api_key: String,
 }
 
 #[tauri::command]
-pub fn get_gemini_transcription_credential_status(
+pub fn get_provider_credential_status(
+    input: ProviderCredentialInput,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<credentials::CredentialStatus, String> {
-    let status = credentials::get_gemini_transcription_credential_status();
+    let status = credentials::provider_credential_status(&input.provider_id)
+        .ok_or_else(|| format!("Unknown AI provider: {}", input.provider_id))?;
     log::info!(
-        "module=credentials stage=credential_checked providerId={} purpose={} secretKind={} configured={} storage={} devFallbackAvailable={}",
+        "module=credentials stage=credential_checked providerId={} secretKind={} configured={} storage={} devFallbackAvailable={}",
         status.provider_id,
-        status.purpose,
         status.secret_kind,
         status.configured,
         status.storage,
@@ -36,16 +44,15 @@ pub fn get_gemini_transcription_credential_status(
 }
 
 #[tauri::command]
-pub fn set_gemini_transcription_api_key(
-    input: SetGeminiTranscriptionApiKeyInput,
+pub fn set_provider_api_key(
+    input: SetProviderApiKeyInput,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<credentials::CredentialStatus, String> {
-    match credentials::set_gemini_transcription_api_key(&input.api_key) {
+    match credentials::set_provider_api_key(&input.provider_id, &input.api_key) {
         Ok(status) => {
             log::info!(
-                "module=credentials stage=stored providerId={} purpose={} secretKind={} configured={} storage={}",
+                "module=credentials stage=stored providerId={} secretKind={} configured={} storage={}",
                 status.provider_id,
-                status.purpose,
                 status.secret_kind,
                 status.configured,
                 status.storage
@@ -56,20 +63,21 @@ pub fn set_gemini_transcription_api_key(
         }
         Err(error) => {
             log::error!(
-                "module=credentials stage=failed providerId=provider_gemini purpose=youtube_transcription secretKind=api_key errorClass=credential_save_error error={}",
+                "module=credentials stage=failed providerId={} secretKind=api_key errorClass=credential_save_error error={}",
+                input.provider_id,
                 error
             );
             record_credential_error_diagnostic(
                 &state,
+                &input.provider_id,
                 "failed",
                 "Credential save failed.",
                 "credential_save_error",
             );
             state.increment_runtime_counter(
-                "brawler_credential_checks_total",
+                "brawler_credential_operations_total",
                 &[
-                    ("provider_id", "provider_gemini"),
-                    ("module", "youtube_transcription"),
+                    ("provider_id", input.provider_id.as_str()),
                     ("status", "failed"),
                 ],
             );
@@ -79,15 +87,15 @@ pub fn set_gemini_transcription_api_key(
 }
 
 #[tauri::command]
-pub fn clear_gemini_transcription_api_key(
+pub fn clear_provider_api_key(
+    input: ProviderCredentialInput,
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<credentials::CredentialStatus, String> {
-    match credentials::clear_gemini_transcription_api_key() {
+    match credentials::clear_provider_api_key(&input.provider_id) {
         Ok(status) => {
             log::info!(
-                "module=credentials stage=cleared providerId={} purpose={} secretKind={} configured={} storage={}",
+                "module=credentials stage=cleared providerId={} secretKind={} configured={} storage={}",
                 status.provider_id,
-                status.purpose,
                 status.secret_kind,
                 status.configured,
                 status.storage
@@ -98,20 +106,21 @@ pub fn clear_gemini_transcription_api_key(
         }
         Err(error) => {
             log::error!(
-                "module=credentials stage=failed providerId=provider_gemini purpose=youtube_transcription secretKind=api_key errorClass=credential_clear_error error={}",
+                "module=credentials stage=failed providerId={} secretKind=api_key errorClass=credential_clear_error error={}",
+                input.provider_id,
                 error
             );
             record_credential_error_diagnostic(
                 &state,
+                &input.provider_id,
                 "failed",
                 "Credential clear failed.",
                 "credential_clear_error",
             );
             state.increment_runtime_counter(
-                "brawler_credential_checks_total",
+                "brawler_credential_operations_total",
                 &[
-                    ("provider_id", "provider_gemini"),
-                    ("module", "youtube_transcription"),
+                    ("provider_id", input.provider_id.as_str()),
                     ("status", "failed"),
                 ],
             );
@@ -134,19 +143,11 @@ fn record_credential_metric(
     };
     state.increment_runtime_counter(
         "brawler_credential_checks_total",
-        &[
-            ("provider_id", status.provider_id),
-            ("module", status.purpose),
-            ("status", outcome),
-        ],
+        &[("provider_id", status.provider_id), ("status", outcome)],
     );
     state.increment_runtime_counter(
         "brawler_credential_operations_total",
-        &[
-            ("provider_id", status.provider_id),
-            ("module", status.purpose),
-            ("status", stage),
-        ],
+        &[("provider_id", status.provider_id), ("status", stage)],
     );
 }
 
@@ -162,17 +163,13 @@ fn record_credential_diagnostic(
         module: "credentials".to_owned(),
         scope: Some(storage::DiagnosticScope {
             scope_type: "credential".to_owned(),
-            id: Some(format!(
-                "{}:{}:{}",
-                status.provider_id, status.purpose, status.secret_kind
-            )),
+            id: Some(format!("{}:{}", status.provider_id, status.secret_kind)),
         }),
         stage: stage.to_owned(),
         severity: severity.to_owned(),
         message: message.to_owned(),
         metadata: Some(json!({
             "providerId": status.provider_id,
-            "purpose": status.purpose,
             "secretKind": status.secret_kind,
             "configured": status.configured,
             "storage": status.storage,
@@ -184,6 +181,7 @@ fn record_credential_diagnostic(
 
 fn record_credential_error_diagnostic(
     state: &app_state::AppState,
+    provider_id: &str,
     stage: &str,
     message: &str,
     error_class: &str,
@@ -193,14 +191,13 @@ fn record_credential_error_diagnostic(
         module: "credentials".to_owned(),
         scope: Some(storage::DiagnosticScope {
             scope_type: "credential".to_owned(),
-            id: Some("provider_gemini:youtube_transcription:api_key".to_owned()),
+            id: Some(format!("{provider_id}:api_key")),
         }),
         stage: stage.to_owned(),
         severity: "error".to_owned(),
         message: message.to_owned(),
         metadata: Some(json!({
-            "providerId": "provider_gemini",
-            "purpose": "youtube_transcription",
+            "providerId": provider_id,
             "secretKind": "api_key",
             "errorClass": error_class
         })),

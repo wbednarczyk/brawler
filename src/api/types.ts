@@ -424,7 +424,6 @@ export type UserSettings = {
 
 export type CredentialStatus = {
   providerId: string;
-  purpose: string;
   secretKind: string;
   configured: boolean;
   storage: string;

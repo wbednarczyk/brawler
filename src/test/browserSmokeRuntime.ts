@@ -168,11 +168,10 @@ const licenseStatus: LicenseStatus = {
 
 const credentialStatus: CredentialStatus = {
   providerId: "provider_gemini",
-  purpose: "youtube_transcription",
   secretKind: "api_key",
   configured: false,
   storage: "not_configured",
-  label: "Gemini YouTube transcription API key",
+  label: "Gemini API key",
   devFallbackAvailable: false,
   error: null,
 };
@@ -216,7 +215,7 @@ function handleCommand(command: string, args: InvokeArgs) {
       return [] satisfies TranscriptJob[];
     case "list_notebook_entries":
       return notebookEntries.filter((entry) => entry.companyId === (args as { companyId?: string })?.companyId);
-    case "get_gemini_transcription_credential_status":
+    case "get_provider_credential_status":
       return credentialStatus;
     case "list_ai_analysis_jobs":
       return [];

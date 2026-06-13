@@ -1266,12 +1266,12 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       return Promise.resolve(appTestState.localMetricsSnapshotResponse);
     }
 
-    if (command === "get_gemini_transcription_credential_status") {
+    if (command === "get_provider_credential_status") {
       return Promise.resolve(appTestState.geminiCredentialStatusResponse);
     }
 
-    if (command === "set_gemini_transcription_api_key") {
-      const input = (args as { input: { apiKey: string } }).input;
+    if (command === "set_provider_api_key") {
+      const input = (args as { input: { providerId: string; apiKey: string } }).input;
 
       if (!input.apiKey.trim()) {
         return Promise.reject(new Error("credential value is required"));
@@ -1286,7 +1286,7 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       return Promise.resolve(appTestState.geminiCredentialStatusResponse);
     }
 
-    if (command === "clear_gemini_transcription_api_key") {
+    if (command === "clear_provider_api_key") {
       appTestState.geminiCredentialStatusResponse = initialGeminiCredentialStatus;
 
       return Promise.resolve(appTestState.geminiCredentialStatusResponse);

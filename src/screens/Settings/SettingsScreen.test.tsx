@@ -210,8 +210,9 @@ describe("Settings screen workflows", () => {
     await user.type(screen.getByLabelText("Klucz API Gemini"), "test-gemini-key");
     await user.click(screen.getByRole("button", { name: "Zapisz" }));
 
-    expect(invoke).toHaveBeenCalledWith("set_gemini_transcription_api_key", {
+    expect(invoke).toHaveBeenCalledWith("set_provider_api_key", {
       input: {
+        providerId: "provider_gemini",
         apiKey: "test-gemini-key",
       },
     });
@@ -221,7 +222,11 @@ describe("Settings screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Wyczyść" }));
 
-    expect(invoke).toHaveBeenCalledWith("clear_gemini_transcription_api_key");
+    expect(invoke).toHaveBeenCalledWith("clear_provider_api_key", {
+      input: {
+        providerId: "provider_gemini",
+      },
+    });
     await waitFor(() => {
       expect(within(settingsRegion).queryByText("Skonfigurowane")).not.toBeInTheDocument();
     });
