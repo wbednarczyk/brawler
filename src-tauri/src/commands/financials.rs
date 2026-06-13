@@ -159,3 +159,12 @@ pub fn list_report_documents(
         .list_report_documents_by_company(&company_id)
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+pub fn resolve_ir_report(
+    input: crate::ir_resolution::ResolveIrReportInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<crate::ir_resolution::IrReportResolution, String> {
+    let fetcher = document_fetcher::HttpDocumentFetcher::new();
+    crate::ir_resolution::resolve_ir_report(&state, &fetcher, input)
+}

@@ -4,6 +4,7 @@ use tauri::Manager;
 pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
+pub mod ir_resolution;
 pub mod jobs;
 pub mod licensing;
 pub mod logging;
@@ -128,6 +129,7 @@ pub fn run() {
             commands::financials::delete_financial_fact,
             commands::financials::capture_report_document,
             commands::financials::list_report_documents,
+            commands::financials::resolve_ir_report,
             commands::kpi_extraction::start_kpi_extraction,
             commands::kpi_extraction::retry_kpi_extraction,
             commands::kpi_extraction::list_kpi_extraction,

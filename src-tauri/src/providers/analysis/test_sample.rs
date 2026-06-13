@@ -11,6 +11,12 @@ use super::types::{
 /// out-of-taxonomy suggestion, with a detected period.
 pub const TEST_SAMPLE_KPI_EXTRACTION_JSON: &str = r#"{"period":{"fiscalYear":2025,"periodType":"Q3","periodEndDate":"2025-09-30"},"currency":"PLN","language":"pl","facts":[{"metricKey":"revenue","label":"Revenue","valueNumeric":"142312000","unit":"PLN","currency":"PLN","asReportedValue":"142 312","asReportedScale":"tys.","measureWindow":"quarter","confidence":"high","sourceSnippet":"przychody ze sprzedazy 142 312 tys. zl","isProposedKpi":false},{"metricKey":"backlog","label":"Backlog","valueNumeric":"410000000","currency":"PLN","confidence":"medium","sourceSnippet":"portfel zamowien 410 mln zl","isProposedKpi":true}]}"#;
 
+/// Deterministic IR-page report-link pick for the test provider. The URL matches a
+/// candidate the resolver test seeds into the sample IR page HTML.
+pub const TEST_SAMPLE_IR_PICK_URL: &str = "https://reports.example.com/q3-2025.pdf";
+const TEST_SAMPLE_IR_PICK_JSON: &str =
+    r#"{"bestUrl":"https://reports.example.com/q3-2025.pdf","confidence":"high"}"#;
+
 pub const TEST_SAMPLE_ANALYSIS_PROVIDER_ID: &str = "test_sample";
 pub const TEST_SAMPLE_ANALYSIS_MODEL: &str = "test-sample-analysis-v1";
 
@@ -171,10 +177,16 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
 
     async fn complete_document(
         &self,
-        _prompt: &str,
+        prompt: &str,
         _document: &AnalysisDocument,
     ) -> Result<String, AnalysisProviderError> {
-        Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
+        // The document path serves both KPI extraction and IR-page link resolution;
+        // branch on the prompt so the deterministic output matches the caller.
+        if prompt.contains("candidate report links") {
+            Ok(TEST_SAMPLE_IR_PICK_JSON.to_owned())
+        } else {
+            Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
+        }
     }
 }
 

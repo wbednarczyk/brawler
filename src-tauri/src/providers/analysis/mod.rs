@@ -17,6 +17,7 @@ pub use prompts::{
 };
 pub use test_sample::{
     TestSampleAnalysisProvider, TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+    TEST_SAMPLE_IR_PICK_URL,
 };
 pub use types::{
     AiAnalysisProvider, AnalysisDocument, AnalysisProviderError, AnalysisProviderOutput,
