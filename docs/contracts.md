@@ -1761,6 +1761,27 @@ Initial local commands:
 
 Input shapes follow the corresponding domain types above. Return shapes include all domain fields plus timestamps. Company fundamentals data must be treated as owner-durable state in import/export and backup workflows.
 
+### AI KPI Extraction
+
+AI KPI extraction ([ADR 0028](adr/0028-multi-provider-ai-boundary.md), [ADR 0029](adr/0029-ir-page-report-resolution.md)) reads a stored report document with the selected AI provider and produces **proposals**. A proposal never becomes a `financial_fact` until the user confirms it; confirming materialises the period, resolves (or, for accepted suggestions, creates) the KPI definition, and writes the fact with `extractionMethod = "ai"` and the source document reference. Confirmed proposals are retained as the provenance trail (provider, model, prompt version live on the job; the verbatim source snippet and confidence on the proposal). Rejected proposals never persist a value.
+
+An extraction job carries the detected primary period (`detectedFiscalYear`, `detectedPeriodType`, `detectedPeriodEndDate`), default currency/language, and its proposals. Each proposal carries `metricKey`, `label`, `valueNumeric` (decimal base-units text), `asReportedValue`/`asReportedScale`, `confidence` (`low|medium|high`), `sourceSnippet`, `isProposedKpi` (true for metrics beyond the supplied taxonomy), `status` (`pending|confirmed|rejected`), and `factId` once confirmed. Only the primary period is extracted; prior-year comparative columns are ignored.
+
+Commands:
+
+- `start_kpi_extraction(input)`: queues an async extraction over a report document (`reportDocumentId`, optional `periodHint`, optional `providerMode`); returns the queued job.
+- `retry_kpi_extraction(jobId)`: re-queues an existing job.
+- `list_kpi_extraction(input)`: returns extraction jobs (with proposals) for one report document.
+- `confirm_kpi_proposal(input)`: commits one proposal as a `financial_fact` (`proposalId`, optional `valueNumeric`/`currency` edit, optional `fiscalYear`/`periodType`/`periodEndDate` period override, `acceptAsNewKpi` for out-of-taxonomy suggestions); returns the created fact.
+- `reject_kpi_proposal(proposalId)`: marks a proposal rejected; never writes a fact.
+
+### IR-Page Report Resolution
+
+The report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md)) is: ESPI/EBI attachment (primary), per-company IR reports page (fallback), manual PDF URL paste (last resort).
+
+- `get_company_ir_reports_url(companyId)` / `set_company_ir_reports_url(companyId, url)`: read/write the durable per-company IR reports page URL (empty clears it).
+- `resolve_ir_report(input)`: fetches the company's IR page, extracts candidate links generically (no per-company scrapers), and has the AI pick the report matching the event context (`companyId`, optional `periodHint`/`reportType`/`publishedAt`). A confident pick is captured into `report_documents` and returned as `document`; otherwise `document` is null and `candidates` is returned for the user to choose. Event-driven automatic resolution is deferred to v0.47.0.
+
 ## UI-Facing Command Boundaries
 
 Initial Tauri command groups:

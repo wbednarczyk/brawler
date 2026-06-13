@@ -38,7 +38,7 @@ Current fundamentals sequence:
 
 - v0.34.0 (completed in `0.34.0`) establishes the financial facts data model, report document persistence (user-supplied PDF URLs), URL evidence capture, and manual KPI entry. ESPI/EBI attachment ingestion and backfill were deferred to v0.39.0.
 - v0.35.0 (completed in `0.35.0`) adds Claude and OpenAI as BYO-key AI providers alongside Gemini (async provider boundary, provider registry, per-provider keychain credentials, model selection, and a document-input abstraction on the provider trait), drawn before extraction so the report-document path is designed multi-provider.
-- v0.36.0 adds AI KPI extraction through the provider boundary with mandatory per-fact user confirmation.
+- v0.36.0 adds AI KPI extraction through the provider boundary with mandatory per-fact user confirmation (proposals staged, never a fact until confirmed; confirmed proposals retained as provenance). It also adds the report-document source ladder from ADR 0029 — ESPI attachment, then the durable per-company IR reports page with an AI-assisted generic resolver, then manual PDF URL — as a user-triggered building block; event-driven auto-resolution stays in v0.47.0. Claude gains native PDF input; OpenAI stays text-path.
 - v0.37.0 ships the fundamentals panel, custom per-company KPIs, KPI trend charts via shared SVG primitives, and export/import.
 
 Current research-leverage sequence:
