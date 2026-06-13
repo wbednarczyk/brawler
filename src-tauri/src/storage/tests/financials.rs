@@ -1,0 +1,562 @@
+use super::*;
+
+#[test]
+fn lists_canonical_kpi_definitions() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical KPI definitions should list");
+
+    assert!(!definitions.is_empty());
+    let net_profit = definitions
+        .iter()
+        .find(|d| d.metric_key == "net_profit")
+        .expect("net_profit should be in canonical definitions");
+    assert_eq!(net_profit.scope, "canonical");
+    assert_eq!(net_profit.label, "Net profit");
+    assert_eq!(net_profit.value_kind, "monetary");
+    assert_eq!(net_profit.computation, "reported");
+}
+
+#[test]
+fn lists_sector_kpi_definitions() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let banking_defs = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("sector".to_owned()),
+            sector: Some("banking".to_owned()),
+            company_id: None,
+        })
+        .expect("banking KPI definitions should list");
+
+    assert!(!banking_defs.is_empty());
+    assert!(banking_defs
+        .iter()
+        .any(|d| d.metric_key == "net_interest_income"));
+    assert!(banking_defs.iter().all(|d| d.scope == "sector"));
+    assert!(banking_defs.iter().all(|d| d.sector == Some("banking".to_owned())));
+}
+
+#[test]
+fn creates_company_custom_kpi_definition() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let custom_kpi = state
+        .create_kpi_definition(NewKpiDefinition {
+            scope: "company".to_owned(),
+            company_id: Some(company.id.clone()),
+            sector: None,
+            metric_key: "custom_metric".to_owned(),
+            label: "Custom Metric".to_owned(),
+            value_kind: "percentage".to_owned(),
+            unit: None,
+            computation: "derived".to_owned(),
+            formula: Some("metric_a / metric_b".to_owned()),
+            display_format: None,
+        })
+        .expect("custom KPI definition should create");
+
+    assert_eq!(custom_kpi.scope, "company");
+    assert_eq!(custom_kpi.company_id, Some(company.id));
+    assert_eq!(custom_kpi.metric_key, "custom_metric");
+}
+
+#[test]
+fn creates_financial_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2026-12-31".to_owned()),
+            report_evidence_ref: Some("annual_report_2026".to_owned()),
+        })
+        .expect("financial period should create");
+
+    assert_eq!(period.company_id, company.id);
+    assert_eq!(period.fiscal_year, 2026);
+    assert_eq!(period.period_type, "FY");
+    assert_eq!(period.period_end_date, Some("2026-12-31".to_owned()));
+    assert_eq!(
+        period.report_evidence_ref,
+        Some("annual_report_2026".to_owned())
+    );
+}
+
+#[test]
+fn updates_financial_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: Some("2026-06-30".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    let updated = state
+        .update_financial_period(UpdateFinancialPeriod {
+            id: period.id.clone(),
+            period_end_date: Some("2026-07-15".to_owned()),
+            report_evidence_ref: Some("h1_report_2026".to_owned()),
+        })
+        .expect("financial period should update");
+
+    assert_eq!(updated.period_end_date, Some("2026-07-15".to_owned()));
+    assert_eq!(
+        updated.report_evidence_ref,
+        Some("h1_report_2026".to_owned())
+    );
+}
+
+#[test]
+fn lists_financial_periods_by_company() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("first period should create");
+
+    state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "H1".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("second period should create");
+
+    let periods = state
+        .list_financial_periods(ListFinancialPeriodsInput {
+            company_id: company.id.clone(),
+            fiscal_year: None,
+        })
+        .expect("financial periods should list");
+
+    assert_eq!(periods.len(), 2);
+    assert!(periods.iter().all(|p| p.company_id == company.id));
+    assert!(periods.iter().any(|p| p.period_type == "FY"));
+    assert!(periods.iter().any(|p| p.period_type == "H1"));
+}
+
+#[test]
+fn creates_and_lists_kpi_relevance() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let net_profit_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "net_profit")
+        .expect("net_profit should exist");
+
+    let relevance = state
+        .create_kpi_relevance(NewKpiRelevance {
+            company_id: company.id.clone(),
+            definition_id: net_profit_def.id.clone(),
+            source: "financial_report".to_owned(),
+            rank: Some("1".to_owned()),
+            first_seen_period: Some("2026-Q1".to_owned()),
+            last_seen_period: None,
+        })
+        .expect("kpi relevance should create");
+
+    assert_eq!(relevance.company_id, company.id);
+    assert_eq!(relevance.definition_id, net_profit_def.id);
+    assert_eq!(relevance.status, "active");
+    assert_eq!(relevance.source, "financial_report");
+    assert_eq!(relevance.rank, Some("1".to_owned()));
+
+    let relevances = state
+        .list_kpi_relevance(&company.id)
+        .expect("kpi relevance should list");
+
+    assert!(!relevances.is_empty());
+    assert!(relevances.iter().any(|r| r.definition_id == net_profit_def.id));
+}
+
+#[test]
+fn updates_kpi_relevance_status() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let revenue_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "revenue")
+        .expect("revenue should exist");
+
+    let relevance = state
+        .create_kpi_relevance(NewKpiRelevance {
+            company_id: company.id.clone(),
+            definition_id: revenue_def.id.clone(),
+            source: "earnings_call".to_owned(),
+            rank: None,
+            first_seen_period: None,
+            last_seen_period: None,
+        })
+        .expect("kpi relevance should create");
+
+    let updated = state
+        .update_kpi_relevance(UpdateKpiRelevance {
+            id: relevance.id.clone(),
+            status: Some("inactive".to_owned()),
+            rank: Some("2".to_owned()),
+            first_seen_period: Some("2025-Q4".to_owned()),
+            last_seen_period: Some("2026-Q2".to_owned()),
+        })
+        .expect("kpi relevance should update");
+
+    assert_eq!(updated.status, "inactive");
+    assert_eq!(updated.rank, Some("2".to_owned()));
+    assert_eq!(updated.first_seen_period, Some("2025-Q4".to_owned()));
+}
+
+#[test]
+fn creates_financial_fact() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2026-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let net_profit_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "net_profit")
+        .expect("net_profit should exist");
+
+    let fact = state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: net_profit_def.id.clone(),
+            value_numeric: "1234567.89".to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: Some("consolidated".to_owned()),
+            attribution: None,
+            variant: Some("reported".to_owned()),
+            measure_window: Some("flow".to_owned()),
+            data_quality: Some("final".to_owned()),
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: Some("IFRS".to_owned()),
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: Some("annual_report_2026.pdf".to_owned()),
+        })
+        .expect("financial fact should create");
+
+    assert_eq!(fact.company_id, company.id);
+    assert_eq!(fact.period_id, period.id);
+    assert_eq!(fact.definition_id, net_profit_def.id);
+    assert_eq!(fact.value_numeric, "1234567.89");
+    assert_eq!(fact.currency, Some("PLN".to_owned()));
+    assert_eq!(fact.statement_basis, "consolidated");
+    assert_eq!(fact.data_quality, "final");
+}
+
+#[test]
+fn lists_financial_facts_by_company() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+
+    let net_profit_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "net_profit")
+        .expect("net_profit should exist");
+    let revenue_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "revenue")
+        .expect("revenue should exist");
+
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: net_profit_def.id.clone(),
+            value_numeric: "100".to_owned(),
+            currency: None,
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+        })
+        .expect("first fact should create");
+
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: revenue_def.id.clone(),
+            value_numeric: "1000".to_owned(),
+            currency: None,
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+        })
+        .expect("second fact should create");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id.clone()),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts should list");
+
+    assert_eq!(facts.len(), 2);
+    assert!(facts.iter().all(|f| f.company_id == company.id));
+}
+
+#[test]
+fn updates_financial_fact() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+
+    let cash_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "cash")
+        .expect("cash should exist");
+
+    let fact = state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: cash_def.id.clone(),
+            value_numeric: "500000".to_owned(),
+            currency: Some("EUR".to_owned()),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: Some("estimate".to_owned()),
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+        })
+        .expect("fact should create");
+
+    let updated = state
+        .update_financial_fact(UpdateFinancialFact {
+            id: fact.id.clone(),
+            value_numeric: Some("550000".to_owned()),
+            currency: Some("EUR".to_owned()),
+            data_quality: Some("final".to_owned()),
+            confirmation_state: Some("provisional".to_owned()),
+            supersedes_id: None,
+            source_document_ref: Some("revised_report.pdf".to_owned()),
+        })
+        .expect("fact should update");
+
+    assert_eq!(updated.value_numeric, "550000");
+    assert_eq!(updated.data_quality, "final");
+    assert_eq!(
+        updated.confirmation_state,
+        "provisional"
+    );
+    assert_eq!(
+        updated.source_document_ref,
+        Some("revised_report.pdf".to_owned())
+    );
+}
+
+#[test]
+fn deletes_financial_period_and_cascades_to_facts() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2026,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+
+    let total_assets_def = definitions
+        .iter()
+        .find(|d| d.metric_key == "total_assets")
+        .expect("total_assets should exist");
+
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company.id.clone(),
+            period_id: period.id.clone(),
+            definition_id: total_assets_def.id.clone(),
+            value_numeric: "5000000".to_owned(),
+            currency: None,
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: None,
+            supersedes_id: None,
+            source_document_ref: None,
+        })
+        .expect("fact should create");
+
+    state
+        .delete_financial_period(&period.id)
+        .expect("period should delete");
+
+    let facts = state
+        .list_financial_facts(ListFinancialFactsInput {
+            company_id: Some(company.id),
+            period_id: None,
+            definition_id: None,
+        })
+        .expect("facts should list");
+
+    assert_eq!(facts.len(), 0);
+}
+
+fn tracked_company(state: &AppState) -> Company {
+    state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "FIN".to_owned(),
+            display_name: "Financials Test Co.".to_owned(),
+            isin: Some("PLFINANCIALS".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("tracked company should create")
+}

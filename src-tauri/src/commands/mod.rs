@@ -4,6 +4,7 @@ pub mod credentials;
 pub mod diagnostics;
 pub mod events;
 pub mod feed;
+pub mod financials;
 pub mod health;
 pub mod import_export;
 pub mod licensing;

@@ -28,6 +28,10 @@ pub enum StorageError {
     InvalidResearchValue { key: &'static str, value: String },
     #[error("missing research reference for {table}: {id}")]
     MissingResearchReference { table: String, id: String },
+    #[error("invalid financials value for {key}: {value}")]
+    InvalidFinancialsValue { key: &'static str, value: String },
+    #[error("missing financials reference for {table}: {id}")]
+    MissingFinancialsReference { table: String, id: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

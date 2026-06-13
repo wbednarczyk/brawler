@@ -40,6 +40,7 @@ mod error;
 mod events;
 mod feed;
 mod feed_matching;
+mod financials;
 mod import_export;
 mod licensing;
 mod metrics;
@@ -62,6 +63,12 @@ pub use ai_analysis::{
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
+pub use financials::{
+    FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance, ListFinancialFactsInput,
+    ListFinancialPeriodsInput, ListKpiDefinitionsInput, NewFinancialFact, NewFinancialPeriod,
+    NewKpiDefinition, NewKpiRelevance, UpdateFinancialFact, UpdateFinancialPeriod,
+    UpdateKpiRelevance,
+};
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
 pub use metrics::{
@@ -954,6 +961,123 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         ai_analysis::mark_ai_analysis_job_failed(&connection, job_id, error_code, error)
+    }
+
+    pub fn list_kpi_definitions(
+        &self,
+        input: ListKpiDefinitionsInput,
+    ) -> StorageResult<Vec<KpiDefinition>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::list_kpi_definitions(&connection, input)
+    }
+
+    pub fn create_kpi_definition(
+        &self,
+        input: NewKpiDefinition,
+    ) -> StorageResult<KpiDefinition> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::create_kpi_definition(&connection, input)
+    }
+
+    pub fn list_financial_periods(
+        &self,
+        input: ListFinancialPeriodsInput,
+    ) -> StorageResult<Vec<FinancialPeriod>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::list_financial_periods(&connection, input)
+    }
+
+    pub fn create_financial_period(
+        &self,
+        input: NewFinancialPeriod,
+    ) -> StorageResult<FinancialPeriod> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::create_financial_period(&connection, input)
+    }
+
+    pub fn update_financial_period(
+        &self,
+        input: UpdateFinancialPeriod,
+    ) -> StorageResult<FinancialPeriod> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::update_financial_period(&connection, input)
+    }
+
+    pub fn delete_financial_period(&self, id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::delete_financial_period(&connection, id)
+    }
+
+    pub fn list_kpi_relevance(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<KpiRelevance>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::list_kpi_relevance(&connection, company_id)
+    }
+
+    pub fn create_kpi_relevance(
+        &self,
+        input: NewKpiRelevance,
+    ) -> StorageResult<KpiRelevance> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::create_kpi_relevance(&connection, input)
+    }
+
+    pub fn update_kpi_relevance(
+        &self,
+        input: UpdateKpiRelevance,
+    ) -> StorageResult<KpiRelevance> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::update_kpi_relevance(&connection, input)
+    }
+
+    pub fn delete_kpi_relevance(&self, id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::delete_kpi_relevance(&connection, id)
+    }
+
+    pub fn list_financial_facts(
+        &self,
+        input: ListFinancialFactsInput,
+    ) -> StorageResult<Vec<FinancialFact>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::list_financial_facts(&connection, input)
+    }
+
+    pub fn create_financial_fact(
+        &self,
+        input: NewFinancialFact,
+    ) -> StorageResult<FinancialFact> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::create_financial_fact(&connection, input)
+    }
+
+    pub fn update_financial_fact(
+        &self,
+        input: UpdateFinancialFact,
+    ) -> StorageResult<FinancialFact> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::update_financial_fact(&connection, input)
+    }
+
+    pub fn delete_financial_fact(&self, id: &str) -> StorageResult<()> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        financials::delete_financial_fact(&connection, id)
     }
 }
 
