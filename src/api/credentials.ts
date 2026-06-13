@@ -6,6 +6,19 @@ export const GEMINI_PROVIDER_ID = "provider_gemini";
 export const ANTHROPIC_PROVIDER_ID = "provider_anthropic";
 export const OPENAI_PROVIDER_ID = "provider_openai";
 
+/**
+ * Credentialed analysis providers shown in settings besides Gemini (which keeps
+ * its own form). The set of providers is stable; model lists come from the
+ * server catalog (ADR 0028).
+ */
+export const ADDITIONAL_CREDENTIAL_PROVIDERS: ReadonlyArray<{
+  providerId: string;
+  label: string;
+}> = [
+  { providerId: ANTHROPIC_PROVIDER_ID, label: "Claude (Anthropic)" },
+  { providerId: OPENAI_PROVIDER_ID, label: "OpenAI (ChatGPT)" },
+];
+
 export function getProviderCredentialStatus(providerId: string) {
   return callCommand<CredentialStatus>("get_provider_credential_status", {
     input: { providerId },

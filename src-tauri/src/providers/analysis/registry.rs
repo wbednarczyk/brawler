@@ -128,3 +128,66 @@ pub fn build_analysis_provider(
         other => Err(format!("Unknown AI analysis provider: {other}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn catalog_lists_providers_with_valid_defaults() {
+        let catalog = analysis_provider_catalog();
+        assert_eq!(catalog.len(), 3);
+        for entry in catalog {
+            assert!(
+                entry.models.contains(&entry.default_model),
+                "default model for {} must be in its model list",
+                entry.provider_id
+            );
+            assert!(entry.requires_credential);
+        }
+    }
+
+    #[test]
+    fn model_ids_include_provider_defaults() {
+        let models = analysis_model_ids();
+        assert!(models.contains(&"gemini-3.5-flash"));
+        assert!(models.contains(&"claude-sonnet-4-6"));
+        assert!(models.contains(&"gpt-5.5"));
+    }
+
+    #[test]
+    fn builds_each_known_provider_and_rejects_unknown() {
+        assert!(
+            build_analysis_provider(GEMINI_ANALYSIS_PROVIDER_ID, None, "gemini-3.5-flash", 90)
+                .is_ok()
+        );
+        assert!(build_analysis_provider(
+            ANTHROPIC_ANALYSIS_PROVIDER_ID,
+            None,
+            "claude-sonnet-4-6",
+            90
+        )
+        .is_ok());
+        assert!(build_analysis_provider(OPENAI_ANALYSIS_PROVIDER_ID, None, "gpt-5.5", 90).is_ok());
+        assert!(
+            build_analysis_provider(TEST_SAMPLE_ANALYSIS_PROVIDER_ID, None, "test", 90).is_ok()
+        );
+        assert!(build_analysis_provider("provider_unknown", None, "x", 90).is_err());
+    }
+
+    #[test]
+    fn only_real_providers_require_credentials() {
+        assert!(analysis_provider_requires_credential(
+            GEMINI_ANALYSIS_PROVIDER_ID
+        ));
+        assert!(analysis_provider_requires_credential(
+            ANTHROPIC_ANALYSIS_PROVIDER_ID
+        ));
+        assert!(analysis_provider_requires_credential(
+            OPENAI_ANALYSIS_PROVIDER_ID
+        ));
+        assert!(!analysis_provider_requires_credential(
+            TEST_SAMPLE_ANALYSIS_PROVIDER_ID
+        ));
+    }
+}

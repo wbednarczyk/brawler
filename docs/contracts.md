@@ -1047,11 +1047,10 @@ Rules:
 ```json
 {
   "providerId": "provider_gemini",
-  "purpose": "youtube_transcription",
   "secretKind": "api_key",
   "configured": true,
   "storage": "os_keychain",
-  "label": "Gemini YouTube transcription API key",
+  "label": "Gemini API key",
   "devFallbackAvailable": false,
   "error": null
 }
@@ -1062,10 +1061,35 @@ Rules:
 - Credential status is non-secret metadata and may be returned to React.
 - Secret values must never be returned to React.
 - Runtime secret storage uses the OS keychain.
-- Development/test fallback may use environment variables, but this must be reported as `storage = "development_environment"` and must not count as exported settings.
+- One API key per provider (ADR 0028): the same provider key serves all of that provider's usages (analysis and, for Gemini, transcription). Purpose is not part of the credential identity.
+- Development/test fallback may use environment variables (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), but this must be reported as `storage = "development_environment"` and must not count as exported settings.
 - Supported `secretKind` values begin with `api_key`; future supported kinds may include `username_password`, `session_token`, or `oauth_token` after source-specific design.
-- `set_gemini_transcription_api_key(apiKey)` stores or replaces only the Gemini YouTube transcription API key.
-- `clear_gemini_transcription_api_key()` removes only the OS-keychain Gemini YouTube transcription API key and must not mutate `.env` or process environment values.
+- Credential commands are generic and keyed by `providerId` (`provider_gemini`, `provider_anthropic`, `provider_openai`):
+  - `get_provider_credential_status({ providerId })` returns the non-secret status for one provider.
+  - `set_provider_api_key({ providerId, apiKey })` stores or replaces only that provider's API key.
+  - `clear_provider_api_key({ providerId })` removes only that provider's OS-keychain key and must not mutate `.env` or process environment values.
+- Legacy purpose-scoped Gemini credential commands were removed with no backward compatibility; legacy keychain entries are best-effort cleared on startup.
+
+## AI Provider Catalog
+
+`list_ai_provider_catalog()` returns the selectable analysis providers and their curated models (ADR 0028), the single source of truth for the settings provider/model selection UI:
+
+```json
+[
+  {
+    "providerId": "provider_anthropic",
+    "label": "Claude (Anthropic)",
+    "models": ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
+    "defaultModel": "claude-sonnet-4-6",
+    "requiresCredential": true
+  }
+]
+```
+
+Rules:
+
+- The active analysis provider and model are the `generalAnalysisProvider` / `generalAnalysisModel` settings; the selected model must belong to the selected provider's catalog entry.
+- Exact model ids are curated server-side; the UI must not hardcode model lists.
 
 ## Research Evidence Boundary
 
@@ -1810,11 +1834,12 @@ Initial Tauri command groups:
 - `resolve_transcript_job_company`
 - `list_transcript_segments`
 - `create_note_from_transcript_selection`
-- `get_gemini_transcription_credential_status`
-- `set_gemini_transcription_api_key`
-- `clear_gemini_transcription_api_key`
+- `get_provider_credential_status`
+- `set_provider_api_key`
+- `clear_provider_api_key`
 - `get_settings`
 - `update_settings`
+- `list_ai_provider_catalog`
 - `export_research_data`
 - `preview_research_import`
 - `apply_research_import`

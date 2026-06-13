@@ -233,6 +233,18 @@ describe("Settings screen workflows", () => {
     });
     expect(within(settingsRegion).getAllByText("Nieskonfigurowane").length).toBeGreaterThanOrEqual(1);
 
+    // The Claude (Anthropic) key uses the per-provider form (label localized).
+    expect(within(settingsRegion).getByRole("heading", { name: "Claude (Anthropic)" })).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Claude (Anthropic) Klucz API"), "test-claude-key");
+    await user.click(screen.getByRole("button", { name: "Zapisz Claude (Anthropic) Klucz API" }));
+
+    expect(invoke).toHaveBeenCalledWith("set_provider_api_key", {
+      input: {
+        providerId: "provider_anthropic",
+        apiKey: "test-claude-key",
+      },
+    });
+
     await user.click(screen.getByRole("button", { name: "Pobierz klucz API Gemini" }));
 
     expect(openUrl).toHaveBeenCalledWith("https://aistudio.google.com/app/apikey");
