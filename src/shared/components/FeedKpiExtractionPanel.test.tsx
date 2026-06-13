@@ -142,7 +142,7 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
-    const extract = await screen.findByRole("button", { name: "Extract from attachment" });
+    const extract = await screen.findByRole("button", { name: /Extract from attachment/ });
     await user.click(extract);
 
     // Proposals render after the (mocked) succeeded job.
@@ -177,7 +177,7 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
-    await user.click(await screen.findByRole("button", { name: "Extract from attachment" }));
+    await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
     await screen.findByText("Revenue");
     await user.click(screen.getByRole("button", { name: "Reject" }));
 

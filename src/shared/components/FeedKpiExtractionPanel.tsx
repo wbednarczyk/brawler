@@ -22,6 +22,16 @@ export type FeedKpiExtractionPanelProps = {
   providerConfigured: boolean;
 };
 
+function fileNameFromUrl(url: string): string {
+  try {
+    const path = new URL(url).pathname;
+    const name = path.split("/").filter(Boolean).pop();
+    return name ? decodeURIComponent(name) : url;
+  } catch {
+    return url;
+  }
+}
+
 function jobStatusTone(status: string) {
   if (status === "succeeded") return "ok";
   if (status === "failed") return "danger";
@@ -232,9 +242,10 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
                 disabled={busy}
                 key={attachment.id}
                 onClick={() => void captureAndExtract(attachment.url, "espi_attachment")}
+                title={attachment.url}
               >
                 <FileSearch size={15} />
-                {text("Extract from attachment")}
+                {text("Extract from attachment")}: {attachment.label || fileNameFromUrl(attachment.url)}
               </Button>
             ))}
             <Button className="compact-button" disabled={busy} onClick={() => void resolveFromIr()}>
@@ -263,7 +274,10 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
             <ul className="kpi-extraction-documents" aria-label={text("Stored report documents")}>
               {fetchedDocuments.map((document) => (
                 <li key={document.id}>
-                  <span>{document.title ?? document.url}</span>
+                  <span title={document.url}>
+                    {document.title ?? fileNameFromUrl(document.url)}{" "}
+                    <small>({fileNameFromUrl(document.url)})</small>
+                  </span>
                   <Button className="compact-button" disabled={busy} onClick={() => void extractDocument(document.id)}>
                     {text("Extract KPIs")}
                   </Button>
@@ -332,11 +346,17 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
                 <li className="kpi-extraction-proposal" key={proposal.id}>
                   <div className="kpi-extraction-proposal-head">
                     <strong>{proposal.label}</strong>
-                    {proposal.isProposedKpi ? <StatusPill tone="neutral">{text("Suggested KPI")}</StatusPill> : null}
-                    {proposal.confidence ? <span>{text(proposal.confidence)}</span> : null}
-                    <StatusPill tone={proposal.status === "confirmed" ? "ok" : proposal.status === "rejected" ? "danger" : "warn"}>
-                      {text(proposal.status)}
-                    </StatusPill>
+                    <span className="kpi-extraction-proposal-tags">
+                      {proposal.isProposedKpi ? (
+                        <StatusPill tone="neutral">{text("Suggested KPI")}</StatusPill>
+                      ) : null}
+                      {proposal.confidence ? (
+                        <StatusPill tone="neutral">{text(proposal.confidence)}</StatusPill>
+                      ) : null}
+                      <StatusPill tone={proposal.status === "confirmed" ? "ok" : proposal.status === "rejected" ? "danger" : "warn"}>
+                        {text(proposal.status)}
+                      </StatusPill>
+                    </span>
                   </div>
                   <input
                     aria-label={`${proposal.label} ${text("value")}`}

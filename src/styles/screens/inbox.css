@@ -647,3 +647,95 @@ summary.feed-body-heading::before {
 .detail-pane dd a {
   color: var(--primary);
 }
+
+/* KPI extraction panel (v0.36). Reuses the AI panel shell; basic readability only. */
+.kpi-extraction-panel {
+  position: relative;
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.kpi-extraction-sources,
+.kpi-extraction-paste {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.kpi-extraction-paste input {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.kpi-extraction-documents,
+.kpi-extraction-candidates ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kpi-extraction-documents li,
+.kpi-extraction-candidates li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.kpi-extraction-period {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.kpi-extraction-review > ul {
+  display: grid;
+  gap: 12px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kpi-extraction-proposal {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.kpi-extraction-proposal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.kpi-extraction-proposal-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.kpi-extraction-snippet {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+}
+
+.kpi-extraction-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}

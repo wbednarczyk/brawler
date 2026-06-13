@@ -252,7 +252,9 @@ fn build_request(
 
     // Canonical packs apply to every company; company-scoped custom KPIs are added.
     // Sector relevance refinement is a later milestone (v0.37); the model can still
-    // surface sector metrics as proposed extras.
+    // surface sector metrics as proposed extras. Derived metrics (margins, ROE, FCF,
+    // …) are excluded: ADR 0027 computes them at read time from confirmed inputs, so
+    // they must not be extracted and stored as competing reported facts.
     let known_kpis = state
         .list_kpi_definitions(storage::ListKpiDefinitionsInput {
             scope: None,
@@ -261,6 +263,7 @@ fn build_request(
         })
         .map_err(|error| error.to_string())?
         .into_iter()
+        .filter(|definition| definition.computation != "derived")
         .filter(|definition| {
             definition.scope == "canonical"
                 || (definition.scope == "company"
