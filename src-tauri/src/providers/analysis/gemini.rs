@@ -9,8 +9,9 @@ use crate::providers::common::{
 
 use super::prompts;
 use super::types::{
-    AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
-    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchDigestRequest,
+    AiAnalysisProvider, AnalysisDocument, AnalysisProviderError, AnalysisProviderOutput,
+    AnalysisRequest, DocumentSupport, ResearchBriefProviderOutput, ResearchBriefRequest,
+    ResearchDigestRequest,
 };
 
 pub const DEFAULT_GEMINI_ANALYSIS_MODEL: &str = "gemini-2.5-flash";
@@ -182,6 +183,53 @@ where
         let output_text = extract_gemini_analysis_text(&response)?;
         prompts::parse_research_brief_output(&output_text, "Gemini")
     }
+
+    fn document_support(&self) -> DocumentSupport {
+        DocumentSupport::Native
+    }
+
+    async fn complete_document(
+        &self,
+        prompt: &str,
+        document: &AnalysisDocument,
+    ) -> Result<String, AnalysisProviderError> {
+        let api_key = self
+            .api_key
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .ok_or(AnalysisProviderError::ProviderNotConfigured)?;
+        let request = GeminiAnalysisGenerateContentRequest {
+            contents: vec![GeminiAnalysisContent {
+                parts: vec![
+                    GeminiAnalysisPart::Text {
+                        text: prompt.to_owned(),
+                    },
+                    gemini_document_part(document),
+                ],
+            }],
+            generation_config: GeminiAnalysisGenerationConfig {
+                response_mime_type: "application/json".to_owned(),
+            },
+        };
+        let response = self
+            .client
+            .generate_content(&self.model, api_key, &request)
+            .await?;
+        extract_gemini_analysis_text(&response)
+    }
+}
+
+fn gemini_document_part(document: &AnalysisDocument) -> GeminiAnalysisPart {
+    use base64::Engine as _;
+    match document {
+        AnalysisDocument::Native { mime_type, data } => GeminiAnalysisPart::InlineData {
+            inline_data: GeminiInlineData {
+                mime_type: mime_type.clone(),
+                data: base64::engine::general_purpose::STANDARD.encode(data),
+            },
+        },
+        AnalysisDocument::Text { text } => GeminiAnalysisPart::Text { text: text.clone() },
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -200,6 +248,14 @@ pub struct GeminiAnalysisContent {
 #[serde(untagged)]
 pub enum GeminiAnalysisPart {
     Text { text: String },
+    InlineData { inline_data: GeminiInlineData },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct GeminiInlineData {
+    mime_type: String,
+    data: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -329,6 +385,9 @@ mod tests {
                     assert!(text.contains("Analyze this source item"));
                     assert!(text.contains("Source URL: https://example.com/report"));
                 }
+                GeminiAnalysisPart::InlineData { .. } => {
+                    panic!("analysis request should use a text part")
+                }
             }
 
             Ok(GeminiAnalysisGenerateContentResponse {
@@ -340,6 +399,38 @@ mod tests {
                     },
                 }],
             })
+        }
+    }
+
+    #[test]
+    fn gemini_reports_native_document_support() {
+        let provider = GeminiAnalysisProvider::with_client(
+            Some("test-api-key".to_owned()),
+            DEFAULT_GEMINI_ANALYSIS_MODEL,
+            MockGeminiAnalysisClient {
+                response_text: "{}".to_owned(),
+            },
+        );
+
+        assert_eq!(
+            provider.document_support(),
+            crate::providers::analysis::DocumentSupport::Native
+        );
+    }
+
+    #[test]
+    fn gemini_document_part_encodes_native_bytes_as_inline_data() {
+        let part = gemini_document_part(&crate::providers::analysis::AnalysisDocument::Native {
+            mime_type: "application/pdf".to_owned(),
+            data: b"PDF".to_vec(),
+        });
+
+        match part {
+            GeminiAnalysisPart::InlineData { inline_data } => {
+                assert_eq!(inline_data.mime_type, "application/pdf");
+                assert_eq!(inline_data.data, "UERG");
+            }
+            GeminiAnalysisPart::Text { .. } => panic!("native document should map to inline data"),
         }
     }
 

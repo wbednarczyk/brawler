@@ -97,6 +97,29 @@ impl AnalysisProviderError {
     }
 }
 
+/// A report document delivered to a provider for grounded analysis/extraction
+/// (ADR 0028). The hybrid model carries either native bytes (for providers that
+/// ingest files directly) or pre-extracted text as a universal fallback.
+#[derive(Debug, Clone)]
+pub enum AnalysisDocument {
+    /// Native document bytes (e.g. a PDF) plus its MIME type.
+    Native { mime_type: String, data: Vec<u8> },
+    /// Pre-extracted plain text fallback.
+    Text { text: String },
+}
+
+/// How a provider can accept report documents (ADR 0028). The v0.36 extraction
+/// job uses this to choose whether to send native bytes or extracted text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DocumentSupport {
+    /// No document input.
+    None,
+    /// Only pre-extracted text.
+    TextOnly,
+    /// Native document bytes (and text).
+    Native,
+}
+
 #[async_trait]
 pub trait AiAnalysisProvider: Send + Sync {
     fn provider_id(&self) -> &'static str;
@@ -115,4 +138,22 @@ pub trait AiAnalysisProvider: Send + Sync {
         &self,
         request: &ResearchDigestRequest,
     ) -> Result<ResearchBriefProviderOutput, AnalysisProviderError>;
+
+    /// How this provider can accept report documents. Defaults to no support.
+    fn document_support(&self) -> DocumentSupport {
+        DocumentSupport::None
+    }
+
+    /// Send a prompt grounded on a report document and return the raw model text.
+    /// The caller parses the result (e.g. the v0.36 extraction job). Defaults to
+    /// an error for providers without document support.
+    async fn complete_document(
+        &self,
+        _prompt: &str,
+        _document: &AnalysisDocument,
+    ) -> Result<String, AnalysisProviderError> {
+        Err(AnalysisProviderError::ProviderError(
+            "provider does not support document input".to_owned(),
+        ))
+    }
 }

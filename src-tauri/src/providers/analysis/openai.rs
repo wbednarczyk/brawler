@@ -9,8 +9,9 @@ use crate::providers::common::{
 
 use super::prompts;
 use super::types::{
-    AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
-    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchDigestRequest,
+    AiAnalysisProvider, AnalysisDocument, AnalysisProviderError, AnalysisProviderOutput,
+    AnalysisRequest, DocumentSupport, ResearchBriefProviderOutput, ResearchBriefRequest,
+    ResearchDigestRequest,
 };
 
 pub const DEFAULT_OPENAI_ANALYSIS_MODEL: &str = "gpt-5.5";
@@ -178,6 +179,26 @@ where
             .complete(prompts::research_digest_prompt(request))
             .await?;
         prompts::parse_research_brief_output(&text, "OpenAI")
+    }
+
+    fn document_support(&self) -> DocumentSupport {
+        DocumentSupport::TextOnly
+    }
+
+    async fn complete_document(
+        &self,
+        prompt: &str,
+        document: &AnalysisDocument,
+    ) -> Result<String, AnalysisProviderError> {
+        match document {
+            AnalysisDocument::Text { text } => {
+                self.complete(format!("{prompt}\n\nDocument text:\n{text}"))
+                    .await
+            }
+            AnalysisDocument::Native { .. } => Err(AnalysisProviderError::ProviderError(
+                "OpenAI document input requires extracted text in this version".to_owned(),
+            )),
+        }
     }
 }
 
