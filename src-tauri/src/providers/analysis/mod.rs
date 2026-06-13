@@ -1,8 +1,11 @@
+mod anthropic;
 mod gemini;
+mod prompts;
 pub mod registry;
 mod test_sample;
 mod types;
 
+pub use anthropic::{ClaudeAnalysisProvider, DEFAULT_ANTHROPIC_ANALYSIS_MODEL};
 pub use gemini::{
     GeminiAnalysisGenerateContentClient, GeminiAnalysisGenerateContentRequest,
     GeminiAnalysisGenerateContentResponse, GeminiAnalysisProvider, DEFAULT_GEMINI_ANALYSIS_MODEL,

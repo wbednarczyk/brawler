@@ -6,7 +6,7 @@
 //! (jobs, commands) depend on the provider-neutral trait, not concrete types.
 
 use super::{
-    AiAnalysisProvider, GeminiAnalysisProvider, TestSampleAnalysisProvider,
+    AiAnalysisProvider, ClaudeAnalysisProvider, GeminiAnalysisProvider, TestSampleAnalysisProvider,
     TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
 };
 use crate::providers::credentials;
@@ -115,6 +115,10 @@ pub fn build_analysis_provider(
         TEST_SAMPLE_ANALYSIS_PROVIDER_ID => Ok(Box::new(TestSampleAnalysisProvider)),
         GEMINI_ANALYSIS_PROVIDER_ID => Ok(Box::new(
             GeminiAnalysisProvider::live(api_key, model.to_owned(), timeout_seconds)
+                .map_err(|error| error.to_string())?,
+        )),
+        ANTHROPIC_ANALYSIS_PROVIDER_ID => Ok(Box::new(
+            ClaudeAnalysisProvider::live(api_key, model.to_owned(), timeout_seconds)
                 .map_err(|error| error.to_string())?,
         )),
         other => Err(format!("Unknown AI analysis provider: {other}")),

@@ -4,14 +4,13 @@ use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 use crate::providers::common::{
-    clean_optional_string, describe_reqwest_error, effective_timeout_seconds, extract_json_object,
-    summarize_provider_error_body,
+    describe_reqwest_error, effective_timeout_seconds, summarize_provider_error_body,
 };
 
+use super::prompts;
 use super::types::{
     AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
-    AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
-    ResearchBriefRequest, ResearchBriefSectionOutput, ResearchDigestRequest,
+    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchDigestRequest,
 };
 
 pub const DEFAULT_GEMINI_ANALYSIS_MODEL: &str = "gemini-2.5-flash";
@@ -145,7 +144,7 @@ where
             .generate_content(&self.model, api_key, &gemini_request)
             .await?;
         let output_text = extract_gemini_analysis_text(&response)?;
-        parse_gemini_analysis_output(&output_text)
+        prompts::parse_analysis_output(&output_text, "Gemini")
     }
 
     async fn generate_research_brief(
@@ -163,7 +162,7 @@ where
             .generate_content(&self.model, api_key, &gemini_request)
             .await?;
         let output_text = extract_gemini_analysis_text(&response)?;
-        parse_gemini_research_brief_output(&output_text)
+        prompts::parse_research_brief_output(&output_text, "Gemini")
     }
 
     async fn generate_research_digest(
@@ -181,7 +180,7 @@ where
             .generate_content(&self.model, api_key, &gemini_request)
             .await?;
         let output_text = extract_gemini_analysis_text(&response)?;
-        parse_gemini_research_brief_output(&output_text)
+        prompts::parse_research_brief_output(&output_text, "Gemini")
     }
 }
 
@@ -231,97 +230,7 @@ pub struct GeminiAnalysisResponsePart {
     text: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiAnalysisJson {
-    summary: String,
-    significance: String,
-    reasoning: String,
-    language: Option<String>,
-    #[serde(default)]
-    tags: Vec<String>,
-    #[serde(default)]
-    source_references: Vec<GeminiAnalysisSourceReferenceJson>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiAnalysisSourceReferenceJson {
-    source_url: String,
-    label: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiResearchBriefJson {
-    title: String,
-    summary: String,
-    #[serde(default)]
-    sections: Vec<GeminiResearchBriefSectionJson>,
-    language: Option<String>,
-    #[serde(default)]
-    citations: Vec<GeminiResearchBriefCitationJson>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiResearchBriefSectionJson {
-    heading: String,
-    body: String,
-    #[serde(default)]
-    citation_keys: Vec<String>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GeminiResearchBriefCitationJson {
-    citation_key: String,
-    evidence_type: String,
-    evidence_id: String,
-    label: String,
-    snippet: Option<String>,
-}
-
-fn gemini_analysis_request(request: &AnalysisRequest) -> GeminiAnalysisGenerateContentRequest {
-    let item = &request.feed_item;
-    let custom_question = request
-        .custom_question
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .unwrap_or("Summarize the selected source item for investor research.");
-    let source_text = if item.body_text.trim().is_empty() {
-        item.summary.as_str()
-    } else {
-        item.body_text.as_str()
-    };
-    let prompt = format!(
-        "Analyze this source item for an investor research workflow. \
-Return only JSON with this exact shape: \
-{{\"summary\":\"...\",\"significance\":\"low|medium|high|unknown\",\"tags\":[\"...\"],\"reasoning\":\"...\",\"language\":\"en\",\"sourceReferences\":[{{\"sourceUrl\":\"...\",\"label\":\"...\"}}]}}. \
-Use only the provided source context. Cite the source URL. Do not include markdown fences, commentary, buy/sell/hold recommendations, portfolio allocation advice, or personalized investment advice.\n\n\
-Prompt preset: {prompt_preset}\n\
-User question: {custom_question}\n\
-Company: {company}\n\
-Item type: {item_type}\n\
-Title: {title}\n\
-Summary: {summary}\n\
-Source body: {source_text}\n\
-Source: {source}\n\
-Attribution: {attribution}\n\
-Source URL: {source_url}\n\
-Language: {language}",
-        prompt_preset = request.prompt_preset_id,
-        company = item.company,
-        item_type = item.item_type,
-        title = item.title,
-        summary = item.summary,
-        source = item.source,
-        attribution = item.attribution,
-        source_url = item.source_url,
-        language = item.language,
-    );
-
+fn gemini_text_request(prompt: String) -> GeminiAnalysisGenerateContentRequest {
     GeminiAnalysisGenerateContentRequest {
         contents: vec![GeminiAnalysisContent {
             parts: vec![GeminiAnalysisPart::Text { text: prompt }],
@@ -330,103 +239,22 @@ Language: {language}",
             response_mime_type: "application/json".to_owned(),
         },
     }
+}
+
+fn gemini_analysis_request(request: &AnalysisRequest) -> GeminiAnalysisGenerateContentRequest {
+    gemini_text_request(prompts::analysis_prompt(request))
 }
 
 fn gemini_research_brief_request(
     request: &ResearchBriefRequest,
 ) -> GeminiAnalysisGenerateContentRequest {
-    let evidence = request
-        .evidence_items
-        .iter()
-        .take(120)
-        .enumerate()
-        .map(|(index, item)| {
-            format!(
-                "E{index}: evidenceType={evidence_type}; evidenceId={evidence_id}; companyId={company_id}; occurredAt={occurred_at}; title={title}; summary={summary}; sourceUrl={source_url}; attribution={attribution}; trust={trust}",
-                index = index + 1,
-                evidence_type = item.evidence_type,
-                evidence_id = item.source_id,
-                company_id = item.company_id,
-                occurred_at = item.occurred_at,
-                title = item.title,
-                summary = item.summary.as_deref().unwrap_or(""),
-                source_url = item.source_url.as_deref().unwrap_or(""),
-                attribution = item.attribution.as_deref().unwrap_or(""),
-                trust = item.trust_category,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let prompt = format!(
-        "Create a source-grounded investor research brief for the selected {scope_type}. \
-Return only JSON with this exact shape: \
-{{\"title\":\"...\",\"summary\":\"...\",\"sections\":[{{\"heading\":\"...\",\"body\":\"...\",\"citationKeys\":[\"E1\"]}}],\"language\":\"en\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"feed_item\",\"evidenceId\":\"feed_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
-Use only the evidence below. Every material claim in every section must cite one or more evidence keys. \
-Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
-Scope type: {scope_type}\n\
-Scope id: {scope_id}\n\
-Evidence:\n{evidence}",
-        scope_type = request.scope_type,
-        scope_id = request.scope_id,
-    );
-
-    GeminiAnalysisGenerateContentRequest {
-        contents: vec![GeminiAnalysisContent {
-            parts: vec![GeminiAnalysisPart::Text { text: prompt }],
-        }],
-        generation_config: GeminiAnalysisGenerationConfig {
-            response_mime_type: "application/json".to_owned(),
-        },
-    }
+    gemini_text_request(prompts::research_brief_prompt(request))
 }
 
 fn gemini_research_digest_request(
     request: &ResearchDigestRequest,
 ) -> GeminiAnalysisGenerateContentRequest {
-    let evidence = request
-        .evidence_items
-        .iter()
-        .take(140)
-        .enumerate()
-        .map(|(index, item)| {
-            format!(
-                "E{index}: evidenceType={evidence_type}; evidenceId={evidence_id}; companyId={company_id}; occurredAt={occurred_at}; title={title}; summary={summary}; sourceUrl={source_url}; attribution={attribution}; trust={trust}",
-                index = index + 1,
-                evidence_type = item.evidence_type,
-                evidence_id = item.source_id,
-                company_id = item.company_id,
-                occurred_at = item.occurred_at,
-                title = item.title,
-                summary = item.summary.as_deref().unwrap_or(""),
-                source_url = item.source_url.as_deref().unwrap_or(""),
-                attribution = item.attribution.as_deref().unwrap_or(""),
-                trust = item.trust_category,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let prompt = format!(
-        "Create a source-grounded research digest for the selected {scope_type}. \
-Focus on changed evidence, open reminders, upcoming review work, and unresolved questions. \
-Return only JSON with this exact shape: \
-{{\"title\":\"...\",\"summary\":\"...\",\"sections\":[{{\"heading\":\"...\",\"body\":\"...\",\"citationKeys\":[\"E1\"]}}],\"language\":\"en\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"feed_item\",\"evidenceId\":\"feed_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
-Use only the evidence below. Every material claim in every section must cite one or more evidence keys. \
-Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
-Scope type: {scope_type}\n\
-Scope id: {scope_id}\n\
-Evidence:\n{evidence}",
-        scope_type = request.scope_type,
-        scope_id = request.scope_id,
-    );
-
-    GeminiAnalysisGenerateContentRequest {
-        contents: vec![GeminiAnalysisContent {
-            parts: vec![GeminiAnalysisPart::Text { text: prompt }],
-        }],
-        generation_config: GeminiAnalysisGenerationConfig {
-            response_mime_type: "application/json".to_owned(),
-        },
-    }
+    gemini_text_request(prompts::research_digest_prompt(request))
 }
 
 fn extract_gemini_analysis_text(
@@ -447,150 +275,6 @@ fn extract_gemini_analysis_text(
         .ok_or_else(|| {
             AnalysisProviderError::ParseError("Gemini response did not include text".to_owned())
         })
-}
-
-fn parse_gemini_analysis_output(
-    text: &str,
-) -> Result<AnalysisProviderOutput, AnalysisProviderError> {
-    let json_text =
-        extract_json_object(text, "Gemini response").map_err(AnalysisProviderError::ParseError)?;
-    let parsed: GeminiAnalysisJson = serde_json::from_str(json_text).map_err(|error| {
-        AnalysisProviderError::ParseError(format!("Gemini analysis JSON: {error}"))
-    })?;
-    let significance = parsed.significance.trim().to_lowercase();
-
-    if !["low", "medium", "high", "unknown"].contains(&significance.as_str()) {
-        return Err(AnalysisProviderError::ParseError(format!(
-            "Gemini analysis significance is not supported: {}",
-            parsed.significance
-        )));
-    }
-
-    let summary = parsed.summary.trim().to_owned();
-    let reasoning = parsed.reasoning.trim().to_owned();
-    if summary.is_empty() || reasoning.is_empty() {
-        return Err(AnalysisProviderError::ParseError(
-            "Gemini analysis did not include usable summary and reasoning".to_owned(),
-        ));
-    }
-
-    let source_references = parsed
-        .source_references
-        .into_iter()
-        .filter_map(|reference| {
-            let source_url = reference.source_url.trim().to_owned();
-            if source_url.is_empty() {
-                None
-            } else {
-                Some(AnalysisSourceReference {
-                    source_url,
-                    label: clean_optional_string(reference.label),
-                })
-            }
-        })
-        .collect::<Vec<_>>();
-
-    if source_references.is_empty() {
-        return Err(AnalysisProviderError::ParseError(
-            "Gemini analysis did not include source references".to_owned(),
-        ));
-    }
-
-    Ok(AnalysisProviderOutput {
-        summary,
-        significance,
-        reasoning,
-        language: clean_optional_string(parsed.language),
-        tags: parsed
-            .tags
-            .into_iter()
-            .map(|tag| tag.trim().to_owned())
-            .filter(|tag| !tag.is_empty())
-            .collect(),
-        source_references,
-    })
-}
-
-fn parse_gemini_research_brief_output(
-    text: &str,
-) -> Result<ResearchBriefProviderOutput, AnalysisProviderError> {
-    let json_text =
-        extract_json_object(text, "Gemini response").map_err(AnalysisProviderError::ParseError)?;
-    let parsed: GeminiResearchBriefJson = serde_json::from_str(json_text).map_err(|error| {
-        AnalysisProviderError::ParseError(format!("Gemini research brief JSON: {error}"))
-    })?;
-
-    let title = parsed.title.trim().to_owned();
-    let summary = parsed.summary.trim().to_owned();
-    if title.is_empty() || summary.is_empty() {
-        return Err(AnalysisProviderError::ParseError(
-            "Gemini research brief did not include usable title and summary".to_owned(),
-        ));
-    }
-
-    let sections = parsed
-        .sections
-        .into_iter()
-        .filter_map(|section| {
-            let heading = section.heading.trim().to_owned();
-            let body = section.body.trim().to_owned();
-            let citation_keys = section
-                .citation_keys
-                .into_iter()
-                .map(|value| value.trim().to_owned())
-                .filter(|value| !value.is_empty())
-                .collect::<Vec<_>>();
-            if heading.is_empty() || body.is_empty() {
-                None
-            } else {
-                Some(ResearchBriefSectionOutput {
-                    heading,
-                    body,
-                    citation_keys,
-                })
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let citations = parsed
-        .citations
-        .into_iter()
-        .filter_map(|citation| {
-            let citation_key = citation.citation_key.trim().to_owned();
-            let evidence_type = citation.evidence_type.trim().to_owned();
-            let evidence_id = citation.evidence_id.trim().to_owned();
-            let label = citation.label.trim().to_owned();
-            if citation_key.is_empty()
-                || evidence_type.is_empty()
-                || evidence_id.is_empty()
-                || label.is_empty()
-            {
-                None
-            } else {
-                Some(ResearchBriefCitationOutput {
-                    citation_key,
-                    evidence_type,
-                    evidence_id,
-                    label,
-                    snippet: clean_optional_string(citation.snippet),
-                })
-            }
-        })
-        .collect::<Vec<_>>();
-
-    if sections.is_empty() || citations.is_empty() {
-        return Err(AnalysisProviderError::ParseError(
-            "Gemini research brief did not include sections and citations".to_owned(),
-        ));
-    }
-
-    Ok(ResearchBriefProviderOutput {
-        title,
-        summary,
-        sections,
-        language: clean_optional_string(parsed.language),
-        citations,
-    })
 }
 
 fn map_gemini_analysis_http_error(status: u16, body: &str) -> AnalysisProviderError {
@@ -696,48 +380,6 @@ mod tests {
             output.source_references[0].source_url,
             "https://example.com/report"
         );
-    }
-
-    #[test]
-    fn gemini_analysis_rejects_missing_source_references() {
-        let error = parse_gemini_analysis_output(
-            r#"{"summary":"Revenue improved.","significance":"medium","tags":[],"reasoning":"The report cites higher revenue.","language":"en","sourceReferences":[]}"#,
-        )
-        .expect_err("source references are required");
-
-        assert_eq!(error.code(), "parse_error");
-    }
-
-    #[test]
-    fn gemini_research_brief_parser_ignores_trailing_text_after_json() {
-        let output = parse_gemini_research_brief_output(
-            r#"
-            {"title":"Research brief","summary":"Summary with {brace} text.","sections":[{"heading":"What changed","body":"Body cites evidence.","citationKeys":["E1"]}],"language":"en","citations":[{"citationKey":"E1","evidenceType":"feed_item","evidenceId":"feed_01","label":"Report","snippet":"Snippet"}]}
-
-            I used the provided evidence only.
-            "#,
-        )
-        .expect("trailing text after the first complete JSON object should be ignored");
-
-        assert_eq!(output.title, "Research brief");
-        assert_eq!(output.summary, "Summary with {brace} text.");
-        assert_eq!(output.citations.len(), 1);
-    }
-
-    #[test]
-    fn gemini_research_brief_parser_handles_fenced_json_with_trailing_text() {
-        let output = parse_gemini_research_brief_output(
-            r#"
-            ```json
-            {"title":"Research brief","summary":"Summary.","sections":[{"heading":"What changed","body":"Body cites evidence.","citationKeys":["E1"]}],"language":"en","citations":[{"citationKey":"E1","evidenceType":"feed_item","evidenceId":"feed_01","label":"Report","snippet":"Snippet"}]}
-            ```
-
-            Done.
-            "#,
-        )
-        .expect("fenced JSON should parse even when the provider appends text");
-
-        assert_eq!(output.title, "Research brief");
     }
 
     #[test]
