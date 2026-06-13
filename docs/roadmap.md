@@ -1294,10 +1294,14 @@ Deferred to v0.39.0: ESPI/EBI attachment ingestion and on-track company history 
 
 v0.36.0 — AI KPI extraction with confirmation:
 
-- provider-neutral extraction contracts with per-fact source citations and prompt-version provenance
-- report-document input for the Gemini adapter plus a deterministic test provider
-- an extraction job that persists proposed facts as pending confirmation
-- a review UI where the user confirms, edits, or rejects each proposed fact before it is committed
+Status: completed in `0.36.0`.
+
+- provider-neutral extraction contracts with per-fact source snippets and prompt-version provenance
+- native PDF document input for Gemini and Claude, plus a deterministic test provider
+- an async extraction job that stages proposed facts (never a committed fact until confirmed)
+- an inline review UI on periodic-report feed items where the user confirms, edits, or rejects each proposed fact, and accepts out-of-taxonomy suggestions as new custom KPIs
+
+Delivered: KPI extraction contracts, prompt builder/parser, and prompt-version provenance; Claude native PDF input; the staging-proposal extraction job with confirm/reject materialization (confirming creates the period, resolves or creates the KPI definition, and writes the fact with provenance; rejecting persists nothing); the inline extraction panel; and the report-document source ladder from [ADR 0029](adr/0029-ir-page-report-resolution.md) — ESPI attachment, then a durable per-company IR reports page with an AI-assisted generic resolver, then manual PDF URL — delivered as a user-triggered building block (event-driven auto-resolution stays in v0.47.0). Derived KPIs are excluded from extraction since they are computed at read time. Deferred: native PDF for OpenAI (text-path), and a non-PDF/IR-landing-page guard ([bug `3d9f7f9`](kanban.md)); display formatting polish lands with the v0.37.0 panel. The per-company KPI relevance profile moved to v0.37.0.
 
 v0.37.0 — Fundamentals panel and KPI charts:
 

@@ -1,5 +1,40 @@
 # Changelog
 
+## v0.36.0 - 2026-06-13
+
+
+
+### Bug Fixes
+
+- normalize report MIME type and surface extraction errors
+
+- make KPI extraction thorough and lift output token cap
+
+- reset KPI extraction panel per feed item
+
+- diagnose extraction completeness and tighten period detection
+
+- exclude derived KPIs from extraction and improve panel clarity
+
+
+
+### Features
+
+- add KPI extraction contracts and prompt boundary
+
+- add native PDF document input to the Claude adapter
+
+- build AI KPI extraction job with confirm/reject staging
+
+- add per-company IR reports-page URL field
+
+- add AI-assisted IR-page report resolver
+
+- add frontend API for KPI extraction and IR resolution
+
+- add KPI extraction review UI and IR reports-page field
+
+
 ## v0.35.0 - 2026-06-13
 
 
