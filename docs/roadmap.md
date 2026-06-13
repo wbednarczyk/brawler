@@ -1264,6 +1264,41 @@ Decision criteria:
 
 Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
 
+## Milestone: Company Fundamentals (v0.34.0–v0.36.0)
+
+Goal: turn report numbers into a structured, source-linked fundamentals view per company, so the investor stops re-reading reports to find the same figures each quarter. Scope and the KPI taxonomy are fixed in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+
+v0.34.0 — Financial facts foundation:
+
+- ADR and KPI taxonomy (this milestone's first task)
+- data model for financial periods, financial facts, and KPI definitions (canonical plus custom per-company), with provenance and confirmation state
+- financial facts storage, commands, and a focused frontend DTO module
+- report document persistence from ESPI/EBI attachments and user-supplied PDF URLs, plus URL evidence capture and on-track company history backfill
+- manual KPI entry and edit workflow
+
+v0.35.0 — AI KPI extraction with confirmation:
+
+- provider-neutral extraction contracts with per-fact source citations and prompt-version provenance
+- report-document input for the Gemini adapter plus a deterministic test provider
+- an extraction job that persists proposed facts as pending confirmation
+- a review UI where the user confirms, edits, or rejects each proposed fact before it is committed
+
+v0.36.0 — Fundamentals panel and KPI charts:
+
+- hand-rolled SVG chart primitives in the shared UI layer, no new runtime dependency
+- a fundamentals panel in the company workspace with per-period figures and click-through to source evidence
+- custom per-company KPI management and KPI trend charts
+- export/import of financial facts and KPI definitions
+
+Cross-company KPI comparison follows later in v0.41.0.
+
+Exit criteria:
+
+- a real GPW company's periodic report can be turned into confirmed, source-linked financial facts end to end
+- no AI-proposed figure is stored as confirmed without explicit user review
+- figures render per period and over time with every value traceable to its report
+- the scope stays report-derived; no price, volume, technical, or market-dashboard features are introduced
+
 ## Future: AI Recommendation Guardrail Enforcement
 
 Goal: add automated post-generation validation that detects and rejects AI output containing buy/sell/hold, portfolio allocation, or similarly actionable recommendation language.
@@ -1287,3 +1322,4 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 - hosted ingestion jobs
 - commercial paid data APIs that require redistribution/licensing or product-level billing
 - mobile app
+- price/volume series, technical-analysis indicators, valuation tooling requiring live prices, and market dashboards (see [ADR 0027](adr/0027-company-fundamentals-scope.md))

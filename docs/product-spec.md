@@ -252,6 +252,20 @@ AI research briefs are separate research entities with citations and provider/mo
 
 M30 adds on-demand AI research briefs for company and watchlist research scopes. Brief generation uses backend-owned evidence collection, prompt/context building, provider execution, citation mapping, rendering, and persistence boundaries. Generated briefs are immutable snapshots with visible citations and provenance. They are imported/exported with research data. Briefs must not contain buy/sell/hold recommendations, and creating a notebook note from a brief is not automatic.
 
+### Company Fundamentals
+
+Milestones v0.34.0–v0.36.0 add a fundamentals view for tracked companies: key financial figures pulled from quarterly and annual reports, tracked per reporting period, and charted over time. The intent is to cut the time an investor spends re-reading reports to find the same handful of numbers each quarter.
+
+User-facing behavior:
+
+- a fundamentals panel in the company workspace showing key figures per reporting period, where every value links back to the report it came from
+- a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog
+- AI assistance that reads a stored report and proposes figures, which the user confirms, edits, or rejects before anything is saved; no AI-proposed number is stored as a confirmed figure without review
+- the user can also enter and correct figures manually against a report
+- simple charts of a figure over time, and (in v0.41.0) side-by-side comparison of the same figure across companies
+
+Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.
+
 ### Terminal Interface
 
 A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.
@@ -290,3 +304,5 @@ Brawler uses an open-core posture. The desktop core is open source under the Moz
 Detailed owner-only monetization strategy belongs in the private sibling repository when available locally. Public product docs should describe the posture at a high level without exposing speculative business plans.
 
 The local entitlement module validates signed license tokens with embedded public verification material, stores the raw accepted token in the OS keychain, stores only derived metadata in SQLite, and does not require cloud accounts, telemetry, hosted activation, billing, or remote entitlement checks. The open desktop core remains usable without a license token. Missing, invalid, expired, tampered, unsupported-version, and unsupported-channel states must be clear and recoverable in Settings for gated entitlements.
+
+AI features, including fundamentals extraction, are part of the open core and free to use with a user-supplied provider API key. The named future paid areas are managed AI (provider access without the user supplying a key), cloud sync and backup, and official signed installers. These are direction only; pricing and packaging detail stay in the private sibling repository. See [ADR 0027](adr/0027-company-fundamentals-scope.md).

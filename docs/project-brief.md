@@ -22,6 +22,7 @@ Contracts and data:
 - [Data Model](data-model.md): local entity model, origin model, migrations, and deferred data areas.
 - [Source Strategy](source-strategy.md): source adapter policy, accepted source paths, source candidates, and rate-limit posture.
 - [AI Analysis Framework](ai-analysis-framework.md): M13 provider-neutral AI analysis design, async job model, settings, and implementation boundaries.
+- [Fundamentals Scope (ADR 0027)](adr/0027-company-fundamentals-scope.md): in-scope report-derived KPIs versus the excluded price/market boundary, the fixed KPI taxonomy plus custom per-company KPIs, and the open-core posture for fundamentals AI.
 
 Planning and workflow:
 
