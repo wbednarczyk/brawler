@@ -1266,9 +1266,13 @@ Not in scope for v1 unless the study identifies a low-risk, permitted, high-valu
 
 ## Milestone: Multi-provider AI (v0.35.0)
 
+Status: completed in `0.35.0`.
+
 Goal: add Claude (Anthropic) and OpenAI (ChatGPT) as AI providers alongside Gemini, all free with a user-supplied key, before AI KPI extraction is built on the provider boundary. Inserted ahead of extraction so the report-document input path is designed against more than one provider rather than retrofitted later.
 
 Scope: a provider registry/factory replacing the hardcoded dispatch, per-provider keychain credentials and model selection, Claude and OpenAI analysis adapters implementing the existing provider trait, and a document-input abstraction on the trait (with Gemini retrofitted). Managed/hosted AI remains a future paid tier; this milestone keeps every provider free with the user's own key.
+
+Delivered: async provider/transcription boundary; provider registries; one-key-per-provider keychain credentials with a generic command surface; per-provider model registry (migration 0036) and catalog-driven selection UI; Claude and OpenAI adapters over a shared prompt/parse layer; document-input abstraction (Gemini native proven, capability-flagged). The local PDF text-extraction dependency and the extraction job itself remain deferred to v0.36.0.
 
 ## Milestone: Company Fundamentals (v0.34.0, v0.36.0–v0.37.0)
 

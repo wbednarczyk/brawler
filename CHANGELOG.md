@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.35.0 - 2026-06-13
+
+
+
+### Changed
+
+- migrate AI analysis and transcription layer to async
+
+- add provider registries replacing duplicated dispatch
+
+- one key per provider, generic provider_id-keyed commands
+
+
+
+### Features
+
+- per-provider model registry and multi-provider defaults (migration 0036)
+
+- catalog-driven AI provider and model selection
+
+- shared analysis prompts/parsing and Claude (Anthropic) adapter
+
+- OpenAI (ChatGPT) analysis adapter
+
+- document-input abstraction with Gemini native and capability flags
+
+- per-provider API key entry for Claude and OpenAI
+
+
 ## v0.34.0 - 2026-06-13
 
 
