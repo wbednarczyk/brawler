@@ -47,3 +47,24 @@ pub fn delete_company(
         .delete_company(&company_id)
         .map_err(|error| error.to_string())
 }
+
+#[tauri::command]
+pub fn get_company_ir_reports_url(
+    company_id: String,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Option<String>, String> {
+    state
+        .get_company_ir_reports_url(&company_id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_company_ir_reports_url(
+    company_id: String,
+    url: Option<String>,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Option<String>, String> {
+    state
+        .set_company_ir_reports_url(&company_id, url.as_deref())
+        .map_err(|error| error.to_string())
+}

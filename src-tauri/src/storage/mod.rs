@@ -187,6 +187,22 @@ impl AppState {
         companies::create_company(&connection, input)
     }
 
+    pub fn get_company_ir_reports_url(&self, company_id: &str) -> StorageResult<Option<String>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        companies::get_company_ir_reports_url(&connection, company_id)
+    }
+
+    pub fn set_company_ir_reports_url(
+        &self,
+        company_id: &str,
+        url: Option<&str>,
+    ) -> StorageResult<Option<String>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        companies::set_company_ir_reports_url(&connection, company_id, url)
+    }
+
     pub fn lookup_company(
         &self,
         input: CompanyLookupInput,

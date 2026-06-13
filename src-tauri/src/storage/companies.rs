@@ -351,3 +351,94 @@ pub(super) fn delete_company(connection: &Connection, company_id: &str) -> Stora
 
     Ok(())
 }
+
+/// The durable per-company investor-relations reports page URL (ADR 0029), or None.
+pub(super) fn get_company_ir_reports_url(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Option<String>> {
+    let url: Option<String> = connection.query_row(
+        "SELECT ir_reports_url FROM companies WHERE id = ?1",
+        [company_id],
+        |row| row.get(0),
+    )?;
+    Ok(url.filter(|value| !value.trim().is_empty()))
+}
+
+/// Set (or clear, with None/empty) the per-company IR reports page URL.
+pub(super) fn set_company_ir_reports_url(
+    connection: &Connection,
+    company_id: &str,
+    url: Option<&str>,
+) -> StorageResult<Option<String>> {
+    let url = url.map(str::trim).filter(|value| !value.is_empty());
+    let updated = connection.execute(
+        "UPDATE companies SET ir_reports_url = ?2 WHERE id = ?1",
+        rusqlite::params![company_id, url],
+    )?;
+    if updated == 0 {
+        return Err(StorageError::MissingFinancialsReference {
+            table: "companies".to_owned(),
+            id: company_id.to_owned(),
+        });
+    }
+    Ok(url.map(str::to_owned))
+}
+
+#[cfg(test)]
+mod ir_url_tests {
+    use crate::storage::{open_in_memory_database, AppState, NewCompany};
+
+    #[test]
+    fn ir_reports_url_round_trips_and_clears() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        assert_eq!(
+            state.get_company_ir_reports_url(&company.id).expect("get"),
+            None
+        );
+
+        let set = state
+            .set_company_ir_reports_url(
+                &company.id,
+                Some("  https://www.cdprojekt.com/en/investors/  "),
+            )
+            .expect("set");
+        assert_eq!(
+            set.as_deref(),
+            Some("https://www.cdprojekt.com/en/investors/")
+        );
+        assert_eq!(
+            state.get_company_ir_reports_url(&company.id).expect("get"),
+            Some("https://www.cdprojekt.com/en/investors/".to_owned())
+        );
+
+        // Empty clears it.
+        state
+            .set_company_ir_reports_url(&company.id, Some("   "))
+            .expect("clear");
+        assert_eq!(
+            state.get_company_ir_reports_url(&company.id).expect("get"),
+            None
+        );
+    }
+
+    #[test]
+    fn setting_ir_url_for_unknown_company_errors() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let error = state
+            .set_company_ir_reports_url("company_missing", Some("https://example.com"))
+            .expect_err("unknown company should error");
+        assert!(error.to_string().contains("companies"));
+    }
+}

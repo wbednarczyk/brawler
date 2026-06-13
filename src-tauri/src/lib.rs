@@ -62,6 +62,8 @@ pub fn run() {
             commands::companies::create_company,
             commands::companies::lookup_company,
             commands::companies::delete_company,
+            commands::companies::get_company_ir_reports_url,
+            commands::companies::set_company_ir_reports_url,
             commands::watchlists::list_watchlists,
             commands::watchlists::list_watchlist_memberships,
             commands::watchlists::create_watchlist,

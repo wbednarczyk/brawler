@@ -193,6 +193,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "kpi_extraction",
         sql: include_str!("../../migrations/0037_kpi_extraction.sql"),
     },
+    Migration {
+        version: 38,
+        name: "company_ir_reports_url",
+        sql: include_str!("../../migrations/0038_company_ir_reports_url.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
