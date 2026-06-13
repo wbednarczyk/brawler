@@ -61,7 +61,14 @@ pub fn run_kpi_extraction_job(
             let failed = state
                 .mark_kpi_extraction_job_failed(job_id, error_code, &error)
                 .map_err(|storage_error| storage_error.to_string())?;
-            record(state, &failed, "failed", "error", "KPI extraction failed.");
+            record_meta(
+                state,
+                &failed,
+                "failed",
+                "error",
+                "KPI extraction failed.",
+                json!({ "errorCode": error_code, "error": error }),
+            );
             Ok(failed)
         }
     }
@@ -80,12 +87,32 @@ fn extract(
     }
 
     let document = load_document(state, job)?;
+    let (mime_type, byte_size) = match &document {
+        AnalysisDocument::Native { mime_type, data } => (mime_type.clone(), data.len()),
+        AnalysisDocument::Text { text } => ("text/plain".to_owned(), text.len()),
+    };
+    record_meta(
+        state,
+        job,
+        "document_loaded",
+        "info",
+        "KPI extraction document loaded.",
+        json!({ "mimeType": mime_type, "byteSize": byte_size }),
+    );
     let request = build_request(state, job).map_err(|error| ("provider_error", error))?;
     let prompt = kpi_extraction_prompt(&request);
 
     state
         .mark_kpi_extraction_job_running(&job.id)
         .map_err(|error| ("unknown", error.to_string()))?;
+    record_meta(
+        state,
+        job,
+        "request_sent",
+        "info",
+        "KPI extraction provider request sent.",
+        json!({ "knownKpiCount": request.known_kpis.len(), "documentSupport": format!("{:?}", provider.document_support()) }),
+    );
 
     let text = tauri::async_runtime::block_on(provider.complete_document(&prompt, &document))
         .map_err(|error| (error.code(), error.to_string()))?;
@@ -165,12 +192,36 @@ fn load_document(
             format!("failed to read report document file: {error}"),
         )
     })?;
-    let mime_type = document
-        .content_type
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "application/pdf".to_owned());
+    let mime_type = resolve_document_mime_type(document.content_type.as_deref(), &local_path);
 
     Ok(AnalysisDocument::Native { mime_type, data })
+}
+
+/// Resolve a provider-acceptable MIME type. Servers often deliver report PDFs as
+/// `application/octet-stream` (or with no type), which providers like Gemini reject;
+/// in that case infer the type from the stored file extension, defaulting to PDF.
+fn resolve_document_mime_type(content_type: Option<&str>, local_path: &str) -> String {
+    let declared = content_type
+        .map(|value| {
+            value
+                .split(';')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_ascii_lowercase()
+        })
+        .filter(|value| !value.is_empty() && value != "application/octet-stream");
+    if let Some(declared) = declared {
+        return declared;
+    }
+    let lower = local_path.to_ascii_lowercase();
+    if lower.ends_with(".htm") || lower.ends_with(".html") {
+        "text/html".to_owned()
+    } else if lower.ends_with(".txt") {
+        "text/plain".to_owned()
+    } else {
+        "application/pdf".to_owned()
+    }
 }
 
 fn build_request(
@@ -234,6 +285,28 @@ fn record(
     severity: &str,
     message: &str,
 ) {
+    record_meta(state, job, stage, severity, message, json!({}));
+}
+
+fn record_meta(
+    state: &app_state::AppState,
+    job: &storage::KpiExtractionJob,
+    stage: &str,
+    severity: &str,
+    message: &str,
+    extra: serde_json::Value,
+) {
+    let mut metadata = json!({
+        "companyId": job.company_id,
+        "documentId": job.report_document_id,
+        "providerId": job.provider_id,
+        "model": job.model
+    });
+    if let (Some(base), Some(extra)) = (metadata.as_object_mut(), extra.as_object()) {
+        for (key, value) in extra {
+            base.insert(key.clone(), value.clone());
+        }
+    }
     let _ = state.record_diagnostic_event(storage::NewDiagnosticEvent {
         occurred_at: None,
         module: "kpi_extraction".to_owned(),
@@ -244,18 +317,33 @@ fn record(
         stage: stage.to_owned(),
         severity: severity.to_owned(),
         message: message.to_owned(),
-        metadata: Some(json!({
-            "companyId": job.company_id,
-            "documentId": job.report_document_id,
-            "providerId": job.provider_id,
-            "model": job.model
-        })),
+        metadata: Some(metadata),
     });
 }
 
 #[cfg(test)]
 mod tests {
-    use super::run_kpi_extraction_job;
+    use super::{resolve_document_mime_type, run_kpi_extraction_job};
+
+    #[test]
+    fn mime_type_normalizes_octet_stream_and_missing_to_pdf() {
+        // Generic/empty server types fall back to the file extension.
+        assert_eq!(
+            resolve_document_mime_type(Some("application/octet-stream"), "report.pdf"),
+            "application/pdf"
+        );
+        assert_eq!(
+            resolve_document_mime_type(None, "report.pdf"),
+            "application/pdf"
+        );
+        // A real declared type wins, with parameters stripped.
+        assert_eq!(
+            resolve_document_mime_type(Some("application/pdf; charset=binary"), "x.bin"),
+            "application/pdf"
+        );
+        // No type, non-pdf extension.
+        assert_eq!(resolve_document_mime_type(None, "page.html"), "text/html");
+    }
     use crate::{
         providers::analysis::{TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID},
         storage::{
