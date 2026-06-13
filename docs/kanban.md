@@ -25,11 +25,13 @@ Current milestone epics:
 - `cbf6999` - epic: Management claims tracker (`milestone:v0.39.0`)
 - `75001e4` - epic: Report-season cockpit (`milestone:v0.40.0`)
 - `b7a54ba` - epic: Cross-company KPI comparison (`milestone:v0.41.0`)
-- `ebbcb29` - epic: Re-invent the notebook panel (`milestone:v0.42.0`)
+- `287d0b4` - epic: Quality frameworks — quantitative checks (`milestone:v0.42.0`)
 - `7cba98b` - epic: Story clustering across sources (`milestone:v0.43.0`)
 - `db6be22` - epic: Report-over-report diff (`milestone:v0.44.0`)
 - `df178f4` - epic: Feed triage mode and command palette (`milestone:v0.45.0`)
 - `9a607da` - epic: Autonomous report pipeline (`milestone:v0.46.0`)
+- `5835112` - epic: Quality frameworks — qualitative assessment (`milestone:v0.47.0`)
+- `ebbcb29` - epic: Re-invent the notebook panel (`milestone:v0.49.0`)
 
 Current fundamentals sequence:
 
@@ -52,6 +54,13 @@ Current time-saver sequence:
 - v0.45.0 ships keyboard feed triage and a global command palette over search, navigation, and actions.
 - v0.46.0 composes the building blocks into an autonomous report pipeline: detect publication, auto-fetch, auto-extract, and notify with cross-references, behind a per-company trust ladder (confirm-before-commit stays the default; auto-confirmed facts are flagged unreviewed, reversible, and cited).
 - Company history backfill on track ships earlier, inside v0.34.0.
+
+Current quality-frameworks sequence (Kroeze-style checklists, user-owned + app templates):
+
+- v0.42.0 adds quantitative checks: a rule engine evaluates user frameworks against the fundamentals facts and produces a versioned scorecard; ships clonable templates incl. a Kroeze-style quality template. Depends only on facts (v0.36); resequenceable.
+- v0.47.0 adds qualitative agent-assessed criteria (moat, pricing power, recurring revenue, capital allocation) with citations, composed into the scorecard and re-evaluated by autopilot.
+
+The fundamentals schema was validated against ~37 GPW companies (IT/SaaS, retail, developers, construction, manufacturing, banks, insurer, debt-purchase, gaming, space); findings are recorded in ADR 0027 (statement-type packs, generalized unit model, fact variants, period model).
 
 Backlog items folded into milestones: portalanaliz.pl source study and README polish into v0.34.0; Claude provider and AI waiting animation into v0.35.0; feed retention policy design into v0.37.0; ChatGPT provider and Investing.com RSS assessment into v0.38.0. Deliberately unscheduled: X.com and Google Finance studies, Perplexity provider, terminal interface, mobile clients, and the Windows taskbar indicator remain plain backlog until product pressure appears.
 

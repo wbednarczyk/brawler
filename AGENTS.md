@@ -23,6 +23,16 @@ Then read only the relevant canonical references for the work being done:
 - Module ownership or refactoring: [docs/modularization-design.md](docs/modularization-design.md).
 - Historical completed-card context only when needed: [docs/kanban-archive.md](docs/kanban-archive.md).
 
+## Tooling and Token Discipline
+
+This applies to all agents working in this repo (Claude Code and Codex/ChatGPT alike).
+
+- **Prefix shell and file commands with `rtk`** (Rust Token Killer): `rtk git`, `rtk grep`, `rtk read <file>`, `rtk ls`, `rtk cargo`, `rtk rad`, etc. It filters/compresses output before it reaches the model. `rtk proxy <cmd>` runs raw. Run `rtk trust` once in this repo so the project-local filters in `.rtk/` are applied.
+- Use **repoctx** for compact repository context instead of opening many files.
+- Read **targeted ranges** (line offsets, grep, search) rather than whole files; do not re-read a file you just edited.
+- Reserve the strongest model for hard reasoning; prefer a cheaper model for routine edits, lookups, and synthesis.
+- Avoid multi-agent fan-out unless the task genuinely needs breadth; reason directly when confident. Batch independent tool calls in one turn.
+
 ## Working Rules
 
 - Do not implement non-trivial changes without an explicit plan and approval.
