@@ -166,8 +166,8 @@ investor research workflow. \
 Return only JSON with this exact shape: \
 {{\"period\":{{\"fiscalYear\":2025,\"periodType\":\"Q1|Q2|Q3|Q4|H1|H2|FY\",\"periodEndDate\":\"YYYY-MM-DD\"}},\"currency\":\"PLN\",\"language\":\"pl\",\"facts\":[{{\"metricKey\":\"revenue\",\"label\":\"Revenue\",\"valueNumeric\":\"142312000\",\"unit\":\"PLN\",\"currency\":\"PLN\",\"asReportedValue\":\"142 312\",\"asReportedScale\":\"tys.\",\"measureWindow\":\"quarter|ytd|ttm|fy\",\"confidence\":\"low|medium|high\",\"sourceSnippet\":\"verbatim text from the document\",\"isProposedKpi\":false}}]}}.\n\n\
 Rules:\n\
-- Extract values for the PRIMARY reporting period of this document only. Ignore prior-year comparative columns and other periods.\n\
-- Detect the primary period (fiscalYear, periodType, periodEndDate). periodType must be one of Q1, Q2, Q3, Q4, H1, H2, FY.\n\
+- Extract values for the PRIMARY reporting period of this filing only. This is the newest period the filing reports (the period named in its title/header), NOT the full-year or prior-year comparative columns shown alongside it. If the Expected period below names a quarter (e.g. Q1 2026), extract that quarter's figures, not the annual or trailing-twelve-month totals.\n\
+- Detect and report that primary period (fiscalYear, periodType, periodEndDate). periodType must be one of Q1, Q2, Q3, Q4, H1, H2, FY, and must match the filing's primary period.\n\
 - valueNumeric is the value normalized to base units as a plain decimal string (no thousands separators, no scale words); e.g. \"142 312 tys. zł\" becomes \"142312000\". Negative values keep a leading minus.\n\
 - asReportedValue and asReportedScale capture the figure exactly as printed (digits and scale word) so the user can verify it.\n\
 - For every fact include a verbatim sourceSnippet copied from the document and a confidence of low, medium, or high.\n\

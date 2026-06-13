@@ -126,6 +126,20 @@ fn extract(
 
     let output = parse_kpi_extraction_output(&text, provider.provider_id())
         .map_err(|error| (error.code(), error.to_string()))?;
+    record_meta(
+        state,
+        job,
+        "parsed",
+        "info",
+        "KPI extraction response parsed.",
+        json!({
+            "factCount": output.facts.len(),
+            "proposedCount": output.facts.iter().filter(|fact| fact.is_proposed_kpi).count(),
+            "responseChars": text.len(),
+            "detectedPeriodType": output.period.as_ref().map(|period| period.period_type.clone()),
+            "detectedFiscalYear": output.period.as_ref().map(|period| period.fiscal_year),
+        }),
+    );
 
     let (detected_fiscal_year, detected_period_type, detected_period_end_date) = match output.period
     {
