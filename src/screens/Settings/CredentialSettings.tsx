@@ -1,8 +1,11 @@
-import type { FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { ExternalLink, Save, Trash2 } from "lucide-react";
-import type { CredentialStatus } from "../../api/types";
+import { listAiProviderCatalog } from "../../api/aiProviders";
+import { GEMINI_PROVIDER_ID } from "../../api/credentials";
+import type { AiProviderCatalogEntry, CredentialStatus } from "../../api/types";
 import { ActionRow, Button, InfoGrid } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { ProviderApiKeyForm } from "./ProviderApiKeyForm";
 
 type CredentialSettingsProps = {
   geminiApiKeyDraft: string;
@@ -30,6 +33,31 @@ export function CredentialSettings({
   onSaveGeminiApiKey,
 }: CredentialSettingsProps) {
   const { t, text } = useLocale();
+  const [catalog, setCatalog] = useState<AiProviderCatalogEntry[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    listAiProviderCatalog()
+      .then((entries) => {
+        if (active) {
+          setCatalog(entries);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCatalog([]);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  // The Gemini key keeps its dedicated form (above); other credentialed
+  // providers get a self-contained per-provider form (ADR 0028).
+  const additionalProviders = catalog.filter(
+    (entry) => entry.requiresCredential && entry.providerId !== GEMINI_PROVIDER_ID,
+  );
 
   return (
     <section className="settings-group" aria-labelledby="settings-credentials-title">
@@ -98,6 +126,14 @@ export function CredentialSettings({
       {geminiCredentialError ? (
         <p className="error-text">{text("Credential command failed")}: {geminiCredentialError}</p>
       ) : null}
+      {additionalProviders.map((entry) => (
+        <ProviderApiKeyForm
+          key={entry.providerId}
+          providerId={entry.providerId}
+          label={entry.label}
+          formatCredentialConfigured={formatCredentialConfigured}
+        />
+      ))}
     </section>
   );
 }
