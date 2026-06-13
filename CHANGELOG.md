@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.34.0 - 2026-06-13
+
+
+
+### Features
+
+- add financial facts schema (migration 0034)
+
+- add financials storage, commands, and DTOs
+
+- persist report documents and capture from URLs
+
+- add manual KPI entry/edit workflow
+
+
 ## v0.33.0 - 2026-06-12
 
 

@@ -1278,11 +1278,15 @@ Note: the AI extraction and panel/charts work shifted up one minor version after
 
 v0.34.0 — Financial facts foundation:
 
+Status: completed in `0.34.0`.
+
 - ADR and KPI taxonomy (this milestone's first task)
 - data model for financial periods, financial facts, and KPI definitions (canonical plus custom per-company), with provenance and confirmation state
 - financial facts storage, commands, and a focused frontend DTO module
-- report document persistence from ESPI/EBI attachments and user-supplied PDF URLs, plus URL evidence capture and on-track company history backfill
+- report document persistence with user-supplied PDF URLs and URL evidence capture
 - manual KPI entry and edit workflow
+
+Deferred to v0.39.0: ESPI/EBI attachment ingestion and on-track company history backfill, which depend on the reusable feed company-matching boundary and live GPW verification. User-supplied URL capture plus manual entry provide the same fundamentals capability in the meantime.
 
 v0.36.0 — AI KPI extraction with confirmation:
 

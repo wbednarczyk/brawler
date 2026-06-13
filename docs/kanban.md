@@ -17,7 +17,7 @@ Active planning has moved from this file to Radicle issues rendered by Radboard.
 
 Current milestone epics:
 
-- `eca2082` - epic: Financial facts foundation (`milestone:v0.34.0`)
+- `eca2082` - epic: Financial facts foundation (`milestone:v0.34.0`, completed in `0.34.0`; ESPI/EBI attachment ingestion and backfill deferred to `v0.39.0`)
 - `fb20c2f` - epic: Multi-provider AI (Claude + OpenAI, BYO key) (`milestone:v0.35.0`)
 - `9879941` - epic: AI KPI extraction with confirmation (`milestone:v0.36.0`)
 - `8505350` - epic: Fundamentals panel and KPI charts (`milestone:v0.37.0`)
@@ -36,7 +36,7 @@ Current milestone epics:
 
 Current fundamentals sequence:
 
-- v0.34.0 establishes the financial facts data model, report document persistence (ESPI/EBI attachments and user-supplied PDF URLs), URL evidence capture, and manual KPI entry.
+- v0.34.0 (completed in `0.34.0`) establishes the financial facts data model, report document persistence (user-supplied PDF URLs), URL evidence capture, and manual KPI entry. ESPI/EBI attachment ingestion and backfill were deferred to v0.39.0.
 - v0.35.0 adds Claude and OpenAI as BYO-key AI providers alongside Gemini (provider registry, per-provider keychain credentials, model selection, and a document-input abstraction on the provider trait), drawn before extraction so the report-document path is designed multi-provider.
 - v0.36.0 adds AI KPI extraction through the provider boundary with mandatory per-fact user confirmation.
 - v0.37.0 ships the fundamentals panel, custom per-company KPIs, KPI trend charts via shared SVG primitives, and export/import.
