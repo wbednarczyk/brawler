@@ -209,6 +209,7 @@ where
             }],
             generation_config: GeminiAnalysisGenerationConfig {
                 response_mime_type: "application/json".to_owned(),
+                max_output_tokens: GEMINI_MAX_OUTPUT_TOKENS,
             },
         };
         let response = self
@@ -258,10 +259,14 @@ pub struct GeminiInlineData {
     data: String,
 }
 
+/// Generous output budget so thorough multi-KPI extraction is not truncated.
+const GEMINI_MAX_OUTPUT_TOKENS: u32 = 16384;
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GeminiAnalysisGenerationConfig {
     response_mime_type: String,
+    max_output_tokens: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -293,6 +298,7 @@ fn gemini_text_request(prompt: String) -> GeminiAnalysisGenerateContentRequest {
         }],
         generation_config: GeminiAnalysisGenerationConfig {
             response_mime_type: "application/json".to_owned(),
+            max_output_tokens: GEMINI_MAX_OUTPUT_TOKENS,
         },
     }
 }

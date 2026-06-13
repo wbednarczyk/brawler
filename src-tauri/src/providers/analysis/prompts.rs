@@ -171,8 +171,9 @@ Rules:\n\
 - valueNumeric is the value normalized to base units as a plain decimal string (no thousands separators, no scale words); e.g. \"142 312 tys. zł\" becomes \"142312000\". Negative values keep a leading minus.\n\
 - asReportedValue and asReportedScale capture the figure exactly as printed (digits and scale word) so the user can verify it.\n\
 - For every fact include a verbatim sourceSnippet copied from the document and a confidence of low, medium, or high.\n\
-- First extract the listed known KPIs that appear in the document (isProposedKpi=false). You may also propose additional KPIs you find that are not in the list by setting isProposedKpi=true.\n\
-- Do not invent values. Omit any KPI you cannot find rather than guessing.\n\
+- Be thorough and exhaustive: scan the ENTIRE document — income statement, balance sheet, cash-flow statement, and key-figures/highlights tables — not just the first page or summary. A periodic report normally reports many of the listed KPIs.\n\
+- Extract EVERY listed known KPI whose value for the primary period appears anywhere in the document (isProposedKpi=false). Do not stop after the first few; include all that are present. You may also propose additional KPIs you find that are not in the list by setting isProposedKpi=true.\n\
+- Do not invent values. Omit a KPI only if its value is genuinely absent from the document; do not guess.\n\
 - Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, or any investment advice.\n\n\
 Company: {company}\n\
 Statement type: {statement_type}\n\
