@@ -64,7 +64,8 @@ describe("Settings screen workflows", () => {
     expect(screen.getByLabelText("Gemini transcription model")).toHaveValue("gemini-2.5-flash");
     expect(screen.getByLabelText("Gemini transcription timeout")).toHaveValue("300");
     expect(screen.getByLabelText("General AI provider")).toHaveValue("");
-    expect(screen.getByLabelText("General AI model")).toHaveValue("gemini-2.5-flash");
+    // With no provider selected the model list is empty (catalog-driven, ADR 0028).
+    expect(screen.getByLabelText("General AI model")).toHaveValue("");
     expect(screen.getByLabelText("General AI timeout")).toHaveValue("90");
     expect(within(settingsRegion).queryByText("provider_gemini")).not.toBeInTheDocument();
     expect(within(settingsRegion).queryByText("Cheapest supported")).not.toBeInTheDocument();

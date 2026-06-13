@@ -1,4 +1,7 @@
-import type { UserSettings } from "../../api/types";
+import { useEffect, useState } from "react";
+
+import { listAiProviderCatalog } from "../../api/aiProviders";
+import type { AiProviderCatalogEntry, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 import { FieldRow, SelectField } from "../../ui";
 
@@ -20,6 +23,29 @@ export function AiSettings({
   onGeneralAnalysisTimeoutChange,
 }: AiSettingsProps) {
   const { t, text } = useLocale();
+  const [catalog, setCatalog] = useState<AiProviderCatalogEntry[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    listAiProviderCatalog()
+      .then((entries) => {
+        if (active) {
+          setCatalog(entries);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCatalog([]);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedProvider = settings?.aiProviders.generalAnalysisProvider ?? "";
+  const selectedProviderEntry = catalog.find((entry) => entry.providerId === selectedProvider);
+  const analysisModels = selectedProviderEntry?.models ?? [];
 
   return (
     <section className="settings-group" aria-labelledby="settings-ai-title">
@@ -28,7 +54,7 @@ export function AiSettings({
         <SelectField
           aria-label={text("Gemini transcription model")}
           label={text("Gemini transcription model")}
-          value={settings?.aiProviders.youtubeTranscriptionModel ?? "gemini-2.5-flash"}
+          value={settings?.aiProviders.youtubeTranscriptionModel ?? "gemini-3.5-flash"}
           onChange={(event) => onYoutubeTranscriptionModelChange(event.target.value)}
         >
           <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
@@ -51,22 +77,31 @@ export function AiSettings({
         <SelectField
           aria-label={text("General AI provider")}
           label={text("General AI provider")}
-          value={settings?.aiProviders.generalAnalysisProvider ?? ""}
+          value={selectedProvider}
           onChange={(event) => onGeneralAnalysisProviderChange(event.target.value)}
         >
           <option value="">{text("Not configured")}</option>
-          <option value="provider_gemini">{text("Gemini")}</option>
+          {catalog.map((entry) => (
+            <option key={entry.providerId} value={entry.providerId}>
+              {entry.label}
+            </option>
+          ))}
         </SelectField>
         <SelectField
           aria-label={text("General AI model")}
           label={text("General AI model")}
-          value={settings?.aiProviders.generalAnalysisModel ?? "gemini-2.5-flash"}
+          value={settings?.aiProviders.generalAnalysisModel ?? ""}
+          disabled={analysisModels.length === 0}
           onChange={(event) => onGeneralAnalysisModelChange(event.target.value)}
         >
-          <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite</option>
-          <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
-          <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite</option>
-          <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+          {analysisModels.length === 0 ? (
+            <option value="">{text("Select a provider first")}</option>
+          ) : null}
+          {analysisModels.map((model) => (
+            <option key={model} value={model}>
+              {model}
+            </option>
+          ))}
         </SelectField>
         <SelectField
           aria-label={text("General AI timeout")}

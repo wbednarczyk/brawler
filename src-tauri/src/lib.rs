@@ -152,6 +152,7 @@ pub fn run() {
             commands::licensing::clear_license_key,
             commands::settings::get_settings,
             commands::settings::update_settings,
+            commands::settings::list_ai_provider_catalog,
             commands::settings::disable_developer_mode,
             commands::settings::unlock_developer_mode,
             commands::credentials::get_provider_credential_status,

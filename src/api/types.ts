@@ -422,6 +422,14 @@ export type UserSettings = {
   shortcutBindings: Record<string, ShortcutBindingSetting>;
 };
 
+export type AiProviderCatalogEntry = {
+  providerId: string;
+  label: string;
+  models: string[];
+  defaultModel: string;
+  requiresCredential: boolean;
+};
+
 export type CredentialStatus = {
   providerId: string;
   secretKind: string;

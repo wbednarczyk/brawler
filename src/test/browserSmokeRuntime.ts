@@ -217,6 +217,30 @@ function handleCommand(command: string, args: InvokeArgs) {
       return notebookEntries.filter((entry) => entry.companyId === (args as { companyId?: string })?.companyId);
     case "get_provider_credential_status":
       return credentialStatus;
+    case "list_ai_provider_catalog":
+      return [
+        {
+          providerId: "provider_gemini",
+          label: "Gemini",
+          models: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
+          defaultModel: "gemini-3.5-flash",
+          requiresCredential: true,
+        },
+        {
+          providerId: "provider_anthropic",
+          label: "Claude (Anthropic)",
+          models: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
+          defaultModel: "claude-sonnet-4-6",
+          requiresCredential: true,
+        },
+        {
+          providerId: "provider_openai",
+          label: "OpenAI (ChatGPT)",
+          models: ["gpt-5.5", "gpt-5.1"],
+          defaultModel: "gpt-5.5",
+          requiresCredential: true,
+        },
+      ];
     case "list_ai_analysis_jobs":
       return [];
     case "get_local_metrics_snapshot":

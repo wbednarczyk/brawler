@@ -1266,6 +1266,37 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       return Promise.resolve(appTestState.localMetricsSnapshotResponse);
     }
 
+    if (command === "list_ai_provider_catalog") {
+      return Promise.resolve([
+        {
+          providerId: "provider_gemini",
+          label: "Gemini",
+          models: [
+            "gemini-3.5-flash",
+            "gemini-3.1-pro-preview",
+            "gemini-2.5-flash",
+            "gemini-2.5-flash-lite",
+          ],
+          defaultModel: "gemini-3.5-flash",
+          requiresCredential: true,
+        },
+        {
+          providerId: "provider_anthropic",
+          label: "Claude (Anthropic)",
+          models: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
+          defaultModel: "claude-sonnet-4-6",
+          requiresCredential: true,
+        },
+        {
+          providerId: "provider_openai",
+          label: "OpenAI (ChatGPT)",
+          models: ["gpt-5.5", "gpt-5.1"],
+          defaultModel: "gpt-5.5",
+          requiresCredential: true,
+        },
+      ]);
+    }
+
     if (command === "get_provider_credential_status") {
       return Promise.resolve(appTestState.geminiCredentialStatusResponse);
     }
