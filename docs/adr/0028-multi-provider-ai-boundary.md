@@ -91,6 +91,8 @@ The neutral request/part model gains a document-input part that carries **either
 
 Scope note: in v0.35.0 no feature *sends* a document yet (extraction is v0.36.0). This milestone builds the abstraction and proves it with **Gemini native**, and **defers the local PDF-text-extraction dependency to v0.36.0**, when the text-fallback path is first exercised. This deferral is a recorded decision, not a gap.
 
+**v0.36.0 resolution (native-first; no PDF-text dependency added):** when AI KPI extraction first exercised the document path, the deferred local PDF-text-extraction dependency was evaluated and **declined**. GPW periodic reports are table-heavy, and pure-Rust PDF text extractors garble financial tables badly enough to undermine the per-fact confirm-correctness goal. The decision is therefore **native-multimodal-first**: extraction routes through a document-capable provider — Gemini (native, proven in v0.35.0) and **Claude native PDF** (added in v0.36.0). OpenAI remains text-path/degraded until its adapter gains native file input. No PDF→text crate is introduced; the `AnalysisDocument::Text` fallback stays in the model for providers/models that can only take text, but no v0.36.0 feature produces it from a PDF. This keeps extraction fidelity high where correctness matters and avoids a fragile dependency.
+
 ### 7. Non-streaming responses for now
 
 AI jobs persist a final result, so responses are non-streaming in this milestone. Streaming (and the AI-waiting-animation UX) is a separate, later concern; the async foundation makes it natural to add.
@@ -131,4 +133,4 @@ Tracked under epic `fb20c2f` (milestone v0.35.0):
 7. Document-input abstraction on the trait (retrofit Gemini native), capability flags.
 8. Multi-provider tests + contracts/docs checkpoint.
 
-The local PDF-text-extraction dependency for the document text-fallback path is deferred to v0.36.0 (AI KPI extraction), where it is first exercised.
+The local PDF-text-extraction dependency for the document text-fallback path was deferred to v0.36.0 (AI KPI extraction), and on evaluation there was **declined** in favour of native-multimodal-first delivery (Gemini + Claude native PDF). See the "v0.36.0 resolution" note under decision 6 above. v0.36.0 extraction work (epic `9879941`) follows: KPI extraction contracts and prompt boundary, Claude native PDF input, the async extraction job persisting pending facts, the per-fact review/confirmation UI, the feed-item extraction action, and tests/docs.

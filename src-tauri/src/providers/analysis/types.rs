@@ -65,6 +65,77 @@ pub struct ResearchBriefCitationOutput {
     pub snippet: Option<String>,
 }
 
+/// One KPI the extractor should look for, drawn from the company's applicable
+/// canonical packs plus its custom KPI definitions (v0.36 AI KPI extraction).
+#[derive(Debug, Clone)]
+pub struct KpiCatalogEntry {
+    pub metric_key: String,
+    pub label: String,
+    /// `value_kind` from the KPI definition (e.g. currency_amount, ratio, per_share, count).
+    pub value_kind: String,
+    pub unit: Option<String>,
+}
+
+/// Request to extract KPI values from a single report document. The document
+/// bytes are delivered separately via [`AiAnalysisProvider::complete_document`];
+/// this request carries only the grounding metadata the prompt needs.
+#[derive(Debug, Clone)]
+pub struct KpiExtractionRequest {
+    pub company_name: String,
+    /// Statement-type pack hint (industrial, bank, insurer, ...) when known.
+    pub statement_type: Option<String>,
+    /// KPIs the model should prioritise (canonical + custom for this company).
+    pub known_kpis: Vec<KpiCatalogEntry>,
+    /// Expected primary period from the triggering event (e.g. "Q3 2025"), when known.
+    pub period_hint: Option<String>,
+}
+
+/// The primary reporting period the model detected in the document. Only the
+/// primary period is extracted; prior-year comparative columns are ignored
+/// (they arrive from their own reports).
+#[derive(Debug, Clone)]
+pub struct ExtractedPeriod {
+    pub fiscal_year: i64,
+    /// Q1 | Q2 | Q3 | Q4 | H1 | H2 | FY.
+    pub period_type: String,
+    pub period_end_date: Option<String>,
+}
+
+/// One proposed KPI value. Never committed as a fact without explicit user
+/// confirmation; every proposal carries the verbatim source snippet it came from.
+#[derive(Debug, Clone)]
+pub struct ExtractedKpiFact {
+    /// Matches a known KPI key, or a model-proposed key when `is_proposed_kpi`.
+    pub metric_key: String,
+    pub label: String,
+    /// Decimal value as text (never a binary float), per the fundamentals data model.
+    pub value_numeric: String,
+    pub unit: Option<String>,
+    pub currency: Option<String>,
+    /// The figure exactly as printed (e.g. "142 312"), before scale normalisation.
+    pub as_reported_value: Option<String>,
+    /// The reported scale word/multiplier (e.g. "tys.", "mln") when present.
+    pub as_reported_scale: Option<String>,
+    /// Measure window the value represents (e.g. quarter, ytd, ttm) when discernible.
+    pub measure_window: Option<String>,
+    /// low | medium | high.
+    pub confidence: Option<String>,
+    pub source_snippet: Option<String>,
+    /// True when the metric is beyond the supplied taxonomy (a suggestion the user
+    /// may accept as a new custom KPI definition before it is kept).
+    pub is_proposed_kpi: bool,
+}
+
+/// Provider-neutral KPI extraction output parsed from the model's response.
+#[derive(Debug, Clone)]
+pub struct KpiExtractionProviderOutput {
+    pub period: Option<ExtractedPeriod>,
+    /// The document's default reporting currency (ISO 4217) when stated.
+    pub currency: Option<String>,
+    pub language: Option<String>,
+    pub facts: Vec<ExtractedKpiFact>,
+}
+
 #[derive(Debug, Error)]
 pub enum AnalysisProviderError {
     #[error("provider is not configured")]

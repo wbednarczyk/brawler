@@ -11,9 +11,18 @@ use crate::providers::common::{clean_optional_string, extract_json_object};
 
 use super::types::{
     AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, AnalysisSourceReference,
+    ExtractedKpiFact, ExtractedPeriod, KpiExtractionProviderOutput, KpiExtractionRequest,
     ResearchBriefCitationOutput, ResearchBriefProviderOutput, ResearchBriefRequest,
     ResearchBriefSectionOutput, ResearchDigestRequest,
 };
+
+/// Stable identifier of the KPI-extraction prompt, recorded as fact provenance so
+/// extracted values can be traced to the exact instructions that produced them.
+/// Bump when the prompt's contract changes materially.
+pub const KPI_EXTRACTION_PROMPT_VERSION: &str = "kpi-extraction.v1";
+
+/// Allowed reporting period types for extraction (primary period only).
+const EXTRACTION_PERIOD_TYPES: [&str; 7] = ["Q1", "Q2", "Q3", "Q4", "H1", "H2", "FY"];
 
 /// Build the analysis prompt for a single feed item.
 pub fn analysis_prompt(request: &AnalysisRequest) -> String {
@@ -113,6 +122,63 @@ Scope id: {scope_id}\n\
 Evidence:\n{evidence}",
         scope_type = request.scope_type,
         scope_id = request.scope_id,
+    )
+}
+
+/// Build the KPI-extraction prompt for a report document. The document bytes are
+/// sent alongside this prompt via the provider's `complete_document` path; this
+/// text only grounds the model in the company, its KPI taxonomy, and the JSON
+/// contract. Only the primary reporting period is extracted.
+pub fn kpi_extraction_prompt(request: &KpiExtractionRequest) -> String {
+    let known_kpis = if request.known_kpis.is_empty() {
+        "(none provided — propose the standard financial KPIs you find)".to_owned()
+    } else {
+        request
+            .known_kpis
+            .iter()
+            .map(|entry| {
+                format!(
+                    "- {key} — {label} (valueKind={value_kind}{unit})",
+                    key = entry.metric_key,
+                    label = entry.label,
+                    value_kind = entry.value_kind,
+                    unit = entry
+                        .unit
+                        .as_deref()
+                        .map(|unit| format!(", unit={unit}"))
+                        .unwrap_or_default(),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    let statement_type = request.statement_type.as_deref().unwrap_or("unknown");
+    let period_hint = request
+        .period_hint
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown — detect it from the document");
+
+    format!(
+        "Extract financial KPI values from the attached company report document for an \
+investor research workflow. \
+Return only JSON with this exact shape: \
+{{\"period\":{{\"fiscalYear\":2025,\"periodType\":\"Q1|Q2|Q3|Q4|H1|H2|FY\",\"periodEndDate\":\"YYYY-MM-DD\"}},\"currency\":\"PLN\",\"language\":\"pl\",\"facts\":[{{\"metricKey\":\"revenue\",\"label\":\"Revenue\",\"valueNumeric\":\"142312000\",\"unit\":\"PLN\",\"currency\":\"PLN\",\"asReportedValue\":\"142 312\",\"asReportedScale\":\"tys.\",\"measureWindow\":\"quarter|ytd|ttm|fy\",\"confidence\":\"low|medium|high\",\"sourceSnippet\":\"verbatim text from the document\",\"isProposedKpi\":false}}]}}.\n\n\
+Rules:\n\
+- Extract values for the PRIMARY reporting period of this document only. Ignore prior-year comparative columns and other periods.\n\
+- Detect the primary period (fiscalYear, periodType, periodEndDate). periodType must be one of Q1, Q2, Q3, Q4, H1, H2, FY.\n\
+- valueNumeric is the value normalized to base units as a plain decimal string (no thousands separators, no scale words); e.g. \"142 312 tys. zł\" becomes \"142312000\". Negative values keep a leading minus.\n\
+- asReportedValue and asReportedScale capture the figure exactly as printed (digits and scale word) so the user can verify it.\n\
+- For every fact include a verbatim sourceSnippet copied from the document and a confidence of low, medium, or high.\n\
+- First extract the listed known KPIs that appear in the document (isProposedKpi=false). You may also propose additional KPIs you find that are not in the list by setting isProposedKpi=true.\n\
+- Do not invent values. Omit any KPI you cannot find rather than guessing.\n\
+- Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, or any investment advice.\n\n\
+Company: {company}\n\
+Statement type: {statement_type}\n\
+Expected period: {period_hint}\n\
+Known KPIs:\n{known_kpis}",
+        company = request.company_name,
     )
 }
 
@@ -317,6 +383,115 @@ pub fn parse_research_brief_output(
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct KpiExtractionJson {
+    period: Option<ExtractedPeriodJson>,
+    currency: Option<String>,
+    language: Option<String>,
+    #[serde(default)]
+    facts: Vec<ExtractedKpiFactJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractedPeriodJson {
+    fiscal_year: Option<i64>,
+    period_type: Option<String>,
+    period_end_date: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractedKpiFactJson {
+    metric_key: String,
+    label: Option<String>,
+    value_numeric: String,
+    unit: Option<String>,
+    currency: Option<String>,
+    as_reported_value: Option<String>,
+    as_reported_scale: Option<String>,
+    measure_window: Option<String>,
+    confidence: Option<String>,
+    source_snippet: Option<String>,
+    #[serde(default)]
+    is_proposed_kpi: bool,
+}
+
+/// Parse a model's KPI-extraction text (JSON) into the neutral extraction output.
+/// `provider_label` is used only for error messages. Invalid individual facts are
+/// dropped; a detected period with an unsupported `periodType` is dropped (the
+/// user then maps the period during confirmation).
+pub fn parse_kpi_extraction_output(
+    text: &str,
+    provider_label: &str,
+) -> Result<KpiExtractionProviderOutput, AnalysisProviderError> {
+    let json_text = extract_json_object(text, &format!("{provider_label} response"))
+        .map_err(AnalysisProviderError::ParseError)?;
+    let parsed: KpiExtractionJson = serde_json::from_str(json_text).map_err(|error| {
+        AnalysisProviderError::ParseError(format!("{provider_label} KPI extraction JSON: {error}"))
+    })?;
+
+    let period = parsed.period.and_then(|period| {
+        let fiscal_year = period.fiscal_year?;
+        let period_type = period.period_type?.trim().to_uppercase();
+        if !EXTRACTION_PERIOD_TYPES.contains(&period_type.as_str()) {
+            return None;
+        }
+        Some(ExtractedPeriod {
+            fiscal_year,
+            period_type,
+            period_end_date: clean_optional_string(period.period_end_date),
+        })
+    });
+
+    let facts = parsed
+        .facts
+        .into_iter()
+        .filter_map(|fact| {
+            let metric_key = fact.metric_key.trim().to_owned();
+            let value_numeric = fact.value_numeric.trim().to_owned();
+            if metric_key.is_empty() || value_numeric.is_empty() {
+                return None;
+            }
+            let label = fact
+                .label
+                .map(|label| label.trim().to_owned())
+                .filter(|label| !label.is_empty())
+                .unwrap_or_else(|| metric_key.clone());
+            let confidence = clean_optional_string(fact.confidence)
+                .map(|value| value.to_lowercase())
+                .filter(|value| ["low", "medium", "high"].contains(&value.as_str()));
+            Some(ExtractedKpiFact {
+                metric_key,
+                label,
+                value_numeric,
+                unit: clean_optional_string(fact.unit),
+                currency: clean_optional_string(fact.currency),
+                as_reported_value: clean_optional_string(fact.as_reported_value),
+                as_reported_scale: clean_optional_string(fact.as_reported_scale),
+                measure_window: clean_optional_string(fact.measure_window),
+                confidence,
+                source_snippet: clean_optional_string(fact.source_snippet),
+                is_proposed_kpi: fact.is_proposed_kpi,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    if facts.is_empty() {
+        return Err(AnalysisProviderError::ParseError(format!(
+            "{provider_label} KPI extraction did not include any usable facts"
+        )));
+    }
+
+    Ok(KpiExtractionProviderOutput {
+        period,
+        currency: clean_optional_string(parsed.currency),
+        language: clean_optional_string(parsed.language),
+        facts,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -347,6 +522,71 @@ mod tests {
         assert_eq!(output.title, "Research brief");
         assert_eq!(output.summary, "Summary with {brace} text.");
         assert_eq!(output.citations.len(), 1);
+    }
+
+    #[test]
+    fn kpi_extraction_prompt_lists_known_kpis_and_period_hint() {
+        let prompt = kpi_extraction_prompt(&KpiExtractionRequest {
+            company_name: "cyber_Folks".to_owned(),
+            statement_type: Some("industrial".to_owned()),
+            known_kpis: vec![super::super::types::KpiCatalogEntry {
+                metric_key: "revenue".to_owned(),
+                label: "Revenue".to_owned(),
+                value_kind: "currency_amount".to_owned(),
+                unit: Some("PLN".to_owned()),
+            }],
+            period_hint: Some("Q3 2025".to_owned()),
+        });
+
+        assert!(prompt.contains("cyber_Folks"));
+        assert!(prompt.contains("revenue — Revenue"));
+        assert!(prompt.contains("Q3 2025"));
+        assert!(prompt.contains("PRIMARY reporting period"));
+    }
+
+    #[test]
+    fn kpi_extraction_parser_extracts_facts_and_period() {
+        let output = parse_kpi_extraction_output(
+            r#"{"period":{"fiscalYear":2025,"periodType":"q3","periodEndDate":"2025-09-30"},"currency":"PLN","language":"pl","facts":[{"metricKey":"revenue","label":"Revenue","valueNumeric":"142312000","unit":"PLN","currency":"PLN","asReportedValue":"142 312","asReportedScale":"tys.","measureWindow":"quarter","confidence":"HIGH","sourceSnippet":"przychody 142 312 tys. zl","isProposedKpi":false},{"metricKey":"backlog","label":"Backlog","valueNumeric":"410000000","confidence":"medium","isProposedKpi":true}]}"#,
+            "Gemini",
+        )
+        .expect("valid extraction output should parse");
+
+        let period = output.period.expect("period detected");
+        assert_eq!(period.fiscal_year, 2025);
+        assert_eq!(period.period_type, "Q3");
+        assert_eq!(output.facts.len(), 2);
+        assert_eq!(output.facts[0].confidence.as_deref(), Some("high"));
+        assert!(!output.facts[0].is_proposed_kpi);
+        assert!(output.facts[1].is_proposed_kpi);
+    }
+
+    #[test]
+    fn kpi_extraction_parser_drops_invalid_facts_and_bad_period() {
+        let output = parse_kpi_extraction_output(
+            r#"{"period":{"fiscalYear":2025,"periodType":"FY2025"},"facts":[{"metricKey":"","valueNumeric":"1"},{"metricKey":"revenue","valueNumeric":""},{"metricKey":"net_profit","valueNumeric":"5000","confidence":"definitely"}]}"#,
+            "Gemini",
+        )
+        .expect("one usable fact remains");
+
+        assert!(output.period.is_none(), "unsupported periodType is dropped");
+        assert_eq!(output.facts.len(), 1);
+        assert_eq!(output.facts[0].metric_key, "net_profit");
+        assert!(
+            output.facts[0].confidence.is_none(),
+            "out-of-range confidence is dropped"
+        );
+    }
+
+    #[test]
+    fn kpi_extraction_parser_rejects_when_no_usable_facts() {
+        let error = parse_kpi_extraction_output(
+            r#"{"period":{"fiscalYear":2025,"periodType":"Q3"},"facts":[]}"#,
+            "Gemini",
+        )
+        .expect_err("an extraction with no facts is an error");
+
+        assert_eq!(error.code(), "parse_error");
     }
 
     #[test]
