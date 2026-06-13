@@ -29,6 +29,7 @@ Current milestone epics:
 - `7cba98b` - epic: Story clustering across sources (`milestone:v0.43.0`)
 - `db6be22` - epic: Report-over-report diff (`milestone:v0.44.0`)
 - `df178f4` - epic: Feed triage mode and command palette (`milestone:v0.45.0`)
+- `9a607da` - epic: Autonomous report pipeline (`milestone:v0.46.0`)
 
 Current fundamentals sequence:
 
@@ -49,6 +50,7 @@ Current time-saver sequence:
 - v0.43.0 clusters near-duplicate multi-source coverage into single stories with the official source ranked first.
 - v0.44.0 diffs consecutive periodic reports section by section with a cited AI delta summary.
 - v0.45.0 ships keyboard feed triage and a global command palette over search, navigation, and actions.
+- v0.46.0 composes the building blocks into an autonomous report pipeline: detect publication, auto-fetch, auto-extract, and notify with cross-references, behind a per-company trust ladder (confirm-before-commit stays the default; auto-confirmed facts are flagged unreviewed, reversible, and cited).
 - Company history backfill on track ships earlier, inside v0.34.0.
 
 Backlog items folded into milestones: portalanaliz.pl source study and README polish into v0.34.0; Claude provider and AI waiting animation into v0.35.0; feed retention policy design into v0.37.0; ChatGPT provider and Investing.com RSS assessment into v0.38.0. Deliberately unscheduled: X.com and Google Finance studies, Perplexity provider, terminal interface, mobile clients, and the Windows taskbar indicator remain plain backlog until product pressure appears.

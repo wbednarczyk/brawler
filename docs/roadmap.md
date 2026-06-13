@@ -1299,6 +1299,14 @@ Exit criteria:
 - figures render per period and over time with every value traceable to its report
 - the scope stays report-derived; no price, volume, technical, or market-dashboard features are introduced
 
+## North Star: Autonomous Report Pipeline (v0.46.0)
+
+The fundamentals, extraction, diff, claims, and cockpit milestones are building blocks toward one experience: a tracked company publishes a periodic report, and the app detects it, fetches it, extracts the figures, summarizes what changed, cross-references the result against open claims, research questions, and evidence, and surfaces a single notification — with no manual steps.
+
+This is deliberately sequenced last (v0.46.0) because it composes everything before it. It introduces a trust ladder rather than changing the confirmation guarantee: confirm-before-commit stays the default, the user opts a specific company into auto-confirm, and auto-committed facts carry a distinct unreviewed provenance state so they stay flagged, reversible, and cited. The financial_facts confirmation model in v0.34.0 is designed so this state is an additive value, not a later migration.
+
+Boundary: fetching and analyzing while the app is closed crosses into a hosted/scheduled service and belongs to the managed-AI paid frontier, not the open core. Autopilot runs while the app is open.
+
 ## Future: AI Recommendation Guardrail Enforcement
 
 Goal: add automated post-generation validation that detects and rejects AI output containing buy/sell/hold, portfolio allocation, or similarly actionable recommendation language.
