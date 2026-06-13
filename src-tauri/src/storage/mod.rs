@@ -47,6 +47,7 @@ mod metrics;
 mod migrations;
 mod notebooks;
 mod registry;
+mod report_documents;
 mod research;
 mod research_briefs;
 mod research_digests;
@@ -75,6 +76,7 @@ pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
 pub use migrations::{open_database, open_in_memory_database};
+pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
 pub use research_briefs::{
     CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
     ResearchBriefCitation, ResearchBriefEvidenceContext, ResearchBriefJob, ResearchBriefScopeInput,
@@ -1078,6 +1080,53 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         financials::delete_financial_fact(&connection, id)
+    }
+
+    pub fn create_or_find_pending_report_document(
+        &self,
+        input: CaptureReportDocumentInput,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        report_documents::create_or_find_pending(&connection, input)
+    }
+
+    pub fn mark_report_document_fetched(
+        &self,
+        id: &str,
+        local_path: Option<&str>,
+        content_type: Option<&str>,
+        content_hash: Option<&str>,
+        byte_size: Option<i64>,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        report_documents::mark_fetched(&connection, id, local_path, content_type, content_hash, byte_size)
+    }
+
+    pub fn mark_report_document_failed(
+        &self,
+        id: &str,
+        error: &str,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        report_documents::mark_failed(&connection, id, error)
+    }
+
+    pub fn get_report_document(&self, id: &str) -> StorageResult<ReportDocument> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        report_documents::get(&connection, id)
+    }
+
+    pub fn list_report_documents_by_company(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<ReportDocument>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        report_documents::list_by_company(&connection, company_id)
     }
 }
 

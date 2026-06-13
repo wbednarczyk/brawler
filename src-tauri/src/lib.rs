@@ -3,11 +3,13 @@ use tauri::Manager;
 
 pub mod app_state;
 pub mod data_directory;
+pub mod document_fetcher;
 pub mod jobs;
 pub mod licensing;
 pub mod logging;
 pub mod observability;
 pub mod providers;
+pub mod report_documents_capture;
 pub mod source_adapters;
 pub mod storage;
 
@@ -118,6 +120,8 @@ pub fn run() {
             commands::financials::create_financial_fact,
             commands::financials::update_financial_fact,
             commands::financials::delete_financial_fact,
+            commands::financials::capture_report_document,
+            commands::financials::list_report_documents,
             commands::transcripts::list_video_transcript_jobs,
             commands::transcripts::delete_video_transcript_job,
             commands::transcripts::create_video_transcript_job,

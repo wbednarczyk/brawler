@@ -1,4 +1,4 @@
-use crate::{app_state, storage};
+use crate::{app_state, document_fetcher, report_documents_capture, storage};
 
 #[tauri::command]
 pub fn list_kpi_definitions(
@@ -137,5 +137,25 @@ pub fn delete_financial_fact(
 ) -> Result<(), String> {
     state
         .delete_financial_fact(&id)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn capture_report_document(
+    input: storage::CaptureReportDocumentInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<report_documents_capture::DocumentCaptureResult, String> {
+    let fetcher = document_fetcher::HttpDocumentFetcher::new();
+    report_documents_capture::capture_report_document(&state, &fetcher, input)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn list_report_documents(
+    company_id: String,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::ReportDocument>, String> {
+    state
+        .list_report_documents_by_company(&company_id)
         .map_err(|error| error.to_string())
 }

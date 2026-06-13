@@ -15,6 +15,7 @@ mod financials;
 mod import_export;
 mod licensing;
 mod notebooks;
+mod report_documents;
 mod research;
 mod research_briefs;
 mod research_reminders;
