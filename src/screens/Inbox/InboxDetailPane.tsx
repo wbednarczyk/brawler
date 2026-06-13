@@ -173,6 +173,7 @@ export function InboxDetailPane({
           />
           {pdfAttachments.length > 0 || /report|raport/i.test(selectedFeedItem.type) ? (
             <FeedKpiExtractionPanel
+              key={selectedFeedItem.id}
               feedItem={selectedFeedItem}
               providerConfigured={aiAnalysisProviderConfigured}
             />
