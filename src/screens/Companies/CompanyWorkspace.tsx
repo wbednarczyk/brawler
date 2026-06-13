@@ -8,10 +8,12 @@ import {
   MailOpen,
   Plus,
   Save,
+  TrendingUp,
   Video,
   X,
 } from "lucide-react";
 import type { Company } from "../../api/types";
+import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
@@ -28,6 +30,8 @@ import {
   StatusPill,
 } from "../../ui";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
+import { FundamentalsPanel } from "./FundamentalsPanel";
+import type { FinancialFactForm, FundamentalsForm } from "../../app/useFundamentalsController";
 
 type CompanyWorkspaceProps = Pick<
   CompaniesScreenProps,
@@ -80,6 +84,22 @@ type CompanyWorkspaceProps = Pick<
   | "feedItemSummary"
 > & {
   selectedCompany: Company;
+  financialPeriods: FinancialPeriod[];
+  financialFacts: FinancialFact[];
+  kpiDefinitions: KpiDefinition[];
+  fundamentalsForm: FundamentalsForm;
+  financialFactForm: FinancialFactForm;
+  selectedFinancialFactId: string | null;
+  isFinancialFactEditMode: boolean;
+  fundamentalsError: string | null;
+  createFinancialPeriod: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  saveFinancialFact: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  deleteFinancialFact: (id: string) => Promise<void>;
+  selectFinancialFact: (id: string) => void;
+  startEditingFinancialFact: () => void;
+  cancelEditingFinancialFact: () => void;
+  updateFundamentalsForm: (field: keyof FundamentalsForm, value: string) => void;
+  updateFinancialFactForm: (field: keyof FinancialFactForm, value: string) => void;
 };
 
 export function CompanyWorkspace({
@@ -131,6 +151,22 @@ export function CompanyWorkspace({
   renderNotebookOrigins,
   formatTimestamp,
   feedItemSummary,
+  financialPeriods,
+  financialFacts,
+  kpiDefinitions,
+  fundamentalsForm,
+  financialFactForm,
+  selectedFinancialFactId,
+  isFinancialFactEditMode,
+  fundamentalsError,
+  createFinancialPeriod,
+  saveFinancialFact,
+  deleteFinancialFact,
+  selectFinancialFact,
+  startEditingFinancialFact,
+  cancelEditingFinancialFact,
+  updateFundamentalsForm,
+  updateFinancialFactForm,
 }: CompanyWorkspaceProps) {
   const { text } = useLocale();
   const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
@@ -158,7 +194,7 @@ export function CompanyWorkspace({
       </div>
     
       <SegmentedControl ariaLabel={text("Company workspace tabs")} className="company-tabs">
-        {(["Feed", "Notebook", "Claims", "Transcripts", "Metadata"] as const).map(
+        {(["Feed", "Notebook", "Claims", "Transcripts", "Fundamentals", "Metadata"] as const).map(
           (tab) => {
             const TabIcon =
               tab === "Feed"
@@ -169,8 +205,10 @@ export function CompanyWorkspace({
                     ? CheckCircle2
                     : tab === "Transcripts"
                       ? Video
-                      : FileText;
-    
+                      : tab === "Fundamentals"
+                        ? TrendingUp
+                        : FileText;
+
             return (
               <SegmentedControlOption active={companyWorkspaceTab === tab} key={tab} onClick={() => setCompanyWorkspaceTab(tab)}>
                 <TabIcon size={14} />
@@ -782,7 +820,28 @@ export function CompanyWorkspace({
           {text("YouTube transcript workflows start in Milestone 7.")}
         </EmptyState>
       ) : null}
-    
+
+      {companyWorkspaceTab === "Fundamentals" ? (
+        <FundamentalsPanel
+          financialPeriods={financialPeriods}
+          financialFacts={financialFacts}
+          kpiDefinitions={kpiDefinitions}
+          fundamentalsForm={fundamentalsForm}
+          financialFactForm={financialFactForm}
+          selectedFinancialFactId={selectedFinancialFactId}
+          isFinancialFactEditMode={isFinancialFactEditMode}
+          fundamentalsError={fundamentalsError}
+          createFinancialPeriod={createFinancialPeriod}
+          saveFinancialFact={saveFinancialFact}
+          deleteFinancialFact={deleteFinancialFact}
+          selectFinancialFact={selectFinancialFact}
+          startEditingFinancialFact={startEditingFinancialFact}
+          cancelEditingFinancialFact={cancelEditingFinancialFact}
+          updateFundamentalsForm={updateFundamentalsForm}
+          updateFinancialFactForm={updateFinancialFactForm}
+        />
+      ) : null}
+
       {companyWorkspaceTab === "Metadata" ? (
         <InfoGrid
           ariaLabel={text("Company metadata")}

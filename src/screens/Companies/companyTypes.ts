@@ -1,1 +1,1 @@
-export type CompanyWorkspaceTab = "Feed" | "Notebook" | "Claims" | "Transcripts" | "Metadata";
+export type CompanyWorkspaceTab = "Feed" | "Notebook" | "Claims" | "Transcripts" | "Fundamentals" | "Metadata";

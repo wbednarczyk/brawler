@@ -28,7 +28,9 @@ import {
 } from "./notebookForms";
 import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
+import * as financialsApi from "../api/financials";
 import { emptyTranscriptJobForm } from "./transcriptForms";
+import { useFundamentalsController } from "./useFundamentalsController";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
@@ -268,6 +270,17 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   });
   const [notebookForm, setNotebookForm] = useState<NotebookForm>(emptyNotebookForm);
   const [notebookEditForm, setNotebookEditForm] = useState<NotebookForm>(emptyNotebookForm);
+  const [financialPeriods, setFinancialPeriods] = useState<any[]>([]);
+  const [financialFacts, setFinancialFacts] = useState<any[]>([]);
+  const [kpiDefinitions, setKpiDefinitions] = useState<any[]>([]);
+  const [financialPeriodsError, setFinancialPeriodsError] = useState<string | null>(null);
+  const [financialFactsError, setFinancialFactsError] = useState<string | null>(null);
+  const [kpiDefinitionsError, setKpiDefinitionsError] = useState<string | null>(null);
+  const [fundamentalsForm, setFundamentalsForm] = useState({ periodFiscalYear: "", periodType: "annual" });
+  const [financialFactForm, setFinancialFactForm] = useState({ definitionId: "", valueNumeric: "", currency: "" });
+  const [selectedFinancialFactId, setSelectedFinancialFactId] = useState<string | null>(null);
+  const [isFinancialFactEditMode, setIsFinancialFactEditMode] = useState(false);
+  const [fundamentalsError, setFundamentalsError] = useState<string | null>(null);
 
   const {
     companiesById,
@@ -794,6 +807,68 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setSelectedFeedItemId,
   });
 
+  async function refreshFinancialPeriods() {
+    if (!selectedCompanyId) return;
+    try {
+      const periods = await financialsApi.listFinancialPeriods({ companyId: selectedCompanyId });
+      setFinancialPeriods(periods);
+      setFinancialPeriodsError(null);
+    } catch (error) {
+      setFinancialPeriodsError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function refreshFinancialFacts() {
+    if (!selectedCompanyId) return;
+    try {
+      const facts = await financialsApi.listFinancialFacts({ companyId: selectedCompanyId });
+      setFinancialFacts(facts);
+      setFinancialFactsError(null);
+    } catch (error) {
+      setFinancialFactsError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function refreshKpiDefinitions() {
+    try {
+      const definitions = await financialsApi.listKpiDefinitions({ scope: "global" });
+      setKpiDefinitions(definitions);
+      setKpiDefinitionsError(null);
+    } catch (error) {
+      setKpiDefinitionsError(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const {
+    createFinancialPeriod,
+    saveFinancialFact,
+    deleteFinancialFact,
+    selectFinancialFact,
+    startEditingFinancialFact,
+    cancelEditingFinancialFact,
+    updateFundamentalsForm,
+    updateFinancialFactForm,
+  } = useFundamentalsController({
+    companyId: selectedCompanyId || "",
+    financialPeriods,
+    financialFacts,
+    kpiDefinitions,
+    fundamentalsForm,
+    setFundamentalsForm,
+    financialFactForm,
+    setFinancialFactForm,
+    selectedFinancialFactId,
+    setSelectedFinancialFactId,
+    isFinancialFactEditMode,
+    setIsFinancialFactEditMode,
+    fundamentalsError,
+    setFundamentalsError,
+    refreshFinancialPeriods,
+    refreshFinancialFacts,
+    refreshKpiDefinitions,
+    text,
+  });
+
   function storeAiAnalysisJobs(feedItemId: string, jobs: AiAnalysisJob[]) {
     setAiAnalysisJobsByFeedItemId((current) => ({
       ...current,
@@ -1088,6 +1163,14 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     sourceRefreshFailureCount,
   });
 
+  useEffect(() => {
+    if (selectedCompanyId && activeSection === "Companies" && companyWorkspaceTab === "Fundamentals") {
+      void refreshFinancialPeriods();
+      void refreshFinancialFacts();
+      void refreshKpiDefinitions();
+    }
+  }, [selectedCompanyId, activeSection, companyWorkspaceTab]);
+
   function openExternalUrl(url: string) {
     void openUrl(url).catch((error) => {
       console.error("Failed to open external URL", error);
@@ -1182,7 +1265,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
       return false;
     }
 
-    const tabs: CompanyWorkspaceTab[] = ["Feed", "Notebook", "Claims", "Transcripts", "Metadata"];
+    const tabs: CompanyWorkspaceTab[] = ["Feed", "Notebook", "Claims", "Transcripts", "Fundamentals", "Metadata"];
     const currentIndex = tabs.indexOf(companyWorkspaceTab);
     const nextIndex = Math.min(Math.max(currentIndex + direction, 0), tabs.length - 1);
 
@@ -1466,6 +1549,22 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               renderNotebookOrigins={renderNotebookOrigins}
               formatTimestamp={formatTimestamp}
               feedItemSummary={feedItemSummary}
+              financialPeriods={financialPeriods}
+              financialFacts={financialFacts}
+              kpiDefinitions={kpiDefinitions}
+              fundamentalsForm={fundamentalsForm}
+              financialFactForm={financialFactForm}
+              selectedFinancialFactId={selectedFinancialFactId}
+              isFinancialFactEditMode={isFinancialFactEditMode}
+              fundamentalsError={fundamentalsError}
+              createFinancialPeriod={createFinancialPeriod}
+              saveFinancialFact={saveFinancialFact}
+              deleteFinancialFact={deleteFinancialFact}
+              selectFinancialFact={selectFinancialFact}
+              startEditingFinancialFact={startEditingFinancialFact}
+              cancelEditingFinancialFact={cancelEditingFinancialFact}
+              updateFundamentalsForm={updateFundamentalsForm}
+              updateFinancialFactForm={updateFinancialFactForm}
             />
           ) : null}
           {activeSection === "Watchlists" ? (

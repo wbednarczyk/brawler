@@ -1,9 +1,11 @@
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { LocateFixed, Plus, Trash2 } from "lucide-react";
 import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
+import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, SearchField } from "../../ui";
+import type { FinancialFactForm, FundamentalsForm } from "../../app/useFundamentalsController";
 import type {
   MarkdownNoteBodyProps,
   NotebookDateLikeFieldProps,
@@ -85,6 +87,22 @@ export type CompaniesScreenProps = {
   renderNotebookOrigins: (origins: NotebookEntry["origins"], companyId: string) => React.ReactNode;
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   feedItemSummary: (item: FeedItem) => string;
+  financialPeriods: FinancialPeriod[];
+  financialFacts: FinancialFact[];
+  kpiDefinitions: KpiDefinition[];
+  fundamentalsForm: FundamentalsForm;
+  financialFactForm: FinancialFactForm;
+  selectedFinancialFactId: string | null;
+  isFinancialFactEditMode: boolean;
+  fundamentalsError: string | null;
+  createFinancialPeriod: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  saveFinancialFact: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  deleteFinancialFact: (id: string) => Promise<void>;
+  selectFinancialFact: (id: string) => void;
+  startEditingFinancialFact: () => void;
+  cancelEditingFinancialFact: () => void;
+  updateFundamentalsForm: (field: keyof FundamentalsForm, value: string) => void;
+  updateFinancialFactForm: (field: keyof FinancialFactForm, value: string) => void;
 };
 
 export function CompaniesScreen({
@@ -158,6 +176,22 @@ export function CompaniesScreen({
   renderNotebookOrigins,
   formatTimestamp,
   feedItemSummary,
+  financialPeriods,
+  financialFacts,
+  kpiDefinitions,
+  fundamentalsForm,
+  financialFactForm,
+  selectedFinancialFactId,
+  isFinancialFactEditMode,
+  fundamentalsError,
+  createFinancialPeriod,
+  saveFinancialFact,
+  deleteFinancialFact,
+  selectFinancialFact,
+  startEditingFinancialFact,
+  cancelEditingFinancialFact,
+  updateFundamentalsForm,
+  updateFinancialFactForm,
 }: CompaniesScreenProps) {
   const { t, text } = useLocale();
 
@@ -417,6 +451,22 @@ export function CompaniesScreen({
                           renderNotebookOrigins={renderNotebookOrigins}
                           formatTimestamp={formatTimestamp}
                           feedItemSummary={feedItemSummary}
+                          financialPeriods={financialPeriods}
+                          financialFacts={financialFacts}
+                          kpiDefinitions={kpiDefinitions}
+                          fundamentalsForm={fundamentalsForm}
+                          financialFactForm={financialFactForm}
+                          selectedFinancialFactId={selectedFinancialFactId}
+                          isFinancialFactEditMode={isFinancialFactEditMode}
+                          fundamentalsError={fundamentalsError}
+                          createFinancialPeriod={createFinancialPeriod}
+                          saveFinancialFact={saveFinancialFact}
+                          deleteFinancialFact={deleteFinancialFact}
+                          selectFinancialFact={selectFinancialFact}
+                          startEditingFinancialFact={startEditingFinancialFact}
+                          cancelEditingFinancialFact={cancelEditingFinancialFact}
+                          updateFundamentalsForm={updateFundamentalsForm}
+                          updateFinancialFactForm={updateFinancialFactForm}
                         />
                       ) : null}
                     </div>
