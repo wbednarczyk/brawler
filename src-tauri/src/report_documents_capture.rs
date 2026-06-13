@@ -92,12 +92,20 @@ fn determine_extension(content_type: &Option<String>, url: &str) -> String {
         }
     }
 
-    // Try to determine from URL
+    // Try to determine from the URL's last path segment (ignoring any query string).
     if let Some(path) = url.split('?').next() {
-        if let Some(extension) = path.split('.').next_back() {
-            if !extension.is_empty() && extension.len() < 10 {
-                return extension.to_lowercase();
-            }
+        let segment = path.rsplit('/').next().unwrap_or(path);
+        let candidate = if let Some((_, ext)) = segment.rsplit_once('.') {
+            // Has a dot: the trailing token is the extension.
+            (!ext.is_empty() && ext.len() < 10).then_some(ext)
+        } else if !segment.is_empty() && segment.len() < 5 {
+            // No dot: accept only a short bare token as an extension-like hint.
+            Some(segment)
+        } else {
+            None
+        };
+        if let Some(ext) = candidate {
+            return ext.to_lowercase();
         }
     }
 
