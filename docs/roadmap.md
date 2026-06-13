@@ -1264,9 +1264,17 @@ Decision criteria:
 
 Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
 
-## Milestone: Company Fundamentals (v0.34.0–v0.36.0)
+## Milestone: Multi-provider AI (v0.35.0)
+
+Goal: add Claude (Anthropic) and OpenAI (ChatGPT) as AI providers alongside Gemini, all free with a user-supplied key, before AI KPI extraction is built on the provider boundary. Inserted ahead of extraction so the report-document input path is designed against more than one provider rather than retrofitted later.
+
+Scope: a provider registry/factory replacing the hardcoded dispatch, per-provider keychain credentials and model selection, Claude and OpenAI analysis adapters implementing the existing provider trait, and a document-input abstraction on the trait (with Gemini retrofitted). Managed/hosted AI remains a future paid tier; this milestone keeps every provider free with the user's own key.
+
+## Milestone: Company Fundamentals (v0.34.0, v0.36.0–v0.37.0)
 
 Goal: turn report numbers into a structured, source-linked fundamentals view per company, so the investor stops re-reading reports to find the same figures each quarter. Scope and the KPI taxonomy are fixed in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+
+Note: the AI extraction and panel/charts work shifted up one minor version after a dedicated [Multi-provider AI](#milestone-multi-provider-ai-v0350) milestone was inserted at v0.35.0, so the report-document input path is designed against multiple providers before extraction is built.
 
 v0.34.0 — Financial facts foundation:
 
@@ -1276,21 +1284,21 @@ v0.34.0 — Financial facts foundation:
 - report document persistence from ESPI/EBI attachments and user-supplied PDF URLs, plus URL evidence capture and on-track company history backfill
 - manual KPI entry and edit workflow
 
-v0.35.0 — AI KPI extraction with confirmation:
+v0.36.0 — AI KPI extraction with confirmation:
 
 - provider-neutral extraction contracts with per-fact source citations and prompt-version provenance
 - report-document input for the Gemini adapter plus a deterministic test provider
 - an extraction job that persists proposed facts as pending confirmation
 - a review UI where the user confirms, edits, or rejects each proposed fact before it is committed
 
-v0.36.0 — Fundamentals panel and KPI charts:
+v0.37.0 — Fundamentals panel and KPI charts:
 
 - hand-rolled SVG chart primitives in the shared UI layer, no new runtime dependency
 - a fundamentals panel in the company workspace with per-period figures and click-through to source evidence
 - custom per-company KPI management and KPI trend charts
 - export/import of financial facts and KPI definitions
 
-Cross-company KPI comparison follows later in v0.41.0.
+Cross-company KPI comparison follows later in v0.42.0.
 
 Exit criteria:
 
@@ -1299,11 +1307,11 @@ Exit criteria:
 - figures render per period and over time with every value traceable to its report
 - the scope stays report-derived; no price, volume, technical, or market-dashboard features are introduced
 
-## North Star: Autonomous Report Pipeline (v0.46.0)
+## North Star: Autonomous Report Pipeline (v0.47.0)
 
 The fundamentals, extraction, diff, claims, and cockpit milestones are building blocks toward one experience: a tracked company publishes a periodic report, and the app detects it, fetches it, extracts the figures, summarizes what changed, cross-references the result against open claims, research questions, and evidence, and surfaces a single notification — with no manual steps.
 
-This is deliberately sequenced last (v0.46.0) because it composes everything before it. It introduces a trust ladder rather than changing the confirmation guarantee: confirm-before-commit stays the default, the user opts a specific company into auto-confirm, and auto-committed facts carry a distinct unreviewed provenance state so they stay flagged, reversible, and cited. The financial_facts confirmation model in v0.34.0 is designed so this state is an additive value, not a later migration.
+This is deliberately sequenced last (v0.47.0) because it composes everything before it. It introduces a trust ladder rather than changing the confirmation guarantee: confirm-before-commit stays the default, the user opts a specific company into auto-confirm, and auto-committed facts carry a distinct unreviewed provenance state so they stay flagged, reversible, and cited. The financial_facts confirmation model in v0.34.0 is designed so this state is an additive value, not a later migration.
 
 Boundary: fetching and analyzing while the app is closed crosses into a hosted/scheduled service and belongs to the managed-AI paid frontier, not the open core. Autopilot runs while the app is open.
 
