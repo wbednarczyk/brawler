@@ -243,11 +243,7 @@ pub(super) fn create_kpi_definition(
     let unit = empty_string_to_none(input.unit.map(|s| s.trim().to_owned()));
     let computation = input.computation.trim().to_owned();
     let formula = empty_string_to_none(input.formula.map(|s| s.trim().to_owned()));
-    let display_format = empty_string_to_none(
-        input
-            .display_format
-            .map(|s| s.trim().to_owned()),
-    );
+    let display_format = empty_string_to_none(input.display_format.map(|s| s.trim().to_owned()));
 
     if metric_key.is_empty() {
         return Err(StorageError::InvalidFinancialsValue {
@@ -318,7 +314,10 @@ pub(super) fn list_financial_periods(
         ",
     )?;
 
-    let rows = statement.query_map(params![company_id, input.fiscal_year], financial_period_from_row)?;
+    let rows = statement.query_map(
+        params![company_id, input.fiscal_year],
+        financial_period_from_row,
+    )?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
@@ -380,14 +379,26 @@ pub(super) fn update_financial_period(
         .period_end_date
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.period_end_date);
 
     let report_evidence_ref = input
         .report_evidence_ref
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.report_evidence_ref);
 
     connection.execute(
@@ -509,21 +520,39 @@ pub(super) fn update_kpi_relevance(
         .rank
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.rank);
 
     let first_seen_period = input
         .first_seen_period
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.first_seen_period);
 
     let last_seen_period = input
         .last_seen_period
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.last_seen_period);
 
     connection.execute(
@@ -591,8 +620,10 @@ pub(super) fn list_financial_facts(
         ",
     )?;
 
-    let rows =
-        statement.query_map(params![company_id, period_id, definition_id], financial_fact_from_row)?;
+    let rows = statement.query_map(
+        params![company_id, period_id, definition_id],
+        financial_fact_from_row,
+    )?;
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
@@ -757,7 +788,13 @@ pub(super) fn update_financial_fact(
         .currency
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.currency);
 
     let data_quality = input
@@ -780,14 +817,26 @@ pub(super) fn update_financial_fact(
         .supersedes_id
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.supersedes_id);
 
     let source_document_ref = input
         .source_document_ref
         .as_deref()
         .map(str::trim)
-        .and_then(|s| if s.is_empty() { None } else { Some(s.to_owned()) })
+        .and_then(|s| {
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
         .or(current.source_document_ref);
 
     connection.execute(

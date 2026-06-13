@@ -42,7 +42,9 @@ fn lists_sector_kpi_definitions() {
         .iter()
         .any(|d| d.metric_key == "net_interest_income"));
     assert!(banking_defs.iter().all(|d| d.scope == "sector"));
-    assert!(banking_defs.iter().all(|d| d.sector == Some("banking".to_owned())));
+    assert!(banking_defs
+        .iter()
+        .all(|d| d.sector == Some("banking".to_owned())));
 }
 
 #[test]
@@ -207,7 +209,9 @@ fn creates_and_lists_kpi_relevance() {
         .expect("kpi relevance should list");
 
     assert!(!relevances.is_empty());
-    assert!(relevances.iter().any(|r| r.definition_id == net_profit_def.id));
+    assert!(relevances
+        .iter()
+        .any(|r| r.definition_id == net_profit_def.id));
 }
 
 #[test]
@@ -471,10 +475,7 @@ fn updates_financial_fact() {
 
     assert_eq!(updated.value_numeric, "550000");
     assert_eq!(updated.data_quality, "final");
-    assert_eq!(
-        updated.confirmation_state,
-        "provisional"
-    );
+    assert_eq!(updated.confirmation_state, "provisional");
     assert_eq!(
         updated.source_document_ref,
         Some("revised_report.pdf".to_owned())

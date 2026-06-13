@@ -74,7 +74,9 @@ pub(super) fn create_or_find_pending(
     }
 
     // Try to find existing document with same (company_id, url)
-    let existing = get_by_company_and_url(connection, &company_id, &url).ok().flatten();
+    let existing = get_by_company_and_url(connection, &company_id, &url)
+        .ok()
+        .flatten();
     if let Some(doc) = existing {
         return Ok(doc);
     }
@@ -137,7 +139,14 @@ pub(super) fn mark_fetched(
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
         ",
-        params![id, local_path, content_type, content_hash, byte_size, "fetched"],
+        params![
+            id,
+            local_path,
+            content_type,
+            content_hash,
+            byte_size,
+            "fetched"
+        ],
     )?;
 
     get_report_document(connection, id)
@@ -214,8 +223,9 @@ pub(super) fn list_by_company(
 // ============================================================================
 
 fn get_report_document(connection: &Connection, id: &str) -> StorageResult<ReportDocument> {
-    connection.query_row(
-        "
+    connection
+        .query_row(
+            "
         SELECT
             id,
             company_id,
@@ -237,9 +247,10 @@ fn get_report_document(connection: &Connection, id: &str) -> StorageResult<Repor
         FROM report_documents
         WHERE id = ?1
         ",
-        params![id],
-        report_document_from_row,
-    ).map_err(StorageError::from)
+            params![id],
+            report_document_from_row,
+        )
+        .map_err(StorageError::from)
 }
 
 fn get_by_company_and_url(
@@ -301,11 +312,7 @@ fn report_document_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportDocum
 }
 
 fn report_document_id(company_id: &str, url: &str) -> String {
-    format!(
-        "doc_{}_{}",
-        slug_part(company_id),
-        slug_part(url)
-    )
+    format!("doc_{}_{}", slug_part(company_id), slug_part(url))
 }
 
 fn validate_reference_exists(

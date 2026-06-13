@@ -1,6 +1,6 @@
-use serde::Serialize;
 use crate::document_fetcher::DocumentFetcher;
 use crate::storage::{self, CaptureReportDocumentInput, StorageResult};
+use serde::Serialize;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

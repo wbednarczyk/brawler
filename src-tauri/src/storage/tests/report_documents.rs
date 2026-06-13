@@ -106,7 +106,10 @@ fn marks_document_as_fetched() {
         .expect("document should mark as fetched");
 
     assert_eq!(updated.fetch_status, "fetched");
-    assert_eq!(updated.local_path, Some("report_documents/doc_abc.pdf".to_owned()));
+    assert_eq!(
+        updated.local_path,
+        Some("report_documents/doc_abc.pdf".to_owned())
+    );
     assert_eq!(updated.content_type, Some("application/pdf".to_owned()));
     assert_eq!(updated.byte_size, Some(1024));
     assert!(updated.fetched_at.is_some());

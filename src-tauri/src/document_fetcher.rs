@@ -81,7 +81,10 @@ pub struct FakeDocumentFetcher {
 impl FakeDocumentFetcher {
     pub fn new_success(bytes: Vec<u8>, content_type: Option<String>) -> Self {
         Self {
-            response: Ok(FetchedDocument { bytes, content_type }),
+            response: Ok(FetchedDocument {
+                bytes,
+                content_type,
+            }),
         }
     }
 
