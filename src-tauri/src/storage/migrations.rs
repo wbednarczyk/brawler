@@ -188,6 +188,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "multi_provider_ai_defaults",
         sql: include_str!("../../migrations/0036_multi_provider_ai_defaults.sql"),
     },
+    Migration {
+        version: 37,
+        name: "kpi_extraction",
+        sql: include_str!("../../migrations/0037_kpi_extraction.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

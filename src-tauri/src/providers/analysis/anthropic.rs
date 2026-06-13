@@ -380,7 +380,10 @@ mod tests {
                     } if media_type == "application/pdf" && data == "UERG"
                 )
             });
-            assert!(has_pdf, "native PDF document block expected (base64 'UERG')");
+            assert!(
+                has_pdf,
+                "native PDF document block expected (base64 'UERG')"
+            );
             assert!(content_text(&request.messages[0].content).contains("Extract financial KPI"));
 
             Ok(AnthropicMessagesResponse {
@@ -488,8 +491,8 @@ mod tests {
             },
         ))
         .expect("native PDF completion succeeds");
-        let output = prompts::parse_kpi_extraction_output(&text, "Claude")
-            .expect("extraction JSON parses");
+        let output =
+            prompts::parse_kpi_extraction_output(&text, "Claude").expect("extraction JSON parses");
 
         assert_eq!(output.facts.len(), 1);
         assert_eq!(output.facts[0].metric_key, "revenue");

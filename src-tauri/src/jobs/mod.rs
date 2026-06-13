@@ -1,5 +1,6 @@
 pub mod ai_analysis;
 pub mod feed_cleanup;
+pub mod kpi_extraction;
 pub mod research_briefs;
 pub mod research_digests;
 pub mod scheduler;

@@ -1,10 +1,15 @@
 use async_trait::async_trait;
 
 use super::types::{
-    AiAnalysisProvider, AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest,
-    AnalysisSourceReference, ResearchBriefCitationOutput, ResearchBriefProviderOutput,
-    ResearchBriefRequest, ResearchBriefSectionOutput, ResearchDigestRequest,
+    AiAnalysisProvider, AnalysisDocument, AnalysisProviderError, AnalysisProviderOutput,
+    AnalysisRequest, AnalysisSourceReference, DocumentSupport, ResearchBriefCitationOutput,
+    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchDigestRequest,
 };
+
+/// Deterministic KPI extraction output for the test provider: one known KPI and one
+/// out-of-taxonomy suggestion, with a detected period.
+pub const TEST_SAMPLE_KPI_EXTRACTION_JSON: &str = r#"{"period":{"fiscalYear":2025,"periodType":"Q3","periodEndDate":"2025-09-30"},"currency":"PLN","language":"pl","facts":[{"metricKey":"revenue","label":"Revenue","valueNumeric":"142312000","unit":"PLN","currency":"PLN","asReportedValue":"142 312","asReportedScale":"tys.","measureWindow":"quarter","confidence":"high","sourceSnippet":"przychody ze sprzedazy 142 312 tys. zl","isProposedKpi":false},{"metricKey":"backlog","label":"Backlog","valueNumeric":"410000000","currency":"PLN","confidence":"medium","sourceSnippet":"portfel zamowien 410 mln zl","isProposedKpi":true}]}"#;
 
 pub const TEST_SAMPLE_ANALYSIS_PROVIDER_ID: &str = "test_sample";
 pub const TEST_SAMPLE_ANALYSIS_MODEL: &str = "test-sample-analysis-v1";
@@ -158,6 +163,18 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
             language: Some("en".to_owned()),
             citations,
         })
+    }
+
+    fn document_support(&self) -> DocumentSupport {
+        DocumentSupport::Native
+    }
+
+    async fn complete_document(
+        &self,
+        _prompt: &str,
+        _document: &AnalysisDocument,
+    ) -> Result<String, AnalysisProviderError> {
+        Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
     }
 }
 

@@ -42,6 +42,7 @@ mod feed;
 mod feed_matching;
 mod financials;
 mod import_export;
+mod kpi_extraction;
 mod licensing;
 mod metrics;
 mod migrations;
@@ -71,6 +72,10 @@ pub use financials::{
     UpdateKpiRelevance,
 };
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
+pub use kpi_extraction::{
+    CompletedKpiExtraction, ConfirmKpiProposalInput, KpiExtractionJob, KpiExtractionProposal,
+    NewKpiExtractionJob, NewKpiProposal,
+};
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
 pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
@@ -1050,6 +1055,71 @@ impl AppState {
         let connection = self.connection.lock().expect("database mutex poisoned");
 
         financials::create_financial_fact(&connection, input)
+    }
+
+    pub fn create_kpi_extraction_job(
+        &self,
+        input: NewKpiExtractionJob,
+    ) -> StorageResult<KpiExtractionJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::create_kpi_extraction_job(&connection, input)
+    }
+
+    pub fn get_kpi_extraction_job(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::get_kpi_extraction_job(&connection, job_id)
+    }
+
+    pub fn list_kpi_extraction_jobs_by_document(
+        &self,
+        report_document_id: &str,
+    ) -> StorageResult<Vec<KpiExtractionJob>> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::list_kpi_extraction_jobs_by_document(&connection, report_document_id)
+    }
+
+    pub fn mark_kpi_extraction_job_running(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::mark_kpi_extraction_job_running(&connection, job_id)
+    }
+
+    pub fn mark_kpi_extraction_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<KpiExtractionJob> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::mark_kpi_extraction_job_failed(&connection, job_id, error_code, error)
+    }
+
+    pub fn complete_kpi_extraction_job(
+        &self,
+        input: CompletedKpiExtraction,
+    ) -> StorageResult<KpiExtractionJob> {
+        let mut connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::complete_kpi_extraction_job(&mut connection, input)
+    }
+
+    pub fn confirm_kpi_proposal(
+        &self,
+        input: ConfirmKpiProposalInput,
+    ) -> StorageResult<FinancialFact> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::confirm_kpi_proposal(&connection, input)
+    }
+
+    pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
+        let connection = self.connection.lock().expect("database mutex poisoned");
+
+        kpi_extraction::reject_kpi_proposal(&connection, proposal_id)
     }
 
     pub fn update_financial_fact(
