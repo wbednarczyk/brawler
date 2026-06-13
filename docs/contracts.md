@@ -1454,6 +1454,289 @@ Initial research command candidates:
 
 These command names may be refined during implementation, but the ownership boundary should remain stable.
 
+## Company Fundamentals
+
+Company fundamentals capture report-derived financial metrics and KPI tracking for each tracked company, governed by [ADR 0027](adr/0027-company-fundamentals-scope.md) and documented in [Data Model](data-model.md#company-fundamentals).
+
+### Financial Period
+
+```json
+{
+  "id": "period_company_gpw_cdr_fy2025",
+  "companyId": "company_gpw_cdr",
+  "fiscalYear": 2025,
+  "periodType": "FY",
+  "periodEndDate": "2025-12-31",
+  "reportEvidenceRef": null,
+  "createdAt": "2026-06-01T10:00:00Z",
+  "updatedAt": "2026-06-01T10:00:00Z"
+}
+```
+
+Allowed `periodType` values:
+
+- `FY` (fiscal year)
+- `H1`, `H2` (half-year)
+- `Q1`, `Q2`, `Q3`, `Q4` (quarter)
+- `9M` (nine months)
+- `M01` through `M12` (individual months)
+
+Rules:
+
+- Financial periods belong to exactly one canonical company.
+- Periods are unique on `(companyId, fiscalYear, periodType)`.
+- `periodEndDate` is optional and records the reported end date for the period.
+- `reportEvidenceRef` is a soft reference to a source document or feed item for future audit linkage.
+
+### KPI Definition
+
+KPI definitions form a three-layer model: canonical catalog (`kpi_definitions`), company-specific selection (`kpi_relevance`), and reported values (`financial_facts`).
+
+```json
+{
+  "id": "kpi_def_net_revenue",
+  "scope": "canonical",
+  "companyId": null,
+  "sector": null,
+  "metricKey": "net_revenue",
+  "label": "Net Revenue",
+  "valueKind": "monetary",
+  "unit": "PLN",
+  "computation": "reported",
+  "formula": null,
+  "displayFormat": "currency_0dp",
+  "createdAt": "2026-06-01T10:00:00Z",
+  "updatedAt": "2026-06-01T10:00:00Z"
+}
+```
+
+Allowed `scope` values:
+
+- `canonical` (app-owned global KPIs)
+- `sector` (shared within a sector)
+- `company` (bespoke company-specific KPIs)
+
+Allowed `valueKind` values:
+
+- `monetary`
+- `percentage`
+- `ratio`
+- `count`
+- `physical`
+- `duration`
+
+Allowed `computation` values:
+
+- `reported` (sourced directly)
+- `derived` (computed at read time from other KPIs)
+
+Rules:
+
+- Definitions are unique on `(metricKey, scope, IFNULL(companyId, ''), IFNULL(sector, ''))`.
+- Canonical packs are seeded and include universal, industrial, cash flow, capital efficiency (derived), and sector-specific packs (insurance, banking, specialty finance, REIT).
+- Sector values in company fundamentals match those used in company statement classification.
+- Derived metrics (margins, FCF, ROE/ROIC, net-debt/EBITDA) are computed at read time from confirmed financial facts.
+
+### KPI Relevance
+
+KPI relevance records which metrics matter for a company over time.
+
+```json
+{
+  "id": "relevance_company_gpw_cdr_net_revenue",
+  "companyId": "company_gpw_cdr",
+  "definitionId": "kpi_def_net_revenue",
+  "status": "active",
+  "source": "agent",
+  "rank": "primary",
+  "firstSeenPeriod": "2025-FY",
+  "lastSeenPeriod": null,
+  "createdAt": "2026-06-01T10:00:00Z",
+  "updatedAt": "2026-06-01T10:00:00Z"
+}
+```
+
+Allowed `status` values:
+
+- `active`
+- `archived`
+
+Allowed `source` values:
+
+- `user` (manually curated)
+- `agent` (auto-detected or recommended)
+- `sector` (from sector pack)
+
+Allowed `rank` values:
+
+- `primary`
+- `secondary`
+
+Rules:
+
+- Relevance records are unique on `(companyId, definitionId)`.
+- A financial fact may exist for a KPI not yet active in the relevance profile (awaiting curation).
+- Relevance tracks the first and last period in which a KPI was reported or relevant.
+
+### Financial Fact
+
+Financial facts are reported or derived values for a specific KPI in a specific period, with provenance and quality metadata.
+
+```json
+{
+  "id": "fact_company_gpw_cdr_2025fy_net_revenue",
+  "companyId": "company_gpw_cdr",
+  "periodId": "period_company_gpw_cdr_fy2025",
+  "definitionId": "kpi_def_net_revenue",
+  "valueNumeric": "2456789000",
+  "currency": "PLN",
+  "statementBasis": "consolidated",
+  "attribution": "total",
+  "variant": "reported",
+  "measureWindow": "point_in_time",
+  "dataQuality": "final",
+  "asReportedValue": "245 678,9 mln zł",
+  "asReportedScale": "thousands",
+  "reportingStandard": "ifrs",
+  "extractionMethod": "manual",
+  "confidence": null,
+  "confirmationState": "confirmed",
+  "supersedesId": null,
+  "sourceDocumentRef": "feed_01",
+  "createdAt": "2026-06-01T10:00:00Z",
+  "updatedAt": "2026-06-01T10:00:00Z"
+}
+```
+
+Allowed `statementBasis` values:
+
+- `consolidated`
+- `standalone`
+
+Allowed `attribution` values:
+
+- `total`
+- `owners_of_parent`
+- `nci` (non-controlling interests)
+
+Allowed `variant` values:
+
+- `reported`
+- `adjusted`
+- `constant_currency`
+- `continuing`
+- `discontinued`
+- `net_of_cancellations`
+- `lifo_ccs`
+
+Allowed `measureWindow` values:
+
+- `flow` (period flow)
+- `point_in_time` (snapshot)
+- `trailing` (TTM/LTM)
+- `cumulative`
+- `duration`
+
+Allowed `dataQuality` values:
+
+- `final`
+- `estimated`
+
+Allowed `extractionMethod` values:
+
+- `manual`
+- `ai_extracted`
+- `api`
+- `derived`
+
+Allowed `confirmationState` values:
+
+- `confirmed`
+- `pending`
+- `auto_unreviewed`
+
+Rules:
+
+- Financial facts are unique on `(periodId, definitionId, statementBasis, attribution, variant, measureWindow, dataQuality)` so estimated and final values coexist for the same fact.
+- `valueNumeric` is stored as exact decimal text in base units (signed). Negative values are supported for liabilities and losses.
+- `asReportedValue` and `asReportedScale` preserve the source form for auditability (e.g., "245 253 tys. zł").
+- `supersedesId` marks a fact that was superseded (final replaces estimate), keeping history for audit trails.
+- `sourceDocumentRef` is a soft reference to the feed item or report document from which the value was extracted.
+- Derived metrics are computed at read time from confirmed facts and are unavailable when required inputs are missing.
+
+### Report Document Capture
+
+Report documents represent financial statements, earnings reports, or other documents captured for a company.
+
+```json
+{
+  "id": "doc_company_gpw_cdr_2025fy",
+  "companyId": "company_gpw_cdr",
+  "periodId": "period_company_gpw_cdr_fy2025",
+  "sourceType": "official_report",
+  "originRef": "feed_01",
+  "url": "https://www.gpw.pl/pub/files/example/report.pdf",
+  "localPath": "/local/documents/company_gpw_cdr/report_2025fy.pdf",
+  "contentType": "application/pdf",
+  "contentHash": "sha256:abc123...",
+  "byteSize": 2456789,
+  "title": "2025 Annual Report",
+  "attribution": "GPW",
+  "fetchStatus": "success",
+  "fetchError": null,
+  "fetchedAt": "2026-06-01T10:30:00Z",
+  "createdAt": "2026-06-01T10:00:00Z",
+  "updatedAt": "2026-06-01T10:30:00Z"
+}
+```
+
+Allowed `sourceType` values:
+
+- `official_report` (investor/official disclosure)
+- `public_media`
+- `manual` (user-uploaded or specified)
+
+Allowed `fetchStatus` values:
+
+- `pending` (capture requested, not yet fetched)
+- `success` (document downloaded and stored)
+- `failed` (fetch error; details in `fetchError`)
+- `not_found` (source URL returned 404 or similar)
+
+Rules:
+
+- Report documents belong to exactly one canonical company.
+- `periodId` is optional (for forward-looking documents or multi-period reports).
+- `originRef` is a soft reference to the feed item from which the document was sourced.
+- `localPath` is the app-owned storage path for fetched documents. Paths are relative to app data directory or absolute, depending on platform.
+- `contentHash` is SHA256 and enables deduplication and integrity checking.
+- `title` is optional user-facing metadata; official report titles are preserved when available.
+- `attribution` is source-level credit (e.g., "GPW", "Company Web Site").
+- ESPI-attachment ingestion and automatic backfill are deferred and not yet implemented.
+
+### Fundamentals Commands
+
+Initial local commands:
+
+- `list_kpi_definitions(input)`: returns KPI definitions, optionally filtered by scope, sector, or company.
+- `create_kpi_definition(input)`: creates one KPI definition at any scope level.
+- `list_financial_periods(input)`: returns financial periods for one company, optionally filtered by fiscal year.
+- `create_financial_period(input)`: creates one financial period record.
+- `update_financial_period(input)`: updates period end date and report evidence reference.
+- `delete_financial_period(id)`: removes one financial period (must not delete financial facts that reference it; cleanup is manual or backend-owned).
+- `list_kpi_relevance(companyId)`: returns KPI relevance records for one company.
+- `create_kpi_relevance(input)`: marks a KPI as relevant for a company.
+- `update_kpi_relevance(input)`: updates relevance status, rank, and period tracking.
+- `delete_kpi_relevance(id)`: removes one relevance record.
+- `list_financial_facts(input)`: returns financial fact values, optionally filtered by company, period, or KPI definition.
+- `create_financial_fact(input)`: records one financial metric value with full provenance.
+- `update_financial_fact(input)`: updates fact values, data quality, and confirmation state.
+- `delete_financial_fact(id)`: removes one financial fact.
+- `capture_report_document(input)`: fetches and stores one report document for a company, returning success/error status.
+- `list_report_documents(companyId)`: returns all captured report documents for one company.
+
+Input shapes follow the corresponding domain types above. Return shapes include all domain fields plus timestamps. Company fundamentals data must be treated as owner-durable state in import/export and backup workflows.
+
 ## UI-Facing Command Boundaries
 
 Initial Tauri command groups:
@@ -1503,6 +1786,22 @@ Initial Tauri command groups:
 - `list_notebook_entries`
 - `create_notebook_entry`
 - `update_notebook_entry`
+- `list_kpi_definitions`
+- `create_kpi_definition`
+- `list_financial_periods`
+- `create_financial_period`
+- `update_financial_period`
+- `delete_financial_period`
+- `list_kpi_relevance`
+- `create_kpi_relevance`
+- `update_kpi_relevance`
+- `delete_kpi_relevance`
+- `list_financial_facts`
+- `create_financial_fact`
+- `update_financial_fact`
+- `delete_financial_fact`
+- `capture_report_document`
+- `list_report_documents`
 - `create_video_transcript_job`
 - `list_video_transcript_jobs`
 - `delete_video_transcript_job`
