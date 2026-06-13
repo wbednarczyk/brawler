@@ -1,12 +1,6 @@
 use crate::{
     app_state,
-    providers::{
-        analysis::{
-            AiAnalysisProvider, AnalysisRequest, GeminiAnalysisProvider,
-            TestSampleAnalysisProvider, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
-        },
-        credentials,
-    },
+    providers::analysis::{registry, AiAnalysisProvider, AnalysisRequest},
     storage,
 };
 use serde_json::json;
@@ -257,70 +251,44 @@ fn provider_for_job(
     state: &app_state::AppState,
     job: &storage::AiAnalysisJob,
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
-    match job.provider_id.as_str() {
-        TEST_SAMPLE_ANALYSIS_PROVIDER_ID => {
-            record_ai_analysis_diagnostic(
-                state,
-                job,
-                "credential_checked",
-                "info",
-                "AI analysis provider credential checked.",
-                json!({
-                    "providerId": job.provider_id,
-                    "credentialRequired": false,
-                    "credentialConfigured": true
-                }),
-            );
-            record_ai_analysis_diagnostic(
-                state,
-                job,
-                "provider_resolved",
-                "info",
-                "AI analysis provider resolved.",
-                json!({
-                    "providerId": job.provider_id,
-                    "model": job.model
-                }),
-            );
-            Ok(Box::new(TestSampleAnalysisProvider))
-        }
-        "provider_gemini" => {
-            let settings = state.get_settings().map_err(|error| error.to_string())?;
-            let api_key = credentials::read_gemini_general_analysis_api_key().unwrap_or(None);
-            record_ai_analysis_diagnostic(
-                state,
-                job,
-                "credential_checked",
-                if api_key.is_some() { "info" } else { "warning" },
-                "AI analysis provider credential checked.",
-                json!({
-                    "providerId": job.provider_id,
-                    "credentialConfigured": api_key.is_some()
-                }),
-            );
-            record_ai_analysis_diagnostic(
-                state,
-                job,
-                "provider_resolved",
-                "info",
-                "AI analysis provider resolved.",
-                json!({
-                    "providerId": job.provider_id,
-                    "model": job.model,
-                    "timeoutSeconds": settings.ai_providers.general_analysis_timeout_seconds
-                }),
-            );
-            Ok(Box::new(
-                GeminiAnalysisProvider::live(
-                    api_key,
-                    job.model.clone(),
-                    settings.ai_providers.general_analysis_timeout_seconds,
-                )
-                .map_err(|error| error.to_string())?,
-            ))
-        }
-        other => Err(format!("Unknown AI analysis provider: {other}")),
-    }
+    let settings = state.get_settings().map_err(|error| error.to_string())?;
+    let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
+
+    let requires_credential = registry::analysis_provider_requires_credential(&job.provider_id);
+    let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
+    let credential_configured = !requires_credential || api_key.is_some();
+    record_ai_analysis_diagnostic(
+        state,
+        job,
+        "credential_checked",
+        if credential_configured {
+            "info"
+        } else {
+            "warning"
+        },
+        "AI analysis provider credential checked.",
+        json!({
+            "providerId": job.provider_id,
+            "credentialRequired": requires_credential,
+            "credentialConfigured": credential_configured
+        }),
+    );
+
+    let provider =
+        registry::build_analysis_provider(&job.provider_id, api_key, &job.model, timeout_seconds)?;
+    record_ai_analysis_diagnostic(
+        state,
+        job,
+        "provider_resolved",
+        "info",
+        "AI analysis provider resolved.",
+        json!({
+            "providerId": job.provider_id,
+            "model": job.model,
+            "timeoutSeconds": timeout_seconds
+        }),
+    );
+    Ok(provider)
 }
 
 fn record_ai_analysis_diagnostic(

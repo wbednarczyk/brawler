@@ -1,4 +1,5 @@
 mod gemini;
+pub mod registry;
 mod test_sample;
 mod types;
 

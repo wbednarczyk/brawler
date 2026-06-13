@@ -1,12 +1,6 @@
 use crate::{
     app_state,
-    providers::{
-        analysis::{
-            AiAnalysisProvider, GeminiAnalysisProvider, ResearchDigestRequest,
-            TestSampleAnalysisProvider, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
-        },
-        credentials,
-    },
+    providers::analysis::{registry, AiAnalysisProvider, ResearchDigestRequest},
     storage,
 };
 
@@ -65,20 +59,12 @@ fn provider_for_job(
     state: &app_state::AppState,
     job: &storage::ResearchDigestJob,
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
-    match job.provider_id.as_str() {
-        TEST_SAMPLE_ANALYSIS_PROVIDER_ID => Ok(Box::new(TestSampleAnalysisProvider)),
-        "provider_gemini" => {
-            let settings = state.get_settings().map_err(|error| error.to_string())?;
-            let api_key = credentials::read_gemini_general_analysis_api_key().unwrap_or(None);
-            Ok(Box::new(
-                GeminiAnalysisProvider::live(
-                    api_key,
-                    job.model.clone(),
-                    settings.ai_providers.general_analysis_timeout_seconds,
-                )
-                .map_err(|error| error.to_string())?,
-            ))
-        }
-        other => Err(format!("Unknown AI analysis provider: {other}")),
-    }
+    let settings = state.get_settings().map_err(|error| error.to_string())?;
+    let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
+    registry::build_analysis_provider(
+        &job.provider_id,
+        api_key,
+        &job.model,
+        settings.ai_providers.general_analysis_timeout_seconds,
+    )
 }

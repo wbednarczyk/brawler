@@ -1,11 +1,6 @@
 use crate::{
     app_state,
-    providers::{
-        credentials,
-        transcripts::{
-            GeminiTranscriptProvider, TestSampleTranscriptProvider, VideoTranscriptProvider,
-        },
-    },
+    providers::transcripts::{registry, VideoTranscriptProvider},
     storage,
 };
 
@@ -20,21 +15,11 @@ pub fn run_video_transcript_job(
         .filter(|value| !value.is_empty())
         .unwrap_or("provider_gemini");
     let settings = state.get_settings().map_err(|error| error.to_string())?;
-    let provider: Box<dyn VideoTranscriptProvider> = match provider_mode {
-        "test_sample" => Box::new(TestSampleTranscriptProvider),
-        "provider_gemini" => {
-            let api_key = credentials::read_gemini_transcription_api_key().unwrap_or(None);
-            Box::new(
-                GeminiTranscriptProvider::live(
-                    api_key,
-                    settings.ai_providers.youtube_transcription_model.clone(),
-                    settings.ai_providers.youtube_transcription_timeout_seconds,
-                )
-                .map_err(|error| error.to_string())?,
-            )
-        }
-        other => return Err(format!("Unknown transcript provider mode: {other}")),
-    };
+    let provider: Box<dyn VideoTranscriptProvider> = registry::build_transcript_provider(
+        provider_mode,
+        &settings.ai_providers.youtube_transcription_model,
+        settings.ai_providers.youtube_transcription_timeout_seconds,
+    )?;
     let job = state
         .get_transcript_job(job_id)
         .map_err(|error| error.to_string())?;
