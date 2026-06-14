@@ -1160,6 +1160,68 @@ The recommended follow-up sequence after M31 is:
    - If live read-model aggregation becomes too slow or review semantics require snapshots, add stored projections behind the existing research API.
    - Projection rows must be rebuildable or have explicit import/export and backup policy.
 
+## Milestone: Multi-provider AI (v0.35.0)
+
+Status: completed in `0.35.0`.
+
+Goal: add Claude (Anthropic) and OpenAI (ChatGPT) as AI providers alongside Gemini, all free with a user-supplied key, before AI KPI extraction is built on the provider boundary. Inserted ahead of extraction so the report-document input path is designed against more than one provider rather than retrofitted later.
+
+Scope: a provider registry/factory replacing the hardcoded dispatch, per-provider keychain credentials and model selection, Claude and OpenAI analysis adapters implementing the existing provider trait, and a document-input abstraction on the trait (with Gemini retrofitted). Managed/hosted AI remains a future paid tier; this milestone keeps every provider free with the user's own key.
+
+Delivered: async provider/transcription boundary; provider registries; one-key-per-provider keychain credentials with a generic command surface; per-provider model registry (migration 0036) and catalog-driven selection UI; Claude and OpenAI adapters over a shared prompt/parse layer; document-input abstraction (Gemini native proven, capability-flagged). The local PDF text-extraction dependency and the extraction job itself remain deferred to v0.36.0.
+
+## Milestone: Company Fundamentals (v0.34.0, v0.36.0–v0.37.0)
+
+Status: completed in `0.37.0` (delivered across `0.34.0`, `0.36.0`, and `0.37.0`).
+
+Goal: turn report numbers into a structured, source-linked fundamentals view per company, so the investor stops re-reading reports to find the same figures each quarter. Scope and the KPI taxonomy are fixed in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+
+Note: the AI extraction and panel/charts work shifted up one minor version after a dedicated [Multi-provider AI](#milestone-multi-provider-ai-v0350) milestone was inserted at v0.35.0, so the report-document input path is designed against multiple providers before extraction is built.
+
+v0.34.0 — Financial facts foundation:
+
+Status: completed in `0.34.0`.
+
+- ADR and KPI taxonomy (this milestone's first task)
+- data model for financial periods, financial facts, and KPI definitions (canonical plus custom per-company), with provenance and confirmation state
+- financial facts storage, commands, and a focused frontend DTO module
+- report document persistence with user-supplied PDF URLs and URL evidence capture
+- manual KPI entry and edit workflow
+
+Deferred to v0.39.0: ESPI/EBI attachment ingestion and on-track company history backfill, which depend on the reusable feed company-matching boundary and live GPW verification. User-supplied URL capture plus manual entry provide the same fundamentals capability in the meantime.
+
+v0.36.0 — AI KPI extraction with confirmation:
+
+Status: completed in `0.36.0`.
+
+- provider-neutral extraction contracts with per-fact source snippets and prompt-version provenance
+- native PDF document input for Gemini and Claude, plus a deterministic test provider
+- an async extraction job that stages proposed facts (never a committed fact until confirmed)
+- an inline review UI on periodic-report feed items where the user confirms, edits, or rejects each proposed fact, and accepts out-of-taxonomy suggestions as new custom KPIs
+
+Delivered: KPI extraction contracts, prompt builder/parser, and prompt-version provenance; Claude native PDF input; the staging-proposal extraction job with confirm/reject materialization (confirming creates the period, resolves or creates the KPI definition, and writes the fact with provenance; rejecting persists nothing); the inline extraction panel; and the report-document source ladder from [ADR 0029](adr/0029-ir-page-report-resolution.md) — ESPI attachment, then a durable per-company IR reports page with an AI-assisted generic resolver, then manual PDF URL — delivered as a user-triggered building block (event-driven auto-resolution stays in v0.47.0). Derived KPIs are excluded from extraction since they are computed at read time. Deferred: native PDF for OpenAI (text-path), and a non-PDF/IR-landing-page guard ([bug `3d9f7f9`](kanban.md)); display formatting polish lands with the v0.37.0 panel. The per-company KPI relevance profile moved to v0.37.0.
+
+v0.37.0 — Fundamentals panel and KPI charts:
+
+Status: completed in `0.37.0`.
+
+- hand-rolled SVG chart primitives (Sparkline, TrendChart) in the shared UI layer, no new runtime dependency
+- a fundamentals panel in the company workspace: a KPI-per-period matrix with as-reported value formatting, localized KPI names, inline KPI search, manual fact entry, and click-through to source evidence
+- custom per-company KPI management and KPI trend charts
+
+Delivered: the panel, charts, as-reported formatting, localized KPI labels, manual fact entry, and custom per-company KPIs. The AI KPI extraction and analysis surfaces were also refactored into a centered modal launched from a containment-bounded feed detail rail ([ADR 0030](adr/0030-detail-rail-containment-boundary.md)), adding shared UI primitives (`DetailSection`, `TextField`) and an assertion-driven browser UI test harness (journeys, layout invariants, console-error gate; see [ADR 0021](adr/0021-browser-ui-regression-testing.md)).
+
+Deferred: export/import of financial facts and KPI definitions moved to the dedicated Import/export v2 epic (v0.50.0).
+
+Cross-company KPI comparison follows later in v0.42.0.
+
+Exit criteria:
+
+- a real GPW company's periodic report can be turned into confirmed, source-linked financial facts end to end
+- no AI-proposed figure is stored as confirmed without explicit user review
+- figures render per period and over time with every value traceable to its report
+- the scope stays report-derived; no price, volume, technical, or market-dashboard features are introduced
+
 ## Future: Release Packaging And Distribution Hardening
 
 Goal: harden distribution after the first public Linux and Windows release artifacts are proven.
@@ -1263,68 +1325,6 @@ Decision criteria:
 - If the study recommends implementation, record the source policy and adapter design in Source Strategy or a source-specific ADR before coding.
 
 Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
-
-## Milestone: Multi-provider AI (v0.35.0)
-
-Status: completed in `0.35.0`.
-
-Goal: add Claude (Anthropic) and OpenAI (ChatGPT) as AI providers alongside Gemini, all free with a user-supplied key, before AI KPI extraction is built on the provider boundary. Inserted ahead of extraction so the report-document input path is designed against more than one provider rather than retrofitted later.
-
-Scope: a provider registry/factory replacing the hardcoded dispatch, per-provider keychain credentials and model selection, Claude and OpenAI analysis adapters implementing the existing provider trait, and a document-input abstraction on the trait (with Gemini retrofitted). Managed/hosted AI remains a future paid tier; this milestone keeps every provider free with the user's own key.
-
-Delivered: async provider/transcription boundary; provider registries; one-key-per-provider keychain credentials with a generic command surface; per-provider model registry (migration 0036) and catalog-driven selection UI; Claude and OpenAI adapters over a shared prompt/parse layer; document-input abstraction (Gemini native proven, capability-flagged). The local PDF text-extraction dependency and the extraction job itself remain deferred to v0.36.0.
-
-## Milestone: Company Fundamentals (v0.34.0, v0.36.0–v0.37.0)
-
-Status: completed in `0.37.0` (delivered across `0.34.0`, `0.36.0`, and `0.37.0`).
-
-Goal: turn report numbers into a structured, source-linked fundamentals view per company, so the investor stops re-reading reports to find the same figures each quarter. Scope and the KPI taxonomy are fixed in [ADR 0027](adr/0027-company-fundamentals-scope.md).
-
-Note: the AI extraction and panel/charts work shifted up one minor version after a dedicated [Multi-provider AI](#milestone-multi-provider-ai-v0350) milestone was inserted at v0.35.0, so the report-document input path is designed against multiple providers before extraction is built.
-
-v0.34.0 — Financial facts foundation:
-
-Status: completed in `0.34.0`.
-
-- ADR and KPI taxonomy (this milestone's first task)
-- data model for financial periods, financial facts, and KPI definitions (canonical plus custom per-company), with provenance and confirmation state
-- financial facts storage, commands, and a focused frontend DTO module
-- report document persistence with user-supplied PDF URLs and URL evidence capture
-- manual KPI entry and edit workflow
-
-Deferred to v0.39.0: ESPI/EBI attachment ingestion and on-track company history backfill, which depend on the reusable feed company-matching boundary and live GPW verification. User-supplied URL capture plus manual entry provide the same fundamentals capability in the meantime.
-
-v0.36.0 — AI KPI extraction with confirmation:
-
-Status: completed in `0.36.0`.
-
-- provider-neutral extraction contracts with per-fact source snippets and prompt-version provenance
-- native PDF document input for Gemini and Claude, plus a deterministic test provider
-- an async extraction job that stages proposed facts (never a committed fact until confirmed)
-- an inline review UI on periodic-report feed items where the user confirms, edits, or rejects each proposed fact, and accepts out-of-taxonomy suggestions as new custom KPIs
-
-Delivered: KPI extraction contracts, prompt builder/parser, and prompt-version provenance; Claude native PDF input; the staging-proposal extraction job with confirm/reject materialization (confirming creates the period, resolves or creates the KPI definition, and writes the fact with provenance; rejecting persists nothing); the inline extraction panel; and the report-document source ladder from [ADR 0029](adr/0029-ir-page-report-resolution.md) — ESPI attachment, then a durable per-company IR reports page with an AI-assisted generic resolver, then manual PDF URL — delivered as a user-triggered building block (event-driven auto-resolution stays in v0.47.0). Derived KPIs are excluded from extraction since they are computed at read time. Deferred: native PDF for OpenAI (text-path), and a non-PDF/IR-landing-page guard ([bug `3d9f7f9`](kanban.md)); display formatting polish lands with the v0.37.0 panel. The per-company KPI relevance profile moved to v0.37.0.
-
-v0.37.0 — Fundamentals panel and KPI charts:
-
-Status: completed in `0.37.0`.
-
-- hand-rolled SVG chart primitives (Sparkline, TrendChart) in the shared UI layer, no new runtime dependency
-- a fundamentals panel in the company workspace: a KPI-per-period matrix with as-reported value formatting, localized KPI names, inline KPI search, manual fact entry, and click-through to source evidence
-- custom per-company KPI management and KPI trend charts
-
-Delivered: the panel, charts, as-reported formatting, localized KPI labels, manual fact entry, and custom per-company KPIs. The AI KPI extraction and analysis surfaces were also refactored into a centered modal launched from a containment-bounded feed detail rail ([ADR 0030](adr/0030-detail-rail-containment-boundary.md)), adding shared UI primitives (`DetailSection`, `TextField`) and an assertion-driven browser UI test harness (journeys, layout invariants, console-error gate; see [ADR 0021](adr/0021-browser-ui-regression-testing.md)).
-
-Deferred: export/import of financial facts and KPI definitions moved to the dedicated Import/export v2 epic (v0.50.0).
-
-Cross-company KPI comparison follows later in v0.42.0.
-
-Exit criteria:
-
-- a real GPW company's periodic report can be turned into confirmed, source-linked financial facts end to end
-- no AI-proposed figure is stored as confirmed without explicit user review
-- figures render per period and over time with every value traceable to its report
-- the scope stays report-derived; no price, volume, technical, or market-dashboard features are introduced
 
 ## North Star: Autonomous Report Pipeline (v0.47.0)
 
