@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.38.0 - 2026-06-14
+
+
+
+### Features
+
+- global search and database improvements
+
+
 ## v0.37.0 - 2026-06-14
 
 

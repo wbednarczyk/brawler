@@ -232,7 +232,7 @@ mod tests {
         let response = super::commands::health::health();
 
         assert_eq!(response.status, "ok");
-        assert_eq!(response.version, "0.37.0");
+        assert_eq!(response.version, "0.38.0");
     }
 
     #[test]

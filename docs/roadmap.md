@@ -23,17 +23,17 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 
 ## Delivered
 
-Milestones through `v0.37.0` are shipped. This roadmap does not restate completed work: the authoritative, per-version release history is [CHANGELOG.md](../CHANGELOG.md), and completed-card detail (through ~`v0.24.x`) is in [Kanban Archive](kanban-archive.md). The recent delivered arc:
+Milestones through `v0.38.0` are shipped. This roadmap does not restate completed work: the authoritative, per-version release history is [CHANGELOG.md](../CHANGELOG.md), and completed-card detail (through ~`v0.24.x`) is in [Kanban Archive](kanban-archive.md). The recent delivered arc:
 
 - Through `v0.31.0` — local-first foundations, GPW ESPI/EBI and Polish media/research sources, the company workspace, notebooks and claims, YouTube transcription, the general AI analysis framework, developer-mode/diagnostics, watchlist management, import/export, portable Windows packaging, modularization, and the research workspace (questions, evidence links, briefs, reminders, digest).
 - `v0.35.0` — Multi-provider AI (Claude + OpenAI alongside Gemini, all free with a user-supplied key).
 - `v0.34.0`, `v0.36.0`–`v0.37.0` — Company Fundamentals: financial facts data model, AI KPI extraction with mandatory confirmation, and the fundamentals panel with KPI charts. Scope and the KPI taxonomy are fixed in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+- `v0.38.0` — Search and data safety hardening: unified FTS5 global search across all stored content (companies, watchlists, feed items, notes, transcript segments, events, briefs, digests), automatic rotating local database backups with restore, pre-migration snapshots, and a WAL connection pool for concurrent background jobs. Boundaries in [ADR 0032](adr/0032-search-and-backup-boundaries.md); feed-retention policy designed in [ADR 0033](adr/0033-feed-retention-policy.md) for a later milestone.
 
 ## Active And Upcoming Milestones
 
-The next milestone is `v0.38.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
+The next milestone is `v0.39.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
 
-- `v0.38.0` — **Search and data safety hardening**: FTS5 full-text search across all stored content, automatic local database backups with restore, and a WAL connection pool for concurrent background jobs (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)).
 - `v0.39.0` — **Typed ESPI event classification**: classify ESPI/EBI filings into typed company events (insider transactions, dividends, profit warnings, contracts, buybacks). Also delivers the ESPI/EBI attachment ingestion and on-track company history backfill deferred from `v0.34.0`.
 - `v0.40.0` — **Management claims tracker**: track management claims from reports and transcripts with due periods, verdicts, and KPI-backed verification.
 - `v0.41.0` — **Report-season cockpit**: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
