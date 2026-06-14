@@ -20,7 +20,7 @@ Current milestone epics:
 - `eca2082` - epic: Financial facts foundation (`milestone:v0.34.0`, completed in `0.34.0`; ESPI/EBI attachment ingestion and backfill deferred to `v0.39.0`)
 - `fb20c2f` - epic: Multi-provider AI (Claude + OpenAI, BYO key) (`milestone:v0.35.0`, completed in `0.35.0`)
 - `9879941` - epic: AI KPI extraction with confirmation (`milestone:v0.36.0`, completed in `0.36.0`; non-PDF/IR-landing-page guard deferred as bug `3d9f7f9`)
-- `8505350` - epic: Fundamentals panel and KPI charts (`milestone:v0.37.0`)
+- `8505350` - epic: Fundamentals panel and KPI charts (`milestone:v0.37.0`, completed in `0.37.0`; financial facts + KPI definitions export/import moved to `8e80b12` as `060bde0`)
 - `2cc8bd6` - epic: Search and data safety hardening (`milestone:v0.38.0`)
 - `0e1d6c5` - epic: Typed ESPI event classification (`milestone:v0.39.0`)
 - `cbf6999` - epic: Management claims tracker (`milestone:v0.40.0`)
@@ -40,7 +40,7 @@ Current fundamentals sequence:
 - v0.34.0 (completed in `0.34.0`) establishes the financial facts data model, report document persistence (user-supplied PDF URLs), URL evidence capture, and manual KPI entry. ESPI/EBI attachment ingestion and backfill were deferred to v0.39.0.
 - v0.35.0 (completed in `0.35.0`) adds Claude and OpenAI as BYO-key AI providers alongside Gemini (async provider boundary, provider registry, per-provider keychain credentials, model selection, and a document-input abstraction on the provider trait), drawn before extraction so the report-document path is designed multi-provider.
 - v0.36.0 (completed in `0.36.0`) adds AI KPI extraction through the provider boundary with mandatory per-fact user confirmation (proposals staged, never a fact until confirmed; confirmed proposals retained as provenance). It also adds the report-document source ladder from ADR 0029 — ESPI attachment, then the durable per-company IR reports page with an AI-assisted generic resolver, then manual PDF URL — as a user-triggered building block; event-driven auto-resolution stays in v0.47.0. Claude gains native PDF input; OpenAI stays text-path.
-- v0.37.0 ships the fundamentals panel, custom per-company KPIs, and KPI trend charts via shared SVG primitives. Financial facts + KPI definitions export/import moved to the dedicated import/export epic `8e80b12` (v0.50.0).
+- v0.37.0 (completed in `0.37.0`) ships the fundamentals panel, custom per-company KPIs, and KPI trend charts via shared SVG primitives, plus as-reported value formatting, localized KPI labels, and a detail-rail refactor (containment-bounded rail + centered extraction/analysis modal, ADR 0030) with an assertion-driven browser UI test harness. Financial facts + KPI definitions export/import moved to the dedicated import/export epic `8e80b12` (v0.50.0).
 
 Current research-leverage sequence:
 

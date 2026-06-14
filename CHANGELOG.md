@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.37.0 - 2026-06-14
+
+
+
+### Features
+
+- v0.37 panel, charts, as-reported formatting, and review modal
+
+- fundamentals panel UI, KPI extraction flow, detail-rail refactor, and assertion-driven UI test harness
+
+
 ## v0.36.0 - 2026-06-13
 
 

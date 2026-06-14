@@ -1305,10 +1305,15 @@ Delivered: KPI extraction contracts, prompt builder/parser, and prompt-version p
 
 v0.37.0 — Fundamentals panel and KPI charts:
 
-- hand-rolled SVG chart primitives in the shared UI layer, no new runtime dependency
-- a fundamentals panel in the company workspace with per-period figures and click-through to source evidence
+Status: completed in `0.37.0`.
+
+- hand-rolled SVG chart primitives (Sparkline, TrendChart) in the shared UI layer, no new runtime dependency
+- a fundamentals panel in the company workspace: a KPI-per-period matrix with as-reported value formatting, localized KPI names, inline KPI search, manual fact entry, and click-through to source evidence
 - custom per-company KPI management and KPI trend charts
-- export/import of financial facts and KPI definitions
+
+Delivered: the panel, charts, as-reported formatting, localized KPI labels, manual fact entry, and custom per-company KPIs. The AI KPI extraction and analysis surfaces were also refactored into a centered modal launched from a containment-bounded feed detail rail ([ADR 0030](adr/0030-detail-rail-containment-boundary.md)), adding shared UI primitives (`DetailSection`, `TextField`) and an assertion-driven browser UI test harness (journeys, layout invariants, console-error gate; see [ADR 0021](adr/0021-browser-ui-regression-testing.md)).
+
+Deferred: export/import of financial facts and KPI definitions moved to the dedicated Import/export v2 epic (v0.50.0).
 
 Cross-company KPI comparison follows later in v0.42.0.
 
