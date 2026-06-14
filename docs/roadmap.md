@@ -1276,6 +1276,8 @@ Delivered: async provider/transcription boundary; provider registries; one-key-p
 
 ## Milestone: Company Fundamentals (v0.34.0, v0.36.0–v0.37.0)
 
+Status: completed in `0.37.0` (delivered across `0.34.0`, `0.36.0`, and `0.37.0`).
+
 Goal: turn report numbers into a structured, source-linked fundamentals view per company, so the investor stops re-reading reports to find the same figures each quarter. Scope and the KPI taxonomy are fixed in [ADR 0027](adr/0027-company-fundamentals-scope.md).
 
 Note: the AI extraction and panel/charts work shifted up one minor version after a dedicated [Multi-provider AI](#milestone-multi-provider-ai-v0350) milestone was inserted at v0.35.0, so the report-document input path is designed against multiple providers before extraction is built.
