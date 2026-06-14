@@ -429,3 +429,141 @@
 .ui-dense-row-disabled {
   opacity: 0.56;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Charts (Sparkline, TrendChart)                                             */
+/* -------------------------------------------------------------------------- */
+
+.ui-sparkline {
+  display: inline-block;
+  vertical-align: middle;
+  color: var(--accent);
+}
+
+.ui-sparkline-up {
+  color: var(--success);
+}
+
+.ui-sparkline-down {
+  color: var(--danger);
+}
+
+.ui-sparkline-empty {
+  display: inline-block;
+  width: 84px;
+  height: 22px;
+  vertical-align: middle;
+}
+
+.ui-trend-chart {
+  display: block;
+  width: 100%;
+}
+
+.ui-trend-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  padding: 16px;
+  color: var(--muted);
+  font-size: 13px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.ui-trend-chart-baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.ui-trend-chart-bar {
+  fill: var(--accent);
+}
+
+.ui-trend-chart-bar-negative {
+  fill: var(--danger);
+}
+
+.ui-trend-chart-value {
+  fill: var(--text);
+  font-size: 7px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-trend-chart-label {
+  fill: var(--muted);
+  font-size: 7px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Modal                                                                      */
+/* -------------------------------------------------------------------------- */
+
+.ui-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.ui-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  outline: none;
+}
+
+.ui-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.ui-modal-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.ui-modal-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.ui-modal-close:hover {
+  color: var(--text);
+}
+
+.ui-modal-body {
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.ui-modal-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}

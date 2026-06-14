@@ -1,0 +1,100 @@
+import { describe, expect, it } from "vitest";
+
+import { buildFactMatrix, periodSortKey } from "./factMatrix";
+import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
+
+function period(id: string, fiscalYear: number, periodType: string, periodEndDate: string | null): FinancialPeriod {
+  return {
+    id,
+    companyId: "co1",
+    fiscalYear,
+    periodType,
+    periodEndDate,
+    reportEvidenceRef: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function definition(id: string, metricKey: string, label: string): KpiDefinition {
+  return {
+    id,
+    scope: "global",
+    companyId: null,
+    sector: null,
+    metricKey,
+    label,
+    valueKind: "monetary",
+    unit: null,
+    computation: "reported",
+    formula: null,
+    displayFormat: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+function fact(id: string, periodId: string, definitionId: string): FinancialFact {
+  return {
+    id,
+    companyId: "co1",
+    periodId,
+    definitionId,
+    valueNumeric: "1",
+    currency: "PLN",
+    statementBasis: "consolidated",
+    attribution: "total",
+    variant: "actual",
+    measureWindow: "period",
+    dataQuality: "final",
+    asReportedValue: null,
+    asReportedScale: null,
+    reportingStandard: null,
+    extractionMethod: "manual",
+    confidence: null,
+    confirmationState: "confirmed",
+    supersedesId: null,
+    sourceDocumentRef: null,
+    createdAt: "",
+    updatedAt: "",
+  };
+}
+
+describe("buildFactMatrix", () => {
+  it("orders periods oldest-to-newest with annual after the quarters", () => {
+    const periods = [
+      period("p_q3", 2025, "q3", "2025-09-30"),
+      period("p_2024", 2024, "annual", "2024-12-31"),
+      period("p_q1", 2025, "q1", "2025-03-31"),
+    ];
+    const matrix = buildFactMatrix(periods, [], []);
+    expect(matrix.periods.map((p) => p.id)).toEqual(["p_2024", "p_q1", "p_q3"]);
+  });
+
+  it("derives an order when period end dates are missing", () => {
+    expect(periodSortKey(period("x", 2025, "q4", null))).toBe("2025-12");
+    expect(periodSortKey(period("x", 2025, "annual", null)) > periodSortKey(period("y", 2025, "q4", null))).toBe(true);
+  });
+
+  it("builds one row per KPI that has facts, with a sparse period->fact map", () => {
+    const periods = [period("p1", 2025, "q1", "2025-03-31"), period("p2", 2025, "q2", "2025-06-30")];
+    const definitions = [
+      definition("d_rev", "revenue", "Revenue"),
+      definition("d_np", "net_profit", "Net profit"),
+      definition("d_unused", "ebitda", "EBITDA"),
+    ];
+    const facts = [
+      fact("f1", "p1", "d_rev"),
+      fact("f2", "p2", "d_rev"),
+      fact("f3", "p2", "d_np"),
+    ];
+
+    const matrix = buildFactMatrix(periods, facts, definitions);
+
+    expect(matrix.rows.map((row) => row.definition.id)).toEqual(["d_rev", "d_np"]);
+    expect(matrix.rows[0].cells.p1?.id).toBe("f1");
+    expect(matrix.rows[0].cells.p2?.id).toBe("f2");
+    expect(matrix.rows[1].cells.p1).toBeUndefined();
+    expect(matrix.rows[1].cells.p2?.id).toBe("f3");
+  });
+});

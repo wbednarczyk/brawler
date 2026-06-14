@@ -6,6 +6,7 @@ dist/
 release-artifacts/
 test-results/
 playwright-report/
+tests/browser/__screens__/
 
 # Rust build output
 target/

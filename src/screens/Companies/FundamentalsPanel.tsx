@@ -1,8 +1,13 @@
+import { useMemo, useState } from "react";
 import { Plus, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { useLocale } from "../../shared/locale";
+import { formatFinancialValue } from "../../shared/format/financialValue";
+import { buildFactMatrix } from "./factMatrix";
 import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
-import { ActionRow, Button, DenseRow, EmptyState, InfoGrid } from "../../ui";
+import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
+import { ActionRow, Button, EmptyState, InfoGrid, Sparkline, TrendChart } from "../../ui";
+import type { FactMatrixRow } from "./factMatrix";
 import type {
   FinancialFactForm,
   FundamentalsForm,
@@ -47,7 +52,15 @@ export function FundamentalsPanel({
   updateFundamentalsForm,
   updateFinancialFactForm,
 }: FundamentalsPanelProps) {
-  const { text } = useLocale();
+  const { text, locale } = useLocale();
+
+  // Company-scoped custom KPI definitions are loaded by CustomKpiManager and
+  // merged with the global taxonomy so they appear in the matrix and dropdown.
+  const [companyDefinitions, setCompanyDefinitions] = useState<KpiDefinition[]>([]);
+  const allDefinitions = useMemo(() => {
+    const seen = new Set(kpiDefinitions.map((definition) => definition.id));
+    return [...kpiDefinitions, ...companyDefinitions.filter((definition) => !seen.has(definition.id))];
+  }, [kpiDefinitions, companyDefinitions]);
 
   const selectedFact = selectedFinancialFactId
     ? financialFacts.find((f) => f.id === selectedFinancialFactId)
@@ -58,8 +71,58 @@ export function FundamentalsPanel({
     : null;
 
   const selectedFactDefinition = selectedFact
-    ? kpiDefinitions.find((d) => d.id === selectedFact.definitionId)
+    ? allDefinitions.find((d) => d.id === selectedFact.definitionId)
     : null;
+
+  const factMatrix = useMemo(
+    () => buildFactMatrix(financialPeriods, financialFacts, allDefinitions),
+    [financialPeriods, financialFacts, allDefinitions],
+  );
+
+  // Trends must compare like-for-like periods: mixing a full-year figure with
+  // quarters distorts the line. When any quarterly/half-year period exists, the
+  // trend series uses only those; otherwise it falls back to all periods (e.g.
+  // an annual-only history). The matrix table still shows every column.
+  const interimPeriods = new Set(["q1", "q2", "q3", "q4", "h1", "h2"]);
+  const trendPeriods = factMatrix.periods.some((period) =>
+    interimPeriods.has(period.periodType.toLowerCase()),
+  )
+    ? factMatrix.periods.filter((period) => interimPeriods.has(period.periodType.toLowerCase()))
+    : factMatrix.periods;
+
+  // Chronological numeric series for a KPI row (skips periods without a fact).
+  const seriesValuesFor = (row: FactMatrixRow): number[] =>
+    trendPeriods
+      .map((period) => row.cells[period.id])
+      .filter((fact): fact is NonNullable<typeof fact> => Boolean(fact))
+      .map((fact) => Number(fact.valueNumeric))
+      .filter((value) => Number.isFinite(value));
+
+  // Labelled points for the larger per-KPI trend chart.
+  const chartPointsFor = (row: FactMatrixRow) =>
+    trendPeriods
+      .map((period) => ({ period, fact: row.cells[period.id] }))
+      .filter((entry) => entry.fact)
+      .map((entry) => ({
+        label: `${entry.period.fiscalYear} ${entry.period.periodType.toUpperCase()}`,
+        value: Number(entry.fact!.valueNumeric),
+        display: formatFinancialValue(
+          {
+            valueNumeric: entry.fact!.valueNumeric,
+            currency: entry.fact!.currency,
+            asReportedValue: entry.fact!.asReportedValue,
+            asReportedScale: entry.fact!.asReportedScale,
+            valueKind: row.definition.valueKind,
+            unit: row.definition.unit,
+          },
+          locale,
+        ),
+      }))
+      .filter((point) => Number.isFinite(point.value));
+
+  const selectedFactRow = selectedFactDefinition
+    ? factMatrix.rows.find((row) => row.definition.id === selectedFactDefinition.id)
+    : undefined;
 
   return (
     <div className="company-tab-panel fundamentals-panel" aria-label={text("Company fundamentals")}>
@@ -77,6 +140,8 @@ export function FundamentalsPanel({
       ) : null}
 
       <CompanyIrReportsUrlField companyId={companyId} />
+
+      <CustomKpiManager companyId={companyId} onDefinitionsChange={setCompanyDefinitions} />
 
       {/* Create Financial Period Section */}
       <section className="fundamentals-section" aria-label={text("Create reporting period")}>
@@ -155,40 +220,81 @@ export function FundamentalsPanel({
         </div>
 
         <div className="fundamentals-workspace">
-          <div className="facts-list" aria-label={text("Financial facts list")}>
-            {financialFacts.length > 0 ? (
-              financialFacts.map((fact) => {
-                const period = financialPeriods.find((p) => p.id === fact.periodId);
-                const definition = kpiDefinitions.find((d) => d.id === fact.definitionId);
-                return (
-                  <DenseRow
-                    aria-label={`${text("Financial fact")}: ${definition?.label || fact.definitionId}`}
-                    className={[
-                      "fact-row",
-                      selectedFinancialFactId === fact.id ? "fact-row-selected" : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    key={fact.id}
-                    onClick={() => selectFinancialFact(fact.id)}
-                    role="button"
-                    selected={selectedFinancialFactId === fact.id}
-                    tabIndex={0}
-                  >
-                    <div className="fact-row-main">
-                      <h4>{definition?.label || fact.definitionId}</h4>
-                      <div className="fact-row-meta">
-                        <span>{period ? `${period.fiscalYear} ${period.periodType.toUpperCase()}` : text("Unknown period")}</span>
-                        <span>{fact.valueNumeric} {fact.currency || ""}</span>
-                      </div>
-                    </div>
-                  </DenseRow>
-                );
-              })
-            ) : (
-              <EmptyState>{text("No financial facts yet.")}</EmptyState>
-            )}
-          </div>
+          {factMatrix.rows.length > 0 ? (
+            <div className="facts-matrix-scroll" aria-label={text("Financial facts matrix")}>
+              <table className="facts-matrix">
+                <thead>
+                  <tr>
+                    <th className="facts-matrix-corner" scope="col">
+                      {text("KPI")}
+                    </th>
+                    {factMatrix.periods.map((period) => (
+                      <th key={period.id} scope="col">
+                        {period.fiscalYear} {period.periodType.toUpperCase()}
+                      </th>
+                    ))}
+                    <th className="facts-matrix-trend-head" scope="col">
+                      {text("Trend")}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {factMatrix.rows.map((row) => (
+                    <tr key={row.definition.id}>
+                      <th className="facts-matrix-kpi" scope="row">
+                        {row.definition.label}
+                      </th>
+                      {factMatrix.periods.map((period) => {
+                        const fact = row.cells[period.id];
+                        if (!fact) {
+                          return (
+                            <td key={period.id} className="facts-matrix-cell-empty">
+                              <span aria-hidden="true">—</span>
+                            </td>
+                          );
+                        }
+                        return (
+                          <td key={period.id}>
+                            <button
+                              aria-label={`${row.definition.label}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
+                              className={[
+                                "facts-matrix-cell",
+                                selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" ")}
+                              onClick={() => selectFinancialFact(fact.id)}
+                              type="button"
+                            >
+                              {formatFinancialValue(
+                                {
+                                  valueNumeric: fact.valueNumeric,
+                                  currency: fact.currency,
+                                  asReportedValue: fact.asReportedValue,
+                                  asReportedScale: fact.asReportedScale,
+                                  valueKind: row.definition.valueKind,
+                                  unit: row.definition.unit,
+                                },
+                                locale,
+                              )}
+                            </button>
+                          </td>
+                        );
+                      })}
+                      <td className="facts-matrix-trend">
+                        <Sparkline
+                          values={seriesValuesFor(row)}
+                          ariaLabel={`${row.definition.label} ${text("trend")}`}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState>{text("No financial facts yet.")}</EmptyState>
+          )}
 
           {/* Financial Fact Detail and Edit */}
           {selectedFact && selectedFactDefinition && selectedFactPeriod ? (
@@ -278,7 +384,24 @@ export function FundamentalsPanel({
                         label: text("Period"),
                         value: `${selectedFactPeriod.fiscalYear} ${selectedFactPeriod.periodType.toUpperCase()}`,
                       },
-                      { label: text("Value"), value: selectedFact.valueNumeric },
+                      {
+                        label: text("Value"),
+                        value: formatFinancialValue(
+                          {
+                            valueNumeric: selectedFact.valueNumeric,
+                            currency: selectedFact.currency,
+                            asReportedValue: selectedFact.asReportedValue,
+                            asReportedScale: selectedFact.asReportedScale,
+                            valueKind: selectedFactDefinition.valueKind,
+                            unit: selectedFactDefinition.unit,
+                          },
+                          locale,
+                        ),
+                      },
+                      {
+                        label: text("As stored"),
+                        value: `${selectedFact.valueNumeric}${selectedFact.currency ? ` ${selectedFact.currency}` : ""}`,
+                      },
                       {
                         label: text("Currency"),
                         value: selectedFact.currency || text("Not set"),
@@ -299,6 +422,28 @@ export function FundamentalsPanel({
                       },
                     ]}
                   />
+                  {selectedFactRow && chartPointsFor(selectedFactRow).length > 1 ? (
+                    <div className="fact-detail-chart">
+                      <span className="eyebrow">
+                        {selectedFactDefinition.label} {text("by period")}
+                      </span>
+                      <TrendChart
+                        ariaLabel={`${selectedFactDefinition.label} ${text("by period")}`}
+                        points={chartPointsFor(selectedFactRow)}
+                        formatValue={(value) =>
+                          formatFinancialValue(
+                            {
+                              valueNumeric: String(value),
+                              currency: selectedFact.currency,
+                              valueKind: selectedFactDefinition.valueKind,
+                              unit: selectedFactDefinition.unit,
+                            },
+                            locale,
+                          )
+                        }
+                      />
+                    </div>
+                  ) : null}
                 </>
               )}
             </form>
@@ -326,7 +471,7 @@ export function FundamentalsPanel({
                   }
                 >
                   <option value="">{text("Select a KPI")}</option>
-                  {kpiDefinitions.map((definition) => (
+                  {allDefinitions.map((definition) => (
                     <option key={definition.id} value={definition.id}>
                       {definition.label} ({definition.metricKey})
                     </option>

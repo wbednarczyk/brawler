@@ -15,7 +15,9 @@ import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
+import { Modal } from "../../ui";
 import { useLocale } from "../locale";
+import { formatFinancialValue } from "../format/financialValue";
 
 export type FeedKpiExtractionPanelProps = {
   feedItem: FeedItem;
@@ -44,7 +46,7 @@ function isActive(status: string) {
 }
 
 export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpiExtractionPanelProps) {
-  const { text } = useLocale();
+  const { text, locale } = useLocale();
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [documents, setDocuments] = useState<ReportDocument[]>([]);
   const [job, setJob] = useState<KpiExtractionJob | null>(null);
@@ -56,6 +58,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
   const [acceptNew, setAcceptNew] = useState<Record<string, boolean>>({});
   const [fiscalYear, setFiscalYear] = useState("");
   const [periodType, setPeriodType] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
 
   const pdfAttachments = useMemo(
     () => feedItem.attachments.filter((attachment) => /\.pdf($|\?)/i.test(attachment.url)),
@@ -211,8 +214,61 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
     [guard, refreshJob]
   );
 
+  // Bulk confirm a set of pending proposals, collecting per-metric failures so a
+  // single unresolved metric key does not abort the whole batch or close the modal.
+  const confirmMany = useCallback(
+    (selector: (proposal: KpiExtractionProposal) => boolean, acceptAsNewKpi: boolean) =>
+      guard(async () => {
+        const targets = (job?.proposals ?? []).filter(
+          (proposal) => proposal.status === "pending" && selector(proposal)
+        );
+        const failures: string[] = [];
+        for (const proposal of targets) {
+          try {
+            const editedValue = edits[proposal.id];
+            await confirmKpiProposal({
+              proposalId: proposal.id,
+              valueNumeric:
+                editedValue && editedValue !== proposal.valueNumeric ? editedValue : undefined,
+              fiscalYear: fiscalYear ? Number(fiscalYear) : undefined,
+              periodType: periodType || undefined,
+              acceptAsNewKpi,
+            });
+          } catch (cause) {
+            failures.push(`${proposal.label}: ${String(cause)}`);
+          }
+        }
+        await refreshJob();
+        if (failures.length > 0) {
+          setError(failures.join("; "));
+        }
+      }),
+    [edits, fiscalYear, guard, job?.proposals, periodType, refreshJob]
+  );
+
+  const confirmAllKnown = useCallback(
+    () => confirmMany((proposal) => !proposal.isProposedKpi, false),
+    [confirmMany]
+  );
+
+  const acceptAllSuggestions = useCallback(
+    () => confirmMany((proposal) => proposal.isProposedKpi, true),
+    [confirmMany]
+  );
+
   const fetchedDocuments = documents.filter((document) => document.fetchStatus === "fetched");
   const pendingProposals = job?.proposals ?? [];
+  const hasPendingProposals = pendingProposals.some((proposal) => proposal.status === "pending");
+
+  // Open the review modal when a job finishes with proposals to handle; close it
+  // automatically once nothing is left pending.
+  useEffect(() => {
+    if (job?.status === "succeeded" && hasPendingProposals) setReviewOpen(true);
+  }, [job?.status, hasPendingProposals]);
+
+  useEffect(() => {
+    if (reviewOpen && job?.status === "succeeded" && !hasPendingProposals) setReviewOpen(false);
+  }, [reviewOpen, job?.status, hasPendingProposals]);
 
   return (
     <section className="kpi-extraction-panel" aria-label={text("AI KPI extraction")}>
@@ -319,7 +375,49 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
       ) : null}
 
       {job && job.status === "succeeded" ? (
-        <div className="kpi-extraction-review" aria-label={text("Proposed KPI values")}>
+        <div className="kpi-extraction-summary">
+          <span>
+            {pendingProposals.length} {text("KPI values extracted")}
+            {hasPendingProposals ? ` · ${pendingProposals.filter((p) => p.status === "pending").length} ${text("to review")}` : ""}
+          </span>
+          <Button className="compact-button" onClick={() => setReviewOpen(true)} variant="primary">
+            <Table2 size={15} />
+            {text("Review extracted KPIs")}
+          </Button>
+        </div>
+      ) : null}
+
+      <Modal
+        ariaLabel={text("Proposed KPI values")}
+        onClose={() => setReviewOpen(false)}
+        open={reviewOpen}
+        title={text("Review extracted KPIs")}
+        footer={
+          <>
+            <Button
+              className="compact-button"
+              disabled={busy || !hasPendingProposals}
+              onClick={() => void confirmAllKnown()}
+              variant="primary"
+            >
+              <CheckCircle2 size={15} />
+              {text("Confirm all known")}
+            </Button>
+            <Button
+              className="compact-button"
+              disabled={busy || !hasPendingProposals}
+              onClick={() => void acceptAllSuggestions()}
+            >
+              {text("Accept all suggestions")}
+            </Button>
+            <Button className="compact-button" disabled={busy} onClick={() => void refreshJob()}>
+              <RefreshCw size={15} />
+              {text("Refresh")}
+            </Button>
+          </>
+        }
+      >
+        <div className="kpi-extraction-review">
           <div className="kpi-extraction-period">
             <label>
               {text("Fiscal year")}
@@ -358,6 +456,21 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
                       </StatusPill>
                     </span>
                   </div>
+                  <p className="kpi-extraction-asreported">
+                    <span>{proposal.asReportedValue ? text("As reported") : text("Value")}</span>
+                    <strong>
+                      {formatFinancialValue(
+                        {
+                          valueNumeric: edits[proposal.id] ?? proposal.valueNumeric,
+                          currency: proposal.currency,
+                          asReportedValue: proposal.asReportedValue,
+                          asReportedScale: proposal.asReportedScale,
+                          unit: proposal.unit,
+                        },
+                        locale,
+                      )}
+                    </strong>
+                  </p>
                   <input
                     aria-label={`${proposal.label} ${text("value")}`}
                     disabled={proposal.status !== "pending"}
@@ -401,15 +514,14 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
               ))}
             </ul>
           )}
-          <Button className="compact-button" disabled={busy} onClick={() => void refreshJob()}>
-            <RefreshCw size={15} />
-            {text("Refresh")}
-          </Button>
+          {error ? <p className="error-text">{error}</p> : null}
         </div>
-      ) : null}
+      </Modal>
 
       <div className="ai-analysis-footer">
-        {error ? <p className="error-text">{text("KPI extraction failed.")} {error}</p> : null}
+        {error && !reviewOpen ? (
+          <p className="error-text">{text("KPI extraction failed.")} {error}</p>
+        ) : null}
       </div>
     </section>
   );

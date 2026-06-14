@@ -40,6 +40,15 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
     if (command === "list_kpi_extraction") {
       return Promise.resolve([]);
     }
+    // v0.37 fundamentals reads (benign empty defaults).
+    if (
+      command === "list_kpi_definitions" ||
+      command === "list_financial_periods" ||
+      command === "list_financial_facts" ||
+      command === "list_kpi_relevance"
+    ) {
+      return Promise.resolve([]);
+    }
     if (command === "get_company_ir_reports_url") {
       return Promise.resolve(null);
     }

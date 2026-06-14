@@ -715,6 +715,7 @@ summary.feed-body-heading::before {
 
 .kpi-extraction-proposal-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -722,8 +723,29 @@ summary.feed-body-heading::before {
 
 .kpi-extraction-proposal-tags {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.kpi-extraction-asreported {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+}
+
+.kpi-extraction-asreported span {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.kpi-extraction-asreported strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
 }
 
 .kpi-extraction-snippet {
@@ -738,4 +760,18 @@ summary.feed-body-heading::before {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
+}
+
+.kpi-extraction-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.kpi-extraction-summary span {
+  color: var(--muted);
+  font-size: 12px;
 }

@@ -163,6 +163,67 @@ describe("FeedKpiExtractionPanel", () => {
     });
   });
 
+  it("bulk-confirms known KPIs and auto-closes when none remain pending", async () => {
+    const user = userEvent.setup();
+    vi.mocked(startKpiExtraction).mockResolvedValue(
+      succeededJob([
+        proposal({ id: "p_rev", metricKey: "revenue", label: "Revenue" }),
+        proposal({ id: "p_np", metricKey: "net_profit", label: "Net profit", valueNumeric: "112400000" }),
+      ])
+    );
+    vi.mocked(confirmKpiProposal).mockResolvedValue({} as never);
+    // After the bulk confirm + refresh, everything is confirmed -> nothing pending.
+    vi.mocked(listKpiExtraction).mockResolvedValue([
+      succeededJob([
+        proposal({ id: "p_rev", label: "Revenue", status: "confirmed", factId: "fact_1" }),
+        proposal({ id: "p_np", metricKey: "net_profit", label: "Net profit", status: "confirmed", factId: "fact_2" }),
+      ]),
+    ]);
+
+    render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
+
+    await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
+    expect(await screen.findByRole("dialog", { name: /Proposed KPI values/ })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Confirm all known" }));
+
+    await waitFor(() => expect(confirmKpiProposal).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(confirmKpiProposal).mock.calls.every((call) => call[0].acceptAsNewKpi === false)).toBe(true);
+
+    // Every proposal handled -> the modal closes itself.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("accepts all AI suggestions as new KPIs in bulk", async () => {
+    const user = userEvent.setup();
+    vi.mocked(startKpiExtraction).mockResolvedValue(
+      succeededJob([
+        proposal({ id: "p_rev", metricKey: "revenue", label: "Revenue" }),
+        proposal({ id: "p_bk", metricKey: "backlog", label: "Backlog", isProposedKpi: true, confidence: "medium" }),
+      ])
+    );
+    vi.mocked(confirmKpiProposal).mockResolvedValue({} as never);
+    vi.mocked(listKpiExtraction).mockResolvedValue([
+      succeededJob([
+        proposal({ id: "p_rev", label: "Revenue" }),
+        proposal({ id: "p_bk", metricKey: "backlog", label: "Backlog", isProposedKpi: true, status: "confirmed" }),
+      ]),
+    ]);
+
+    render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
+
+    await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
+    await screen.findByRole("dialog", { name: /Proposed KPI values/ });
+
+    await user.click(screen.getByRole("button", { name: "Accept all suggestions" }));
+
+    await waitFor(() => expect(confirmKpiProposal).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(confirmKpiProposal).mock.calls[0][0]).toMatchObject({
+      proposalId: "p_bk",
+      acceptAsNewKpi: true,
+    });
+  });
+
   it("rejects a proposal without committing a fact", async () => {
     const user = userEvent.setup();
     vi.mocked(startKpiExtraction).mockResolvedValue(

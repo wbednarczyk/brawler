@@ -414,3 +414,247 @@
 .company-row-context .membership-list {
   justify-content: flex-start;
 }
+
+/* -------------------------------------------------------------------------- */
+/* Fundamentals panel (v0.37)                                                  */
+/* -------------------------------------------------------------------------- */
+
+.fundamentals-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.fundamentals-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fundamentals-toolbar h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.fundamentals-toolbar p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fundamentals-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.fundamentals-section .section-heading h4 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.fundamentals-form-row,
+.fundamentals-form-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.fundamentals-form label,
+.fact-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fundamentals-form input,
+.fundamentals-form select,
+.fact-form-grid input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: 13px;
+}
+
+/* Reporting periods as chips rather than a cramped column. */
+.periods-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.period-item {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+}
+
+.period-label {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* KPI x period matrix. */
+.fundamentals-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.facts-matrix-scroll {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.facts-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.facts-matrix th,
+.facts-matrix td {
+  padding: 0;
+  text-align: right;
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.facts-matrix thead th {
+  position: sticky;
+  top: 0;
+  padding: 8px 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-variant-numeric: tabular-nums;
+}
+
+.facts-matrix tbody tr:last-child th,
+.facts-matrix tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.facts-matrix-corner,
+.facts-matrix-kpi {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--surface);
+  z-index: 1;
+}
+
+.facts-matrix-kpi {
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.facts-matrix-corner {
+  background: var(--surface-raised);
+  z-index: 2;
+}
+
+.facts-matrix-cell {
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.facts-matrix-cell:hover {
+  background: var(--surface-raised);
+}
+
+.facts-matrix-cell-selected {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+
+.facts-matrix-cell-empty {
+  padding: 8px 12px;
+  color: var(--muted);
+}
+
+/* Selected fact detail. */
+.fact-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.fact-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.fact-detail-header h3 {
+  margin: 2px 0 0;
+  font-size: 15px;
+}
+
+.fact-detail-header .eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.facts-matrix-trend-head,
+.facts-matrix-trend {
+  text-align: center;
+  padding: 6px 12px;
+}
+
+.facts-matrix-trend {
+  color: var(--accent);
+}
+
+.fact-detail-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
+.fact-detail-chart .eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.fact-detail-chart .ui-trend-chart {
+  max-width: 540px;
+}

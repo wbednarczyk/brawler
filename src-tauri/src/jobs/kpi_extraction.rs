@@ -208,7 +208,30 @@ fn load_document(
     })?;
     let mime_type = resolve_document_mime_type(document.content_type.as_deref(), &local_path);
 
+    // Guard against extracting from an IR landing page (or any non-report web
+    // page) captured as a "report document": the model would only see the few
+    // headline figures on the page, producing a misleading partial result. Bug
+    // 3d9f7f9. The IR resolver and PDF-URL paths deliver the actual report PDF.
+    if let Some(message) = non_report_mime_rejection(&mime_type) {
+        return Err(("non_pdf_document", message.to_owned()));
+    }
+
     Ok(AnalysisDocument::Native { mime_type, data })
+}
+
+/// Returns an actionable error message when a resolved MIME type is a web page
+/// rather than a report document, otherwise `None`. PDFs and unknown binary
+/// types (defaulted to PDF upstream) are accepted.
+fn non_report_mime_rejection(mime_type: &str) -> Option<&'static str> {
+    if mime_type == "text/html" {
+        Some(
+            "This looks like a web page (text/html), not a report PDF. \
+             Use \"Fetch report from IR page\" to pick the actual report, \
+             or paste the report's PDF URL.",
+        )
+    } else {
+        None
+    }
 }
 
 /// Resolve a provider-acceptable MIME type. Servers often deliver report PDFs as
@@ -360,6 +383,14 @@ mod tests {
         );
         // No type, non-pdf extension.
         assert_eq!(resolve_document_mime_type(None, "page.html"), "text/html");
+    }
+
+    #[test]
+    fn rejects_web_pages_but_accepts_pdfs_for_extraction() {
+        // IR landing pages (text/html) must be rejected with an actionable hint.
+        assert!(super::non_report_mime_rejection("text/html").is_some());
+        // Report PDFs (incl. octet-stream defaulted to PDF upstream) are accepted.
+        assert!(super::non_report_mime_rejection("application/pdf").is_none());
     }
     use crate::{
         providers::analysis::{TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID},
