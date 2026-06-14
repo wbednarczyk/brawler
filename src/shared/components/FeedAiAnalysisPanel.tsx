@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { AiAnalysisJob, FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
+import { DetailSection, Modal } from "../../ui";
 import { useLocale } from "../locale";
 
 export type FeedAiAnalysisPanelProps = {
@@ -44,6 +45,7 @@ export function FeedAiAnalysisPanel({
 }: FeedAiAnalysisPanelProps) {
   const { text } = useLocale();
   const [customQuestion, setCustomQuestion] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
   const job = latestJob(jobs);
   const isBusy = requestInFlight || job?.status === "queued" || job?.status === "running";
   const canAnalyze = providerConfigured && !isBusy;
@@ -62,24 +64,62 @@ export function FeedAiAnalysisPanel({
   }
 
   return (
-    <section className="ai-analysis-panel" aria-label={text("AI analysis")}>
-      <div className="ai-analysis-header">
-        <div>
-          <h3>
-            <Sparkles size={15} />
-            {text("AI analysis")}
-          </h3>
-          <p>{text("Source-grounded decision support for the selected feed item.")}</p>
-        </div>
-        {job ? <StatusPill tone={statusTone(job.status)}>{text(job.status)}</StatusPill> : null}
-      </div>
-
+    <DetailSection
+      ariaLabel={text("AI analysis")}
+      aside={job ? <StatusPill tone={statusTone(job.status)}>{text(job.status)}</StatusPill> : null}
+      description={text("Source-grounded decision support for the selected feed item.")}
+      icon={<Sparkles size={15} />}
+      title={text("AI analysis")}
+    >
       {!providerConfigured ? (
         <p className="ai-analysis-empty">
           {text("Configure a general AI provider in Settings before running analysis.")}
         </p>
       ) : (
         <>
+          {job?.result && !modalOpen ? (
+            <article className="ai-analysis-preview" aria-label={text("AI analysis result")}>
+              <span className="detail-launcher-status">
+                {text("Significance")}: {text(job.result.significance)}
+              </span>
+              <p>{job.result.summary}</p>
+            </article>
+          ) : null}
+          <div className="detail-launcher">
+            <span className="detail-launcher-status">
+              {job?.result
+                ? text("Open the analysis for reasoning, tags, and sources.")
+                : text("Run a preset prompt or ask a custom question about this item.")}
+            </span>
+            <Button className="compact-button" onClick={() => setModalOpen(true)} variant="primary">
+              <Sparkles size={15} />
+              {job?.result ? text("View analysis") : text("Analyze with AI")}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {error && !modalOpen ? (
+        <p className="error-text">{text("AI analysis command failed")}: {error}</p>
+      ) : null}
+
+      <Modal
+        ariaLabel={text("AI analysis")}
+        onClose={() => setModalOpen(false)}
+        open={modalOpen}
+        title={text("AI analysis")}
+        footer={
+          <Button className="compact-button" onClick={() => setModalOpen(false)}>
+            {text("Close")}
+          </Button>
+        }
+      >
+        <div className="ai-analysis-review">
+          {job ? (
+            <div className="kpi-extraction-status" aria-label={text("Analysis status")}>
+              <StatusPill tone={statusTone(job.status)}>{text(job.status)}</StatusPill>
+            </div>
+          ) : null}
           <div className="ai-analysis-presets" aria-label={text("Suggested AI prompts")}>
             {promptPresets.map((preset) => (
               <Button
@@ -115,50 +155,52 @@ export function FeedAiAnalysisPanel({
               {text("Analyze")}
             </Button>
           </form>
-        </>
-      )}
 
-      {job?.result ? (
-        <article className="ai-analysis-result" aria-label={text("AI analysis result")}>
-          <div className="ai-analysis-result-meta">
-            <span>{text("Significance")}: {text(job.result.significance)}</span>
-            <span>{job.providerId}</span>
-            <span>{job.model}</span>
-          </div>
-          <p>{job.result.summary}</p>
-          {job.result.reasoning ? <p className="ai-analysis-reasoning">{job.result.reasoning}</p> : null}
-          {job.result.tags.length > 0 ? (
-            <div className="ai-analysis-tags" aria-label={text("AI analysis tags")}>
-              {job.result.tags.map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
+          {job?.result ? (
+            <article className="ai-analysis-result" aria-label={text("AI analysis result")}>
+              <div className="ai-analysis-result-meta">
+                <span>{text("Significance")}: {text(job.result.significance)}</span>
+                <span>{job.providerId}</span>
+                <span>{job.model}</span>
+              </div>
+              <p>{job.result.summary}</p>
+              {job.result.reasoning ? <p className="ai-analysis-reasoning">{job.result.reasoning}</p> : null}
+              {job.result.tags.length > 0 ? (
+                <div className="ai-analysis-tags" aria-label={text("AI analysis tags")}>
+                  {job.result.tags.map((tag) => (
+                    <span key={tag}>{tag}</span>
+                  ))}
+                </div>
+              ) : null}
+              {job.result.sourceReferences.length > 0 ? (
+                <div className="ai-analysis-sources" aria-label={text("AI analysis source references")}>
+                  {job.result.sourceReferences.map((source) => (
+                    <a href={source.sourceUrl} key={source.id} rel="noreferrer" target="_blank">
+                      {source.label ?? source.sourceUrl}
+                    </a>
+                  ))}
+                </div>
+              ) : null}
+            </article>
+          ) : null}
+
+          {job?.status === "failed" ? (
+            <div className="ai-analysis-error">
+              <p>{job.error ?? text("AI analysis failed.")}</p>
+              <Button
+                className="compact-button"
+                disabled={requestInFlight}
+                onClick={() => void onRetry(job.id, feedItem.id)}
+              >
+                <RefreshCw size={15} />
+                {text("Retry")}
+              </Button>
             </div>
           ) : null}
-          {job.result.sourceReferences.length > 0 ? (
-            <div className="ai-analysis-sources" aria-label={text("AI analysis source references")}>
-              {job.result.sourceReferences.map((source) => (
-                <a href={source.sourceUrl} key={source.id} rel="noreferrer" target="_blank">
-                  {source.label ?? source.sourceUrl}
-                </a>
-              ))}
-            </div>
-          ) : null}
-        </article>
-      ) : null}
 
-      {job?.status === "failed" ? (
-        <div className="ai-analysis-error">
-          <p>{job.error ?? text("AI analysis failed.")}</p>
-          <Button className="compact-button" disabled={requestInFlight} onClick={() => void onRetry(job.id, feedItem.id)}>
-            <RefreshCw size={15} />
-            {text("Retry")}
-          </Button>
+          {error ? <p className="error-text">{text("AI analysis command failed")}: {error}</p> : null}
         </div>
-      ) : null}
-
-      <div className="ai-analysis-footer">
-        {error ? <p className="error-text">{text("AI analysis command failed")}: {error}</p> : null}
-      </div>
-    </section>
+      </Modal>
+    </DetailSection>
   );
 }

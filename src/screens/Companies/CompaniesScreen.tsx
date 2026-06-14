@@ -26,6 +26,8 @@ export type CompaniesScreenProps = {
   filteredCompanies: Company[];
   companies: Company[];
   selectedCompany: Company | null;
+  workspaceAutoFocusId: string | null;
+  clearWorkspaceAutoFocus: () => void;
   membershipsByCompany: Record<string, WatchlistMembership[]>;
   selectedCompanyFeedStats: { total: number; unread: number; saved: number };
   companyWorkspaceTab: CompanyWorkspaceTab;
@@ -115,6 +117,8 @@ export function CompaniesScreen({
   filteredCompanies,
   companies,
   selectedCompany,
+  workspaceAutoFocusId,
+  clearWorkspaceAutoFocus,
   membershipsByCompany,
   selectedCompanyFeedStats,
   companyWorkspaceTab,
@@ -391,9 +395,10 @@ export function CompaniesScreen({
                           <div className="company-row-actions">
                             <span>{company.isin ?? text("No ISIN")}</span>
                             <Button
+                              className="danger-button"
                               onClick={() => deleteCompany(company)}
                               title={`${text("Delete")} ${company.qualifiedTicker}`}
-                              variant="danger"
+                              variant="icon"
                             >
                               <Trash2 size={16} />
                             </Button>
@@ -404,6 +409,8 @@ export function CompaniesScreen({
                       {selectedCompany?.id === company.id ? (
                         <CompanyWorkspace
                           selectedCompany={selectedCompany}
+                          autoFocusOnOpen={workspaceAutoFocusId === selectedCompany.id}
+                          onAutoFocusHandled={clearWorkspaceAutoFocus}
                           membershipsByCompany={membershipsByCompany}
                           selectedCompanyFeedStats={selectedCompanyFeedStats}
                           companyWorkspaceTab={companyWorkspaceTab}

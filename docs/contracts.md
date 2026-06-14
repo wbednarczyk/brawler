@@ -1769,7 +1769,7 @@ An extraction job carries the detected primary period (`detectedFiscalYear`, `de
 
 Commands:
 
-- `start_kpi_extraction(input)`: queues an async extraction over a report document (`reportDocumentId`, optional `periodHint`, optional `providerMode`); returns the queued job.
+- `start_kpi_extraction(input)`: queues an async extraction over a report document (`reportDocumentId`, optional `periodHint`, optional `providerMode`); returns the queued job. A document that resolves to a web page rather than a report PDF (content type `text/html`, e.g. an IR landing page captured as a document) is rejected with error code `non_pdf_document` and an actionable message instead of producing a misleading partial extraction.
 - `retry_kpi_extraction(jobId)`: re-queues an existing job.
 - `list_kpi_extraction(input)`: returns extraction jobs (with proposals) for one report document.
 - `confirm_kpi_proposal(input)`: commits one proposal as a `financial_fact` (`proposalId`, optional `valueNumeric`/`currency` edit, optional `fiscalYear`/`periodType`/`periodEndDate` period override, `acceptAsNewKpi` for out-of-taxonomy suggestions); returns the created fact.

@@ -190,13 +190,14 @@ export function TranscriptJobRow({
             </Button>
           ) : null}
           <Button
+            className="danger-button"
             disabled={transcriptDeleteInFlight === job.id}
             onClick={(event) => {
               event.stopPropagation();
               deleteTranscriptJob(job);
             }}
             title={`${text("Delete transcript job")} ${job.sourceLabel ?? job.sourceUrl}`}
-            variant="danger"
+            variant="icon"
           >
             <Trash2 size={15} />
           </Button>

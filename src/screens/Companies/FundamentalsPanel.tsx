@@ -1,12 +1,13 @@
-import { useMemo, useState } from "react";
-import { Plus, Save, Trash2, X } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { useLocale } from "../../shared/locale";
+import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { buildFactMatrix } from "./factMatrix";
 import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
-import { ActionRow, Button, EmptyState, InfoGrid, Sparkline, TrendChart } from "../../ui";
+import { ActionRow, Button, EmptyState, InfoGrid, InlineConfirm, Sparkline, TrendChart } from "../../ui";
 import type { FactMatrixRow } from "./factMatrix";
 import type {
   FinancialFactForm,
@@ -57,6 +58,11 @@ export function FundamentalsPanel({
   // Company-scoped custom KPI definitions are loaded by CustomKpiManager and
   // merged with the global taxonomy so they appear in the matrix and dropdown.
   const [companyDefinitions, setCompanyDefinitions] = useState<KpiDefinition[]>([]);
+  const [kpiQuery, setKpiQuery] = useState("");
+  const [confirmDeleteFact, setConfirmDeleteFact] = useState(false);
+
+  // Reset the delete confirmation whenever the selected fact changes.
+  useEffect(() => setConfirmDeleteFact(false), [selectedFinancialFactId]);
   const allDefinitions = useMemo(() => {
     const seen = new Set(kpiDefinitions.map((definition) => definition.id));
     return [...kpiDefinitions, ...companyDefinitions.filter((definition) => !seen.has(definition.id))];
@@ -242,7 +248,7 @@ export function FundamentalsPanel({
                   {factMatrix.rows.map((row) => (
                     <tr key={row.definition.id}>
                       <th className="facts-matrix-kpi" scope="row">
-                        {row.definition.label}
+                        {localizedKpiLabel(row.definition, locale)}
                       </th>
                       {factMatrix.periods.map((period) => {
                         const fact = row.cells[period.id];
@@ -256,7 +262,7 @@ export function FundamentalsPanel({
                         return (
                           <td key={period.id}>
                             <button
-                              aria-label={`${row.definition.label}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
+                              aria-label={`${localizedKpiLabel(row.definition, locale)}, ${period.fiscalYear} ${period.periodType.toUpperCase()}`}
                               className={[
                                 "facts-matrix-cell",
                                 selectedFinancialFactId === fact.id ? "facts-matrix-cell-selected" : "",
@@ -284,7 +290,7 @@ export function FundamentalsPanel({
                       <td className="facts-matrix-trend">
                         <Sparkline
                           values={seriesValuesFor(row)}
-                          ariaLabel={`${row.definition.label} ${text("trend")}`}
+                          ariaLabel={`${localizedKpiLabel(row.definition, locale)} ${text("trend")}`}
                         />
                       </td>
                     </tr>
@@ -308,7 +314,7 @@ export function FundamentalsPanel({
                   <div className="fact-detail-header">
                     <div>
                       <span className="eyebrow">{text("Editing fact")}</span>
-                      <h3>{selectedFactDefinition.label}</h3>
+                      <h3>{localizedKpiLabel(selectedFactDefinition, locale)}</h3>
                     </div>
                     <ActionRow className="fact-detail-actions">
                       <Button
@@ -367,15 +373,36 @@ export function FundamentalsPanel({
                   <div className="fact-detail-header">
                     <div>
                       <span className="eyebrow">{text("Financial fact")}</span>
-                      <h3>{selectedFactDefinition.label}</h3>
+                      <h3>{localizedKpiLabel(selectedFactDefinition, locale)}</h3>
                     </div>
-                    <Button
-                      className="compact-button"
-                      onClick={startEditingFinancialFact}
-                    >
-                      <X size={15} />
-                      {text("Edit")}
-                    </Button>
+                    {confirmDeleteFact ? (
+                      <InlineConfirm
+                        cancelLabel={text("Cancel")}
+                        confirmLabel={text("Remove")}
+                        onCancel={() => setConfirmDeleteFact(false)}
+                        onConfirm={() => {
+                          void deleteFinancialFact(selectedFact.id);
+                          setConfirmDeleteFact(false);
+                        }}
+                      >
+                        {text("Remove this fact?")}
+                      </InlineConfirm>
+                    ) : (
+                      <ActionRow className="fact-detail-actions">
+                        <Button className="compact-button" onClick={startEditingFinancialFact}>
+                          <Pencil size={15} />
+                          {text("Edit")}
+                        </Button>
+                        <Button
+                          className="compact-button"
+                          onClick={() => setConfirmDeleteFact(true)}
+                          variant="danger"
+                        >
+                          <Trash2 size={15} />
+                          {text("Remove")}
+                        </Button>
+                      </ActionRow>
+                    )}
                   </div>
                   <InfoGrid
                     className="fact-detail-grid"
@@ -425,10 +452,10 @@ export function FundamentalsPanel({
                   {selectedFactRow && chartPointsFor(selectedFactRow).length > 1 ? (
                     <div className="fact-detail-chart">
                       <span className="eyebrow">
-                        {selectedFactDefinition.label} {text("by period")}
+                        {localizedKpiLabel(selectedFactDefinition, locale)} {text("by period")}
                       </span>
                       <TrendChart
-                        ariaLabel={`${selectedFactDefinition.label} ${text("by period")}`}
+                        ariaLabel={`${localizedKpiLabel(selectedFactDefinition, locale)} ${text("by period")}`}
                         points={chartPointsFor(selectedFactRow)}
                         formatValue={(value) =>
                           formatFinancialValue(
@@ -459,21 +486,49 @@ export function FundamentalsPanel({
           <div className="section-heading">
             <h4>{text("Add financial fact")}</h4>
           </div>
-          <form className="fundamentals-form" onSubmit={saveFinancialFact}>
+          <form
+            className="fundamentals-form"
+            onSubmit={async (event) => {
+              await saveFinancialFact(event);
+              setKpiQuery("");
+            }}
+          >
             <div className="fundamentals-form-grid">
               <label>
                 {text("KPI definition")}
-                <select
+                <input
                   aria-label={text("KPI definition")}
-                  value={financialFactForm.definitionId}
-                  onChange={(event) =>
-                    updateFinancialFactForm("definitionId", event.target.value)
-                  }
-                >
-                  <option value="">{text("Select a KPI")}</option>
+                  list="kpi-definition-options"
+                  onChange={(event) => {
+                    const query = event.target.value;
+                    setKpiQuery(query);
+                    const match = allDefinitions.find(
+                      (definition) =>
+                        localizedKpiLabel(definition, locale) === query ||
+                        definition.metricKey === query,
+                    );
+                    updateFinancialFactForm("definitionId", match?.id ?? "");
+                  }}
+                  placeholder={text("Search a KPI…")}
+                  value={kpiQuery}
+                />
+                <datalist id="kpi-definition-options">
                   {allDefinitions.map((definition) => (
-                    <option key={definition.id} value={definition.id}>
-                      {definition.label} ({definition.metricKey})
+                    <option key={definition.id} value={localizedKpiLabel(definition, locale)} />
+                  ))}
+                </datalist>
+              </label>
+              <label>
+                {text("Reporting period")}
+                <select
+                  aria-label={text("Reporting period")}
+                  value={financialFactForm.periodId}
+                  onChange={(event) => updateFinancialFactForm("periodId", event.target.value)}
+                >
+                  <option value="">{text("Select a period")}</option>
+                  {factMatrix.periods.map((period) => (
+                    <option key={period.id} value={period.id}>
+                      {period.fiscalYear} {period.periodType.toUpperCase()}
                     </option>
                   ))}
                 </select>
@@ -506,6 +561,7 @@ export function FundamentalsPanel({
                 className="compact-button"
                 disabled={
                   !financialFactForm.definitionId ||
+                  !financialFactForm.periodId ||
                   !financialFactForm.valueNumeric
                 }
                 type="submit"

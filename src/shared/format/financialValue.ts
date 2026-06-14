@@ -63,8 +63,11 @@ function formatAsReported(value: FormattableValue): string | null {
   if (!asReported) return null;
 
   const parts = [asReported];
+  // A real scale is a word (tys., mln, mld). Extractors sometimes emit a bare
+  // number like "1" (meaning ×1 / base units) — that is noise, not a scale, and
+  // must not render as a stray "1" (e.g. "15 661 260 1" or "8,63 1 PLN").
   const scale = value.asReportedScale?.trim();
-  if (scale) parts.push(scale);
+  if (scale && !/^[\d.,\s]+$/.test(scale)) parts.push(scale);
 
   const suffix = valueSuffix(value);
   // Avoid doubling "%" if the as-reported figure already carries it.

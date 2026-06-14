@@ -19,6 +19,12 @@
 .content-grid > .detail-pane {
   height: 100%;
   min-height: 0;
+  /* Grid items default to min-width:auto, so a wide descendant would expand the
+     track past the viewport. Pin every grid item to its track width. The detail
+     pane additionally enforces a subtree-wide containment contract (see
+     .detail-pane below) so content wraps/clips internally rather than blowing
+     out the column — no horizontal scroll, no clipped panes. */
+  min-width: 0;
 }
 
 .transcripts-panel {

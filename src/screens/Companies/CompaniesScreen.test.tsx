@@ -608,7 +608,10 @@ describe("Companies screen workflows", () => {
       "href",
       "https://www.gpw.pl/komunikaty",
     );
-    await user.click(within(companyFeedDetail).getByRole("button", { name: "Summarize impact" }));
+    // AI analysis controls live in a modal launched from the detail panel; the
+    // modal portals to <body>, so query its contents at screen level.
+    await user.click(within(companyFeedDetail).getByRole("button", { name: "Analyze with AI" }));
+    await user.click(await screen.findByRole("button", { name: "Summarize impact" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("start_ai_analysis", {
@@ -619,10 +622,13 @@ describe("Companies screen workflows", () => {
         },
       });
     });
+    // The analysis result renders in the modal, which portals to <body> (not
+    // inside the company feed detail subtree).
     expect(
-      await within(companyFeedDetail).findByText("AI summary for Current report placeholder for watchlist company"),
+      await screen.findByText("AI summary for Current report placeholder for watchlist company"),
     ).toBeInTheDocument();
 
+    await user.click(screen.getByRole("button", { name: "Close dialog" }));
     await user.click(within(companyFeedDetail).getByRole("button", { name: "Open in Inbox" }));
 
     expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();

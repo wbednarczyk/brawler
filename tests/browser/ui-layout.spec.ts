@@ -69,19 +69,30 @@ test.describe("browser UI regression smoke", () => {
     await expect(statusFilter).toBeVisible();
     await expect(filterReset).toBeVisible();
 
-    expect((await expectBox(feedPanel)).width).toBeGreaterThanOrEqual(450);
+    // Select a report feed item so the detail pane renders its full content
+    // (attachments, AI analysis panel, KPI extraction panel) — a wide descendant
+    // there must not blow out the grid track and clip the pane.
+    await page
+      .getByLabel(/Select feed item: CD PROJEKT/)
+      .first()
+      .click();
+    await expect(detailPane.getByLabel("AI KPI extraction")).toBeVisible();
+
+    // At this width the two-column grid shrinks its columns to fit beside the
+    // sidebar (rather than overflowing and clipping the detail pane). Both panes
+    // stay visible side-by-side and there is no horizontal overflow.
+    expect((await expectBox(feedPanel)).width).toBeGreaterThanOrEqual(320);
     expect((await expectBox(detailPane)).width).toBeGreaterThanOrEqual(300);
     await expectNoHorizontalOverflow(feedPanel);
+    await expectNoHorizontalOverflow(detailPane);
     await expectNoHorizontalOverflow(filterReset);
     await expectNoHorizontalOverflow(filterToolbar);
 
     const gridScroll = await contentGrid.evaluate((element) => ({
       clientWidth: element.clientWidth,
-      overflowX: window.getComputedStyle(element).overflowX,
       scrollWidth: element.scrollWidth,
     }));
-    expect(gridScroll.overflowX).toBe("auto");
-    expect(gridScroll.scrollWidth).toBeGreaterThanOrEqual(gridScroll.clientWidth);
+    expect(gridScroll.scrollWidth).toBeLessThanOrEqual(gridScroll.clientWidth + 1);
   });
 
   test("keeps notebook panes independently usable", async ({ page }) => {
@@ -136,12 +147,15 @@ test.describe("browser UI regression smoke", () => {
     await expect(memberTable).toBeVisible();
 
     expect((await expectBox(memberTable)).height).toBeGreaterThan(160);
-    await expectScrollable(memberTable);
+    // Bounded scroll region: configured to scroll without pushing the page. We
+    // don't require actual overflow because on a tall window (e.g. the 1280x1440
+    // quarter-ultrawide target) the list legitimately fits without scrolling.
+    await expectScrollContainer(memberTable);
 
     await selectedWatchlist.getByRole("button", { name: "Add companies" }).click();
     const pickerList = selectedWatchlist.locator(".watchlist-picker-list");
     await expect(pickerList).toBeVisible();
-    await expectScrollable(pickerList);
+    await expectScrollContainer(pickerList);
   });
 });
 
@@ -169,6 +183,14 @@ async function expectScrollable(locator: Locator) {
 
   expect(["auto", "scroll"]).toContain(scroll.overflowY);
   expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+}
+
+// Asserts a region is a bounded internal scroll container (it will scroll rather
+// than push the page) without requiring it to currently overflow — content may
+// fit on tall viewports.
+async function expectScrollContainer(locator: Locator) {
+  const overflowY = await locator.evaluate((element) => window.getComputedStyle(element).overflowY);
+  expect(["auto", "scroll"]).toContain(overflowY);
 }
 
 async function expectNoHorizontalOverflow(locator: Locator) {

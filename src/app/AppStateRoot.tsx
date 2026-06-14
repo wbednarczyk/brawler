@@ -213,6 +213,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [geminiCredentialInFlight, setGeminiCredentialInFlight] = useState(false);
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
+  const [workspaceAutoFocusId, setWorkspaceAutoFocusId] = useState<string | null>(null);
   const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
   const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<string | null>(null);
   const [isNotebookComposerOpen, setNotebookComposerOpen] = useState(false);
@@ -277,7 +278,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [financialFactsError, setFinancialFactsError] = useState<string | null>(null);
   const [kpiDefinitionsError, setKpiDefinitionsError] = useState<string | null>(null);
   const [fundamentalsForm, setFundamentalsForm] = useState({ periodFiscalYear: "", periodType: "annual" });
-  const [financialFactForm, setFinancialFactForm] = useState({ definitionId: "", valueNumeric: "", currency: "" });
+  const [financialFactForm, setFinancialFactForm] = useState({ definitionId: "", valueNumeric: "", currency: "", periodId: "" });
   const [selectedFinancialFactId, setSelectedFinancialFactId] = useState<string | null>(null);
   const [isFinancialFactEditMode, setIsFinancialFactEditMode] = useState(false);
   const [fundamentalsError, setFundamentalsError] = useState<string | null>(null);
@@ -805,6 +806,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setSelectedCompanyFeedItemId,
     setSelectedCompanyId,
     setSelectedFeedItemId,
+    setWorkspaceAutoFocusId,
   });
 
   async function refreshFinancialPeriods() {
@@ -831,7 +833,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
 
   async function refreshKpiDefinitions() {
     try {
-      const definitions = await financialsApi.listKpiDefinitions({ scope: "global" });
+      // Load all definitions (canonical + sector + any global), not just one
+      // scope: confirmed facts reference canonical/sector definitions, and the
+      // fundamentals matrix needs them to resolve labels and render rows.
+      const definitions = await financialsApi.listKpiDefinitions({});
       setKpiDefinitions(definitions);
       setKpiDefinitionsError(null);
     } catch (error) {
@@ -1488,6 +1493,8 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               filteredCompanies={filteredCompanies}
               companies={companies}
               selectedCompany={selectedCompany}
+              workspaceAutoFocusId={workspaceAutoFocusId}
+              clearWorkspaceAutoFocus={() => setWorkspaceAutoFocusId(null)}
               membershipsByCompany={membershipsByCompany}
               selectedCompanyFeedStats={selectedCompanyFeedStats}
               companyWorkspaceTab={companyWorkspaceTab}

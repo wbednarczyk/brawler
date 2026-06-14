@@ -22,6 +22,7 @@ type FeedControllerInput = {
   setSelectedCompanyFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
+  setWorkspaceAutoFocusId: Dispatch<SetStateAction<string | null>>;
 };
 
 export function useFeedController({
@@ -41,6 +42,7 @@ export function useFeedController({
   setSelectedCompanyFeedItemId,
   setSelectedCompanyId,
   setSelectedFeedItemId,
+  setWorkspaceAutoFocusId,
 }: FeedControllerInput) {
   function updateFeedItemState(item: FeedItem, update: (item: FeedItem) => FeedItem) {
     const nextItem = update(item);
@@ -149,6 +151,10 @@ export function useFeedController({
     setSelectedCompanyFeedItemId(item.id);
     setCompanyWorkspaceTab("Feed");
     setActiveSection("Companies");
+    // Signal the (cross-screen) workspace to scroll into view and take focus on
+    // open. Only this path requests it — in-list click/keyboard navigation must
+    // not steal focus from the company list.
+    setWorkspaceAutoFocusId(company.id);
   }
 
   function inspectCompanyFeedItem(item: FeedItem) {

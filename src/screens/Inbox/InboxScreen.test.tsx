@@ -112,6 +112,8 @@ describe("Inbox screen workflows", () => {
 
     renderApp();
 
+    // AI analysis controls now live in a modal launched from the detail rail.
+    await user.click(await screen.findByRole("button", { name: "Analyze with AI" }));
     await user.click(await screen.findByRole("button", { name: "Summarize impact" }));
 
     await waitFor(() => {

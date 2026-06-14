@@ -11,6 +11,13 @@
   padding: 16px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  scroll-margin-top: 12px;
+}
+
+/* Focus is moved here programmatically on open (scroll into view); don't paint a
+   focus ring around the whole card for that. */
+.company-workspace:focus {
+  outline: none;
   background:
     linear-gradient(
       135deg,

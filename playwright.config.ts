@@ -32,6 +32,25 @@ export default defineConfig({
         viewport: { width: 1920, height: 1080 },
       },
     },
+    {
+      // A quarter of a 49" 5120x1440 ultrawide (vertical 4-way split) at 100% OS
+      // scaling: a tall, narrow window the app is commonly run in. Per AGENTS.md.
+      name: "chromium-quarter-uw",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1280, height: 1440 },
+      },
+    },
+    {
+      // The same quarter-ultrawide window at 125% OS scaling (effective CSS px).
+      // This lands in the band where sidebar + two-column content must stack to
+      // avoid clipping the detail pane.
+      name: "chromium-quarter-uw-125",
+      use: {
+        ...devices["Desktop Chrome"],
+        viewport: { width: 1024, height: 1152 },
+      },
+    },
   ],
   webServer: {
     command: `VITE_BRAWLER_BROWSER_SMOKE=1 npx vite --host 127.0.0.1 --port ${port}`,

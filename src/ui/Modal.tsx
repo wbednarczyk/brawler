@@ -1,8 +1,14 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 // Centered overlay dialog. Dependency-free: backdrop click and Esc close it,
 // focus moves into the dialog on open and is restored on close, and the dialog
 // is marked up as an accessible modal. Renders nothing when closed.
+//
+// Rendered through a portal to <body> so it is never a DOM descendant of the
+// surface that launched it (e.g. the feed detail rail). That keeps it free of
+// any ancestor containment/overflow rules and any stacking-context surprises —
+// the modal sizes to the viewport, not to the launching pane.
 
 export type ModalProps = {
   open: boolean;
@@ -40,7 +46,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="ui-modal-overlay"
       onMouseDown={(event) => {
@@ -57,13 +63,14 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
       >
         <div className="ui-modal-header">
           <h3>{title}</h3>
-          <button className="ui-modal-close" type="button" aria-label="Close" onClick={onClose}>
+          <button className="ui-modal-close" type="button" aria-label="Close dialog" onClick={onClose}>
             ×
           </button>
         </div>
         <div className="ui-modal-body">{children}</div>
         {footer ? <div className="ui-modal-footer">{footer}</div> : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

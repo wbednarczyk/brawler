@@ -102,7 +102,7 @@ Intent: answer "what do I know about this company and what should I check later?
 Flow:
 
 1. User opens a company.
-2. Company workspace is one company page with tabs or segmented views for Feed, Notebook, Claims, Transcripts, and Metadata.
+2. Company workspace is one company page with tabs or segmented views for Feed, Notebook, Claims, Transcripts, Fundamentals, and Metadata.
 3. Notebook view lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
 4. User opens a note in the detail pane.
 5. User edits note content, changes claim status, or opens linked source material.
@@ -112,6 +112,27 @@ Acceptance criteria:
 - Company notebook is reachable from both company navigation and feed item context.
 - Open claims and due follow-up periods are visible.
 - Notes can be traced back to feed items, reports, or transcript segments.
+
+## Journey: Track Company Fundamentals From A Report
+
+Intent: turn a periodic report's reported numbers into a structured, source-linked fundamentals view.
+
+Flow:
+
+1. User opens a report feed item (e.g. an ESPI/EBI periodic report) in the detail rail.
+2. The rail shows a compact AI KPI extraction launcher; the user opens it, which presents a centered modal.
+3. In the modal the user picks a report source: an attached PDF, the company's IR reports page, or a pasted PDF URL.
+4. The app extracts reported KPIs for the primary period; the modal shows the job status and proposed values with as-reported figures, confidence, and source snippets.
+5. The user reviews each proposal — confirm, edit, or reject — or bulk-confirms known KPIs and accepts out-of-taxonomy suggestions as new company KPIs. No value is committed without confirmation.
+6. The user opens the company's Fundamentals tab and sees the confirmed values in the KPI-per-period matrix, with trend charts and click-through provenance. Manual entry and custom per-company KPIs cover anything extraction missed.
+
+Acceptance criteria:
+
+- No AI-proposed number becomes a stored fact without explicit confirmation.
+- Heavy extraction interaction happens in the modal, not crammed into the fixed-width detail rail.
+- Confirmed facts appear in the Fundamentals matrix through the same read model as manually entered facts.
+- Values display in their original as-reported scale with localized KPI names, never raw integers or internal ids.
+- A document that is a web page rather than a report PDF is rejected with an actionable message, not a misleading partial extraction.
 
 ## Journey: YouTube Conference To Notes
 

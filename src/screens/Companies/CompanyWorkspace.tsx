@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import {
   BookOpenText,
   CheckCircle2,
@@ -84,6 +85,8 @@ type CompanyWorkspaceProps = Pick<
   | "feedItemSummary"
 > & {
   selectedCompany: Company;
+  autoFocusOnOpen: boolean;
+  onAutoFocusHandled: () => void;
   financialPeriods: FinancialPeriod[];
   financialFacts: FinancialFact[];
   kpiDefinitions: KpiDefinition[];
@@ -104,6 +107,8 @@ type CompanyWorkspaceProps = Pick<
 
 export function CompanyWorkspace({
   selectedCompany,
+  autoFocusOnOpen,
+  onAutoFocusHandled,
   membershipsByCompany,
   selectedCompanyFeedStats,
   companyWorkspaceTab,
@@ -170,9 +175,38 @@ export function CompanyWorkspace({
 }: CompanyWorkspaceProps) {
   const { text } = useLocale();
   const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
+  const workspaceRef = useRef<HTMLElement>(null);
+
+  // The workspace expands inline beneath the selected company row inside the
+  // scrollable list, so opening it via "Open company" from a feed item can land
+  // it off-screen. Only that cross-screen path requests auto-focus; in-list
+  // click/keyboard navigation must not have focus yanked to the workspace.
+  useEffect(() => {
+    if (!autoFocusOnOpen) return;
+    const node = workspaceRef.current;
+    onAutoFocusHandled();
+    if (!node) return;
+    // Scroll only the internal company-list container — not via scrollIntoView,
+    // which would scroll every scrollable ancestor (including the app shell) and
+    // shove the whole UI. Confine the movement to the list that owns the row.
+    const scroller = node.closest<HTMLElement>('[data-company-list="true"]');
+    if (scroller && typeof scroller.scrollTo === "function") {
+      const nodeTop = node.getBoundingClientRect().top;
+      const scrollerTop = scroller.getBoundingClientRect().top;
+      scroller.scrollTo({ top: scroller.scrollTop + nodeTop - scrollerTop - 12, behavior: "smooth" });
+    } else {
+      node.scrollIntoView?.({ block: "nearest" });
+    }
+    node.focus?.({ preventScroll: true });
+  }, [autoFocusOnOpen, onAutoFocusHandled]);
 
   return (
-    <section className="company-workspace" aria-label={text("Company workspace")}>
+    <section
+      aria-label={text("Company workspace")}
+      className="company-workspace"
+      ref={workspaceRef}
+      tabIndex={-1}
+    >
       <div className="company-workspace-header">
         <div>
           <span className="eyebrow">{text("Company workspace")}</span>

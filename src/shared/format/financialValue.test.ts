@@ -98,6 +98,29 @@ describe("formatFinancialValue", () => {
     ).toBe("42.1 %");
   });
 
+  it("ignores a junk numeric as-reported scale (no stray '1')", () => {
+    // Count with a bare "1" scale from the extractor.
+    expect(
+      formatFinancialValue({
+        valueNumeric: "15661260",
+        asReportedValue: "15 661 260",
+        asReportedScale: "1",
+        valueKind: "count",
+      }),
+    ).toBe("15 661 260");
+    // Per-share figure: drop the "1", keep the currency.
+    expect(
+      formatFinancialValue({
+        valueNumeric: "863",
+        currency: "PLN",
+        asReportedValue: "8,63",
+        asReportedScale: "1",
+        valueKind: "monetary",
+        unit: "per_share",
+      }),
+    ).toBe("8,63 PLN");
+  });
+
   it("falls back to the raw string when the base value is not numeric", () => {
     expect(formatFinancialValue({ valueNumeric: "n/a", valueKind: "monetary" })).toBe("n/a");
   });

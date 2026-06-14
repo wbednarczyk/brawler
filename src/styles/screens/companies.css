@@ -658,3 +658,40 @@
 .fact-detail-chart .ui-trend-chart {
   max-width: 540px;
 }
+
+/* Financial fact detail: a readable label-on-left, value-on-right list (side-by
+   -side boxes were hard to scan). */
+.fact-detail-grid {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.fact-detail-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  padding: 7px 2px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.fact-detail-grid > div:last-child {
+  border-bottom: none;
+}
+
+.fact-detail-grid dt {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fact-detail-grid dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}

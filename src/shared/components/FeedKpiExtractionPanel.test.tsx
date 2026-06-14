@@ -116,6 +116,13 @@ beforeEach(() => {
   });
 });
 
+// The interactive flow (source buttons, paste, proposal review) lives in a modal
+// launched from the compact rail panel. Open it before driving the flow.
+async function openExtractor(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole("button", { name: "Extract KPIs" }));
+  return screen.findByRole("dialog", { name: /KPI extraction/ });
+}
+
 describe("FeedKpiExtractionPanel", () => {
   it("extracts from an attachment and confirms only the chosen proposal", async () => {
     const user = userEvent.setup();
@@ -142,6 +149,7 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
+    await openExtractor(user);
     const extract = await screen.findByRole("button", { name: /Extract from attachment/ });
     await user.click(extract);
 
@@ -163,7 +171,7 @@ describe("FeedKpiExtractionPanel", () => {
     });
   });
 
-  it("bulk-confirms known KPIs and auto-closes when none remain pending", async () => {
+  it("bulk-confirms known KPIs and keeps the flow open for further work", async () => {
     const user = userEvent.setup();
     vi.mocked(startKpiExtraction).mockResolvedValue(
       succeededJob([
@@ -182,16 +190,18 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
+    await openExtractor(user);
     await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
-    expect(await screen.findByRole("dialog", { name: /Proposed KPI values/ })).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Confirm all known" }));
+    await user.click(await screen.findByRole("button", { name: "Confirm all known" }));
 
     await waitFor(() => expect(confirmKpiProposal).toHaveBeenCalledTimes(2));
     expect(vi.mocked(confirmKpiProposal).mock.calls.every((call) => call[0].acceptAsNewKpi === false)).toBe(true);
 
-    // Every proposal handled -> the modal closes itself.
-    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // The flow no longer closes itself; once nothing is pending the footer offers
+    // an explicit Close so the user can extract another source if they want.
+    expect(await screen.findByRole("button", { name: "Close" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: /KPI extraction/ })).toBeInTheDocument();
   });
 
   it("accepts all AI suggestions as new KPIs in bulk", async () => {
@@ -212,16 +222,40 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
+    await openExtractor(user);
     await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
-    await screen.findByRole("dialog", { name: /Proposed KPI values/ });
 
-    await user.click(screen.getByRole("button", { name: "Accept all suggestions" }));
+    await user.click(await screen.findByRole("button", { name: "Accept all suggestions" }));
 
     await waitFor(() => expect(confirmKpiProposal).toHaveBeenCalledTimes(1));
     expect(vi.mocked(confirmKpiProposal).mock.calls[0][0]).toMatchObject({
       proposalId: "p_bk",
       acceptAsNewKpi: true,
     });
+  });
+
+  it("reopens the extractor stably after every proposal is handled", async () => {
+    const user = userEvent.setup();
+    // Job comes back with nothing pending (all already confirmed).
+    vi.mocked(startKpiExtraction).mockResolvedValue(
+      succeededJob([proposal({ id: "p_rev", label: "Revenue", status: "confirmed", factId: "fact_1" })])
+    );
+
+    render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
+
+    await openExtractor(user);
+    await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
+
+    // Nothing pending -> the footer offers Close; closing returns to the rail.
+    await user.click(await screen.findByRole("button", { name: "Close" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+
+    // The launcher now reopens the review; it must stay open (regression: it used
+    // to blink shut immediately when reopened after results were handled).
+    await user.click(await screen.findByRole("button", { name: /Review extracted KPIs/ }));
+    const dialog = await screen.findByRole("dialog", { name: /KPI extraction/ });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(dialog).toBeInTheDocument();
   });
 
   it("rejects a proposal without committing a fact", async () => {
@@ -238,6 +272,7 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
+    await openExtractor(user);
     await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
     await screen.findByText("Revenue");
     await user.click(screen.getByRole("button", { name: "Reject" }));
@@ -257,6 +292,7 @@ describe("FeedKpiExtractionPanel", () => {
 
     render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
 
+    await openExtractor(user);
     await user.click(await screen.findByRole("button", { name: "Fetch report from IR page" }));
     expect(await screen.findByText("Q3 2025")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Use this" })).toBeInTheDocument();

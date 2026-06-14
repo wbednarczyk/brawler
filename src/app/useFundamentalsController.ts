@@ -15,6 +15,7 @@ export type FinancialFactForm = {
   definitionId: string;
   valueNumeric: string;
   currency: string;
+  periodId: string;
 };
 
 type FundamentalsControllerInput = {
@@ -102,9 +103,7 @@ export function useFundamentalsController({
           confirmationState: "confirmed",
         });
       } else {
-        const selectedPeriod = financialPeriods.find(
-          (p) => p.id === (financialFactForm as any).selectedPeriodId
-        );
+        const selectedPeriod = financialPeriods.find((p) => p.id === financialFactForm.periodId);
         if (!selectedPeriod) {
           setFundamentalsError(text("Please select a reporting period"));
           return;
@@ -130,6 +129,7 @@ export function useFundamentalsController({
         definitionId: "",
         valueNumeric: "",
         currency: "",
+        periodId: "",
       });
       setSelectedFinancialFactId(null);
       setIsFinancialFactEditMode(false);
@@ -165,6 +165,7 @@ export function useFundamentalsController({
         definitionId: fact.definitionId,
         valueNumeric: fact.valueNumeric,
         currency: fact.currency || "",
+        periodId: fact.periodId,
       });
     }
   }
@@ -180,6 +181,7 @@ export function useFundamentalsController({
       definitionId: "",
       valueNumeric: "",
       currency: "",
+      periodId: "",
     });
   }
 

@@ -26,6 +26,8 @@ The first migrated primitives are:
 - `Subnav` for icon-supported section navigation with stable active, hover, focus, long-label, and overflow behavior
 - `FieldRow` for grouped setting controls
 - `SelectField` for native select controls with consistent label and control styling
+- `TextField` for single-line text inputs with consistent border, padding, focus ring, placeholder, and disabled treatment (the text-input counterpart to `SelectField`; replaces raw `<input>` elements that previously inherited no shared styling)
+- `DetailSection` for self-contained detail-rail cards that establish the rail containment contract (see ADR 0030)
 - `Button` for app-owned button variants behind a stable UI boundary
 - `StatusChip` for compact status labels and repeated metadata chips
 - `StatusPill` for existing membership/status pill treatment while older screens migrate

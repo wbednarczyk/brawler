@@ -31,6 +31,17 @@ The first implementation will not:
 - replace existing Vitest/jsdom component and workflow tests
 - perform live source/API testing
 
+## Update (v0.37): assertion-driven journeys, layout invariants, and a console gate
+
+A cluster of UI bugs (clipped detail pane, modal blink, a no-op bulk action, broken manual fact-add, a confirmed KPI not appearing) reached manual testing because the browser layer was largely a screenshot/eyeball harness rather than an assertion suite — it rendered the real app across the viewport matrix but mostly captured instead of asserting. The browser layer is therefore extended (still opt-in, still `tests/browser/`):
+
+- **Shared harness** (`tests/browser/helpers/harness.ts`): an extended `test` with an auto **console-error gate** (any `console.error` / uncaught page error fails the test, catching React warnings and silent breakage), plus reusable layout invariants (`expectNoPageOverflow`, `expectNoHorizontalOverflow` deep-scan, `expectInternalScroll`).
+- **Journey scenarios** (`journeys.spec.ts`): end-to-end flows with assertions at each step (extract → review → confirm; open-company focuses the workspace without scrolling the app; confirmed KPI surfaces in the fundamentals matrix). These target the wiring / state-machine / visibility bug classes.
+- **Layout smoke-walk** (`smoke-walk.spec.ts`): walks every primary screen asserting no page-level horizontal overflow, and deep-scans the detail rail (where `overflow:hidden` hides the symptom) for blowouts. The page-level gate is the low-noise invariant; the per-element deep scan is reserved for the rail/modal and skips replaced/interactive leaf controls to avoid sub-pixel false positives.
+- The matrix now samples four viewports (compact, wide, and the tall/narrow quarter-ultrawide at 100% and 125% scaling) per the AGENTS.md UI scaling requirement.
+
+Preference order remains: make a bug structurally impossible (e.g. the `DetailSection` containment primitive, ADR 0030) > assert an invariant > assert a journey > screenshot. The deep-scan immediately surfaced a pre-existing contained overflow on the Watchlists header, filed as a separate bug.
+
 ## Consequences
 
 The project gains a practical guardrail for layout regressions that have already consumed iteration time. The suite is intentionally narrow and opt-in so it does not slow the default development loop or add CI/browser-install complexity before it proves stable.

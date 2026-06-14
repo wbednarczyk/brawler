@@ -97,4 +97,18 @@ describe("buildFactMatrix", () => {
     expect(matrix.rows[1].cells.p1).toBeUndefined();
     expect(matrix.rows[1].cells.p2?.id).toBe("f3");
   });
+
+  it("never drops a fact whose definition is not loaded (synthesizes a row)", () => {
+    const periods = [period("p1", 2026, "h1", "2026-06-30")];
+    // Definitions list is empty (e.g. wrong scope loaded) but a confirmed fact
+    // references a canonical definition id.
+    const facts = [fact("f1", "p1", "kpidef_revenue")];
+
+    const matrix = buildFactMatrix(periods, facts, []);
+
+    expect(matrix.rows).toHaveLength(1);
+    expect(matrix.rows[0].definition.id).toBe("kpidef_revenue");
+    expect(matrix.rows[0].definition.label).toBe("Revenue");
+    expect(matrix.rows[0].cells.p1?.id).toBe("f1");
+  });
 });

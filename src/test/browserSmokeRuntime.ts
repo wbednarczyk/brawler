@@ -81,6 +81,32 @@ const feedItems: FeedItem[] = companies.slice(0, 7).map((entry, index) => ({
   attachments: [{ id: `attachment_${entry.id}`, label: "report.pdf", url: "https://example.test/report.pdf" }],
 }));
 
+// A realistic "results" report with several long-named PDF attachments, used to
+// check the extraction panel's source-button layout under real-world filenames.
+feedItems.push({
+  id: "feed_results_report",
+  company: "GPW:CDR",
+  type: "Official report",
+  source: "Bankier Company Komunikaty",
+  time: "Today 08:20",
+  title: "CD PROJEKT S.A. — wyniki za I półrocze 2026",
+  unread: true,
+  saved: false,
+  sourceUrl: "https://example.test/source",
+  language: "pl",
+  publishedAt: "2026-06-08T20:12:13Z",
+  fetchedAt: "2026-06-14T08:20:00Z",
+  attribution: "Bankier Company Komunikaty",
+  summary: "Półroczne wyniki finansowe wraz z raportem z przeglądu.",
+  bodyText: "Treść raportu okresowego dostępna do podglądu.",
+  attachments: [
+    { id: "att_results_1", label: "H1_25_26_Sprawozdanie Zarządu.pdf", url: "https://example.test/H1_25_26_Sprawozdanie_Zarzadu.pdf" },
+    { id: "att_results_2", label: "H1_25_26_Sprawozdanie_finansowe.pdf", url: "https://example.test/H1_25_26_Sprawozdanie_finansowe.pdf" },
+    { id: "att_results_3", label: "AB S.A._31.03.2026_Raport z przeglądu śródrocznego skróconego JSF_MSSF.pdf", url: "https://example.test/AB_JSF_MSSF.pdf" },
+    { id: "att_results_4", label: "GK AB_31.03.2026_Raport z przeglądu śródrocznego skróconego SSF_MSSF.pdf", url: "https://example.test/GK_AB_SSF_MSSF.pdf" },
+  ],
+});
+
 const sourceAdapters: SourceAdapter[] = [
   sourceAdapter("gpw-company-registry", "GPW Company Directory", "company_registry", "required", true, ["GPW"], 470),
   sourceAdapter("newconnect-company-directory", "NewConnect Company Directory", "company_registry", "required", true, ["NEWCONNECT"], 350),
@@ -293,6 +319,11 @@ function seedExtractionJob(reportDocumentId: string): KpiExtractionJob {
 }
 
 export function installBrowserSmokeRuntime() {
+  // Allow `?locale=pl` to preview the app in Polish (used by UI screenshot specs).
+  const requestedLocale = new URLSearchParams(window.location.search).get("locale");
+  if (requestedLocale === "pl" || requestedLocale === "en") {
+    settings.locale = requestedLocale;
+  }
   mockIPC((command, args) => handleCommand(command, args as InvokeArgs), { shouldMockEvents: true });
 }
 
@@ -533,7 +564,8 @@ function kpiDefinition(
 ): KpiDefinition {
   return {
     id,
-    scope: "global",
+    // Matches the real seed: canonical KPIs are scope "canonical", not "global".
+    scope: "canonical",
     companyId: null,
     sector: null,
     metricKey,

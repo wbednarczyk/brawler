@@ -189,6 +189,42 @@
   background: var(--surface-raised);
 }
 
+.ui-text-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ui-text-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-raised);
+  font: inherit;
+  font-size: 13px;
+}
+
+.ui-text-input::placeholder {
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
+}
+
+.ui-text-input:focus {
+  outline: 2px solid color-mix(in srgb, var(--primary) 48%, transparent);
+  outline-offset: 1px;
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+}
+
+.ui-text-input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .field-with-clear {
   position: relative;
   display: block;

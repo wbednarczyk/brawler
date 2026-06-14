@@ -15,7 +15,7 @@ import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
-import { Modal } from "../../ui";
+import { DetailSection, Modal, TextField } from "../../ui";
 import { useLocale } from "../locale";
 import { formatFinancialValue } from "../format/financialValue";
 
@@ -58,7 +58,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
   const [acceptNew, setAcceptNew] = useState<Record<string, boolean>>({});
   const [fiscalYear, setFiscalYear] = useState("");
   const [periodType, setPeriodType] = useState("");
-  const [reviewOpen, setReviewOpen] = useState(false);
+  const [flowOpen, setFlowOpen] = useState(false);
 
   const pdfAttachments = useMemo(
     () => feedItem.attachments.filter((attachment) => /\.pdf($|\?)/i.test(attachment.url)),
@@ -257,32 +257,31 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
   );
 
   const fetchedDocuments = documents.filter((document) => document.fetchStatus === "fetched");
-  const pendingProposals = job?.proposals ?? [];
-  const hasPendingProposals = pendingProposals.some((proposal) => proposal.status === "pending");
+  const proposals = job?.proposals ?? [];
+  const hasPendingProposals = proposals.some((proposal) => proposal.status === "pending");
+  // Split pending proposals by kind so each bulk action is only enabled when it
+  // has something to do — otherwise "Accept all suggestions" appears to blink
+  // (busy toggles, refresh runs) with no visible effect when every proposal is a
+  // known taxonomy KPI and nothing was suggested as new.
+  const hasPendingKnown = proposals.some((p) => p.status === "pending" && !p.isProposedKpi);
+  const hasPendingSuggested = proposals.some((p) => p.status === "pending" && p.isProposedKpi);
+  const canExtract = providerConfigured && companyId != null;
 
-  // Open the review modal when a job finishes with proposals to handle; close it
-  // automatically once nothing is left pending.
+  // Surface the modal automatically once a job finishes with proposals to handle,
+  // so the user lands directly on the review without a second click.
   useEffect(() => {
-    if (job?.status === "succeeded" && hasPendingProposals) setReviewOpen(true);
+    if (job?.status === "succeeded" && hasPendingProposals) setFlowOpen(true);
   }, [job?.status, hasPendingProposals]);
 
-  useEffect(() => {
-    if (reviewOpen && job?.status === "succeeded" && !hasPendingProposals) setReviewOpen(false);
-  }, [reviewOpen, job?.status, hasPendingProposals]);
-
   return (
-    <section className="kpi-extraction-panel" aria-label={text("AI KPI extraction")}>
-      <div className="ai-analysis-header">
-        <div>
-          <h3>
-            <Table2 size={15} />
-            {text("AI KPI extraction")}
-          </h3>
-          <p>{text("Extract reported KPIs from this report; confirm each value before it is saved.")}</p>
-        </div>
-        {job ? <StatusPill tone={jobStatusTone(job.status)}>{text(job.status)}</StatusPill> : null}
-      </div>
-
+    <DetailSection
+      ariaLabel={text("AI KPI extraction")}
+      aside={job ? <StatusPill tone={jobStatusTone(job.status)}>{text(job.status)}</StatusPill> : null}
+      className="kpi-extraction-launcher"
+      description={text("Extract reported KPIs from this report; confirm each value before it is saved.")}
+      icon={<Table2 size={15} />}
+      title={text("AI KPI extraction")}
+    >
       {!providerConfigured ? (
         <p className="ai-analysis-empty">
           {text("Configure a general AI provider in Settings before running analysis.")}
@@ -290,157 +289,196 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
       ) : companyId == null ? (
         <p className="ai-analysis-empty">{text("Track this company to extract KPIs from its reports.")}</p>
       ) : (
-        <>
-          <div className="kpi-extraction-sources" aria-label={text("Report document sources")}>
-            {pdfAttachments.map((attachment) => (
+        <div className="detail-launcher">
+          <span className="detail-launcher-status">
+            {job?.status === "succeeded"
+              ? `${proposals.length} ${text("KPI values extracted")}${
+                  hasPendingProposals
+                    ? ` · ${proposals.filter((p) => p.status === "pending").length} ${text("to review")}`
+                    : ""
+                }`
+              : text("Open the extractor to pick a report source and review proposed KPIs.")}
+          </span>
+          <Button
+            className="compact-button"
+            disabled={busy}
+            onClick={() => setFlowOpen(true)}
+            variant="primary"
+          >
+            <Table2 size={15} />
+            {job?.status === "succeeded" ? text("Review extracted KPIs") : text("Extract KPIs")}
+          </Button>
+        </div>
+      )}
+
+      {error && !flowOpen ? (
+        <p className="error-text">{text("KPI extraction failed.")} {error}</p>
+      ) : null}
+
+      <Modal
+        ariaLabel={text("AI KPI extraction")}
+        onClose={() => setFlowOpen(false)}
+        open={flowOpen}
+        title={text("AI KPI extraction")}
+        footer={
+          hasPendingProposals ? (
+            <>
               <Button
                 className="compact-button"
-                disabled={busy}
-                key={attachment.id}
-                onClick={() => void captureAndExtract(attachment.url, "espi_attachment")}
-                title={attachment.url}
+                disabled={busy || !hasPendingKnown}
+                onClick={() => void confirmAllKnown()}
+                variant="primary"
               >
-                <FileSearch size={15} />
-                {text("Extract from attachment")}: {attachment.label || fileNameFromUrl(attachment.url)}
+                <CheckCircle2 size={15} />
+                {text("Confirm all known")}
               </Button>
-            ))}
-            <Button className="compact-button" disabled={busy} onClick={() => void resolveFromIr()}>
-              <Link2 size={15} />
-              {text("Fetch report from IR page")}
+              <Button
+                className="compact-button"
+                disabled={busy || !hasPendingSuggested}
+                onClick={() => void acceptAllSuggestions()}
+              >
+                {text("Accept all suggestions")}
+              </Button>
+              <Button className="compact-button" disabled={busy} onClick={() => void refreshJob()}>
+                <RefreshCw size={15} />
+                {text("Refresh")}
+              </Button>
+            </>
+          ) : (
+            <Button className="compact-button" onClick={() => setFlowOpen(false)}>
+              {text("Close")}
             </Button>
-          </div>
-
-          <div className="kpi-extraction-paste">
-            <input
-              aria-label={text("Report PDF URL")}
-              onChange={(event) => setPasteUrl(event.target.value)}
-              placeholder={text("Paste a report PDF URL")}
-              value={pasteUrl}
-            />
-            <Button
-              className="compact-button"
-              disabled={busy || !pasteUrl.trim()}
-              onClick={() => void captureAndExtract(pasteUrl.trim(), "user_url")}
-            >
-              {text("Capture & extract")}
-            </Button>
-          </div>
-
-          {fetchedDocuments.length > 0 ? (
-            <ul className="kpi-extraction-documents" aria-label={text("Stored report documents")}>
-              {fetchedDocuments.map((document) => (
-                <li key={document.id}>
-                  <span title={document.url}>
-                    {document.title ?? fileNameFromUrl(document.url)}{" "}
-                    <small>({fileNameFromUrl(document.url)})</small>
-                  </span>
-                  <Button className="compact-button" disabled={busy} onClick={() => void extractDocument(document.id)}>
-                    {text("Extract KPIs")}
-                  </Button>
-                </li>
-              ))}
-            </ul>
+          )
+        }
+      >
+        <div className="kpi-extraction-review">
+          {job ? (
+            <div className="kpi-extraction-status" aria-label={text("Extraction status")}>
+              <StatusPill tone={jobStatusTone(job.status)}>{text(job.status)}</StatusPill>
+              {job.status === "succeeded" ? (
+                <span>
+                  {proposals.length} {text("KPI values extracted")}
+                  {hasPendingProposals
+                    ? ` · ${proposals.filter((p) => p.status === "pending").length} ${text("to review")}`
+                    : ""}
+                </span>
+              ) : null}
+            </div>
           ) : null}
+          {!canExtract ? null : (
+            <>
+              <div className="kpi-extraction-sources" aria-label={text("Report document sources")}>
+                {pdfAttachments.map((attachment) => {
+                  const name = attachment.label || fileNameFromUrl(attachment.url);
+                  return (
+                    <Button
+                      className="compact-button kpi-extraction-source"
+                      disabled={busy}
+                      key={attachment.id}
+                      onClick={() => void captureAndExtract(attachment.url, "espi_attachment")}
+                      title={name}
+                    >
+                      <FileSearch size={15} />
+                      <span className="kpi-extraction-source-text">
+                        <span className="kpi-extraction-source-label">{text("Extract from attachment")}</span>
+                        <span className="kpi-extraction-source-name">{name}</span>
+                      </span>
+                    </Button>
+                  );
+                })}
+                <Button
+                  className="compact-button kpi-extraction-source kpi-extraction-source-action"
+                  disabled={busy}
+                  onClick={() => void resolveFromIr()}
+                >
+                  <Link2 size={15} />
+                  <span className="kpi-extraction-source-text">{text("Fetch report from IR page")}</span>
+                </Button>
+              </div>
 
-          {candidates ? (
-            <div className="kpi-extraction-candidates" aria-label={text("IR page report candidates")}>
-              <p>{text("Pick the report on the IR page:")}</p>
-              {candidates.length === 0 ? (
-                <p className="ai-analysis-empty">{text("No report links found on the IR page.")}</p>
-              ) : (
-                <ul>
-                  {candidates.map((candidate) => (
-                    <li key={candidate.url}>
-                      <span>{candidate.label || candidate.url}</span>
-                      <Button
-                        className="compact-button"
-                        disabled={busy}
-                        onClick={() => void captureAndExtract(candidate.url, "ir_page")}
-                      >
-                        {text("Use this")}
+              <div className="kpi-extraction-paste">
+                <TextField
+                  aria-label={text("Report PDF URL")}
+                  onChange={(event) => setPasteUrl(event.target.value)}
+                  placeholder={text("Paste a report PDF URL")}
+                  value={pasteUrl}
+                />
+                <Button
+                  className="compact-button"
+                  disabled={busy || !pasteUrl.trim()}
+                  onClick={() => void captureAndExtract(pasteUrl.trim(), "user_url")}
+                >
+                  {text("Capture & extract")}
+                </Button>
+              </div>
+
+              {fetchedDocuments.length > 0 ? (
+                <ul className="kpi-extraction-documents" aria-label={text("Stored report documents")}>
+                  {fetchedDocuments.map((document) => (
+                    <li key={document.id}>
+                      <span title={document.url}>
+                        {document.title ?? fileNameFromUrl(document.url)}{" "}
+                        <small>({fileNameFromUrl(document.url)})</small>
+                      </span>
+                      <Button className="compact-button" disabled={busy} onClick={() => void extractDocument(document.id)}>
+                        {text("Extract KPIs")}
                       </Button>
                     </li>
                   ))}
                 </ul>
-              )}
+              ) : null}
+
+              {candidates ? (
+                <div className="kpi-extraction-candidates" aria-label={text("IR page report candidates")}>
+                  <p>{text("Pick the report on the IR page:")}</p>
+                  {candidates.length === 0 ? (
+                    <p className="ai-analysis-empty">{text("No report links found on the IR page.")}</p>
+                  ) : (
+                    <ul>
+                      {candidates.map((candidate) => (
+                        <li key={candidate.url}>
+                          <span>{candidate.label || candidate.url}</span>
+                          <Button
+                            className="compact-button"
+                            disabled={busy}
+                            onClick={() => void captureAndExtract(candidate.url, "ir_page")}
+                          >
+                            {text("Use this")}
+                          </Button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
+            </>
+          )}
+
+          {job?.status === "failed" ? (
+            <div className="ai-analysis-error">
+              <p>{job.error ?? text("KPI extraction failed.")}</p>
             </div>
           ) : null}
-        </>
-      )}
 
-      {job?.status === "failed" ? (
-        <div className="ai-analysis-error">
-          <p>{job.error ?? text("KPI extraction failed.")}</p>
-        </div>
-      ) : null}
-
-      {job && job.status === "succeeded" ? (
-        <div className="kpi-extraction-summary">
-          <span>
-            {pendingProposals.length} {text("KPI values extracted")}
-            {hasPendingProposals ? ` · ${pendingProposals.filter((p) => p.status === "pending").length} ${text("to review")}` : ""}
-          </span>
-          <Button className="compact-button" onClick={() => setReviewOpen(true)} variant="primary">
-            <Table2 size={15} />
-            {text("Review extracted KPIs")}
-          </Button>
-        </div>
-      ) : null}
-
-      <Modal
-        ariaLabel={text("Proposed KPI values")}
-        onClose={() => setReviewOpen(false)}
-        open={reviewOpen}
-        title={text("Review extracted KPIs")}
-        footer={
-          <>
-            <Button
-              className="compact-button"
-              disabled={busy || !hasPendingProposals}
-              onClick={() => void confirmAllKnown()}
-              variant="primary"
-            >
-              <CheckCircle2 size={15} />
-              {text("Confirm all known")}
-            </Button>
-            <Button
-              className="compact-button"
-              disabled={busy || !hasPendingProposals}
-              onClick={() => void acceptAllSuggestions()}
-            >
-              {text("Accept all suggestions")}
-            </Button>
-            <Button className="compact-button" disabled={busy} onClick={() => void refreshJob()}>
-              <RefreshCw size={15} />
-              {text("Refresh")}
-            </Button>
-          </>
-        }
-      >
-        <div className="kpi-extraction-review">
           <div className="kpi-extraction-period">
-            <label>
-              {text("Fiscal year")}
-              <input
-                aria-label={text("Fiscal year")}
-                onChange={(event) => setFiscalYear(event.target.value)}
-                value={fiscalYear}
-              />
-            </label>
-            <label>
-              {text("Period")}
-              <input
-                aria-label={text("Period")}
-                onChange={(event) => setPeriodType(event.target.value)}
-                value={periodType}
-              />
-            </label>
+            <TextField
+              aria-label={text("Fiscal year")}
+              label={text("Fiscal year")}
+              onChange={(event) => setFiscalYear(event.target.value)}
+              value={fiscalYear}
+            />
+            <TextField
+              aria-label={text("Period")}
+              label={text("Period")}
+              onChange={(event) => setPeriodType(event.target.value)}
+              value={periodType}
+            />
           </div>
-          {pendingProposals.length === 0 ? (
+          {proposals.length === 0 ? (
             <p className="ai-analysis-empty">{text("No KPI values were proposed.")}</p>
           ) : (
             <ul>
-              {pendingProposals.map((proposal) => (
+              {proposals.map((proposal) => (
                 <li className="kpi-extraction-proposal" key={proposal.id}>
                   <div className="kpi-extraction-proposal-head">
                     <strong>{proposal.label}</strong>
@@ -471,7 +509,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
                       )}
                     </strong>
                   </p>
-                  <input
+                  <TextField
                     aria-label={`${proposal.label} ${text("value")}`}
                     disabled={proposal.status !== "pending"}
                     onChange={(event) => setEdits((current) => ({ ...current, [proposal.id]: event.target.value }))}
@@ -517,12 +555,6 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
           {error ? <p className="error-text">{error}</p> : null}
         </div>
       </Modal>
-
-      <div className="ai-analysis-footer">
-        {error && !reviewOpen ? (
-          <p className="error-text">{text("KPI extraction failed.")} {error}</p>
-        ) : null}
-      </div>
-    </section>
+    </DetailSection>
   );
 }

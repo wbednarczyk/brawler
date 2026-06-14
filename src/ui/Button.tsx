@@ -12,7 +12,10 @@ const variantClassName: Record<ButtonVariant, string> = {
   secondary: "secondary-button",
   minimal: "minimal-button",
   icon: "icon-button",
-  danger: "icon-button danger-button",
+  // A text-capable danger button (secondary shell + danger color). Icon-only
+  // danger actions use variant="icon" with a "danger-button" className so they
+  // keep the fixed square icon sizing instead of squeezing a label.
+  danger: "secondary-button danger-button",
   action: "action-button",
   ghost: "ghost-button",
 };

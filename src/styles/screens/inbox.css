@@ -528,10 +528,88 @@ summary.feed-body-heading::before {
 }
 
 .detail-pane {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-y: auto;
+  /* The rail is a fixed-width grid track. Never let a horizontal scrollbar or a
+     clipped pane appear here: content must wrap/ellipsis within the track. */
+  overflow-x: hidden;
   padding: 16px;
+}
+
+/* Single containment contract for the whole rail subtree. Block children take
+   the width of their widest descendant's min-content, so one unconstrained
+   element (a long URL, an unbreakable filename, a wide input row) would widen
+   the entire column and clip every sibling. Relaxing min-width on the subtree
+   lets flex/grid descendants shrink instead of forcing the track wider. Uses
+   :where() for zero specificity so component rules still win on other props. */
+.detail-pane :where(*) {
+  min-width: 0;
+}
+
+/* Long unbroken strings (URLs, filenames) wrap rather than push the track. */
+.detail-pane :where(a, p, span, dd, strong, small, li) {
+  overflow-wrap: anywhere;
+}
+
+/* Self-contained rail card. New detail panels render inside this instead of
+   re-deriving containment per element (see DetailSection.tsx). */
+.detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 14px;
+  padding: 11px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.detail-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-section-heading h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.detail-section-heading p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.detail-section-aside {
+  flex: 0 0 auto;
+}
+
+/* Compact launcher row inside a detail-section (status summary + open button). */
+.detail-launcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.detail-launcher-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .detail-icon {
@@ -660,7 +738,11 @@ summary.feed-body-heading::before {
   background: var(--surface-raised);
 }
 
-.kpi-extraction-sources,
+.kpi-extraction-sources {
+  display: grid;
+  gap: 6px;
+}
+
 .kpi-extraction-paste {
   display: flex;
   flex-wrap: wrap;
@@ -671,6 +753,49 @@ summary.feed-body-heading::before {
 .kpi-extraction-paste input {
   flex: 1 1 200px;
   min-width: 0;
+}
+
+/* Source buttons are full-width and left-aligned; the icon stays fixed while a
+   two-line text block shows the action label over a truncated file name. */
+.kpi-extraction-source.compact-button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.kpi-extraction-source > svg {
+  flex: 0 0 auto;
+}
+
+.kpi-extraction-source-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+
+.kpi-extraction-source-action .kpi-extraction-source-text {
+  flex-direction: row;
+}
+
+.kpi-extraction-source-label {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.kpi-extraction-source-name {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .kpi-extraction-documents,
@@ -691,10 +816,48 @@ summary.feed-body-heading::before {
   font-size: 12px;
 }
 
+.kpi-extraction-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .kpi-extraction-period {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+}
+
+.kpi-extraction-period .ui-text-field {
+  flex: 1 1 140px;
+}
+
+/* Modal bodies for the AI analysis + KPI extraction flows (moved out of the
+   narrow detail rail into the centered Modal). */
+.ai-analysis-review,
+.kpi-extraction-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Compact result preview shown in the rail launcher (full detail is in the
+   modal). Prose wraps safely; no wide controls live here. */
+.ai-analysis-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ai-analysis-preview p {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .kpi-extraction-review > ul {

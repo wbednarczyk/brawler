@@ -98,7 +98,10 @@ describe("layout scroll contracts", () => {
     expect(filterResetRule).toContain("flex-wrap: wrap");
     expect(detailPaneRule).toContain("height: 100%");
     expect(detailPaneRule).toContain("min-height: 0");
-    expect(detailPaneRule).toContain("overflow: auto");
+    // The rail scrolls vertically but never horizontally: a fixed-width grid
+    // track must contain its content (wrap/ellipsis) rather than scroll or clip.
+    expect(detailPaneRule).toContain("overflow-y: auto");
+    expect(detailPaneRule).toContain("overflow-x: hidden");
   });
 
   it("keeps Watchlists member companies in a scrollable remaining-height region", () => {

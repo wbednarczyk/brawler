@@ -31,6 +31,8 @@ Expected v1 UI areas:
 - saved items
 - item detail pane with original link, compact metadata, and bottom-aligned publication/fetch timestamps
 - action to create a company notebook note from a feed item
+
+The feed detail pane is a fixed-width side rail and is treated as a containment boundary: it shows compact, read-only summaries plus launchers, never wide interactive controls. Rich flows — AI analysis (preset prompts, custom question, full result) and AI KPI extraction (source selection, capture-by-URL, IR fallback, per-value review and confirmation) — open in the centered modal rather than rendering inline in the rail. The rail shows a status pill and a one-line summary (for completed AI analysis, a significance + summary preview), with a button to open the full flow. This keeps the rail readable at the supported narrow window range and prevents a wide descendant from clipping the pane. New rail panels render inside the `DetailSection` primitive, which bakes in the containment contract so the rail cannot regress.
 - manual refresh control
 - in-app badges for new/unread items
 
@@ -254,15 +256,17 @@ M30 adds on-demand AI research briefs for company and watchlist research scopes.
 
 ### Company Fundamentals
 
-Milestones v0.34.0–v0.36.0 add a fundamentals view for tracked companies: key financial figures pulled from quarterly and annual reports, tracked per reporting period, and charted over time. The intent is to cut the time an investor spends re-reading reports to find the same handful of numbers each quarter.
+Milestones v0.34.0–v0.37.0 add a fundamentals view for tracked companies: key financial figures pulled from quarterly and annual reports, tracked per reporting period, and charted over time. The intent is to cut the time an investor spends re-reading reports to find the same handful of numbers each quarter.
 
 User-facing behavior:
 
-- a fundamentals panel in the company workspace showing key figures per reporting period, where every value links back to the report it came from
-- a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog
-- AI assistance that reads a stored report and proposes figures, which the user confirms, edits, or rejects before anything is saved; no AI-proposed number is stored as a confirmed figure without review
+- a fundamentals panel in the company workspace presenting figures as a KPI-row × reporting-period-column matrix, where every value links back to the report it came from; a fact's detail shows its period, value, source, and status
+- figures are shown the way the report printed them (e.g. `319,7 mln PLN`, `8,63 PLN`) using the as-reported figure captured at extraction, falling back to a locale-aware formatted base value for manually entered numbers; KPI names are localized
+- a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog; the add-fact KPI picker supports inline search
+- AI assistance that reads a stored report and proposes figures, reviewed in a centered modal where the user confirms, edits, or rejects each value, with bulk "confirm all known" and "accept all suggestions" actions; the modal auto-closes when nothing is left to review and no AI-proposed number is stored as a confirmed figure without review
 - the user can also enter and correct figures manually against a report
-- simple charts of a figure over time, and (in v0.41.0) side-by-side comparison of the same figure across companies
+- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.41.0) side-by-side comparison of the same figure across companies
+- the panel and the review modal remain usable in tall, narrow windows (e.g. a quarter of an ultrawide monitor), stacking or shrinking rather than clipping
 
 Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.
 

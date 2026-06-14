@@ -382,8 +382,15 @@ Use browser UI smoke tests for repeated layout risks:
 - fixed app chrome and absence of a global application scrollbar
 - independently scrollable panels in Companies, Watchlists, Notebooks, Inbox, Events, and Sources
 - dense row and category sizing in Sources and other list-heavy screens
-- compact desktop and normal desktop viewport regressions
-- tiny cross-screen navigation smoke when it helps prove the preview harness is wired correctly
+- viewport regressions across the matrix in `playwright.config.ts`: compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide window at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [AGENTS.md](../AGENTS.md)
+- cross-screen navigation smoke when it helps prove the preview harness is wired correctly
+
+The browser layer is assertion-driven, not screenshot-only (see [ADR 0021](adr/0021-browser-ui-regression-testing.md)):
+
+- a shared harness (`tests/browser/helpers/harness.ts`) provides an auto console-error gate (any `console.error`/uncaught error fails the test) and reusable layout invariants (`expectNoPageOverflow`, a deep `expectNoHorizontalOverflow` scan, `expectInternalScroll`)
+- journey scenarios (`tests/browser/journeys.spec.ts`) assert full flows end to end (extract → review → confirm; open-company focuses the workspace without scrolling the app; confirmed KPI surfaces in the fundamentals matrix)
+- a layout smoke-walk (`tests/browser/smoke-walk.spec.ts`) walks every primary screen asserting no page-level horizontal overflow, and deep-scans the detail rail where `overflow:hidden` hides the symptom
+- run a subset with `npx playwright test journeys smoke-walk`; the page-level overflow gate is the low-noise invariant while the per-element deep scan is reserved for the rail/modal
 
 Do not use the first Playwright suite for:
 

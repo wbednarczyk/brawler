@@ -170,6 +170,7 @@ Tabs or segmented views:
 - Notebook
 - Claims
 - Transcripts
+- Fundamentals
 - Metadata
 
 Feed tab:
@@ -214,6 +215,18 @@ Transcripts tab:
 - create note from selected segments
 
 Global or notebook-level transcript entry starts from a required `URL` field and optional company/ticker field. If the company is omitted, the app should try to recognize it after transcription, but the transcript can remain unlinked for general market videos or any non-company-specific recording. Company selection is required only when saving selected segments into a company notebook.
+
+Fundamentals tab:
+
+- reporting periods list and a KPI-per-period matrix (KPI rows × period columns), newest period first
+- as-reported values shown in their original scale (e.g. "1 093,6 mln PLN") with localized KPI names, not internal metric ids
+- a per-KPI trend column (sparkline) plus a larger trend chart for a selected KPI, drawn with the app-owned SVG primitives (no chart dependency)
+- fact detail as a readable label/value list, with edit and remove (inline-confirm) actions
+- manual fact entry: inline KPI search (datalist), a reporting-period selector, value, and currency; the submit is gated on KPI + period + value
+- custom per-company KPI management (create/edit `company`-scope KPI definitions) alongside the seeded `canonical`/`sector` taxonomy
+- confirmed AI-extracted facts surface here through the same read model as manual facts
+
+The Fundamentals tab is the panel half of the company-fundamentals feature; the ingestion/extraction half is launched from report feed item detail (see the AI KPI extraction flow in [UI Flows](ui-flows.md)). The matrix and charts must remain readable across the supported narrow window range; values never render as raw integers or internal ids.
 
 Metadata tab:
 
