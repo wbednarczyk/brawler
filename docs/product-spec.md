@@ -213,7 +213,13 @@ YAML is accepted as the future import/export/bootstrap format for non-secret set
 
 App data lives in the OS app data directory by default, with development-only override support. V1 uses local logs and local Developer-mode metrics only, with no telemetry. Settings expose runtime log level and rotation limits. Developer mode Diagnostics may show local metrics, a full local log viewer, and open the app-owned logs folder for troubleshooting.
 
-Export is part of normal v1 implementation. M20 exports companies, watchlists, watchlist memberships, notebook entries, and non-secret settings. Research data uses structured JSON. Settings use YAML. Import preview validates supported files before applying changes. Full local backup/restore and hosted data services require later design discussions.
+Export is part of normal v1 implementation. M20 exports companies, watchlists, watchlist memberships, notebook entries, and non-secret settings. Research data uses structured JSON. Settings use YAML. Import preview validates supported files before applying changes.
+
+Global search (delivered in `v0.38.0`) lets the user find anything stored locally from one search box in the top toolbar — companies, feed items, notes, transcript text, research briefs, and digests — with ranked results grouped by type and a snippet, and navigation to the matching item. Search is local-only and covers the user's own content.
+
+Automatic local backups (delivered in `v0.38.0`) keep recent copies of the local data so it can be recovered. The app takes a safety copy before any data-structure upgrade and keeps a rotating set of recent backups; if a safety copy cannot be written, the upgrade is stopped. Restore is offered from Developer Diagnostics with explicit confirmation and is applied when the app restarts. Backups stay on the machine and never contain stored API keys. A broader full app-data bundle and hosted data services remain later design discussions.
+
+The Settings Database section exposes advanced performance tuning (how many simultaneous connections the local data store uses and how long operations wait under contention) with safe defaults, range limits, and a reset control; changes apply on the next launch. Like the Logs section, this is an intentionally technical area; ordinary screens keep plain language.
 
 ## Future Experience Directions
 

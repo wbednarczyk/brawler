@@ -1,6 +1,7 @@
 import { useState } from "react";
 import {
   Bot,
+  Database,
   Download,
   FileKey2,
   KeyRound,
@@ -13,6 +14,7 @@ import {
 import { AiSettings } from "./AiSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
+import { DatabaseSettings } from "./DatabaseSettings";
 import { ImportExportSettings } from "./ImportExportSettings";
 import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
@@ -30,6 +32,7 @@ type SettingsTab =
   | "importExport"
   | "shortcuts"
   | "logs"
+  | "database"
   | "license";
 
 const settingsTabs = [
@@ -40,6 +43,7 @@ const settingsTabs = [
   { id: "importExport", icon: Download, labelKey: "settings.importExport.title" },
   { id: "shortcuts", icon: Keyboard, labelText: "Keyboard shortcuts" },
   { id: "logs", icon: Logs, labelText: "Logs" },
+  { id: "database", icon: Database, labelText: "Database" },
   { id: "license", icon: FileKey2, labelText: "License" },
 ] satisfies Array<{ id: SettingsTab; icon: LucideIcon; labelKey?: LocaleKey; labelText?: string }>;
 
@@ -74,6 +78,10 @@ export function SettingsScreen({
   onLogLevelChange,
   onLogMaxFilesChange,
   onLogMaxFileBytesChange,
+  onDbMaxConnectionsChange,
+  onDbBusyTimeoutMsChange,
+  onDbAcquireTimeoutMsChange,
+  onResetDatabaseSettings,
   onClearLicenseKey,
   onLicenseKeyDraftChange,
   onSubmitLicenseKey,
@@ -177,6 +185,15 @@ export function SettingsScreen({
               onLogLevelChange={onLogLevelChange}
               onLogMaxFilesChange={onLogMaxFilesChange}
               onLogMaxFileBytesChange={onLogMaxFileBytesChange}
+            />
+          ) : null}
+          {activeSettingsTab === "database" ? (
+            <DatabaseSettings
+              settings={settings}
+              onDbMaxConnectionsChange={onDbMaxConnectionsChange}
+              onDbBusyTimeoutMsChange={onDbBusyTimeoutMsChange}
+              onDbAcquireTimeoutMsChange={onDbAcquireTimeoutMsChange}
+              onResetDatabaseSettings={onResetDatabaseSettings}
             />
           ) : null}
           {activeSettingsTab === "license" ? (

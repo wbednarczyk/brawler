@@ -108,6 +108,9 @@ fn updates_settings_through_storage_api() {
             log_max_files: Some(8),
             log_max_file_bytes: Some(10_485_760),
             shortcut_bindings: None,
+            db_max_connections: None,
+            db_busy_timeout_ms: None,
+            db_acquire_timeout_ms: None,
         })
         .expect("settings should update");
 
@@ -202,6 +205,9 @@ fn updates_shortcut_bindings_through_storage_api() {
             log_max_files: None,
             log_max_file_bytes: None,
             shortcut_bindings: Some(shortcut_bindings),
+            db_max_connections: None,
+            db_busy_timeout_ms: None,
+            db_acquire_timeout_ms: None,
         })
         .expect("settings should update");
 
@@ -245,6 +251,9 @@ fn rejects_invalid_poll_interval_setting() {
         log_max_files: None,
         log_max_file_bytes: None,
         shortcut_bindings: None,
+        db_max_connections: None,
+        db_busy_timeout_ms: None,
+        db_acquire_timeout_ms: None,
     });
 
     assert!(result.is_err());
@@ -271,6 +280,9 @@ fn rejects_invalid_theme_setting() {
         log_max_files: None,
         log_max_file_bytes: None,
         shortcut_bindings: None,
+        db_max_connections: None,
+        db_busy_timeout_ms: None,
+        db_acquire_timeout_ms: None,
     });
 
     assert!(result.is_err());
@@ -310,6 +322,9 @@ fn rejects_invalid_locale_setting() {
         log_max_files: None,
         log_max_file_bytes: None,
         shortcut_bindings: None,
+        db_max_connections: None,
+        db_busy_timeout_ms: None,
+        db_acquire_timeout_ms: None,
     });
 
     assert!(result.is_err());
@@ -336,6 +351,9 @@ fn rejects_invalid_general_analysis_settings() {
         log_max_files: None,
         log_max_file_bytes: None,
         shortcut_bindings: None,
+        db_max_connections: None,
+        db_busy_timeout_ms: None,
+        db_acquire_timeout_ms: None,
     });
 
     assert!(invalid_provider.is_err());
@@ -356,6 +374,9 @@ fn rejects_invalid_general_analysis_settings() {
         log_max_files: None,
         log_max_file_bytes: None,
         shortcut_bindings: None,
+        db_max_connections: None,
+        db_busy_timeout_ms: None,
+        db_acquire_timeout_ms: None,
     });
 
     assert!(invalid_model.is_err());
@@ -376,6 +397,9 @@ fn rejects_invalid_general_analysis_settings() {
         log_max_files: None,
         log_max_file_bytes: None,
         shortcut_bindings: None,
+        db_max_connections: None,
+        db_busy_timeout_ms: None,
+        db_acquire_timeout_ms: None,
     });
 
     assert!(invalid_timeout.is_err());

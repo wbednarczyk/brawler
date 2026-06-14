@@ -6,6 +6,7 @@ use super::*;
 const PORTAL_ANALIZ_ADAPTER_ID: &str = "portal-analiz";
 
 mod ai_analysis;
+mod backup_pool;
 mod common;
 mod companies;
 mod diagnostics;
@@ -20,6 +21,7 @@ mod research;
 mod research_briefs;
 mod research_reminders;
 mod schema;
+mod search;
 mod settings;
 mod source_registry;
 mod transcripts;

@@ -420,6 +420,11 @@ export type UserSettings = {
     maxFileBytes: number;
   };
   shortcutBindings: Record<string, ShortcutBindingSetting>;
+  database: {
+    maxConnections: number;
+    busyTimeoutMs: number;
+    acquireTimeoutMs: number;
+  };
 };
 
 export type AiProviderCatalogEntry = {

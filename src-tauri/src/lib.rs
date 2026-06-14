@@ -36,8 +36,7 @@ pub fn run() {
             std::fs::create_dir_all(&app_data_dir)?;
 
             let database_path = app_data_dir.join("brawler.sqlite3");
-            let connection = storage::open_database(database_path)?;
-            let state = app_state::AppState::with_data_dir(connection, app_data_dir.clone());
+            let state = storage::open_pool(database_path, app_data_dir.clone())?;
             if developer_mode_requested_from_environment() {
                 state.set_developer_mode_enabled(true)?;
             }
@@ -103,6 +102,10 @@ pub fn run() {
             commands::research::delete_research_reminder,
             commands::research::start_research_digest,
             commands::research::list_research_digests,
+            commands::search::search,
+            commands::backups::backup_status,
+            commands::backups::create_backup,
+            commands::backups::restore_backup,
             commands::ai_analysis::start_ai_analysis,
             commands::ai_analysis::list_ai_analysis,
             commands::ai_analysis::retry_ai_analysis,

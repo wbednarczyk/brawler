@@ -15,6 +15,9 @@ export type UpdateSettingsInput = {
   logMaxFiles?: number;
   logMaxFileBytes?: number;
   shortcutBindings?: Record<string, ShortcutBindingSetting>;
+  dbMaxConnections?: number;
+  dbBusyTimeoutMs?: number;
+  dbAcquireTimeoutMs?: number;
 };
 
 export function getSettings() {

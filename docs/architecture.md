@@ -54,6 +54,8 @@ SQLite is the runtime source of truth for non-secret settings. YAML is an import
 
 SQLite data and local logs live in the OS app data directory by default. Development builds may override the data directory through a dev-only setting or environment variable.
 
+The database runs in WAL mode and is accessed through an `r2d2` connection pool rather than a single shared connection, so background jobs and the UI read concurrently. Startup uses a single bootstrap connection to run migrations, write a pre-migration snapshot, and read pool configuration before building the pool. Full-text search is served by a unified `search_index` FTS5 virtual table maintained as derived state by per-source triggers. Automatic rotating backups and pre-migration snapshots use `VACUUM INTO`; restore is a restart operation. These data-layer boundaries are defined in [ADR 0032](adr/0032-search-and-backup-boundaries.md) and detailed in [Data Model](data-model.md).
+
 Data must include enough origin to audit a feed item:
 
 - source adapter ID
@@ -66,6 +68,18 @@ Data must include enough origin to audit a feed item:
 - raw source reference or checksum
 - notebook note origin links
 - transcript segment origin links
+
+## Source Refresh Scheduling
+
+Source refresh and feed cleanup are currently scheduled in the frontend (`src/app/useAppLifecycleEffects.ts`) with `window.setTimeout`/`setInterval` over the user's poll interval, with start jitter and a backoff that doubles the interval after repeated failures.
+
+Idle-session study (v0.38.0, issue `28d6409`):
+
+- Webview timers are subject to background throttling. Chromium-based webviews (WebView2 on Windows) throttle and coalesce timers when the window is hidden/minimized, and the OS can suspend the webview process under memory pressure or sleep. WebKitGTK behaves similarly when occluded.
+- For the current cadence (poll intervals of minutes), coarse background throttling (~once per minute) does not materially break a multi-minute interval, and screen lock alone does not stop timers. The real stall risk is OS-level app/process suspension, which a Rust-side timer cannot avoid either while the app is suspended.
+- Boundary reminder: refresh runs only while the app is open (background/closed fetching is out of scope until the managed-AI frontier; see [roadmap.md](roadmap.md)).
+
+Decision: keep frontend-driven scheduling for v0.38.0. Move scheduling ownership to a Rust-side scheduler as future hardening — it is more resilient to webview timer throttling and centralizes timing for the autonomous report pipeline (v0.47.0). Tracked as a follow-up implementation issue; not required for this milestone.
 
 ## Extensibility Boundaries
 
@@ -80,6 +94,8 @@ Code organization should follow those boundaries. Large shell files are architec
 Gemini is preferred only for the YouTube press conference transcription workflow because the Gemini API currently has native video/audio understanding and YouTube URL support. M10 requires a working live `provider_gemini` path for supported public YouTube URLs, while automated tests continue to use mocked responses or offline test samples. The implementation must still keep provider boundaries pluggable.
 
 Provider credentials should use a reusable credential boundary rather than provider-specific ad hoc storage. The first credential is the Gemini YouTube transcription API key, but the same boundary must be able to describe future API keys, username/password credentials, session tokens, or other source-specific secret material. Runtime secrets live in the OS keychain and are referenced by provider, purpose, and secret kind; only non-secret status metadata is exposed to the UI.
+
+Global search is a typed-command domain governed by [ADR 0032](adr/0032-search-and-backup-boundaries.md): one search command over the unified `search_index`, with DTOs in `src/api/search.ts` and no SQL in command modules. Backups, pre-migration snapshots, restore, and the connection pool are storage-layer boundaries — UI and command code request backups/restore and read/write pool configuration through typed commands, never by touching files or pool internals directly. Pool configuration is user-tunable through the normal settings boundary and applied at startup.
 
 Import/export is a local typed-command domain governed by [ADR 0018](adr/0018-import-export-boundaries.md). M20 separates format adapters, validation, preview/planning, domain apply, storage operations, commands, and UI workflow. The first section adapters cover research data JSON for companies, watchlists, memberships, and notebooks, plus settings YAML for allowlisted non-secret settings. Future full backup, restore, cloud sync, or alternate file-format adapters should plug into those boundaries instead of reading arbitrary files or dumping runtime tables directly.
 

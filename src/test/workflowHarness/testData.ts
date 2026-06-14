@@ -644,6 +644,11 @@ logs: {
   maxFileBytes: 5_242_880,
 },
 shortcutBindings: {},
+database: {
+  maxConnections: 4,
+  busyTimeoutMs: 5000,
+  acquireTimeoutMs: 10000,
+},
 };
 
 export const initialGeminiCredentialStatus = {

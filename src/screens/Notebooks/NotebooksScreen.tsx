@@ -375,7 +375,7 @@ export function NotebooksScreen({
 
           <div className="notebooks-notes-list" aria-label={text("Notebook note list")}>
             {selectedNotebookScreenEntries.map((entry) => (
-              <div className="notebook-row-block" key={entry.id}>
+              <div className="notebook-row-block" key={entry.id} data-notebook-entry-id={entry.id}>
                 <button
                   aria-label={`${text("Select notebook screen entry")}: ${entry.title}`}
                   className={[

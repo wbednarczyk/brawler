@@ -749,16 +749,62 @@ Rules:
 - Sourced event refreshes update the existing source-keyed row when event date, title, status, source URL, attribution, or fetched timestamp changes.
 - Manual events are for missing or user-known dates, not normal corrections to changed sourced events.
 
-## Search Inputs
+## Search Index
 
-The first schema should leave room for search across:
+Global full-text search is served by a single unified SQLite FTS5 virtual table, `search_index`. See [ADR 0032](adr/0032-search-and-backup-boundaries.md).
 
-- company ticker and display name
+```sql
+CREATE VIRTUAL TABLE search_index USING fts5(
+  title,
+  body,
+  content_type UNINDEXED,   -- 'company' | 'watchlist' | 'feed_item' | 'notebook_entry'
+                            -- | 'transcript_segment' | 'event' | 'research_brief' | 'digest'
+  source_id    UNINDEXED,   -- primary key of the owning source row
+  company_id   UNINDEXED,   -- canonical company for scoping/grouping (nullable)
+  parent_id    UNINDEXED,   -- navigational container when source_id is not the
+                            -- nav target (transcript_segment -> transcript job); nullable
+  tokenize = 'unicode61 remove_diacritics 2'
+);
+```
+
+Indexed content:
+
+- company ticker and display name (`content_type = 'company'`)
+- watchlist name and description (`content_type = 'watchlist'`)
 - feed item title and body text
 - notebook title and Markdown body
-- transcript segment text
+- transcript segment text (`parent_id` = owning transcript job)
+- company event title and type (`content_type = 'event'`)
+- research brief title and body
+- digest title and body
 
-SQLite FTS can be added after the base schema is stable.
+Rules:
+
+- `search_index` is **derived state**, not a source of truth. It is populated by per-source `AFTER INSERT/UPDATE/DELETE` triggers and is fully rebuildable from the source tables, so schema evolution rebuilds the index rather than migrating its shape.
+- The tokenizer is `unicode61 remove_diacritics 2` (language-neutral, diacritic- and case-folding) for the Polish-primary, English-mixed corpus.
+- Existing rows are backfilled when the index migration first applies.
+- User query text is sanitized before reaching `MATCH`; it is never interpolated as FTS5 syntax. Ranking uses `bm25()`; results carry `snippet()`, `content_type`, `company_id`, and `parent_id`.
+- `parent_id` carries the navigational container when an item's own id is not the navigation target — currently the owning transcript job for a transcript segment — so a result opens the specific item. It is `NULL` for content navigated by `source_id` directly.
+
+## Database Safety: WAL, Snapshots, And Backups
+
+Data-safety guarantees for the local SQLite database (`brawler.sqlite3`). See [ADR 0032](adr/0032-search-and-backup-boundaries.md).
+
+- The database runs in WAL journaling mode (`PRAGMA journal_mode = WAL`); a `-wal`/`-shm` sidecar is expected on disk.
+- Backups and pre-migration snapshots are produced with `VACUUM INTO '<path>'` — a consistent, compacted copy safe to take on the live connection.
+- **Pre-migration snapshot:** before the migration runner applies any pending migration, it writes a snapshot named with schema version and timestamp. If the snapshot cannot be written, migration is aborted with a clear error and no schema change is attempted; a failed migration leaves the snapshot intact for manual restore.
+- **Rotating backups:** periodic and on-close backups are written to `<app_data_dir>/backups/`, keeping the last N (oldest pruned). Backup status (last time, count) is inspectable.
+- **Restore** is a restart operation surfaced in Diagnostics: the chosen backup is staged and applied on app relaunch (no hot in-place swap), because live connections hold the database open.
+- A backup is a byte-faithful copy of the database only; it is distinct from M20 import/export documents. Secrets live in the OS keychain, never in the database, so they are absent from backups by construction. No cloud backup.
+
+## Connection Model
+
+The app accesses the database through an `r2d2` connection pool, not a single shared connection. See [ADR 0032](adr/0032-search-and-backup-boundaries.md).
+
+- The pool is uniform (any connection may read or write); SQLite's single-writer rule is absorbed by `busy_timeout` rather than a dedicated-writer split.
+- Each pooled connection sets `journal_mode = WAL`, `foreign_keys = ON`, and `busy_timeout` on creation. Synchronous rusqlite work runs on blocking tasks.
+- **Bootstrap ordering:** a single bootstrap connection runs pending migrations, writes the pre-migration snapshot, and reads pool configuration; the pool is then built from that configuration. Migrations, snapshots, and restore staging run outside the pool.
+- Pool configuration (`maxConnections`, `busyTimeoutMs`, `acquireTimeoutMs`) is read from settings (see User Settings in [contracts.md](contracts.md)). Values are validated and clamped to safe ranges with default fallback, so an invalid value can never prevent the database from opening. Pool sizing is applied at startup, so changes take effect on the next launch.
 
 ## First Migration Scope
 

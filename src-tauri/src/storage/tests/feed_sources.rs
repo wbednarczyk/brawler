@@ -237,7 +237,7 @@ fn source_listing_match_can_use_future_exchange_registry_ticker() {
         })
         .expect("future exchange company should create");
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         connection
             .execute(
                 "
@@ -291,7 +291,7 @@ fn source_listing_match_can_use_future_exchange_registry_ticker() {
     }
 
     let matched = {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         find_company_for_exchange_listing(&connection, "XETRA", "", "DE0007164600")
             .expect("source listing should match")
             .expect("future registry should resolve source identifier")
@@ -451,7 +451,7 @@ fn bankier_rss_ingestion_updates_existing_item_by_source_url() {
         .expect("company should create");
 
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         connection
                 .execute(
                     "
@@ -540,7 +540,7 @@ fn bankier_rss_ingestion_skips_cross_source_media_duplicate() {
     .expect("matched media item should have duplicate signature");
 
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         connection
             .execute(
                 "
@@ -758,7 +758,7 @@ fn does_not_prune_existing_bankier_company_items_during_ingestion() {
         })
         .expect("company should create");
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         connection
                 .execute(
                     "
@@ -790,7 +790,7 @@ fn does_not_prune_existing_bankier_company_items_during_ingestion() {
                 .expect("legacy Bankier item should insert");
     }
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         let legacy_count: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM feed_items WHERE source_adapter_id = ?1",
@@ -808,7 +808,7 @@ fn does_not_prune_existing_bankier_company_items_during_ingestion() {
     let visible_items = state.list_feed_items().expect("feed items should list");
     assert_eq!(visible_items.len(), 2);
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         let legacy_count: i64 = connection
             .query_row(
                 "SELECT COUNT(*) FROM feed_items WHERE source_adapter_id = ?1",
@@ -920,7 +920,7 @@ fn hides_bankier_company_item_after_matching_gpw_report_arrives() {
     assert_eq!(visible_items[0].body_text, "Official GPW body.");
 
     let stored_bankier_count: i64 = {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         connection
             .query_row(
                 "SELECT COUNT(*) FROM feed_items WHERE source_adapter_id = ?1",
@@ -948,7 +948,7 @@ fn prunes_old_unsaved_feed_items_only_when_maintenance_runs() {
         .expect("company should create");
 
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         for (id, published_at, saved) in [
             ("feed_old_unsaved", "2000-01-01T10:00:00Z", false),
             ("feed_old_saved", "2000-01-01T11:00:00Z", true),
@@ -1004,7 +1004,7 @@ fn prunes_old_unsaved_feed_items_only_when_maintenance_runs() {
     assert_eq!(result.items_deleted, 1);
 
     let remaining_ids = {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         let mut statement = connection
             .prepare("SELECT id FROM feed_items ORDER BY id")
             .expect("remaining feed query should prepare");
@@ -1040,7 +1040,7 @@ fn deletes_all_unsaved_feed_items_when_requested() {
         .expect("company should create");
 
     {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         for (id, saved) in [
             ("feed_old_unsaved", false),
             ("feed_recent_unsaved", false),
@@ -1143,7 +1143,7 @@ fn deletes_all_unsaved_feed_items_when_requested() {
     assert_eq!(result.items_deleted, 2);
 
     let (remaining_ids, attachment_count, company_link_count, analysis_count) = {
-        let connection = state.connection.lock().expect("database mutex poisoned");
+        let connection = state.checkout().expect("database connection");
         let mut statement = connection
             .prepare("SELECT id FROM feed_items ORDER BY id")
             .expect("remaining feed query should prepare");

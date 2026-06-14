@@ -49,7 +49,7 @@ export function WeekEventsView({
     const dueClass = companyEventDueClass(event.eventDate);
 
     return (
-      <div className="event-week-card-block" key={event.id}>
+      <div className="event-week-card-block" key={event.id} data-event-id={event.id}>
         <article
           aria-label={`${text("Open event")}: ${event.title}`}
           className={[

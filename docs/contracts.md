@@ -953,6 +953,68 @@ Rules:
 - Logs, diagnostics, metrics, settings export, tests, and UI state must not include full license tokens, private signing material, or raw private key material.
 - Future paid feature, subscription, or hosted activation policies must be added as entitlement-policy or verifier/storage adapters and require a later ADR when they introduce hosted services or billing.
 
+## Global Search
+
+```json
+{
+  "query": "profit warning",
+  "contentTypes": ["company", "watchlist", "feed_item", "notebook_entry", "transcript_segment", "event", "research_brief", "digest"],
+  "companyId": null,
+  "limit": 50
+}
+```
+
+Result shape:
+
+```json
+{
+  "groups": [
+    {
+      "contentType": "feed_item",
+      "matches": [
+        {
+          "sourceId": "feed_item-id",
+          "companyId": "company-id",
+          "parentId": null,
+          "title": "…",
+          "snippet": "…profit warning…",
+          "score": 1.83
+        }
+      ]
+    }
+  ]
+}
+```
+
+Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
+
+- One typed search command queries the unified `search_index` FTS5 table; DTOs live in `src/api/search.ts` and command modules contain no SQL.
+- `query` is sanitized before reaching `MATCH`; user input is never interpolated as FTS5 syntax. An empty/blank query returns no groups.
+- `contentTypes` and `companyId` are optional scoping filters. Omitting `contentTypes` searches all types.
+- Matches are ranked by `bm25()` and returned grouped by `contentType`, each carrying `sourceId`, `companyId`, `parentId`, `title`, `snippet`, and `score` — enough context to render and navigate to the specific item.
+- `parentId` is the navigational container when `sourceId` is not the navigation target (a transcript segment carries its transcript job id); it is `null` otherwise. Snippet highlight markers are control characters (STX/ETX), not HTML, so callers render snippets as plain text.
+- Coverage is companies, watchlists, feed items, notebook entries, transcript segments, company events, research briefs, and digests.
+
+## Database Backups
+
+```json
+{
+  "lastBackupAt": "2026-06-14T10:00:00.000Z",
+  "backupCount": 5,
+  "backups": [
+    { "fileName": "brawler-v0039-2026-06-14T100000Z.sqlite3", "createdAt": "2026-06-14T10:00:00.000Z", "kind": "rotating", "sizeBytes": 1048576 }
+  ]
+}
+```
+
+Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
+
+- Typed commands expose backup status, list, create-now, and restore; UI never touches backup files directly.
+- Backups and pre-migration snapshots are produced with `VACUUM INTO` into `<app_data_dir>/backups/`; rotating backups keep the last N and prune the oldest.
+- `kind` distinguishes `rotating` backups from pre-migration `snapshot` files.
+- Restore requires explicit confirmation, is surfaced in Diagnostics, and is applied on app relaunch (staged, not a hot in-place swap).
+- Backups are local-only byte-faithful copies of the database; they are distinct from import/export documents and contain no keychain secrets. No cloud backup.
+
 ## User Settings
 
 ```json
@@ -973,7 +1035,12 @@ Rules:
     "generalAnalysisTimeoutSeconds": 90
   },
   "aiAnalysisMode": "source_grounded",
-  "shortcutBindings": {}
+  "shortcutBindings": {},
+  "database": {
+    "maxConnections": 4,
+    "busyTimeoutMs": 5000,
+    "acquireTimeoutMs": 10000
+  }
 }
 ```
 
@@ -1032,6 +1099,11 @@ Rules:
 - Settings/About must show local license status and allow valid users to inspect safe metadata, replace the token, and clear the token.
 - Shortcut binding overrides are stored as a JSON object keyed by action ID. Missing entries use the current default binding for that action.
 - Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
+- Settings expose database connection-pool tuning under `database`: `maxConnections`, `busyTimeoutMs`, and `acquireTimeoutMs` (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)).
+- The default pool configuration is `maxConnections` 4, `busyTimeoutMs` 5000, `acquireTimeoutMs` 10000.
+- Pool values are validated and clamped to safe ranges (`maxConnections` 1–16, `busyTimeoutMs` 0–60000, `acquireTimeoutMs` 1000–60000); a missing or invalid value falls back to the default so the database can always open.
+- Pool sizing is applied when the pool is built at startup, so changes persist immediately but take effect on the next app launch; Settings must disclose this.
+- Settings must offer a reset-to-defaults action for database pool configuration.
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.
 - YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.

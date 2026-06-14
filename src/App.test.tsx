@@ -104,13 +104,14 @@ describe("App shell", () => {
     fireEvent.keyDown(document, { key: "2", code: "Digit2", ctrlKey: true });
     expect(await screen.findByRole("heading", { name: "Companies" })).toBeInTheDocument();
 
+    // Ctrl+K focuses global search without leaving the current section.
     fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
-    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
-    const searchInput = screen.getByLabelText("Search feed");
-    expect(searchInput).toHaveFocus();
+    const searchInput = screen.getByLabelText("Global search");
+    await waitFor(() => expect(searchInput).toHaveFocus());
+    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
 
     fireEvent.keyDown(searchInput, { key: "3", code: "Digit3", ctrlKey: true });
-    expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
 
     searchInput.blur();
     fireEvent.keyDown(document, { key: "8", code: "Digit8", ctrlKey: true });

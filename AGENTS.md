@@ -2,6 +2,13 @@
 
 Brawler is a local-first investor newsfeed desktop app. This repository is run as a spec-driven project: documentation and contracts define intent before implementation.
 
+## Two Always-On Rules
+
+These two rules apply at all times, in every session, before anything else. This file (`AGENTS.md`) is loaded into context every session — treat it as read at all times.
+
+1. **Token discipline.** Prefix every shell/file command with `rtk` (see [Tooling and Token Discipline](#tooling-and-token-discipline)).
+2. **Doc-first.** This is a spec-driven repo: the docs are the source of intent, not a record to tidy up afterward. Before any non-trivial change, open and read the canonical doc(s) for the area (map in [Required Reading](#required-reading)) and implement to spec. Update the affected doc(s) in the same change. **Never invent or guess** architecture, scope, data shapes, field names, command names, scopes, or error codes — they are specified. If a spec is missing, ambiguous, or contradicted by reality, propose a doc/ADR change and confirm it before (or as part of) the code change; do not silently pick a design. Epic/milestone planning must update all relevant docs to capture the architecture decisions made, as part of completing the planning.
+
 ## Required Reading
 
 Before making non-trivial changes, agents must read enough project context to understand the affected behavior without loading unrelated reference material.
@@ -22,6 +29,15 @@ Then read only the relevant canonical references for the work being done:
 - Build, test, CI, packaging, or local environment behavior: [docs/engineering-workflow.md](docs/engineering-workflow.md).
 - Module ownership or refactoring: [docs/modularization-design.md](docs/modularization-design.md).
 - Historical completed-card context only when needed: [docs/kanban-archive.md](docs/kanban-archive.md).
+
+### Single Source Of Truth
+
+Every fact has exactly one canonical home; update it there, do not duplicate it elsewhere (duplication is what causes drift):
+
+- **Milestone intent + the active/upcoming plan** → [docs/roadmap.md](docs/roadmap.md) (forward-looking only).
+- **Delivered/release history** → [CHANGELOG.md](CHANGELOG.md) (authoritative per-version) and [docs/kanban-archive.md](docs/kanban-archive.md) (completed-card detail). Not roadmap.
+- **Live epic/task status and IDs** → Radicle/Radboard (`rad issue list --all`). [docs/kanban.md](docs/kanban.md) is only the thin pointer + label conventions; it does not carry milestone narrative or an epic list.
+- **Commands/IPC** → contracts; **data shapes/DB/migrations** → data-model; **product behavior** → product-spec; **UI flows / IA** → ui-flows / ui-information-architecture; **architecture/boundaries + decisions** → architecture + ADRs; **source policy** → source-strategy; **build/test/CI** → engineering-workflow; **module ownership** → modularization-design.
 
 ## Tooling and Token Discipline
 

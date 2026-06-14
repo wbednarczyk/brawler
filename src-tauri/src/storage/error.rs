@@ -4,6 +4,10 @@ use thiserror::Error;
 pub enum StorageError {
     #[error("sqlite error: {0}")]
     Sqlite(#[from] rusqlite::Error),
+    #[error("connection pool error: {0}")]
+    Pool(#[from] r2d2::Error),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
     #[error("yaml error: {0}")]

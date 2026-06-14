@@ -198,7 +198,7 @@ fn creates_transcript_segments_and_keeps_text_immutable() {
         "Management expects a milestone within two quarters."
     );
 
-    let connection = state.connection.lock().expect("database mutex poisoned");
+    let connection = state.checkout().expect("database connection");
     let update_result = connection.execute(
         "UPDATE transcript_segments SET text = ?1 WHERE id = ?2",
         params!["Changed source text", segment.id],

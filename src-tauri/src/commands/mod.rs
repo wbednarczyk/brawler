@@ -1,4 +1,5 @@
 pub mod ai_analysis;
+pub mod backups;
 pub mod companies;
 pub mod credentials;
 pub mod diagnostics;
@@ -13,6 +14,7 @@ pub mod logs;
 pub mod metrics;
 pub mod notebooks;
 pub mod research;
+pub mod search;
 pub mod settings;
 pub mod sources;
 pub mod transcripts;

@@ -49,7 +49,7 @@ export function EventListView({
         const isSelected = selectedCompanyEventId === event.id;
 
         return (
-          <div className="event-row-block" key={event.id}>
+          <div className="event-row-block" key={event.id} data-event-id={event.id}>
             <article
               aria-label={`${text("Open event")}: ${event.title}`}
               className={[

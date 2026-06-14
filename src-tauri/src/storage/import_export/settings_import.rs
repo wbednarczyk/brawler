@@ -154,6 +154,8 @@ fn settings_to_update(settings: ExportSettings) -> StorageResult<SettingsUpdate>
         log_max_files: settings.log_max_files,
         log_max_file_bytes: settings.log_max_file_bytes,
         shortcut_bindings: settings.shortcut_bindings,
+        // Connection-pool tuning is not part of import/export (local-only, ADR 0032).
+        ..SettingsUpdate::default()
     })
 }
 

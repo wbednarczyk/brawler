@@ -77,7 +77,9 @@ Manual review path:
 - Inbox: scan feed rows, change filters, clear representative filter/search inputs, open details, and verify the destructive feed cleanup action is separated from routine review controls.
 - Sources: verify adapters are grouped by purpose, disabled/review candidates are visually distinct, expanded rows remain readable, registry search works, and the clear control resets it.
 - Companies: create a watchlist, toggle company membership on and off, verify feedback and selected states, and clear representative company form fields.
-- Global search: type a query, clear it with the field button, and verify focus returns to the search input.
+- Global search: open the top-toolbar search, type a query, verify ranked results grouped by content type with snippets, select a result and confirm navigation, then clear it with the field button and verify focus returns to the search input.
+- Database settings: open Settings → Database, adjust pool values within range, verify out-of-range values are clamped and reset-to-defaults works, and confirm the "applied on next launch" note is shown.
+- Backups and restore: in Developer Diagnostics, verify backup status and the backup list, create a backup, then exercise restore and confirm it warns about and applies on relaunch (restore recovers a verified earlier state).
 - Polish locale: switch to Polish and check the updated labels in Settings, Sources, Notebooks, Companies, and licensing views.
 
 Record pass/fail notes in the milestone review before asking for closure signoff.

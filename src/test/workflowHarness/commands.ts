@@ -32,6 +32,18 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       return Promise.resolve(appTestState.companiesResponse);
     }
 
+    if (command === "search") {
+      return Promise.resolve(appTestState.searchResponse);
+    }
+
+    if (command === "backup_status" || command === "create_backup") {
+      return Promise.resolve(appTestState.backupStatusResponse);
+    }
+
+    if (command === "restore_backup") {
+      return Promise.resolve(null);
+    }
+
     // v0.36 KPI extraction + IR resolution + report documents (benign defaults;
     // specific tests stub these via their own mocks where behavior matters).
     if (command === "list_report_documents") {

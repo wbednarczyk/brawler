@@ -187,6 +187,44 @@ Acceptance criteria:
 - Locale handling is extensible so future supported languages can be added through locale resources/configuration instead of per-screen rewrites.
 - Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
 
+## Journey: Global Search
+
+Intent: find anything stored locally from anywhere in the app.
+
+Flow:
+
+1. User opens global search from the top-toolbar search box (or its keyboard shortcut).
+2. User types a query.
+3. App shows ranked results grouped by content type (companies, feed items, notes, transcript segments, research briefs, digests), each with a snippet.
+4. User selects a result.
+5. App navigates to the owning screen/item.
+
+Acceptance criteria:
+
+- Searching a known phrase from feed, note, and transcript content returns it and navigates correctly.
+- Results are ranked and grouped by content type with a snippet.
+- The per-workspace search/filter inputs (Inbox, Companies, Notebooks) still work independently.
+- Search copy is available in English and Polish.
+
+## Journey: Restore From Backup
+
+Intent: recover the local data from an automatic backup after loss or a bad upgrade.
+
+Flow:
+
+1. User opens Developer Diagnostics and the backups section.
+2. User reviews backup status and the list of rotating backups and pre-migration snapshots.
+3. User chooses a backup and selects restore.
+4. App requires explicit confirmation and warns that restore is applied on relaunch.
+5. App stages the chosen backup and relaunches to apply it.
+
+Acceptance criteria:
+
+- A backup exists before every data-structure migration; a failed migration leaves the snapshot intact.
+- Rotating backups keep the last N and prune the oldest.
+- Restore from Diagnostics recovers a verified earlier state after relaunch.
+- Restore never performs a hot in-place swap while connections are open.
+
 ## Screen Inventory
 
 V1 screens:

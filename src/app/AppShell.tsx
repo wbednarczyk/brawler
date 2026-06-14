@@ -17,6 +17,8 @@ import type {
 } from "../api/types";
 import { makeTextTranslator, makeTranslator } from "../shared/locale";
 import { useKeyboardShortcuts } from "../shared/shortcuts";
+import type { SearchMatch } from "../api/search";
+import { GlobalSearch } from "./GlobalSearch";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { sections, type Section } from "./navigation";
 import { createAppShortcutDefinitions, type AppShortcutActionMap } from "./shortcuts";
@@ -38,6 +40,7 @@ type AppShellProps = {
   refreshDatabaseBackedViews: () => void;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
   setActiveSection: (section: Section) => void;
+  onNavigateToSearchResult: (match: SearchMatch) => void;
   sourceRefreshError: string | null;
   sourceRefreshResult: SourceIngestionResult | null;
   sourceRefreshState: SourceRefreshState;
@@ -65,6 +68,7 @@ export function AppShell({
   refreshDatabaseBackedViews,
   refreshSources,
   setActiveSection,
+  onNavigateToSearchResult,
   sourceRefreshError,
   sourceRefreshResult,
   sourceRefreshState,
@@ -93,9 +97,8 @@ export function AppShell({
       "app.openSources": () => setActiveSection("Sources"),
       "app.openSettings": () => setActiveSection("Settings"),
       "app.focusSearch": () => {
-        setActiveSection("Inbox");
         window.setTimeout(() => {
-          document.querySelector<HTMLInputElement>("[data-inbox-search-input]")?.focus();
+          document.querySelector<HTMLInputElement>("[data-global-search-input]")?.focus();
         }, 0);
       },
       "app.refreshSources": () => {
@@ -278,6 +281,7 @@ export function AppShell({
 
       <main className="workspace">
         <header className="topbar">
+          <GlobalSearch locale={locale} onNavigate={onNavigateToSearchResult} />
           <div className="topbar-actions">
             <button
               aria-label={t("app.sources.openStatus")}

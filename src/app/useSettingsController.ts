@@ -101,6 +101,22 @@ export function useSettingsController({
     updateSettings({ logMaxFileBytes: nextMaxFileBytes });
   }
 
+  function updateDbMaxConnections(nextMaxConnections: number) {
+    updateSettings({ dbMaxConnections: nextMaxConnections });
+  }
+
+  function updateDbBusyTimeoutMs(nextBusyTimeoutMs: number) {
+    updateSettings({ dbBusyTimeoutMs: nextBusyTimeoutMs });
+  }
+
+  function updateDbAcquireTimeoutMs(nextAcquireTimeoutMs: number) {
+    updateSettings({ dbAcquireTimeoutMs: nextAcquireTimeoutMs });
+  }
+
+  function resetDatabaseSettings() {
+    updateSettings({ dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 });
+  }
+
   function disableDeveloperMode() {
     settingsApi.disableDeveloperMode()
       .then(applySettingsResponse)
@@ -165,6 +181,10 @@ export function useSettingsController({
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
+    updateDbAcquireTimeoutMs,
+    updateDbBusyTimeoutMs,
+    updateDbMaxConnections,
+    resetDatabaseSettings,
     updateLocale,
     updateLogLevel,
     updateLogMaxFileBytes,

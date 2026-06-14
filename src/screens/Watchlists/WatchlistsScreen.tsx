@@ -186,6 +186,7 @@ export function WatchlistsScreen({
                     : "watchlist-row"
                 }
                 key={watchlist.id}
+                data-watchlist-id={watchlist.id}
                 onClick={() => selectWatchlist(watchlist)}
                 type="button"
               >

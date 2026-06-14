@@ -198,6 +198,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "company_ir_reports_url",
         sql: include_str!("../../migrations/0038_company_ir_reports_url.sql"),
     },
+    Migration {
+        version: 39,
+        name: "search_index",
+        sql: include_str!("../../migrations/0039_search_index.sql"),
+    },
+    Migration {
+        version: 40,
+        name: "database_pool_settings",
+        sql: include_str!("../../migrations/0040_database_pool_settings.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -224,6 +234,26 @@ pub(super) fn database_status(connection: &Connection) -> StorageResult<Database
 #[cfg(test)]
 pub(super) fn expected_migration_count() -> i64 {
     MIGRATIONS.len() as i64
+}
+
+pub(super) fn migration_count() -> i64 {
+    MIGRATIONS.len() as i64
+}
+
+/// Number of applied migrations, or 0 when the database has no migration table
+/// yet (a brand-new database).
+pub(super) fn count_applied_migrations(connection: &Connection) -> StorageResult<i64> {
+    let table_exists: bool = connection.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations')",
+        [],
+        |row| row.get(0),
+    )?;
+
+    if !table_exists {
+        return Ok(0);
+    }
+
+    count_rows(connection, "schema_migrations")
 }
 
 pub(super) fn apply_migrations(connection: &mut Connection) -> StorageResult<()> {

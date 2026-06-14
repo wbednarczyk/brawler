@@ -127,7 +127,7 @@ export function TranscriptJobRow({
   const isTranscriptDescriptionDirty = transcriptDescriptionDraft !== (job.sourceLabel ?? "");
   
   return (
-    <div className="source-row-block" key={job.id}>
+    <div className="source-row-block" key={job.id} data-transcript-job-id={job.id}>
       <DenseRow
         className={[
           "source-row",

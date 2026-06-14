@@ -61,6 +61,12 @@ export const appTestState = {
   localMetricsSnapshotResponse: initialLocalMetricsSnapshot,
   licenseStatusResponse: initialLicenseStatus,
   sourceAdaptersResponse: cloneSourceAdapters(),
+  searchResponse: { groups: [] } as { groups: unknown[] },
+  backupStatusResponse: { lastBackupAt: null, backupCount: 0, backups: [] } as {
+    lastBackupAt: string | null;
+    backupCount: number;
+    backups: unknown[];
+  },
 };
 
 export function buildResearchTimeline(input: ResearchEvidenceInput) {
@@ -165,4 +171,6 @@ export function resetAppTestState() {
   appTestState.localMetricsSnapshotResponse = initialLocalMetricsSnapshot;
   appTestState.licenseStatusResponse = initialLicenseStatus;
   appTestState.sourceAdaptersResponse = cloneSourceAdapters();
+  appTestState.searchResponse = { groups: [] };
+  appTestState.backupStatusResponse = { lastBackupAt: null, backupCount: 0, backups: [] };
 }

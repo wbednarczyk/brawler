@@ -30,10 +30,15 @@ use crate::source_adapters::gpw_market_events::{
 use crate::source_adapters::newconnect_company_directory::{
     ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID, SOURCE_URL as NEWCONNECT_DIRECTORY_SOURCE_URL,
 };
+use r2d2::PooledConnection;
+use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
+type SqlitePool = r2d2::Pool<SqliteConnectionManager>;
+
 mod ai_analysis;
+mod backup;
 mod companies;
 mod diagnostics;
 mod error;
@@ -47,12 +52,14 @@ mod licensing;
 mod metrics;
 mod migrations;
 mod notebooks;
+mod pool;
 mod registry;
 mod report_documents;
 mod research;
 mod research_briefs;
 mod research_digests;
 mod research_reminders;
+mod search;
 mod settings;
 mod sources;
 mod transcripts;
@@ -63,6 +70,7 @@ pub use ai_analysis::{
     AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
     NewAiAnalysisJob, NewAiAnalysisSourceReference,
 };
+pub use backup::{BackupEntry, BackupStatus};
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
 pub use financials::{
@@ -81,6 +89,7 @@ pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
 pub use migrations::{open_database, open_in_memory_database};
+pub use pool::open_pool;
 pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
 pub use research_briefs::{
     CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
@@ -97,6 +106,7 @@ pub use research_digests::{
 pub use research_reminders::{
     NewResearchReminder, ResearchReminder, ResearchReminderListInput, ResearchReminderUpdate,
 };
+pub use search::SearchMatch;
 pub use settings::{
     AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
 };
@@ -113,9 +123,45 @@ const BANKIER_WIADOMOSCI_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/wiad
 const STREFA_REPORT_CALENDAR_SOURCE_URL: &str = "https://strefainwestorow.pl/dane/raporty";
 const MONEY_CALENDAR_SOURCE_URL: &str = "https://www.money.pl/gielda/raporty/";
 
+/// How the app reaches SQLite. Production uses an r2d2 pool (concurrent readers
+/// under WAL); tests use a single shared connection so an in-memory database is
+/// not duplicated per pooled connection. See [ADR 0032].
+#[derive(Clone)]
+enum Db {
+    Pool(SqlitePool),
+    Single(Arc<Mutex<Connection>>),
+}
+
+/// A checked-out connection that derefs to `rusqlite::Connection`, regardless of
+/// whether it came from the pool or the single test connection.
+enum DbGuard<'a> {
+    Pooled(PooledConnection<SqliteConnectionManager>),
+    Locked(std::sync::MutexGuard<'a, Connection>),
+}
+
+impl std::ops::Deref for DbGuard<'_> {
+    type Target = Connection;
+
+    fn deref(&self) -> &Connection {
+        match self {
+            DbGuard::Pooled(connection) => connection,
+            DbGuard::Locked(connection) => connection,
+        }
+    }
+}
+
+impl std::ops::DerefMut for DbGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Connection {
+        match self {
+            DbGuard::Pooled(connection) => connection,
+            DbGuard::Locked(connection) => connection,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
-    connection: Arc<Mutex<Connection>>,
+    db: Db,
     runtime_metrics: Arc<RuntimeMetricCounters>,
     data_dir: PathBuf,
 }
@@ -127,9 +173,27 @@ impl AppState {
 
     pub fn with_data_dir(connection: Connection, data_dir: PathBuf) -> Self {
         Self {
-            connection: Arc::new(Mutex::new(connection)),
+            db: Db::Single(Arc::new(Mutex::new(connection))),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
+        }
+    }
+
+    pub(super) fn with_pool(pool: SqlitePool, data_dir: PathBuf) -> Self {
+        Self {
+            db: Db::Pool(pool),
+            runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
+            data_dir,
+        }
+    }
+
+    /// Check out a connection for a single storage operation.
+    fn checkout(&self) -> StorageResult<DbGuard<'_>> {
+        match &self.db {
+            Db::Pool(pool) => Ok(DbGuard::Pooled(pool.get()?)),
+            Db::Single(connection) => Ok(DbGuard::Locked(
+                connection.lock().expect("database mutex poisoned"),
+            )),
         }
     }
 
@@ -164,31 +228,57 @@ impl AppState {
         &self,
         app_data_dir: &std::path::Path,
     ) -> StorageResult<LocalMetricsSnapshot> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         metrics::collect_local_metrics_snapshot(&connection, &self.runtime_metrics, app_data_dir)
     }
 
     pub fn database_status(&self) -> StorageResult<DatabaseStatus> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         migrations::database_status(&connection)
     }
 
+    pub fn backup_status(&self) -> StorageResult<BackupStatus> {
+        backup::collect_status(&self.data_dir)
+    }
+
+    pub fn create_backup(&self) -> StorageResult<BackupStatus> {
+        let connection = self.checkout()?;
+
+        backup::create_rotating_backup(&connection, &self.data_dir)
+    }
+
+    pub fn request_restore(&self, file_name: &str) -> StorageResult<()> {
+        backup::request_restore(&self.data_dir, file_name)
+    }
+
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::list_companies(&connection)
     }
 
+    pub fn search(
+        &self,
+        query: &str,
+        content_types: &[String],
+        company_id: Option<&str>,
+        limit: i64,
+    ) -> StorageResult<Vec<SearchMatch>> {
+        let connection = self.checkout()?;
+
+        search::run_search(&connection, query, content_types, company_id, limit)
+    }
+
     pub fn create_company(&self, input: NewCompany) -> StorageResult<Company> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::create_company(&connection, input)
     }
 
     pub fn get_company_ir_reports_url(&self, company_id: &str) -> StorageResult<Option<String>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::get_company_ir_reports_url(&connection, company_id)
     }
@@ -198,7 +288,7 @@ impl AppState {
         company_id: &str,
         url: Option<&str>,
     ) -> StorageResult<Option<String>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::set_company_ir_reports_url(&connection, company_id, url)
     }
@@ -207,19 +297,19 @@ impl AppState {
         &self,
         input: CompanyLookupInput,
     ) -> StorageResult<Option<CompanyLookupResult>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::lookup_company(&connection, input)
     }
 
     pub fn company_directories_need_bootstrap_refresh(&self) -> StorageResult<bool> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::company_directories_need_bootstrap_refresh(&connection)
     }
 
     pub fn company_directories_are_stale(&self, stale_after_seconds: i64) -> StorageResult<bool> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::company_directories_are_stale(&connection, stale_after_seconds)
     }
@@ -229,7 +319,7 @@ impl AppState {
         entries: &[GpwCompanyRegistryEntry],
         fetched_at: &str,
     ) -> StorageResult<CompanyRegistryRefreshResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         companies::refresh_company_directory(
             &mut connection,
@@ -244,7 +334,7 @@ impl AppState {
         entries: &[GpwCompanyRegistryEntry],
         fetched_at: &str,
     ) -> StorageResult<CompanyRegistryRefreshResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         companies::refresh_company_directory(
             &mut connection,
@@ -255,31 +345,31 @@ impl AppState {
     }
 
     pub fn delete_company(&self, company_id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         companies::delete_company(&connection, company_id)
     }
 
     pub fn export_research_data(&self) -> StorageResult<ExportPayload> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         import_export::export_research_data(&connection)
     }
 
     pub fn preview_research_import(&self, contents: &str) -> StorageResult<ImportPreview> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         import_export::preview_research_import(&connection, contents)
     }
 
     pub fn apply_research_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         import_export::apply_research_import(&mut connection, contents)
     }
 
     pub fn export_settings_data(&self) -> StorageResult<ExportPayload> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         import_export::export_settings_data(&connection)
     }
@@ -289,55 +379,55 @@ impl AppState {
     }
 
     pub fn apply_settings_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         import_export::apply_settings_import(&connection, contents)
     }
 
     pub fn list_watchlists(&self) -> StorageResult<Vec<Watchlist>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::list_watchlists(&connection)
     }
 
     pub fn list_watchlist_memberships(&self) -> StorageResult<Vec<WatchlistMembership>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::list_watchlist_memberships(&connection)
     }
 
     pub fn create_watchlist(&self, input: NewWatchlist) -> StorageResult<Watchlist> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::create_watchlist(&connection, input)
     }
 
     pub fn rename_watchlist(&self, input: WatchlistUpdate) -> StorageResult<Watchlist> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::rename_watchlist(&connection, input)
     }
 
     pub fn delete_watchlist(&self, watchlist_id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::delete_watchlist(&connection, watchlist_id)
     }
 
     pub fn add_company_to_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::add_company_to_watchlist(&connection, input)
     }
 
     pub fn remove_company_from_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         watchlists::remove_company_from_watchlist(&connection, input)
     }
 
     pub fn list_feed_items(&self) -> StorageResult<Vec<FeedItem>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         feed::list_feed_items(&connection)
     }
@@ -346,7 +436,7 @@ impl AppState {
         &self,
         adapter_id: &str,
     ) -> StorageResult<Vec<UnmatchedSourceItem>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         feed::list_unmatched_source_items(&connection, adapter_id)
     }
@@ -355,7 +445,7 @@ impl AppState {
         &self,
         input: ResearchEvidenceInput,
     ) -> StorageResult<ResearchTimelineResult> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::list_research_evidence(&connection, input)
     }
@@ -364,7 +454,7 @@ impl AppState {
         &self,
         input: ResearchReviewCheckpointInput,
     ) -> StorageResult<ResearchReviewCheckpoint> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::mark_research_scope_reviewed(&connection, input)
     }
@@ -373,7 +463,7 @@ impl AppState {
         &self,
         input: ResearchReviewCheckpointInput,
     ) -> StorageResult<Option<ResearchReviewCheckpoint>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::list_research_review_state(&connection, input)
     }
@@ -382,7 +472,7 @@ impl AppState {
         &self,
         input: ResearchQuestionListInput,
     ) -> StorageResult<Vec<ResearchQuestion>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::list_research_questions(&connection, input)
     }
@@ -391,7 +481,7 @@ impl AppState {
         &self,
         input: NewResearchQuestion,
     ) -> StorageResult<ResearchQuestion> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::create_research_question(&connection, input)
     }
@@ -400,19 +490,19 @@ impl AppState {
         &self,
         input: ResearchQuestionUpdate,
     ) -> StorageResult<ResearchQuestion> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::update_research_question(&connection, input)
     }
 
     pub fn delete_research_question(&self, id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::delete_research_question(&connection, id)
     }
 
     pub fn create_evidence_link(&self, input: NewEvidenceLink) -> StorageResult<EvidenceLink> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::create_evidence_link(&connection, input)
     }
@@ -421,13 +511,13 @@ impl AppState {
         &self,
         input: EvidenceLinkListInput,
     ) -> StorageResult<Vec<EvidenceLink>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::list_evidence_links(&connection, input)
     }
 
     pub fn delete_evidence_link(&self, id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research::delete_evidence_link(&connection, id)
     }
@@ -436,7 +526,7 @@ impl AppState {
         &self,
         input: ResearchReminderListInput,
     ) -> StorageResult<Vec<ResearchReminder>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_reminders::list_research_reminders(&connection, input)
     }
@@ -445,7 +535,7 @@ impl AppState {
         &self,
         input: NewResearchReminder,
     ) -> StorageResult<ResearchReminder> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_reminders::create_research_reminder(&connection, input)
     }
@@ -454,13 +544,13 @@ impl AppState {
         &self,
         input: ResearchReminderUpdate,
     ) -> StorageResult<ResearchReminder> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_reminders::update_research_reminder(&connection, input)
     }
 
     pub fn delete_research_reminder(&self, id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_reminders::delete_research_reminder(&connection, id)
     }
@@ -469,7 +559,7 @@ impl AppState {
         &self,
         input: NewResearchBriefJob,
     ) -> StorageResult<ResearchBriefJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::create_research_brief_job(&connection, input)
     }
@@ -478,13 +568,13 @@ impl AppState {
         &self,
         input: ResearchBriefScopeInput,
     ) -> StorageResult<Vec<ResearchBriefJob>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::list_research_brief_jobs(&connection, input)
     }
 
     pub fn get_research_brief_job(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::get_research_brief_job(&connection, job_id)
     }
@@ -493,13 +583,13 @@ impl AppState {
         &self,
         job_id: &str,
     ) -> StorageResult<ResearchBriefEvidenceContext> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::collect_research_brief_evidence(&connection, job_id)
     }
 
     pub fn mark_research_brief_job_running(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::mark_research_brief_job_running(&connection, job_id)
     }
@@ -508,7 +598,7 @@ impl AppState {
         &self,
         input: CompletedResearchBrief,
     ) -> StorageResult<ResearchBriefJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::complete_research_brief_job(&connection, input)
     }
@@ -519,7 +609,7 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<ResearchBriefJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_briefs::mark_research_brief_job_failed(&connection, job_id, error_code, error)
     }
@@ -528,7 +618,7 @@ impl AppState {
         &self,
         input: NewResearchDigestJob,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::create_research_digest_job(&connection, input)
     }
@@ -537,13 +627,13 @@ impl AppState {
         &self,
         input: ResearchDigestScopeInput,
     ) -> StorageResult<Vec<ResearchDigestJob>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::list_research_digest_jobs(&connection, input)
     }
 
     pub fn get_research_digest_job(&self, job_id: &str) -> StorageResult<ResearchDigestJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::get_research_digest_job(&connection, job_id)
     }
@@ -552,7 +642,7 @@ impl AppState {
         &self,
         job_id: &str,
     ) -> StorageResult<ResearchDigestEvidenceContext> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::collect_research_digest_evidence(&connection, job_id)
     }
@@ -561,7 +651,7 @@ impl AppState {
         &self,
         job_id: &str,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::mark_research_digest_job_running(&connection, job_id)
     }
@@ -570,7 +660,7 @@ impl AppState {
         &self,
         input: CompletedResearchDigest,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::complete_research_digest_job(&connection, input)
     }
@@ -581,7 +671,7 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         research_digests::mark_research_digest_job_failed(&connection, job_id, error_code, error)
     }
@@ -590,7 +680,7 @@ impl AppState {
         &self,
         listings: &[GpwReportListing],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         sources::ingest_gpw_report_listings(&mut connection, listings)
     }
@@ -599,13 +689,13 @@ impl AppState {
         &self,
         items: &[BankierRssItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         sources::ingest_bankier_rss_items(&mut connection, items)
     }
 
     pub fn list_bankier_company_targets(&self) -> StorageResult<Vec<BankierCompanyTarget>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         sources::list_bankier_company_targets(&connection)
     }
@@ -615,13 +705,13 @@ impl AppState {
         company_id: &str,
         identifiers: &BankierCompanyIdentifiers,
     ) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         sources::upsert_bankier_company_identifiers(&connection, company_id, identifiers)
     }
 
     pub fn list_bankier_company_detail_cached_urls(&self) -> StorageResult<Vec<String>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         sources::list_bankier_company_detail_cached_urls(&connection)
     }
@@ -630,7 +720,7 @@ impl AppState {
         &self,
         items: &[BankierCompanyItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         sources::ingest_bankier_company_items(&mut connection, items)
     }
@@ -639,7 +729,7 @@ impl AppState {
         &self,
         items: &[GpwMarketEventItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         events::ingest_gpw_market_event_items(&mut connection, items)
     }
@@ -648,49 +738,49 @@ impl AppState {
         &self,
         items: &[BankierCalendarEventItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         events::ingest_bankier_calendar_event_items(&mut connection, items)
     }
 
     pub fn tracks_gpw_listing_company(&self, ticker: &str, isin: &str) -> StorageResult<bool> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         Ok(feed_matching::find_company_for_gpw_listing(&connection, ticker, isin)?.is_some())
     }
 
     pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         feed::update_feed_item_state(&connection, input)
     }
 
     pub fn get_feed_item(&self, feed_item_id: &str) -> StorageResult<FeedItem> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         feed::get_feed_item(&connection, feed_item_id)
     }
 
     pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         feed::prune_old_feed_items(&mut connection, retention_days)
     }
 
     pub fn delete_unsaved_feed_items(&self) -> StorageResult<FeedDeleteResult> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         feed::delete_unsaved_feed_items(&mut connection)
     }
 
     pub fn list_notebook_entries(&self, company_id: &str) -> StorageResult<Vec<NotebookEntry>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         notebooks::list_notebook_entries(&connection, company_id)
     }
 
     pub fn create_notebook_entry(&self, input: NewNotebookEntry) -> StorageResult<NotebookEntry> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         notebooks::create_notebook_entry(&connection, input)
     }
@@ -699,7 +789,7 @@ impl AppState {
         &self,
         input: CreateNoteFromTranscriptSelectionInput,
     ) -> StorageResult<NotebookEntry> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::create_note_from_transcript_selection(&connection, input)
     }
@@ -708,13 +798,13 @@ impl AppState {
         &self,
         input: NotebookEntryUpdate,
     ) -> StorageResult<NotebookEntry> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         notebooks::update_notebook_entry(&connection, input)
     }
 
     pub fn delete_notebook_entry(&self, notebook_entry_id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         notebooks::delete_notebook_entry(&connection, notebook_entry_id)
     }
@@ -723,13 +813,13 @@ impl AppState {
         &self,
         input: CompanyEventListInput,
     ) -> StorageResult<Vec<CompanyEvent>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         events::list_company_events(&connection, input)
     }
 
     pub fn create_company_event(&self, input: NewCompanyEvent) -> StorageResult<CompanyEvent> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         events::create_company_event(&connection, input)
     }
@@ -738,19 +828,19 @@ impl AppState {
         &self,
         input: TranscriptJobListInput,
     ) -> StorageResult<Vec<TranscriptJob>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::list_transcript_jobs(&connection, input)
     }
 
     pub fn delete_transcript_job(&self, job_id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::delete_transcript_job(&connection, job_id)
     }
 
     pub fn create_transcript_job(&self, input: NewTranscriptJob) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::create_transcript_job(&connection, input)
     }
@@ -759,7 +849,7 @@ impl AppState {
         &self,
         input: UpdateTranscriptJobInput,
     ) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::update_transcript_job(&connection, input)
     }
@@ -768,7 +858,7 @@ impl AppState {
         &self,
         transcript_job_id: &str,
     ) -> StorageResult<Vec<TranscriptSegment>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::list_transcript_segments(&connection, transcript_job_id)
     }
@@ -777,7 +867,7 @@ impl AppState {
         &self,
         input: NewTranscriptSegment,
     ) -> StorageResult<TranscriptSegment> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::create_transcript_segment(&connection, input)
     }
@@ -786,25 +876,25 @@ impl AppState {
         &self,
         input: ResolveTranscriptJobCompanyInput,
     ) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::resolve_transcript_job_company(&connection, input)
     }
 
     pub fn get_transcript_job(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::get_transcript_job(&connection, job_id)
     }
 
     pub fn mark_transcript_job_running(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::mark_transcript_job_running(&connection, job_id)
     }
 
     pub fn mark_transcript_job_completed(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::mark_transcript_job_completed(&connection, job_id)
     }
@@ -815,7 +905,7 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<TranscriptJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         transcripts::mark_transcript_job_failed(&connection, job_id, error_code, error)
     }
@@ -828,7 +918,7 @@ impl AppState {
         &self,
         include_developer_only: bool,
     ) -> StorageResult<Vec<SourceAdapter>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         registry::list_source_adapters(&connection, include_developer_only)
     }
@@ -838,25 +928,25 @@ impl AppState {
         adapter_id: &str,
         enabled: bool,
     ) -> StorageResult<SourceAdapter> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         registry::set_source_adapter_enabled(&connection, adapter_id, enabled)
     }
 
     pub fn source_adapter_enabled(&self, adapter_id: &str) -> StorageResult<bool> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         registry::source_adapter_enabled(&connection, adapter_id)
     }
 
     pub fn list_company_registry_entries(&self) -> StorageResult<Vec<CompanyRegistryEntry>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         registry::list_company_registry_entries(&connection)
     }
 
     pub fn record_source_adapter_error(&self, adapter_id: &str, error: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         registry::record_source_adapter_error(&connection, adapter_id, error)
     }
@@ -866,7 +956,7 @@ impl AppState {
         adapter_id: &str,
         trigger: &str,
     ) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         registry::record_source_adapter_attempt(&connection, adapter_id, trigger)
     }
@@ -877,31 +967,31 @@ impl AppState {
         key: &str,
         value: &str,
     ) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         sources::set_source_adapter_state(&connection, adapter_id, key, value)
     }
 
     pub fn get_settings(&self) -> StorageResult<UserSettings> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         settings::get_settings(&connection)
     }
 
     pub fn update_settings(&self, input: SettingsUpdate) -> StorageResult<UserSettings> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         settings::update_settings(&connection, input)
     }
 
     pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         settings::set_developer_mode_enabled(&connection, enabled)
     }
 
     pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         licensing::get_license_metadata(&connection)
     }
@@ -910,13 +1000,13 @@ impl AppState {
         &self,
         input: LicenseMetadataUpdate,
     ) -> StorageResult<StoredLicenseMetadata> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         licensing::upsert_license_metadata(&connection, input)
     }
 
     pub fn clear_license_metadata(&self) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         licensing::clear_license_metadata(&connection)
     }
@@ -925,43 +1015,43 @@ impl AppState {
         &self,
         input: NewDiagnosticEvent,
     ) -> StorageResult<Option<DiagnosticEvent>> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         diagnostics::record_diagnostic_event(&mut connection, input)
     }
 
     pub fn list_diagnostic_events(&self, limit: i64) -> StorageResult<Vec<DiagnosticEvent>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         diagnostics::list_diagnostic_events(&connection, limit)
     }
 
     pub fn clear_diagnostic_events(&self) -> StorageResult<usize> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         diagnostics::clear_diagnostic_events(&connection)
     }
 
     pub fn create_ai_analysis_job(&self, input: NewAiAnalysisJob) -> StorageResult<AiAnalysisJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         ai_analysis::create_ai_analysis_job(&connection, input)
     }
 
     pub fn list_ai_analysis_jobs(&self, feed_item_id: &str) -> StorageResult<Vec<AiAnalysisJob>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         ai_analysis::list_ai_analysis_jobs(&connection, feed_item_id)
     }
 
     pub fn get_ai_analysis_job(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         ai_analysis::get_ai_analysis_job(&connection, job_id)
     }
 
     pub fn mark_ai_analysis_job_running(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         ai_analysis::mark_ai_analysis_job_running(&connection, job_id)
     }
@@ -970,7 +1060,7 @@ impl AppState {
         &self,
         input: CompletedAiAnalysis,
     ) -> StorageResult<AiAnalysisJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         ai_analysis::complete_ai_analysis_job(&connection, input)
     }
@@ -981,7 +1071,7 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<AiAnalysisJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         ai_analysis::mark_ai_analysis_job_failed(&connection, job_id, error_code, error)
     }
@@ -990,13 +1080,13 @@ impl AppState {
         &self,
         input: ListKpiDefinitionsInput,
     ) -> StorageResult<Vec<KpiDefinition>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::list_kpi_definitions(&connection, input)
     }
 
     pub fn create_kpi_definition(&self, input: NewKpiDefinition) -> StorageResult<KpiDefinition> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::create_kpi_definition(&connection, input)
     }
@@ -1005,7 +1095,7 @@ impl AppState {
         &self,
         input: ListFinancialPeriodsInput,
     ) -> StorageResult<Vec<FinancialPeriod>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::list_financial_periods(&connection, input)
     }
@@ -1014,7 +1104,7 @@ impl AppState {
         &self,
         input: NewFinancialPeriod,
     ) -> StorageResult<FinancialPeriod> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::create_financial_period(&connection, input)
     }
@@ -1023,37 +1113,37 @@ impl AppState {
         &self,
         input: UpdateFinancialPeriod,
     ) -> StorageResult<FinancialPeriod> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::update_financial_period(&connection, input)
     }
 
     pub fn delete_financial_period(&self, id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::delete_financial_period(&connection, id)
     }
 
     pub fn list_kpi_relevance(&self, company_id: &str) -> StorageResult<Vec<KpiRelevance>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::list_kpi_relevance(&connection, company_id)
     }
 
     pub fn create_kpi_relevance(&self, input: NewKpiRelevance) -> StorageResult<KpiRelevance> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::create_kpi_relevance(&connection, input)
     }
 
     pub fn update_kpi_relevance(&self, input: UpdateKpiRelevance) -> StorageResult<KpiRelevance> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::update_kpi_relevance(&connection, input)
     }
 
     pub fn delete_kpi_relevance(&self, id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::delete_kpi_relevance(&connection, id)
     }
@@ -1062,13 +1152,13 @@ impl AppState {
         &self,
         input: ListFinancialFactsInput,
     ) -> StorageResult<Vec<FinancialFact>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::list_financial_facts(&connection, input)
     }
 
     pub fn create_financial_fact(&self, input: NewFinancialFact) -> StorageResult<FinancialFact> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::create_financial_fact(&connection, input)
     }
@@ -1077,13 +1167,13 @@ impl AppState {
         &self,
         input: NewKpiExtractionJob,
     ) -> StorageResult<KpiExtractionJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::create_kpi_extraction_job(&connection, input)
     }
 
     pub fn get_kpi_extraction_job(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::get_kpi_extraction_job(&connection, job_id)
     }
@@ -1092,13 +1182,13 @@ impl AppState {
         &self,
         report_document_id: &str,
     ) -> StorageResult<Vec<KpiExtractionJob>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::list_kpi_extraction_jobs_by_document(&connection, report_document_id)
     }
 
     pub fn mark_kpi_extraction_job_running(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::mark_kpi_extraction_job_running(&connection, job_id)
     }
@@ -1109,7 +1199,7 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<KpiExtractionJob> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::mark_kpi_extraction_job_failed(&connection, job_id, error_code, error)
     }
@@ -1118,7 +1208,7 @@ impl AppState {
         &self,
         input: CompletedKpiExtraction,
     ) -> StorageResult<KpiExtractionJob> {
-        let mut connection = self.connection.lock().expect("database mutex poisoned");
+        let mut connection = self.checkout()?;
 
         kpi_extraction::complete_kpi_extraction_job(&mut connection, input)
     }
@@ -1127,13 +1217,13 @@ impl AppState {
         &self,
         input: ConfirmKpiProposalInput,
     ) -> StorageResult<FinancialFact> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::confirm_kpi_proposal(&connection, input)
     }
 
     pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         kpi_extraction::reject_kpi_proposal(&connection, proposal_id)
     }
@@ -1142,13 +1232,13 @@ impl AppState {
         &self,
         input: UpdateFinancialFact,
     ) -> StorageResult<FinancialFact> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::update_financial_fact(&connection, input)
     }
 
     pub fn delete_financial_fact(&self, id: &str) -> StorageResult<()> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         financials::delete_financial_fact(&connection, id)
     }
@@ -1157,7 +1247,7 @@ impl AppState {
         &self,
         input: CaptureReportDocumentInput,
     ) -> StorageResult<ReportDocument> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         report_documents::create_or_find_pending(&connection, input)
     }
@@ -1170,7 +1260,7 @@ impl AppState {
         content_hash: Option<&str>,
         byte_size: Option<i64>,
     ) -> StorageResult<ReportDocument> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         report_documents::mark_fetched(
             &connection,
@@ -1187,13 +1277,13 @@ impl AppState {
         id: &str,
         error: &str,
     ) -> StorageResult<ReportDocument> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         report_documents::mark_failed(&connection, id, error)
     }
 
     pub fn get_report_document(&self, id: &str) -> StorageResult<ReportDocument> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         report_documents::get(&connection, id)
     }
@@ -1202,7 +1292,7 @@ impl AppState {
         &self,
         company_id: &str,
     ) -> StorageResult<Vec<ReportDocument>> {
-        let connection = self.connection.lock().expect("database mutex poisoned");
+        let connection = self.checkout()?;
 
         report_documents::list_by_company(&connection, company_id)
     }

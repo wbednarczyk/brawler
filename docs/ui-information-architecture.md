@@ -350,6 +350,7 @@ Main regions:
 - metrics tab or section: local operational counters, gauges, and durations from the Developer-mode metrics snapshot
 - logs tab or section: full in-app runtime log viewer, log status, copy redacted log output, and open logs folder
 - source candidates section: registered developer-tier source candidates, IDs, source types, fetch modes, source URLs, and source-policy notes
+- backups section: backup status (last backup time, count), backup list (rotating backups and pre-migration snapshots), a create-backup-now action, and a restore action with explicit confirmation that warns restore is applied on app relaunch (see [ADR 0032](adr/0032-search-and-backup-boundaries.md))
 - developer mode status and disable action
 
 Rules:
@@ -377,6 +378,7 @@ Sections:
 - Credentials: credential configured/not-configured status, credential storage, secret kind, save/replace/clear controls
 - Keyboard shortcuts: discoverable action list, configurable bindings, conflict visibility, disable, and reset controls
 - Logs: local runtime log level and rotation limits, with a clear local-only/no-telemetry explanation
+- Database: connection-pool tuning (`maxConnections`, `busyTimeoutMs`, `acquireTimeoutMs`) with safe-range clamping, a reset-to-defaults control, and a clear "applied on next launch" note (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)); backup and restore controls remain in Diagnostics
 - Import and Export: export/import research data, export/import safe preferences, preview import changes before applying them
 - License: optional local entitlement status, safe metadata, replace, and clear controls
 - Privacy: local data location, provider data disclosure
@@ -396,14 +398,20 @@ Behavior:
 
 ## Search
 
-Global search should eventually cover:
+Global search (delivered in `v0.38.0`, see [ADR 0032](adr/0032-search-and-backup-boundaries.md)) covers:
 
 - companies
+- watchlists
 - feed items
-- notes
-- transcript text
+- notebook entries
+- transcript segments
+- company events
+- research briefs
+- digests
 
-V1 keeps search scoped to the workspace that owns the result list. Inbox owns feed-item search inside its filter toolbar, Companies owns company-list search, and Notebooks owns note filtering. The top toolbar must not show a search box until a true cross-workspace result model exists.
+A global, keyboard-reachable search box lives in the top toolbar and queries the unified `search_index`. Results are ranked, grouped by content type, and show a snippet; selecting a result navigates to the owning screen/item. Copy is localized (en/pl).
+
+The earlier constraint that kept search workspace-scoped is lifted now that a cross-workspace result model exists. The existing per-workspace search/filter inputs remain: Inbox owns feed-item filtering in its toolbar, Companies owns company-list search, and Notebooks owns note filtering. Global search complements, rather than replaces, those local lists.
 
 ## Future Research Workspace
 

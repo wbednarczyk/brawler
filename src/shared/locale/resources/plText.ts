@@ -1,4 +1,27 @@
 export const plText: Record<string, string> = {
+  "Database": "Baza danych",
+  "Advanced connection-pool tuning. Changes apply on the next app launch.":
+    "Zaawansowane strojenie puli połączeń. Zmiany działają po następnym uruchomieniu aplikacji.",
+  "Max connections": "Maks. połączeń",
+  "Busy timeout (ms)": "Limit zajętości (ms)",
+  "Acquire timeout (ms)": "Limit oczekiwania (ms)",
+  "Reset to defaults": "Przywróć domyślne",
+  "Backups": "Kopie zapasowe",
+  "Local database backups. Restore is applied on the next app launch.":
+    "Lokalne kopie zapasowe bazy danych. Przywracanie działa po następnym uruchomieniu aplikacji.",
+  "Last backup": "Ostatnia kopia",
+  "Backups kept": "Przechowywane kopie",
+  "None yet": "Brak",
+  "Create backup": "Utwórz kopię",
+  "Backup created.": "Kopia utworzona.",
+  "Restore": "Przywróć",
+  "Restore this backup? It is applied when the app restarts and replaces current data.":
+    "Przywrócić tę kopię? Zostanie zastosowana po restarcie aplikacji i zastąpi bieżące dane.",
+  "Restore staged. Restart the app to apply it.":
+    "Przywracanie przygotowane. Uruchom ponownie aplikację, aby je zastosować.",
+  "Pre-migration snapshot": "Migawka przed migracją",
+  "Automatic backup": "Kopia automatyczna",
+  "No backups yet.": "Brak kopii zapasowych.",
   "Primary navigation": "Nawigacja główna",
   "Fetch GPW ESPI/EBI public listings": "Pobierz publiczne komunikaty GPW ESPI/EBI",
   "Last refresh": "Ostatnie odświeżenie",

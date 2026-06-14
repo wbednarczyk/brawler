@@ -360,4 +360,37 @@ describe("Settings screen workflows", () => {
       });
     });
   });
+
+  it("edits and resets database connection-pool settings", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "Database" }));
+
+    expect(within(settingsRegion).getByRole("heading", { name: "Database" })).toBeInTheDocument();
+    expect(
+      within(settingsRegion).getByText(
+        "Advanced connection-pool tuning. Changes apply on the next app launch.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText("Max connections"), "8");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbMaxConnections: 8 },
+    });
+
+    await user.selectOptions(screen.getByLabelText("Busy timeout (ms)"), "30000");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbBusyTimeoutMs: 30000 },
+    });
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "Reset to defaults" }));
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },
+    });
+  });
 });

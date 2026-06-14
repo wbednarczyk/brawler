@@ -15,6 +15,7 @@ import type {
 } from "../../api/types";
 import { ActionRow, Button, EmptyState, FilterToolbar, InfoGrid, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { BackupsSection } from "./BackupsSection";
 
 const eventLimit = 200;
 const severityOptions: Array<DiagnosticSeverity | "all"> = [
@@ -527,6 +528,8 @@ export function DiagnosticsScreen({
             </div>
           ) : null}
         </section>
+
+        <BackupsSection />
       </div>
     </section>
   );

@@ -37,6 +37,14 @@ pub struct ShortcutBindingSetting {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DatabaseSettings {
+    pub max_connections: u32,
+    pub busy_timeout_ms: u64,
+    pub acquire_timeout_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserSettings {
     pub theme: String,
     pub locale: String,
@@ -50,6 +58,7 @@ pub struct UserSettings {
     pub ai_analysis_mode: String,
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
+    pub database: DatabaseSettings,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -70,6 +79,9 @@ pub struct SettingsUpdate {
     pub log_max_files: Option<i64>,
     pub log_max_file_bytes: Option<i64>,
     pub shortcut_bindings: Option<HashMap<String, ShortcutBindingSetting>>,
+    pub db_max_connections: Option<i64>,
+    pub db_busy_timeout_ms: Option<i64>,
+    pub db_acquire_timeout_ms: Option<i64>,
 }
 
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -109,6 +121,14 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             max_file_bytes: setting_i64(connection, "log_max_file_bytes")?,
         },
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
+        database: {
+            let config = super::pool::read_pool_config(connection);
+            DatabaseSettings {
+                max_connections: config.max_connections,
+                busy_timeout_ms: config.busy_timeout_ms,
+                acquire_timeout_ms: config.acquire_timeout_ms,
+            }
+        },
     })
 }
 
@@ -285,6 +305,36 @@ pub(crate) fn update_settings(
         validate_shortcut_bindings(&shortcut_bindings)?;
         let value = serde_json::to_string(&shortcut_bindings).map_err(StorageError::from)?;
         update_setting(connection, "shortcut_bindings", &value)?;
+    }
+
+    // Connection-pool tuning is clamped to safe ranges rather than rejected, so a
+    // value out of bounds is corrected instead of failing the update (ADR 0032).
+    // Pool sizing takes effect on the next launch.
+    if let Some(db_max_connections) = input.db_max_connections {
+        let clamped = super::pool::clamp_max_connections(db_max_connections);
+        update_setting(
+            connection,
+            super::pool::MAX_CONNECTIONS_SETTING_KEY,
+            &clamped.to_string(),
+        )?;
+    }
+
+    if let Some(db_busy_timeout_ms) = input.db_busy_timeout_ms {
+        let clamped = super::pool::clamp_busy_timeout_ms(db_busy_timeout_ms);
+        update_setting(
+            connection,
+            super::pool::BUSY_TIMEOUT_SETTING_KEY,
+            &clamped.to_string(),
+        )?;
+    }
+
+    if let Some(db_acquire_timeout_ms) = input.db_acquire_timeout_ms {
+        let clamped = super::pool::clamp_acquire_timeout_ms(db_acquire_timeout_ms);
+        update_setting(
+            connection,
+            super::pool::ACQUIRE_TIMEOUT_SETTING_KEY,
+            &clamped.to_string(),
+        )?;
     }
 
     get_settings(connection)

@@ -133,7 +133,7 @@ Canonical docs live in **[docs/](docs/)**:
 - [Architecture](docs/architecture.md) — runtime boundaries and module layout
 - [Engineering Workflow](docs/engineering-workflow.md) — build, test, CI, packaging
 - [Data Model](docs/data-model.md) & [Contracts](docs/contracts.md) — schema and command surface
-- [Roadmap](docs/kanban.md) — milestones and active tracking
+- [Roadmap](docs/roadmap.md) — active and upcoming milestones; [Radicle/Radboard Tracking](docs/kanban.md) — live status pointer
 
 ## Contributing
 

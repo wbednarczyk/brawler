@@ -29,6 +29,7 @@ import {
 import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
 import * as financialsApi from "../api/financials";
+import * as eventsApi from "../api/events";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useFundamentalsController } from "./useFundamentalsController";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
@@ -113,6 +114,7 @@ import {
   startAiAnalysis,
 } from "../api/aiAnalysis";
 import type { ResearchEvidenceItem } from "../api/researchTypes";
+import type { SearchMatch } from "../api/search";
 
 type AppStateRootProps = {
   initialLicenseStatus?: LicenseStatus | null;
@@ -214,6 +216,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
   const [workspaceAutoFocusId, setWorkspaceAutoFocusId] = useState<string | null>(null);
+  const [searchFocusSelector, setSearchFocusSelector] = useState<string | null>(null);
   const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
   const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<string | null>(null);
   const [isNotebookComposerOpen, setNotebookComposerOpen] = useState(false);
@@ -569,6 +572,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
+    updateDbMaxConnections,
+    updateDbBusyTimeoutMs,
+    updateDbAcquireTimeoutMs,
+    resetDatabaseSettings,
     updateShortcutBindings,
     updateTheme,
     updateYoutubeTranscriptionModel,
@@ -1028,6 +1035,35 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     };
   }, []);
 
+  // After a global-search navigation, scroll the opened item into view and focus
+  // it once it has rendered (rows may appear a frame or two after the section and
+  // selection update, including after an async list load).
+  useEffect(() => {
+    if (!searchFocusSelector) {
+      return undefined;
+    }
+
+    let frame = 0;
+    let attempts = 0;
+    const tryFocus = () => {
+      const element = document.querySelector<HTMLElement>(searchFocusSelector);
+      if (element) {
+        element.scrollIntoView?.({ block: "nearest" });
+        element.focus?.({ preventScroll: true });
+        setSearchFocusSelector(null);
+        return;
+      }
+      attempts += 1;
+      if (attempts < 30) {
+        frame = requestAnimationFrame(tryFocus);
+      } else {
+        setSearchFocusSelector(null);
+      }
+    };
+    frame = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(frame);
+  }, [searchFocusSelector]);
+
   const {
     focusCompanyWorkspace,
     openCompanyInboxFilter,
@@ -1228,6 +1264,85 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     }
   }
 
+  function navigateToSearchResult(match: SearchMatch) {
+    switch (match.contentType) {
+      case "company":
+        focusCompanyWorkspace(match.sourceId);
+        // Reuse the workspace's tuned scroll/focus-on-open behavior.
+        setWorkspaceAutoFocusId(match.sourceId);
+        break;
+      case "watchlist":
+        setSelectedManagedWatchlistId(match.sourceId);
+        setActiveSection("Watchlists");
+        setSearchFocusSelector(`[data-watchlist-id="${match.sourceId}"]`);
+        break;
+      case "feed_item":
+        // Clear filters so the selected item is not hidden by an active filter.
+        setInboxCompanyFilter("all");
+        setInboxStatusFilter("all");
+        setInboxTypeFilter("all");
+        setInboxSourceFilter("all");
+        setInboxWatchlistFilter("all");
+        setSearchQuery("");
+        setSelectedFeedItemId(match.sourceId);
+        setActiveSection("Inbox");
+        setSearchFocusSelector(`[data-feed-item-id="${match.sourceId}"]`);
+        break;
+      case "notebook_entry":
+        if (match.companyId) {
+          setSelectedNotebookCompanyId(match.companyId);
+        }
+        setSelectedNotebookScreenEntryId(match.sourceId);
+        setActiveSection("Notebooks");
+        setSearchFocusSelector(`[data-notebook-entry-id="${match.sourceId}"]`);
+        break;
+      case "research_brief":
+      case "digest":
+        if (match.companyId) {
+          if (researchMode !== "company") {
+            setResearchMode("company");
+          }
+          setSelectedResearchCompanyId(match.companyId);
+        }
+        setActiveSection("Research");
+        break;
+      case "event":
+        if (match.companyId) {
+          setCompanyEventCompanyFilter(match.companyId);
+        }
+        setSelectedCompanyEventId(match.sourceId);
+        setActiveSection("Events");
+        setSearchFocusSelector(`[data-event-id="${match.sourceId}"]`);
+        // The week view is anchored on a date the search result does not carry,
+        // so look up the event and move the week view to its week.
+        void eventsApi
+          .listCompanyEvents({
+            mode: "all",
+            companyId: match.companyId,
+            watchlistId: null,
+            eventType: null,
+            status: null,
+            dateFrom: null,
+            dateTo: null,
+          })
+          .then((events) => {
+            const target = events.find((event) => event.id === match.sourceId);
+            if (target) {
+              setCompanyEventWeekAnchorDate(target.eventDate);
+            }
+          })
+          .catch(() => undefined);
+        break;
+      case "transcript_segment":
+        if (match.parentId) {
+          setSelectedTranscriptJobId(match.parentId);
+          setSearchFocusSelector(`[data-transcript-job-id="${match.parentId}"]`);
+        }
+        setActiveSection("Transcripts");
+        break;
+    }
+  }
+
   function selectAdjacentInboxItem(direction: 1 | -1) {
     if (activeSection !== "Inbox" || filteredFeedItems.length === 0) {
       return false;
@@ -1401,6 +1516,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
         refreshDatabaseBackedViews={refreshDatabaseBackedViews}
         refreshSources={refreshSources}
         setActiveSection={setActiveSection}
+        onNavigateToSearchResult={navigateToSearchResult}
         sourceRefreshError={sourceRefreshError}
         sourceRefreshResult={sourceRefreshResult}
         sourceRefreshState={sourceRefreshState}
@@ -1911,6 +2027,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               onLogLevelChange={updateLogLevel}
               onLogMaxFilesChange={updateLogMaxFiles}
               onLogMaxFileBytesChange={updateLogMaxFileBytes}
+              onDbMaxConnectionsChange={updateDbMaxConnections}
+              onDbBusyTimeoutMsChange={updateDbBusyTimeoutMs}
+              onDbAcquireTimeoutMsChange={updateDbAcquireTimeoutMs}
+              onResetDatabaseSettings={resetDatabaseSettings}
               onClearLicenseKey={clearLicenseKey}
               onLicenseKeyDraftChange={setLicenseKeyDraft}
               onSubmitLicenseKey={submitLicenseKey}
