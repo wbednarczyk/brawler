@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.39.0 - 2026-06-15
+
+
+
+### Features
+
+- add interpretative AI layer static foundation
+
+
 ## v0.38.0 - 2026-06-14
 
 
