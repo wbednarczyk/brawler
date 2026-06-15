@@ -36,6 +36,8 @@ pub enum StorageError {
     InvalidFinancialsValue { key: &'static str, value: String },
     #[error("missing financials reference for {table}: {id}")]
     MissingFinancialsReference { table: String, id: String },
+    #[error("classification error: {0}")]
+    Classification(String),
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

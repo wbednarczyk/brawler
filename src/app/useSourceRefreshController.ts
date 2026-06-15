@@ -15,6 +15,7 @@ type RefreshCallbacks = {
   refreshCompanyRegistryEntries: () => Promise<void>;
   refreshDatabaseStatus: () => Promise<void>;
   refreshFeedItems: () => Promise<void>;
+  refreshSignals: () => Promise<void>;
   refreshSourceAdapters: () => Promise<void>;
   refreshUnmatchedSourceItems: (adapterId: string) => Promise<void>;
 };
@@ -87,6 +88,7 @@ export function useSourceRefreshController({
   refreshCompanyRegistryEntries,
   refreshDatabaseStatus,
   refreshFeedItems,
+  refreshSignals,
   refreshSourceAdapters,
   refreshUnmatchedSourceItems,
   scheduledSourceAdapters,
@@ -120,7 +122,10 @@ export function useSourceRefreshController({
 
   function refreshViewsAfterSourceRefresh(adapterId: string, includeFeed: boolean) {
     return Promise.all([
-      ...(includeFeed ? [refreshFeedItems()] : []),
+      // Official-report ingestion classifies filings into signals, so reload
+      // signals whenever the feed is reloaded — otherwise badges only appear
+      // after an app restart (the mount-time signal load).
+      ...(includeFeed ? [refreshFeedItems(), refreshSignals()] : []),
       refreshCompanyEvents(),
       refreshSourceAdapters(),
       refreshDatabaseStatus(),

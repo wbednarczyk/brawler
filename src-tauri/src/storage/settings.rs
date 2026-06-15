@@ -56,6 +56,7 @@ pub struct UserSettings {
     pub yaml_import_export_status: &'static str,
     pub ai_providers: AiProviderSettings,
     pub ai_analysis_mode: String,
+    pub espi_ai_fallback_enabled: bool,
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
     pub database: DatabaseSettings,
@@ -75,6 +76,7 @@ pub struct SettingsUpdate {
     pub general_analysis_model: Option<String>,
     pub general_analysis_timeout_seconds: Option<i64>,
     pub ai_analysis_mode: Option<String>,
+    pub espi_ai_fallback_enabled: Option<bool>,
     pub log_level: Option<String>,
     pub log_max_files: Option<i64>,
     pub log_max_file_bytes: Option<i64>,
@@ -115,6 +117,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             )?,
         },
         ai_analysis_mode: setting_string(connection, "ai_analysis_mode")?,
+        espi_ai_fallback_enabled: setting_bool_or(connection, "espi_ai_fallback_enabled", false)?,
         logs: LogSettings {
             level: setting_string(connection, "log_level")?,
             max_files: setting_i64(connection, "log_max_files")?,
@@ -273,6 +276,18 @@ pub(crate) fn update_settings(
         update_setting(connection, "ai_analysis_mode", &ai_analysis_mode)?;
     }
 
+    if let Some(espi_ai_fallback_enabled) = input.espi_ai_fallback_enabled {
+        update_setting(
+            connection,
+            "espi_ai_fallback_enabled",
+            if espi_ai_fallback_enabled {
+                "true"
+            } else {
+                "false"
+            },
+        )?;
+    }
+
     if let Some(log_level) = input.log_level {
         validate_allowed_setting(
             "log_level",
@@ -363,6 +378,28 @@ fn setting_bool(connection: &Connection, key: &'static str) -> StorageResult<boo
         "true" => Ok(true),
         "false" => Ok(false),
         _ => Err(StorageError::InvalidSettingValue { key, value }),
+    }
+}
+
+/// Read a boolean setting, falling back to `default` when the row is absent.
+/// Used for settings introduced by later migrations so a database that recorded
+/// the migration before the seed row existed never fails to load settings (and,
+/// via the startup `get_settings` call, never crashes app launch).
+fn setting_bool_or(
+    connection: &Connection,
+    key: &'static str,
+    default: bool,
+) -> StorageResult<bool> {
+    match connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get::<_, String>(0)
+    }) {
+        Ok(value) => match value.as_str() {
+            "true" => Ok(true),
+            "false" => Ok(false),
+            _ => Err(StorageError::InvalidSettingValue { key, value }),
+        },
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(default),
+        Err(error) => Err(StorageError::from(error)),
     }
 }
 

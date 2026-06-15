@@ -34,6 +34,7 @@ type AppLifecycleEffectsInput = {
   refreshCompanyRegistryIfStale: (staleAfterSeconds: number) => void;
   refreshDatabaseStatus: () => void;
   refreshFeedItems: () => void;
+  refreshSignals: () => void;
   refreshGeminiCredentialStatus: () => void;
   refreshHealth: () => void;
   refreshLicenseStatus: () => void;
@@ -95,6 +96,7 @@ export function useAppLifecycleEffects({
   refreshCompanyRegistryIfStale,
   refreshDatabaseStatus,
   refreshFeedItems,
+  refreshSignals,
   refreshGeminiCredentialStatus,
   refreshHealth,
   refreshLicenseStatus,
@@ -165,6 +167,7 @@ export function useAppLifecycleEffects({
     refreshWatchlists();
     refreshWatchlistMemberships();
     refreshFeedItems();
+    refreshSignals();
     refreshCompanyEvents();
     refreshTranscriptJobs();
     refreshSourceAdapters();

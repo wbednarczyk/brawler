@@ -30,6 +30,7 @@ export type SettingsScreenProps = {
   onGeneralAnalysisProviderChange: (provider: string) => void;
   onGeneralAnalysisModelChange: (model: string) => void;
   onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
+  onEspiAiFallbackChange: (enabled: boolean) => void;
   onLogLevelChange: (level: string) => void;
   onLogMaxFilesChange: (maxFiles: number) => void;
   onLogMaxFileBytesChange: (maxFileBytes: number) => void;

@@ -14,6 +14,7 @@ type FeedControllerInput = {
   setFeedError: Dispatch<SetStateAction<string | null>>;
   setFeedState: Dispatch<SetStateAction<FeedItem[]>>;
   setInboxCompanyFilter: Dispatch<SetStateAction<string>>;
+  setInboxSignalFilter: Dispatch<SetStateAction<string>>;
   setInboxSourceFilter: Dispatch<SetStateAction<string>>;
   setInboxStatusFilter: Dispatch<SetStateAction<InboxStatusFilter>>;
   setInboxTypeFilter: Dispatch<SetStateAction<string>>;
@@ -34,6 +35,7 @@ export function useFeedController({
   setFeedError,
   setFeedState,
   setInboxCompanyFilter,
+  setInboxSignalFilter,
   setInboxSourceFilter,
   setInboxStatusFilter,
   setInboxTypeFilter,
@@ -136,6 +138,7 @@ export function useFeedController({
     setInboxWatchlistFilter("all");
     setInboxCompanyFilter("all");
     setInboxTypeFilter("all");
+    setInboxSignalFilter("all");
     setInboxSourceFilter("all");
     setInboxStatusFilter("all");
   }

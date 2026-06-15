@@ -157,7 +157,7 @@ Feed retention must be designed before v1 ingestion becomes broad. The app shoul
 
 ## Typed Filing Signals
 
-Official ESPI/EBI filings should be classified into typed disclosure signals so the feed reads as a signal stream instead of homework. The investor should be able to tell at a glance whether a filing is an insider transaction, a dividend, a profit warning or result estimate, a significant contract, a buyback, or a guidance change.
+Official ESPI/EBI filings should be classified into typed disclosure signals so the feed reads as a signal stream instead of homework. The investor should be able to tell at a glance whether a filing is an insider transaction, a dividend, a profit warning or result estimate, a significant contract, an own-share transaction, or a guidance change.
 
 Behavior:
 

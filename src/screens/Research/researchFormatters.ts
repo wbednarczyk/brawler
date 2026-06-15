@@ -30,6 +30,8 @@ export function formatReminderKind(kind: ResearchReminder["reminderKind"]) {
       return "Manual research";
     case "digest_review":
       return "Digest review";
+    case "signal_review":
+      return "Signal review";
   }
 }
 
@@ -92,6 +94,8 @@ export function formatEvidenceType(evidenceType: ResearchEvidenceType) {
       return "AI analysis";
     case "research_question":
       return "Research question";
+    case "company_signal":
+      return "Signal";
     case "reminder":
       return "Reminder";
     case "ai_brief":

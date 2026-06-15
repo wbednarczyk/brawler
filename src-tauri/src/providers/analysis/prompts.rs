@@ -11,9 +11,10 @@ use crate::providers::common::{clean_optional_string, extract_json_object};
 
 use super::types::{
     AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, AnalysisSourceReference,
-    ExtractedKpiFact, ExtractedPeriod, KpiExtractionProviderOutput, KpiExtractionRequest,
-    ResearchBriefCitationOutput, ResearchBriefProviderOutput, ResearchBriefRequest,
-    ResearchBriefSectionOutput, ResearchDigestRequest,
+    EspiClassificationCategory, EspiClassificationOutput, ExtractedKpiFact, ExtractedPeriod,
+    KpiExtractionProviderOutput, KpiExtractionRequest, ResearchBriefCitationOutput,
+    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchDigestRequest,
 };
 
 /// Stable identifier of the KPI-extraction prompt, recorded as fact provenance so
@@ -23,6 +24,76 @@ pub const KPI_EXTRACTION_PROMPT_VERSION: &str = "kpi-extraction.v1";
 
 /// Allowed reporting period types for extraction (primary period only).
 const EXTRACTION_PERIOD_TYPES: [&str; 7] = ["Q1", "Q2", "Q3", "Q4", "H1", "H2", "FY"];
+
+/// Stable identifier of the ESPI classification fallback prompt, recorded as
+/// signal provenance. Bump when the prompt's contract changes materially.
+pub const ESPI_CLASSIFICATION_PROMPT_VERSION: &str = "espi-classification.v1";
+
+/// Marker phrase the deterministic test-sample provider branches on.
+const ESPI_CLASSIFICATION_MARKER: &str = "classify this official ESPI/EBI filing";
+
+/// Build the ESPI classification fallback prompt for one filing. The model must
+/// pick exactly one category key or return `"unknown"` — it must never guess a
+/// type it is not confident about (ADR 0034 conservative posture).
+pub fn espi_classification_prompt(
+    categories: &[EspiClassificationCategory],
+    title: &str,
+) -> String {
+    let category_lines = categories
+        .iter()
+        .map(|category| format!("- {} ({})", category.key, category.display_name))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "You classify Polish stock-exchange official disclosures. {ESPI_CLASSIFICATION_MARKER} \
+into exactly one of the categories below, or report \"unknown\" when none clearly applies. \
+Do not guess: if the filing does not clearly match a category, return \"unknown\". The filing \
+body text is provided as the attached document.\n\n\
+Categories (key — label):\n{category_lines}\n\n\
+Filing title:\n{title}\n\n\
+Respond with strict JSON only, no prose, in this exact shape:\n\
+{{\"category\": \"<one category key, or 'unknown'>\", \"confidence\": <number between 0 and 1>}}"
+    )
+}
+
+#[derive(Debug, Deserialize)]
+struct EspiClassificationJson {
+    category: Option<String>,
+    confidence: Option<f64>,
+}
+
+/// Parse the model's classification response. Returns the unknown outcome
+/// (`category = None`) when the model reports `"unknown"`, returns an unlisted
+/// category, or omits the category — never a category outside `allowed_keys`.
+pub fn parse_espi_classification_output(
+    text: &str,
+    allowed_keys: &[String],
+    provider_label: &str,
+) -> Result<EspiClassificationOutput, AnalysisProviderError> {
+    let json_text = extract_json_object(text, &format!("{provider_label} classification response"))
+        .map_err(AnalysisProviderError::ParseError)?;
+    let parsed: EspiClassificationJson = serde_json::from_str(json_text).map_err(|error| {
+        AnalysisProviderError::ParseError(format!(
+            "{provider_label} ESPI classification JSON: {error}"
+        ))
+    })?;
+
+    let reported_confidence = parsed.confidence.unwrap_or(0.0).clamp(0.0, 1.0) as f32;
+    let category = clean_optional_string(parsed.category)
+        .map(|value| value.to_lowercase())
+        .filter(|value| value != "unknown" && allowed_keys.iter().any(|key| key == value));
+
+    let confidence = if category.is_some() {
+        reported_confidence
+    } else {
+        0.0
+    };
+    Ok(EspiClassificationOutput {
+        category,
+        confidence,
+    })
+}
 
 /// Build the analysis prompt for a single feed item.
 pub fn analysis_prompt(request: &AnalysisRequest) -> String {

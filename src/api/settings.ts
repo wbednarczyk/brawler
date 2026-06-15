@@ -11,6 +11,7 @@ export type UpdateSettingsInput = {
   generalAnalysisProvider?: string;
   generalAnalysisModel?: string;
   generalAnalysisTimeoutSeconds?: number;
+  espiAiFallbackEnabled?: boolean;
   logLevel?: string;
   logMaxFiles?: number;
   logMaxFileBytes?: number;

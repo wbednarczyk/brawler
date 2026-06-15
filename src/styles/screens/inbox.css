@@ -938,3 +938,67 @@ summary.feed-body-heading::before {
   color: var(--muted);
   font-size: 12px;
 }
+
+/* Typed ESPI/EBI signals (v0.40.0) */
+.feed-row-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 2px;
+}
+
+/* Signal badges read as a distinct class from the plain source chips: a leading
+   tag icon, heavier weight, and a restrained neon glow tied to the tone color. */
+.signal-badge {
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, currentColor 32%, transparent),
+    0 0 10px color-mix(in srgb, currentColor 20%, transparent);
+}
+
+.signal-badge svg {
+  flex: 0 0 auto;
+  opacity: 0.85;
+}
+
+.feed-signals-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.feed-signals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.feed-signal-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.feed-signal-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.feed-signal-source {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.feed-signal-actions {
+  flex: 0 0 auto;
+}

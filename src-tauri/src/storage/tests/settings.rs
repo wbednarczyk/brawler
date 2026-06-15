@@ -2,6 +2,28 @@ use super::*;
 use std::collections::HashMap;
 
 #[test]
+fn get_settings_tolerates_missing_optional_setting_row() {
+    // A database that recorded a later migration before its seed row existed
+    // (e.g. an intermediate dev build) must still load settings — otherwise the
+    // startup get_settings call aborts setup and the app closes immediately.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "DELETE FROM settings WHERE key = 'espi_ai_fallback_enabled'",
+            [],
+        )
+        .expect("delete row");
+
+    let settings = state
+        .get_settings()
+        .expect("settings should load even without the optional setting row");
+    assert!(!settings.espi_ai_fallback_enabled);
+}
+
+#[test]
 fn reads_default_settings_from_sqlite() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -104,6 +126,7 @@ fn updates_settings_through_storage_api() {
             general_analysis_model: Some("gemini-3.5-flash".to_owned()),
             general_analysis_timeout_seconds: Some(180),
             ai_analysis_mode: None,
+            espi_ai_fallback_enabled: None,
             log_level: Some("debug".to_owned()),
             log_max_files: Some(8),
             log_max_file_bytes: Some(10_485_760),
@@ -201,6 +224,7 @@ fn updates_shortcut_bindings_through_storage_api() {
             general_analysis_model: None,
             general_analysis_timeout_seconds: None,
             ai_analysis_mode: None,
+            espi_ai_fallback_enabled: None,
             log_level: None,
             log_max_files: None,
             log_max_file_bytes: None,
@@ -247,6 +271,7 @@ fn rejects_invalid_poll_interval_setting() {
         general_analysis_model: None,
         general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
+        espi_ai_fallback_enabled: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -276,6 +301,7 @@ fn rejects_invalid_theme_setting() {
         general_analysis_model: None,
         general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
+        espi_ai_fallback_enabled: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -318,6 +344,7 @@ fn rejects_invalid_locale_setting() {
         general_analysis_model: None,
         general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
+        espi_ai_fallback_enabled: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -347,6 +374,7 @@ fn rejects_invalid_general_analysis_settings() {
         general_analysis_model: None,
         general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
+        espi_ai_fallback_enabled: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -370,6 +398,7 @@ fn rejects_invalid_general_analysis_settings() {
         general_analysis_model: Some("gemini-unknown".to_owned()),
         general_analysis_timeout_seconds: None,
         ai_analysis_mode: None,
+        espi_ai_fallback_enabled: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,
@@ -393,6 +422,7 @@ fn rejects_invalid_general_analysis_settings() {
         general_analysis_model: None,
         general_analysis_timeout_seconds: Some(12),
         ai_analysis_mode: None,
+        espi_ai_fallback_enabled: None,
         log_level: None,
         log_max_files: None,
         log_max_file_bytes: None,

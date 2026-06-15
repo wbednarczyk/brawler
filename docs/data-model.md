@@ -248,7 +248,7 @@ Rules:
 
 ### Company Signals
 
-Supports typed ESPI/EBI classification: turns official filings into typed disclosure signals (insider transactions, dividends, profit warnings, significant contracts, buybacks, guidance changes). `company_signals` is the canonical classification output, separate from `feed_items` (the raw filing) and `company_events` (the calendar). See [ADR 0034](adr/0034-espi-event-classification.md).
+Supports typed ESPI/EBI classification: turns official filings into typed disclosure signals (insider transactions, dividends, profit warnings, significant contracts, own-share transactions, guidance changes). `company_signals` is the canonical classification output, separate from `feed_items` (the raw filing) and `company_events` (the calendar). See [ADR 0034](adr/0034-espi-event-classification.md).
 
 Fields:
 
@@ -298,9 +298,9 @@ Fields:
 
 Rules:
 
-- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `buyback`, `guidance_change`, `other`.
-- `rule_definition_json` holds the deterministic match rules (category labels, title/body patterns) for the rule classifier.
-- `derives_event = 1` marks categories that materialize a derived `company_events` row when the filing carries a future date.
+- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `own_shares` (own-share/treasury transactions, purchases and sales; generalized from `buyback` in migration 0044), `guidance_change`, `general_meeting`, `other`.
+- `rule_definition_json` is consumed by the interpretation-layer `RuleClassifier` ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)). Shape: `{ "patterns": [..], "confidence": 0.0..1.0 }`, where any case-insensitive substring match against the filing text selects the category. An empty `patterns` list never rule-matches — `other` carries no patterns and is reachable only via the AI fallback.
+- `derives_event = 1` marks categories that materialize a derived `company_events` row when the filing carries a future date. Only `dividend` and `general_meeting` derive events (ADR 0034); all other seed categories are `derives_event = 0`.
 - The registry is source-neutral so a future GPW re-enable feeds the same classifier.
 
 ### Transcript Jobs
@@ -550,8 +550,10 @@ Initial `research_reminders` fields:
 Rules:
 
 - Reminder records are research-owned review pressure, not generic tasks.
-- Reminder `source_type` and `source_id` point to the canonical object when a reminder comes from a claim, event, question, digest, or other evidence.
+- Reminder `source_type` and `source_id` point to the canonical object when a reminder comes from a claim, event, question, digest, signal, or other evidence.
+- `reminder_kind` values: `claim_follow_up`, `event_review`, `question_review`, `manual_research`, `digest_review`, and `signal_review` (a high-signal ESPI/EBI classification — insider transaction or profit warning — `source_type = company_signal`; ADR 0034).
 - Derived reminders may be synchronized from claims, events, and open research questions.
+- Confirmed `company_signals` appear in the backend research timeline as `company_signal` evidence items and so flow into the personal digest; proposed (unconfirmed AI) signals do not.
 - Completion and dismissal are stored on the reminder record and do not modify the linked source object by default.
 
 Initial `ai_research_digest_jobs`, `ai_research_digests`, and `ai_research_digest_citations` mirror the AI brief tables with digest-specific names and version fields.
@@ -808,7 +810,7 @@ Rules:
 
 ## Company Signal Model
 
-Company signals are typed classifications of official ESPI/EBI filings. A signal answers "what kind of disclosure is this filing" — insider transaction, dividend, profit warning, significant contract, buyback, guidance change, or other. Signals are canonical and distinct from calendar events: most disclosures are dated past events, so only forward-looking categories with a real future date derive a `company_events` row. See [ADR 0034](adr/0034-espi-event-classification.md).
+Company signals are typed classifications of official ESPI/EBI filings. A signal answers "what kind of disclosure is this filing" — insider transaction, dividend, profit warning, significant contract, own-share transaction, guidance change, or other. Signals are canonical and distinct from calendar events: most disclosures are dated past events, so only forward-looking categories with a real future date derive a `company_events` row. See [ADR 0034](adr/0034-espi-event-classification.md).
 
 Identity and lifecycle:
 

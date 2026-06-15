@@ -480,6 +480,77 @@ pub struct CompanyEventListInput {
     pub date_to: Option<String>,
 }
 
+/// A typed ESPI/EBI classification (ADR 0034). Canonical output of
+/// classification, separate from the raw `feed_item` and any derived event.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanySignal {
+    pub id: String,
+    pub company_id: String,
+    pub company: String,
+    pub company_name: String,
+    pub feed_item_id: String,
+    pub category: String,
+    pub category_display_name: String,
+    pub confidence: f64,
+    pub classified_by: String,
+    pub status: String,
+    pub signal_date: Option<String>,
+    pub provider_id: Option<String>,
+    pub model_id: Option<String>,
+    pub derived_event_id: Option<String>,
+    pub title: String,
+    pub source_url: String,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanySignalListInput {
+    pub company_id: Option<String>,
+    pub watchlist_id: Option<String>,
+    pub category: Option<String>,
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanySignalActionInput {
+    pub id: String,
+}
+
+/// One seeded signal category exposed to the AI fallback prompt (key + label).
+#[derive(Debug, Clone)]
+pub struct SignalCategorySummary {
+    pub key: String,
+    pub display_name: String,
+}
+
+/// An official-report filing that has no signal yet — a candidate for the AI
+/// fallback. `body_text` may be empty when only the title is available.
+#[derive(Debug, Clone)]
+pub struct UnclassifiedFiling {
+    pub feed_item_id: String,
+    pub company_id: String,
+    pub title: String,
+    pub body_text: String,
+    pub signal_date: Option<String>,
+}
+
+/// Internal input for persisting an AI-proposed signal (used by the AI fallback
+/// job). Not a command DTO; the AI job builds it from the classification result.
+#[derive(Debug, Clone)]
+pub struct ProposedSignalInput {
+    pub feed_item_id: String,
+    pub company_id: String,
+    pub category: String,
+    pub confidence: f64,
+    pub signal_date: Option<String>,
+    pub provider_id: String,
+    pub model_id: String,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NewCompanyEvent {

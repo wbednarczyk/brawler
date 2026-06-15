@@ -638,6 +638,7 @@ aiProviders: {
   generalAnalysisTimeoutSeconds: 90,
 },
 aiAnalysisMode: "source_grounded",
+espiAiFallbackEnabled: false,
 logs: {
   level: "info",
   maxFiles: 5,

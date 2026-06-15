@@ -16,6 +16,7 @@ pub mod notebooks;
 pub mod research;
 pub mod search;
 pub mod settings;
+pub mod signals;
 pub mod sources;
 pub mod transcripts;
 pub mod watchlists;

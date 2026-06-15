@@ -1,5 +1,16 @@
 import type { KeyboardEvent, PointerEvent } from "react";
-import type { AiAnalysisJob, Company, FeedItem, Watchlist } from "../../api/types";
+import type {
+  AiAnalysisJob,
+  Company,
+  CompanySignal,
+  FeedItem,
+  Watchlist,
+} from "../../api/types";
+
+export type FeedSignalCategoryOption = {
+  category: string;
+  displayName: string;
+};
 
 export type InboxStatusFilter = "all" | "unread" | "saved";
 
@@ -16,7 +27,12 @@ export type InboxScreenProps = {
   companies: Company[];
   feedTypes: string[];
   feedSources: string[];
+  feedSignalCategories: FeedSignalCategoryOption[];
   filteredFeedItems: FeedItem[];
+  signalsByFeedItemId: Record<string, CompanySignal[]>;
+  signalsError: string | null;
+  aiSignalClassificationState: string;
+  aiSignalFallbackEnabled: boolean;
   selectedFeedItem: FeedItem | null;
   selectedFeedCompany: Company | null;
   aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
@@ -28,6 +44,7 @@ export type InboxScreenProps = {
   inboxWatchlistFilter: string;
   inboxCompanyFilter: string;
   inboxTypeFilter: string;
+  inboxSignalFilter: string;
   inboxSourceFilter: string;
   inboxReviewStats: InboxReviewStats;
   inboxEmptyState: InboxEmptyState;
@@ -47,7 +64,11 @@ export type InboxScreenProps = {
   setInboxWatchlistFilter: (filter: string) => void;
   setInboxCompanyFilter: (filter: string) => void;
   setInboxTypeFilter: (filter: string) => void;
+  setInboxSignalFilter: (filter: string) => void;
   setInboxSourceFilter: (filter: string) => void;
+  confirmCompanySignal: (signalId: string) => Promise<void> | void;
+  rejectCompanySignal: (signalId: string) => Promise<void> | void;
+  runAiSignalClassification: () => Promise<void> | void;
   setSelectedFeedItemId: (itemId: string) => void;
   setActiveSection: (section: "Companies") => void;
   markVisibleInboxAsRead: () => void;

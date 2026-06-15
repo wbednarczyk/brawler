@@ -1,9 +1,20 @@
-import { BookOpenText, Building2, ExternalLink, FileText, Mail, MailOpen, Save } from "lucide-react";
-import { ActionRow, Button, InfoGrid } from "../../ui";
+import {
+  BookOpenText,
+  Building2,
+  Check,
+  ExternalLink,
+  FileText,
+  Mail,
+  MailOpen,
+  Save,
+  X,
+} from "lucide-react";
+import { ActionRow, Button, InfoGrid, StatusChip } from "../../ui";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { FeedKpiExtractionPanel } from "../../shared/components/FeedKpiExtractionPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import type { CompanySignal } from "../../api/types";
 import type { InboxScreenProps } from "./inboxTypes";
 
 type InboxDetailPaneProps = Pick<
@@ -21,9 +32,13 @@ type InboxDetailPaneProps = Pick<
   | "openFeedItemNoteDraft"
   | "startFeedItemAiAnalysis"
   | "retryFeedItemAiAnalysis"
+  | "confirmCompanySignal"
+  | "rejectCompanySignal"
   | "feedItemSummary"
   | "formatTimestamp"
->;
+> & {
+  selectedFeedSignals: CompanySignal[] | undefined;
+};
 
 function isPdfAttachment(attachment: { label: string; url: string }) {
   const label = attachment.label.trim().toLowerCase();
@@ -42,6 +57,7 @@ function isPdfAttachment(attachment: { label: string; url: string }) {
 export function InboxDetailPane({
   selectedFeedItem,
   selectedFeedCompany,
+  selectedFeedSignals,
   aiAnalysisJobsByFeedItemId,
   aiAnalysisErrorByFeedItemId,
   aiAnalysisRequestInFlightByFeedItemId,
@@ -53,11 +69,14 @@ export function InboxDetailPane({
   openFeedItemNoteDraft,
   startFeedItemAiAnalysis,
   retryFeedItemAiAnalysis,
+  confirmCompanySignal,
+  rejectCompanySignal,
   feedItemSummary,
   formatTimestamp,
 }: InboxDetailPaneProps) {
   const { text } = useLocale();
   const pdfAttachments = selectedFeedItem?.attachments.filter(isPdfAttachment) ?? [];
+  const signals = selectedFeedSignals ?? [];
 
   return (
     <aside className="detail-pane" aria-label={text("Feed item details")}>
@@ -88,6 +107,54 @@ export function InboxDetailPane({
             </div>
             <p className="feed-detail-body">{feedItemSummary(selectedFeedItem)}</p>
           </section>
+          {signals.length > 0 ? (
+            <section
+              className="feed-body-section feed-signals-section"
+              aria-label={text("Typed filing signals")}
+            >
+              <div className="feed-body-heading">
+                <span>{text("Typed signals")}</span>
+              </div>
+              <ul className="feed-signals-list">
+                {signals.map((signal) => (
+                  <li className="feed-signal-row" key={signal.id}>
+                    <div className="feed-signal-meta">
+                      <StatusChip tone={signal.status === "proposed" ? "warn" : "accent"}>
+                        {text(signal.categoryDisplayName)}
+                      </StatusChip>
+                      <span className="feed-signal-source">
+                        {signal.classifiedBy === "ai"
+                          ? text("AI proposal — confirm to apply")
+                          : text("Rule-classified")}
+                      </span>
+                    </div>
+                    {signal.status === "proposed" ? (
+                      <ActionRow className="feed-signal-actions" ariaLabel={text("Signal proposal actions")}>
+                        <Button
+                          className="compact-button"
+                          onClick={() => {
+                            void confirmCompanySignal(signal.id);
+                          }}
+                        >
+                          <Check size={15} />
+                          {text("Confirm")}
+                        </Button>
+                        <Button
+                          className="compact-button danger-subtle-button"
+                          onClick={() => {
+                            void rejectCompanySignal(signal.id);
+                          }}
+                        >
+                          <X size={15} />
+                          {text("Reject")}
+                        </Button>
+                      </ActionRow>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
           <details className="feed-body-section feed-body-disclosure" aria-label={text("Official report body")}>
             <summary className="feed-body-heading">
               <span>{text("Official report body")}</span>

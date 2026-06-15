@@ -720,4 +720,87 @@ describe("Inbox screen workflows", () => {
 
     expect(within(feedList).getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
   });
+
+  it("shows typed signal badges, filters by signal type, and confirms an AI proposal", async () => {
+    appTestState.companySignalsResponse = [
+      {
+        id: "signal_feed_sample_cdr_report_insider_transaction",
+        companyId: "company_gpw_cdr",
+        company: "GPW:CDR",
+        companyName: "CD PROJEKT S.A.",
+        feedItemId: "feed_sample_cdr_report",
+        category: "insider_transaction",
+        categoryDisplayName: "Insider transaction",
+        confidence: 0.95,
+        classifiedBy: "rule",
+        status: "confirmed",
+        signalDate: "2026-05-28",
+        providerId: null,
+        modelId: null,
+        derivedEventId: null,
+        title: "Current report placeholder for watchlist company",
+        sourceUrl: "https://example.test/source",
+        createdAt: "2026-05-28T12:00:00Z",
+        updatedAt: "2026-05-28T12:00:00Z",
+      },
+      {
+        id: "signal_feed_sample_pkn_news_guidance_change",
+        companyId: "company_gpw_pkn",
+        company: "GPW:PKN",
+        companyName: "PKN ORLEN S.A.",
+        feedItemId: "feed_sample_pkn_news",
+        category: "guidance_change",
+        categoryDisplayName: "Guidance change",
+        confidence: 0.72,
+        classifiedBy: "ai",
+        status: "proposed",
+        signalDate: "2026-05-28",
+        providerId: "provider_gemini",
+        modelId: "gemini-2.5-flash",
+        derivedEventId: null,
+        title: "Sample item proving the inbox layout can scan dense rows",
+        sourceUrl: "https://example.test/source",
+        createdAt: "2026-05-28T12:00:00Z",
+        updatedAt: "2026-05-28T12:00:00Z",
+      },
+    ];
+
+    const user = userEvent.setup();
+    renderApp();
+
+    // Wait for the feed (and signals) to load.
+    await screen.findByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    });
+    const feedList = screen.getByLabelText("Feed items");
+    // A confirmed rule signal is visually distinguishable as a feed badge.
+    expect((await within(feedList).findAllByText("Insider transaction")).length).toBeGreaterThan(0);
+    // The AI proposal renders with the "Proposed" marker, never silently applied.
+    expect(within(feedList).getByText("Guidance change · Proposed")).toBeInTheDocument();
+
+    // Filtering by signal type narrows the feed to matching filings.
+    await user.selectOptions(screen.getByLabelText("Inbox signal type"), "insider_transaction");
+    expect(
+      within(feedList).getByText("Current report placeholder for watchlist company"),
+    ).toBeInTheDocument();
+    expect(
+      within(feedList).queryByText("Sample item proving the inbox layout can scan dense rows"),
+    ).not.toBeInTheDocument();
+
+    // Clear the filter and confirm the AI proposal from the detail pane.
+    await user.selectOptions(screen.getByLabelText("Inbox signal type"), "all");
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+      }),
+    );
+    const detailPane = within(screen.getByLabelText("Feed item details"));
+    await user.click(detailPane.getByRole("button", { name: "Confirm" }));
+
+    // Confirmation transitions the proposal to confirmed: the proposed marker is gone.
+    await waitFor(() => {
+      expect(within(feedList).queryByText("Guidance change · Proposed")).not.toBeInTheDocument();
+    });
+    expect(within(feedList).getAllByText("Guidance change").length).toBeGreaterThan(0);
+  });
 });

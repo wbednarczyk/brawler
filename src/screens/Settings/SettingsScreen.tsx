@@ -75,6 +75,7 @@ export function SettingsScreen({
   onGeneralAnalysisProviderChange,
   onGeneralAnalysisModelChange,
   onGeneralAnalysisTimeoutChange,
+  onEspiAiFallbackChange,
   onLogLevelChange,
   onLogMaxFilesChange,
   onLogMaxFileBytesChange,
@@ -152,6 +153,7 @@ export function SettingsScreen({
               onGeneralAnalysisProviderChange={onGeneralAnalysisProviderChange}
               onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
               onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
+              onEspiAiFallbackChange={onEspiAiFallbackChange}
             />
           ) : null}
           {activeSettingsTab === "credentials" ? (

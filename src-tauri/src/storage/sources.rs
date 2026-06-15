@@ -563,6 +563,19 @@ pub(super) fn ingest_bankier_company_items(
 
     transaction.commit()?;
 
+    // Typed ESPI/EBI classification (ADR 0034) runs after the feed-item commit
+    // as a best-effort enhancement: it classifies the official filings into rule
+    // signals, but a classification failure must never roll back ingestion or
+    // fail the source refresh. Errors are logged and the refresh still succeeds.
+    if let Err(error) = signals::classify_pending_feed_items(connection, BANKIER_COMPANY_ADAPTER_ID)
+    {
+        log::warn!(
+            "module=signals stage=classify_pending adapter={} error={}",
+            BANKIER_COMPANY_ADAPTER_ID,
+            error
+        );
+    }
+
     Ok(SourceIngestionResult {
         adapter_id: BANKIER_COMPANY_ADAPTER_ID.to_owned(),
         items_fetched: items.len(),

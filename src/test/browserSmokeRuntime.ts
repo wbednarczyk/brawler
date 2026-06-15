@@ -3,6 +3,7 @@ import type {
   Company,
   CompanyEvent,
   CompanyRegistryEntry,
+  CompanySignal,
   CredentialStatus,
   FeedItem,
   LicenseStatus,
@@ -107,6 +108,51 @@ feedItems.push({
   ],
 });
 
+// Typed ESPI signals for layout smoke: one confirmed rule signal and one
+// AI proposal so the feed badges and the detail-pane confirm/reject render.
+const companySignals: CompanySignal[] = [
+  {
+    id: "signal_feed_results_report_dividend",
+    companyId: "company_gpw_cdr",
+    company: "GPW:CDR",
+    companyName: "CD PROJEKT S.A.",
+    feedItemId: "feed_results_report",
+    category: "dividend",
+    categoryDisplayName: "Dividend",
+    confidence: 0.92,
+    classifiedBy: "rule",
+    status: "confirmed",
+    signalDate: "2026-06-08",
+    providerId: null,
+    modelId: null,
+    derivedEventId: null,
+    title: "CD PROJEKT S.A. — wyniki za I półrocze 2026",
+    sourceUrl: "https://example.test/source",
+    createdAt: "2026-06-08T20:12:13Z",
+    updatedAt: "2026-06-08T20:12:13Z",
+  },
+  {
+    id: `signal_${feedItems[0].id}_guidance_change`,
+    companyId: companies[0].id,
+    company: feedItems[0].company,
+    companyName: companies[0].displayName,
+    feedItemId: feedItems[0].id,
+    category: "guidance_change",
+    categoryDisplayName: "Guidance change",
+    confidence: 0.74,
+    classifiedBy: "ai",
+    status: "proposed",
+    signalDate: "2026-06-05",
+    providerId: "provider_gemini",
+    modelId: "gemini-2.5-flash",
+    derivedEventId: null,
+    title: feedItems[0].title,
+    sourceUrl: "https://example.test/source",
+    createdAt: "2026-06-05T09:15:00Z",
+    updatedAt: "2026-06-05T09:15:00Z",
+  },
+];
+
 const sourceAdapters: SourceAdapter[] = [
   sourceAdapter("gpw-company-registry", "GPW Company Directory", "company_registry", "required", true, ["GPW"], 470),
   sourceAdapter("newconnect-company-directory", "NewConnect Company Directory", "company_registry", "required", true, ["NEWCONNECT"], 350),
@@ -179,6 +225,7 @@ const settings: UserSettings = {
     generalAnalysisTimeoutSeconds: 90,
   },
   aiAnalysisMode: "source_grounded",
+  espiAiFallbackEnabled: false,
   logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
   shortcutBindings: {},
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
@@ -354,6 +401,13 @@ function handleCommand(command: string, args: InvokeArgs) {
       return registryEntries;
     case "list_company_events":
       return companyEvents;
+    case "list_company_signals":
+      return companySignals;
+    case "confirm_company_signal":
+    case "reject_company_signal":
+      return null;
+    case "run_ai_signal_classification":
+      return { enabled: false, examined: 0, proposed: 0, skipped: 0 };
     case "list_video_transcript_jobs":
       return [] satisfies TranscriptJob[];
     case "list_notebook_entries":

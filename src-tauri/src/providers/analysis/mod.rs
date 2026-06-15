@@ -13,7 +13,8 @@ pub use gemini::{
 };
 pub use openai::{OpenAiAnalysisProvider, DEFAULT_OPENAI_ANALYSIS_MODEL};
 pub use prompts::{
-    kpi_extraction_prompt, parse_kpi_extraction_output, KPI_EXTRACTION_PROMPT_VERSION,
+    espi_classification_prompt, kpi_extraction_prompt, parse_espi_classification_output,
+    parse_kpi_extraction_output, ESPI_CLASSIFICATION_PROMPT_VERSION, KPI_EXTRACTION_PROMPT_VERSION,
 };
 pub use test_sample::{
     TestSampleAnalysisProvider, TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
@@ -21,8 +22,9 @@ pub use test_sample::{
 };
 pub use types::{
     AiAnalysisProvider, AnalysisDocument, AnalysisProviderError, AnalysisProviderOutput,
-    AnalysisRequest, AnalysisSourceReference, DocumentSupport, ExtractedKpiFact, ExtractedPeriod,
-    KpiCatalogEntry, KpiExtractionProviderOutput, KpiExtractionRequest,
-    ResearchBriefCitationOutput, ResearchBriefProviderOutput, ResearchBriefRequest,
-    ResearchBriefSectionOutput, ResearchDigestRequest,
+    AnalysisRequest, AnalysisSourceReference, DocumentSupport, EspiClassificationCategory,
+    EspiClassificationOutput, ExtractedKpiFact, ExtractedPeriod, KpiCatalogEntry,
+    KpiExtractionProviderOutput, KpiExtractionRequest, ResearchBriefCitationOutput,
+    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchDigestRequest,
 };

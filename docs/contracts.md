@@ -477,8 +477,9 @@ Signal categories (seeded registry, extensible as data):
 - `dividend`
 - `profit_warning`
 - `significant_contract`
-- `buyback`
+- `own_shares`
 - `guidance_change`
+- `general_meeting` (carries a meeting date)
 - `other`
 
 Statuses:
@@ -497,8 +498,11 @@ Rules:
 Initial local commands:
 
 - `list_company_signals(input)`: returns signals filtered by company, watchlist, category, and status.
-- `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed` and creating the derived event when applicable.
+- `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed`. Derived-event creation for dated categories is deferred to `v0.41.0` (see [ADR 0034](adr/0034-espi-event-classification.md) Scope boundary); in `v0.40.0` confirmation transitions status and persists provenance only.
 - `reject_company_signal(input)`: discards a `proposed` signal without creating a signal/event.
+- `run_ai_signal_classification()`: runs the opt-in AI classification fallback over official filings the rule classifier left unknown, creating `proposed` signals. A no-op returning `{ enabled: false, examined: 0, proposed: 0, skipped: 0 }` unless the user enables the `espiAiFallbackEnabled` setting; uses the configured general analysis provider/model (ADR 0028). Never auto-commits — results require confirmation.
+
+The opt-in toggle is the `espiAiFallbackEnabled` boolean in user settings (default `false`); no provider call happens until it is enabled.
 
 Confirm/reject input:
 
@@ -1317,6 +1321,7 @@ Initial evidence types:
 - `company_event`
 - `ai_analysis`
 - `research_question`
+- `company_signal` (confirmed typed ESPI/EBI signals; ADR 0034)
 - `reminder`
 - `ai_brief`
 - `digest`
@@ -1533,6 +1538,7 @@ Initial reminder kinds:
 - `question_review`
 - `manual_research`
 - `digest_review`
+- `signal_review` (generated when a high-signal ESPI/EBI category — insider transaction, profit warning — is classified; ADR 0034)
 
 Initial reminder statuses:
 

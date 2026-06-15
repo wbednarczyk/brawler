@@ -1,4 +1,4 @@
-import type { AiAnalysisJob, LicenseStatus, LocalMetricsSnapshot, UserSettings, Watchlist, WatchlistMembership } from "../../api/types";
+import type { AiAnalysisJob, CompanySignal, LicenseStatus, LocalMetricsSnapshot, UserSettings, Watchlist, WatchlistMembership } from "../../api/types";
 import type {
   EvidenceLink,
   ResearchBriefJob,
@@ -36,6 +36,7 @@ export const appTestState = {
   researchRemindersResponse: [] as ResearchReminder[],
   researchReviewCheckpointResponse: null as ResearchReviewCheckpoint | null,
   companyEventsResponse: initialCompanyEvents,
+  companySignalsResponse: [] as CompanySignal[],
   transcriptJobsResponse: initialTranscriptJobs,
   companyRegistryEntriesResponse: initialCompanyRegistryEntries,
   watchlistsResponse: [
@@ -146,6 +147,7 @@ export function resetAppTestState() {
   ];
   appTestState.researchReviewCheckpointResponse = null;
   appTestState.companyEventsResponse = initialCompanyEvents;
+  appTestState.companySignalsResponse = [];
   appTestState.transcriptJobsResponse = initialTranscriptJobs;
   appTestState.companyRegistryEntriesResponse = initialCompanyRegistryEntries;
   appTestState.watchlistsResponse = [

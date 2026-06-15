@@ -9,6 +9,7 @@ const REMINDER_KINDS: &[&str] = &[
     "question_review",
     "manual_research",
     "digest_review",
+    "signal_review",
 ];
 const REMINDER_STATUSES: &[&str] = &["open", "completed", "dismissed"];
 

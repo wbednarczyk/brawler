@@ -353,6 +353,46 @@ export type CompanyEvent = {
   updatedAt: string;
 };
 
+// Typed ESPI/EBI classification signal (ADR 0034). `classifiedBy` is "rule" or
+// "ai"; `status` is "confirmed" or "proposed" (AI proposals await confirmation).
+export type CompanySignalCategory =
+  | "insider_transaction"
+  | "dividend"
+  | "profit_warning"
+  | "significant_contract"
+  | "own_shares"
+  | "guidance_change"
+  | "general_meeting"
+  | "other";
+
+export type CompanySignal = {
+  id: string;
+  companyId: string;
+  company: string;
+  companyName: string;
+  feedItemId: string;
+  category: CompanySignalCategory;
+  categoryDisplayName: string;
+  confidence: number;
+  classifiedBy: "rule" | "ai";
+  status: "confirmed" | "proposed";
+  signalDate: string | null;
+  providerId: string | null;
+  modelId: string | null;
+  derivedEventId: string | null;
+  title: string;
+  sourceUrl: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AiSignalClassificationSummary = {
+  enabled: boolean;
+  examined: number;
+  proposed: number;
+  skipped: number;
+};
+
 export type TranscriptJob = {
   id: string;
   companyId: string | null;
@@ -414,6 +454,7 @@ export type UserSettings = {
     generalAnalysisTimeoutSeconds: number;
   };
   aiAnalysisMode: string;
+  espiAiFallbackEnabled: boolean;
   logs: {
     level: string;
     maxFiles: number;

@@ -61,6 +61,7 @@ mod research_digests;
 mod research_reminders;
 mod search;
 mod settings;
+mod signals;
 mod sources;
 mod transcripts;
 mod types;
@@ -822,6 +823,49 @@ impl AppState {
         let connection = self.checkout()?;
 
         events::create_company_event(&connection, input)
+    }
+
+    pub fn list_company_signals(
+        &self,
+        input: CompanySignalListInput,
+    ) -> StorageResult<Vec<CompanySignal>> {
+        let connection = self.checkout()?;
+
+        signals::list_company_signals(&connection, input)
+    }
+
+    pub fn propose_company_signal(&self, input: ProposedSignalInput) -> StorageResult<bool> {
+        let connection = self.checkout()?;
+
+        signals::create_proposed_signal(&connection, &input)
+    }
+
+    pub fn list_signal_categories_for_ai(&self) -> StorageResult<Vec<SignalCategorySummary>> {
+        let connection = self.checkout()?;
+
+        signals::list_categories_for_ai(&connection)
+    }
+
+    pub fn list_unclassified_official_filings(
+        &self,
+        source_adapter_id: &str,
+        limit: i64,
+    ) -> StorageResult<Vec<UnclassifiedFiling>> {
+        let connection = self.checkout()?;
+
+        signals::list_unclassified_official_filings(&connection, source_adapter_id, limit)
+    }
+
+    pub fn confirm_company_signal(&self, signal_id: &str) -> StorageResult<CompanySignal> {
+        let connection = self.checkout()?;
+
+        signals::confirm_company_signal(&connection, signal_id)
+    }
+
+    pub fn reject_company_signal(&self, signal_id: &str) -> StorageResult<()> {
+        let connection = self.checkout()?;
+
+        signals::reject_company_signal(&connection, signal_id)
     }
 
     pub fn list_transcript_jobs(

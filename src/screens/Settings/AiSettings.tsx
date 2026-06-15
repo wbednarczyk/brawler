@@ -12,6 +12,7 @@ type AiSettingsProps = {
   onGeneralAnalysisProviderChange: (provider: string) => void;
   onGeneralAnalysisModelChange: (model: string) => void;
   onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
+  onEspiAiFallbackChange: (enabled: boolean) => void;
 };
 
 export function AiSettings({
@@ -21,6 +22,7 @@ export function AiSettings({
   onGeneralAnalysisProviderChange,
   onGeneralAnalysisModelChange,
   onGeneralAnalysisTimeoutChange,
+  onEspiAiFallbackChange,
 }: AiSettingsProps) {
   const { t, text } = useLocale();
   const [catalog, setCatalog] = useState<AiProviderCatalogEntry[]>([]);
@@ -114,6 +116,15 @@ export function AiSettings({
           <option value={180}>3 {text("minutes")}</option>
           <option value={300}>5 {text("minutes")}</option>
           <option value={600}>10 {text("minutes")}</option>
+        </SelectField>
+        <SelectField
+          aria-label={text("ESPI AI classification fallback")}
+          label={text("ESPI AI classification fallback")}
+          value={settings?.espiAiFallbackEnabled ? "enabled" : "disabled"}
+          onChange={(event) => onEspiAiFallbackChange(event.target.value === "enabled")}
+        >
+          <option value="disabled">{text("Disabled")}</option>
+          <option value="enabled">{text("Enabled")}</option>
         </SelectField>
       </FieldRow>
     </section>

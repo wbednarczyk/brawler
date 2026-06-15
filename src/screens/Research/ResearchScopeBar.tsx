@@ -28,6 +28,7 @@ const evidenceTypeOptions: Array<{ value: ResearchEvidenceType; label: string }>
   { value: "company_event", label: "Events" },
   { value: "transcript_segment", label: "Transcripts" },
   { value: "ai_analysis", label: "AI analysis" },
+  { value: "company_signal", label: "Signals" },
 ];
 
 export function ResearchScopeBar({

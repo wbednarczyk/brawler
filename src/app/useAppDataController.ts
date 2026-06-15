@@ -6,9 +6,11 @@ import * as settingsApi from "../api/settings";
 import * as sourcesApi from "../api/sources";
 import * as systemApi from "../api/system";
 import * as watchlistsApi from "../api/watchlists";
+import * as signalsApi from "../api/signals";
 import type {
   Company,
   CompanyRegistryEntry,
+  CompanySignal,
   CredentialStatus,
   DatabaseStatus,
   FeedItem,
@@ -42,6 +44,8 @@ type AppDataControllerInput = {
   setHealth: Dispatch<SetStateAction<HealthResponse | null>>;
   setHealthError: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
+  setSignals: Dispatch<SetStateAction<CompanySignal[]>>;
+  setSignalsError: Dispatch<SetStateAction<string | null>>;
   setSettings: Dispatch<SetStateAction<UserSettings | null>>;
   setSettingsError: Dispatch<SetStateAction<string | null>>;
   setAccentPalette: Dispatch<SetStateAction<UserSettings["accentPalette"]>>;
@@ -77,6 +81,8 @@ export function useAppDataController({
   setHealth,
   setHealthError,
   setSelectedFeedItemId,
+  setSignals,
+  setSignalsError,
   setSettings,
   setSettingsError,
   setAccentPalette,
@@ -170,6 +176,19 @@ export function useAppDataController({
       });
   }
 
+  function refreshSignals() {
+    return signalsApi
+      .listCompanySignals({ companyId: null, watchlistId: null, category: null, status: null })
+      .then((response) => {
+        setSignals(response);
+        setSignalsError(null);
+      })
+      .catch((error) => {
+        setSignals([]);
+        setSignalsError(String(error));
+      });
+  }
+
   function refreshSourceAdapters() {
     return sourcesApi.listSourceAdapters()
       .then((response) => {
@@ -248,6 +267,7 @@ export function useAppDataController({
       refreshWatchlists(),
       refreshWatchlistMemberships(),
       refreshFeedItems(),
+      refreshSignals(),
       refreshCompanyEvents(),
       refreshSourceAdapters(),
       refreshSettings(),
@@ -301,6 +321,7 @@ export function useAppDataController({
     refreshDatabaseBackedViews,
     refreshDatabaseStatus,
     refreshFeedItems,
+    refreshSignals,
     refreshGeminiCredentialStatus,
     refreshHealth,
     refreshSettings,

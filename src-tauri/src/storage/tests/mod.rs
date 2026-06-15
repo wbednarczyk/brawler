@@ -23,6 +23,7 @@ mod research_reminders;
 mod schema;
 mod search;
 mod settings;
+mod signals;
 mod source_registry;
 mod transcripts;
 mod watchlists;

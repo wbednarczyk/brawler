@@ -76,6 +76,7 @@ Acceptance criteria:
 - Note creation from a feed item preserves origin.
 - A classified insider transaction is visually distinguishable in the feed and can be filtered to.
 - AI-proposed signals are never applied without explicit user confirmation.
+- Confirmed signals appear in the company research timeline (filterable as "Signals") and feed the personal digest; a high-signal classification (insider transaction, profit warning) raises a research reminder.
 
 ## Journey: Create Note From Feed Item
 

@@ -30,6 +30,7 @@ import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
 import * as financialsApi from "../api/financials";
 import * as eventsApi from "../api/events";
+import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
 import { useFundamentalsController } from "./useFundamentalsController";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
@@ -89,6 +90,7 @@ import type {
   CompanyEvent,
   CompanyRegistryEntry,
   CompanyRegistryRefreshResult,
+  CompanySignal,
   CredentialStatus,
   DatabaseStatus,
   FeedDeleteResult,
@@ -154,10 +156,14 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [inboxWatchlistFilter, setInboxWatchlistFilter] = useState("all");
   const [inboxCompanyFilter, setInboxCompanyFilter] = useState("all");
   const [inboxTypeFilter, setInboxTypeFilter] = useState("all");
+  const [inboxSignalFilter, setInboxSignalFilter] = useState("all");
   const [inboxSourceFilter, setInboxSourceFilter] = useState("all");
   const [inboxStatusFilter, setInboxStatusFilter] = useState<InboxStatusFilter>("all");
   const [feedState, setFeedState] = useState<FeedItem[]>([]);
   const [feedError, setFeedError] = useState<string | null>(null);
+  const [signals, setSignals] = useState<CompanySignal[]>([]);
+  const [signalsError, setSignalsError] = useState<string | null>(null);
+  const [aiSignalClassificationState, setAiSignalClassificationState] = useState<string>("idle");
   const [aiAnalysisJobsByFeedItemId, setAiAnalysisJobsByFeedItemId] = useState<Record<string, AiAnalysisJob[]>>({});
   const [aiAnalysisErrorByFeedItemId, setAiAnalysisErrorByFeedItemId] = useState<Record<string, string | null>>({});
   const [aiAnalysisRequestInFlightByFeedItemId, setAiAnalysisRequestInFlightByFeedItemId] = useState<Record<string, boolean>>({});
@@ -297,11 +303,13 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     companyEventsByDate,
     companyFormRegistryMatches,
     effectiveTheme,
+    feedSignalCategories,
     feedSources,
     feedTypes,
     filteredCompanies,
     filteredCompanyRegistryEntries,
     filteredFeedItems,
+    signalsByFeedItemId,
     filteredNotebookScreenCompanies,
     hasActiveInboxFilters,
     inboxEmptyState,
@@ -341,10 +349,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     companyRegistrySearch,
     feedState,
     inboxCompanyFilter,
+    inboxSignalFilter,
     inboxSourceFilter,
     inboxStatusFilter,
     inboxTypeFilter,
     inboxWatchlistFilter,
+    signals,
     notebookEditForm,
     notebookEntries,
     notebookScreenWatchlistFilter,
@@ -476,6 +486,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     refreshGeminiCredentialStatus,
     refreshHealth,
     refreshSettings,
+    refreshSignals,
     refreshSourceAdapters,
     refreshUnmatchedSourceItems,
     refreshWatchlistMemberships,
@@ -500,6 +511,8 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setHealth,
     setHealthError,
     setSelectedFeedItemId,
+    setSignals,
+    setSignalsError,
     setSettings,
     setSettingsError,
     setAccentPalette,
@@ -540,6 +553,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     refreshCompanyRegistryEntries,
     refreshDatabaseStatus,
     refreshFeedItems,
+    refreshSignals,
     refreshSourceAdapters,
     refreshUnmatchedSourceItems,
     scheduledSourceAdapters,
@@ -568,6 +582,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
+    updateEspiAiFallbackEnabled,
     updatePollInterval,
     updateLogLevel,
     updateLogMaxFileBytes,
@@ -805,6 +820,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setFeedError,
     setFeedState,
     setInboxCompanyFilter,
+    setInboxSignalFilter,
     setInboxSourceFilter,
     setInboxStatusFilter,
     setInboxTypeFilter,
@@ -953,6 +969,42 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
       }
     } catch (error) {
       setAiAnalysisFeedError(feedItemId, error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function confirmCompanySignal(signalId: string) {
+    try {
+      await signalsApi.confirmCompanySignal(signalId);
+      await refreshSignals();
+      setSignalsError(null);
+    } catch (error) {
+      setSignalsError(String(error));
+    }
+  }
+
+  async function rejectCompanySignal(signalId: string) {
+    try {
+      await signalsApi.rejectCompanySignal(signalId);
+      await refreshSignals();
+      setSignalsError(null);
+    } catch (error) {
+      setSignalsError(String(error));
+    }
+  }
+
+  async function runAiSignalClassification() {
+    setAiSignalClassificationState("running");
+    setSignalsError(null);
+    try {
+      await signalsApi.runAiSignalClassification();
+      await refreshSignals();
+      setAiSignalClassificationState("done");
+      window.setTimeout(() => {
+        setAiSignalClassificationState("idle");
+      }, 900);
+    } catch (error) {
+      setSignalsError(String(error));
+      setAiSignalClassificationState("idle");
     }
   }
 
@@ -1167,6 +1219,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     refreshCompanyRegistryIfStale,
     refreshDatabaseStatus,
     refreshFeedItems,
+    refreshSignals,
     refreshGeminiCredentialStatus,
     refreshHealth,
     refreshLicenseStatus,
@@ -1544,7 +1597,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               companies={companies}
               feedTypes={feedTypes}
               feedSources={feedSources}
+              feedSignalCategories={feedSignalCategories}
               filteredFeedItems={filteredFeedItems}
+              signalsByFeedItemId={signalsByFeedItemId}
+              signalsError={signalsError}
+              aiSignalClassificationState={aiSignalClassificationState}
+              aiSignalFallbackEnabled={Boolean(settings?.espiAiFallbackEnabled)}
               selectedFeedItem={selectedFeedItem}
               selectedFeedCompany={selectedFeedCompany}
               aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
@@ -1556,6 +1614,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               inboxWatchlistFilter={inboxWatchlistFilter}
               inboxCompanyFilter={inboxCompanyFilter}
               inboxTypeFilter={inboxTypeFilter}
+              inboxSignalFilter={inboxSignalFilter}
               inboxSourceFilter={inboxSourceFilter}
               inboxReviewStats={inboxReviewStats}
               inboxEmptyState={inboxEmptyState}
@@ -1575,7 +1634,11 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               setInboxWatchlistFilter={setInboxWatchlistFilter}
               setInboxCompanyFilter={setInboxCompanyFilter}
               setInboxTypeFilter={setInboxTypeFilter}
+              setInboxSignalFilter={setInboxSignalFilter}
               setInboxSourceFilter={setInboxSourceFilter}
+              confirmCompanySignal={confirmCompanySignal}
+              rejectCompanySignal={rejectCompanySignal}
+              runAiSignalClassification={runAiSignalClassification}
               setSelectedFeedItemId={setSelectedFeedItemId}
               setActiveSection={setActiveSection}
               markVisibleInboxAsRead={markVisibleInboxAsRead}
@@ -2024,6 +2087,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               onGeneralAnalysisProviderChange={updateGeneralAnalysisProvider}
               onGeneralAnalysisModelChange={updateGeneralAnalysisModel}
               onGeneralAnalysisTimeoutChange={updateGeneralAnalysisTimeout}
+              onEspiAiFallbackChange={updateEspiAiFallbackEnabled}
               onLogLevelChange={updateLogLevel}
               onLogMaxFilesChange={updateLogMaxFiles}
               onLogMaxFileBytesChange={updateLogMaxFileBytes}

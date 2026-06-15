@@ -6,6 +6,7 @@ export type ResearchEvidenceType =
   | "company_event"
   | "ai_analysis"
   | "research_question"
+  | "company_signal"
   | "reminder"
   | "ai_brief"
   | "digest";
@@ -218,7 +219,8 @@ export type ResearchReminderKind =
   | "event_review"
   | "question_review"
   | "manual_research"
-  | "digest_review";
+  | "digest_review"
+  | "signal_review";
 
 export type ResearchReminderStatus = "open" | "completed" | "dismissed";
 

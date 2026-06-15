@@ -6,7 +6,7 @@ This ADR captures the **design** for typed ESPI/EBI event classification (epic `
 
 ## Context
 
-ESPI/EBI official filings arrive as undifferentiated `feed_items`: an insider transaction, a dividend recommendation, a profit warning, and a routine administrative notice all look the same in the Inbox. The investor has to open and read each filing to learn what kind of disclosure it is. The goal is to turn the official-report stream into a typed signal stream — insider transactions, dividends, profit warnings/estimates, significant contracts, buybacks, guidance changes — so the feed surfaces *what happened* without manual triage.
+ESPI/EBI official filings arrive as undifferentiated `feed_items`: an insider transaction, a dividend recommendation, a profit warning, and a routine administrative notice all look the same in the Inbox. The investor has to open and read each filing to learn what kind of disclosure it is. The goal is to turn the official-report stream into a typed signal stream — insider transactions, dividends, profit warnings/estimates, significant contracts, own-share transactions, guidance changes — so the feed surfaces *what happened* without manual triage.
 
 Constraints from the existing system:
 
@@ -28,8 +28,9 @@ The taxonomy is a typed registry of categories with associated rule definitions,
 - `dividend` — dividend recommendations and declarations
 - `profit_warning` — profit warnings and result estimates (positive or negative)
 - `significant_contract` — significant agreements/contracts
-- `buyback` — share buyback notices
+- `own_shares` — own-share / treasury-share transactions (purchases **and** sales; generalized from the original `buyback` category, which mis-typed own-share sales — migration 0044)
 - `guidance_change` — forecast/guidance changes
+- `general_meeting` — general-meeting convocations carrying a meeting date
 - `other` — official filing that classified to no specific category
 
 Each category records its matching rules and whether it derives a calendar event (see §4).
@@ -42,7 +43,7 @@ Each category records its matching rules and whether it derives a calendar event
 
 ### 4. Signals are canonical; calendar events are derived only for dated types
 
-`company_signals` is the source of truth for "what kind of disclosure this is." A `company_events` row is materialized **only** for forward-looking categories that carry a genuine future date (e.g. a dividend record/payment date, a general-meeting date declared in the filing). Past-disclosure signals — insider transaction, profit warning, buyback notice, significant contract — remain signals and do **not** create calendar events. Derivation is idempotent: re-running ingestion or re-confirming a signal never duplicates the signal or its derived event, and derived events carry origin linkage back to the signal and the originating `feed_item`.
+`company_signals` is the source of truth for "what kind of disclosure this is." A `company_events` row is materialized **only** for forward-looking categories that carry a genuine future date (e.g. a dividend record/payment date, a general-meeting date declared in the filing). Past-disclosure signals — insider transaction, profit warning, own-share transaction, significant contract — remain signals and do **not** create calendar events. Derivation is idempotent: re-running ingestion or re-confirming a signal never duplicates the signal or its derived event, and derived events carry origin linkage back to the signal and the originating `feed_item`. **Derivation itself runs in `v0.41.0`** (see Scope boundary): the future date is extracted from the filing body via the report body-fetch path that milestone introduces, so `v0.40.0` only persists the `derived_event_id` wiring.
 
 ### 5. Confirmation and provenance policy
 
@@ -54,15 +55,21 @@ Each category records its matching rules and whether it derives a calendar event
 
 Classified signals are surfaced where the investor already looks: type badges and type filters on feed items, type-aware digest grouping (e.g. insider-activity grouping), and reminder hooks for high-signal categories. Surfacing details and copy (en/pl) are specified in [product-spec.md](../product-spec.md) and [ui-flows.md](../ui-flows.md).
 
+Research-workspace integration (the digest/reminder half of surfacing) plugs signals into the existing research-evidence boundary (ADR-tracked M24/M31 model) rather than adding a parallel path:
+
+- **Confirmed** signals become a `company_signal` research **evidence type** in the backend timeline read model (proposed AI signals stay out of research evidence until confirmed). Because the personal digest is generated from collected changed evidence, signals flow into the digest automatically and the digest groups them by type alongside other evidence — no separate digest pipeline.
+- A **high-signal** classification (insider transaction, profit warning) generates a research reminder of kind `signal_review` (`source_type = company_signal`), created once when the signal is first classified. Reminder generation is best-effort and never fails ingestion.
+
 ## Scope boundary
 
-- In scope (`v0.40.0`): classification of the active official ESPI/EBI feed into `company_signals`, derived calendar events for dated types, and feed/digest/reminder surfacing.
-- Out of scope: classification of non-official media sources; trading signals or sentiment scoring; ESPI/EBI **attachment ingestion** and **on-track history backfill**, which are split into milestone `v0.41.0` (Report document ingestion & history backfill) because they depend on the Bankier article/attachment fetch path and live verification rather than on classification.
+- In scope (`v0.40.0`): classification of the active official ESPI/EBI feed into `company_signals` (rule classifier + opt-in AI fallback with confirmation), and feed/digest/reminder surfacing.
+- **Event derivation deferred to `v0.41.0`** (owner decision at milestone start): materializing a `company_events` row for a dividend/general-meeting signal requires a *future date* that lives only in the filing **body**, not the title. Reliable date extraction depends on the Bankier article/attachment body-fetch path that `v0.41.0` (Report document ingestion & history backfill) introduces. To avoid wrong-dated calendar entries, `v0.40.0` ships signals only; the `company_signals.derived_event_id` column and the §4 derivation contract stay in place as forward-compatible wiring, and derivation runs in `v0.41.0`. This keeps the conservative posture intact (never create a guessed-date event) and is additive — no migration when derivation lands.
+- Out of scope: classification of non-official media sources; trading signals or sentiment scoring; ESPI/EBI **attachment ingestion** and **on-track history backfill**, which are part of milestone `v0.41.0` (Report document ingestion & history backfill) because they depend on the Bankier article/attachment fetch path and live verification rather than on classification.
 
 ## Consequences
 
 - The feed becomes a typed signal stream while the calendar stays calendar-shaped; past disclosures do not pollute the Events screen.
 - A new entity (`company_signals`), a category registry, the rule classifier, an opt-in async AI fallback path, event derivation, and the feed/digest/reminder surfaces are added. The classifier reads the active Bankier feed but is source-neutral for a future GPW re-enable.
 - The `status` (`confirmed` | `proposed`) value is additive and forward-compatible with the `v0.50.0` autopilot trust ladder, which adds an auto-confirm provenance state rather than a migration.
-- Open decisions for owner confirmation: the exact rule patterns per category (built from real filings in the classifier task), the confidence threshold that separates a confident rule match from `unknown`, and whether any category beyond dividends/general-meeting should derive a calendar event.
+- Owner-confirmed decisions (milestone `v0.40.0` start): (a) **event derivation is dividend + general-meeting dates only** — no other category materializes a calendar event, keeping the Events screen calendar-shaped; (b) **the rule classifier is conservative** — only high-confidence formulaic matches produce a `confirmed` rule signal, and any borderline/partial match routes to `unknown` (and thus to confirmation), never to an auto-confirmed guessed type; (c) **the AI fallback is disabled by default** (opt-in) on a fresh install, consistent with the local-first / BYO-key posture, so no provider calls happen until the user enables it and unknown filings stay unclassified until then. The exact per-category rule patterns are still pinned empirically from real Bankier ESPI filings during the classifier task (`64061a4`).
 - Related: this is a building block toward the autonomous report pipeline ([roadmap.md](../roadmap.md) North Star); detection of new report publication there can reuse classified signals.

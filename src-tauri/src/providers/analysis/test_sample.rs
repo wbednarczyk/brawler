@@ -17,6 +17,11 @@ pub const TEST_SAMPLE_IR_PICK_URL: &str = "https://reports.example.com/q3-2025.p
 const TEST_SAMPLE_IR_PICK_JSON: &str =
     r#"{"bestUrl":"https://reports.example.com/q3-2025.pdf","confidence":"high"}"#;
 
+/// Deterministic ESPI classification for the test provider: a confident
+/// guidance-change verdict, used by the AI fallback job test.
+const TEST_SAMPLE_ESPI_CLASSIFICATION_JSON: &str =
+    r#"{"category":"guidance_change","confidence":0.81}"#;
+
 pub const TEST_SAMPLE_ANALYSIS_PROVIDER_ID: &str = "test_sample";
 pub const TEST_SAMPLE_ANALYSIS_MODEL: &str = "test-sample-analysis-v1";
 
@@ -184,6 +189,8 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
         // branch on the prompt so the deterministic output matches the caller.
         if prompt.contains("candidate report links") {
             Ok(TEST_SAMPLE_IR_PICK_JSON.to_owned())
+        } else if prompt.contains("classify this official ESPI/EBI filing") {
+            Ok(TEST_SAMPLE_ESPI_CLASSIFICATION_JSON.to_owned())
         } else {
             Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
         }

@@ -15,6 +15,7 @@ import type {
   CompanyEvent,
   CompanyForm,
   CompanyRegistryEntry,
+  CompanySignal,
   FeedItem,
   NotebookEntry,
   SourceAdapter,
@@ -37,11 +38,13 @@ type AppViewModelInput = {
   companyRegistrySearch: string;
   feedState: FeedItem[];
   inboxCompanyFilter: string;
+  inboxSignalFilter: string;
   inboxSourceFilter: string;
   inboxStatusFilter: InboxStatusFilter;
   inboxTypeFilter: string;
   inboxWatchlistFilter: string;
   notebookEditForm: NotebookForm;
+  signals: CompanySignal[];
   notebookEntries: NotebookEntry[];
   notebookScreenWatchlistFilter: string;
   notebookScreenClaimStatusFilter: string;
@@ -79,10 +82,12 @@ export function useAppViewModel({
   companyRegistrySearch,
   feedState,
   inboxCompanyFilter,
+  inboxSignalFilter,
   inboxSourceFilter,
   inboxStatusFilter,
   inboxTypeFilter,
   inboxWatchlistFilter,
+  signals,
   notebookEditForm,
   notebookEntries,
   notebookScreenWatchlistFilter,
@@ -164,6 +169,28 @@ export function useAppViewModel({
   const feedSources = useMemo(() => {
     return Array.from(new Set(feedState.map((item) => item.source))).sort();
   }, [feedState]);
+  const signalsByFeedItemId = useMemo(() => {
+    return signals.reduce<Record<string, CompanySignal[]>>((grouped, signal) => {
+      grouped[signal.feedItemId] = grouped[signal.feedItemId] ?? [];
+      grouped[signal.feedItemId].push(signal);
+
+      return grouped;
+    }, {});
+  }, [signals]);
+  // Distinct categories present in the feed, for the signal-type filter. Each
+  // appears once with its localized-ready display name from the registry.
+  const feedSignalCategories = useMemo(() => {
+    const byCategory = new Map<string, string>();
+    for (const signal of signals) {
+      if (!byCategory.has(signal.category)) {
+        byCategory.set(signal.category, signal.categoryDisplayName);
+      }
+    }
+
+    return Array.from(byCategory.entries())
+      .map(([category, displayName]) => ({ category, displayName }))
+      .sort((a, b) => a.displayName.localeCompare(b.displayName));
+  }, [signals]);
   const selectedCompanyEvent =
     companyEvents.find((event) => event.id === selectedCompanyEventId) ?? null;
   const companyEventTypes = useMemo(() => {
@@ -228,6 +255,10 @@ export function useAppViewModel({
       const watchlistMatches = allowedTickers ? allowedTickers.has(item.company) : true;
       const companyMatches = inboxCompanyFilter === "all" || item.company === inboxCompanyFilter;
       const typeMatches = inboxTypeFilter === "all" || item.type === inboxTypeFilter;
+      const signalMatches =
+        inboxSignalFilter === "all" ||
+        (signalsByFeedItemId[item.id]?.some((signal) => signal.category === inboxSignalFilter) ??
+          false);
       const sourceMatches = inboxSourceFilter === "all" || item.source === inboxSourceFilter;
       const statusMatches =
         inboxStatusFilter === "all" ||
@@ -244,6 +275,7 @@ export function useAppViewModel({
         watchlistMatches &&
         companyMatches &&
         typeMatches &&
+        signalMatches &&
         sourceMatches &&
         statusMatches &&
         searchMatches
@@ -253,11 +285,13 @@ export function useAppViewModel({
     companiesById,
     feedState,
     inboxCompanyFilter,
+    inboxSignalFilter,
     inboxSourceFilter,
     inboxStatusFilter,
     inboxTypeFilter,
     inboxWatchlistFilter,
     searchQuery,
+    signalsByFeedItemId,
     watchlistMemberships,
   ]);
   const selectedFeedItem =
@@ -509,6 +543,7 @@ export function useAppViewModel({
     inboxWatchlistFilter !== "all" ||
     inboxCompanyFilter !== "all" ||
     inboxTypeFilter !== "all" ||
+    inboxSignalFilter !== "all" ||
     inboxSourceFilter !== "all" ||
     inboxStatusFilter !== "all";
   const inboxEmptyState: InboxEmptyState =
@@ -531,6 +566,7 @@ export function useAppViewModel({
     companyEventsByDate,
     companyFormRegistryMatches,
     effectiveTheme,
+    feedSignalCategories,
     feedSources,
     feedTypes,
     filteredCompanies,
@@ -560,6 +596,7 @@ export function useAppViewModel({
     selectedNotebookScreenCompany,
     selectedNotebookScreenEntries,
     selectedNotebookScreenEntry,
+    signalsByFeedItemId,
     sourceStatusSummary,
     totalUnreadFeedItems,
     transcriptCompanySuggestions,

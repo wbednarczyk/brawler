@@ -24,6 +24,7 @@ import {
   StatusChip,
 } from "../../ui";
 import { InboxDetailPane } from "./InboxDetailPane";
+import { SignalBadges } from "./SignalBadges";
 import type { InboxScreenProps } from "./inboxTypes";
 
 export function InboxScreen({
@@ -31,7 +32,12 @@ export function InboxScreen({
   companies,
   feedTypes,
   feedSources,
+  feedSignalCategories,
   filteredFeedItems,
+  signalsByFeedItemId,
+  signalsError,
+  aiSignalClassificationState,
+  aiSignalFallbackEnabled,
   selectedFeedItem,
   selectedFeedCompany,
   aiAnalysisJobsByFeedItemId,
@@ -43,6 +49,7 @@ export function InboxScreen({
   inboxWatchlistFilter,
   inboxCompanyFilter,
   inboxTypeFilter,
+  inboxSignalFilter,
   inboxSourceFilter,
   inboxReviewStats,
   inboxEmptyState,
@@ -62,7 +69,11 @@ export function InboxScreen({
   setInboxWatchlistFilter,
   setInboxCompanyFilter,
   setInboxTypeFilter,
+  setInboxSignalFilter,
   setInboxSourceFilter,
+  confirmCompanySignal,
+  rejectCompanySignal,
+  runAiSignalClassification,
   setSelectedFeedItemId,
   setActiveSection,
   markVisibleInboxAsRead,
@@ -204,6 +215,21 @@ export function InboxScreen({
             </select>
           </label>
           <label>
+            {text("Signal")}
+            <select
+              aria-label={text("Inbox signal type")}
+              value={inboxSignalFilter}
+              onChange={(event) => setInboxSignalFilter(event.target.value)}
+            >
+              <option value="all">{text("All signals")}</option>
+              {feedSignalCategories.map((option) => (
+                <option key={option.category} value={option.category}>
+                  {text(option.displayName)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
             {text("Source")}
             <select
               aria-label={text("Inbox source")}
@@ -254,6 +280,7 @@ export function InboxScreen({
                   <span>{item.source}</span>
                 </div>
                 <h2>{item.title}</h2>
+                <SignalBadges signals={signalsByFeedItemId[item.id]} />
                 <p>{feedItemSummary(item)}</p>
               </div>
               {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
@@ -324,6 +351,9 @@ export function InboxScreen({
           {sourceRefreshError ? (
             <p className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</p>
           ) : null}
+          {signalsError ? (
+            <p className="error-text">{text("Signal classification failed")}: {signalsError}</p>
+          ) : null}
         </div>
 
         <div className="inbox-maintenance-row" aria-label={text("Inbox maintenance")}>
@@ -336,6 +366,21 @@ export function InboxScreen({
             {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
             {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
           </Button>
+          {aiSignalFallbackEnabled ? (
+            <Button
+              className="compact-button"
+              disabled={aiSignalClassificationState === "running"}
+              onClick={() => {
+                void runAiSignalClassification();
+              }}
+              title={text("Classify unknown official filings with the AI fallback")}
+            >
+              {aiSignalClassificationState === "done" ? <CheckCircle2 size={15} /> : <Activity size={15} />}
+              {aiSignalClassificationState === "running"
+                ? text("Classifying")
+                : text("Classify with AI")}
+            </Button>
+          ) : null}
         </div>
       </section>
 
@@ -358,6 +403,9 @@ export function InboxScreen({
         <InboxDetailPane
           selectedFeedItem={selectedFeedItem}
           selectedFeedCompany={selectedFeedCompany}
+          selectedFeedSignals={selectedFeedItem ? signalsByFeedItemId[selectedFeedItem.id] : undefined}
+          confirmCompanySignal={confirmCompanySignal}
+          rejectCompanySignal={rejectCompanySignal}
           aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
           aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
           aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}

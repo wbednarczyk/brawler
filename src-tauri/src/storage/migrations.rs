@@ -208,6 +208,26 @@ const MIGRATIONS: &[Migration] = &[
         name: "database_pool_settings",
         sql: include_str!("../../migrations/0040_database_pool_settings.sql"),
     },
+    Migration {
+        version: 41,
+        name: "company_signals",
+        sql: include_str!("../../migrations/0041_company_signals.sql"),
+    },
+    Migration {
+        version: 42,
+        name: "company_signals_seed_fixup",
+        sql: include_str!("../../migrations/0042_company_signals_seed_fixup.sql"),
+    },
+    Migration {
+        version: 43,
+        name: "company_signals_self_heal",
+        sql: include_str!("../../migrations/0043_company_signals_self_heal.sql"),
+    },
+    Migration {
+        version: 44,
+        name: "generalize_own_shares_signal",
+        sql: include_str!("../../migrations/0044_generalize_own_shares_signal.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

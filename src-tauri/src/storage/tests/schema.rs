@@ -210,5 +210,5 @@ fn reports_database_status() {
     assert_eq!(status.applied_migrations, super::expected_migration_count());
     assert_eq!(status.companies, 0);
     assert_eq!(status.source_adapters, 12);
-    assert_eq!(status.settings, 20);
+    assert_eq!(status.settings, 21);
 }

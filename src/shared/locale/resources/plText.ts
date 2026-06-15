@@ -904,4 +904,30 @@ export const plText: Record<string, string> = {
   "Used to fetch reports when a filing has no attachment. The URL rarely changes.":
     "Używana do pobierania raportów, gdy komunikat nie ma załącznika. Adres URL rzadko się zmienia.",
   "IR reports page URL": "Adres URL strony raportów RI",
+  // Typed ESPI/EBI signals (v0.40.0)
+  "Typed filing signals": "Typowane sygnały komunikatów",
+  "Typed signals": "Typowane sygnały",
+  "Signal": "Sygnał",
+  "Inbox signal type": "Typ sygnału w skrzynce",
+  "Signals": "Sygnały",
+  "All signals": "Wszystkie sygnały",
+  "Proposed": "Propozycja",
+  "Signal classification failed": "Klasyfikacja sygnałów nie powiodła się",
+  "Classify unknown official filings with the AI fallback":
+    "Sklasyfikuj nierozpoznane komunikaty oficjalne za pomocą AI",
+  "Classify with AI": "Klasyfikuj z AI",
+  "Classifying": "Klasyfikowanie",
+  "AI proposal — confirm to apply": "Propozycja AI — potwierdź, aby zastosować",
+  "Rule-classified": "Sklasyfikowano regułą",
+  "Signal review": "Przegląd sygnału",
+  "Signal proposal actions": "Działania dla propozycji sygnału",
+  "ESPI AI classification fallback": "Klasyfikacja ESPI przez AI (zapasowa)",
+  // Signal category display names
+  "Insider transaction": "Transakcja osoby zarządzającej",
+  "Profit warning / estimate": "Ostrzeżenie o wynikach / szacunki",
+  "Significant contract": "Znacząca umowa",
+  "Own-share transactions": "Akcje własne",
+  "Guidance change": "Zmiana prognoz",
+  "General meeting": "Walne zgromadzenie",
+  "Other official filing": "Inny komunikat oficjalny",
 };

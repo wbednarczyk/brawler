@@ -812,6 +812,53 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       );
     }
 
+    if (command === "list_company_signals") {
+      const input = (args as {
+        input: {
+          companyId: string | null;
+          watchlistId: string | null;
+          category: string | null;
+          status: string | null;
+        };
+      }).input;
+
+      return Promise.resolve(
+        appTestState.companySignalsResponse.filter((signal) => {
+          const companyMatches = !input.companyId || signal.companyId === input.companyId;
+          const categoryMatches = !input.category || signal.category === input.category;
+          const statusMatches = !input.status || signal.status === input.status;
+          const watchlistMatches =
+            !input.watchlistId ||
+            (input.watchlistId === "watchlist_main_gpw" && signal.companyId === "company_gpw_cdr");
+
+          return companyMatches && categoryMatches && statusMatches && watchlistMatches;
+        }),
+      );
+    }
+
+    if (command === "confirm_company_signal") {
+      const input = (args as { input: { id: string } }).input;
+      let confirmed = appTestState.companySignalsResponse.find((signal) => signal.id === input.id);
+      appTestState.companySignalsResponse = appTestState.companySignalsResponse.map((signal) =>
+        signal.id === input.id ? { ...signal, status: "confirmed" as const } : signal,
+      );
+      confirmed =
+        appTestState.companySignalsResponse.find((signal) => signal.id === input.id) ?? confirmed;
+      return Promise.resolve(confirmed);
+    }
+
+    if (command === "reject_company_signal") {
+      const input = (args as { input: { id: string } }).input;
+      appTestState.companySignalsResponse = appTestState.companySignalsResponse.filter(
+        (signal) => signal.id !== input.id,
+      );
+      return Promise.resolve(null);
+    }
+
+    if (command === "run_ai_signal_classification") {
+      return Promise.resolve({ enabled: false, examined: 0, proposed: 0, skipped: 0 });
+    }
+
     if (command === "create_company_event") {
       const input = (args as {
         input: {

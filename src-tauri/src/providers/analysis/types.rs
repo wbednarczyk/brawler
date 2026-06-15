@@ -136,6 +136,21 @@ pub struct KpiExtractionProviderOutput {
     pub facts: Vec<ExtractedKpiFact>,
 }
 
+/// One candidate category offered to the ESPI classification fallback prompt.
+#[derive(Debug, Clone)]
+pub struct EspiClassificationCategory {
+    pub key: String,
+    pub display_name: String,
+}
+
+/// The model's classification of one filing. `category` is `None` for the
+/// unknown outcome (no confident category), never a guessed type (ADR 0034).
+#[derive(Debug, Clone)]
+pub struct EspiClassificationOutput {
+    pub category: Option<String>,
+    pub confidence: f32,
+}
+
 #[derive(Debug, Error)]
 pub enum AnalysisProviderError {
     #[error("provider is not configured")]

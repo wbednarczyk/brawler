@@ -9,6 +9,7 @@ const EVIDENCE_TYPES: &[&str] = &[
     "company_event",
     "ai_analysis",
     "research_question",
+    "company_signal",
 ];
 
 const RELATION_TYPES: &[&str] = &[
@@ -200,6 +201,29 @@ pub(super) fn list_research_evidence(
             FROM research_questions
             JOIN scope_companies ON scope_companies.company_id = research_questions.scope_id
             WHERE research_questions.scope_type = 'company'
+
+            UNION ALL
+
+            SELECT
+                'evidence_signal_' || company_signals.id AS id,
+                'company_signal' AS evidence_type,
+                'signals' AS source_domain,
+                company_signals.id AS source_id,
+                company_signals.company_id AS company_id,
+                COALESCE(company_signals.signal_date, company_signals.created_at) AS occurred_at,
+                signal_categories.display_name AS title,
+                feed_items.title AS summary,
+                feed_items.source_url AS source_url,
+                company_signals.classified_by AS attribution,
+                CASE
+                    WHEN company_signals.classified_by = 'ai' THEN 'ai_generated'
+                    ELSE 'official_report'
+                END AS trust_category
+            FROM company_signals
+            JOIN feed_items ON feed_items.id = company_signals.feed_item_id
+            JOIN signal_categories ON signal_categories.key = company_signals.category
+            JOIN scope_companies ON scope_companies.company_id = company_signals.company_id
+            WHERE company_signals.status = 'confirmed'
         )
         SELECT
             id,

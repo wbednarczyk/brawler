@@ -85,6 +85,10 @@ export function useSettingsController({
     updateSettings({ generalAnalysisTimeoutSeconds: nextTimeoutSeconds });
   }
 
+  function updateEspiAiFallbackEnabled(nextEnabled: boolean) {
+    updateSettings({ espiAiFallbackEnabled: nextEnabled });
+  }
+
   function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
@@ -181,6 +185,7 @@ export function useSettingsController({
     updateGeneralAnalysisModel,
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
+    updateEspiAiFallbackEnabled,
     updateDbAcquireTimeoutMs,
     updateDbBusyTimeoutMs,
     updateDbMaxConnections,
