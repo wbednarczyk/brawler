@@ -4,6 +4,7 @@ use tauri::Manager;
 pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
+pub mod interpretation;
 pub mod ir_resolution;
 pub mod jobs;
 pub mod licensing;
