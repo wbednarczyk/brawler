@@ -155,6 +155,20 @@ Ingestion should preserve source attribution, publication time, fetch time, orig
 
 Feed retention must be designed before v1 ingestion becomes broad. The app should avoid unbounded local growth by defining per-source retention defaults, user-adjustable cleanup settings, and rules that preserve important user-marked content. Saved items, items linked to notes, and items with AI analysis or explicit user decisions should not be removed by routine cleanup without clear user control.
 
+## Typed Filing Signals
+
+Official ESPI/EBI filings should be classified into typed disclosure signals so the feed reads as a signal stream instead of homework. The investor should be able to tell at a glance whether a filing is an insider transaction, a dividend, a profit warning or result estimate, a significant contract, a buyback, or a guidance change.
+
+Behavior:
+
+- A deterministic rule classifier runs during ingestion over the filing's official category label, title, and body, and types the formulaic majority of filings automatically.
+- Filings the rules cannot place are left untyped, or — when the optional AI fallback is enabled — produce a proposed type that the user must confirm before it is applied. The app never silently assigns a wrong type.
+- Typed filings show a type badge in the Inbox and company feed, and the feed can be filtered by type.
+- The digest groups high-signal types (for example, insider activity) so the user sees them together, and high-signal types can drive reminders.
+- A typed filing that carries a real future date (such as a dividend record/payment date or a general-meeting date) also appears as a company event in the calendar. Past disclosures stay in the feed and do not create calendar entries.
+
+Typed signals are decision support, not recommendations: a signal states what kind of disclosure occurred, with a link back to the official filing, and never implies a buy/sell/hold action.
+
 ## Company Events Calendar
 
 V1 should include a company-events calendar view for companies in the user's watchlists. The main default goal is to answer: "what company-specific dates should I pay attention to next?" The same screen should also support historical dates so the user can understand what already happened and compare current notes, reports, dividends, and meetings against prior context.
@@ -271,7 +285,7 @@ User-facing behavior:
 - a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog; the add-fact KPI picker supports inline search
 - AI assistance that reads a stored report and proposes figures, reviewed in a centered modal where the user confirms, edits, or rejects each value, with bulk "confirm all known" and "accept all suggestions" actions; the modal auto-closes when nothing is left to review and no AI-proposed number is stored as a confirmed figure without review
 - the user can also enter and correct figures manually against a report
-- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.41.0) side-by-side comparison of the same figure across companies
+- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.44.0) side-by-side comparison of the same figure across companies
 - the panel and the review modal remain usable in tall, narrow windows (e.g. a quarter of an ultrawide monitor), stacking or shrinking rather than clipping
 
 Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.

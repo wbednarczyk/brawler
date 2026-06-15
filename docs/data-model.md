@@ -246,6 +246,63 @@ Rules:
 - Bankier calendar source keys are based on ticker, event category, and event description so source-side date changes update the existing sourced event row.
 - Source-keyed refresh updates sourced event rows when the accepted source changes the event.
 
+### Company Signals
+
+Supports typed ESPI/EBI classification: turns official filings into typed disclosure signals (insider transactions, dividends, profit warnings, significant contracts, buybacks, guidance changes). `company_signals` is the canonical classification output, separate from `feed_items` (the raw filing) and `company_events` (the calendar). See [ADR 0034](adr/0034-espi-event-classification.md).
+
+Fields:
+
+- `id`
+- `company_id`
+- `feed_item_id`
+- `category`
+- `confidence`
+- `classified_by`
+- `status`
+- `signal_date`
+- `provider_id`
+- `model_id`
+- `derived_event_id`
+- `created_at`
+- `updated_at`
+
+Related tables:
+
+- `signal_categories`
+
+Rules:
+
+- Signals belong to exactly one canonical company and reference the originating `feed_item` as origin.
+- `category` references a row in the seeded, extensible `signal_categories` registry; it is not a hard-coded enum.
+- `classified_by` is `rule` or `ai`.
+- `status` is `confirmed` or `proposed`. Rule-classified signals are `confirmed` on creation; AI-classified signals are `proposed` and require user confirmation before becoming `confirmed`.
+- `signal_date` is the filing publication date and is stored as `YYYY-MM-DD`.
+- `provider_id` and `model_id` are populated only for `ai` classifications and record provider provenance for audit and reversibility.
+- A `company_events` row is derived (`derived_event_id`) **only** for forward-looking categories carrying a genuine future date (e.g. dividend record/payment date, general-meeting date). Past-disclosure signals do not derive calendar events.
+- Classification and event derivation are idempotent: re-ingesting or re-confirming never duplicates a signal or its derived event. Identity is `(feed_item_id, category)`.
+- Unknown filings produce no signal (or a `proposed` AI signal); they are never assigned a wrong category silently.
+
+### Signal Categories
+
+The seeded, extensible registry that backs `company_signals.category`. New categories and markets are added as data, not schema changes.
+
+Fields:
+
+- `id`
+- `key`
+- `display_name`
+- `rule_definition_json`
+- `derives_event`
+- `created_at`
+- `updated_at`
+
+Rules:
+
+- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `buyback`, `guidance_change`, `other`.
+- `rule_definition_json` holds the deterministic match rules (category labels, title/body patterns) for the rule classifier.
+- `derives_event = 1` marks categories that materialize a derived `company_events` row when the filing carries a future date.
+- The registry is source-neutral so a future GPW re-enable feeds the same classifier.
+
 ### Transcript Jobs
 
 Supports Transcripts screen and company Transcripts tab.
@@ -748,6 +805,17 @@ Rules:
 - Sourced event identity uses `(source_adapter_id, source_event_key)` when both values are present.
 - Sourced event refreshes update the existing source-keyed row when event date, title, status, source URL, attribution, or fetched timestamp changes.
 - Manual events are for missing or user-known dates, not normal corrections to changed sourced events.
+
+## Company Signal Model
+
+Company signals are typed classifications of official ESPI/EBI filings. A signal answers "what kind of disclosure is this filing" — insider transaction, dividend, profit warning, significant contract, buyback, guidance change, or other. Signals are canonical and distinct from calendar events: most disclosures are dated past events, so only forward-looking categories with a real future date derive a `company_events` row. See [ADR 0034](adr/0034-espi-event-classification.md).
+
+Identity and lifecycle:
+
+- A signal is produced by classifying a `feed_item` from an official report source (currently the active Bankier company-komunikaty feed; source-neutral for a future `gpw-espi-ebi` re-enable).
+- The rule classifier runs at ingestion and writes `confirmed` signals deterministically. Filings it cannot place go to the opt-in async AI fallback, which writes `proposed` signals that require user confirmation.
+- Signal identity is `(feed_item_id, category)`; re-classification updates the existing row rather than inserting a duplicate.
+- Derived calendar events link back via `derived_event_id`, and the event carries origin linkage to the signal and the originating filing.
 
 ## Search Index
 

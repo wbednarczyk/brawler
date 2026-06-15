@@ -34,26 +34,29 @@ Milestones through `v0.38.0` are shipped. This roadmap does not restate complete
 
 The next milestone is `v0.39.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
 
-- `v0.39.0` — **Typed ESPI event classification**: classify ESPI/EBI filings into typed company events (insider transactions, dividends, profit warnings, contracts, buybacks). Also delivers the ESPI/EBI attachment ingestion and on-track company history backfill deferred from `v0.34.0`.
-- `v0.40.0` — **Management claims tracker**: track management claims from reports and transcripts with due periods, verdicts, and KPI-backed verification.
-- `v0.41.0` — **Report-season cockpit**: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
-- `v0.42.0` — **Cross-company KPI comparison**: side-by-side tables and multi-series trend charts.
-- `v0.43.0` — **Quality frameworks (quantitative checks)**: a rule engine evaluates user frameworks against the fundamentals facts and produces a versioned scorecard; ships clonable templates including a Kroeze-style quality template. Depends only on facts (`v0.37.0`); resequenceable.
-- `v0.44.0` — **Story clustering across sources**: cluster near-duplicate multi-source coverage into single stories with the official source ranked first.
-- `v0.45.0` — **Report-over-report diff**: diff consecutive periodic reports section by section with a cited AI delta summary.
-- `v0.46.0` — **Feed triage mode and command palette**: keyboard feed triage and a global command palette over search, navigation, and actions.
-- `v0.47.0` — **Autonomous report pipeline** (North Star, detailed below): detect publication, auto-fetch, auto-extract, and notify with cross-references, behind a per-company trust ladder.
-- `v0.48.0` — **Quality frameworks (qualitative assessment)**: agent-assessed criteria (moat, pricing power, recurring revenue, capital allocation) with citations, composed into the scorecard and re-evaluated by autopilot.
-- `v0.49.0` — **Re-invent the notebook panel**.
-- `v0.50.0` — **Import/export v2**: unified data bundle and per-feature coverage, including the financial facts + KPI definitions export/import deferred from `v0.37.0`.
+- `v0.39.0` — **Interpretative AI layer — static foundation**: introduce the two-layer AI architecture and the on-device interpretative layer as capability contracts (`Classifier`, `SimilarityProvider`, `Matcher`, `SemanticSearch`) with a registry/config selection, deterministic **static** baselines (rules, FTS5/lexical, fuzzy), and a per-capability eval harness. No embedding model or vector store yet; the static baselines need neither. Built before its consumers so later features bind to the boundary from day one. Design in [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md).
+- `v0.40.0` — **Typed ESPI event classification**: classify official ESPI/EBI filings into typed company signals (insider transactions, dividends, profit warnings, significant contracts, buybacks, guidance changes) as the first consumer of the `Classifier` capability, with a rule classifier plus an opt-in AI fallback that requires confirmation, and derived calendar events for dated types. Design in [ADR 0034](adr/0034-espi-event-classification.md).
+- `v0.41.0` — **Report document ingestion & history backfill**: persist ESPI/EBI report attachments and user-supplied report URLs as stored report documents, and an on-track action that backfills the last 2–3 years of periodic reports, filings, and calendar entries for a company. Both target the active Bankier official-report path and were deferred from `v0.34.0`.
+- `v0.42.0` — **Management claims tracker**: track management claims from reports and transcripts with due periods, verdicts, and KPI-backed verification.
+- `v0.43.0` — **Report-season cockpit**: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
+- `v0.44.0` — **Cross-company KPI comparison**: side-by-side tables and multi-series trend charts.
+- `v0.45.0` — **Quality frameworks (quantitative checks)**: a rule engine evaluates user frameworks against the fundamentals facts and produces a versioned scorecard; ships clonable templates including a Kroeze-style quality template. Depends only on facts (`v0.37.0`); resequenceable.
+- `v0.46.0` — **Interpretative AI layer — embedding model**: add the on-device embedding model + vector store (`sqlite-vec`-class, a disposable derived index) behind the existing capability boundary, and enable the model-backed implementation per capability only where the eval shows it beats the static baseline. Sequenced immediately before its first high-value consumer (story clustering). Design in [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md).
+- `v0.47.0` — **Story clustering across sources**: cluster near-duplicate multi-source coverage into single stories with the official source ranked first; first model consumer of the `SimilarityProvider` capability.
+- `v0.48.0` — **Report-over-report diff**: diff consecutive periodic reports section by section with a cited AI delta summary.
+- `v0.49.0` — **Feed triage mode and command palette**: keyboard feed triage and a global command palette over search, navigation, and actions.
+- `v0.50.0` — **Autonomous report pipeline** (North Star, detailed below): detect publication, auto-fetch, auto-extract, and notify with cross-references, behind a per-company trust ladder.
+- `v0.51.0` — **Quality frameworks (qualitative assessment)**: agent-assessed criteria (moat, pricing power, recurring revenue, capital allocation) with citations, composed into the scorecard and re-evaluated by autopilot.
+- `v0.52.0` — **Re-invent the notebook panel**.
+- `v0.53.0` — **Import/export v2**: unified data bundle and per-feature coverage, including the financial facts + KPI definitions export/import deferred from `v0.37.0`.
 
-Sequencing notes: the quality-frameworks milestones (`v0.43.0` quantitative, `v0.48.0` qualitative) depend only on the fundamentals facts and are resequenceable. The fundamentals schema was validated against ~37 GPW companies across sectors; findings (statement-type packs, generalized unit model, fact variants, period model) are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+Sequencing notes: the interpretative AI layer is split into a static foundation (`v0.39.0`, no model) and an embedding-model milestone (`v0.46.0`, lands before story clustering, its first model consumer); the model-backed path is adopted per capability only where a per-capability eval beats the static baseline, and the vector index is disposable so the model is reversible to static — see [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md). The quality-frameworks milestones (`v0.45.0` quantitative, `v0.51.0` qualitative) depend only on the fundamentals facts and are resequenceable. The fundamentals schema was validated against ~37 GPW companies across sectors; findings (statement-type packs, generalized unit model, fact variants, period model) are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md).
 
-## North Star: Autonomous Report Pipeline (v0.47.0)
+## North Star: Autonomous Report Pipeline (v0.50.0)
 
 The fundamentals, extraction, diff, claims, and cockpit milestones are building blocks toward one experience: a tracked company publishes a periodic report, and the app detects it, fetches it, extracts the figures, summarizes what changed, cross-references the result against open claims, research questions, and evidence, and surfaces a single notification — with no manual steps.
 
-This is deliberately sequenced last (v0.47.0) because it composes everything before it. It introduces a trust ladder rather than changing the confirmation guarantee: confirm-before-commit stays the default, the user opts a specific company into auto-confirm, and auto-committed facts carry a distinct unreviewed provenance state so they stay flagged, reversible, and cited. The financial_facts confirmation model in v0.34.0 is designed so this state is an additive value, not a later migration.
+This is deliberately sequenced last (v0.50.0) because it composes everything before it. It introduces a trust ladder rather than changing the confirmation guarantee: confirm-before-commit stays the default, the user opts a specific company into auto-confirm, and auto-committed facts carry a distinct unreviewed provenance state so they stay flagged, reversible, and cited. The financial_facts confirmation model in v0.34.0 is designed so this state is an additive value, not a later migration.
 
 Boundary: fetching and analyzing while the app is closed crosses into a hosted/scheduled service and belongs to the managed-AI paid frontier, not the open core. Autopilot runs while the app is open.
 

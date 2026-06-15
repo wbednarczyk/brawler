@@ -190,12 +190,21 @@ Rules:
       "label": "report.pdf",
       "url": "https://www.gpw.pl/pub/GPW/ESPI/example/report.pdf"
     }
+  ],
+  "signals": [
+    {
+      "id": "signal_01",
+      "category": "insider_transaction",
+      "status": "confirmed",
+      "classifiedBy": "rule"
+    }
   ]
 }
 ```
 
 Rules:
 
+- `signals` is the list of typed classifications attached to this filing (see [Company Signal](#company-signal)). It is read-only on the feed read model and empty for unclassified items; the full signal contract is served by the signal endpoints.
 - `publishedAt` may be null only when the source does not provide it.
 - `fetchedAt` is always required.
 - `dedupeKey` must be stable for the same source item.
@@ -439,6 +448,70 @@ List rules:
 - `mode: "historical"` returns events before today unless explicit dates are supplied.
 - `mode: "all"` allows combined/historical timeline views.
 - Initial source ingestion may use this same create contract through storage internals, but UI manual creation must set `sourceType: "manual"`.
+
+## Company Signal
+
+Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).
+
+```json
+{
+  "id": "signal_01",
+  "companyId": "company_gpw_cdr",
+  "feedItemId": "feed_01",
+  "category": "insider_transaction",
+  "confidence": 0.98,
+  "classifiedBy": "rule",
+  "status": "confirmed",
+  "signalDate": "2026-05-28",
+  "providerId": null,
+  "modelId": null,
+  "derivedEventId": null,
+  "createdAt": "2026-05-28T12:15:00Z",
+  "updatedAt": "2026-05-28T12:15:00Z"
+}
+```
+
+Signal categories (seeded registry, extensible as data):
+
+- `insider_transaction` (MAR Art. 19)
+- `dividend`
+- `profit_warning`
+- `significant_contract`
+- `buyback`
+- `guidance_change`
+- `other`
+
+Statuses:
+
+- `confirmed`
+- `proposed`
+
+Rules:
+
+- Signals belong to exactly one canonical company and reference the originating `feedItemId`.
+- `classifiedBy` is `rule` or `ai`. Rule-classified signals are `confirmed` on creation; AI-classified signals are `proposed` and require user confirmation.
+- `providerId`/`modelId` are populated only for `ai` classifications.
+- `derivedEventId` is set only when a forward-looking category with a future date materializes a `company_events` row (e.g. dividend or general-meeting dates). Past-disclosure categories do not derive events.
+- Classification and event derivation are idempotent; signal identity is `(feedItemId, category)`.
+
+Initial local commands:
+
+- `list_company_signals(input)`: returns signals filtered by company, watchlist, category, and status.
+- `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed` and creating the derived event when applicable.
+- `reject_company_signal(input)`: discards a `proposed` signal without creating a signal/event.
+
+Confirm/reject input:
+
+```json
+{
+  "id": "signal_01"
+}
+```
+
+Rules:
+
+- Confirming or rejecting applies only to `proposed` signals; `confirmed` signals are terminal except for future reversal flows.
+- Confirmation must persist provider provenance and create at most one derived event, idempotently.
 
 ## AI Analysis Result
 
@@ -1852,7 +1925,7 @@ Commands:
 The report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md)) is: ESPI/EBI attachment (primary), per-company IR reports page (fallback), manual PDF URL paste (last resort).
 
 - `get_company_ir_reports_url(companyId)` / `set_company_ir_reports_url(companyId, url)`: read/write the durable per-company IR reports page URL (empty clears it).
-- `resolve_ir_report(input)`: fetches the company's IR page, extracts candidate links generically (no per-company scrapers), and has the AI pick the report matching the event context (`companyId`, optional `periodHint`/`reportType`/`publishedAt`). A confident pick is captured into `report_documents` and returned as `document`; otherwise `document` is null and `candidates` is returned for the user to choose. Event-driven automatic resolution is deferred to v0.47.0.
+- `resolve_ir_report(input)`: fetches the company's IR page, extracts candidate links generically (no per-company scrapers), and has the AI pick the report matching the event context (`companyId`, optional `periodHint`/`reportType`/`publishedAt`). A confident pick is captured into `report_documents` and returned as `document`; otherwise `document` is null and `candidates` is returned for the user to choose. Event-driven automatic resolution is deferred to v0.50.0.
 
 ## UI-Facing Command Boundaries
 

@@ -50,7 +50,7 @@ The shared `transport.rs` is "the in-house lib"; it also removes the ad-hoc erro
 
 ### 3. Async by default
 
-The provider/job layer migrates from blocking to async. Rationale: Tauri already runs on tokio (so `reqwest::blocking` wraps async anyway); the future official SDKs and all current community crates are async-first, so async now makes the later swap a drop-in instead of a prerequisite refactor; and async enables the concurrency the autonomous report pipeline (v0.47.0) needs and the streaming the AI-waiting-animation work wants.
+The provider/job layer migrates from blocking to async. Rationale: Tauri already runs on tokio (so `reqwest::blocking` wraps async anyway); the future official SDKs and all current community crates are async-first, so async now makes the later swap a drop-in instead of a prerequisite refactor; and async enables the concurrency the autonomous report pipeline (v0.50.0) needs and the streaming the AI-waiting-animation work wants.
 
 - `AiAnalysisProvider` becomes an async trait. Because the registry holds `Box<dyn AiAnalysisProvider>`, dynamic dispatch over async methods uses the **`async-trait`** crate — an accepted, deliberate dependency (small, ubiquitous), consistent with not being needlessly conservative about dependencies.
 - The Gemini adapter and its injectable HTTP client trait, the three analysis jobs (`ai_analysis`, `research_briefs`, `research_digests`) and their Tauri commands, and the **transcription** provider + `transcript_runner` all migrate to async. Transcription stays Gemini-only; it migrates for consistency, not to become multi-provider.

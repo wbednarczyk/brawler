@@ -1,0 +1,111 @@
+# ADR 0035: Two-Layer AI Architecture and the Local Interpretative Layer (Design)
+
+Status: Accepted
+
+This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.46.0`); runtime/model defaults remain proposed and require owner confirmation, validated by the eval harness, before implementation. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
+
+## Context
+
+Multiple current and upcoming milestones independently need *interpretative lookup* over local content — "what is this," "what is this similar to," "what does this match":
+
+- ESPI classification (`v0.40.0`) — classify a filing into a typed category.
+- Story clustering (`v0.47.0`) — group near-duplicate multi-source coverage.
+- Management claims (`v0.42.0`) and the autonomous pipeline (`v0.50.0`) — match claims to facts, evidence to questions.
+- Global search (`v0.38.0`, [ADR 0032](0032-search-and-backup-boundaries.md)) is keyword-only (FTS5) today and would benefit from semantic (hybrid) retrieval.
+
+Today the only "AI" boundary is the generative, BYO-key, remote provider boundary ([ADR 0028](0028-multi-provider-ai-boundary.md)). Routing every interpretative lookup through a remote generative model is slow, costs per call, requires an API key, and sends content off-device — at odds with the local-first and privacy principles. A small **on-device encoder** (text → vector) can serve interpretative lookup locally: fast, free, offline, private.
+
+Two owner requirements shape this design:
+
+1. **Replaceable / upgradeable / maintainable.** It must be easy to swap one model for another, and to swap the engine behind it, without touching the features that use it.
+2. **Reversible to "static."** If an embedded model does not prove good enough, it must be possible to remove the model — and the whole "AI inside" idea — and fall back to a non-ML/deterministic implementation, without ripping out consumers or losing data.
+
+Both requirements are satisfied by the same move: **consumers bind to capabilities, not to models.**
+
+## Decision (proposed)
+
+### 1. Two AI layers
+
+- **Interpretative layer** (new) — on-device semantic lookup: embeddings and light classifiers. Always-on, free, offline, private. Powers classification, similarity, matching, and semantic/hybrid search.
+- **Generative / reasoning layer** (existing, [ADR 0028](0028-multi-provider-ai-boundary.md)) — summarize, extract, assess, with citations. Provider-neutral, BYO-key, remote by default; an optional local generative model may be added later behind the same boundary.
+
+Heavy reasoning (Polish financial summarization, KPI extraction with citations) stays in the generative layer; a small local model is not relied on for it.
+
+### 2. Capability boundary (consumers depend on tasks, not models)
+
+Consumers depend on small task-level capability contracts, never on "embeddings" or "a model." Initial capabilities (added only as real consumers appear — see Scope):
+
+- `Classifier` — `classify(text, taxonomy) -> { category, confidence }`
+- `SimilarityProvider` — `most_similar(item, candidates, k)` / `score(a, b)`
+- `Matcher` — `match(query, candidates) -> ranked`
+- `SemanticSearch` — `search(query, scope) -> ranked`
+
+### 3. Implementation strategies, with a static baseline that ships first
+
+Each capability has interchangeable implementations. The **static/deterministic implementation is the shipped baseline**; the model-backed implementation is an *optional enhancement layered behind the same interface*:
+
+| Capability | Static baseline | Model implementation |
+| --- | --- | --- |
+| `Classifier` | rules over source category/title | embedding nearest-prototype |
+| `SimilarityProvider` | lexical (BM25 over existing FTS5, trigram/Jaccard) | cosine over embeddings |
+| `Matcher` | keyword/fuzzy overlap | embedding similarity |
+| `SemanticSearch` | FTS5 keyword (today) | hybrid keyword + vector |
+
+Removing the model is therefore not surgery: it is switching a capability's active implementation back to the static one it was layered on. Consumers are unaffected because they only ever knew the capability.
+
+### 4. Engine boundary and model versioning (below the model implementation)
+
+Beneath the model-backed implementations sits a separate, lower-level boundary for the inference engine and model itself:
+
+- `Embedder` — `embed(texts) -> vectors`, with `model_id` and `dim` metadata. Implementations: local (`candle` / `fastembed`-class, pure-Rust preferred) and optionally remote embedding APIs.
+- Every stored vector records its `model_id` and `dim`. Changing the model re-runs the embed job and rebuilds the index; vectors from a different `model_id` are never mixed.
+
+This is the second swap point: the capability boundary gives reversibility; the engine boundary gives model upgradeability.
+
+### 5. The interpretative layer produces only disposable, derived artifacts
+
+Hard rule: the interpretative layer may only ever produce **derived/cache** data, never a source of truth. Vectors are an index computed from canonical data (filings, notes, claims, facts), stored in a dedicated vector store (`sqlite-vec`-class, co-located with the existing SQLite database so it inherits the backup/WAL posture, [ADR 0032](0032-search-and-backup-boundaries.md)).
+
+Consequences of the rule:
+- Changing the model → rebuild the index; no data migration.
+- Disabling/removing the model entirely → stop populating vectors, switch capabilities to static, drop the vector table. **Zero canonical data loss.**
+
+### 6. Selection via registry + configuration
+
+Active implementation per capability is chosen through a registry/factory + settings, the same pattern [ADR 0028](0028-multi-provider-ai-boundary.md) mandates for generative providers. Defaults are conservative (static); the model is opt-in. The interpretative layer reuses the credential/config/provider-selection boundary rather than inventing a parallel one.
+
+### 7. Eval harness decides keep/drop, per capability
+
+The model is kept only where it measurably beats the static baseline. Each capability ships with a small deterministic eval (sample-backed) so the model-vs-static decision is data-driven, not assumed. A capability where the model does not win stays static.
+
+### 8. Proposed runtime/model defaults (for confirmation)
+
+- Inference engine: a pure-Rust path (`candle` or `fastembed`-class) preferred over an onnxruntime C++ dependency, to keep the cross-build-from-Linux packaging path simple.
+- Encoder: a multilingual model evaluated on Polish (e5-small/base or bge-m3 class). Weights distributed as an optional download, not bundled into the default installer.
+- Vector store: `sqlite-vec`-class SQLite extension.
+
+These are proposed; the eval harness (§7) confirms the encoder choice.
+
+## Scope boundary
+
+- In scope (this design): the two-layer split, the capability and engine boundaries, the static baselines, the disposable derived-index rule, registry/config selection, and the eval policy. The capability surface grows only with real consumers: `Classifier` (`v0.40.0`), `SimilarityProvider` (`v0.47.0` clustering), `Matcher`/`SemanticSearch` (claims, hybrid search).
+- Out of scope (deferred): a local **generative** LLM (remains a possible future adapter behind the [ADR 0028](0028-multi-provider-ai-boundary.md) boundary, not part of the interpretative layer); speculative capabilities with no near-term caller.
+
+## Consequences
+
+- The open desktop core becomes meaningfully "smart" with **no API key** (local-first dividend), while quality-critical reasoning stays in the BYO-key/managed generative layer — reinforcing the open-core split (the managed/autonomous frontier stays the paid tier).
+- Reversibility is structural: because consumers bind to capabilities and the model produces only a disposable index, "remove the AI-inside idea" is a configuration switch plus dropping a derived table, with no consumer rewrite and no data loss.
+- New surface to build: capability contracts + registry, the engine/`Embedder` boundary, the vector store + embed/re-embed job, static baselines, and per-capability evals. Net-new runtime dependencies (a Rust inference crate, a vector-store extension) — conservative-dependency review required at implementation.
+- Near-term consumers that would otherwise each reinvent similarity/matching get a shared substrate; classification (`v0.40.0`) ships on the static `Classifier` (rules) regardless, so the layer does not block it.
+
+## Sequencing (decided)
+
+The interpretative layer is split into two milestones:
+
+- `v0.39.0` — **static foundation**: capability contracts + registry/config selection + static baselines + eval harness. No embedding model or vector store (the static baselines need neither). Built before its consumers; epic `8e94b2f`. Its first consumer is ESPI classification (`v0.40.0`), which binds to the `Classifier` capability.
+- `v0.46.0` — **embedding model**: the on-device embedder + `sqlite-vec`-class vector store, enabling the model-backed implementation per capability only where the eval beats static. Sequenced immediately before story clustering (`v0.47.0`), its first high-value consumer; epic `64980da`.
+
+## Open decisions for owner confirmation
+
+- **Runtime/model defaults** (§8) — confirmed by the eval harness.
+- **Hybrid search timing** — when semantic retrieval augments the existing FTS5 search ([ADR 0032](0032-search-and-backup-boundaries.md)) versus remaining keyword-only.

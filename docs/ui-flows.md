@@ -61,11 +61,12 @@ Intent: review new company-specific reports and news with minimal friction.
 Flow:
 
 1. User opens Inbox.
-2. Feed shows newest items first.
-3. User filters by watchlist, company, item type, unread, saved, and significance when available.
+2. Feed shows newest items first, with a typed-signal badge on classified official filings (e.g. insider transaction, dividend, profit warning).
+3. User filters by watchlist, company, item type, signal type, unread, saved, and significance when available.
 4. User opens an item in the detail pane.
-5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, and AI analysis if available.
+5. Detail pane shows title, source, publication time, matched companies, source URL, original text or excerpt, the typed signal(s), and AI analysis if available.
 6. User marks item read, saves it, opens the original source, or creates a note from it.
+7. For a filing typed only by the optional AI fallback, the signal shows as a proposal the user can confirm or reject before it is applied.
 
 Acceptance criteria:
 
@@ -73,6 +74,8 @@ Acceptance criteria:
 - Source and timestamp are visible without opening the original website.
 - Read/unread and saved states are quick actions.
 - Note creation from a feed item preserves origin.
+- A classified insider transaction is visually distinguishable in the feed and can be filtered to.
+- AI-proposed signals are never applied without explicit user confirmation.
 
 ## Journey: Create Note From Feed Item
 

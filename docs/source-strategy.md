@@ -352,6 +352,10 @@ Accepted Bankier company-komunikaty slice:
 - Dedupe policy: use Bankier article ID for adapter-local dedupe and title/company comparison to avoid creating a second visible item if `gpw-espi-ebi` is later re-enabled.
 - Source-policy note: Bankier Company Komunikaty is the active v1 official-report source while `gpw-espi-ebi` remains registered but disabled until a later reliability pass proves it should be re-enabled.
 
+## ESPI/EBI Filing Classification
+
+Typed ESPI/EBI event classification (`v0.40.0`, [ADR 0034](adr/0034-espi-event-classification.md)) runs over the **active official-report feed**, currently `bankier-company-komunikaty`, which exposes the ESPI/EBI category label, report title, and body text needed to classify. The classifier is source-neutral: it reads whichever official-report adapter is enabled, so a future `gpw-espi-ebi` re-enable feeds the same classifier without changes. Classification produces typed `company_signals` (insider transaction, dividend, profit warning, significant contract, buyback, guidance change, other) rather than altering the source adapter contract. The deferred ESPI/EBI **attachment ingestion** and **on-track backfill** work (milestone `v0.41.0`) likewise targets the active Bankier article/attachment path, not the disabled GPW detail flow.
+
 ## Price And Fundamentals Context Sources
 
 Price/fundamentals enrichment is useful for later context around reports and news, but it is not the same as official-report ingestion.

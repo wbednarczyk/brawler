@@ -25,7 +25,7 @@ The local data store should not grow without bound, but no durable, decision-rel
    - linked as research evidence;
    - the origin of a notebook entry;
    - the subject of a stored AI analysis;
-   - part of a clustered story whose representative is protected (future, once clustering exists in `v0.44.0`).
+   - part of a clustered story whose representative is protected (future, once clustering exists in `v0.47.0`).
 
 3. **User-adjustable settings.** A Settings → Data retention section exposes the per-category windows (from a bounded set of options, with an "indefinite" choice) and clamps/validates like other settings. Defaults apply when unset.
 
