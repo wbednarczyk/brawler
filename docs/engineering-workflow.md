@@ -132,7 +132,9 @@ Recommended command grouping once code exists:
 - `npm run build`: frontend build
 - `npm run test`: frontend tests
 - `npm run typecheck`: TypeScript checks
-- `npm run lint`: ESLint (primitive-first ban + standard TS/react-hooks rules as warnings)
+- `npm run lint`: ESLint (primitive-first ban + barrel-import discipline + standard TS/react-hooks rules as warnings)
+- `npm run stylelint`: CSS hygiene (no hardcoded hex outside tokens/themes, no duplicate selectors/properties, no empty rules)
+- `npm run knip`: dead-code audit (unused files/exports/deps) — periodic, run in the nix dev shell
 - `cargo test`: Rust tests
 - `cargo clippy`: Rust linting
 - `cargo fmt --check`: Rust formatting check
@@ -278,7 +280,9 @@ Underlying commands:
 - `npm run test:browser:install`: download Chromium for the opt-in Playwright browser UI smoke suite
 - `npm run test:browser`: run the opt-in Playwright browser UI smoke suite
 - `npm run typecheck`: run TypeScript checks
-- `npm run lint`: run ESLint (primitive-first ban + standard TS/react-hooks rules as warnings)
+- `npm run lint`: run ESLint (primitive-first ban + barrel-import discipline + standard TS/react-hooks rules as warnings)
+- `npm run stylelint`: run CSS hygiene checks (tokens, no duplicate selectors/properties, no empty rules)
+- `npm run knip`: run the dead-code audit (unused files/exports/deps)
 - `cargo test`: run Rust tests
 - `cargo clippy`: run Rust lints
 - `cargo fmt --check`: check Rust formatting

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": [
+    "src/gallery.tsx!",
+    "tests/browser/**/*.spec.ts",
+    "src/**/*.{test,spec}.{ts,tsx}",
+    "scripts/**/*.mjs"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
+  "exclude": ["exports", "types", "nsExports", "nsTypes", "enumMembers", "duplicates", "binaries"]
+}

@@ -4,6 +4,18 @@ This document captures day-1 operating rules for Brawler. It complements the pro
 
 Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Modularization Design](modularization-design.md), [Engineering Workflow](engineering-workflow.md), [Release Workflow](release-workflow.md), [Roadmap](roadmap.md), and [Radicle/Radboard Tracking](kanban.md).
 
+## Enforcement As Guardrails
+
+The project's good practices, architecture, and posture are encoded as automated checks (type checks, ESLint/stylelint, guard and contract tests, the translation/pluralization/a11y guards, layout/viewport tests, `engine-strict`, the `check`/release gates). Their job is to produce a **hard stop** when an agent is about to do the wrong thing — especially one acting without consulting the user, or without enough context to know the change is wrong. This is the third of the **Three Always-On Rules** ([AGENTS.md](../AGENTS.md)) and policy in [ADR 0038](adr/0038-enforcement-as-guardrails.md).
+
+Rules:
+
+- A failing gate is a **stop-and-reconsider** signal, not an obstacle to clear. Do not weaken, delete, skip, `--no-verify`, baseline-away, loosen, or work around a check, rule, or assertion to make it pass.
+- If a gate looks wrong, raise it with the user and change the rule deliberately, with the matching doc/ADR update — never silently.
+- When a change introduces a decision, contract, convention, or invariant, **add (or extend) the gate that protects it** so future changes by any agent cannot silently violate it.
+- Gates must be firm but non-restrictive: they fail on real violations, not legitimate cases. Make a legitimate exception explicit and documented at the site (an inline `eslint-disable … -- <reason>`, a baseline entry with rationale), never by disabling the gate globally.
+- Prefer a hard stop over a silent pass: when in doubt, block and prompt consultation rather than let a questionable change through.
+
 ## Real Feature Completion
 
 Brawler milestones are expected to end with real working product behavior.

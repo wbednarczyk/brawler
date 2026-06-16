@@ -34,27 +34,9 @@ export function renderApp() {
   return render(<App initialLicenseStatus={appTestState.licenseStatusResponse} />);
 }
 
-vi.mock("@tauri-apps/api/core", () => ({
-  invoke: vi.fn(),
-}));
-
-vi.mock("@tauri-apps/api/path", () => ({
-  downloadDir: vi.fn(() => Promise.resolve("/home/test/Downloads")),
-  join: vi.fn((...paths: string[]) => Promise.resolve(paths.join("/"))),
-}));
-
-vi.mock("@tauri-apps/plugin-opener", () => ({
-  openUrl: vi.fn(() => Promise.resolve()),
-}));
-
-vi.mock("@tauri-apps/plugin-dialog", () => ({
-  save: vi.fn(() => Promise.resolve("/tmp/brawler-export.json")),
-}));
-
-vi.mock("@tauri-apps/plugin-fs", () => ({
-  writeTextFile: vi.fn(() => Promise.resolve()),
-}));
-
+// Tauri module mocks now live in src/test/setup.ts (a configured setupFile);
+// vitest 3+ only honors vi.mock from the test file or a setup file. This harness
+// imports the mocked members above and resets them here per test.
 beforeEach(() => {
   resetAppTestState();
   vi.mocked(invoke).mockClear();

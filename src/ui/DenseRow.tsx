@@ -21,7 +21,9 @@ export function DenseRow({
   return (
     <article
       aria-disabled={disabled || undefined}
-      aria-selected={selected || undefined}
+      // `aria-current` is a global ARIA attribute valid on any element; the row
+      // has no widget role, so `aria-selected` (option/row/tab-only) would be invalid.
+      aria-current={selected ? "true" : undefined}
       className={[
         "ui-dense-row",
         interactive ? "ui-dense-row-interactive" : "",

@@ -76,8 +76,10 @@
 }
 
 .settings-grid dd {
+  margin: 2px 0 0;
   color: var(--text);
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 .settings-grid {
@@ -93,11 +95,6 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-raised);
-}
-
-.settings-grid dd {
-  margin: 2px 0 0;
-  overflow-wrap: anywhere;
 }
 
 .import-export-grid {

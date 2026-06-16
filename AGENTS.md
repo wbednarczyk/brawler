@@ -2,12 +2,13 @@
 
 Brawler is a local-first investor newsfeed desktop app. This repository is run as a spec-driven project: documentation and contracts define intent before implementation.
 
-## Two Always-On Rules
+## Three Always-On Rules
 
-These two rules apply at all times, in every session, before anything else. This file (`AGENTS.md`) is loaded into context every session — treat it as read at all times.
+These three rules apply at all times, in every session, before anything else. This file (`AGENTS.md`) is loaded into context every session — treat it as read at all times.
 
 1. **Token discipline.** Prefix every shell/file command with `rtk` (see [Tooling and Token Discipline](#tooling-and-token-discipline)).
 2. **Doc-first.** This is a spec-driven repo: the docs are the source of intent, not a record to tidy up afterward. Before any non-trivial change, open and read the canonical doc(s) for the area (map in [Required Reading](#required-reading)) and implement to spec. Update the affected doc(s) in the same change. **Never invent or guess** architecture, scope, data shapes, field names, command names, scopes, or error codes — they are specified. If a spec is missing, ambiguous, or contradicted by reality, propose a doc/ADR change and confirm it before (or as part of) the code change; do not silently pick a design. Epic/milestone planning must update all relevant docs to capture the architecture decisions made, as part of completing the planning.
+3. **Enforcement is a hard stop.** Brawler deliberately encodes its good practices, architecture, and posture as automated checks — type checks, ESLint/stylelint rules, guard/contract tests, the translation/pluralization/a11y guards, `engine-strict`, and the `check`/release gates. Their purpose is not only to catch bugs but to **halt an agent that is about to do the wrong thing** — especially one acting without consulting the user, or whose context is not enough to realize the change is wrong. A failing gate is a **stop-and-reconsider signal, never an obstacle to clear**: do not weaken, delete, skip, `--no-verify`, baseline-away, or loosen a check, rule, or assertion to make it pass, and do not work around it. If a gate looks wrong, surface it to the user and change the rule deliberately (with the doc/ADR update). The corollary: **when you add a capability or a decision, add the gate that keeps future changes — yours or another agent's — from silently violating it.** This is how the project stays coherent without relying on every agent having full context. See [ADR 0038](docs/adr/0038-enforcement-as-guardrails.md) and [project-practices.md](docs/project-practices.md).
 
 ## Required Reading
 

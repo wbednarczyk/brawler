@@ -1,0 +1,15 @@
+{
+  "rules": {
+    "color-no-hex": true,
+    "no-duplicate-selectors": true,
+    "block-no-empty": true,
+    "declaration-block-no-duplicate-properties": true,
+    "no-invalid-double-slash-comments": true
+  },
+  "overrides": [
+    {
+      "files": ["src/styles/tokens.css", "src/styles/themes.css"],
+      "rules": { "color-no-hex": null }
+    }
+  ]
+}

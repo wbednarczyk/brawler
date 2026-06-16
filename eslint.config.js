@@ -94,4 +94,27 @@ export default tseslint.config(
       "no-restricted-syntax": PRIMITIVE_FIRST,
     },
   },
+  {
+    // Barrel discipline: consumers import primitives from the "…/ui" barrel
+    // (src/ui/index.ts, the public surface), never a deep "…/ui/Button" path.
+    // src/ui/** (siblings import each other relatively) and src/gallery.tsx (the
+    // dev-only gallery deep-imports the intentionally-unexported PrimitiveGallery)
+    // are exempt.
+    files: ["src/**/*.{ts,tsx}"],
+    ignores: ["src/ui/**", "src/gallery.tsx"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ui/*", "!**/ui/index"],
+              message:
+                'Import UI primitives from the barrel (e.g. `from "../../ui"`), not a deep path (`../../ui/Button`). The barrel src/ui/index.ts is the public surface.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

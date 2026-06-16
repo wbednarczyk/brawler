@@ -248,6 +248,19 @@
   cursor: pointer;
 }
 
+/* Dev-only primitive catalog (gallery.html / PrimitiveGallery). */
+.primitive-gallery {
+  display: grid;
+  gap: 22px;
+  max-width: 920px;
+  padding: 24px;
+}
+
+.primitive-gallery section {
+  display: grid;
+  gap: 10px;
+}
+
 .field-with-clear {
   position: relative;
   display: block;
