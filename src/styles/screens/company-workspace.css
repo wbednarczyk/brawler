@@ -90,65 +90,9 @@
   gap: 8px;
 }
 
-/* Report documents (ADR 0036): compact single-line rows that truncate long filenames
-   instead of wrapping or forcing a horizontal scrollbar. */
-.company-report-documents-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.company-report-documents-head span {
-  color: var(--muted);
-}
-
-.company-report-documents-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.company-report-document-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 3px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
-}
-
-.company-report-document-row:last-child {
-  border-bottom: none;
-}
-
-.company-report-document-icon {
-  flex: none;
-  color: var(--muted);
-}
-
-.company-report-document-link {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.company-report-document-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
-.company-report-document-link svg {
-  flex: none;
-}
-
-.company-report-document-attr {
-  flex: none;
-  color: var(--muted);
+/* Report documents (ADR 0036): a SectionHeader + ui-list-rows (ui/ListRow). Rows own their
+   own compact layout/truncation; this only spaces the panel. */
+.company-report-documents {
+  display: grid;
+  gap: 6px;
 }

@@ -1,6 +1,15 @@
 import { BookOpenText, Save, Trash2, X } from "lucide-react";
 import type { NotebookEntry } from "../../api/types";
-import { ActionRow, Button, ChipList, InfoGrid, StatusPill } from "../../ui";
+import {
+  ActionRow,
+  Button,
+  ChipList,
+  InfoGrid,
+  SelectField,
+  StatusPill,
+  TextareaField,
+  TextField,
+} from "../../ui";
 import { useLocale } from "../../shared/locale";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
@@ -48,16 +57,14 @@ export function NotebookEntryEditor({
       {isNotebookScreenEditMode ? (
         <>
           <div className="notebook-entry-header">
-            <label>
-              {text("Title")}
-              <input
-                aria-label={text("Notebook screen selected title")}
-                value={notebookScreenEditForm.title}
-                onChange={(event) =>
-                  updateNotebookScreenEditForm("title", event.target.value)
-                }
-              />
-            </label>
+            <TextField
+              label={text("Title")}
+              aria-label={text("Notebook screen selected title")}
+              value={notebookScreenEditForm.title}
+              onChange={(event) =>
+                updateNotebookScreenEditForm("title", event.target.value)
+              }
+            />
             <ActionRow className="notebook-detail-actions">
               <Button
                 className="compact-button"
@@ -89,7 +96,7 @@ export function NotebookEntryEditor({
               </Button>
             </ActionRow>
           </div>
-          <textarea
+          <TextareaField
             aria-label={text("Notebook screen selected body")}
             value={notebookScreenEditForm.body}
             onChange={(event) =>
@@ -97,50 +104,44 @@ export function NotebookEntryEditor({
             }
           />
           <div className="notebook-detail-grid">
-            <label>
-              {text("Kind")}
-              <select
-                aria-label={text("Notebook screen selected kind")}
-                value={notebookScreenEditForm.kind}
-                onChange={(event) =>
-                  updateNotebookScreenEditForm("kind", event.target.value)
-                }
-              >
-                <option value="manual">{text("Manual")}</option>
-                <option value="observation">{text("Observation")}</option>
-                <option value="claim">{text("Claim")}</option>
-                <option value="question">{text("Question")}</option>
-                <option value="follow_up">{text("Follow-up")}</option>
-              </select>
-            </label>
-            <label>
-              {text("Claim status")}
-              <select
-                aria-label={text("Notebook screen selected claim status")}
-                value={notebookScreenEditForm.claimStatus}
-                onChange={(event) =>
-                  updateNotebookScreenEditForm("claimStatus", event.target.value)
-                }
-              >
-                <option value="">{text("None")}</option>
-                <option value="open">{text("Status open")}</option>
-                <option value="delivered">{text("Delivered")}</option>
-                <option value="partially_delivered">{text("Partially delivered")}</option>
-                <option value="missed">{text("Missed")}</option>
-                <option value="unknown">{text("Unknown")}</option>
-                <option value="not_applicable">{text("Not applicable")}</option>
-              </select>
-            </label>
-            <label>
-              {text("Tags")}
-              <input
-                aria-label={text("Notebook screen selected tags")}
-                value={notebookScreenEditForm.tags}
-                onChange={(event) =>
-                  updateNotebookScreenEditForm("tags", event.target.value)
-                }
-              />
-            </label>
+            <SelectField
+              label={text("Kind")}
+              aria-label={text("Notebook screen selected kind")}
+              value={notebookScreenEditForm.kind}
+              onChange={(event) =>
+                updateNotebookScreenEditForm("kind", event.target.value)
+              }
+            >
+              <option value="manual">{text("Manual")}</option>
+              <option value="observation">{text("Observation")}</option>
+              <option value="claim">{text("Claim")}</option>
+              <option value="question">{text("Question")}</option>
+              <option value="follow_up">{text("Follow-up")}</option>
+            </SelectField>
+            <SelectField
+              label={text("Claim status")}
+              aria-label={text("Notebook screen selected claim status")}
+              value={notebookScreenEditForm.claimStatus}
+              onChange={(event) =>
+                updateNotebookScreenEditForm("claimStatus", event.target.value)
+              }
+            >
+              <option value="">{text("None")}</option>
+              <option value="open">{text("Status open")}</option>
+              <option value="delivered">{text("Delivered")}</option>
+              <option value="partially_delivered">{text("Partially delivered")}</option>
+              <option value="missed">{text("Missed")}</option>
+              <option value="unknown">{text("Unknown")}</option>
+              <option value="not_applicable">{text("Not applicable")}</option>
+            </SelectField>
+            <TextField
+              label={text("Tags")}
+              aria-label={text("Notebook screen selected tags")}
+              value={notebookScreenEditForm.tags}
+              onChange={(event) =>
+                updateNotebookScreenEditForm("tags", event.target.value)
+              }
+            />
             <NotebookDateField
               ariaLabel={text("Notebook screen selected event date")}
               label={text("Event date")}

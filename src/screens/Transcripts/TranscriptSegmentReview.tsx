@@ -51,6 +51,7 @@ export function TranscriptSegmentReview({
           <label>
             {text("Search transcript")}
             <span className="transcript-search-input-row">
+              {/* eslint-disable-next-line no-restricted-syntax -- bespoke search panel: 2-column input+clear grid paired with an external result-count; SearchField's icon/clear layout does not compose here */}
               <input
                 aria-label={text("Search transcript segments")}
                 placeholder={text("Search text, speaker, language, timestamp")}

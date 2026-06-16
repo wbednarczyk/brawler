@@ -15,6 +15,7 @@ Product and UX:
 - [Product Spec](product-spec.md): user-facing v1 behavior and deferred scope.
 - [UI Flows](ui-flows.md): task flows and interaction sequences.
 - [UI Information Architecture](ui-information-architecture.md): screens, navigation, layout, and information hierarchy.
+- [UI Authoring Guide](ui-authoring.md): how to build UI — the `src/ui` primitive catalog and the primitive-first authoring contract (read before writing any frontend UI).
 
 Contracts and data:
 

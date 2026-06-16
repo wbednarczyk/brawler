@@ -116,13 +116,13 @@ export function ResearchAiPanel({
       </div>
       <div className="research-ai-output-list">
         <section className="research-ai-output" aria-label={text("Digest output")}>
-          <div className="research-ai-output-heading">
-            <div>
-              <h3>{text("What needs attention")}</h3>
-              <p>{text("Reminder and changed-evidence checkpoint.")}</p>
-            </div>
-            <span>{digestJobs.length}</span>
-          </div>
+          <SectionHeader
+            className="research-ai-output-heading"
+            description={text("Reminder and changed-evidence checkpoint.")}
+            level="h3"
+            meta={digestJobs.length}
+            title={text("What needs attention")}
+          />
           {latestDigest ? (
             <article className="research-brief-card">
               <div className="research-brief-card-header">
@@ -162,13 +162,13 @@ export function ResearchAiPanel({
           )}
         </section>
         <section className="research-ai-output" aria-label={text("Brief output")}>
-          <div className="research-ai-output-heading">
-            <div>
-              <h3>{text("Research summary")}</h3>
-              <p>{text("Source-grounded memo for the selected scope.")}</p>
-            </div>
-            <span>{briefJobs.length}</span>
-          </div>
+          <SectionHeader
+            className="research-ai-output-heading"
+            description={text("Source-grounded memo for the selected scope.")}
+            level="h3"
+            meta={briefJobs.length}
+            title={text("Research summary")}
+          />
           {latestBrief ? (
             <article className="research-brief-card">
               <div className="research-brief-card-header">

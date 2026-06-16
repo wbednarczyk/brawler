@@ -1,7 +1,5 @@
 import {
   type CSSProperties,
-  type FormEvent,
-  type KeyboardEvent,
   useEffect,
   useMemo,
   useRef,
@@ -29,6 +27,7 @@ import {
 import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
 import * as financialsApi from "../api/financials";
+import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../api/financialsTypes";
 import * as eventsApi from "../api/events";
 import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
@@ -93,7 +92,6 @@ import type {
   CompanySignal,
   CredentialStatus,
   DatabaseStatus,
-  FeedDeleteResult,
   FeedItem,
   FeedPruneResult,
   HealthResponse,
@@ -144,7 +142,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [locale, setLocale] = useState<UserSettings["locale"]>("en");
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [healthError, setHealthError] = useState<string | null>(null);
-  const [databaseStatus, setDatabaseStatus] = useState<DatabaseStatus | null>(null);
+  const [, setDatabaseStatus] = useState<DatabaseStatus | null>(null);
   const [databaseError, setDatabaseError] = useState<string | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companiesError, setCompaniesError] = useState<string | null>(null);
@@ -280,12 +278,14 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   });
   const [notebookForm, setNotebookForm] = useState<NotebookForm>(emptyNotebookForm);
   const [notebookEditForm, setNotebookEditForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [financialPeriods, setFinancialPeriods] = useState<any[]>([]);
-  const [financialFacts, setFinancialFacts] = useState<any[]>([]);
-  const [kpiDefinitions, setKpiDefinitions] = useState<any[]>([]);
+  const [financialPeriods, setFinancialPeriods] = useState<FinancialPeriod[]>([]);
+  const [financialFacts, setFinancialFacts] = useState<FinancialFact[]>([]);
+  const [kpiDefinitions, setKpiDefinitions] = useState<KpiDefinition[]>([]);
   const [financialPeriodsError, setFinancialPeriodsError] = useState<string | null>(null);
   const [financialFactsError, setFinancialFactsError] = useState<string | null>(null);
   const [kpiDefinitionsError, setKpiDefinitionsError] = useState<string | null>(null);
+  // Surfaced together as a single fundamentals data load-error line in FundamentalsPanel.
+  const fundamentalsLoadError = financialPeriodsError ?? financialFactsError ?? kpiDefinitionsError;
   const [fundamentalsForm, setFundamentalsForm] = useState({ periodFiscalYear: "", periodType: "annual" });
   const [financialFactForm, setFinancialFactForm] = useState({ definitionId: "", valueNumeric: "", currency: "", periodId: "" });
   const [selectedFinancialFactId, setSelectedFinancialFactId] = useState<string | null>(null);
@@ -323,7 +323,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     selectedClaimEntry,
     selectedCompany,
     selectedCompanyClaimEntries,
-    selectedCompanyEvent,
     selectedCompanyFeedItem,
     selectedCompanyFeedItems,
     selectedCompanyFeedStats,
@@ -546,7 +545,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     refreshCompanyRegistryIfStale,
     refreshEventSources,
     refreshScheduledSource,
-    refreshSingleSource,
     refreshSources,
   } = useSourceRefreshController({
     refreshCompanyEvents,
@@ -757,7 +755,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     linkTranscriptJobCompany,
     openTranscriptNoteDraft,
     refreshTranscriptJobs,
-    refreshTranscriptSegments,
     runTranscriptJob,
     selectTranscriptCompany,
     toggleTranscriptJob,
@@ -1073,6 +1070,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     if (aiAnalysisJobIsActive(selectedFeedAiAnalysisJob)) {
       scheduleAiAnalysisPoll(selectedFeedItem.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- trigger/poll AI analysis keyed on the selected item + job id/status; the jobs map and the non-memoized refresh/schedule callbacks are intentionally excluded to avoid re-running every render
   }, [selectedFeedItem?.id, selectedFeedAiAnalysisJob?.id, selectedFeedAiAnalysisJob?.status]);
 
   useEffect(() => {
@@ -1085,6 +1083,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     if (aiAnalysisJobIsActive(selectedCompanyFeedAiAnalysisJob)) {
       scheduleAiAnalysisPoll(selectedCompanyFeedItem.id);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- trigger/poll AI analysis keyed on the selected company item + job id/status; the jobs map and the non-memoized refresh/schedule callbacks are intentionally excluded to avoid re-running every render
   }, [
     selectedCompanyFeedItem?.id,
     selectedCompanyFeedAiAnalysisJob?.id,
@@ -1093,6 +1092,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
 
   useEffect(() => {
     return () => {
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup intentionally reads the live timers map at teardown (not a mount snapshot) to clear whatever poll timers exist
       Object.keys(aiAnalysisPollTimersRef.current).forEach(clearAiAnalysisPollTimer);
     };
   }, []);
@@ -1155,7 +1155,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const {
     formatNextRefresh,
     formatSourceScheduler,
-    formatSourceTrigger,
     openSourceStatus,
     toggleCompanyRegistryList,
     toggleSourceAdapter,
@@ -1273,6 +1272,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
       void refreshFinancialFacts();
       void refreshKpiDefinitions();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh fundamentals when the Companies/Fundamentals tab is opened; the non-memoized refresh callbacks are intentionally excluded to avoid re-fetching every render
   }, [selectedCompanyId, activeSection, companyWorkspaceTab]);
 
   function openExternalUrl(url: string) {
@@ -1546,6 +1546,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
 
       return false;
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- view-model memo keyed on the listed UI state; the plain keyboard-navigation helpers (selectAdjacentCompany/selectAdjacentInboxItem/switchCompanyWorkspaceTab) are excluded to keep it from recomputing every render — they read the same state already in the dep list
   }), [
     activeSection,
     companyWorkspaceTab,
@@ -1753,6 +1754,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               selectedFinancialFactId={selectedFinancialFactId}
               isFinancialFactEditMode={isFinancialFactEditMode}
               fundamentalsError={fundamentalsError}
+              fundamentalsLoadError={fundamentalsLoadError}
               createFinancialPeriod={createFinancialPeriod}
               saveFinancialFact={saveFinancialFact}
               deleteFinancialFact={deleteFinancialFact}

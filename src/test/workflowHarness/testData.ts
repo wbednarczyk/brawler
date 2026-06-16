@@ -1,24 +1,11 @@
 import type {
-  AiAnalysisJob,
-  AccentPalette,
-  AppLocale,
   LicenseStatus,
   LocalMetricsSnapshot,
-  ShortcutBindingSetting,
-  Theme,
   UserSettings,
-  Watchlist,
-  WatchlistMembership,
 } from "../../api/types";
 import type {
-  EvidenceLink,
-  ResearchBriefJob,
-  ResearchDigestJob,
-  ResearchEvidenceInput,
   ResearchEvidenceItem,
   ResearchQuestion,
-  ResearchReminder,
-  ResearchReviewCheckpoint,
 } from "../../api/researchTypes";
 
 export const noFeedAttachments: Array<{ id: string; label: string; url: string }> = [];

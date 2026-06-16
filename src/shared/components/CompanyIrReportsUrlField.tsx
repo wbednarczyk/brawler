@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCompanyIrReportsUrl, setCompanyIrReportsUrl } from "../../api/ir";
 import { Button } from "./Button";
+import { SectionHeader, TextField } from "../../ui";
 import { useLocale } from "../locale";
 
 export type CompanyIrReportsUrlFieldProps = {
@@ -50,22 +51,18 @@ export function CompanyIrReportsUrlField({ companyId }: CompanyIrReportsUrlField
 
   return (
     <section className="fundamentals-section" aria-label={text("Investor relations reports page")}>
-      <div className="section-heading">
-        <h4>{text("Investor relations reports page")}</h4>
-      </div>
+      <SectionHeader level="h4" title={text("Investor relations reports page")} />
       <p className="ai-analysis-empty">
         {text("Used to fetch reports when a filing has no attachment. The URL rarely changes.")}
       </p>
       <div className="fundamentals-form-row">
-        <label>
-          {text("IR reports page URL")}
-          <input
-            aria-label={text("IR reports page URL")}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder="https://…/investors/reports"
-            value={value}
-          />
-        </label>
+        <TextField
+          label={text("IR reports page URL")}
+          aria-label={text("IR reports page URL")}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder="https://…/investors/reports"
+          value={value}
+        />
         <Button className="compact-button" disabled={busy || !dirty} onClick={() => void save()}>
           {text("Save")}
         </Button>

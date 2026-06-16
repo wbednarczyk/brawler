@@ -7,7 +7,7 @@ import { formatFinancialValue } from "../../shared/format/financialValue";
 import { buildFactMatrix } from "./factMatrix";
 import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
-import { ActionRow, Button, EmptyState, InfoGrid, InlineConfirm, Sparkline, TrendChart } from "../../ui";
+import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, SectionHeader, SelectField, Sparkline, TextField, TrendChart } from "../../ui";
 import type { FactMatrixRow } from "./factMatrix";
 import type {
   FinancialFactForm,
@@ -24,6 +24,7 @@ type FundamentalsPanelProps = {
   selectedFinancialFactId: string | null;
   isFinancialFactEditMode: boolean;
   fundamentalsError: string | null;
+  fundamentalsLoadError: string | null;
   createFinancialPeriod: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   saveFinancialFact: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteFinancialFact: (id: string) => Promise<void>;
@@ -44,6 +45,7 @@ export function FundamentalsPanel({
   selectedFinancialFactId,
   isFinancialFactEditMode,
   fundamentalsError,
+  fundamentalsLoadError,
   createFinancialPeriod,
   saveFinancialFact,
   deleteFinancialFact,
@@ -132,17 +134,21 @@ export function FundamentalsPanel({
 
   return (
     <div className="company-tab-panel fundamentals-panel" aria-label={text("Company fundamentals")}>
-      <div className="fundamentals-toolbar">
-        <div>
-          <h3>{text("Fundamentals")}</h3>
-          <p>
+      <SectionHeader
+        level="h3"
+        title={text("Fundamentals")}
+        description={
+          <>
             {financialFacts.length} {text(financialFacts.length === 1 ? "fact" : "facts")} {text("recorded")}
-          </p>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {fundamentalsError ? (
-        <p className="error-text">{text("Fundamentals command failed")}: {fundamentalsError}</p>
+        <ErrorText>{text("Fundamentals command failed")}: {fundamentalsError}</ErrorText>
+      ) : null}
+      {fundamentalsLoadError ? (
+        <ErrorText>{text("Failed to load fundamentals data")}: {fundamentalsLoadError}</ErrorText>
       ) : null}
 
       <CompanyIrReportsUrlField companyId={companyId} />
@@ -151,41 +157,35 @@ export function FundamentalsPanel({
 
       {/* Create Financial Period Section */}
       <section className="fundamentals-section" aria-label={text("Create reporting period")}>
-        <div className="section-heading">
-          <h4>{text("New reporting period")}</h4>
-        </div>
+        <SectionHeader level="h4" title={text("New reporting period")} />
         <form className="fundamentals-form" onSubmit={createFinancialPeriod}>
           <div className="fundamentals-form-row">
-            <label>
-              {text("Fiscal year")}
-              <input
-                aria-label={text("Fiscal year")}
-                type="number"
-                min="1900"
-                max="2100"
-                value={fundamentalsForm.periodFiscalYear}
-                onChange={(event) =>
-                  updateFundamentalsForm("periodFiscalYear", event.target.value)
-                }
-                placeholder="2024"
-              />
-            </label>
-            <label>
-              {text("Period type")}
-              <select
-                aria-label={text("Period type")}
-                value={fundamentalsForm.periodType}
-                onChange={(event) =>
-                  updateFundamentalsForm("periodType", event.target.value)
-                }
-              >
-                <option value="annual">{text("Annual")}</option>
-                <option value="q1">{text("Q1")}</option>
-                <option value="q2">{text("Q2")}</option>
-                <option value="q3">{text("Q3")}</option>
-                <option value="q4">{text("Q4")}</option>
-              </select>
-            </label>
+            <TextField
+              label={text("Fiscal year")}
+              aria-label={text("Fiscal year")}
+              type="number"
+              min="1900"
+              max="2100"
+              value={fundamentalsForm.periodFiscalYear}
+              onChange={(event) =>
+                updateFundamentalsForm("periodFiscalYear", event.target.value)
+              }
+              placeholder="2024"
+            />
+            <SelectField
+              label={text("Period type")}
+              aria-label={text("Period type")}
+              value={fundamentalsForm.periodType}
+              onChange={(event) =>
+                updateFundamentalsForm("periodType", event.target.value)
+              }
+            >
+              <option value="annual">{text("Annual")}</option>
+              <option value="q1">{text("Q1")}</option>
+              <option value="q2">{text("Q2")}</option>
+              <option value="q3">{text("Q3")}</option>
+              <option value="q4">{text("Q4")}</option>
+            </SelectField>
             <Button
               className="compact-button"
               disabled={!fundamentalsForm.periodFiscalYear.trim()}
@@ -201,9 +201,7 @@ export function FundamentalsPanel({
 
       {/* Financial Periods List */}
       <section className="fundamentals-section" aria-label={text("Reporting periods")}>
-        <div className="section-heading">
-          <h4>{text("Reporting periods")}</h4>
-        </div>
+        <SectionHeader level="h4" title={text("Reporting periods")} />
         {financialPeriods.length > 0 ? (
           <div className="periods-list">
             {financialPeriods.map((period) => (
@@ -221,9 +219,7 @@ export function FundamentalsPanel({
 
       {/* Financial Facts List and Detail */}
       <section className="fundamentals-section" aria-label={text("Financial facts")}>
-        <div className="section-heading">
-          <h4>{text("Financial facts")}</h4>
-        </div>
+        <SectionHeader level="h4" title={text("Financial facts")} />
 
         <div className="fundamentals-workspace">
           {factMatrix.rows.length > 0 ? (
@@ -343,29 +339,25 @@ export function FundamentalsPanel({
                     </ActionRow>
                   </div>
                   <div className="fact-form-grid">
-                    <label>
-                      {text("Value")}
-                      <input
-                        aria-label={text("Numeric value")}
-                        type="number"
-                        step="any"
-                        value={financialFactForm.valueNumeric}
-                        onChange={(event) =>
-                          updateFinancialFactForm("valueNumeric", event.target.value)
-                        }
-                      />
-                    </label>
-                    <label>
-                      {text("Currency")}
-                      <input
-                        aria-label={text("Currency")}
-                        value={financialFactForm.currency}
-                        onChange={(event) =>
-                          updateFinancialFactForm("currency", event.target.value)
-                        }
-                        placeholder="USD"
-                      />
-                    </label>
+                    <TextField
+                      label={text("Value")}
+                      aria-label={text("Numeric value")}
+                      type="number"
+                      step="any"
+                      value={financialFactForm.valueNumeric}
+                      onChange={(event) =>
+                        updateFinancialFactForm("valueNumeric", event.target.value)
+                      }
+                    />
+                    <TextField
+                      label={text("Currency")}
+                      aria-label={text("Currency")}
+                      value={financialFactForm.currency}
+                      onChange={(event) =>
+                        updateFinancialFactForm("currency", event.target.value)
+                      }
+                      placeholder="USD"
+                    />
                   </div>
                 </>
               ) : (
@@ -483,9 +475,7 @@ export function FundamentalsPanel({
       {/* Add Financial Fact Section */}
       {financialPeriods.length > 0 ? (
         <section className="fundamentals-section" aria-label={text("Add financial fact")}>
-          <div className="section-heading">
-            <h4>{text("Add financial fact")}</h4>
-          </div>
+          <SectionHeader level="h4" title={text("Add financial fact")} />
           <form
             className="fundamentals-form"
             onSubmit={async (event) => {
@@ -494,69 +484,61 @@ export function FundamentalsPanel({
             }}
           >
             <div className="fundamentals-form-grid">
-              <label>
-                {text("KPI definition")}
-                <input
-                  aria-label={text("KPI definition")}
-                  list="kpi-definition-options"
-                  onChange={(event) => {
-                    const query = event.target.value;
-                    setKpiQuery(query);
-                    const match = allDefinitions.find(
-                      (definition) =>
-                        localizedKpiLabel(definition, locale) === query ||
-                        definition.metricKey === query,
-                    );
-                    updateFinancialFactForm("definitionId", match?.id ?? "");
-                  }}
-                  placeholder={text("Search a KPI…")}
-                  value={kpiQuery}
-                />
-                <datalist id="kpi-definition-options">
-                  {allDefinitions.map((definition) => (
-                    <option key={definition.id} value={localizedKpiLabel(definition, locale)} />
-                  ))}
-                </datalist>
-              </label>
-              <label>
-                {text("Reporting period")}
-                <select
-                  aria-label={text("Reporting period")}
-                  value={financialFactForm.periodId}
-                  onChange={(event) => updateFinancialFactForm("periodId", event.target.value)}
-                >
-                  <option value="">{text("Select a period")}</option>
-                  {factMatrix.periods.map((period) => (
-                    <option key={period.id} value={period.id}>
-                      {period.fiscalYear} {period.periodType.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                {text("Value")}
-                <input
-                  aria-label={text("Numeric value")}
-                  type="number"
-                  step="any"
-                  value={financialFactForm.valueNumeric}
-                  onChange={(event) =>
-                    updateFinancialFactForm("valueNumeric", event.target.value)
-                  }
-                  placeholder="0"
-                />
-              </label>
-              <label>
-                {text("Currency")}
-                <input
-                  aria-label={text("Currency")}
-                  value={financialFactForm.currency}
-                  onChange={(event) =>
-                    updateFinancialFactForm("currency", event.target.value)
-                  }
-                  placeholder="USD"
-                />
-              </label>
+              <TextField
+                label={text("KPI definition")}
+                aria-label={text("KPI definition")}
+                list="kpi-definition-options"
+                onChange={(event) => {
+                  const query = event.target.value;
+                  setKpiQuery(query);
+                  const match = allDefinitions.find(
+                    (definition) =>
+                      localizedKpiLabel(definition, locale) === query ||
+                      definition.metricKey === query,
+                  );
+                  updateFinancialFactForm("definitionId", match?.id ?? "");
+                }}
+                placeholder={text("Search a KPI…")}
+                value={kpiQuery}
+              />
+              <datalist id="kpi-definition-options">
+                {allDefinitions.map((definition) => (
+                  <option key={definition.id} value={localizedKpiLabel(definition, locale)} />
+                ))}
+              </datalist>
+              <SelectField
+                label={text("Reporting period")}
+                aria-label={text("Reporting period")}
+                value={financialFactForm.periodId}
+                onChange={(event) => updateFinancialFactForm("periodId", event.target.value)}
+              >
+                <option value="">{text("Select a period")}</option>
+                {factMatrix.periods.map((period) => (
+                  <option key={period.id} value={period.id}>
+                    {period.fiscalYear} {period.periodType.toUpperCase()}
+                  </option>
+                ))}
+              </SelectField>
+              <TextField
+                label={text("Value")}
+                aria-label={text("Numeric value")}
+                type="number"
+                step="any"
+                value={financialFactForm.valueNumeric}
+                onChange={(event) =>
+                  updateFinancialFactForm("valueNumeric", event.target.value)
+                }
+                placeholder="0"
+              />
+              <TextField
+                label={text("Currency")}
+                aria-label={text("Currency")}
+                value={financialFactForm.currency}
+                onChange={(event) =>
+                  updateFinancialFactForm("currency", event.target.value)
+                }
+                placeholder="USD"
+              />
               <Button
                 className="compact-button"
                 disabled={

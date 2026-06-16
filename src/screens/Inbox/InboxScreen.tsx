@@ -21,6 +21,7 @@ import {
   SearchField,
   SegmentedControl,
   SegmentedControlOption,
+  SelectField,
   StatusChip,
 } from "../../ui";
 import { InboxDetailPane } from "./InboxDetailPane";
@@ -169,81 +170,71 @@ export function InboxScreen({
               value={searchQuery}
             />
           </label>
-          <label>
-            {text("Watchlist")}
-            <select
-              aria-label={text("Inbox watchlist")}
-              value={inboxWatchlistFilter}
-              onChange={(event) => setInboxWatchlistFilter(event.target.value)}
-            >
-              <option value="all">{text("All watchlists")}</option>
-              {watchlists.map((watchlist) => (
-                <option key={watchlist.id} value={watchlist.id}>
-                  {watchlist.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {text("Company")}
-            <select
-              aria-label={text("Inbox company")}
-              value={inboxCompanyFilter}
-              onChange={(event) => setInboxCompanyFilter(event.target.value)}
-            >
-              <option value="all">{text("All companies")}</option>
-              {companies.map((company) => (
-                <option key={company.id} value={company.qualifiedTicker}>
-                  {company.qualifiedTicker}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {text("Type")}
-            <select
-              aria-label={text("Inbox type")}
-              value={inboxTypeFilter}
-              onChange={(event) => setInboxTypeFilter(event.target.value)}
-            >
-              <option value="all">{text("All types")}</option>
-              {feedTypes.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {text("Signal")}
-            <select
-              aria-label={text("Inbox signal type")}
-              value={inboxSignalFilter}
-              onChange={(event) => setInboxSignalFilter(event.target.value)}
-            >
-              <option value="all">{text("All signals")}</option>
-              {feedSignalCategories.map((option) => (
-                <option key={option.category} value={option.category}>
-                  {text(option.displayName)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {text("Source")}
-            <select
-              aria-label={text("Inbox source")}
-              value={inboxSourceFilter}
-              onChange={(event) => setInboxSourceFilter(event.target.value)}
-            >
-              <option value="all">{text("All sources")}</option>
-              {feedSources.map((source) => (
-                <option key={source} value={source}>
-                  {source}
-                </option>
-              ))}
-            </select>
-          </label>
+          <SelectField
+            label={text("Watchlist")}
+            aria-label={text("Inbox watchlist")}
+            value={inboxWatchlistFilter}
+            onChange={(event) => setInboxWatchlistFilter(event.target.value)}
+          >
+            <option value="all">{text("All watchlists")}</option>
+            {watchlists.map((watchlist) => (
+              <option key={watchlist.id} value={watchlist.id}>
+                {watchlist.name}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label={text("Company")}
+            aria-label={text("Inbox company")}
+            value={inboxCompanyFilter}
+            onChange={(event) => setInboxCompanyFilter(event.target.value)}
+          >
+            <option value="all">{text("All companies")}</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.qualifiedTicker}>
+                {company.qualifiedTicker}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label={text("Type")}
+            aria-label={text("Inbox type")}
+            value={inboxTypeFilter}
+            onChange={(event) => setInboxTypeFilter(event.target.value)}
+          >
+            <option value="all">{text("All types")}</option>
+            {feedTypes.map((type) => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label={text("Signal")}
+            aria-label={text("Inbox signal type")}
+            value={inboxSignalFilter}
+            onChange={(event) => setInboxSignalFilter(event.target.value)}
+          >
+            <option value="all">{text("All signals")}</option>
+            {feedSignalCategories.map((option) => (
+              <option key={option.category} value={option.category}>
+                {text(option.displayName)}
+              </option>
+            ))}
+          </SelectField>
+          <SelectField
+            label={text("Source")}
+            aria-label={text("Inbox source")}
+            value={inboxSourceFilter}
+            onChange={(event) => setInboxSourceFilter(event.target.value)}
+          >
+            <option value="all">{text("All sources")}</option>
+            {feedSources.map((source) => (
+              <option key={source} value={source}>
+                {source}
+              </option>
+            ))}
+          </SelectField>
         </FilterToolbar>
 
         <div className="feed-list" aria-label={text("Feed items")}>

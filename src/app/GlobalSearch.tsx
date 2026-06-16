@@ -126,6 +126,7 @@ export function GlobalSearch({ locale, onNavigate }: GlobalSearchProps) {
   return (
     <div className="global-search" ref={containerRef} data-global-search>
       <Search size={14} aria-hidden="true" className="global-search-icon" />
+      {/* eslint-disable-next-line no-restricted-syntax -- ref-bound, keyboard-driven global search widget (imperative focus via inputRef, Escape handling, data-* hooks); not the labelled SearchField primitive */}
       <input
         ref={inputRef}
         data-global-search-input

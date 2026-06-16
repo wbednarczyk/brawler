@@ -2,18 +2,11 @@ import { fireEvent } from "@testing-library/react";
 import { describe, it } from "vitest";
 import {
   appTestState,
-  currentWeekTestDate,
   expect,
-  initialCompanies,
-  initialFeedItems,
-  initialGeminiCredentialStatus,
-  initialNotebookEntry,
   invoke,
-  openUrl,
   renderApp,
   screen,
   userEvent,
-  vi,
   waitFor,
   within,
 } from "./test/appWorkflowHarness";

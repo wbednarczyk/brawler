@@ -166,31 +166,8 @@ export function ResearchScreen({
     .filter((company): company is Company => Boolean(company));
   const selectedWatchlistCompany =
     watchlistCompanies.find((company) => company.id === selectedWatchlistCompanyId) ?? null;
-  const selectedEvidenceTypeSet = new Set(selectedEvidenceTypes);
   const items = timeline?.items ?? [];
   const selectedQuestion = questions.find((question) => question.id === selectedQuestionId) ?? null;
-  const latestBriefJob = briefJobs[0] ?? null;
-  const latestBrief = latestBriefJob?.brief ?? null;
-  const latestDigestJob = digestJobs[0] ?? null;
-  const latestDigest = latestDigestJob?.digest ?? null;
-  const briefRunning = briefJobs.some((job) => job.status === "queued" || job.status === "running");
-  const digestRunning = digestJobs.some((job) => job.status === "queued" || job.status === "running");
-  const latestBriefTitle =
-    mode === "company" && selectedCompany
-      ? `${text("Investor research brief")}: ${selectedCompany.displayName}`
-      : mode === "watchlist" && selectedWatchlist
-        ? `${text("Investor research brief")}: ${selectedWatchlist.name}`
-        : text("Investor research brief");
-  const latestBriefParagraphs =
-    latestBrief?.contentMarkdown
-      .split(/\n+/)
-      .map((line) => line.replace(/^##\s*/, "").trim())
-      .filter(Boolean) ?? [];
-  const latestDigestParagraphs =
-    latestDigest?.contentMarkdown
-      .split(/\n+/)
-      .map((line) => line.replace(/^##\s*/, "").trim())
-      .filter(Boolean) ?? [];
   const linkedEvidenceKeys = new Set(
     questionLinks.map((link) =>
       link.fromType === "research_question"
@@ -266,20 +243,6 @@ export function ResearchScreen({
     }
 
     setBriefPanelWidth((current) => clampPanelWidth((current ?? 520) - delta, 420, 0.5));
-  }
-
-  function openCitationEvidence(evidenceType: ResearchEvidenceType, evidenceId: string) {
-    const item = items.find(
-      (current) => current.evidenceType === evidenceType && current.sourceId === evidenceId,
-    );
-
-    if (item) {
-      openEvidence(item);
-    }
-  }
-
-  function isCitationOpenable(evidenceType: ResearchEvidenceType, evidenceId: string) {
-    return items.some((item) => item.evidenceType === evidenceType && item.sourceId === evidenceId);
   }
 
   function openQuestionDialog() {

@@ -308,7 +308,7 @@ let financialFacts: FinancialFact[] = [
   financialFact("fact_eps_q3", "period_cdr_2025_q3", "def_eps", "112", "1,12", "", "PLN"),
 ];
 
-let kpiRelevance: KpiRelevance[] = [
+const kpiRelevance: KpiRelevance[] = [
   kpiRelevanceEntry("rel_revenue", "def_revenue", "primary"),
   kpiRelevanceEntry("rel_net_profit", "def_net_profit", "primary"),
   kpiRelevanceEntry("rel_eps", "def_eps", "secondary"),

@@ -3,7 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, DenseRow, EmptyState, PanelHeader, SearchField } from "../../ui";
+import { pluralNoun } from "../../shared/locale/plural";
+import { ActionRow, Button, DenseRow, EmptyState, PanelHeader, SearchField, SectionHeader, TextField } from "../../ui";
+
+// Polish needs three plural forms; "{n} companies" must read "18 spółek", not "18 spółki".
+const COMPANY_FORMS = { en: ["company", "companies"], pl: ["spółka", "spółki", "spółek"] } as const;
 
 type WatchlistsScreenProps = {
   companies: Company[];
@@ -32,7 +36,7 @@ export function WatchlistsScreen({
   addCompanyToWatchlist,
   removeCompanyFromWatchlist,
 }: WatchlistsScreenProps) {
-  const { t, text } = useLocale();
+  const { t, text, locale } = useLocale();
   const [watchlistName, setWatchlistName] = useState("");
   const [watchlistRenameDraft, setWatchlistRenameDraft] = useState("");
   const [watchlistSearch, setWatchlistSearch] = useState("");
@@ -94,7 +98,7 @@ export function WatchlistsScreen({
 
     setSelectedWatchlistId(watchlists[0].id);
     setWatchlistRenameDraft(watchlists[0].name);
-  }, [selectedWatchlist, watchlists]);
+  }, [selectedWatchlist, watchlists, setSelectedWatchlistId]);
 
   function submitCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -150,7 +154,7 @@ export function WatchlistsScreen({
         titleId="watchlists-title"
         actions={
           <form className="watchlist-form" onSubmit={submitCreate}>
-            <input
+            <TextField
               aria-label={text("Watchlist name")}
               placeholder="Main GPW"
               value={watchlistName}
@@ -209,7 +213,7 @@ export function WatchlistsScreen({
               <div className="watchlist-detail-header">
                 {isRenameOpen ? (
                   <form className="watchlist-rename-form" onSubmit={submitRename}>
-                    <input
+                    <TextField
                       aria-label={text("Rename watchlist")}
                       onChange={(event) => setWatchlistRenameDraft(event.target.value)}
                       required
@@ -228,7 +232,8 @@ export function WatchlistsScreen({
                     <span className="eyebrow">{text("Selected watchlist")}</span>
                     <h3>{selectedWatchlist.name}</h3>
                     <p>
-                      {memberCompanies.length} {text("companies")}
+                      {memberCompanies.length}{" "}
+                      {pluralNoun(locale, memberCompanies.length, COMPANY_FORMS)}
                     </p>
                   </div>
                 )}
@@ -259,30 +264,34 @@ export function WatchlistsScreen({
 
               {isAddOpen ? (
                 <section className="watchlist-add-panel" aria-label={text("Add companies")}>
-                  <div className="watchlist-add-panel-header">
-                    <h4>{text("Add companies")}</h4>
-                    <div>
-                      <Button
-                        disabled={selectedAddCompanyIds.size === 0}
-                        onClick={addSelectedCompanies}
-                        type="button"
-                        variant="primary"
-                      >
-                        <Check size={14} />
-                        {text("Add selected")}
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          setAddOpen(false);
-                          setSelectedAddCompanyIds(new Set());
-                        }}
-                        type="button"
-                        variant="ghost"
-                      >
-                        <X size={14} />
-                      </Button>
-                    </div>
-                  </div>
+                  <SectionHeader
+                    className="watchlist-add-panel-header"
+                    level="h4"
+                    title={text("Add companies")}
+                    actions={
+                      <>
+                        <Button
+                          disabled={selectedAddCompanyIds.size === 0}
+                          onClick={addSelectedCompanies}
+                          type="button"
+                          variant="primary"
+                        >
+                          <Check size={14} />
+                          {text("Add selected")}
+                        </Button>
+                        <Button
+                          onClick={() => {
+                            setAddOpen(false);
+                            setSelectedAddCompanyIds(new Set());
+                          }}
+                          type="button"
+                          variant="ghost"
+                        >
+                          <X size={14} />
+                        </Button>
+                      </>
+                    }
+                  />
                   <SearchField
                     ariaLabel={text("Search tracked companies to add")}
                     className="registry-search-field"
@@ -319,12 +328,17 @@ export function WatchlistsScreen({
               ) : null}
 
               <section className="watchlist-members-section" aria-label={text("Companies in watchlist")}>
-                <div className="watchlist-table-header">
-                  <h4>{text("In this watchlist")}</h4>
-                  <span>
-                    {memberCompanies.length} {text("companies")}
-                  </span>
-                </div>
+                <SectionHeader
+                  className="watchlist-table-header"
+                  level="h4"
+                  title={text("In this watchlist")}
+                  meta={
+                    <>
+                      {memberCompanies.length}{" "}
+                      {pluralNoun(locale, memberCompanies.length, COMPANY_FORMS)}
+                    </>
+                  }
+                />
                 <div className="watchlist-member-table">
                   {memberCompanies.map((company) => (
                     <DenseRow className="watchlist-member-row" interactive={false} key={company.id}>

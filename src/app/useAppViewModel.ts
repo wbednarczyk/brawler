@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { SourceStatusSummary } from "./AppShell";
 import type { InboxEmptyState, InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import type { TranscriptJobForm } from "../screens/Transcripts/transcriptTypes";
@@ -72,7 +72,6 @@ type AppViewModelInput = {
 
 export function useAppViewModel({
   companies,
-  companyEventViewMode,
   companyEventWeekAnchorDate,
   companyEvents,
   companyForm,
@@ -106,7 +105,6 @@ export function useAppViewModel({
   selectedNotebookCompanyId,
   selectedNotebookEntryId,
   selectedNotebookScreenEntryId,
-  settings,
   sourceAdapters,
   sourceAdaptersError,
   theme,
@@ -137,8 +135,11 @@ export function useAppViewModel({
       return grouped;
     }, {});
   }, [watchlistMemberships]);
-  const companyMatchesWatchlist = (company: Company, watchlistId: string) =>
-    watchlistId === "all" || Boolean(companyIdsByWatchlist[watchlistId]?.has(company.id));
+  const companyMatchesWatchlist = useCallback(
+    (company: Company, watchlistId: string) =>
+      watchlistId === "all" || Boolean(companyIdsByWatchlist[watchlistId]?.has(company.id)),
+    [companyIdsByWatchlist],
+  );
   const transcriptCompanySuggestions = useMemo(() => {
     const query = transcriptJobForm.companyQuery.trim().toLowerCase();
 
@@ -336,7 +337,7 @@ export function useAppViewModel({
     return companies.filter((company) =>
       companyMatchesWatchlist(company, notebookScreenWatchlistFilter),
     );
-  }, [companies, companyIdsByWatchlist, notebookScreenWatchlistFilter]);
+  }, [companies, companyMatchesWatchlist, notebookScreenWatchlistFilter]);
   const selectedNotebookScreenCompany =
     filteredNotebookScreenCompanies.find((company) => company.id === selectedNotebookCompanyId) ??
     filteredNotebookScreenCompanies[0] ??
@@ -495,7 +496,7 @@ export function useAppViewModel({
 
       return watchlistMatches && searchMatches;
     });
-  }, [companies, companyIdsByWatchlist, companyListSearch, companyWatchlistFilter]);
+  }, [companies, companyMatchesWatchlist, companyListSearch, companyWatchlistFilter]);
   const selectedCompanyFeedStats = useMemo(
     () => ({
       total: selectedCompanyFeedItems.length,

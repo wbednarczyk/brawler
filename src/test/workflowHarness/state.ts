@@ -1,11 +1,9 @@
-import type { AiAnalysisJob, CompanySignal, LicenseStatus, LocalMetricsSnapshot, UserSettings, Watchlist, WatchlistMembership } from "../../api/types";
+import type { AiAnalysisJob, CompanySignal, Watchlist, WatchlistMembership } from "../../api/types";
 import type {
   EvidenceLink,
   ResearchBriefJob,
   ResearchDigestJob,
   ResearchEvidenceInput,
-  ResearchEvidenceItem,
-  ResearchQuestion,
   ResearchReminder,
   ResearchReviewCheckpoint,
 } from "../../api/researchTypes";

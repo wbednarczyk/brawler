@@ -1,6 +1,6 @@
 import { CheckCircle2, RefreshCw } from "lucide-react";
 import { useLocale } from "../../shared/locale";
-import { Button, EmptyState, InfoGrid, PanelHeader } from "../../ui";
+import { Button, EmptyState, InfoGrid, PanelHeader, SectionHeader } from "../../ui";
 import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 import type { SourcesScreenProps } from "./sourceTypes";
@@ -64,13 +64,12 @@ export function SourcesScreen({
       <div className="sources-layout" aria-label={text("Source list")}>
         {groupedAdapters.map((group) => (
           <section className="source-group" key={group.id} aria-label={text(group.label)}>
-            <div className="source-group-header">
-              <div>
-                <h2>{text(group.label)}</h2>
-                <p>{text(group.description)}</p>
-              </div>
-              <span>{group.adapters.length}</span>
-            </div>
+            <SectionHeader
+              className="source-group-header"
+              title={text(group.label)}
+              description={text(group.description)}
+              meta={group.adapters.length}
+            />
             <div className="source-group-list">
               {group.adapters.map((adapter) => (
                 <SourceAdapterRow
@@ -125,10 +124,11 @@ export function SourcesScreen({
         ) : null}
         {developerMode && sourceRefreshResult ? (
           <section className="source-developer-summary" aria-label={text("Developer source refresh summary")}>
-            <div className="source-developer-summary-header">
-              <h2>{text("Developer refresh summary")}</h2>
-              <span>{text("Latest manual or scheduled source run")}</span>
-            </div>
+            <SectionHeader
+              className="source-developer-summary-header"
+              title={text("Developer refresh summary")}
+              description={text("Latest manual or scheduled source run")}
+            />
             <InfoGrid
               ariaLabel={text("Last source refresh summary")}
               className="source-status-grid source-refresh-summary"

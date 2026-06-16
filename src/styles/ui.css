@@ -1,3 +1,8 @@
+.ui-hint {
+  margin: 0;
+  color: var(--muted);
+}
+
 .ui-panel {
   display: flex;
   flex-direction: column;
@@ -94,11 +99,15 @@
   line-height: 1.3;
 }
 
-.ui-section-header h2 {
+.ui-section-header h2,
+.ui-section-header h3,
+.ui-section-header h4 {
   font-size: 14px;
 }
 
-.ui-section-header-accent h2 {
+.ui-section-header-accent h2,
+.ui-section-header-accent h3,
+.ui-section-header-accent h4 {
   color: var(--section-accent, var(--primary));
 }
 
@@ -225,6 +234,20 @@
   cursor: not-allowed;
 }
 
+.ui-textarea-input {
+  min-height: 92px;
+  padding: 8px 10px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.ui-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 .field-with-clear {
   position: relative;
   display: block;
@@ -274,7 +297,9 @@
 }
 
 .primary-button,
-.secondary-button {
+.secondary-button,
+.action-button,
+.ghost-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -294,6 +319,31 @@
 .secondary-button {
   border-color: color-mix(in srgb, var(--primary) 34%, var(--border));
   background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised));
+}
+
+/* Prominent confirm action (e.g. Save). */
+.action-button {
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface-raised));
+}
+
+.action-button:hover,
+.action-button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 78%, var(--border));
+  background: color-mix(in srgb, var(--primary) 24%, var(--surface-raised));
+}
+
+/* Quiet, low-emphasis action (e.g. Clear, Remove) — still clearly a button, not greyed. */
+.ghost-button {
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-raised) 50%, transparent);
+  color: var(--muted);
+}
+
+.ghost-button:hover,
+.ghost-button:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-raised) 80%, transparent);
 }
 
 .primary-button:hover,

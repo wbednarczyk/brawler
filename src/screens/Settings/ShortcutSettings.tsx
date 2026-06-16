@@ -2,6 +2,7 @@ import type { AppLocale, ShortcutBindingSetting } from "../../api/types";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 import { makeTextTranslator } from "../../shared/locale";
 import { formatShortcutBinding, type ShortcutKeyBinding } from "../../shared/shortcuts";
+import { Checkbox, TextField } from "../../ui";
 
 type ShortcutSettingsProps = {
   locale: AppLocale;
@@ -91,50 +92,43 @@ export function ShortcutSettings({
                         <kbd>{formatShortcutBinding(shortcut.binding)}</kbd>
                       </div>
                       <div className="shortcut-reference-controls" aria-label={`${text("Configure shortcut")} ${text(shortcut.label)}`}>
-                        <label>
-                          <input
-                            checked={!shortcut.disabled}
-                            onChange={(event) => {
-                              updateShortcut(shortcut, {
-                                ...bindingValue,
-                                disabled: !event.target.checked,
-                              });
-                            }}
-                            type="checkbox"
-                          />
-                          {text("Enabled")}
-                        </label>
-                        <label>
-                          {text("Key")}
-                          <input
-                            aria-label={`${text("Shortcut key")} ${text(shortcut.label)}`}
-                            disabled={shortcut.disabled}
-                            maxLength={1}
-                            onFocus={(event) => event.target.select()}
-                            onChange={(event) => {
-                              updateShortcut(shortcut, {
-                                ...bindingValue,
-                                key: normalizeShortcutKey(event.target.value, shortcut.defaultBinding.key),
-                              });
-                            }}
-                            value={shortcut.binding.key}
-                          />
-                        </label>
+                        <Checkbox
+                          checked={!shortcut.disabled}
+                          onChange={(event) => {
+                            updateShortcut(shortcut, {
+                              ...bindingValue,
+                              disabled: !event.target.checked,
+                            });
+                          }}
+                          label={text("Enabled")}
+                        />
+                        <TextField
+                          label={text("Key")}
+                          aria-label={`${text("Shortcut key")} ${text(shortcut.label)}`}
+                          disabled={shortcut.disabled}
+                          maxLength={1}
+                          onFocus={(event) => event.target.select()}
+                          onChange={(event) => {
+                            updateShortcut(shortcut, {
+                              ...bindingValue,
+                              key: normalizeShortcutKey(event.target.value, shortcut.defaultBinding.key),
+                            });
+                          }}
+                          value={shortcut.binding.key}
+                        />
                         {(["ctrlKey", "altKey", "shiftKey", "metaKey"] as const).map((modifier) => (
-                          <label key={modifier}>
-                            <input
-                              checked={Boolean(shortcut.binding[modifier])}
-                              disabled={shortcut.disabled}
-                              onChange={(event) => {
-                                updateShortcut(shortcut, {
-                                  ...bindingValue,
-                                  [modifier]: event.target.checked,
-                                });
-                              }}
-                              type="checkbox"
-                            />
-                            {text(modifier)}
-                          </label>
+                          <Checkbox
+                            key={modifier}
+                            checked={Boolean(shortcut.binding[modifier])}
+                            disabled={shortcut.disabled}
+                            onChange={(event) => {
+                              updateShortcut(shortcut, {
+                                ...bindingValue,
+                                [modifier]: event.target.checked,
+                              });
+                            }}
+                            label={text(modifier)}
+                          />
                         ))}
                         <button
                           className="secondary-button"

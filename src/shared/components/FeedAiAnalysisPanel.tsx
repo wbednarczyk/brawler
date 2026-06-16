@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { AiAnalysisJob, FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
-import { DetailSection, Modal } from "../../ui";
+import { DetailSection, Modal, TextareaField } from "../../ui";
 import { useLocale } from "../locale";
 
 export type FeedAiAnalysisPanelProps = {
@@ -134,17 +134,15 @@ export function FeedAiAnalysisPanel({
             ))}
           </div>
           <form className="ai-analysis-question" onSubmit={submitCustomQuestion}>
-            <label>
-              {text("Custom question")}
-              <textarea
-                aria-label={text("AI custom question")}
-                disabled={!canAnalyze}
-                onChange={(event) => setCustomQuestion(event.target.value)}
-                placeholder={text("Ask about impact, risks, management claims, or follow-up questions")}
-                rows={3}
-                value={customQuestion}
-              />
-            </label>
+            <TextareaField
+              label={text("Custom question")}
+              aria-label={text("AI custom question")}
+              disabled={!canAnalyze}
+              onChange={(event) => setCustomQuestion(event.target.value)}
+              placeholder={text("Ask about impact, risks, management claims, or follow-up questions")}
+              rows={3}
+              value={customQuestion}
+            />
             <Button
               className="compact-button"
               disabled={!canAnalyze || !customQuestion.trim()}

@@ -1,12 +1,7 @@
 import { describe, it } from "vitest";
 import {
   appTestState,
-  currentWeekTestDate,
   expect,
-  initialCompanies,
-  initialFeedItems,
-  initialGeminiCredentialStatus,
-  initialNotebookEntry,
   invoke,
   openUrl,
   renderApp,

@@ -6,7 +6,6 @@ import {
   renderApp,
   screen,
   userEvent,
-  waitFor,
   within,
 } from "../../test/appWorkflowHarness";
 

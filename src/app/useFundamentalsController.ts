@@ -43,7 +43,6 @@ export function useFundamentalsController({
   companyId,
   financialPeriods,
   financialFacts,
-  kpiDefinitions,
   fundamentalsForm,
   setFundamentalsForm,
   financialFactForm,
@@ -52,11 +51,9 @@ export function useFundamentalsController({
   setSelectedFinancialFactId,
   isFinancialFactEditMode,
   setIsFinancialFactEditMode,
-  fundamentalsError,
   setFundamentalsError,
   refreshFinancialPeriods,
   refreshFinancialFacts,
-  refreshKpiDefinitions,
   text,
 }: FundamentalsControllerInput) {
   async function createFinancialPeriod(event: React.FormEvent<HTMLFormElement>) {
@@ -160,7 +157,6 @@ export function useFundamentalsController({
     if (fact) {
       setSelectedFinancialFactId(factId);
       setIsFinancialFactEditMode(false);
-      const definition = kpiDefinitions.find((d) => d.id === fact.definitionId);
       setFinancialFactForm({
         definitionId: fact.definitionId,
         valueNumeric: fact.valueNumeric,

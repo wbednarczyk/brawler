@@ -2,7 +2,7 @@ import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, ChipList, DenseRow, InfoGrid, StatusPill } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, InfoGrid, StatusPill, TextField } from "../../ui";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
 import { TranscriptSegmentReview } from "./TranscriptSegmentReview";
@@ -206,20 +206,18 @@ export function TranscriptJobRow({
       {isTranscriptJobSelected ? (
         <div className="transcript-detail-panel" aria-label={text("Transcript job details")}>
           <div className="transcript-description-editor" aria-label={text("Transcript description editor")}>
-            <label>
-              {text("Description")}
-              <input
-                aria-label={text("Edit transcript description")}
-                placeholder={text("Optional, e.g. CDR Q2 investor conference")}
-                value={transcriptDescriptionDraft}
-                onChange={(event) =>
-                  setTranscriptDescriptionDraftByJobId((current) => ({
-                    ...current,
-                    [job.id]: event.target.value,
-                  }))
-                }
-              />
-            </label>
+            <TextField
+              label={text("Description")}
+              aria-label={text("Edit transcript description")}
+              placeholder={text("Optional, e.g. CDR Q2 investor conference")}
+              value={transcriptDescriptionDraft}
+              onChange={(event) =>
+                setTranscriptDescriptionDraftByJobId((current) => ({
+                  ...current,
+                  [job.id]: event.target.value,
+                }))
+              }
+            />
             <Button
               className="compact-button"
               disabled={transcriptDescriptionSaveInFlight === job.id || !isTranscriptDescriptionDirty}
@@ -258,15 +256,13 @@ export function TranscriptJobRow({
                   {text("Keep this transcript unlinked, or link it when selected segments should become a company notebook note.")}
                 </p>
               </div>
-              <label>
-                {text("Company or ticker")}
-                <input
-                  aria-label={text("Transcript link company lookup")}
-                  placeholder="GPW:CDR, CDR, CD PROJEKT"
-                  value={transcriptLinkQuery}
-                  onChange={(event) => updateTranscriptLinkQuery(job.id, event.target.value)}
-                />
-              </label>
+              <TextField
+                label={text("Company or ticker")}
+                aria-label={text("Transcript link company lookup")}
+                placeholder="GPW:CDR, CDR, CD PROJEKT"
+                value={transcriptLinkQuery}
+                onChange={(event) => updateTranscriptLinkQuery(job.id, event.target.value)}
+              />
               {transcriptLinkQuery ? (
                 <div className="company-registry-suggestions" aria-label={text("Transcript link company suggestions")}>
                   {transcriptLinkSuggestions.length > 0 ? (

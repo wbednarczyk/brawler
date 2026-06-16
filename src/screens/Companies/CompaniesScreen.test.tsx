@@ -2,14 +2,11 @@ import { describe, it } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
 import {
   appTestState,
-  currentWeekTestDate,
   expect,
   initialCompanies,
   initialFeedItems,
-  initialGeminiCredentialStatus,
   initialNotebookEntry,
   invoke,
-  openUrl,
   renderApp,
   screen,
   userEvent,

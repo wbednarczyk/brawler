@@ -3,7 +3,7 @@ import { History } from "lucide-react";
 import { backfillCompanyHistory, getBackfillProgress } from "../../api/sources";
 import type { BackfillProgress } from "../../api/types";
 import { useLocale } from "../locale";
-import { Button } from "../../ui";
+import { Button, ErrorText, Hint } from "../../ui";
 
 type CompanyBackfillPanelProps = {
   companyId: string;
@@ -98,9 +98,9 @@ export function CompanyBackfillPanel({ companyId, onComplete }: CompanyBackfillP
           <History size={15} />
           {running ? text("Backfilling…") : text("Backfill history")}
         </Button>
-        <p className="company-backfill-hint">
+        <Hint className="company-backfill-hint">
           {text("Fetch the last ~3 years of reports and filings for this company.")}
-        </p>
+        </Hint>
       </div>
       {progress ? (
         <div
@@ -115,7 +115,7 @@ export function CompanyBackfillPanel({ companyId, onComplete }: CompanyBackfillP
             {progress.detailErrors > 0 ? ` · ${progress.detailErrors} ${text("errors")}` : ""}
           </span>
           {progress.status === "failed" && progress.error ? (
-            <span className="error-text">{progress.error}</span>
+            <ErrorText>{progress.error}</ErrorText>
           ) : null}
         </div>
       ) : null}

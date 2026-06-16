@@ -3,7 +3,7 @@ import { ExternalLink, FileText } from "lucide-react";
 import { listReportDocuments } from "../../api/reportDocuments";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import { useLocale } from "../locale";
-import { EmptyState, StatusChip } from "../../ui";
+import { EmptyState, ErrorText, ListRow, SectionHeader, StatusChip } from "../../ui";
 
 type CompanyReportDocumentsPanelProps = {
   companyId: string;
@@ -51,37 +51,29 @@ export function CompanyReportDocumentsPanel({
 
   return (
     <section className="company-report-documents" aria-label={text("Report documents")}>
-      <div className="company-report-documents-head">
-        <h4>{text("Report documents")}</h4>
-        <span>{documents.length}</span>
-      </div>
-      {error ? <p className="error-text">{error}</p> : null}
+      <SectionHeader title={text("Report documents")} meta={documents.length} />
+      {error ? <ErrorText>{error}</ErrorText> : null}
       {documents.length === 0 && !error ? (
         <EmptyState>{text("No report documents stored yet.")}</EmptyState>
       ) : (
-        <ul className="company-report-documents-list">
+        <ul className="ui-list-rows">
           {documents.map((document) => {
             const fullName = document.title?.trim() || document.url;
             return (
-              <li className="company-report-document-row" key={document.id}>
-                <FileText size={14} aria-hidden="true" className="company-report-document-icon" />
-                <a
-                  className="company-report-document-link"
-                  href={document.url}
-                  rel="noreferrer"
-                  target="_blank"
-                  title={fullName}
-                >
-                  <span className="company-report-document-name">{fullName}</span>
-                  <ExternalLink size={12} aria-hidden="true" />
-                </a>
-                <span className="company-report-document-attr">
-                  {document.attribution ?? text("Unknown")}
-                </span>
-                <StatusChip tone={document.fetchStatus === "fetched" ? "accent" : "neutral"}>
-                  {statusLabel(document.fetchStatus)}
-                </StatusChip>
-              </li>
+              <ListRow
+                key={document.id}
+                icon={<FileText size={14} aria-hidden="true" />}
+                href={document.url}
+                title={fullName}
+                titleAttr={fullName}
+                adornment={<ExternalLink size={12} aria-hidden="true" />}
+                meta={document.attribution ?? text("Unknown")}
+                trailing={
+                  <StatusChip tone={document.fetchStatus === "fetched" ? "accent" : "neutral"}>
+                    {statusLabel(document.fetchStatus)}
+                  </StatusChip>
+                }
+              />
             );
           })}
         </ul>

@@ -8,7 +8,17 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { ActionRow, Button, FilterToolbar, PanelHeader, SegmentedControl, SegmentedControlOption } from "../../ui";
+import {
+  ActionRow,
+  Button,
+  FilterToolbar,
+  PanelHeader,
+  SectionHeader,
+  SegmentedControl,
+  SegmentedControlOption,
+  SelectField,
+  TextField,
+} from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { EventListView } from "./EventListView";
 import type { EventsScreenProps } from "./eventTypes";
@@ -164,66 +174,58 @@ export function EventsScreen({
             ))}
           </SegmentedControl>
         )}
-        <label>
-          {text("Watchlist")}
-          <select
-            aria-label={text("Event watchlist filter")}
-            value={companyEventWatchlistFilter}
-            onChange={(event) => setCompanyEventWatchlistFilter(event.target.value)}
-          >
-            <option value="all">{text("All watchlists")}</option>
-            {watchlists.map((watchlist) => (
-              <option key={watchlist.id} value={watchlist.id}>
-                {watchlist.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {text("Company")}
-          <select
-            aria-label={text("Event company filter")}
-            value={companyEventCompanyFilter}
-            onChange={(event) => setCompanyEventCompanyFilter(event.target.value)}
-          >
-            <option value="all">{text("All companies")}</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.qualifiedTicker}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {text("Type")}
-          <select
-            aria-label={text("Event type filter")}
-            value={companyEventTypeFilter}
-            onChange={(event) => setCompanyEventTypeFilter(event.target.value)}
-          >
-            <option value="all">{text("All types")}</option>
-            {companyEventTypes.map((eventType) => (
-              <option key={eventType} value={eventType}>
-                {formatCompanyEventType(eventType)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          {text("Status")}
-          <select
-            aria-label={text("Event status filter")}
-            value={companyEventStatusFilter}
-            onChange={(event) => setCompanyEventStatusFilter(event.target.value)}
-          >
-            <option value="all">{text("All statuses")}</option>
-            {companyEventStatuses.map((status) => (
-              <option key={status} value={status}>
-                {formatCompanyEventStatus(status)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          label={text("Watchlist")}
+          aria-label={text("Event watchlist filter")}
+          value={companyEventWatchlistFilter}
+          onChange={(event) => setCompanyEventWatchlistFilter(event.target.value)}
+        >
+          <option value="all">{text("All watchlists")}</option>
+          {watchlists.map((watchlist) => (
+            <option key={watchlist.id} value={watchlist.id}>
+              {watchlist.name}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField
+          label={text("Company")}
+          aria-label={text("Event company filter")}
+          value={companyEventCompanyFilter}
+          onChange={(event) => setCompanyEventCompanyFilter(event.target.value)}
+        >
+          <option value="all">{text("All companies")}</option>
+          {companies.map((company) => (
+            <option key={company.id} value={company.id}>
+              {company.qualifiedTicker}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField
+          label={text("Type")}
+          aria-label={text("Event type filter")}
+          value={companyEventTypeFilter}
+          onChange={(event) => setCompanyEventTypeFilter(event.target.value)}
+        >
+          <option value="all">{text("All types")}</option>
+          {companyEventTypes.map((eventType) => (
+            <option key={eventType} value={eventType}>
+              {formatCompanyEventType(eventType)}
+            </option>
+          ))}
+        </SelectField>
+        <SelectField
+          label={text("Status")}
+          aria-label={text("Event status filter")}
+          value={companyEventStatusFilter}
+          onChange={(event) => setCompanyEventStatusFilter(event.target.value)}
+        >
+          <option value="all">{text("All statuses")}</option>
+          {companyEventStatuses.map((status) => (
+            <option key={status} value={status}>
+              {formatCompanyEventStatus(status)}
+            </option>
+          ))}
+        </SelectField>
         {companyEventViewMode === "list" ? (
           <>
             <NotebookDateField
@@ -259,81 +261,76 @@ export function EventsScreen({
 
       {isCompanyEventComposerOpen ? (
         <div className="event-composer" aria-label={text("Create manual event")}>
-          <div className="event-composer-header">
-            <div>
-              <h2>{text("Manual event")}</h2>
-              <p>{text("Add a missing date for one tracked company.")}</p>
-            </div>
-            <Button
-              className="compact-button"
-              onClick={() => {
-                setCompanyEventComposerOpen(false);
-                setCompanyEventCreateError(null);
-              }}
-            >
-              <X size={15} />
-              {text("Discard")}
-            </Button>
-          </div>
+          <SectionHeader
+            className="event-composer-header"
+            title={text("Manual event")}
+            description={text("Add a missing date for one tracked company.")}
+            actions={
+              <Button
+                className="compact-button"
+                onClick={() => {
+                  setCompanyEventComposerOpen(false);
+                  setCompanyEventCreateError(null);
+                }}
+              >
+                <X size={15} />
+                {text("Discard")}
+              </Button>
+            }
+          />
           <div className="event-composer-grid">
-            <label>
-              {text("Company")}
-              <select
-                aria-label={text("Manual event company")}
-                value={companyEventForm.companyId}
-                onChange={(event) =>
-                  setCompanyEventForm((current) => ({
-                    ...current,
-                    companyId: event.target.value,
-                  }))
-                }
-              >
-                <option value="">{text("Select company")}</option>
-                {companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.qualifiedTicker}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {text("Type")}
-              <select
-                aria-label={text("Manual event type")}
-                value={companyEventForm.eventType}
-                onChange={(event) =>
-                  setCompanyEventForm((current) => ({
-                    ...current,
-                    eventType: event.target.value,
-                  }))
-                }
-              >
-                {companyEventTypeOptions.map((eventType) => (
-                  <option key={eventType} value={eventType}>
-                    {formatCompanyEventType(eventType)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {text("Status")}
-              <select
-                aria-label={text("Manual event status")}
-                value={companyEventForm.status}
-                onChange={(event) =>
-                  setCompanyEventForm((current) => ({
-                    ...current,
-                    status: event.target.value,
-                  }))
-                }
-              >
-                {companyEventStatusOptions.map((status) => (
-                  <option key={status} value={status}>
-                    {formatCompanyEventStatus(status)}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <SelectField
+              label={text("Company")}
+              aria-label={text("Manual event company")}
+              value={companyEventForm.companyId}
+              onChange={(event) =>
+                setCompanyEventForm((current) => ({
+                  ...current,
+                  companyId: event.target.value,
+                }))
+              }
+            >
+              <option value="">{text("Select company")}</option>
+              {companies.map((company) => (
+                <option key={company.id} value={company.id}>
+                  {company.qualifiedTicker}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label={text("Type")}
+              aria-label={text("Manual event type")}
+              value={companyEventForm.eventType}
+              onChange={(event) =>
+                setCompanyEventForm((current) => ({
+                  ...current,
+                  eventType: event.target.value,
+                }))
+              }
+            >
+              {companyEventTypeOptions.map((eventType) => (
+                <option key={eventType} value={eventType}>
+                  {formatCompanyEventType(eventType)}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label={text("Status")}
+              aria-label={text("Manual event status")}
+              value={companyEventForm.status}
+              onChange={(event) =>
+                setCompanyEventForm((current) => ({
+                  ...current,
+                  status: event.target.value,
+                }))
+              }
+            >
+              {companyEventStatusOptions.map((status) => (
+                <option key={status} value={status}>
+                  {formatCompanyEventStatus(status)}
+                </option>
+              ))}
+            </SelectField>
             <NotebookDateField
               ariaLabel={text("Manual event date")}
               label={text("Date")}
@@ -359,19 +356,18 @@ export function EventsScreen({
                 }
               />
             </label>
-            <label className="event-composer-title">
-              {text("Title")}
-              <input
-                aria-label={text("Manual event title")}
-                value={companyEventForm.title}
-                onChange={(event) =>
-                  setCompanyEventForm((current) => ({
-                    ...current,
-                    title: event.target.value,
-                  }))
-                }
-              />
-            </label>
+            <TextField
+              className="event-composer-title"
+              label={text("Title")}
+              aria-label={text("Manual event title")}
+              value={companyEventForm.title}
+              onChange={(event) =>
+                setCompanyEventForm((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+            />
           </div>
           <ActionRow className="event-composer-actions">
             {companyEventCreateError ? <p className="error-text">{text(companyEventCreateError)}</p> : null}

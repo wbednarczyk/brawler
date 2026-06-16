@@ -221,6 +221,7 @@ export function AppShell({
   return (
     <div
       className="app-shell"
+      // eslint-disable-next-line no-restricted-syntax -- the one tolerated inline style (ADR 0037): a dynamic `--sidebar-width` CSS custom property driven by the resizable sidebar's runtime state; a static stylesheet cannot express a live px value
       style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
     >
       <aside className="sidebar" aria-label={text("Primary navigation")}>
@@ -322,6 +323,7 @@ export function AppShell({
             </button>
             <label className="theme-control" title={t("settings.appearance.theme")}>
               {effectiveTheme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
+              {/* eslint-disable-next-line no-restricted-syntax -- compact topbar theme switcher: a bare <select> inside an icon label; SelectField's labelled layout does not fit this inline control */}
               <select value={theme} onChange={(event) => updateTheme(event.target.value as Theme)}>
                 <option value="dark">{t("theme.dark")}</option>
                 <option value="light">{t("theme.light")}</option>

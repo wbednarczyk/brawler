@@ -46,6 +46,7 @@ function groupFormat(value: number, locale: LocaleCode, maximumFractionDigits: n
     .format(value)
     // Normalize non-breaking / narrow-no-break grouping spaces to plain spaces
     // so display and tests are consistent across ICU versions.
+    // eslint-disable-next-line no-irregular-whitespace -- the U+00A0/U+202F chars in this class are the intentional normalization targets
     .replace(/[  ]/g, " ");
 }
 

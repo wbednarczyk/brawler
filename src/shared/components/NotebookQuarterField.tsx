@@ -32,6 +32,7 @@ export function NotebookQuarterField({ label, ariaLabel, value, onChange }: Note
     <div className="date-picker-field">
       <span>{label}</span>
       <div className="date-picker-input-row">
+        {/* eslint-disable-next-line no-restricted-syntax -- editable field of a custom quarter-picker widget (text entry + calendar popover); no primitive covers this composite control */}
         <input
           aria-label={ariaLabel}
           placeholder="2026-Q4"

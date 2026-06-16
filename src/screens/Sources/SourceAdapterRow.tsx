@@ -47,7 +47,6 @@ export function SourceAdapterRow({
   companyRegistryEntries,
   companyRegistryEntriesError,
   companyRegistrySearch,
-  expandedUnmatchedAdapters,
   filteredCompanyRegistryEntries,
   isCompanyRegistryListExpanded,
   registryRefreshError,
@@ -56,7 +55,6 @@ export function SourceAdapterRow({
   selected,
   sourceAdapterRefreshInFlight,
   sourceRefreshError,
-  unmatchedSourceItems,
   addCompanyFromRegistry,
   formatNextRefresh,
   formatSourceScheduler,
@@ -68,7 +66,6 @@ export function SourceAdapterRow({
   toggleCompanyRegistryList,
   toggleSourceAdapter,
   toggleSourceAdapterFromKeyboard,
-  toggleUnmatchedSourceItems,
 }: SourceAdapterRowProps) {
   const { text } = useLocale();
   const isCompanyDirectorySource = adapter.sourceType === "company_registry";
@@ -295,61 +292,5 @@ function RegistrySourcePanel({
         ) : null}
       </div>
     </>
-  );
-}
-
-type UnmatchedSourcePanelProps = {
-  adapterId: string;
-  expandedUnmatchedAdapters: Record<string, boolean>;
-  unmatchedSourceItems: Record<string, UnmatchedSourceItem[]>;
-  formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
-  toggleUnmatchedSourceItems: (adapterId: string) => void;
-};
-
-function UnmatchedSourcePanel({
-  adapterId,
-  expandedUnmatchedAdapters,
-  unmatchedSourceItems,
-  formatTimestamp,
-  toggleUnmatchedSourceItems,
-}: UnmatchedSourcePanelProps) {
-  const { text } = useLocale();
-
-  return (
-    <div className="source-collapsible-panel" aria-label={text("Unmatched source item diagnostics")}>
-      <button
-        aria-expanded={Boolean(expandedUnmatchedAdapters[adapterId])}
-        className="source-collapsible-header"
-        onClick={() => toggleUnmatchedSourceItems(adapterId)}
-        type="button"
-      >
-        <span>{text("Unmatched")}</span>
-        <span className="source-collapsible-header-meta">
-          <strong>{unmatchedSourceItems[adapterId]?.length ?? 0}</strong>
-          <ChevronDown className={expandedUnmatchedAdapters[adapterId] ? "chevron-open" : ""} size={15} />
-        </span>
-      </button>
-      {expandedUnmatchedAdapters[adapterId] ? (
-        <div className="source-unmatched-list">
-          {(unmatchedSourceItems[adapterId] ?? []).map((item) => (
-            <a
-              className="source-unmatched-row"
-              href={item.sourceUrl}
-              key={item.id}
-              rel="noreferrer"
-              target="_blank"
-              title={item.title}
-            >
-              <span>{item.companyName}</span>
-              <strong>{item.title}</strong>
-              <small>{formatTimestamp(item.publishedAt || item.fetchedAt, text("Unknown"))}</small>
-            </a>
-          ))}
-          {(unmatchedSourceItems[adapterId] ?? []).length === 0 ? (
-            <span className="membership-empty">{text("No unmatched items stored.")}</span>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
   );
 }

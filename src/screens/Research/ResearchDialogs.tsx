@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { Button } from "../../ui";
+import { Button, TextField, TextareaField } from "../../ui";
 
 type AddQuestionDialogProps = {
   questionTitle: string;
@@ -44,24 +44,20 @@ export function AddQuestionDialog({
             <X size={14} />
           </button>
         </div>
-        <label>
-          <span>{text("Question title")}</span>
-          <input
-            aria-label={text("Question title")}
-            placeholder={text("Question title")}
-            value={questionTitle}
-            onChange={(event) => setQuestionTitle(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>{text("Question context")}</span>
-          <textarea
-            aria-label={text("Question context")}
-            placeholder={text("Question context")}
-            value={questionBody}
-            onChange={(event) => setQuestionBody(event.target.value)}
-          />
-        </label>
+        <TextField
+          label={<span>{text("Question title")}</span>}
+          aria-label={text("Question title")}
+          placeholder={text("Question title")}
+          value={questionTitle}
+          onChange={(event) => setQuestionTitle(event.target.value)}
+        />
+        <TextareaField
+          label={<span>{text("Question context")}</span>}
+          aria-label={text("Question context")}
+          placeholder={text("Question context")}
+          value={questionBody}
+          onChange={(event) => setQuestionBody(event.target.value)}
+        />
         <div className="research-dialog-actions">
           <Button className="compact-button" type="button" onClick={onCancel}>
             {text("Cancel")}
@@ -122,33 +118,27 @@ export function AddReminderDialog({
             <X size={14} />
           </button>
         </div>
-        <label>
-          <span>{text("Reminder title")}</span>
-          <input
-            aria-label={text("Reminder title")}
-            placeholder={text("Reminder title")}
-            value={reminderTitle}
-            onChange={(event) => setReminderTitle(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>{text("Reminder notes")}</span>
-          <textarea
-            aria-label={text("Reminder notes")}
-            placeholder={text("Reminder notes")}
-            value={reminderBody}
-            onChange={(event) => setReminderBody(event.target.value)}
-          />
-        </label>
-        <label>
-          <span>{text("Due date")}</span>
-          <input
-            aria-label={text("Due date")}
-            type="datetime-local"
-            value={reminderDueAt}
-            onChange={(event) => setReminderDueAt(event.target.value)}
-          />
-        </label>
+        <TextField
+          label={<span>{text("Reminder title")}</span>}
+          aria-label={text("Reminder title")}
+          placeholder={text("Reminder title")}
+          value={reminderTitle}
+          onChange={(event) => setReminderTitle(event.target.value)}
+        />
+        <TextareaField
+          label={<span>{text("Reminder notes")}</span>}
+          aria-label={text("Reminder notes")}
+          placeholder={text("Reminder notes")}
+          value={reminderBody}
+          onChange={(event) => setReminderBody(event.target.value)}
+        />
+        <TextField
+          label={<span>{text("Due date")}</span>}
+          aria-label={text("Due date")}
+          type="datetime-local"
+          value={reminderDueAt}
+          onChange={(event) => setReminderDueAt(event.target.value)}
+        />
         <div className="research-dialog-actions">
           <Button className="compact-button" type="button" onClick={onCancel}>
             {text("Cancel")}

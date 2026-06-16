@@ -13,7 +13,7 @@ import type {
   MetricSample,
   SourceAdapter,
 } from "../../api/types";
-import { ActionRow, Button, EmptyState, FilterToolbar, InfoGrid, PanelHeader } from "../../ui";
+import { ActionRow, Button, EmptyState, FilterToolbar, InfoGrid, PanelHeader, SelectField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { BackupsSection } from "./BackupsSection";
 
@@ -141,6 +141,7 @@ export function DiagnosticsScreen({
     refreshMetrics();
     refreshLogs();
     refreshDeveloperSources();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load diagnostics when developer mode toggles; the non-memoized refresh callbacks are intentionally excluded to avoid re-fetching every render
   }, [developerMode]);
 
   const modules = useMemo(() => {
@@ -282,30 +283,29 @@ export function DiagnosticsScreen({
             <div className="diagnostics-section-body">
               <div className="diagnostics-section-toolbar">
                 <FilterToolbar ariaLabel={text("Diagnostic filters")} className="diagnostics-filter-toolbar">
-                  <label>
-                    {text("Module")}
-                    <select value={moduleFilter} onChange={(event) => setModuleFilter(event.target.value)}>
-                      <option value="all">{text("All modules")}</option>
-                      {modules.map((moduleId) => (
-                        <option key={moduleId} value={moduleId}>
-                          {moduleId}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    {text("Severity")}
-                    <select
-                      value={severityFilter}
-                      onChange={(event) => setSeverityFilter(event.target.value as DiagnosticSeverity | "all")}
-                    >
-                      {severityOptions.map((severity) => (
-                        <option key={severity} value={severity}>
-                          {severity === "all" ? text("All severities") : severity}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                  <SelectField
+                    label={text("Module")}
+                    value={moduleFilter}
+                    onChange={(event) => setModuleFilter(event.target.value)}
+                  >
+                    <option value="all">{text("All modules")}</option>
+                    {modules.map((moduleId) => (
+                      <option key={moduleId} value={moduleId}>
+                        {moduleId}
+                      </option>
+                    ))}
+                  </SelectField>
+                  <SelectField
+                    label={text("Severity")}
+                    value={severityFilter}
+                    onChange={(event) => setSeverityFilter(event.target.value as DiagnosticSeverity | "all")}
+                  >
+                    {severityOptions.map((severity) => (
+                      <option key={severity} value={severity}>
+                        {severity === "all" ? text("All severities") : severity}
+                      </option>
+                    ))}
+                  </SelectField>
                 </FilterToolbar>
                 <ActionRow className="diagnostics-actions">
                   <Button className="compact-button" disabled={inFlight} onClick={refreshDiagnostics}>

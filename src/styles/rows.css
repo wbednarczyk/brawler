@@ -122,3 +122,57 @@
   border-radius: 0 0 8px 8px;
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
+
+/* ListRow: compact, self-truncating media rows (ui/ListRow.tsx). */
+.ui-list-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-list-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 3px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.ui-list-row:last-child {
+  border-bottom: none;
+}
+
+.ui-list-row-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.ui-list-row-link,
+.ui-list-row-main {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.ui-list-row-link svg,
+.ui-list-row-main svg {
+  flex: none;
+}
+
+.ui-list-row-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.ui-list-row-meta {
+  flex: none;
+  color: var(--muted);
+}

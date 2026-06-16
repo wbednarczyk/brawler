@@ -4,7 +4,7 @@ import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedIte
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, SearchField } from "../../ui";
+import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, SearchField, TextField } from "../../ui";
 import type { FinancialFactForm, FundamentalsForm } from "../../app/useFundamentalsController";
 import type {
   MarkdownNoteBodyProps,
@@ -97,6 +97,7 @@ export type CompaniesScreenProps = {
   selectedFinancialFactId: string | null;
   isFinancialFactEditMode: boolean;
   fundamentalsError: string | null;
+  fundamentalsLoadError: string | null;
   createFinancialPeriod: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   saveFinancialFact: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteFinancialFact: (id: string) => Promise<void>;
@@ -188,6 +189,7 @@ export function CompaniesScreen({
   selectedFinancialFactId,
   isFinancialFactEditMode,
   fundamentalsError,
+  fundamentalsLoadError,
   createFinancialPeriod,
   saveFinancialFact,
   deleteFinancialFact,
@@ -212,7 +214,7 @@ export function CompaniesScreen({
                   <label>
                     {text("Exchange")}
                     <span className="field-with-clear">
-                      <input
+                      <TextField
                         ref={(element) => {
                           companyFieldRefs.current.exchange = element;
                         }}
@@ -228,7 +230,7 @@ export function CompaniesScreen({
                   <label>
                     {text("Ticker")}
                     <span className="field-with-clear">
-                      <input
+                      <TextField
                         ref={(element) => {
                           companyFieldRefs.current.ticker = element;
                         }}
@@ -246,7 +248,7 @@ export function CompaniesScreen({
                   <label>
                     {text("Name")}
                     <span className="field-with-clear">
-                      <input
+                      <TextField
                         ref={(element) => {
                           companyFieldRefs.current.displayName = element;
                         }}
@@ -264,7 +266,7 @@ export function CompaniesScreen({
                   <label>
                     ISIN
                     <span className="field-with-clear">
-                      <input
+                      <TextField
                         ref={(element) => {
                           companyFieldRefs.current.isin = element;
                         }}
@@ -330,6 +332,7 @@ export function CompaniesScreen({
                   />
                   <label className="company-list-filter">
                     {text("Watchlist")}
+                    {/* eslint-disable-next-line no-restricted-syntax -- layout-specific inline filter <select> in the company-list toolbar row */}
                     <select
                       aria-label={text("Company watchlist filter")}
                       onChange={(event) => setCompanyWatchlistFilter(event.target.value)}
@@ -466,6 +469,7 @@ export function CompaniesScreen({
                           selectedFinancialFactId={selectedFinancialFactId}
                           isFinancialFactEditMode={isFinancialFactEditMode}
                           fundamentalsError={fundamentalsError}
+                          fundamentalsLoadError={fundamentalsLoadError}
                           createFinancialPeriod={createFinancialPeriod}
                           saveFinancialFact={saveFinancialFact}
                           deleteFinancialFact={deleteFinancialFact}

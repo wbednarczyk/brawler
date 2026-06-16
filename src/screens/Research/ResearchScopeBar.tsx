@@ -1,6 +1,7 @@
 import type { Company, Watchlist } from "../../api/types";
 import type { ResearchEvidenceType } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
+import { Checkbox, SelectField } from "../../ui";
 
 type ResearchScopeBarProps = {
   companies: Company[];
@@ -71,35 +72,31 @@ export function ResearchScopeBar({
       </div>
 
       {mode === "company" ? (
-        <label className="research-company-picker">
-          <span>{text("Company")}</span>
-          <select
-            value={selectedCompanyId ?? ""}
-            onChange={(event) => setSelectedCompanyId(event.target.value || null)}
-          >
-            {companies.length === 0 ? <option value="">{text("No companies tracked yet.")}</option> : null}
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.qualifiedTicker} - {company.displayName}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          label={<span>{text("Company")}</span>}
+          value={selectedCompanyId ?? ""}
+          onChange={(event) => setSelectedCompanyId(event.target.value || null)}
+        >
+          {companies.length === 0 ? <option value="">{text("No companies tracked yet.")}</option> : null}
+          {companies.map((company) => (
+            <option key={company.id} value={company.id}>
+              {company.qualifiedTicker} - {company.displayName}
+            </option>
+          ))}
+        </SelectField>
       ) : (
-        <label className="research-company-picker">
-          <span>{text("Watchlist")}</span>
-          <select
-            value={selectedWatchlistId ?? ""}
-            onChange={(event) => setSelectedWatchlistId(event.target.value || null)}
-          >
-            {watchlists.length === 0 ? <option value="">{text("No watchlists yet.")}</option> : null}
-            {watchlists.map((watchlist) => (
-              <option key={watchlist.id} value={watchlist.id}>
-                {watchlist.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <SelectField
+          label={<span>{text("Watchlist")}</span>}
+          value={selectedWatchlistId ?? ""}
+          onChange={(event) => setSelectedWatchlistId(event.target.value || null)}
+        >
+          {watchlists.length === 0 ? <option value="">{text("No watchlists yet.")}</option> : null}
+          {watchlists.map((watchlist) => (
+            <option key={watchlist.id} value={watchlist.id}>
+              {watchlist.name}
+            </option>
+          ))}
+        </SelectField>
       )}
 
       <div className="research-filter-group" aria-label={text("Evidence type filters")}>
@@ -120,23 +117,19 @@ export function ResearchScopeBar({
         ) : null}
       </div>
 
-      <label className="research-toggle">
-        <input
-          checked={changedOnly}
-          type="checkbox"
-          onChange={(event) => setChangedOnly(event.target.checked)}
-        />
-        <span>{text("Changed since review")}</span>
-      </label>
+      <Checkbox
+        className="research-toggle"
+        checked={changedOnly}
+        onChange={(event) => setChangedOnly(event.target.checked)}
+        label={<span>{text("Changed since review")}</span>}
+      />
       {mode === "watchlist" ? (
-        <label className="research-toggle">
-          <input
-            checked={cascadeToCompanies}
-            type="checkbox"
-            onChange={(event) => setCascadeToCompanies(event.target.checked)}
-          />
-          <span>{text("Also mark member companies reviewed")}</span>
-        </label>
+        <Checkbox
+          className="research-toggle"
+          checked={cascadeToCompanies}
+          onChange={(event) => setCascadeToCompanies(event.target.checked)}
+          label={<span>{text("Also mark member companies reviewed")}</span>}
+        />
       ) : null}
     </section>
   );

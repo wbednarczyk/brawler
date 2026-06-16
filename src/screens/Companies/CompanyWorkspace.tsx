@@ -27,10 +27,14 @@ import {
   DenseRow,
   EmptyState,
   InfoGrid,
+  SectionHeader,
   SegmentedControl,
   SegmentedControlOption,
+  SelectField,
   StatusChip,
   StatusPill,
+  TextareaField,
+  TextField,
 } from "../../ui";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
 import { FundamentalsPanel } from "./FundamentalsPanel";
@@ -97,6 +101,7 @@ type CompanyWorkspaceProps = Pick<
   selectedFinancialFactId: string | null;
   isFinancialFactEditMode: boolean;
   fundamentalsError: string | null;
+  fundamentalsLoadError: string | null;
   createFinancialPeriod: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   saveFinancialFact: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
   deleteFinancialFact: (id: string) => Promise<void>;
@@ -123,7 +128,6 @@ export function CompanyWorkspace({
   selectedCompanyNotebookEntries,
   isNotebookComposerOpen,
   notebookForm,
-  selectedNotebookEntryId,
   selectedNotebookEntry,
   notebookEditMode,
   notebookEditForm,
@@ -166,6 +170,7 @@ export function CompanyWorkspace({
   selectedFinancialFactId,
   isFinancialFactEditMode,
   fundamentalsError,
+  fundamentalsLoadError,
   createFinancialPeriod,
   saveFinancialFact,
   deleteFinancialFact,
@@ -449,74 +454,69 @@ export function CompanyWorkspace({
     
       {companyWorkspaceTab === "Notebook" ? (
         <div className="company-tab-panel notebook-panel" aria-label={text("Company notebook")}>
-          <div className="notebook-toolbar">
-            <div>
-              <h3>{text("Notebook")}</h3>
-              <p>
+          <SectionHeader
+            level="h3"
+            title={text("Notebook")}
+            description={
+              <>
                 {selectedCompanyNotebookEntries.length} {text(selectedCompanyNotebookEntries.length === 1 ? "note" : "notes")} {text("for")}{" "}
                 <TickerLabel value={selectedCompany.qualifiedTicker} />
-              </p>
-            </div>
-            <Button
-              className="compact-button"
-              onClick={() => setNotebookComposerOpen((current) => !current)}
-              variant="primary"
-            >
-              {isNotebookComposerOpen ? <X size={15} /> : <Plus size={15} />}
-              {isNotebookComposerOpen ? text("Hide form") : text("New note")}
-            </Button>
-          </div>
+              </>
+            }
+            actions={
+              <Button
+                className="compact-button"
+                onClick={() => setNotebookComposerOpen((current) => !current)}
+                variant="primary"
+              >
+                {isNotebookComposerOpen ? <X size={15} /> : <Plus size={15} />}
+                {isNotebookComposerOpen ? text("Hide form") : text("New note")}
+              </Button>
+            }
+          />
     
           {isNotebookComposerOpen ? (
             <form className="notebook-form" onSubmit={createNotebookEntry}>
               <div className="notebook-form-grid">
-                <label>
-                  {text("Title")}
-                  <input
-                    aria-label={text("Notebook note title")}
-                    value={notebookForm.title}
-                    onChange={(event) => updateNotebookForm("title", event.target.value)}
-                  />
-                </label>
-                <label>
-                  {text("Kind")}
-                  <select
-                    aria-label={text("Notebook note kind")}
-                    value={notebookForm.kind}
-                    onChange={(event) => updateNotebookForm("kind", event.target.value)}
-                  >
-                    <option value="manual">{text("Manual")}</option>
-                    <option value="observation">{text("Observation")}</option>
-                    <option value="claim">{text("Claim")}</option>
-                    <option value="question">{text("Question")}</option>
-                    <option value="follow_up">{text("Follow-up")}</option>
-                  </select>
-                </label>
-                <label>
-                  {text("Tags")}
-                  <input
-                    aria-label={text("Notebook note tags")}
-                    placeholder={text("comma, separated")}
-                    value={notebookForm.tags}
-                    onChange={(event) => updateNotebookForm("tags", event.target.value)}
-                  />
-                </label>
-                <label>
-                  {text("Claim status")}
-                  <select
-                    aria-label={text("Notebook claim status")}
-                    value={notebookForm.claimStatus}
-                    onChange={(event) => updateNotebookForm("claimStatus", event.target.value)}
-                  >
-                    <option value="">{text("None")}</option>
-                    <option value="open">{text("Status open")}</option>
-                    <option value="delivered">{text("Delivered")}</option>
-                    <option value="partially_delivered">{text("Partially delivered")}</option>
-                    <option value="missed">{text("Missed")}</option>
-                    <option value="unknown">{text("Unknown")}</option>
-                    <option value="not_applicable">{text("Not applicable")}</option>
-                  </select>
-                </label>
+                <TextField
+                  label={text("Title")}
+                  aria-label={text("Notebook note title")}
+                  value={notebookForm.title}
+                  onChange={(event) => updateNotebookForm("title", event.target.value)}
+                />
+                <SelectField
+                  label={text("Kind")}
+                  aria-label={text("Notebook note kind")}
+                  value={notebookForm.kind}
+                  onChange={(event) => updateNotebookForm("kind", event.target.value)}
+                >
+                  <option value="manual">{text("Manual")}</option>
+                  <option value="observation">{text("Observation")}</option>
+                  <option value="claim">{text("Claim")}</option>
+                  <option value="question">{text("Question")}</option>
+                  <option value="follow_up">{text("Follow-up")}</option>
+                </SelectField>
+                <TextField
+                  label={text("Tags")}
+                  aria-label={text("Notebook note tags")}
+                  placeholder={text("comma, separated")}
+                  value={notebookForm.tags}
+                  onChange={(event) => updateNotebookForm("tags", event.target.value)}
+                />
+                <SelectField
+                  label={text("Claim status")}
+                  aria-label={text("Notebook claim status")}
+                  value={notebookForm.claimStatus}
+                  onChange={(event) => updateNotebookForm("claimStatus", event.target.value)}
+                >
+                  <option value="">{text("None")}</option>
+                  <option value="open">{text("Status open")}</option>
+                  <option value="delivered">{text("Delivered")}</option>
+                  <option value="partially_delivered">{text("Partially delivered")}</option>
+                  <option value="missed">{text("Missed")}</option>
+                  <option value="unknown">{text("Unknown")}</option>
+                  <option value="not_applicable">{text("Not applicable")}</option>
+                </SelectField>
                 <NotebookDateField
                   ariaLabel={text("Notebook event date")}
                   label={text("Event date")}
@@ -545,14 +545,13 @@ export function CompanyWorkspace({
                   {text("Save")}
                 </Button>
               </div>
-              <label className="notebook-body-field">
-                {text("Body")}
-                <textarea
-                  aria-label={text("Notebook note body")}
-                  value={notebookForm.body}
-                  onChange={(event) => updateNotebookForm("body", event.target.value)}
-                />
-              </label>
+              <TextareaField
+                className="notebook-body-field"
+                label={text("Body")}
+                aria-label={text("Notebook note body")}
+                value={notebookForm.body}
+                onChange={(event) => updateNotebookForm("body", event.target.value)}
+              />
             </form>
           ) : null}
     
@@ -599,16 +598,14 @@ export function CompanyWorkspace({
                 notebookEditMode ? (
                   <>
                     <div className="notebook-entry-header">
-                      <label>
-                        {text("Title")}
-                        <input
-                          aria-label={text("Selected notebook title")}
-                          value={notebookEditForm.title}
-                          onChange={(event) =>
-                            updateNotebookEditForm("title", event.target.value)
-                          }
-                        />
-                      </label>
+                      <TextField
+                        label={text("Title")}
+                        aria-label={text("Selected notebook title")}
+                        value={notebookEditForm.title}
+                        onChange={(event) =>
+                          updateNotebookEditForm("title", event.target.value)
+                        }
+                      />
                       <ActionRow className="notebook-detail-actions">
                         <Button
                           className="compact-button"
@@ -632,52 +629,46 @@ export function CompanyWorkspace({
                         </Button>
                       </ActionRow>
                     </div>
-                    <textarea
+                    <TextareaField
                       aria-label={text("Selected notebook body")}
                       value={notebookEditForm.body}
                       onChange={(event) => updateNotebookEditForm("body", event.target.value)}
                     />
                     <div className="notebook-detail-grid">
-                      <label>
-                        {text("Kind")}
-                        <select
-                          aria-label={text("Selected notebook kind")}
-                          value={notebookEditForm.kind}
-                          onChange={(event) => updateNotebookEditForm("kind", event.target.value)}
-                        >
-                          <option value="manual">{text("Manual")}</option>
-                          <option value="observation">{text("Observation")}</option>
-                          <option value="claim">{text("Claim")}</option>
-                          <option value="question">{text("Question")}</option>
-                          <option value="follow_up">{text("Follow-up")}</option>
-                        </select>
-                      </label>
-                      <label>
-                        {text("Claim status")}
-                        <select
-                          aria-label={text("Selected notebook claim status")}
-                          value={notebookEditForm.claimStatus}
-                          onChange={(event) =>
-                            updateNotebookEditForm("claimStatus", event.target.value)
-                          }
-                        >
-                          <option value="">{text("None")}</option>
-                          <option value="open">{text("Status open")}</option>
-                          <option value="delivered">{text("Delivered")}</option>
-                          <option value="partially_delivered">{text("Partially delivered")}</option>
-                          <option value="missed">{text("Missed")}</option>
-                          <option value="unknown">{text("Unknown")}</option>
-                          <option value="not_applicable">{text("Not applicable")}</option>
-                        </select>
-                      </label>
-                      <label>
-                        {text("Tags")}
-                        <input
-                          aria-label={text("Selected notebook tags")}
-                          value={notebookEditForm.tags}
-                          onChange={(event) => updateNotebookEditForm("tags", event.target.value)}
-                        />
-                      </label>
+                      <SelectField
+                        label={text("Kind")}
+                        aria-label={text("Selected notebook kind")}
+                        value={notebookEditForm.kind}
+                        onChange={(event) => updateNotebookEditForm("kind", event.target.value)}
+                      >
+                        <option value="manual">{text("Manual")}</option>
+                        <option value="observation">{text("Observation")}</option>
+                        <option value="claim">{text("Claim")}</option>
+                        <option value="question">{text("Question")}</option>
+                        <option value="follow_up">{text("Follow-up")}</option>
+                      </SelectField>
+                      <SelectField
+                        label={text("Claim status")}
+                        aria-label={text("Selected notebook claim status")}
+                        value={notebookEditForm.claimStatus}
+                        onChange={(event) =>
+                          updateNotebookEditForm("claimStatus", event.target.value)
+                        }
+                      >
+                        <option value="">{text("None")}</option>
+                        <option value="open">{text("Status open")}</option>
+                        <option value="delivered">{text("Delivered")}</option>
+                        <option value="partially_delivered">{text("Partially delivered")}</option>
+                        <option value="missed">{text("Missed")}</option>
+                        <option value="unknown">{text("Unknown")}</option>
+                        <option value="not_applicable">{text("Not applicable")}</option>
+                      </SelectField>
+                      <TextField
+                        label={text("Tags")}
+                        aria-label={text("Selected notebook tags")}
+                        value={notebookEditForm.tags}
+                        onChange={(event) => updateNotebookEditForm("tags", event.target.value)}
+                      />
                       <NotebookDateField
                         ariaLabel={text("Selected notebook event date")}
                         label={text("Event date")}
@@ -759,15 +750,16 @@ export function CompanyWorkspace({
     
       {companyWorkspaceTab === "Claims" ? (
         <div className="company-tab-panel claims-panel" aria-label={text("Company claims")}>
-          <div className="notebook-toolbar">
-            <div>
-              <h3>{text("Claims")}</h3>
-              <p>
+          <SectionHeader
+            level="h3"
+            title={text("Claims")}
+            description={
+              <>
                 {selectedCompanyClaimEntries.length} {text(selectedCompanyClaimEntries.length === 1 ? "follow-up item" : "follow-up items")} {text("for")}{" "}
                 <TickerLabel value={selectedCompany.qualifiedTicker} />
-              </p>
-            </div>
-          </div>
+              </>
+            }
+          />
           <div className="claims-list">
             {selectedCompanyClaimEntries.map((entry) => (
               <div className="claim-row-block" key={entry.id}>
@@ -807,21 +799,19 @@ export function CompanyWorkspace({
                         <h3>{entry.title}</h3>
                       </div>
                       <div className="claim-status-control">
-                        <label>
-                          {text("Status")}
-                          <select
-                            aria-label={text("Claim status")}
-                            value={claimStatusDraft}
-                            onChange={(event) => setClaimStatusDraft(event.target.value)}
-                          >
-                            <option value="open">{text("Status open")}</option>
-                            <option value="delivered">{text("Delivered")}</option>
-                            <option value="partially_delivered">{text("Partially delivered")}</option>
-                            <option value="missed">{text("Missed")}</option>
-                            <option value="unknown">{text("Unknown")}</option>
-                            <option value="not_applicable">{text("Not applicable")}</option>
-                          </select>
-                        </label>
+                        <SelectField
+                          label={text("Status")}
+                          aria-label={text("Claim status")}
+                          value={claimStatusDraft}
+                          onChange={(event) => setClaimStatusDraft(event.target.value)}
+                        >
+                          <option value="open">{text("Status open")}</option>
+                          <option value="delivered">{text("Delivered")}</option>
+                          <option value="partially_delivered">{text("Partially delivered")}</option>
+                          <option value="missed">{text("Missed")}</option>
+                          <option value="unknown">{text("Unknown")}</option>
+                          <option value="not_applicable">{text("Not applicable")}</option>
+                        </SelectField>
                         <Button
                           className="compact-button"
                           disabled={(entry.claimStatus ?? "open") === claimStatusDraft}
@@ -874,6 +864,7 @@ export function CompanyWorkspace({
           selectedFinancialFactId={selectedFinancialFactId}
           isFinancialFactEditMode={isFinancialFactEditMode}
           fundamentalsError={fundamentalsError}
+          fundamentalsLoadError={fundamentalsLoadError}
           createFinancialPeriod={createFinancialPeriod}
           saveFinancialFact={saveFinancialFact}
           deleteFinancialFact={deleteFinancialFact}

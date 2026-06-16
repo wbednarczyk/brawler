@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createKpiDefinition, listKpiDefinitions } from "../../api/financials";
 import type { KpiDefinition } from "../../api/financialsTypes";
 import { Button } from "./Button";
+import { SectionHeader, SelectField, TextField } from "../../ui";
 import { useLocale } from "../locale";
 
 export type CustomKpiManagerProps = {
@@ -65,9 +66,7 @@ export function CustomKpiManager({ companyId, onDefinitionsChange }: CustomKpiMa
 
   return (
     <section className="fundamentals-section custom-kpi-manager" aria-label={text("Custom KPIs")}>
-      <div className="section-heading">
-        <h4>{text("Custom KPIs")}</h4>
-      </div>
+      <SectionHeader level="h4" title={text("Custom KPIs")} />
 
       {definitions.length > 0 ? (
         <div className="periods-list" aria-label={text("Custom KPI list")}>
@@ -83,47 +82,39 @@ export function CustomKpiManager({ companyId, onDefinitionsChange }: CustomKpiMa
 
       <form className="fundamentals-form" onSubmit={create}>
         <div className="fundamentals-form-grid">
-          <label>
-            {text("Label")}
-            <input
-              aria-label={text("Custom KPI label")}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder={text("Subscribers")}
-              value={label}
-            />
-          </label>
-          <label>
-            {text("Metric key")}
-            <input
-              aria-label={text("Custom KPI metric key")}
-              onChange={(event) => setMetricKey(event.target.value)}
-              placeholder="subscribers"
-              value={metricKey}
-            />
-          </label>
-          <label>
-            {text("Value kind")}
-            <select
-              aria-label={text("Custom KPI value kind")}
-              onChange={(event) => setValueKind(event.target.value)}
-              value={valueKind}
-            >
-              {VALUE_KINDS.map((kind) => (
-                <option key={kind} value={kind}>
-                  {text(kind)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {text("Unit")}
-            <input
-              aria-label={text("Custom KPI unit")}
-              onChange={(event) => setUnit(event.target.value)}
-              placeholder="per_share"
-              value={unit}
-            />
-          </label>
+          <TextField
+            label={text("Label")}
+            aria-label={text("Custom KPI label")}
+            onChange={(event) => setLabel(event.target.value)}
+            placeholder={text("Subscribers")}
+            value={label}
+          />
+          <TextField
+            label={text("Metric key")}
+            aria-label={text("Custom KPI metric key")}
+            onChange={(event) => setMetricKey(event.target.value)}
+            placeholder="subscribers"
+            value={metricKey}
+          />
+          <SelectField
+            label={text("Value kind")}
+            aria-label={text("Custom KPI value kind")}
+            onChange={(event) => setValueKind(event.target.value)}
+            value={valueKind}
+          >
+            {VALUE_KINDS.map((kind) => (
+              <option key={kind} value={kind}>
+                {text(kind)}
+              </option>
+            ))}
+          </SelectField>
+          <TextField
+            label={text("Unit")}
+            aria-label={text("Custom KPI unit")}
+            onChange={(event) => setUnit(event.target.value)}
+            placeholder="per_share"
+            value={unit}
+          />
           <Button
             className="compact-button"
             disabled={busy || !metricKey.trim() || !label.trim()}

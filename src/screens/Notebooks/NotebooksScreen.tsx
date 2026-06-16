@@ -2,7 +2,16 @@ import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerE
 import { LocateFixed, Plus, Save, X } from "lucide-react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ClearButton, DenseRow, EmptyState, PanelHeader } from "../../ui";
+import {
+  Button,
+  ClearButton,
+  DenseRow,
+  EmptyState,
+  PanelHeader,
+  SelectField,
+  TextareaField,
+  TextField,
+} from "../../ui";
 import { NotebookEntryEditor } from "./NotebookEntryEditor";
 import type { NotebooksScreenProps } from "./notebookTypes";
 
@@ -299,56 +308,50 @@ export function NotebooksScreen({
             </Button>
           </div>
           <div className="notebooks-filter-row" aria-label={text("Notebook filters")}>
-            <label>
-              {text("Watchlist")}
-              <select
-                aria-label={text("Notebook watchlist filter")}
-                value={notebookScreenWatchlistFilter}
-                onChange={(event) => setNotebookScreenWatchlistFilter(event.target.value)}
-              >
-                <option value="all">{text("All watchlists")}</option>
-                {watchlists.map((watchlist) => (
-                  <option key={watchlist.id} value={watchlist.id}>
-                    {watchlist.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              {text("Kind")}
-              <select
-                aria-label={text("Notebook kind filter")}
-                value={notebookScreenKindFilter}
-                onChange={(event) => setNotebookScreenKindFilter(event.target.value)}
-              >
-                <option value="all">{text("All")}</option>
-                <option value="manual">{text("Manual")}</option>
-                <option value="observation">{text("Observation")}</option>
-                <option value="claim">{text("Claim")}</option>
-                <option value="question">{text("Question")}</option>
-                <option value="follow_up">{text("Follow-up")}</option>
-              </select>
-            </label>
-            <label>
-              {text("Status")}
-              <select
-                aria-label={text("Notebook claim status filter")}
-                value={notebookScreenClaimStatusFilter}
-                onChange={(event) => setNotebookScreenClaimStatusFilter(event.target.value)}
-              >
-                <option value="all">{text("All")}</option>
-                <option value="open">{text("Status open")}</option>
-                <option value="delivered">{text("Delivered")}</option>
-                <option value="partially_delivered">{text("Partially delivered")}</option>
-                <option value="missed">{text("Missed")}</option>
-                <option value="unknown">{text("Unknown")}</option>
-                <option value="not_applicable">{text("Not applicable")}</option>
-              </select>
-            </label>
+            <SelectField
+              label={text("Watchlist")}
+              aria-label={text("Notebook watchlist filter")}
+              value={notebookScreenWatchlistFilter}
+              onChange={(event) => setNotebookScreenWatchlistFilter(event.target.value)}
+            >
+              <option value="all">{text("All watchlists")}</option>
+              {watchlists.map((watchlist) => (
+                <option key={watchlist.id} value={watchlist.id}>
+                  {watchlist.name}
+                </option>
+              ))}
+            </SelectField>
+            <SelectField
+              label={text("Kind")}
+              aria-label={text("Notebook kind filter")}
+              value={notebookScreenKindFilter}
+              onChange={(event) => setNotebookScreenKindFilter(event.target.value)}
+            >
+              <option value="all">{text("All")}</option>
+              <option value="manual">{text("Manual")}</option>
+              <option value="observation">{text("Observation")}</option>
+              <option value="claim">{text("Claim")}</option>
+              <option value="question">{text("Question")}</option>
+              <option value="follow_up">{text("Follow-up")}</option>
+            </SelectField>
+            <SelectField
+              label={text("Status")}
+              aria-label={text("Notebook claim status filter")}
+              value={notebookScreenClaimStatusFilter}
+              onChange={(event) => setNotebookScreenClaimStatusFilter(event.target.value)}
+            >
+              <option value="all">{text("All")}</option>
+              <option value="open">{text("Status open")}</option>
+              <option value="delivered">{text("Delivered")}</option>
+              <option value="partially_delivered">{text("Partially delivered")}</option>
+              <option value="missed">{text("Missed")}</option>
+              <option value="unknown">{text("Unknown")}</option>
+              <option value="not_applicable">{text("Not applicable")}</option>
+            </SelectField>
             <label>
               {text("Tag")}
               <span className="field-with-clear">
-                <input
+                <TextField
                   aria-label={text("Notebook tag filter")}
                   placeholder={text("tag")}
                   value={notebookScreenTagFilter}
@@ -359,18 +362,16 @@ export function NotebooksScreen({
                 ) : null}
               </span>
             </label>
-            <label>
-              {text("Follow-up")}
-              <select
-                aria-label={text("Notebook follow-up filter")}
-                value={notebookScreenFollowUpFilter}
-                onChange={(event) => setNotebookScreenFollowUpFilter(event.target.value)}
-              >
-                <option value="all">{text("All")}</option>
-                <option value="has_follow_up">{text("Has follow-up")}</option>
-                <option value="no_follow_up">{text("No follow-up")}</option>
-              </select>
-            </label>
+            <SelectField
+              label={text("Follow-up")}
+              aria-label={text("Notebook follow-up filter")}
+              value={notebookScreenFollowUpFilter}
+              onChange={(event) => setNotebookScreenFollowUpFilter(event.target.value)}
+            >
+              <option value="all">{text("All")}</option>
+              <option value="has_follow_up">{text("Has follow-up")}</option>
+              <option value="no_follow_up">{text("No follow-up")}</option>
+            </SelectField>
           </div>
 
           <div className="notebooks-notes-list" aria-label={text("Notebook note list")}>
@@ -451,53 +452,45 @@ export function NotebooksScreen({
                 </Button>
               </div>
               <div className="notebook-form-grid">
-                <label>
-                  {text("Title")}
-                  <input
-                    aria-label={text("Notebook screen note title")}
-                    value={notebookScreenForm.title}
-                    onChange={(event) => updateNotebookScreenForm("title", event.target.value)}
-                  />
-                </label>
-                <label>
-                  {text("Kind")}
-                  <select
-                    aria-label={text("Notebook screen note kind")}
-                    value={notebookScreenForm.kind}
-                    onChange={(event) => updateNotebookScreenForm("kind", event.target.value)}
-                  >
-                    <option value="manual">{text("Manual")}</option>
-                    <option value="observation">{text("Observation")}</option>
-                    <option value="claim">{text("Claim")}</option>
-                    <option value="question">{text("Question")}</option>
-                    <option value="follow_up">{text("Follow-up")}</option>
-                  </select>
-                </label>
-                <label>
-                  {text("Tags")}
-                  <input
-                    aria-label={text("Notebook screen note tags")}
-                    placeholder={text("comma, separated")}
-                    value={notebookScreenForm.tags}
-                    onChange={(event) => updateNotebookScreenForm("tags", event.target.value)}
-                  />
-                </label>
-                <label>
-                  {text("Claim status")}
-                  <select
-                    aria-label={text("Notebook screen note claim status")}
-                    value={notebookScreenForm.claimStatus}
-                    onChange={(event) => updateNotebookScreenForm("claimStatus", event.target.value)}
-                  >
-                    <option value="">{text("None")}</option>
-                    <option value="open">{text("Status open")}</option>
-                    <option value="delivered">{text("Delivered")}</option>
-                    <option value="partially_delivered">{text("Partially delivered")}</option>
-                    <option value="missed">{text("Missed")}</option>
-                    <option value="unknown">{text("Unknown")}</option>
-                    <option value="not_applicable">{text("Not applicable")}</option>
-                  </select>
-                </label>
+                <TextField
+                  label={text("Title")}
+                  aria-label={text("Notebook screen note title")}
+                  value={notebookScreenForm.title}
+                  onChange={(event) => updateNotebookScreenForm("title", event.target.value)}
+                />
+                <SelectField
+                  label={text("Kind")}
+                  aria-label={text("Notebook screen note kind")}
+                  value={notebookScreenForm.kind}
+                  onChange={(event) => updateNotebookScreenForm("kind", event.target.value)}
+                >
+                  <option value="manual">{text("Manual")}</option>
+                  <option value="observation">{text("Observation")}</option>
+                  <option value="claim">{text("Claim")}</option>
+                  <option value="question">{text("Question")}</option>
+                  <option value="follow_up">{text("Follow-up")}</option>
+                </SelectField>
+                <TextField
+                  label={text("Tags")}
+                  aria-label={text("Notebook screen note tags")}
+                  placeholder={text("comma, separated")}
+                  value={notebookScreenForm.tags}
+                  onChange={(event) => updateNotebookScreenForm("tags", event.target.value)}
+                />
+                <SelectField
+                  label={text("Claim status")}
+                  aria-label={text("Notebook screen note claim status")}
+                  value={notebookScreenForm.claimStatus}
+                  onChange={(event) => updateNotebookScreenForm("claimStatus", event.target.value)}
+                >
+                  <option value="">{text("None")}</option>
+                  <option value="open">{text("Status open")}</option>
+                  <option value="delivered">{text("Delivered")}</option>
+                  <option value="partially_delivered">{text("Partially delivered")}</option>
+                  <option value="missed">{text("Missed")}</option>
+                  <option value="unknown">{text("Unknown")}</option>
+                  <option value="not_applicable">{text("Not applicable")}</option>
+                </SelectField>
                 <NotebookDateField
                   ariaLabel={text("Notebook screen note event date")}
                   label={text("Event date")}
@@ -517,14 +510,13 @@ export function NotebooksScreen({
                   onChange={(value) => updateNotebookScreenForm("followUpDate", value)}
                 />
               </div>
-              <label className="notebook-body-field">
-                {text("Body")}
-                <textarea
-                  aria-label={text("Notebook screen note body")}
-                  value={notebookScreenForm.body}
-                  onChange={(event) => updateNotebookScreenForm("body", event.target.value)}
-                />
-              </label>
+              <TextareaField
+                className="notebook-body-field"
+                label={text("Body")}
+                aria-label={text("Notebook screen note body")}
+                value={notebookScreenForm.body}
+                onChange={(event) => updateNotebookScreenForm("body", event.target.value)}
+              />
             </form>
           ) : null}
 

@@ -147,11 +147,11 @@ export function useAppLifecycleEffects({
     if (selectedFeedItemId !== nextSelectedFeedItemId) {
       setSelectedFeedItemId(nextSelectedFeedItemId);
     }
-  }, [filteredFeedItems, selectedFeedItemId]);
+  }, [filteredFeedItems, selectedFeedItemId, setSelectedFeedItemId]);
 
   useEffect(() => {
     sourceAdaptersRef.current = sourceAdapters;
-  }, [sourceAdapters]);
+  }, [sourceAdapters, sourceAdaptersRef]);
 
   useEffect(() => {
     refreshHealth();
@@ -172,6 +172,7 @@ export function useAppLifecycleEffects({
     refreshTranscriptJobs();
     refreshSourceAdapters();
     refreshGeminiCredentialStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- initial data load: runs when the license gate flips; the non-memoized refresh callbacks from AppStateRoot are intentionally excluded so startup does not re-fetch every render
   }, [licenseCanUseApp]);
 
   useEffect(() => {
@@ -180,6 +181,7 @@ export function useAppLifecycleEffects({
     }
 
     void refreshCompanyEvents(companyEventMode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-fetch when the event filters change; the non-memoized refreshCompanyEvents identity is intentionally excluded
   }, [
     licenseCanUseApp,
     companyEventCompanyFilter,
@@ -206,6 +208,7 @@ export function useAppLifecycleEffects({
 
     eventWeekFetchAttemptedRef.current.add(weekStart);
     void refreshBankierCalendarWeek(weekStart, "manual");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch each week once (guarded by eventWeekFetchAttemptedRef); the non-memoized refreshBankierCalendarWeek identity is intentionally excluded
   }, [licenseCanUseApp, activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
   useEffect(() => {
@@ -228,6 +231,7 @@ export function useAppLifecycleEffects({
         window.clearInterval(intervalId);
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- schedule the feed-prune timer once per license gate; the non-memoized pruneOldFeedItems identity is intentionally excluded
   }, [licenseCanUseApp]);
 
   useEffect(() => {
@@ -282,6 +286,7 @@ export function useAppLifecycleEffects({
       }
       setNextSourceRefreshAtByAdapterId({});
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- source-refresh scheduler keyed on scheduledSourceAdapterKey + poll interval; the adapters array and refresh callback are represented by that key rather than listed directly
   }, [licenseCanUseApp, settings?.pollIntervalSeconds, sourceRefreshFailureCount, scheduledSourceAdapterKey]);
 
   useEffect(() => {
@@ -311,6 +316,7 @@ export function useAppLifecycleEffects({
       }
       setNextRegistryRefreshAt(null);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- registry-refresh scheduler keyed on the adapter's enabled/interval; the non-memoized refreshCompanyRegistryIfStale identity is intentionally excluded
   }, [licenseCanUseApp, registryAdapter?.enabled, registryAdapter?.defaultPollIntervalSeconds]);
 
   useEffect(() => {
@@ -326,6 +332,7 @@ export function useAppLifecycleEffects({
     }
 
     refreshNotebookEntries(selectedCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load notebook entries on company change; the non-memoized refreshNotebookEntries and stable setters are intentionally excluded
   }, [licenseCanUseApp, selectedCompanyId]);
 
   useEffect(() => {
@@ -344,12 +351,14 @@ export function useAppLifecycleEffects({
     }
 
     refreshNotebookEntries(nextCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- select + load the notebook company when Notebooks opens; the non-memoized refreshNotebookEntries and stable setter are intentionally excluded
   }, [licenseCanUseApp, activeSection, companies, selectedNotebookCompanyId]);
 
   useEffect(() => {
     if (licenseCanUseApp && activeSection === "Companies") {
       refreshCompanyRegistryEntries();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh registry entries when Companies opens; the non-memoized refreshCompanyRegistryEntries identity is intentionally excluded
   }, [licenseCanUseApp, activeSection, companies.length]);
 
   useEffect(() => {
@@ -361,7 +370,7 @@ export function useAppLifecycleEffects({
 
     setNotebookEditForm(notebookFormFromEntry(selectedNotebookEntry));
     setNotebookEditMode(false);
-  }, [selectedNotebookEntry]);
+  }, [selectedNotebookEntry, setNotebookEditForm, setNotebookEditMode]);
 
   useEffect(() => {
     if (!selectedNotebookScreenEntry) {
@@ -372,7 +381,7 @@ export function useAppLifecycleEffects({
 
     setNotebookScreenEditForm(notebookFormFromEntry(selectedNotebookScreenEntry));
     setNotebookScreenEditMode(false);
-  }, [selectedNotebookScreenEntry]);
+  }, [selectedNotebookScreenEntry, setNotebookScreenEditForm, setNotebookScreenEditMode]);
 
   useEffect(() => {
     if (!selectedClaimEntry) {
@@ -381,5 +390,5 @@ export function useAppLifecycleEffects({
     }
 
     setClaimStatusDraft(selectedClaimEntry.claimStatus ?? "open");
-  }, [selectedClaimEntry]);
+  }, [selectedClaimEntry, setClaimStatusDraft]);
 }

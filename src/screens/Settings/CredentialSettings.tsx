@@ -2,7 +2,7 @@ import type { FormEvent } from "react";
 import { ExternalLink, Save, Trash2 } from "lucide-react";
 import { ADDITIONAL_CREDENTIAL_PROVIDERS } from "../../api/credentials";
 import type { CredentialStatus } from "../../api/types";
-import { ActionRow, Button, InfoGrid } from "../../ui";
+import { ActionRow, Button, InfoGrid, TextField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { ProviderApiKeyForm } from "./ProviderApiKeyForm";
 
@@ -50,17 +50,15 @@ export function CredentialSettings({
         ]}
       />
       <form className="credential-form" onSubmit={onSaveGeminiApiKey}>
-        <label>
-          {t("settings.credentials.geminiApiKey")}
-          <input
-            aria-label={t("settings.credentials.geminiApiKey")}
-            autoComplete="off"
-            placeholder={geminiCredentialStatus?.configured ? text("Replace configured key") : text("Paste API key")}
-            type="password"
-            value={geminiApiKeyDraft}
-            onChange={(event) => onGeminiApiKeyDraftChange(event.target.value)}
-          />
-        </label>
+        <TextField
+          label={t("settings.credentials.geminiApiKey")}
+          aria-label={t("settings.credentials.geminiApiKey")}
+          autoComplete="off"
+          placeholder={geminiCredentialStatus?.configured ? text("Replace configured key") : text("Paste API key")}
+          type="password"
+          value={geminiApiKeyDraft}
+          onChange={(event) => onGeminiApiKeyDraftChange(event.target.value)}
+        />
         <ActionRow className="credential-actions">
           <Button
             disabled={geminiCredentialInFlight || !geminiApiKeyDraft.trim()}

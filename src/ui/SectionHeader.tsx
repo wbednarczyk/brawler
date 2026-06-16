@@ -4,6 +4,8 @@ export type SectionHeaderProps = {
   actions?: ReactNode;
   className?: string;
   description?: ReactNode;
+  /** Heading level for the title. Defaults to h2; use h3/h4 for nested sections to preserve document outline. */
+  level?: "h2" | "h3" | "h4";
   meta?: ReactNode;
   title: ReactNode;
   titleId?: string;
@@ -14,6 +16,7 @@ export function SectionHeader({
   actions,
   className,
   description,
+  level: Heading = "h2",
   meta,
   title,
   titleId,
@@ -30,7 +33,7 @@ export function SectionHeader({
         .join(" ")}
     >
       <div className="ui-section-title">
-        <h2 id={titleId}>{title}</h2>
+        <Heading id={titleId}>{title}</Heading>
         {description ? <p>{description}</p> : null}
       </div>
       {meta ? <span className="ui-section-header-meta">{meta}</span> : null}

@@ -7,7 +7,7 @@ import {
   setProviderApiKey,
 } from "../../api/credentials";
 import type { CredentialStatus } from "../../api/types";
-import { ActionRow, Button, InfoGrid } from "../../ui";
+import { ActionRow, Button, InfoGrid, TextField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ProviderApiKeyFormProps = {
@@ -89,17 +89,15 @@ export function ProviderApiKeyForm({
         ]}
       />
       <form className="credential-form" onSubmit={save}>
-        <label>
-          {keyLabel}
-          <input
-            aria-label={keyLabel}
-            autoComplete="off"
-            placeholder={status?.configured ? text("Replace configured key") : text("Paste API key")}
-            type="password"
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-          />
-        </label>
+        <TextField
+          label={keyLabel}
+          aria-label={keyLabel}
+          autoComplete="off"
+          placeholder={status?.configured ? text("Replace configured key") : text("Paste API key")}
+          type="password"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+        />
         <ActionRow className="credential-actions">
           <Button
             aria-label={`${text("Save")} ${keyLabel}`}

@@ -3,12 +3,8 @@ import { act, fireEvent } from "@testing-library/react";
 import type { AiAnalysisJob } from "../../api/types";
 import {
   appTestState,
-  currentWeekTestDate,
   expect,
-  initialCompanies,
   initialFeedItems,
-  initialGeminiCredentialStatus,
-  initialNotebookEntry,
   invoke,
   openUrl,
   renderApp,

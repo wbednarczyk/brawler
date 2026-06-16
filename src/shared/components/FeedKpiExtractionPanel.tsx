@@ -15,7 +15,7 @@ import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
-import { DetailSection, Modal, TextField } from "../../ui";
+import { Checkbox, DetailSection, Modal, TextField } from "../../ui";
 import { useLocale } from "../locale";
 import { formatFinancialValue } from "../format/financialValue";
 
@@ -159,7 +159,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
           setError(result.error ?? text("Failed to fetch the report document."));
         }
       }),
-    [companyId, extractDocument, feedItem.id, feedItem.title, refreshDocuments, text]
+    [companyId, extractDocument, feedItem.id, feedItem.title, guard, refreshDocuments, text]
   );
 
   const resolveFromIr = useCallback(
@@ -179,7 +179,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
           setCandidates(resolution.candidates);
         }
       }),
-    [companyId, extractDocument, feedItem.publishedAt, feedItem.title, feedItem.type, refreshDocuments]
+    [companyId, extractDocument, feedItem.publishedAt, feedItem.title, feedItem.type, guard, refreshDocuments]
   );
 
   const refreshJob = useCallback(async () => {
@@ -521,17 +521,15 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
                   {proposal.status === "pending" ? (
                     <div className="kpi-extraction-proposal-actions">
                       {proposal.isProposedKpi ? (
-                        <label className="kpi-extraction-accept-new">
-                          <input
-                            aria-label={`${proposal.label} ${text("track as new KPI")}`}
-                            checked={acceptNew[proposal.id] ?? false}
-                            onChange={(event) =>
-                              setAcceptNew((current) => ({ ...current, [proposal.id]: event.target.checked }))
-                            }
-                            type="checkbox"
-                          />
-                          {text("Track as new KPI")}
-                        </label>
+                        <Checkbox
+                          className="kpi-extraction-accept-new"
+                          aria-label={`${proposal.label} ${text("track as new KPI")}`}
+                          checked={acceptNew[proposal.id] ?? false}
+                          onChange={(event) =>
+                            setAcceptNew((current) => ({ ...current, [proposal.id]: event.target.checked }))
+                          }
+                          label={text("Track as new KPI")}
+                        />
                       ) : null}
                       <Button
                         className="compact-button"

@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
     "test": "vitest run src",
     "test:browser:install": "playwright install chromium",
     "test:browser": "playwright test",
@@ -20,7 +21,7 @@
     "release:version-check": "scripts/release/check-version-sync.sh",
     "release:changelog-check": "git-cliff --config cliff.toml --strip header HEAD..HEAD",
     "release:check": "npm run release:commit-msg-check && npm run release:version-check && npm run release:changelog-check",
-    "check:frontend": "npm run typecheck && npm run test && npm run build",
+    "check:frontend": "npm run typecheck && npm run lint && npm run test && npm run build",
     "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
     "check": "npm run check:frontend && npm run check:rust"
   },
@@ -34,6 +35,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.60.0",
     "@tauri-apps/cli": "^2.0.0",
     "@testing-library/jest-dom": "^6.4.8",
@@ -42,8 +44,12 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
     "jsdom": "^24.1.1",
     "typescript": "^5.5.4",
+    "typescript-eslint": "^8.61.1",
     "vite": "^5.4.0",
     "vitest": "^2.0.5"
   }
