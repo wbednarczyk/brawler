@@ -1,5 +1,14 @@
 # Changelog
 
+## v - 2026-06-16
+
+
+
+### Changed
+
+- enforce ErrorText, add primitive/a11y tests, extract AI-analysis controller
+
+
 ## v0.41.1 - 2026-06-16
 
 
