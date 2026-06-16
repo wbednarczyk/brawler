@@ -51,8 +51,8 @@ New behavior should land in the matching API, screen, shared, command, storage, 
 
 ## Design Principles
 
-- Split by domain first, then by technical layer.
-- Treat extensibility as a default module design goal. Prefer stable contracts plus adapters for plausible future implementations over hard-coded one-off paths.
+- Split by domain first, then by technical layer. This is the package-by-feature half of the project's Ports and Adapters posture ([ADR 0039](adr/0039-ports-and-adapters-posture.md)): hexagonal at the external seams (sources, AI providers, interpretative capabilities, credentials, search/backup, import/export, licensing, the UI↔Rust seam), domain-sliced inside the core.
+- Treat extensibility as a default module design goal. Prefer stable contracts plus adapters for plausible future implementations over hard-coded one-off paths. Do not add a port whose population is permanently one adapter (e.g. storage is intentionally SQLite-coupled, not a repository port — see the storage-port trigger in [ADR 0039](adr/0039-ports-and-adapters-posture.md)).
 - Keep collection, orchestration, storage access, presentation, and export/integration concerns separate when a module is likely to grow more than one implementation.
 - Keep screen modules responsible for presentation and local UI state.
 - Keep API/client modules responsible for Tauri command calls and TypeScript DTOs.

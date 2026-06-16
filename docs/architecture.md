@@ -83,6 +83,14 @@ Decision: keep frontend-driven scheduling for v0.38.0. Move scheduling ownership
 
 ## Extensibility Boundaries
 
+### Ports and Adapters Posture
+
+Brawler is **hexagonal (Ports and Adapters) at its external seams and package-by-feature inside the Rust domain core** ([ADR 0039](adr/0039-ports-and-adapters-posture.md)). The metapattern is applied where it pays off — a seam with more than one plausible implementation or a replaceable external dependency — and deliberately declined where it does not.
+
+- **Ports (bind to the interface, never the implementation):** source adapters, AI providers ([ADR 0016](adr/0016-provider-neutral-ai-analysis-framework.md), [ADR 0028](adr/0028-multi-provider-ai-boundary.md)), the interpretative capability contracts (`Classifier`/`SimilarityProvider`/`Matcher`/`SemanticSearch`, [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md) — the reference hexagon), credentials, search/backups/pool ([ADR 0032](adr/0032-search-and-backup-boundaries.md)), import/export format adapters ([ADR 0018](adr/0018-import-export-boundaries.md)), licensing ([ADR 0017](adr/0017-license-gate.md)), and the UI↔Rust typed-command seam.
+- **Core internals:** organized by domain slice (`companies/`, `feed/`, `notebooks/`, …) per [Modularization Design](modularization-design.md), not onion-style layers.
+- **Storage is intentionally not a repository port.** SQLite is the single local-first source of truth; domain `storage/*` code may be SQLite-coupled. A `Repository` trait / domain-vs-row split is deferred until a real second backend, a sync/replication engine, or a non-SQLite durable target becomes planned scope (the storage-port trigger in [ADR 0039](adr/0039-ports-and-adapters-posture.md)). Do not add a port whose population is permanently one adapter.
+
 Source adapters should return normalized records through a common interface. Adapters must declare source type, rate limits, supported markets, and allowed fetch mode.
 
 AI providers should implement provider-neutral interfaces. Gemini is already the first live AI provider for YouTube transcription and may be extended first for general analysis, but summarization, significance labeling, note extraction, and future AI workflows must remain behind provider/model/credential boundaries that can support OpenAI, Anthropic, and other providers later. General AI analysis is governed by [ADR 0016](adr/0016-provider-neutral-ai-analysis-framework.md).
