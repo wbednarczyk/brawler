@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.41.1 - 2026-06-16
+
+
+
+### Features
+
+- adopt and enforce the primitive-first component framework
+
+
 ## v0.41.0 - 2026-06-16
 
 
