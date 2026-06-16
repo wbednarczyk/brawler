@@ -4,6 +4,15 @@
 
 
 
+### Features
+
+- management claims tracker (v0.42.0)
+
+
+## v - 2026-06-16
+
+
+
 ### Changed
 
 - enforce ErrorText, add primitive/a11y tests, extract AI-analysis controller
