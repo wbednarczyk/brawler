@@ -86,6 +86,9 @@ V1 stores local app data in the OS app data directory by default. Development bu
 Rules:
 
 - SQLite database lives under the app data directory by default.
+- Migrations are append-only and immutable once applied. A migration version number must map to exactly one piece of content forever; never reuse a version across branches/sessions, and never edit a migration that has shipped or been applied to any real database. The runner records each applied version and skips it, so edits to an applied migration silently never re-run — in `v0.40.0` this produced a missing-table ("no such table") failure on installed databases.
+- To change or repair already-applied schema or seed data, add a **new forward migration** that is idempotent and self-healing: `CREATE TABLE IF NOT EXISTS`, `INSERT OR IGNORE` / upserts (`ON CONFLICT ... DO UPDATE`), and guarded `UPDATE`/`DELETE`, so it converges every database regardless of which prior intermediate state it recorded.
+- Reads of settings or columns introduced by a later migration must tolerate a missing row with a safe default, so a single absent migration can never crash app startup (e.g. the startup `get_settings` path).
 - Local logs live under the app data/log directory.
 - Exports are built as normal features during v1 implementation.
 - Import/restore and full local backup are late-v1 roadmap items.

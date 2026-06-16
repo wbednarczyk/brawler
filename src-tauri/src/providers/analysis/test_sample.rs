@@ -22,6 +22,8 @@ const TEST_SAMPLE_IR_PICK_JSON: &str =
 const TEST_SAMPLE_ESPI_CLASSIFICATION_JSON: &str =
     r#"{"category":"guidance_change","confidence":0.81}"#;
 
+const TEST_SAMPLE_EVENT_DATE_JSON: &str = r#"{"date":"2030-09-15"}"#;
+
 pub const TEST_SAMPLE_ANALYSIS_PROVIDER_ID: &str = "test_sample";
 pub const TEST_SAMPLE_ANALYSIS_MODEL: &str = "test-sample-analysis-v1";
 
@@ -191,6 +193,8 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
             Ok(TEST_SAMPLE_IR_PICK_JSON.to_owned())
         } else if prompt.contains("classify this official ESPI/EBI filing") {
             Ok(TEST_SAMPLE_ESPI_CLASSIFICATION_JSON.to_owned())
+        } else if prompt.contains("extract the future date") {
+            Ok(TEST_SAMPLE_EVENT_DATE_JSON.to_owned())
         } else {
             Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
         }

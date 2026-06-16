@@ -264,6 +264,21 @@ Considered options:
 
 V1 decision: tabs or segmented views inside one company workspace.
 
+### Report Backfill And Document Capture (v0.41.0)
+
+Decision: tracking a company offers an explicit **"Backfill history"** action, and report files are captured into the company's evidence rather than left as external links only. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
+
+Why it matters: a freshly tracked company otherwise starts with an empty timeline, and AI extraction/diff have no local document to work from.
+
+Flow:
+
+1. The user tracks a company (or opens its workspace) and triggers **Backfill history**. A progress indicator shows pages fetched, items ingested, and documents stored, with a cancel control; diagnostics surface any per-item fetch errors.
+2. As backfill and normal refresh ingest official filings, periodic-report attachments are stored as full report documents and appear linked from the company's Fundamentals/timeline; routine filings show as linked metadata only.
+3. Re-running backfill or refreshing again does not create duplicate items, documents, or events; backfilled items keep their original publication dates.
+4. A dividend or general-meeting filing with a stated future date surfaces a **proposed** calendar event; the user confirms or rejects it before it appears on the calendar. A date is never placed on the calendar without confirmation.
+
+V1 decision: backfill is user-triggered, app-open-only, ~3-year depth, official sources only; historical calendar entries are not backfilled.
+
 ### Claim Follow-up Periods
 
 Decision: when you write a note like "management said X should happen soon", the app supports both a follow-up quarter and an exact follow-up date.

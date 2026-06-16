@@ -1,6 +1,7 @@
-use crate::document_fetcher::DocumentFetcher;
+use crate::document_fetcher::{DocumentFetcher, FetchedDocument};
 use crate::storage::{self, CaptureReportDocumentInput, StorageResult};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,6 +12,14 @@ pub struct DocumentCaptureResult {
     pub error: Option<String>,
 }
 
+/// Result of fetching the files for `pending` ESPI/EBI attachment documents (ADR 0036).
+#[derive(Debug, Default, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AttachmentFetchSummary {
+    pub stored: usize,
+    pub failed: usize,
+}
+
 pub fn capture_report_document(
     state: &crate::storage::AppState,
     fetcher: &dyn DocumentFetcher,
@@ -19,36 +28,10 @@ pub fn capture_report_document(
     // Create or find the pending document
     let doc = state.create_or_find_pending_report_document(input)?;
     let doc_id = doc.id.clone();
-    let data_dir = state.data_dir().to_path_buf();
 
-    // Try to fetch the document
     match fetcher.fetch(&doc.url) {
         Ok(fetched) => {
-            // Determine file extension from content type or URL
-            let extension = determine_extension(&fetched.content_type, &doc.url);
-            let local_path = format!("report_documents/{}.{}", doc_id, extension);
-            let full_path = data_dir.join(&local_path);
-
-            // Create directory if it doesn't exist
-            if let Some(parent) = full_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
-            }
-
-            // Write file to disk
-            std::fs::write(&full_path, &fetched.bytes)
-                .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
-
-            let byte_size = fetched.bytes.len() as i64;
-
-            // Mark as fetched
-            state.mark_report_document_fetched(
-                &doc_id,
-                Some(&local_path),
-                fetched.content_type.as_deref(),
-                None,
-                Some(byte_size),
-            )?;
+            let local_path = store_fetched_document(state, &doc_id, &doc.url, &fetched)?;
 
             Ok(DocumentCaptureResult {
                 document_id: doc_id,
@@ -59,8 +42,6 @@ pub fn capture_report_document(
         }
         Err(err) => {
             let error_msg = err.to_string();
-
-            // Mark as failed
             state.mark_report_document_failed(&doc_id, &error_msg)?;
 
             Ok(DocumentCaptureResult {
@@ -71,6 +52,82 @@ pub fn capture_report_document(
             })
         }
     }
+}
+
+/// Fetch and store the files for report documents registered `pending` during ingestion
+/// (periodic-report ESPI/EBI attachments). Each fetch is throttled; failures are recorded on
+/// the document and never abort the batch. Idempotent: already-fetched documents are not
+/// re-listed. Used by source refresh and on-track backfill (ADR 0036).
+pub fn fetch_pending_attachments(
+    state: &crate::storage::AppState,
+    fetcher: &dyn DocumentFetcher,
+) -> StorageResult<AttachmentFetchSummary> {
+    let pending = state.list_pending_attachment_documents()?;
+    let mut summary = AttachmentFetchSummary::default();
+
+    for (index, doc) in pending.iter().enumerate() {
+        if index > 0 {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+
+        match fetcher.fetch(&doc.url) {
+            Ok(fetched) => {
+                store_fetched_document(state, &doc.id, &doc.url, &fetched)?;
+                summary.stored += 1;
+            }
+            Err(err) => {
+                state.mark_report_document_failed(&doc.id, &err.to_string())?;
+                summary.failed += 1;
+            }
+        }
+    }
+
+    Ok(summary)
+}
+
+/// Write fetched bytes under `report_documents/`, recording the relative path, content type,
+/// SHA-256 content hash, and byte size on the document. Returns the relative `local_path`.
+fn store_fetched_document(
+    state: &crate::storage::AppState,
+    doc_id: &str,
+    url: &str,
+    fetched: &FetchedDocument,
+) -> StorageResult<String> {
+    let extension = determine_extension(&fetched.content_type, url);
+    let local_path = format!("report_documents/{doc_id}.{extension}");
+    let full_path = state.data_dir().join(&local_path);
+
+    if let Some(parent) = full_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
+    }
+
+    std::fs::write(&full_path, &fetched.bytes)
+        .map_err(|e| storage::StorageError::Json(serde_json::Error::io(e)))?;
+
+    let content_hash = content_hash_hex(&fetched.bytes);
+    let byte_size = fetched.bytes.len() as i64;
+
+    state.mark_report_document_fetched(
+        doc_id,
+        Some(&local_path),
+        fetched.content_type.as_deref(),
+        Some(&content_hash),
+        Some(byte_size),
+    )?;
+
+    Ok(local_path)
+}
+
+fn content_hash_hex(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    hex
 }
 
 fn determine_extension(content_type: &Option<String>, url: &str) -> String {

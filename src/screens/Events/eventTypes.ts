@@ -66,4 +66,6 @@ export type EventsScreenProps = {
   companyEventDueLabel: (eventDate: string) => string | null;
   companyEventDueClass: (eventDate: string) => string;
   openExternalUrl: (url: string) => void;
+  // Confirm or reject a proposed derived calendar event, then reload events (ADR 0036).
+  confirmDerivedEvent: (eventId: string, action: "confirm" | "reject") => Promise<void>;
 };

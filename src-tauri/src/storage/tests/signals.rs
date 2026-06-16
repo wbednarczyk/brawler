@@ -32,6 +32,143 @@ fn espi_item(company: &Company, article_id: &str, title: &str) -> BankierCompany
     }
 }
 
+fn espi_item_with_body(
+    company: &Company,
+    article_id: &str,
+    title: &str,
+    body: &str,
+) -> BankierCompanyItem {
+    let mut item = espi_item(company, article_id, title);
+    item.body_text = Some(body.to_owned());
+    item
+}
+
+fn list_proposed_events(state: &AppState, company_id: &str) -> Vec<CompanyEvent> {
+    state
+        .list_company_events(CompanyEventListInput {
+            mode: Some("all".to_owned()),
+            company_id: Some(company_id.to_owned()),
+            ..Default::default()
+        })
+        .expect("events should list")
+        .into_iter()
+        .filter(|event| event.status == "proposed")
+        .collect()
+}
+
+#[test]
+fn confirmed_dividend_signal_derives_proposed_event_and_confirms() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let items = vec![espi_item_with_body(
+        &company,
+        "9200001",
+        "Rekomendacja Zarządu w sprawie wypłaty dywidendy za rok 2025",
+        "Zarząd rekomenduje wypłatę dywidendy. Dzień dywidendy: 10.07.2030 r. \
+         Termin wypłaty dywidendy: 24.07.2030 r.",
+    )];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should classify and derive");
+
+    let proposed = list_proposed_events(&state, &company.id);
+    assert_eq!(proposed.len(), 1, "one proposed dividend event expected");
+    assert_eq!(proposed[0].event_type, "dividend");
+    assert_eq!(proposed[0].event_date, "2030-07-24");
+    assert_eq!(proposed[0].source_type, "derived_signal");
+
+    // The signal now links to its derived event.
+    let signals = state
+        .list_company_signals(CompanySignalListInput {
+            company_id: Some(company.id.clone()),
+            ..Default::default()
+        })
+        .expect("signals should list");
+    assert!(signals
+        .iter()
+        .any(|s| s.category == "dividend" && s.derived_event_id.is_some()));
+
+    // Confirming places it on the calendar.
+    state
+        .confirm_derived_event(&proposed[0].id, true)
+        .expect("confirm should succeed");
+    assert!(list_proposed_events(&state, &company.id).is_empty());
+
+    // Re-ingesting does not duplicate the derived event.
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("re-ingestion");
+    let all = state
+        .list_company_events(CompanyEventListInput {
+            mode: Some("all".to_owned()),
+            company_id: Some(company.id.clone()),
+            event_type: Some("dividend".to_owned()),
+            ..Default::default()
+        })
+        .expect("events should list");
+    assert_eq!(all.len(), 1, "derivation must be idempotent");
+}
+
+#[test]
+fn general_meeting_derivation_can_be_rejected() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let items = vec![espi_item_with_body(
+        &company,
+        "9200002",
+        "Zwołanie Zwyczajnego Walnego Zgromadzenia CD PROJEKT S.A.",
+        "Zarząd zwołuje Zwyczajne Walne Zgromadzenie na dzień 28 czerwca 2030 r. o godzinie 11:00.",
+    )];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should classify and derive");
+
+    let proposed = list_proposed_events(&state, &company.id);
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(proposed[0].event_type, "shareholder_meeting");
+    assert_eq!(proposed[0].event_date, "2030-06-28");
+
+    // Rejecting discards the proposed event and clears the link.
+    state
+        .confirm_derived_event(&proposed[0].id, false)
+        .expect("reject should succeed");
+    assert!(list_proposed_events(&state, &company.id).is_empty());
+
+    let signals = state
+        .list_company_signals(CompanySignalListInput {
+            company_id: Some(company.id.clone()),
+            ..Default::default()
+        })
+        .expect("signals should list");
+    assert!(signals.iter().all(|s| s.derived_event_id.is_none()));
+}
+
+#[test]
+fn dividend_without_a_date_derives_no_event() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let items = vec![espi_item_with_body(
+        &company,
+        "9200003",
+        "Rekomendacja Zarządu w sprawie wypłaty dywidendy za rok 2025",
+        "Zarząd rekomenduje przeznaczenie zysku na wypłatę dywidendy w wysokości 1,50 zł na akcję.",
+    )];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should classify");
+
+    assert!(
+        list_proposed_events(&state, &company.id).is_empty(),
+        "no event without a parseable date (never guess)"
+    );
+}
+
 #[test]
 fn rule_classifier_produces_confirmed_typed_signals_for_real_filings() {
     let connection = open_in_memory_database().expect("database should initialize");

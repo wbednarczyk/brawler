@@ -49,6 +49,25 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
     if (command === "list_report_documents") {
       return Promise.resolve([]);
     }
+    // v0.41 on-track backfill (benign defaults; no backfill recorded by default).
+    if (command === "get_backfill_progress") {
+      return Promise.resolve(null);
+    }
+    if (command === "backfill_company_history") {
+      const companyId =
+        (args as { input?: { companyId?: string } } | undefined)?.input?.companyId ?? "";
+      return Promise.resolve({
+        companyId,
+        status: "completed",
+        pagesFetched: 0,
+        itemsIngested: 0,
+        documentsStored: 0,
+        detailErrors: 0,
+        error: null,
+        startedAt: "",
+        updatedAt: "",
+      });
+    }
     if (command === "list_kpi_extraction") {
       return Promise.resolve([]);
     }
@@ -834,6 +853,10 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
           return companyMatches && categoryMatches && statusMatches && watchlistMatches;
         }),
       );
+    }
+
+    if (command === "confirm_derived_event") {
+      return Promise.resolve(null);
     }
 
     if (command === "confirm_company_signal") {

@@ -46,6 +46,20 @@ pub(super) fn create_or_find_pending(
     connection: &Connection,
     input: CaptureReportDocumentInput,
 ) -> StorageResult<ReportDocument> {
+    create_or_find_with_status(connection, input, "pending")
+}
+
+/// Create a report document with an explicit initial `fetch_status`, or return the
+/// existing row for the same `(company_id, url)` (idempotent upsert on the UNIQUE key).
+///
+/// Used by attachment ingestion to register periodic-report attachments as `pending`
+/// (a follow-up fetch stores the file) and other ESPI/EBI attachments as `metadata_only`
+/// (URL + attribution preserved, no bytes stored). See ADR 0036.
+pub(super) fn create_or_find_with_status(
+    connection: &Connection,
+    input: CaptureReportDocumentInput,
+    initial_status: &str,
+) -> StorageResult<ReportDocument> {
     let company_id = input.company_id.trim().to_owned();
     let url = input.url.trim().to_owned();
     let source_type = input.source_type.trim().to_owned();
@@ -106,11 +120,61 @@ pub(super) fn create_or_find_pending(
             url,
             title,
             attribution,
-            "pending"
+            initial_status
         ],
     )?;
 
     get_report_document(connection, &id)
+}
+
+/// Downgrade a document to `metadata_only`: keep the URL/title/attribution row for
+/// citation and the source ladder, but record that no file is stored locally. Used by
+/// retention pruning and for non-periodic ESPI/EBI attachments (ADR 0036).
+pub(super) fn mark_metadata_only(
+    connection: &Connection,
+    id: &str,
+) -> StorageResult<ReportDocument> {
+    let _doc = get_report_document(connection, id)?;
+
+    connection.execute(
+        "
+        UPDATE report_documents
+        SET fetch_status = 'metadata_only',
+            local_path = NULL,
+            fetch_error = NULL,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![id],
+    )?;
+
+    get_report_document(connection, id)
+}
+
+/// Documents awaiting a file fetch: ESPI/EBI attachments registered as `pending` with no
+/// stored file yet. Driven outside the ingestion transaction so network IO stays off the
+/// write path (ADR 0036).
+pub(super) fn list_pending_attachments(
+    connection: &Connection,
+) -> StorageResult<Vec<ReportDocument>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id, company_id, period_id, source_type, origin_ref, url, local_path,
+            content_type, content_hash, byte_size, title, attribution, fetch_status,
+            fetch_error, fetched_at, created_at, updated_at
+        FROM report_documents
+        WHERE source_type = 'espi_attachment'
+          AND fetch_status = 'pending'
+          AND local_path IS NULL
+        ORDER BY created_at ASC
+        ",
+    )?;
+
+    let rows = statement.query_map([], report_document_from_row)?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
 }
 
 pub(super) fn mark_fetched(

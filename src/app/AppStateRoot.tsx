@@ -992,6 +992,16 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     }
   }
 
+  async function confirmDerivedEvent(eventId: string, action: "confirm" | "reject") {
+    try {
+      await signalsApi.confirmDerivedEvent(eventId, action);
+      await refreshCompanyEvents();
+      setCompanyEventsError(null);
+    } catch (error) {
+      setCompanyEventsError(String(error));
+    }
+  }
+
   async function runAiSignalClassification() {
     setAiSignalClassificationState("running");
     setSignalsError(null);
@@ -1930,6 +1940,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               companyEventTypeOptions={companyEventTypeOptions}
               companyEventStatusOptions={companyEventStatusOptions}
               refreshEventSources={refreshEventSources}
+              confirmDerivedEvent={confirmDerivedEvent}
               openCompanyEventComposer={openCompanyEventComposer}
               setCompanyEventViewMode={setCompanyEventViewMode}
               setCompanyEventMode={setCompanyEventMode}

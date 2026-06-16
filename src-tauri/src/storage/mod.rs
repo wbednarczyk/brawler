@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -111,6 +112,7 @@ pub use search::SearchMatch;
 pub use settings::{
     AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
 };
+pub use signals::SignalNeedingDate;
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
     ResolveTranscriptJobCompanyInput, TranscriptJob, TranscriptJobListInput, TranscriptNoteDraft,
@@ -160,11 +162,30 @@ impl std::ops::DerefMut for DbGuard<'_> {
     }
 }
 
+/// Live progress/diagnostics for an on-track history backfill (ADR 0036). Held in shared
+/// memory (not persisted): backfill is an explicit, app-open-only action, and idempotent
+/// re-runs mean a lost in-flight status is never harmful.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackfillProgress {
+    pub company_id: String,
+    /// `running` | `completed` | `failed`.
+    pub status: String,
+    pub pages_fetched: usize,
+    pub items_ingested: usize,
+    pub documents_stored: usize,
+    pub detail_errors: usize,
+    pub error: Option<String>,
+    pub started_at: String,
+    pub updated_at: String,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     db: Db,
     runtime_metrics: Arc<RuntimeMetricCounters>,
     data_dir: PathBuf,
+    backfill_progress: Arc<Mutex<HashMap<String, BackfillProgress>>>,
 }
 
 impl AppState {
@@ -177,6 +198,7 @@ impl AppState {
             db: Db::Single(Arc::new(Mutex::new(connection))),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
+            backfill_progress: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -185,7 +207,26 @@ impl AppState {
             db: Db::Pool(pool),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
+            backfill_progress: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    /// Replace the stored backfill progress for a company.
+    pub fn set_backfill_progress(&self, progress: BackfillProgress) {
+        let mut guard = self
+            .backfill_progress
+            .lock()
+            .expect("backfill progress mutex poisoned");
+        guard.insert(progress.company_id.clone(), progress);
+    }
+
+    /// Read the latest backfill progress for a company, if any run has been recorded.
+    pub fn get_backfill_progress(&self, company_id: &str) -> Option<BackfillProgress> {
+        let guard = self
+            .backfill_progress
+            .lock()
+            .expect("backfill progress mutex poisoned");
+        guard.get(company_id).cloned()
     }
 
     /// Check out a connection for a single storage operation.
@@ -868,6 +909,35 @@ impl AppState {
         signals::reject_company_signal(&connection, signal_id)
     }
 
+    /// Confirm (`confirm = true`) or reject a `proposed` derived calendar event (ADR 0036).
+    pub fn confirm_derived_event(&self, event_id: &str, confirm: bool) -> StorageResult<()> {
+        let connection = self.checkout()?;
+
+        signals::confirm_derived_event(&connection, event_id, confirm)
+    }
+
+    /// Confirmed dividend / general-meeting signals still lacking a derived event — candidates
+    /// for the opt-in AI date-extraction fallback (ADR 0036).
+    pub fn list_signals_needing_event_date(
+        &self,
+        limit: i64,
+    ) -> StorageResult<Vec<signals::SignalNeedingDate>> {
+        let connection = self.checkout()?;
+
+        signals::list_signals_needing_event_date(&connection, limit)
+    }
+
+    /// Derive a `proposed` event from an AI-extracted date for one signal (ADR 0036).
+    pub fn derive_event_from_extracted_date(
+        &self,
+        signal_id: &str,
+        event_date: &str,
+    ) -> StorageResult<bool> {
+        let connection = self.checkout()?;
+
+        signals::derive_event_from_extracted_date(&connection, signal_id, event_date)
+    }
+
     pub fn list_transcript_jobs(
         &self,
         input: TranscriptJobListInput,
@@ -1324,6 +1394,18 @@ impl AppState {
         let connection = self.checkout()?;
 
         report_documents::mark_failed(&connection, id, error)
+    }
+
+    pub fn mark_report_document_metadata_only(&self, id: &str) -> StorageResult<ReportDocument> {
+        let connection = self.checkout()?;
+
+        report_documents::mark_metadata_only(&connection, id)
+    }
+
+    pub fn list_pending_attachment_documents(&self) -> StorageResult<Vec<ReportDocument>> {
+        let connection = self.checkout()?;
+
+        report_documents::list_pending_attachments(&connection)
     }
 
     pub fn get_report_document(&self, id: &str) -> StorageResult<ReportDocument> {

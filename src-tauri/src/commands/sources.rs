@@ -79,6 +79,38 @@ pub fn list_unmatched_source_items(
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompanyBackfillInput {
+    company_id: String,
+}
+
+/// Run an on-track history backfill for one tracked company (ADR 0036). Long-running and
+/// throttled; progress is readable via `get_backfill_progress` while it runs.
+#[tauri::command]
+pub async fn backfill_company_history(
+    input: CompanyBackfillInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::BackfillProgress, String> {
+    let state = state.inner().clone();
+    jobs::scheduler::run_blocking_task(move || {
+        Ok(jobs::backfill::backfill_company_history(
+            &state,
+            &input.company_id,
+        ))
+    })
+    .await
+}
+
+/// Read the latest backfill progress/diagnostics for a company, if a run has been recorded.
+#[tauri::command]
+pub fn get_backfill_progress(
+    input: CompanyBackfillInput,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Option<storage::BackfillProgress>, String> {
+    Ok(state.get_backfill_progress(&input.company_id))
+}
+
 #[tauri::command]
 pub async fn refresh_sources(
     input: Option<RefreshSourcesInput>,

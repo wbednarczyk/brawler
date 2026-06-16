@@ -198,6 +198,137 @@ fn lists_documents_by_company() {
     assert!(company2_docs.iter().all(|d| d.company_id == company2.id));
 }
 
+fn espi_item_with_attachments(
+    company: &Company,
+    article_id: &str,
+    title: &str,
+    attachments: Vec<BankierCompanyAttachment>,
+) -> BankierCompanyItem {
+    BankierCompanyItem {
+        company_id: company.id.clone(),
+        qualified_ticker: company.qualified_ticker.clone(),
+        title: title.to_owned(),
+        link: format!("https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-{article_id}.html"),
+        summary: "Komunikat ESPI/EBI".to_owned(),
+        published_at: Some("2026-05-28T17:33:09".to_owned()),
+        fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+        article_id: article_id.to_owned(),
+        pub_id: 3,
+        dedupe_key: format!("bankier-company-komunikaty:article:{article_id}"),
+        duplicate_signature: format!("official-secondary:GPW:CDR:{article_id}"),
+        body_text: Some("Treść raportu okresowego.".to_owned()),
+        attachments,
+        detail_fetch_attempted: true,
+    }
+}
+
+#[test]
+fn periodic_report_attachments_register_pending_for_full_fetch() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let items = vec![espi_item_with_attachments(
+        &company,
+        "9100001",
+        "Skonsolidowany raport kwartalny QSr 1/2026",
+        vec![BankierCompanyAttachment {
+            label: "Raport XHTML".to_owned(),
+            url: "https://bonnier.pl/report-q1.xhtml".to_owned(),
+        }],
+    )];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should register attachments");
+
+    let docs = state
+        .list_report_documents_by_company(&company.id)
+        .expect("documents should list");
+
+    assert_eq!(docs.len(), 1);
+    let doc = &docs[0];
+    assert_eq!(doc.source_type, "espi_attachment");
+    assert_eq!(doc.url, "https://bonnier.pl/report-q1.xhtml");
+    assert_eq!(doc.fetch_status, "pending");
+    assert!(doc.local_path.is_none());
+    assert_eq!(doc.attribution, Some("Bankier.pl".to_owned()));
+    assert!(doc.origin_ref.is_some());
+
+    let pending = state
+        .list_pending_attachment_documents()
+        .expect("pending attachments should list");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, doc.id);
+}
+
+#[test]
+fn non_periodic_attachments_register_metadata_only() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let mut items = vec![espi_item_with_attachments(
+        &company,
+        "9100002",
+        "Powiadomienie o transakcjach na akcjach - art. 19 ust. 1 MAR",
+        vec![BankierCompanyAttachment {
+            label: "Załącznik".to_owned(),
+            url: "https://bonnier.pl/insider-notice.pdf".to_owned(),
+        }],
+    )];
+    items[0].body_text =
+        Some("Powiadomienie o transakcji osoby pełniącej obowiązki zarządcze.".to_owned());
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should register attachments");
+
+    let docs = state
+        .list_report_documents_by_company(&company.id)
+        .expect("documents should list");
+
+    assert_eq!(docs.len(), 1);
+    assert_eq!(docs[0].fetch_status, "metadata_only");
+    assert!(docs[0].local_path.is_none());
+
+    let pending = state
+        .list_pending_attachment_documents()
+        .expect("pending attachments should list");
+    assert!(pending.is_empty());
+}
+
+#[test]
+fn attachment_registration_is_idempotent_across_reruns() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let items = vec![espi_item_with_attachments(
+        &company,
+        "9100003",
+        "Raport roczny za 2025 rok",
+        vec![BankierCompanyAttachment {
+            label: "Raport roczny".to_owned(),
+            url: "https://bonnier.pl/annual-2025.xhtml".to_owned(),
+        }],
+    )];
+
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("first ingestion");
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("second ingestion");
+
+    let docs = state
+        .list_report_documents_by_company(&company.id)
+        .expect("documents should list");
+    assert_eq!(
+        docs.len(),
+        1,
+        "re-running ingestion must not duplicate documents"
+    );
+}
+
 #[test]
 fn get_returns_document_by_id() {
     let connection = open_in_memory_database().expect("database should initialize");

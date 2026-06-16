@@ -12,6 +12,7 @@ pub mod logging;
 pub mod observability;
 pub mod providers;
 pub mod report_documents_capture;
+pub mod signal_dates;
 pub mod source_adapters;
 pub mod storage;
 
@@ -120,7 +121,9 @@ pub fn run() {
             commands::signals::list_company_signals,
             commands::signals::confirm_company_signal,
             commands::signals::reject_company_signal,
+            commands::signals::confirm_derived_event,
             commands::signals::run_ai_signal_classification,
+            commands::signals::run_ai_event_derivation,
             commands::financials::list_kpi_definitions,
             commands::financials::create_kpi_definition,
             commands::financials::list_financial_periods,
@@ -155,6 +158,8 @@ pub fn run() {
             commands::sources::set_source_adapter_enabled,
             commands::sources::refresh_sources,
             commands::sources::refresh_source,
+            commands::sources::backfill_company_history,
+            commands::sources::get_backfill_progress,
             commands::sources::refresh_gpw_company_registry,
             commands::sources::refresh_gpw_company_registry_if_stale,
             commands::diagnostics::list_diagnostic_events,

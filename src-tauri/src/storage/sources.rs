@@ -432,6 +432,46 @@ pub(super) fn list_bankier_company_detail_cached_urls(
         .map_err(StorageError::from)
 }
 
+/// Register a filing's ESPI/EBI attachment links as `report_documents`, linked to the
+/// originating feed item. Periodic-report attachments are registered `pending` (a follow-up
+/// fetch stores the file); other attachments are registered `metadata_only` (URL + attribution
+/// only, no bytes). Idempotent via the report-document `(company_id, url)` UNIQUE key. ADR 0036.
+fn register_bankier_company_attachments(
+    connection: &Connection,
+    item: &BankierCompanyItem,
+    feed_item_id: &str,
+) -> StorageResult<()> {
+    if item.company_id.trim().is_empty() || item.attachments.is_empty() {
+        return Ok(());
+    }
+
+    let initial_status = if crate::source_adapters::bankier_company::is_periodic_report_item(item) {
+        "pending"
+    } else {
+        "metadata_only"
+    };
+
+    for attachment in &item.attachments {
+        let title = if attachment.label.trim().is_empty() {
+            item.title.clone()
+        } else {
+            attachment.label.clone()
+        };
+        let input = CaptureReportDocumentInput {
+            company_id: item.company_id.clone(),
+            source_type: "espi_attachment".to_owned(),
+            url: attachment.url.clone(),
+            period_id: None,
+            origin_ref: Some(feed_item_id.to_owned()),
+            title: Some(title),
+            attribution: Some(crate::source_adapters::bankier_company::ATTRIBUTION.to_owned()),
+        };
+        super::report_documents::create_or_find_with_status(connection, input, initial_status)?;
+    }
+
+    Ok(())
+}
+
 pub(super) fn ingest_bankier_company_items(
     connection: &mut Connection,
     items: &[BankierCompanyItem],
@@ -475,6 +515,7 @@ pub(super) fn ingest_bankier_company_items(
                     "secondary_official_duplicate",
                 ],
             )?;
+            register_bankier_company_attachments(&transaction, item, &feed_item_id)?;
         } else {
             let feed_item_id = existing_feed_item_id
                 .clone()
@@ -503,6 +544,7 @@ pub(super) fn ingest_bankier_company_items(
                     ",
                     params![feed_item_id, item.company_id, "bankier_tag_id"],
                 )?;
+                register_bankier_company_attachments(&transaction, item, &feed_item_id)?;
             }
         }
     }

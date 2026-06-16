@@ -1,5 +1,6 @@
 import { callCommand } from "./tauri";
 import type {
+  BackfillProgress,
   CompanyRegistryEntry,
   CompanyRegistryRefreshResult,
   SourceAdapter,
@@ -54,6 +55,16 @@ export function refreshSource(input: RefreshSourceInput) {
 
 export function refreshGpwCompanyRegistry(trigger: SourceRefreshTrigger) {
   return callCommand<CompanyRegistryRefreshResult>("refresh_gpw_company_registry", { input: { trigger } });
+}
+
+// Runs an explicit ~3-year history backfill for one tracked company (ADR 0036).
+// Long-running and throttled; poll getBackfillProgress while it runs.
+export function backfillCompanyHistory(companyId: string) {
+  return callCommand<BackfillProgress>("backfill_company_history", { input: { companyId } });
+}
+
+export function getBackfillProgress(companyId: string) {
+  return callCommand<BackfillProgress | null>("get_backfill_progress", { input: { companyId } });
 }
 
 export function refreshGpwCompanyRegistryIfStale(input: RefreshCompanyRegistryIfStaleInput) {

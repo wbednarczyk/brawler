@@ -95,6 +95,47 @@ pub fn parse_espi_classification_output(
     })
 }
 
+/// Marker phrase the test-sample provider keys on to return a sample event date.
+const ESPI_EVENT_DATE_MARKER: &str = "extract the future date";
+
+/// Build the prompt that asks the model to extract the single relevant future date from a
+/// dividend or general-meeting filing body (ADR 0036). `event_kind` is a human label such as
+/// "dividend payment date" or "general meeting date". The model must return `null` rather than
+/// guess — the deterministic parser already handled the explicit cases.
+pub fn espi_event_date_prompt(event_kind: &str, title: &str) -> String {
+    format!(
+        "You read a Polish stock-exchange official disclosure and {ESPI_EVENT_DATE_MARKER} it \
+announces: the {event_kind}. The filing body text is provided as the attached document. \
+Return the date only if it is clearly stated; if there is no clear future date, return null. \
+Do not guess.\n\n\
+Filing title:\n{title}\n\n\
+Respond with strict JSON only, no prose, in this exact shape:\n\
+{{\"date\": \"<YYYY-MM-DD, or null>\"}}"
+    )
+}
+
+#[derive(Debug, Deserialize)]
+struct EspiEventDateJson {
+    date: Option<String>,
+}
+
+/// Parse the model's event-date response into a validated ISO `YYYY-MM-DD` string, or `None`
+/// when the model returned null / an unparseable or invalid date. Never returns a guess.
+pub fn parse_espi_event_date_output(
+    text: &str,
+    provider_label: &str,
+) -> Result<Option<String>, AnalysisProviderError> {
+    let json_text = extract_json_object(text, &format!("{provider_label} event-date response"))
+        .map_err(AnalysisProviderError::ParseError)?;
+    let parsed: EspiEventDateJson = serde_json::from_str(json_text).map_err(|error| {
+        AnalysisProviderError::ParseError(format!("{provider_label} ESPI event-date JSON: {error}"))
+    })?;
+
+    Ok(clean_optional_string(parsed.date)
+        .filter(|value| value.to_lowercase() != "null")
+        .and_then(|value| crate::signal_dates::validate_iso_date(&value)))
+}
+
 /// Build the analysis prompt for a single feed item.
 pub fn analysis_prompt(request: &AnalysisRequest) -> String {
     let item = &request.feed_item;

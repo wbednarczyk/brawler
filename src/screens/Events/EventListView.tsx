@@ -1,4 +1,4 @@
-import { CalendarDays, ExternalLink } from "lucide-react";
+import { CalendarDays, Check, ExternalLink, X } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
 import { Button, EmptyState, InfoGrid } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -19,6 +19,7 @@ type EventListViewProps = Pick<
   | "companyEventDueLabel"
   | "companyEventDueClass"
   | "openExternalUrl"
+  | "confirmDerivedEvent"
 >;
 
 export function EventListView({
@@ -34,6 +35,7 @@ export function EventListView({
   companyEventDueLabel,
   companyEventDueClass,
   openExternalUrl,
+  confirmDerivedEvent,
 }: EventListViewProps) {
   const { text } = useLocale();
 
@@ -104,6 +106,30 @@ export function EventListView({
                     { label: text("Fetched"), value: formatTimestamp(event.fetchedAt, text("Not fetched")) },
                   ]}
                 />
+                {event.status === "proposed" && event.sourceType === "derived_signal" ? (
+                  <div className="derived-event-actions" aria-label={text("Confirm derived event")}>
+                    <p className="derived-event-hint">
+                      {text("This date was derived from a filing. Confirm to add it to the calendar.")}
+                    </p>
+                    <div className="derived-event-buttons">
+                      <Button
+                        className="compact-button"
+                        variant="primary"
+                        onClick={() => confirmDerivedEvent(event.id, "confirm")}
+                      >
+                        <Check size={15} />
+                        {text("Confirm")}
+                      </Button>
+                      <Button
+                        className="compact-button"
+                        onClick={() => confirmDerivedEvent(event.id, "reject")}
+                      >
+                        <X size={15} />
+                        {text("Reject")}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 {event.sourceUrl ? (
                   <Button
                     className="compact-button"

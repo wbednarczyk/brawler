@@ -535,6 +535,19 @@ fn refresh_bankier_company_for_trigger(
     let result = state
         .ingest_bankier_company_items(&bankier_company_items)
         .map_err(|error| error.to_string())?;
+
+    // Fetch files for periodic-report attachments registered during ingestion (ADR 0036).
+    // Best-effort: a fetch failure is recorded on the document and never fails the refresh.
+    let document_fetcher = crate::document_fetcher::HttpDocumentFetcher::new();
+    if let Err(error) =
+        crate::report_documents_capture::fetch_pending_attachments(state, &document_fetcher)
+    {
+        let _ = state.record_source_adapter_error(
+            source_adapters::bankier_company::ADAPTER_ID,
+            &format!("attachment fetch failed: {error}"),
+        );
+    }
+
     if let Some(message) = bankier_company_last_error {
         let _ = state
             .record_source_adapter_error(source_adapters::bankier_company::ADAPTER_ID, &message);

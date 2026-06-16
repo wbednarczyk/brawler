@@ -204,6 +204,263 @@ pub(super) fn ensure_high_signal_reminders(connection: &Connection) -> StorageRe
     Ok(created)
 }
 
+/// Categories whose confirmed signals can carry a real future date and therefore derive a
+/// calendar event (ADR 0034 §4 / ADR 0036). `dividend` derives a `dividend` event;
+/// `general_meeting` derives a `shareholder_meeting` event.
+const DERIVABLE_CATEGORIES: &[&str] = &["dividend", "general_meeting"];
+
+/// Derive a `proposed` calendar event for every confirmed dividend / general-meeting signal
+/// that does not yet have one and whose filing body yields a future date by the deterministic
+/// parser ([crate::signal_dates]). Idempotent: only signals without `derived_event_id` are
+/// considered, the event identity is keyed on the signal, and re-derivation upserts the same
+/// row. A derived event stays `proposed` until the user confirms it (ADR 0036). Returns the
+/// number of events newly derived. Best-effort per signal — one failure does not abort.
+pub(super) fn ensure_derived_events(connection: &Connection) -> StorageResult<usize> {
+    let placeholders = DERIVABLE_CATEGORIES
+        .iter()
+        .map(|category| format!("'{category}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        "
+        SELECT
+            company_signals.id,
+            company_signals.company_id,
+            company_signals.category,
+            feed_items.title,
+            feed_items.body_text
+        FROM company_signals
+        JOIN feed_items ON feed_items.id = company_signals.feed_item_id
+        WHERE company_signals.status = 'confirmed'
+          AND company_signals.category IN ({placeholders})
+          AND company_signals.derived_event_id IS NULL
+          AND feed_items.body_text IS NOT NULL
+        "
+    );
+    let mut statement = connection.prepare(&query)?;
+    let pending = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut created = 0;
+    for (signal_id, company_id, category, title, body) in pending {
+        let event_date = match category.as_str() {
+            "dividend" => crate::signal_dates::parse_dividend_date(&body),
+            "general_meeting" => crate::signal_dates::parse_general_meeting_date(&body),
+            _ => None,
+        };
+        let Some(event_date) = event_date else {
+            continue;
+        };
+
+        match insert_derived_event(
+            connection,
+            &signal_id,
+            &company_id,
+            &category,
+            &title,
+            &event_date,
+        ) {
+            Ok(true) => created += 1,
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!("module=signals stage=derive_event signalId={signal_id} error={error}");
+            }
+        }
+    }
+
+    Ok(created)
+}
+
+/// Create the `proposed` calendar event for one signal and link it back via `derived_event_id`.
+/// The event identity is keyed on the signal, so this is idempotent. Returns `true` when an
+/// event was created/linked. Shared by the deterministic sweep and the AI fallback (ADR 0036).
+fn insert_derived_event(
+    connection: &Connection,
+    signal_id: &str,
+    company_id: &str,
+    category: &str,
+    title: &str,
+    event_date: &str,
+) -> StorageResult<bool> {
+    let event_type = match category {
+        "dividend" => "dividend",
+        "general_meeting" => "shareholder_meeting",
+        _ => return Ok(false),
+    };
+
+    let event = super::events::create_company_event(
+        connection,
+        NewCompanyEvent {
+            company_id: company_id.to_owned(),
+            event_type: event_type.to_owned(),
+            title: title.trim().chars().take(160).collect::<String>(),
+            event_date: event_date.to_owned(),
+            event_time: None,
+            status: Some("proposed".to_owned()),
+            source_type: Some("derived_signal".to_owned()),
+            source_adapter_id: Some(crate::source_adapters::bankier_company::ADAPTER_ID.to_owned()),
+            source_event_key: Some(signal_id.to_owned()),
+            source_url: None,
+            attribution: Some(crate::source_adapters::bankier_company::ATTRIBUTION.to_owned()),
+            fetched_at: None,
+        },
+    )?;
+
+    connection.execute(
+        "
+        UPDATE company_signals
+        SET derived_event_id = ?2,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE id = ?1
+        ",
+        params![signal_id, event.id],
+    )?;
+    Ok(true)
+}
+
+/// A confirmed dividend / general-meeting signal that the deterministic parser could not date,
+/// surfaced for the opt-in AI date-extraction fallback (ADR 0036).
+#[derive(Debug, Clone)]
+pub struct SignalNeedingDate {
+    pub signal_id: String,
+    pub company_id: String,
+    pub category: String,
+    pub title: String,
+    pub body_text: String,
+}
+
+/// List confirmed dividend / general-meeting signals that still have no derived event and whose
+/// filing body is available — the candidates for AI date extraction. Bounded by `limit`.
+pub(super) fn list_signals_needing_event_date(
+    connection: &Connection,
+    limit: i64,
+) -> StorageResult<Vec<SignalNeedingDate>> {
+    let placeholders = DERIVABLE_CATEGORIES
+        .iter()
+        .map(|category| format!("'{category}'"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let query = format!(
+        "
+        SELECT
+            company_signals.id,
+            company_signals.company_id,
+            company_signals.category,
+            feed_items.title,
+            feed_items.body_text
+        FROM company_signals
+        JOIN feed_items ON feed_items.id = company_signals.feed_item_id
+        WHERE company_signals.status = 'confirmed'
+          AND company_signals.category IN ({placeholders})
+          AND company_signals.derived_event_id IS NULL
+          AND feed_items.body_text IS NOT NULL
+          AND TRIM(feed_items.body_text) <> ''
+        ORDER BY company_signals.created_at DESC
+        LIMIT ?1
+        "
+    );
+    let mut statement = connection.prepare(&query)?;
+    let rows = statement.query_map(params![limit], |row| {
+        Ok(SignalNeedingDate {
+            signal_id: row.get(0)?,
+            company_id: row.get(1)?,
+            category: row.get(2)?,
+            title: row.get(3)?,
+            body_text: row.get(4)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+/// Derive a `proposed` event from an AI-extracted date for one signal. Validates the date and
+/// no-ops if the signal already has a derived event. Returns `true` when an event was created.
+pub(super) fn derive_event_from_extracted_date(
+    connection: &Connection,
+    signal_id: &str,
+    event_date: &str,
+) -> StorageResult<bool> {
+    let Some(event_date) = crate::signal_dates::validate_iso_date(event_date) else {
+        return Ok(false);
+    };
+    let row = connection
+        .query_row(
+            "
+            SELECT company_signals.company_id, company_signals.category, feed_items.title
+            FROM company_signals
+            JOIN feed_items ON feed_items.id = company_signals.feed_item_id
+            WHERE company_signals.id = ?1
+              AND company_signals.status = 'confirmed'
+              AND company_signals.derived_event_id IS NULL
+            ",
+            params![signal_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((company_id, category, title)) = row else {
+        return Ok(false);
+    };
+    insert_derived_event(
+        connection,
+        signal_id,
+        &company_id,
+        &category,
+        &title,
+        &event_date,
+    )
+}
+
+/// Confirm a `proposed` derived calendar event onto the calendar, or reject it. Confirming
+/// flips the event status to `confirmed`; rejecting clears the originating signal's
+/// `derived_event_id` and deletes the proposed event (ADR 0036). Idempotent.
+pub(super) fn confirm_derived_event(
+    connection: &Connection,
+    event_id: &str,
+    confirm: bool,
+) -> StorageResult<()> {
+    if confirm {
+        connection.execute(
+            "
+            UPDATE company_events
+            SET status = 'confirmed',
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1 AND status = 'proposed'
+            ",
+            [event_id],
+        )?;
+    } else {
+        connection.execute(
+            "
+            UPDATE company_signals
+            SET derived_event_id = NULL,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE derived_event_id = ?1
+            ",
+            [event_id],
+        )?;
+        connection.execute(
+            "DELETE FROM company_events WHERE id = ?1 AND status = 'proposed'",
+            [event_id],
+        )?;
+    }
+    Ok(())
+}
+
 /// Classify every official-report feed item already matched to a company that
 /// does not yet have a signal. Called after official ingestion so newly stored
 /// filings are classified in the same refresh. Returns the number of new signals.
@@ -257,6 +514,11 @@ pub(super) fn classify_pending_feed_items(
     // those classified before the reminder hook existed). Best-effort.
     if let Err(error) = ensure_high_signal_reminders(connection) {
         log::warn!("module=signals stage=reminder_sweep error={error}");
+    }
+    // Derive proposed calendar events for confirmed dividend / general-meeting filings whose
+    // body now yields a future date. Best-effort.
+    if let Err(error) = ensure_derived_events(connection) {
+        log::warn!("module=signals stage=derive_event_sweep error={error}");
     }
 
     Ok(created)
@@ -322,6 +584,10 @@ pub(super) fn confirm_company_signal(
     // A confirmed high-signal AI proposal also raises a review reminder.
     if let Err(error) = ensure_high_signal_reminders(connection) {
         log::warn!("module=signals stage=reminder_sweep error={error}");
+    }
+    // A confirmed dividend / general-meeting signal may now derive a proposed calendar event.
+    if let Err(error) = ensure_derived_events(connection) {
+        log::warn!("module=signals stage=derive_event_sweep error={error}");
     }
     get_company_signal(connection, signal_id)
 }

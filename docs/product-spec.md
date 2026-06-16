@@ -290,6 +290,20 @@ User-facing behavior:
 
 Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.
 
+### Report Documents And History Backfill
+
+Milestone v0.41.0 persists the actual report files and removes the cold-start problem when tracking a company ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
+
+User-facing behavior:
+
+- official ESPI/EBI report attachments are stored locally as report documents with durable attribution and linked from the company's evidence/timeline; periodic/financial reports keep the full file (so AI extraction and diff have a real document to cite), while routine filings keep only the link and title
+- the existing escape hatch — pasting a report PDF URL, or resolving one from the company's IR page — still stores the full file and flows through the same downstream path
+- an explicit **"Backfill history"** action on a tracked company (on track, or from the company workspace) fetches roughly the last 3 years of periodic reports and ESPI/EBI filings, so the company's research timeline is populated with prior years instead of starting at "now"; items appear with their original publication dates
+- backfill shows progress and diagnostics while it runs, can be cancelled, and is safe to re-run (no duplicates); it never runs automatically and only runs while the app is open
+- dividend and general-meeting filings that state a future date produce a **proposed** calendar event the user confirms before it appears on the calendar; a date is never guessed onto the calendar
+
+Scope boundary: backfill covers official report sources only (not media), does not backfill historical calendar entries (the calendar focuses on upcoming events), and does no per-company PDF parsing or ESEF/iXBRL parsing.
+
 ### Terminal Interface
 
 A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.

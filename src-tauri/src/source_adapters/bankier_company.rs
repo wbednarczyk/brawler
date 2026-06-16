@@ -149,6 +149,156 @@ fn fetch_company_items_with_detail_filter_at(
     Ok((identifiers, items))
 }
 
+/// Per-page diagnostics surfaced by `fetch_company_backfill_items`.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct BackfillFetchStats {
+    pub pages_fetched: usize,
+    pub detail_errors: usize,
+}
+
+/// Paginate the company komunikaty listing backward, keeping items down to `cutoff` (an
+/// ISO `YYYY-MM-DDTHH:MM:SS` lower bound), up to `max_pages`. Report detail (body + attachments)
+/// is fetched for kept items so classification, attachment registration, and event derivation
+/// see the same data the live path does. Detail-fetch failures are counted, not fatal. The
+/// listing is time-desc, so pagination stops once a page reaches items older than the cutoff.
+/// Throttling between requests is the caller's `delay`. See ADR 0036.
+#[allow(clippy::type_complexity)]
+pub fn fetch_company_backfill_items(
+    fetcher: &impl BankierCompanyFetcher,
+    target: &BankierCompanyTarget,
+    cutoff: &str,
+    max_pages: usize,
+    delay: std::time::Duration,
+    mut on_progress: impl FnMut(usize, usize),
+) -> Result<
+    (
+        Option<BankierCompanyIdentifiers>,
+        Vec<BankierCompanyItem>,
+        BackfillFetchStats,
+    ),
+    BankierCompanyError,
+> {
+    let fetched_at = time::OffsetDateTime::now_utc().format(&Rfc3339)?;
+
+    let identifiers = match (&target.bankier_slug, &target.bankier_tag_id) {
+        (Some(slug), Some(tag_id)) if !slug.trim().is_empty() && !tag_id.trim().is_empty() => None,
+        _ => {
+            let html = fetcher.fetch_text(&company_page_url(&target.ticker))?;
+            Some(parse_company_identifiers(&html)?)
+        }
+    };
+    let tag_id = identifiers
+        .as_ref()
+        .map(|identifiers| identifiers.tag_id.as_str())
+        .or(target.bankier_tag_id.as_deref())
+        .expect("tag id must be present after identifier resolution")
+        .to_owned();
+
+    let mut items: Vec<BankierCompanyItem> = Vec::new();
+    let mut stats = BackfillFetchStats::default();
+
+    for page in 1..=max_pages.max(1) {
+        if page > 1 && !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+
+        let json = fetcher.fetch_text(&listing_api_url(&tag_id, page, PAGE_LIMIT)?)?;
+        let page_items = parse_company_listing_json_all(target, &json, &fetched_at)?;
+        stats.pages_fetched += 1;
+        on_progress(stats.pages_fetched, items.len());
+
+        if page_items.is_empty() {
+            break;
+        }
+
+        let mut reached_cutoff = false;
+        for mut item in page_items {
+            if item_is_older_than_cutoff(&item, cutoff) {
+                reached_cutoff = true;
+                continue;
+            }
+
+            if !delay.is_zero() {
+                std::thread::sleep(delay);
+            }
+            match fetcher.fetch_text(&item.link) {
+                Ok(html) => {
+                    let detail = parse_company_report_detail(&html, &item.title);
+                    item.detail_fetch_attempted = true;
+                    item.body_text = detail.body_text;
+                    item.attachments = detail.attachments;
+                }
+                Err(_) => {
+                    item.detail_fetch_attempted = true;
+                    stats.detail_errors += 1;
+                }
+            }
+            items.push(item);
+            on_progress(stats.pages_fetched, items.len());
+        }
+
+        if reached_cutoff {
+            break;
+        }
+    }
+
+    Ok((identifiers, items, stats))
+}
+
+fn item_is_older_than_cutoff(item: &BankierCompanyItem, cutoff: &str) -> bool {
+    match item.published_at.as_deref() {
+        Some(published_at) => published_at < cutoff,
+        // Undated items are kept (treated as in-window) so they are not silently dropped.
+        None => false,
+    }
+}
+
+/// Whether a Bankier company filing is a periodic / financial report (quarterly, half-year,
+/// or annual financial statements) as opposed to a routine current report (`raport bieżący`).
+///
+/// Periodic reports are the documents AI KPI extraction and report-over-report diff consume,
+/// so their attachments are downloaded and stored in full; other ESPI/EBI attachments persist
+/// as metadata + URL only (ADR 0036). Detection is a deterministic Polish-language heuristic
+/// over the report title and body, not a per-company rule.
+pub fn is_periodic_report_item(item: &BankierCompanyItem) -> bool {
+    let haystack = match &item.body_text {
+        Some(body) => format!("{} {}", item.title, body),
+        None => item.title.clone(),
+    };
+    text_marks_periodic_report(&haystack)
+}
+
+fn text_marks_periodic_report(text: &str) -> bool {
+    let normalized = text.to_lowercase();
+    const MARKERS: &[&str] = &[
+        "raport okresowy",
+        "raport kwartalny",
+        "raport półroczny",
+        "raport polroczny",
+        "raport roczny",
+        "skonsolidowany raport",
+        "jednostkowy raport",
+        "rozszerzony skonsolidowany raport",
+        "wyniki finansowe",
+        "sprawozdanie finansowe",
+    ];
+    if MARKERS.iter().any(|marker| normalized.contains(marker)) {
+        return true;
+    }
+
+    // GPW ESPI periodic-report form codes: SA-Q / SA-R / SA-P / QSr / PSr and consolidated variants.
+    const FORM_CODES: &[&str] = &[
+        "sa-q", "sa-r", "sa-p", "qsr", "psr", "skr-q", "skr-r", "scr-q", "scr-r",
+    ];
+    let tokens: Vec<&str> = normalized
+        .split(|c: char| !(c.is_alphanumeric() || c == '-'))
+        .filter(|t| !t.is_empty())
+        .collect();
+    FORM_CODES
+        .iter()
+        .any(|code| tokens.iter().any(|token| token == code))
+}
+
 pub fn company_page_url(ticker: &str) -> String {
     format!(
         "https://www.bankier.pl/gielda/notowania/akcje/{}/komunikaty",
@@ -220,6 +370,23 @@ pub fn parse_company_listing_json(
         .into_iter()
         .filter_map(|article| article.into_item(target, fetched_at))
         .filter(|item| item_is_in_recent_window(item, cutoff.as_deref()))
+        .collect())
+}
+
+/// Parse a listing page without applying the recent-window filter. Used by history backfill,
+/// which keeps items down to its own multi-year cutoff instead of the live 7-day window.
+pub fn parse_company_listing_json_all(
+    target: &BankierCompanyTarget,
+    json: &str,
+    fetched_at: &str,
+) -> Result<Vec<BankierCompanyItem>, BankierCompanyParseError> {
+    let response: ListingResponse = serde_json::from_str(json)
+        .map_err(|error| BankierCompanyParseError::Json(error.to_string()))?;
+
+    Ok(response
+        .articles
+        .into_iter()
+        .filter_map(|article| article.into_item(target, fetched_at))
         .collect())
 }
 
@@ -622,6 +789,36 @@ mod tests {
                 "#
                 .to_owned())
             }
+        }
+    }
+
+    #[test]
+    fn detects_periodic_reports_and_rejects_current_reports() {
+        // Periodic / financial report titles and form codes.
+        for title in [
+            "Skonsolidowany raport kwartalny QSr 1/2026",
+            "Raport roczny za 2025 rok",
+            "Raport półroczny PSr 2025",
+            "Wyniki finansowe za III kwartał 2025",
+            "SA-R 2025",
+        ] {
+            assert!(
+                text_marks_periodic_report(title),
+                "expected periodic: {title}"
+            );
+        }
+
+        // Routine current reports must not be treated as periodic.
+        for title in [
+            "Powiadomienie o transakcjach na akcjach - art. 19 ust. 1 MAR",
+            "Zwołanie Zwyczajnego Walnego Zgromadzenia",
+            "Rekomendacja Zarządu w sprawie wypłaty dywidendy za rok 2025",
+            "Zawarcie znaczącej umowy",
+        ] {
+            assert!(
+                !text_marks_periodic_report(title),
+                "expected non-periodic: {title}"
+            );
         }
     }
 

@@ -72,6 +72,7 @@ export function EventsScreen({
   companyEventDueLabel,
   companyEventDueClass,
   openExternalUrl,
+  confirmDerivedEvent,
 }: EventsScreenProps) {
   const { t, text } = useLocale();
 
@@ -413,6 +414,7 @@ export function EventsScreen({
             companyEventDueLabel={companyEventDueLabel}
             companyEventDueClass={companyEventDueClass}
             openExternalUrl={openExternalUrl}
+            confirmDerivedEvent={confirmDerivedEvent}
           />
         )}
       </div>

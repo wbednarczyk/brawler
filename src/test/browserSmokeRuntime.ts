@@ -482,6 +482,22 @@ function handleCommand(command: string, args: InvokeArgs) {
     // ---- Report documents + IR -------------------------------------------
     case "list_report_documents":
       return reportDocuments.filter((document) => document.companyId === companyIdArg(args));
+    case "get_backfill_progress":
+      return null;
+    case "confirm_derived_event":
+      return null;
+    case "backfill_company_history":
+      return {
+        companyId: companyIdArg(args),
+        status: "completed",
+        pagesFetched: 0,
+        itemsIngested: 0,
+        documentsStored: 0,
+        detailErrors: 0,
+        error: null,
+        startedAt: "",
+        updatedAt: "",
+      };
     case "get_company_ir_reports_url":
       return irReportsUrls[companyIdArg(args)] ?? null;
     case "set_company_ir_reports_url": {

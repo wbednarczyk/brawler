@@ -1,5 +1,9 @@
 import { callCommand } from "./tauri";
-import type { AiSignalClassificationSummary, CompanySignal } from "./types";
+import type {
+  AiEventDerivationSummary,
+  AiSignalClassificationSummary,
+  CompanySignal,
+} from "./types";
 
 export type ListCompanySignalsInput = {
   companyId: string | null;
@@ -24,4 +28,15 @@ export function rejectCompanySignal(id: string) {
 // A no-op (enabled: false) unless the user enabled espiAiFallbackEnabled.
 export function runAiSignalClassification() {
   return callCommand<AiSignalClassificationSummary>("run_ai_signal_classification");
+}
+
+// Runs the opt-in AI date-extraction fallback, deriving proposed calendar events for
+// dividend/general-meeting signals the deterministic parser could not date (ADR 0036).
+export function runAiEventDerivation() {
+  return callCommand<AiEventDerivationSummary>("run_ai_event_derivation");
+}
+
+// Confirms a proposed derived calendar event onto the calendar, or rejects it (ADR 0036).
+export function confirmDerivedEvent(eventId: string, action: "confirm" | "reject") {
+  return callCommand<void>("confirm_derived_event", { input: { eventId, action } });
 }

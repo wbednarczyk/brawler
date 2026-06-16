@@ -166,6 +166,9 @@ pub(super) fn create_company_event(
             "changed",
             "cancelled",
             "completed",
+            // Derived calendar events await user confirmation before they appear on the
+            // calendar (ADR 0036).
+            "proposed",
         ],
     )?;
     validate_allowed_company_event_value(
@@ -178,6 +181,8 @@ pub(super) fn create_company_event(
             "public_media",
             "notebook_entry",
             "feed_item",
+            // Calendar event derived from a confirmed dividend/general-meeting signal (ADR 0036).
+            "derived_signal",
         ],
     )?;
     connection.execute(

@@ -498,11 +498,13 @@ Rules:
 Initial local commands:
 
 - `list_company_signals(input)`: returns signals filtered by company, watchlist, category, and status.
-- `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed`. Derived-event creation for dated categories is deferred to `v0.41.0` (see [ADR 0034](adr/0034-espi-event-classification.md) Scope boundary); in `v0.40.0` confirmation transitions status and persists provenance only.
+- `confirm_company_signal(input)`: confirms a `proposed` (AI) signal, transitioning it to `confirmed`. For `dividend` and `general_meeting` signals this also derives a `proposed` calendar event when a future date can be extracted from the filing body (`v0.41.0`, see below and [ADR 0036](adr/0036-report-document-storage-and-backfill.md)); other categories transition status and persist provenance only.
 - `reject_company_signal(input)`: discards a `proposed` signal without creating a signal/event.
+- `confirm_derived_event(input)`: confirms a `proposed` derived calendar event (from a dividend/general-meeting signal) onto the calendar, or rejects it; takes `{ eventId, action: "confirm" | "reject" }`. A guessed-date event is never auto-confirmed (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
 - `run_ai_signal_classification()`: runs the opt-in AI classification fallback over official filings the rule classifier left unknown, creating `proposed` signals. A no-op returning `{ enabled: false, examined: 0, proposed: 0, skipped: 0 }` unless the user enables the `espiAiFallbackEnabled` setting; uses the configured general analysis provider/model (ADR 0028). Never auto-commits — results require confirmation.
+- `run_ai_event_derivation()`: runs the opt-in AI date-extraction fallback over confirmed dividend/general-meeting signals the deterministic parser could not date, deriving `proposed` calendar events (`v0.41.0`, [ADR 0036](adr/0036-report-document-storage-and-backfill.md)). A no-op returning `{ enabled: false, examined: 0, derived: 0, skipped: 0 }` unless `espiAiFallbackEnabled` is set; uses the same provider/model and never auto-commits — derived events require `confirm_derived_event`.
 
-The opt-in toggle is the `espiAiFallbackEnabled` boolean in user settings (default `false`); no provider call happens until it is enabled.
+The opt-in toggle is the `espiAiFallbackEnabled` boolean in user settings (default `false`); no provider call happens until it is enabled. It gates both the classification fallback and the event-date fallback.
 
 Confirm/reject input:
 
@@ -516,6 +518,7 @@ Rules:
 
 - Confirming or rejecting applies only to `proposed` signals; `confirmed` signals are terminal except for future reversal flows.
 - Confirmation must persist provider provenance and create at most one derived event, idempotently.
+- Derived-event date extraction (`v0.41.0`, dividend/general-meeting only) is **deterministic-first** over the fetched filing body, with the **opt-in async AI fallback** when the deterministic parse is not confident. The derived event is created `proposed` and requires `confirm_derived_event` before it appears on the calendar — a guessed-date event is never created. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
 
 ## AI Analysis Result
 
@@ -1883,11 +1886,18 @@ Rules:
 - Report documents belong to exactly one canonical company.
 - `periodId` is optional (for forward-looking documents or multi-period reports).
 - `originRef` is a soft reference to the feed item from which the document was sourced.
-- `localPath` is the app-owned storage path for fetched documents. Paths are relative to app data directory or absolute, depending on platform.
+- `localPath` is the app-owned **relative** storage path (under the `report_documents/` subtree) for fetched documents, so the store stays portable across machines and import/export. It is null when no file is stored.
 - `contentHash` is SHA256 and enables deduplication and integrity checking.
 - `title` is optional user-facing metadata; official report titles are preserved when available.
 - `attribution` is source-level credit (e.g., "GPW", "Company Web Site").
-- ESPI-attachment ingestion and automatic backfill are deferred and not yet implemented.
+- `fetchStatus` is `pending | fetched | failed | metadata_only`. **Full files are stored only for periodic/financial reports**; other ESPI/EBI attachments persist as `metadata_only` (URL + attribution, no bytes). The user-URL and IR-page rungs always store the full file. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
+- ESPI/EBI attachment ingestion lands in `v0.41.0`: attachments surfaced by the active Bankier company-komunikaty article path are upserted into `report_documents` (identity `(companyId, url)`), full file fetched only for periodic reports per the rule above.
+
+#### On-Track History Backfill (`v0.41.0`)
+
+- `backfill_company_history(input)`: explicit, user-triggered action (`{ companyId }`) that paginates the active official-report listing back ~3 years and ingests periodic reports + ESPI/EBI filings through the normal ingestion path, preserving original publication dates. Calendar entries are **not** backfilled (the forward-looking calendar adapters own upcoming events). Runs as an async, cancellable job; returns a job handle. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
+- `get_backfill_progress(input)`: returns progress/diagnostics for a running or completed backfill (`{ companyId }` or job id): pages fetched, items ingested, documents stored, errors, and status.
+- Backfill is **idempotent** — it reuses feed-item `(sourceAdapterId, sourceEventKey)`, report-document `(companyId, url)`, and signal `(feedItemId, category)` dedup, so re-runs and resumed partial runs never duplicate. Throttling obeys the existing Bankier rate policy (serialized, waits between pages/companies). Backfill is never automatic.
 
 ### Fundamentals Commands
 
@@ -1998,6 +2008,10 @@ Initial Tauri command groups:
 - `delete_financial_fact`
 - `capture_report_document`
 - `list_report_documents`
+- `backfill_company_history`
+- `get_backfill_progress`
+- `confirm_derived_event`
+- `run_ai_event_derivation`
 - `create_video_transcript_job`
 - `list_video_transcript_jobs`
 - `delete_video_transcript_job`

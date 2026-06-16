@@ -468,7 +468,7 @@ pub struct CompanyEvent {
     pub updated_at: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyEventListInput {
     pub mode: Option<String>,

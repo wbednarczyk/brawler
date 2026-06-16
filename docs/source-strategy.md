@@ -356,6 +356,14 @@ Accepted Bankier company-komunikaty slice:
 
 Typed ESPI/EBI event classification (`v0.40.0`, [ADR 0034](adr/0034-espi-event-classification.md)) runs over the **active official-report feed**, currently `bankier-company-komunikaty`, which exposes the ESPI/EBI category label, report title, and body text needed to classify. The classifier is source-neutral: it reads whichever official-report adapter is enabled, so a future `gpw-espi-ebi` re-enable feeds the same classifier without changes. Classification produces typed `company_signals` (insider transaction, dividend, profit warning, significant contract, buyback, guidance change, other) rather than altering the source adapter contract. The deferred ESPI/EBI **attachment ingestion** and **on-track backfill** work (milestone `v0.41.0`) likewise targets the active Bankier article/attachment path, not the disabled GPW detail flow.
 
+### Report Document Ingestion And On-Track Backfill (`v0.41.0`)
+
+Report-file persistence and history backfill ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)) target the active Bankier company-komunikaty article/attachment path:
+
+- **Attachment ingestion.** Attachment links surfaced on the Bankier komunikaty article page are upserted into `report_documents` (identity `(company_id, url)`). The **full file is downloaded only for periodic/financial reports**; other ESPI/EBI attachments persist as metadata + URL only (`fetch_status = metadata_only`). Attribution stays `Bankier.pl`.
+- **On-track backfill.** An explicit, user-triggered action paginates the Bankier komunikaty JSON listing (`/articles/listing/{page}/{limit}`) **backward ~3 years** for one tracked company, ingesting periodic reports + ESPI/EBI filings through the normal ingestion path with original publication dates preserved. It obeys the existing Bankier rate policy (serialized, waits between pages, `LocalInvestorNewsfeed/{version}` agent), runs as a cancellable async job with progress/diagnostics, and is idempotent via the existing dedup keys. **Historical calendar entries are not backfilled** — the forward-looking `official_calendar`/`public_calendar` adapters own upcoming events. Backfill never runs automatically and never fetches while the app is closed (that is the `v0.50.0` autopilot frontier).
+- **Source-neutral.** Both paths read whichever official-report adapter is active, so a future `gpw-espi-ebi` re-enable reuses them without changes.
+
 ## Price And Fundamentals Context Sources
 
 Price/fundamentals enrichment is useful for later context around reports and news, but it is not the same as official-report ingestion.

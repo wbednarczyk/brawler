@@ -393,6 +393,28 @@ export type AiSignalClassificationSummary = {
   skipped: number;
 };
 
+// Outcome of the opt-in AI date-extraction fallback (ADR 0036). Derives proposed
+// calendar events for dividend/general-meeting signals the deterministic parser missed.
+export type AiEventDerivationSummary = {
+  enabled: boolean;
+  examined: number;
+  derived: number;
+  skipped: number;
+};
+
+// Live progress/diagnostics for an on-track history backfill (ADR 0036).
+export type BackfillProgress = {
+  companyId: string;
+  status: "running" | "completed" | "failed";
+  pagesFetched: number;
+  itemsIngested: number;
+  documentsStored: number;
+  detailErrors: number;
+  error: string | null;
+  startedAt: string;
+  updatedAt: string;
+};
+
 export type TranscriptJob = {
   id: string;
   companyId: string | null;

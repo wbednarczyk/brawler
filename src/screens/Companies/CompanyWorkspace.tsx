@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BookOpenText,
   CheckCircle2,
@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import type { Company } from "../../api/types";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
+import { CompanyBackfillPanel } from "../../shared/components/CompanyBackfillPanel";
+import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
@@ -176,6 +178,8 @@ export function CompanyWorkspace({
   const { text } = useLocale();
   const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
   const workspaceRef = useRef<HTMLElement>(null);
+  // Bumped when a backfill finishes so the report-documents panel reloads.
+  const [reportDocsReloadKey, setReportDocsReloadKey] = useState(0);
 
   // The workspace expands inline beneath the selected company row inside the
   // scrollable list, so opening it via "Open company" from a feed item can land
@@ -224,6 +228,10 @@ export function CompanyWorkspace({
               <span key={membership.watchlistId}>{membership.watchlistName}</span>
             ))}
           </div>
+          <CompanyBackfillPanel
+            companyId={selectedCompany.id}
+            onComplete={() => setReportDocsReloadKey((key) => key + 1)}
+          />
         </div>
       </div>
     
@@ -874,6 +882,13 @@ export function CompanyWorkspace({
           cancelEditingFinancialFact={cancelEditingFinancialFact}
           updateFundamentalsForm={updateFundamentalsForm}
           updateFinancialFactForm={updateFinancialFactForm}
+        />
+      ) : null}
+
+      {companyWorkspaceTab === "Fundamentals" ? (
+        <CompanyReportDocumentsPanel
+          companyId={selectedCompany.id}
+          reloadKey={reportDocsReloadKey}
         />
       ) : null}
 
