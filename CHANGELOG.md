@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.41.0 - 2026-06-16
+
+
+
+### Features
+
+- report document ingestion, history backfill, and derived events (v0.41.0)
+
+
 ## v0.40.0 - 2026-06-15
 
 
