@@ -4,7 +4,7 @@ import { useState } from "react";
 import type { AiAnalysisJob, FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
-import { DetailSection, Modal, TextareaField } from "../../ui";
+import { DetailSection, ErrorText, Modal, TextareaField } from "../../ui";
 import { useLocale } from "../locale";
 
 export type FeedAiAnalysisPanelProps = {
@@ -100,7 +100,7 @@ export function FeedAiAnalysisPanel({
       )}
 
       {error && !modalOpen ? (
-        <p className="error-text">{text("AI analysis command failed")}: {error}</p>
+        <ErrorText>{text("AI analysis command failed")}: {error}</ErrorText>
       ) : null}
 
       <Modal
@@ -196,7 +196,7 @@ export function FeedAiAnalysisPanel({
             </div>
           ) : null}
 
-          {error ? <p className="error-text">{text("AI analysis command failed")}: {error}</p> : null}
+          {error ? <ErrorText>{text("AI analysis command failed")}: {error}</ErrorText> : null}
         </div>
       </Modal>
     </DetailSection>

@@ -9,7 +9,7 @@ import {
   Save,
   X,
 } from "lucide-react";
-import { ActionRow, Button, InfoGrid, StatusChip } from "../../ui";
+import { ActionRow, Button, ErrorText, InfoGrid, StatusChip } from "../../ui";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { FeedKpiExtractionPanel } from "../../shared/components/FeedKpiExtractionPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -260,8 +260,8 @@ export function InboxDetailPane({
           <p>{text("Select a feed item to inspect source details and origin links.")}</p>
         </>
       )}
-      {healthError ? <p className="error-text">{text("Health command failed")}: {healthError}</p> : null}
-          {databaseError ? <p className="error-text">{text("Workspace refresh failed")}: {databaseError}</p> : null}
+      {healthError ? <ErrorText>{text("Health command failed")}: {healthError}</ErrorText> : null}
+          {databaseError ? <ErrorText>{text("Workspace refresh failed")}: {databaseError}</ErrorText> : null}
     </aside>
   );
 }

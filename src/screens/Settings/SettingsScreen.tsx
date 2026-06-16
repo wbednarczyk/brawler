@@ -22,7 +22,7 @@ import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import type { SettingsScreenProps } from "./settingsTypes";
 import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
-import { Panel, PanelHeader, Subnav } from "../../ui";
+import { ErrorText, Panel, PanelHeader, Subnav } from "../../ui";
 
 type SettingsTab =
   | "appearance"
@@ -212,7 +212,7 @@ export function SettingsScreen({
         </div>
 
         {settingsError ? (
-          <p className="error-text">Settings command failed: {settingsError}</p>
+          <ErrorText>Settings command failed: {settingsError}</ErrorText>
         ) : null}
       </div>
     </Panel>

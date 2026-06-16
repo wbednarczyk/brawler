@@ -1,5 +1,5 @@
 import { RefreshCw } from "lucide-react";
-import { Button, EmptyState, PanelHeader } from "../../ui";
+import { Button, EmptyState, ErrorText, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { TranscriptJobComposer } from "./TranscriptJobComposer";
 import { TranscriptJobRow } from "./TranscriptJobRow";
@@ -100,7 +100,7 @@ export function TranscriptsScreen({
 
       <div className="sources-layout" aria-label={text("Transcript jobs")}>
         {transcriptJobsError ? (
-          <p className="error-text">{t("error.transcriptJobsUnavailable")}: {transcriptJobsError}</p>
+          <ErrorText>{t("error.transcriptJobsUnavailable")}: {transcriptJobsError}</ErrorText>
         ) : null}
         {transcriptJobs.length === 0 && !transcriptJobsError ? (
           <EmptyState>{t("empty.noTranscriptJobs")}</EmptyState>

@@ -2,7 +2,7 @@ import { ChevronDown, DatabaseBackup, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as backupsApi from "../../api/backups";
 import type { BackupStatus } from "../../api/backups";
-import { ActionRow, Button, EmptyState, InfoGrid } from "../../ui";
+import { ActionRow, Button, EmptyState, ErrorText, InfoGrid } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 export function BackupsSection() {
@@ -103,7 +103,7 @@ export function BackupsSection() {
             </ActionRow>
           </div>
           {notice ? <p className="settings-note">{notice}</p> : null}
-          {error ? <p className="error-text">{error}</p> : null}
+          {error ? <ErrorText>{error}</ErrorText> : null}
           <div className="diagnostics-backups-list" aria-label={text("Backups")}>
             {status && status.backups.length > 0 ? (
               status.backups.map((backup) => (

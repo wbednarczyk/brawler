@@ -2,7 +2,7 @@ import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
 import type { TranscriptJob } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, ChipList, DenseRow, InfoGrid, StatusPill, TextField } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, StatusPill, TextField } from "../../ui";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
 import { TranscriptSegmentReview } from "./TranscriptSegmentReview";
@@ -227,7 +227,7 @@ export function TranscriptJobRow({
               {text("Save")}
             </Button>
             {transcriptDescriptionError ? (
-              <p className="error-text">{transcriptDescriptionError}</p>
+              <ErrorText>{transcriptDescriptionError}</ErrorText>
             ) : null}
           </div>
           <InfoGrid
@@ -285,7 +285,7 @@ export function TranscriptJobRow({
                   )}
                 </div>
               ) : null}
-              {transcriptLinkError ? <p className="error-text">{transcriptLinkError}</p> : null}
+              {transcriptLinkError ? <ErrorText>{transcriptLinkError}</ErrorText> : null}
             </div>
           ) : null}
           <TranscriptSegmentReview
@@ -313,7 +313,7 @@ export function TranscriptJobRow({
                 <Plus size={15} />
                 {text("Create company note draft")}
               </Button>
-              {transcriptNoteError ? <p className="error-text">{transcriptNoteError}</p> : null}
+              {transcriptNoteError ? <ErrorText>{transcriptNoteError}</ErrorText> : null}
             </ActionRow>
           ) : null}
           {isTranscriptNoteDraftOpen ? (

@@ -43,6 +43,16 @@ const PRIMITIVE_FIRST = [
     message:
       "No inline style={{…}} outside src/ui (ADR 0037). Put containment/spacing in CSS or bake it into a primitive. If unavoidable, add `// eslint-disable-next-line no-restricted-syntax -- <reason>`.",
   },
+  {
+    // A raw HTML element (lowercase tag) with the `error-text` class is the
+    // ad-hoc error line the ErrorText primitive replaces. Component elements
+    // (<ErrorText>, which renders the class itself) start uppercase and are not
+    // matched. For an inline error inside a row use <ErrorText as="span">.
+    selector:
+      "JSXOpeningElement[name.name=/^[a-z]/] > JSXAttribute[name.name='className'][value.value=/(^|\\s)error-text(\\s|$)/]",
+    message:
+      "Use the ErrorText primitive instead of a raw element with className=\"error-text\" (docs/ui-authoring.md). For an inline error use <ErrorText as=\"span\">.",
+  },
 ];
 
 export default tseslint.config(

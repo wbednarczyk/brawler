@@ -1,7 +1,7 @@
 import type { FormEvent } from "react";
 import { KeyRound, Save, Trash2 } from "lucide-react";
 import type { LicenseStatus } from "../../api/types";
-import { ActionRow, Button, InfoGrid, TextareaField } from "../../ui";
+import { ActionRow, Button, ErrorText, InfoGrid, TextareaField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type LicenseSettingsProps = {
@@ -71,7 +71,7 @@ export function LicenseSettings({
       </form>
 
       {licenseStatus?.reason ? <p className="settings-note">{licenseStatus.reason}</p> : null}
-      {licenseError ? <p className="error-text">{licenseError}</p> : null}
+      {licenseError ? <ErrorText>{licenseError}</ErrorText> : null}
     </section>
   );
 }

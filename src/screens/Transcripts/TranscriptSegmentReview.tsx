@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import type { TranscriptJob, TranscriptSegment } from "../../api/types";
-import { Button, EmptyState } from "../../ui";
+import { Button, EmptyState, ErrorText } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import {
   highlightSearchMatch,
@@ -41,7 +41,7 @@ export function TranscriptSegmentReview({
         <p className="muted-text">{text("Transcript segments will be available after the job completes.")}</p>
       ) : null}
       {transcriptSegmentsError ? (
-        <p className="error-text">{text("Transcript segments unavailable")}: {transcriptSegmentsError}</p>
+        <ErrorText>{text("Transcript segments unavailable")}: {transcriptSegmentsError}</ErrorText>
       ) : null}
       {job.status === "completed" && transcriptSegments.length === 0 && !transcriptSegmentsError ? (
         <EmptyState>{text("No transcript segments stored for this job.")}</EmptyState>

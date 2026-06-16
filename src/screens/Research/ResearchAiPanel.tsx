@@ -8,7 +8,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { formatAiProvider } from "../../shared/formatting/labels";
-import { Button, EmptyState, SectionHeader } from "../../ui";
+import { Button, EmptyState, ErrorText, SectionHeader } from "../../ui";
 
 type ResearchAiPanelProps = {
   briefJobs: ResearchBriefJob[];
@@ -156,7 +156,7 @@ export function ResearchAiPanel({
               </details>
             </article>
           ) : latestDigestJob?.status === "failed" ? (
-            <p className="error-text">{latestDigestJob.error ?? text("Research digest failed")}</p>
+            <ErrorText>{latestDigestJob.error ?? text("Research digest failed")}</ErrorText>
           ) : (
             <EmptyState>{text("No research digest generated yet.")}</EmptyState>
           )}
@@ -207,7 +207,7 @@ export function ResearchAiPanel({
               </div>
             </article>
           ) : latestBriefJob?.status === "failed" ? (
-            <p className="error-text">{latestBriefJob.error ?? text("Research brief failed")}</p>
+            <ErrorText>{latestBriefJob.error ?? text("Research brief failed")}</ErrorText>
           ) : (
             <EmptyState>{text("No research brief generated yet.")}</EmptyState>
           )}

@@ -1,6 +1,6 @@
 import { CalendarDays, Check, ExternalLink, X } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
-import { Button, EmptyState, InfoGrid } from "../../ui";
+import { Button, EmptyState, ErrorText, Hint, InfoGrid } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
@@ -108,9 +108,9 @@ export function EventListView({
                 />
                 {event.status === "proposed" && event.sourceType === "derived_signal" ? (
                   <div className="derived-event-actions" aria-label={text("Confirm derived event")}>
-                    <p className="derived-event-hint">
+                    <Hint className="derived-event-hint">
                       {text("This date was derived from a filing. Confirm to add it to the calendar.")}
-                    </p>
+                    </Hint>
                     <div className="derived-event-buttons">
                       <Button
                         className="compact-button"
@@ -147,7 +147,7 @@ export function EventListView({
       {companyEvents.length === 0 ? (
         <EmptyState>{companyEventMode === "upcoming" ? text("No upcoming events.") : text("No events.")}</EmptyState>
       ) : null}
-      {companyEventsError ? <p className="error-text">{text("Events command failed")}: {companyEventsError}</p> : null}
+      {companyEventsError ? <ErrorText>{text("Events command failed")}: {companyEventsError}</ErrorText> : null}
     </>
   );
 }

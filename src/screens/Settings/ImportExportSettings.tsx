@@ -13,7 +13,7 @@ import {
   type ImportApplySummary,
   type ImportPreview,
 } from "../../api/importExport";
-import { ActionRow, Button, InfoGrid } from "../../ui";
+import { ActionRow, Button, ErrorText, InfoGrid } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ImportKind = "research" | "settings";
@@ -143,7 +143,7 @@ export function ImportExportSettings({ onImportApplied }: ImportExportSettingsPr
         />
       </div>
 
-      {exportError ? <p className="error-text">{text("Export failed")}: {exportError}</p> : null}
+      {exportError ? <ErrorText>{text("Export failed")}: {exportError}</ErrorText> : null}
     </section>
   );
 }
@@ -202,7 +202,7 @@ function WorkflowPanel({
       {state.inFlight ? <p className="settings-note">{text("Working")}</p> : null}
       {state.preview ? <PreviewSummary preview={state.preview} /> : null}
       {state.result ? <ResultSummary result={state.result} /> : null}
-      {state.error ? <p className="error-text">{text("Import failed")}: {state.error}</p> : null}
+      {state.error ? <ErrorText>{text("Import failed")}: {state.error}</ErrorText> : null}
 
       {!state.preview && !state.result && !state.error && !state.inFlight ? (
         <p className="settings-note import-export-empty">{text("Choose a file to preview import.")}</p>

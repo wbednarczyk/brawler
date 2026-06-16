@@ -15,7 +15,7 @@ import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
-import { Checkbox, DetailSection, Modal, TextField } from "../../ui";
+import { Checkbox, DetailSection, ErrorText, Modal, TextField } from "../../ui";
 import { useLocale } from "../locale";
 import { formatFinancialValue } from "../format/financialValue";
 
@@ -312,7 +312,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
       )}
 
       {error && !flowOpen ? (
-        <p className="error-text">{text("KPI extraction failed.")} {error}</p>
+        <ErrorText>{text("KPI extraction failed.")} {error}</ErrorText>
       ) : null}
 
       <Modal
@@ -550,7 +550,7 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
               ))}
             </ul>
           )}
-          {error ? <p className="error-text">{error}</p> : null}
+          {error ? <ErrorText>{error}</ErrorText> : null}
         </div>
       </Modal>
     </DetailSection>

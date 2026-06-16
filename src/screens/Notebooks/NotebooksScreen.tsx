@@ -7,6 +7,7 @@ import {
   ClearButton,
   DenseRow,
   EmptyState,
+  ErrorText,
   PanelHeader,
   SelectField,
   TextareaField,
@@ -543,7 +544,7 @@ export function NotebooksScreen({
           ) : null}
         </aside>
       </div>
-      {notebookError ? <p className="error-text">{text("Notebook command failed")}: {notebookError}</p> : null}
+      {notebookError ? <ErrorText>{text("Notebook command failed")}: {notebookError}</ErrorText> : null}
     </section>
   );
 }

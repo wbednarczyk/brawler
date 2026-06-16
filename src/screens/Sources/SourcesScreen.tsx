@@ -1,6 +1,6 @@
 import { CheckCircle2, RefreshCw } from "lucide-react";
 import { useLocale } from "../../shared/locale";
-import { Button, EmptyState, InfoGrid, PanelHeader, SectionHeader } from "../../ui";
+import { Button, EmptyState, ErrorText, InfoGrid, PanelHeader, SectionHeader } from "../../ui";
 import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
 import type { SourcesScreenProps } from "./sourceTypes";
@@ -117,10 +117,10 @@ export function SourcesScreen({
           </section>
         ))}
         {sourceAdapters.length === 0 ? <EmptyState>{t("empty.noSourceAdapters")}</EmptyState> : null}
-        {sourceAdaptersError ? <p className="error-text">{t("error.sourceCommandFailed")}: {sourceAdaptersError}</p> : null}
-        {sourceRefreshError ? <p className="error-text">{t("error.sourceRefreshFailed")}: {sourceRefreshError}</p> : null}
+        {sourceAdaptersError ? <ErrorText>{t("error.sourceCommandFailed")}: {sourceAdaptersError}</ErrorText> : null}
+        {sourceRefreshError ? <ErrorText>{t("error.sourceRefreshFailed")}: {sourceRefreshError}</ErrorText> : null}
         {unmatchedSourceItemsError ? (
-          <p className="error-text">{t("error.unmatchedSourceDiagnosticsFailed")}: {unmatchedSourceItemsError}</p>
+          <ErrorText>{t("error.unmatchedSourceDiagnosticsFailed")}: {unmatchedSourceItemsError}</ErrorText>
         ) : null}
         {developerMode && sourceRefreshResult ? (
           <section className="source-developer-summary" aria-label={text("Developer source refresh summary")}>

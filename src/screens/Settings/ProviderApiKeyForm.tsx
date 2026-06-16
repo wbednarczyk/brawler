@@ -7,7 +7,7 @@ import {
   setProviderApiKey,
 } from "../../api/credentials";
 import type { CredentialStatus } from "../../api/types";
-import { ActionRow, Button, InfoGrid, TextField } from "../../ui";
+import { ActionRow, Button, ErrorText, InfoGrid, TextField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ProviderApiKeyFormProps = {
@@ -125,9 +125,9 @@ export function ProviderApiKeyForm({
         </p>
       ) : null}
       {error ? (
-        <p className="error-text">
+        <ErrorText>
           {text("Credential command failed")}: {error}
-        </p>
+        </ErrorText>
       ) : null}
     </div>
   );

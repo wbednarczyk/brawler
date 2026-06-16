@@ -4,7 +4,7 @@ import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedIte
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { Button, ClearButton, DenseRow, EmptyState, PanelHeader, SearchField, TextField } from "../../ui";
+import { Button, ClearButton, DenseRow, EmptyState, ErrorText, PanelHeader, SearchField, TextField } from "../../ui";
 import type { FinancialFactForm, FundamentalsForm } from "../../app/useFundamentalsController";
 import type {
   MarkdownNoteBodyProps,
@@ -491,7 +491,7 @@ export function CompaniesScreen({
                 </div>
 
                 {companiesError ? (
-                  <p className="error-text">{text("Companies command failed")}: {companiesError}</p>
+                  <ErrorText>{text("Companies command failed")}: {companiesError}</ErrorText>
                 ) : null}
                 {lookupStatus ? <p className="helper-text">{text(lookupStatus)}</p> : null}
               </div>

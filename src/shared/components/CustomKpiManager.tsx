@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { createKpiDefinition, listKpiDefinitions } from "../../api/financials";
 import type { KpiDefinition } from "../../api/financialsTypes";
 import { Button } from "./Button";
-import { SectionHeader, SelectField, TextField } from "../../ui";
+import { ErrorText, SectionHeader, SelectField, TextField } from "../../ui";
 import { useLocale } from "../locale";
 
 export type CustomKpiManagerProps = {
@@ -127,7 +127,7 @@ export function CustomKpiManager({ companyId, onDefinitionsChange }: CustomKpiMa
         </div>
       </form>
 
-      {error ? <p className="error-text">{text("Failed to create custom KPI")}: {error}</p> : null}
+      {error ? <ErrorText>{text("Failed to create custom KPI")}: {error}</ErrorText> : null}
     </section>
   );
 }

@@ -13,7 +13,7 @@ import type {
   MetricSample,
   SourceAdapter,
 } from "../../api/types";
-import { ActionRow, Button, EmptyState, FilterToolbar, InfoGrid, PanelHeader, SelectField } from "../../ui";
+import { ActionRow, Button, EmptyState, ErrorText, FilterToolbar, InfoGrid, PanelHeader, SelectField } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { BackupsSection } from "./BackupsSection";
 
@@ -260,7 +260,7 @@ export function DiagnosticsScreen({
       </p>
 
       {diagnosticsStatus ? <p className="settings-note">{diagnosticsStatus}</p> : null}
-      {diagnosticsError ? <p className="error-text">{text("Diagnostics command failed")}: {diagnosticsError}</p> : null}
+      {diagnosticsError ? <ErrorText>{text("Diagnostics command failed")}: {diagnosticsError}</ErrorText> : null}
 
       <div className="diagnostics-sections">
         <section className="diagnostics-section" aria-labelledby="diagnostics-events-title">

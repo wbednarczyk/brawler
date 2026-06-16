@@ -2,7 +2,7 @@ import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw } from "lucide
 import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger, UnmatchedSourceItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, ChipList, DenseRow, InfoGrid, SearchField, StatusPill } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, SearchField, StatusPill } from "../../ui";
 import {
   formatSourceHealth,
   formatSourceLastResult,
@@ -127,7 +127,7 @@ export function SourceAdapterRow({
       {selected ? (
         <div className="source-detail-panel" aria-label={text("Source details")}>
           {sourceRefreshError && sourceAdapterRefreshInFlight === null ? (
-            <span className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</span>
+            <ErrorText as="span">{text("Source refresh failed")}: {sourceRefreshError}</ErrorText>
           ) : null}
           <InfoGrid
             className="source-status-grid source-status-detail"
@@ -233,7 +233,7 @@ function RegistrySourcePanel({
           </span>
         ) : null}
         {registryRefreshError ? (
-          <span className="error-text">{text("Company directory refresh failed")}: {registryRefreshError}</span>
+          <ErrorText as="span">{text("Company directory refresh failed")}: {registryRefreshError}</ErrorText>
         ) : null}
       </ActionRow>
       <div className="source-collapsible-panel" aria-label={text("Company directory entries")}>
@@ -286,7 +286,7 @@ function RegistrySourcePanel({
               <span className="membership-empty">{text("No company directory entries match this search.")}</span>
             ) : null}
             {companyRegistryEntriesError ? (
-              <span className="error-text">{text("Company directory list failed")}: {companyRegistryEntriesError}</span>
+              <ErrorText as="span">{text("Company directory list failed")}: {companyRegistryEntriesError}</ErrorText>
             ) : null}
           </div>
         ) : null}

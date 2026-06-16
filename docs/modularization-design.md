@@ -39,10 +39,10 @@ Current notable composition points:
 
 New behavior should land in the matching API, screen, shared, command, storage, provider, source adapter, or job module instead of rebuilding the original monolithic files.
 
-## Findings From M13
+## Findings
 
 - Broad extraction is useful when a file mixes multiple architectural layers; it is less useful when a file is a cohesive domain view or facade.
-- `src/app/AppStateRoot.tsx` is intentionally large because it coordinates app state. Splitting it should wait for a feature-driven state-domain boundary, not a line-count target.
+- `src/app/AppStateRoot.tsx` is intentionally large because it coordinates app state. Splitting it should wait for a feature-driven state-domain boundary, not a line-count target. The AI-analysis domain (per-feed-item jobs/error/in-flight maps, poll timers, start/retry commands, and the load+poll effects) was extracted to `src/app/useAiAnalysisController.ts` on exactly that basis — a cohesive, self-contained boundary. The signals and fundamentals domains were intentionally left in place for now because their state feeds `useAppViewModel` derivations (`signalsByFeedItemId`, `feedSignalCategories`, filtered company lists); extracting them cleanly needs a coordinated controller/view-model boundary, not an in-place lift, so it should be a dedicated incremental step.
 - Shared frontend primitives are useful only when they preserve existing class semantics and accessibility. `Button`, `EmptyState`, and `StatusPill` are now adopted for generic controls; segmented controls, row selectors, field clear buttons, collapsible headers, suggestion rows, and anchor links remain native/domain-specific on purpose.
 - Screen tests became easier to reason about after screen extraction, but the shared app workflow harness remains useful for integration-style UI flows.
 - Rust command modules should stay thin. Most complexity belongs in storage, provider, source adapter, or job modules.

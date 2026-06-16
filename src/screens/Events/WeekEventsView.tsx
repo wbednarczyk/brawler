@@ -1,6 +1,6 @@
 import { ExternalLink } from "lucide-react";
 import type { CompanyEvent } from "../../api/types";
-import { Button } from "../../ui";
+import { Button, ErrorText } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import type { EventsScreenProps } from "./eventTypes";
@@ -153,7 +153,7 @@ export function WeekEventsView({
           </section>
         ) : null}
       </div>
-      {companyEventsError ? <p className="error-text">{text("Events command failed")}: {companyEventsError}</p> : null}
+      {companyEventsError ? <ErrorText>{text("Events command failed")}: {companyEventsError}</ErrorText> : null}
     </>
   );
 }

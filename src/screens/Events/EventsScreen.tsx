@@ -11,6 +11,7 @@ import {
 import {
   ActionRow,
   Button,
+  ErrorText,
   FilterToolbar,
   PanelHeader,
   SectionHeader,
@@ -370,7 +371,7 @@ export function EventsScreen({
             />
           </div>
           <ActionRow className="event-composer-actions">
-            {companyEventCreateError ? <p className="error-text">{text(companyEventCreateError)}</p> : null}
+            {companyEventCreateError ? <ErrorText>{text(companyEventCreateError)}</ErrorText> : null}
             <Button className="compact-button" onClick={createCompanyEvent} variant="primary">
               <Save size={15} />
               {text("Save")}

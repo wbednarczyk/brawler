@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { getCompanyIrReportsUrl, setCompanyIrReportsUrl } from "../../api/ir";
 import { Button } from "./Button";
-import { SectionHeader, TextField } from "../../ui";
+import { ErrorText, SectionHeader, TextField } from "../../ui";
 import { useLocale } from "../locale";
 
 export type CompanyIrReportsUrlFieldProps = {
@@ -67,7 +67,7 @@ export function CompanyIrReportsUrlField({ companyId }: CompanyIrReportsUrlField
           {text("Save")}
         </Button>
       </div>
-      {error ? <p className="error-text">{error}</p> : null}
+      {error ? <ErrorText>{error}</ErrorText> : null}
     </section>
   );
 }

@@ -17,7 +17,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, PanelHeader } from "../../ui";
+import { ActionRow, Button, ErrorText, PanelHeader } from "../../ui";
 import { ResearchAiPanel } from "./ResearchAiPanel";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
 import { ResearchEvidencePanel } from "./ResearchEvidencePanel";
@@ -326,7 +326,7 @@ export function ResearchScreen({
           watchlistCompanyCount={watchlistCompanies.length}
         />
 
-        {error ? <p className="error-text">{text("Research timeline failed")}: {error}</p> : null}
+        {error ? <ErrorText>{text("Research timeline failed")}: {error}</ErrorText> : null}
 
         <div className="research-main-layout" style={researchLayoutStyle}>
           <div className={mode === "watchlist" ? "research-main-stack watchlist" : "research-main-stack company"}>

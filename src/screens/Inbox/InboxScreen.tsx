@@ -16,6 +16,7 @@ import {
   Button,
   DenseRow,
   EmptyState,
+  ErrorText,
   FilterToolbar,
   PanelHeader,
   SearchField,
@@ -335,15 +336,15 @@ export function InboxScreen({
               ) : null}
             </EmptyState>
           ) : null}
-          {feedError ? <p className="error-text">{text("Feed command failed")}: {feedError}</p> : null}
+          {feedError ? <ErrorText>{text("Feed command failed")}: {feedError}</ErrorText> : null}
           {deleteUnsavedFeedError ? (
-            <p className="error-text">{text("Delete unsaved failed")}: {deleteUnsavedFeedError}</p>
+            <ErrorText>{text("Delete unsaved failed")}: {deleteUnsavedFeedError}</ErrorText>
           ) : null}
           {sourceRefreshError ? (
-            <p className="error-text">{text("Source refresh failed")}: {sourceRefreshError}</p>
+            <ErrorText>{text("Source refresh failed")}: {sourceRefreshError}</ErrorText>
           ) : null}
           {signalsError ? (
-            <p className="error-text">{text("Signal classification failed")}: {signalsError}</p>
+            <ErrorText>{text("Signal classification failed")}: {signalsError}</ErrorText>
           ) : null}
         </div>
 

@@ -26,6 +26,7 @@ import {
   ChipList,
   DenseRow,
   EmptyState,
+  ErrorText,
   InfoGrid,
   SectionHeader,
   SegmentedControl,
@@ -743,7 +744,7 @@ export function CompanyWorkspace({
             </form>
           </div>
           {notebookError ? (
-            <p className="error-text">{text("Notebook command failed")}: {notebookError}</p>
+            <ErrorText>{text("Notebook command failed")}: {notebookError}</ErrorText>
           ) : null}
         </div>
       ) : null}
@@ -842,7 +843,7 @@ export function CompanyWorkspace({
             ) : null}
           </div>
           {notebookError ? (
-            <p className="error-text">{text("Notebook command failed")}: {notebookError}</p>
+            <ErrorText>{text("Notebook command failed")}: {notebookError}</ErrorText>
           ) : null}
         </div>
       ) : null}

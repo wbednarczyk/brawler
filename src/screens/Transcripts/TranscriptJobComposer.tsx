@@ -1,6 +1,6 @@
 import { CheckCircle2, Plus } from "lucide-react";
 import type { Company } from "../../api/types";
-import { Button, SectionHeader, TextField } from "../../ui";
+import { Button, ErrorText, SectionHeader, TextField } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { transcriptUrlValidationMessage } from "./transcriptHelpers";
@@ -103,7 +103,7 @@ export function TranscriptJobComposer({
           selectTranscriptCompany={selectTranscriptCompany}
         />
       ) : null}
-      {transcriptJobCreateError ? <p className="error-text">{text(transcriptJobCreateError)}</p> : null}
+      {transcriptJobCreateError ? <ErrorText>{text(transcriptJobCreateError)}</ErrorText> : null}
     </form>
   );
 }

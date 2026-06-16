@@ -4,7 +4,7 @@ import type { Company, Watchlist, WatchlistMembership } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { pluralNoun } from "../../shared/locale/plural";
-import { ActionRow, Button, DenseRow, EmptyState, PanelHeader, SearchField, SectionHeader, TextField } from "../../ui";
+import { ActionRow, Button, DenseRow, EmptyState, ErrorText, PanelHeader, SearchField, SectionHeader, TextField } from "../../ui";
 
 // Polish needs three plural forms; "{n} companies" must read "18 spółek", not "18 spółki".
 const COMPANY_FORMS = { en: ["company", "companies"], pl: ["spółka", "spółki", "spółek"] } as const;
@@ -364,7 +364,7 @@ export function WatchlistsScreen({
       </div>
 
       {watchlistsError ? (
-        <p className="error-text">{text("Watchlist command failed")}: {watchlistsError}</p>
+        <ErrorText>{text("Watchlist command failed")}: {watchlistsError}</ErrorText>
       ) : null}
     </section>
   );
