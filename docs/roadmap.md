@@ -37,7 +37,7 @@ Milestones through `v0.38.0` are shipped. This roadmap does not restate complete
 
 The next milestone is `v0.42.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
 
-- `v0.42.0` — **Management claims tracker**: track management claims from reports and transcripts with due periods, verdicts, and KPI-backed verification.
+- `v0.42.0` — **Management claims tracker**: promote claims to a first-class entity with a due period and a user-set verdict; AI claim extraction (mandatory confirmation) from report documents and transcripts; a due-period derivation job resurfaces an open claim into a "claims to verify" review queue when the due-period report arrives, with KPI-backed verification for quantitative claims. Design in [ADR 0040](adr/0040-management-claims-tracker.md).
 - `v0.43.0` — **Report-season cockpit**: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
 - `v0.44.0` — **Cross-company KPI comparison**: side-by-side tables and multi-series trend charts.
 - `v0.45.0` — **Quality frameworks (quantitative checks)**: a rule engine evaluates user frameworks against the fundamentals facts and produces a versioned scorecard; ships clonable templates including a Kroeze-style quality template. Depends only on facts (`v0.37.0`); resequenceable.
@@ -50,7 +50,19 @@ The next milestone is `v0.42.0`. This is the forward plan (milestone intent only
 - `v0.52.0` — **Re-invent the notebook panel**.
 - `v0.53.0` — **Import/export v2**: unified data bundle and per-feature coverage, including the financial facts + KPI definitions export/import deferred from `v0.37.0`.
 
-Sequencing notes: the interpretative AI layer is split into a static foundation (`v0.39.0`, no model) and an embedding-model milestone (`v0.46.0`, lands before story clustering, its first model consumer); the model-backed path is adopted per capability only where a per-capability eval beats the static baseline, and the vector index is disposable so the model is reversible to static — see [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md). The quality-frameworks milestones (`v0.45.0` quantitative, `v0.51.0` qualitative) depend only on the fundamentals facts and are resequenceable. The fundamentals schema was validated against ~37 GPW companies across sectors; findings (statement-type packs, generalized unit model, fact variants, period model) are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md).
+### Valuation & decision arc (decision-making augmentor)
+
+These milestones turn the fundamentals substrate into computed valuation and a decision workflow, so the app provides sourced facts **and** computed analysis as decision support. Version numbers below are provisional; the deterministic valuation engine is **pulled forward** (resequenceable, depends only on facts) to land alongside/after the quality-scorecard block (`v0.45.0`), ahead of the clustering/diff/triage milestones — final numbering set at planning approval.
+
+- `v0.54.0` — **Deterministic valuation engine**: a pure-Rust, deterministic valuation slice over confirmed `financial_facts` — DCF/owner-earnings (default for thin GPW peer sets), multiple-based bear/base/bull scenarios where peer sets are deep, an FCF normalization cross-check, peer-relative multiples with a thin-flag, and what-if/sensitivity. Outputs scenario fair values and upside, decision-support framed. Design in [ADR 0041](adr/0041-deterministic-valuation-engine.md).
+- `v0.55.0` — **Valuation-aware scoring + advisory-verdict seam**: extend the `v0.45.0` versioned scorecard with a valuation dimension and a scenario/upside readout, and define the open-core `AdvisoryVerdictProvider` port with an **empty default** (decision-support only; no prescriptive output in the open-core build). Design and the open-core boundary in [ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md).
+- `v0.56.0` — **Investment thesis workbench + decision journal**: persisted, provenance-stamped theses (verdict as decision support, scenario forecasts, variant/inversion/disclosed-gaps, valuation↔thesis link with orphan check) and a decision journal (recorded buy/pass + rationale + outcome). Reschedules the previously "Not in V1" trade journal. Design in [ADR 0043](adr/0043-investment-thesis-and-decision-journal.md).
+- `v0.57.0` — **Living thesis (newsfeed-as-input)**: link feed items, report documents, signals, and events to theses for staleness state, what-changed diffs, catalyst-aware refresh, and re-score triggers — the differentiator that keeps a thesis fresh from the live feed.
+- `v0.58.0` — **Watchlist screener / leaderboard**: batch-run the valuation engine and scorecard across the watchlist into a ranked board with deltas since the last run; extends the report-season cockpit (`v0.43.0`) and cross-company comparison (`v0.44.0`).
+
+Deferred follow-ons (separate ADRs when scheduled): a **SEC EDGAR XBRL fundamentals adapter** for US coverage (new `financial_data` source type; open-core, emits no advice), and an **analyst-consensus adapter** (mostly paid/restricted; behind a flag + ADR) to feed "vs consensus" context.
+
+Sequencing notes: the interpretative AI layer is split into a static foundation (`v0.39.0`, no model) and an embedding-model milestone (`v0.46.0`, lands before story clustering, its first model consumer); the model-backed path is adopted per capability only where a per-capability eval beats the static baseline, and the vector index is disposable so the model is reversible to static — see [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md). The quality-frameworks milestones (`v0.45.0` quantitative, `v0.51.0` qualitative) depend only on the fundamentals facts and are resequenceable. The fundamentals schema was validated against ~37 GPW companies across sectors; findings (statement-type packs, generalized unit model, fact variants, period model) are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). The valuation & decision arc (`v0.54.0`+) also depends only on facts and is GPW-first/DCF-lean for thin-market reliability; the deterministic valuation engine is pulled forward to land near the quality-scorecard block. The arc stays open-core and decision-support only: any prescriptive (buy/sell/hold) advisory output is supplied by an out-of-band adapter behind the `AdvisoryVerdictProvider` port and is absent from the open-core build, preserving the `AGENTS.md` decision-support rule and the planned recommendation-guardrail enforcement — see [ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md).
 
 ## North Star: Autonomous Report Pipeline (v0.50.0)
 
@@ -171,6 +183,21 @@ Goal: add automated post-generation validation that detects and rejects AI outpu
 M13 keeps the source-grounded prompt policy and UI positioning as decision support, but hard output enforcement is explicitly deferred until after v1.
 
 Not in scope for v1.
+
+## Future Exploration: Agent / MCP Surface
+
+Goal: expose Brawler's local domain (fundamentals facts, KPIs, valuation runs, scorecards, theses, signals) to an agent through a **local MCP server**, so deep, conversational analysis can be driven over the same data the GUI uses — without making Brawler agent-native or leaving local-first.
+
+Intent:
+
+- Treat the MCP server as a second **inbound adapter** over the existing domain core (alongside the UI ↔ Rust typed-command seam), reusing the same typed contracts — not a new business logic path. See [ADR 0039](adr/0039-ports-and-adapters-posture.md).
+- Keep it **local-only** (stdio/loopback); no cloud, no data leaving the machine; strict typed tools mirroring the existing command surface (no arbitrary shell or broad filesystem access).
+- Keep the **engine deterministic**: the agent orchestrates and synthesizes; valuation/scoring remain deterministic Rust ([ADR 0041](adr/0041-deterministic-valuation-engine.md)). Agent-as-core-engine is a deliberate non-goal (it would break determinism, testability, cost, and offline operation).
+- Inherit the open-core/gating boundary: decision-support tools are open-core; any prescriptive advisory tool is gated by the same `AdvisoryVerdictProvider` seam ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+
+Sequencing: this only has value once the valuation & decision arc domain exists, so it is a follow-on to that arc, not part of it. Record the surface design and tool contracts in an ADR before implementation.
+
+Not scheduled.
 
 ## Future: Cloud Backup And Sync
 
