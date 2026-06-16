@@ -48,21 +48,18 @@ type AppLifecycleEffectsInput = {
   registryAdapter: SourceAdapter | null;
   scheduledSourceAdapterKey: string;
   scheduledSourceAdapters: SourceAdapter[];
-  selectedClaimEntry: NotebookEntry | null;
   selectedCompanyId: string | null;
   selectedFeedItemId: string | null;
   selectedNotebookCompanyId: string | null;
   selectedNotebookEntry: NotebookEntry | null;
   selectedNotebookScreenEntry: NotebookEntry | null;
   settings: UserSettings | null;
-  setClaimStatusDraft: Dispatch<SetStateAction<string>>;
   setNextRegistryRefreshAt: Dispatch<SetStateAction<number | null>>;
   setNextSourceRefreshAtByAdapterId: Dispatch<SetStateAction<Record<string, number>>>;
   setNotebookEditForm: Dispatch<SetStateAction<ReturnType<typeof emptyNotebookForm>>>;
   setNotebookEditMode: Dispatch<SetStateAction<boolean>>;
   setNotebookScreenEditForm: Dispatch<SetStateAction<ReturnType<typeof emptyNotebookForm>>>;
   setNotebookScreenEditMode: Dispatch<SetStateAction<boolean>>;
-  setSelectedClaimEntryId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSelectedNotebookCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedNotebookEntryId: Dispatch<SetStateAction<string | null>>;
@@ -110,21 +107,18 @@ export function useAppLifecycleEffects({
   registryAdapter,
   scheduledSourceAdapterKey,
   scheduledSourceAdapters,
-  selectedClaimEntry,
   selectedCompanyId,
   selectedFeedItemId,
   selectedNotebookCompanyId,
   selectedNotebookEntry,
   selectedNotebookScreenEntry,
   settings,
-  setClaimStatusDraft,
   setNextRegistryRefreshAt,
   setNextSourceRefreshAtByAdapterId,
   setNotebookEditForm,
   setNotebookEditMode,
   setNotebookScreenEditForm,
   setNotebookScreenEditMode,
-  setSelectedClaimEntryId,
   setSelectedFeedItemId,
   setSelectedNotebookCompanyId,
   setSelectedNotebookEntryId,
@@ -326,7 +320,6 @@ export function useAppLifecycleEffects({
 
     if (!selectedCompanyId) {
       setSelectedNotebookEntryId(null);
-      setSelectedClaimEntryId(null);
       setNotebookEditMode(false);
       return;
     }
@@ -382,13 +375,4 @@ export function useAppLifecycleEffects({
     setNotebookScreenEditForm(notebookFormFromEntry(selectedNotebookScreenEntry));
     setNotebookScreenEditMode(false);
   }, [selectedNotebookScreenEntry, setNotebookScreenEditForm, setNotebookScreenEditMode]);
-
-  useEffect(() => {
-    if (!selectedClaimEntry) {
-      setClaimStatusDraft("");
-      return;
-    }
-
-    setClaimStatusDraft(selectedClaimEntry.claimStatus ?? "open");
-  }, [selectedClaimEntry, setClaimStatusDraft]);
 }

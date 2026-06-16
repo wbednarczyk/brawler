@@ -173,6 +173,53 @@ fn plan_research_import(
         summary.notebook_entries_created += 1;
     }
 
+    let existing_claim_ids = existing_ids(connection, "management_claims").unwrap_or_default();
+    let imported_claim_ids = document
+        .management_claims
+        .iter()
+        .map(|claim| claim.id.clone())
+        .collect::<HashSet<_>>();
+    for claim in &document.management_claims {
+        if claim.id.trim().is_empty() || claim.statement.trim().is_empty() {
+            errors.push("Management claim id and statement are required".to_owned());
+            continue;
+        }
+        if existing_claim_ids.contains(&claim.id) {
+            summary.management_claims_skipped += 1;
+            warnings.push(format!(
+                "Management claim {} already exists and will be skipped",
+                claim.id
+            ));
+            continue;
+        }
+        let company_ticker = claim.company_qualified_ticker.trim().to_uppercase();
+        if !imported_company_tickers.contains(&company_ticker)
+            && !existing_companies.contains_key(&company_ticker)
+        {
+            errors.push(format!(
+                "Management claim {} references missing company {}",
+                claim.id, claim.company_qualified_ticker
+            ));
+            continue;
+        }
+        if ![
+            "pending",
+            "delivered",
+            "partially_delivered",
+            "missed",
+            "revised",
+        ]
+        .contains(&claim.status.as_str())
+        {
+            errors.push(format!(
+                "Management claim {} has unsupported status {}",
+                claim.id, claim.status
+            ));
+            continue;
+        }
+        summary.management_claims_created += 1;
+    }
+
     let existing_question_ids = existing_ids(connection, "research_questions").unwrap_or_default();
     let imported_question_ids = document
         .research_questions
@@ -237,12 +284,14 @@ fn plan_research_import(
             &link.from_type,
             &link.from_id,
             &imported_note_ids,
+            &imported_claim_ids,
             &imported_question_ids,
         ) || !imported_or_existing_evidence_reference(
             connection,
             &link.to_type,
             &link.to_id,
             &imported_note_ids,
+            &imported_claim_ids,
             &imported_question_ids,
         ) {
             summary.evidence_links_skipped += 1;
@@ -340,6 +389,7 @@ fn plan_research_import(
             &citation.evidence_type,
             &citation.evidence_id,
             &imported_note_ids,
+            &imported_claim_ids,
             &imported_question_ids,
         ) {
             summary.ai_research_brief_citations_skipped += 1;
@@ -525,6 +575,7 @@ fn plan_research_import(
             &citation.evidence_type,
             &citation.evidence_id,
             &imported_note_ids,
+            &imported_claim_ids,
             &imported_question_ids,
             &imported_reminder_ids,
         ) {
@@ -764,6 +815,57 @@ fn apply_watchlists_notebooks_questions(
         }
 
         summary.notebook_entries_created += 1;
+    }
+
+    for claim in &document.management_claims {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM management_claims WHERE id = ?1)",
+            [&claim.id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            summary.management_claims_skipped += 1;
+            continue;
+        }
+
+        let company_id = company_id_by_ticker
+            .get(&claim.company_qualified_ticker.trim().to_uppercase())
+            .ok_or_else(|| StorageError::InvalidSettingValue {
+                key: "import_export",
+                value: format!("missing claim company {}", claim.company_qualified_ticker),
+            })?;
+
+        connection.execute(
+            "
+            INSERT INTO management_claims (
+                id, company_id, statement, body, body_format, made_at,
+                due_fiscal_year, due_period_type, status, source_evidence_type,
+                source_evidence_id, target_metric_key, target_comparator,
+                target_value_numeric, target_unit, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+            ",
+            params![
+                claim.id.trim(),
+                company_id,
+                claim.statement.trim(),
+                claim.body.trim(),
+                claim.body_format.trim(),
+                empty_string_to_none(claim.made_at.clone()),
+                claim.due_fiscal_year,
+                empty_string_to_none(claim.due_period_type.clone()),
+                claim.status.trim(),
+                claim.source_evidence_type.trim(),
+                empty_string_to_none(claim.source_evidence_id.clone()),
+                empty_string_to_none(claim.target_metric_key.clone()),
+                empty_string_to_none(claim.target_comparator.clone()),
+                empty_string_to_none(claim.target_value_numeric.clone()),
+                empty_string_to_none(claim.target_unit.clone()),
+                claim.created_at.trim(),
+                claim.updated_at.trim(),
+            ],
+        )?;
+
+        summary.management_claims_created += 1;
     }
 
     for question in &document.research_questions {

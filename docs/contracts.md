@@ -285,9 +285,7 @@ Rules:
 - Notebook UI surfaces should render origin links in note details and make feed-item origins actionable inside the app when the referenced feed item is still available locally.
 - Origin links are immutable through normal note editing. Future workflows may add or detach origins through explicit source-link actions, but inline note editing must not rewrite origin records.
 - Feed-to-note drafts start from UI-facing feed items, which are scoped to tracked companies; `create_notebook_entry` requires the canonical tracked `companyId`.
-- Claim notes should support a future follow-up period, but follow-up automation is not required in the first implementation.
-- The Claims tab uses `list_notebook_entries(companyId)` and filters entries whose `kind` is `claim` or whose `claimStatus` is set.
-- Claim status update uses `update_notebook_entry(input)` and must preserve company ownership, origin links, note body, tags, and follow-up dates unless the user is editing those fields in a notebook editor.
+- As of `v0.42.0` ([ADR 0040](adr/0040-management-claims-tracker.md)) management claims are a first-class entity with their own commands (see [Management Claim](#management-claim)); `kind = 'claim'` and the `claimStatus`/`followUp*` fields are **legacy**. The `0045` migration moves existing claim notes into `management_claims`. New claims are created and tracked through the claim commands, not `create_notebook_entry`.
 
 Initial local commands:
 
@@ -341,6 +339,141 @@ Update rules:
 - `companyId`, `bodyFormat`, timestamps, and origin links are not edited by this command.
 - Tags are replaced atomically from the submitted tag list.
 - Empty optional date/status fields are stored as unset values.
+
+## Management Claim
+
+Management claims are first-class tracked promises with a due period and a user-set verdict ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`). They are the canonical claim entity (replacing `notebook_entries(kind='claim')`).
+
+```json
+{
+  "id": "claim_01",
+  "companyId": "company_gpw_cdr",
+  "statement": "Management expects the next major release in the next two quarters.",
+  "body": "Stated on the Q1 earnings call.",
+  "bodyFormat": "markdown",
+  "madeAt": "2026-05-28",
+  "sourcePeriodId": "period_cdr_2026_q1",
+  "dueFiscalYear": 2026,
+  "duePeriodType": "Q4",
+  "status": "pending",
+  "sourceEvidenceType": "transcript_segment",
+  "sourceEvidenceId": "seg_42",
+  "extractionProposalId": "claim_prop_07",
+  "targetMetricKey": null,
+  "targetComparator": null,
+  "targetValueNumeric": null,
+  "targetUnit": null,
+  "verifyingFactId": null,
+  "revisesClaimId": null,
+  "createdAt": "2026-05-28T13:20:00Z",
+  "updatedAt": "2026-05-28T13:20:00Z"
+}
+```
+
+Allowed verdict statuses: `pending`, `delivered`, `partially_delivered`, `missed`, `revised`.
+
+Allowed `sourceEvidenceType`: `report_document`, `transcript_segment`, `transcript`, `feed_item`, `manual`.
+
+Allowed `targetComparator` (quantitative claims): `gte`, `lte`, `gt`, `lt`, `approx`, `eq`.
+
+Rules:
+
+- A claim belongs to exactly one canonical company.
+- The verdict (`status`) is user-set; there are no automated verdicts.
+- A claim with both `dueFiscalYear` and `duePeriodType` is eligible for due-period resurfacing; a claim missing either is user-managed only.
+- `verifyingFactId` is the direct link to the confirmed fact that verifies a quantitative claim; `verifyingRelation` (`supports`/`contradicts`) is reserved for a follow-up that registers the link in the evidence graph (deferred — `financial_fact` is not yet an evidence type; see [ADR 0040](adr/0040-management-claims-tracker.md) Decision 5).
+- A `revised` verdict requires `revisesClaimId` (or creates a superseding claim that sets it); claim history is retained.
+
+Local commands:
+
+- `list_management_claims(companyId)`: returns claims for one company, newest updated first.
+- `create_management_claim(input)`: creates one claim (manual or from a confirmed extraction proposal).
+- `update_management_claim(input)`: updates editable fields (statement, body, due period, quantitative target, source links) while preserving company ownership and provenance.
+- `set_claim_verdict(input)`: sets `status` and optionally links `verifyingFactId` (with the `supports`/`contradicts` relation) and `revisesClaimId`. Idempotent.
+- `delete_management_claim(claimId)`: deletes a claim and its derived reminders/queue rows; retains rejected extraction proposals.
+- `list_claims_to_verify(input)`: the review-queue read model — claims bucketed `due` | `overdue` | `upcoming` for a company (or watchlist scope), with the resolved verifying fact attached for quantitative claims (see [Claims Review Queue](#claims-review-queue)).
+
+Error codes: `claim_not_found`, `company_not_found`, `invalid_due_period`, `invalid_verdict`, `fact_not_found` (when linking `verifyingFactId`), `invalid_comparator`.
+
+## Claim Extraction
+
+AI claim extraction with mandatory user confirmation ([ADR 0040](adr/0040-management-claims-tracker.md)), mirroring KPI extraction. Sources are report documents and transcripts.
+
+```json
+{
+  "id": "claim_job_01",
+  "companyId": "company_gpw_cdr",
+  "sourceType": "transcript",
+  "sourceId": "transcript_77",
+  "providerId": "gemini",
+  "model": "gemini-2.5-flash",
+  "promptVersion": "claims-v1",
+  "status": "succeeded",
+  "errorCode": null,
+  "error": null,
+  "createdAt": "2026-05-28T13:00:00Z",
+  "startedAt": "2026-05-28T13:00:02Z",
+  "finishedAt": "2026-05-28T13:00:20Z",
+  "proposals": [
+    {
+      "id": "claim_prop_07",
+      "jobId": "claim_job_01",
+      "statement": "Management expects the next major release in the next two quarters.",
+      "dueFiscalYear": 2026,
+      "duePeriodType": "Q4",
+      "targetMetricKey": null,
+      "targetComparator": null,
+      "targetValueNumeric": null,
+      "targetUnit": null,
+      "confidence": "high",
+      "sourceSnippet": "...we expect to ship the next major release within two quarters...",
+      "sourceEvidenceType": "transcript_segment",
+      "sourceEvidenceId": "seg_42",
+      "status": "pending",
+      "claimId": null
+    }
+  ]
+}
+```
+
+Allowed `sourceType`: `report_document`, `transcript`. Allowed proposal `status`: `pending`, `confirmed`, `rejected`.
+
+Local commands:
+
+- `start_claim_extraction(input)`: creates a job over a report document or transcript and spawns the async runner. Idempotent per `(sourceType, sourceId, promptVersion)`.
+- `list_claim_extraction(input)`: returns jobs + proposals for a source (`sourceType` + `sourceId`) or company.
+- `confirm_claim_proposal(input)`: materializes a `management_claims` row from a proposal, applying optional user overrides; marks the proposal `confirmed` with the new `claimId`.
+- `reject_claim_proposal(proposalId)`: marks a proposal `rejected` (retained; suppresses re-proposal).
+- `retry_claim_extraction(jobId)`: re-runs a failed job.
+
+Rules:
+
+- Only a confirmed proposal creates a claim; no claim is created automatically.
+- The runner uses the provider-neutral AI settings and credential boundary; provider/model/prompt provenance is recorded.
+- Extraction never blocks ingestion and is always user-initiated.
+
+Error codes: `extraction_job_not_found`, `proposal_not_found`, `source_not_found`, `proposal_already_resolved`, `provider_unavailable`, `extraction_failed`.
+
+## Claims Review Queue
+
+The due-period resurfacing read model ([ADR 0040](adr/0040-management-claims-tracker.md)). When a report arrives and a `financial_period` is created/linked for a company, a derivation job matches open (`status = pending`) claims whose `dueFiscalYear`/`duePeriodType` equal the arriving period and records them as resurfaced; the queue surfaces them for verification.
+
+`list_claims_to_verify(input)` returns, per company (or watchlist scope):
+
+```json
+{
+  "due": [{ "claim": { "id": "claim_01" }, "arrivedPeriodId": "period_cdr_2026_q4", "verifyingFactCandidate": { "factId": "fact_99", "valueNumeric": "12500000" } }],
+  "overdue": [],
+  "upcoming": [{ "claim": { "id": "claim_02" }, "dueFiscalYear": 2027, "duePeriodType": "H1" }]
+}
+```
+
+Rules:
+
+- `due`: the due-period report has arrived and the claim is still `pending`. `overdue`: the due period has passed (a later period arrived) and the claim is still `pending`. `upcoming`: the due period has not yet arrived.
+- For a quantitative claim (`targetMetricKey` set), the queue resolves the matching confirmed `financial_fact` for the arrived period and attaches it as `verifyingFactCandidate`; the user confirms the link and verdict via `set_claim_verdict`.
+- Resurfacing is idempotent: re-running the derivation never duplicates queue entries for the same `(claim, period)`.
+- The same arrival may also create a `claim_follow_up` reminder; the queue is the primary verification surface, reminders/digests are the cross-cutting paths.
 
 ## Company Event
 

@@ -110,11 +110,7 @@ pub(super) fn list_research_evidence(
 
             SELECT
                 'evidence_note_' || notebook_entries.id AS id,
-                CASE
-                    WHEN notebook_entries.kind = 'claim' OR notebook_entries.claim_status IS NOT NULL
-                    THEN 'claim'
-                    ELSE 'notebook_entry'
-                END AS evidence_type,
+                'notebook_entry' AS evidence_type,
                 'notebooks' AS source_domain,
                 notebook_entries.id AS source_id,
                 notebook_entries.company_id AS company_id,
@@ -126,6 +122,26 @@ pub(super) fn list_research_evidence(
                 'user_note' AS trust_category
             FROM notebook_entries
             JOIN scope_companies ON scope_companies.company_id = notebook_entries.company_id
+            -- Claims are a first-class entity (ADR 0040); they surface from
+            -- management_claims below, not from the notebook-entry branch.
+            WHERE notebook_entries.kind != 'claim' AND notebook_entries.claim_status IS NULL
+
+            UNION ALL
+
+            SELECT
+                'evidence_claim_' || management_claims.id AS id,
+                'claim' AS evidence_type,
+                'notebooks' AS source_domain,
+                management_claims.id AS source_id,
+                management_claims.company_id AS company_id,
+                COALESCE(management_claims.made_at, management_claims.updated_at, management_claims.created_at) AS occurred_at,
+                management_claims.statement AS title,
+                NULL AS summary,
+                NULL AS source_url,
+                NULL AS attribution,
+                'user_note' AS trust_category
+            FROM management_claims
+            JOIN scope_companies ON scope_companies.company_id = management_claims.company_id
 
             UNION ALL
 
@@ -820,9 +836,10 @@ fn validate_evidence_reference(
 ) -> StorageResult<()> {
     match evidence_type {
         "feed_item" => validate_reference_exists(connection, "feed_items", evidence_id),
-        "notebook_entry" | "claim" => {
-            validate_reference_exists(connection, "notebook_entries", evidence_id)
-        }
+        "notebook_entry" => validate_reference_exists(connection, "notebook_entries", evidence_id),
+        // Claims are a first-class entity (ADR 0040); claim evidence resolves against
+        // management_claims, not notebook_entries.
+        "claim" => validate_reference_exists(connection, "management_claims", evidence_id),
         "transcript_segment" => {
             validate_reference_exists(connection, "transcript_segments", evidence_id)
         }

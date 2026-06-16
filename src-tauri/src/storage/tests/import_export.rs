@@ -467,3 +467,77 @@ fn settings_export_is_yaml_and_import_updates_allowlisted_settings_only() {
     assert_eq!(settings.locale, "pl");
     assert_eq!(settings.poll_interval_seconds, 1800);
 }
+
+#[test]
+fn research_data_round_trips_management_claims() {
+    // First-class management claims (ADR 0040) are owner durable state and must
+    // survive an export/import round trip.
+    let source = AppState::new(open_in_memory_database().expect("database should open"));
+    let cdr = source
+        .create_company(tracked_company("CDR", "CD PROJEKT S.A."))
+        .expect("company should create");
+    let claim = source
+        .create_management_claim(NewManagementClaim {
+            company_id: cdr.id.clone(),
+            statement: "Net revenue will reach at least 1,000,000 by FY2026 Q4.".to_owned(),
+            due_fiscal_year: Some(2026),
+            due_period_type: Some("Q4".to_owned()),
+            status: Some("delivered".to_owned()),
+            target_metric_key: Some("net_revenue".to_owned()),
+            target_comparator: Some("gte".to_owned()),
+            target_value_numeric: Some("1000000".to_owned()),
+            ..Default::default()
+        })
+        .expect("claim should create");
+
+    assert_eq!(
+        source
+            .list_management_claims(&cdr.id)
+            .expect("source claims should list")
+            .len(),
+        1,
+        "source should hold exactly the one created claim"
+    );
+
+    let export = source
+        .export_research_data()
+        .expect("research data should export");
+    assert_eq!(export.summary.management_claims, 1);
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    let preview = target
+        .preview_research_import(&export.contents)
+        .expect("preview should parse");
+    assert!(preview.valid, "{:?}", preview.errors);
+    assert_eq!(preview.summary.management_claims_created, 1);
+
+    target
+        .apply_research_import(&export.contents)
+        .expect("import should apply");
+    let imported_companies = target.list_companies().expect("companies should list");
+    let imported_claims = target
+        .list_management_claims(&imported_companies[0].id)
+        .expect("claims should list");
+    assert_eq!(imported_claims.len(), 1);
+    assert_eq!(imported_claims[0].id, claim.id);
+    assert_eq!(imported_claims[0].statement, claim.statement);
+    assert_eq!(imported_claims[0].status, "delivered");
+    assert_eq!(imported_claims[0].due_fiscal_year, Some(2026));
+    assert_eq!(imported_claims[0].due_period_type.as_deref(), Some("Q4"));
+    assert_eq!(
+        imported_claims[0].target_metric_key.as_deref(),
+        Some("net_revenue")
+    );
+
+    // Re-importing is idempotent: the existing claim is not duplicated.
+    target
+        .apply_research_import(&export.contents)
+        .expect("re-import should apply");
+    assert_eq!(
+        target
+            .list_management_claims(&imported_companies[0].id)
+            .expect("claims should list")
+            .len(),
+        1
+    );
+}

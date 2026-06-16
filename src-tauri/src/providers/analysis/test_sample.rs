@@ -11,6 +11,10 @@ use super::types::{
 /// out-of-taxonomy suggestion, with a detected period.
 pub const TEST_SAMPLE_KPI_EXTRACTION_JSON: &str = r#"{"period":{"fiscalYear":2025,"periodType":"Q3","periodEndDate":"2025-09-30"},"currency":"PLN","language":"pl","facts":[{"metricKey":"revenue","label":"Revenue","valueNumeric":"142312000","unit":"PLN","currency":"PLN","asReportedValue":"142 312","asReportedScale":"tys.","measureWindow":"quarter","confidence":"high","sourceSnippet":"przychody ze sprzedazy 142 312 tys. zl","isProposedKpi":false},{"metricKey":"backlog","label":"Backlog","valueNumeric":"410000000","currency":"PLN","confidence":"medium","sourceSnippet":"portfel zamowien 410 mln zl","isProposedKpi":true}]}"#;
 
+/// Deterministic claim extraction output for the test provider: one quantitative
+/// claim with a due period and a metric target, and one qualitative claim.
+pub const TEST_SAMPLE_CLAIM_EXTRACTION_JSON: &str = r#"{"language":"en","claims":[{"statement":"Net revenue will reach at least 1,000,000 by FY2026 Q4.","dueFiscalYear":2026,"duePeriodType":"Q4","targetMetricKey":"net_revenue","targetComparator":"gte","targetValueNumeric":"1000000","targetUnit":"PLN","confidence":"high","sourceSnippet":"we expect net revenue of at least 1 mln by the fourth quarter"},{"statement":"Management will launch the new product line next year.","confidence":"medium","sourceSnippet":"we will launch the new product line next year"}]}"#;
+
 /// Deterministic IR-page report-link pick for the test provider. The URL matches a
 /// candidate the resolver test seeds into the sample IR page HTML.
 pub const TEST_SAMPLE_IR_PICK_URL: &str = "https://reports.example.com/q3-2025.pdf";
@@ -195,6 +199,8 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
             Ok(TEST_SAMPLE_ESPI_CLASSIFICATION_JSON.to_owned())
         } else if prompt.contains("extract the future date") {
             Ok(TEST_SAMPLE_EVENT_DATE_JSON.to_owned())
+        } else if prompt.contains("extract management claims") {
+            Ok(TEST_SAMPLE_CLAIM_EXTRACTION_JSON.to_owned())
         } else {
             Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
         }

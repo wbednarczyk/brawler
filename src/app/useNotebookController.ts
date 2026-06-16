@@ -18,7 +18,6 @@ import {
 type PreventableFormEvent = Pick<FormEvent<HTMLFormElement>, "preventDefault">;
 
 type NotebookControllerInput = {
-  claimStatusDraft: string;
   companies: Company[];
   notebookEditForm: NotebookForm;
   notebookForm: NotebookForm;
@@ -46,7 +45,6 @@ type NotebookControllerInput = {
   setNotebookScreenKindFilter: Dispatch<SetStateAction<string>>;
   setNotebookScreenClaimStatusFilter: Dispatch<SetStateAction<string>>;
   setNotebookScreenTagFilter: Dispatch<SetStateAction<string>>;
-  setSelectedClaimEntryId: Dispatch<SetStateAction<string | null>>;
   setSelectedNotebookCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedNotebookEntryId: Dispatch<SetStateAction<string | null>>;
   setSelectedNotebookScreenEntryId: Dispatch<SetStateAction<string | null>>;
@@ -105,7 +103,6 @@ function feedItemSummary(item: FeedItem) {
 }
 
 export function useNotebookController({
-  claimStatusDraft,
   companies,
   notebookEditForm,
   notebookForm,
@@ -133,7 +130,6 @@ export function useNotebookController({
   setNotebookScreenKindFilter,
   setNotebookScreenClaimStatusFilter,
   setNotebookScreenTagFilter,
-  setSelectedClaimEntryId,
   setSelectedNotebookCompanyId,
   setSelectedNotebookEntryId,
   setSelectedNotebookScreenEntryId,
@@ -262,39 +258,6 @@ export function useNotebookController({
     }
 
     setNotebookEditMode(false);
-  }
-
-  function toggleClaimEntry(entry: NotebookEntry) {
-    setSelectedClaimEntryId((current) => (current === entry.id ? null : entry.id));
-  }
-
-  function saveClaimStatus(entry: NotebookEntry) {
-    if (!selectedCompany) {
-      return;
-    }
-
-    notebooksApi.updateNotebookEntry({
-      id: entry.id,
-      title: entry.title,
-      body: entry.body,
-      tags: entry.tags,
-      kind: entry.kind,
-      claimStatus: claimStatusDraft || null,
-      eventDate: entry.eventDate,
-      followUpAfter: entry.followUpAfter,
-      followUpDate: entry.followUpDate,
-    })
-      .then((updated) => {
-        setNotebookEntries((current) =>
-          current.map((notebookEntry) => (notebookEntry.id === updated.id ? updated : notebookEntry)),
-        );
-        setSelectedClaimEntryId(updated.id);
-        setNotebookError(null);
-        refreshNotebookEntries(selectedCompany.id);
-      })
-      .catch((error) => {
-        setNotebookError(String(error));
-      });
   }
 
   function selectNotebookScreenCompany(company: Company) {
@@ -448,13 +411,11 @@ export function useNotebookController({
     feedItemSummary,
     openFeedItemNoteDraft,
     refreshNotebookEntries,
-    saveClaimStatus,
     saveNotebookEntry,
     saveNotebookScreenEntry,
     selectNotebookScreenCompany,
     showNotebookCompanyFollowUps,
     showNotebookCompanyOpenClaims,
-    toggleClaimEntry,
     toggleNotebookScreenComposer,
     toggleNotebookScreenEntry,
     updateNotebookEditForm: (field: keyof NotebookForm, value: string) =>

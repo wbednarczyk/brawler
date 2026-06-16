@@ -1,5 +1,6 @@
 pub mod ai_analysis;
 pub mod backfill;
+pub mod claim_extraction;
 pub mod event_derivation;
 pub mod feed_cleanup;
 pub mod kpi_extraction;

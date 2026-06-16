@@ -11,7 +11,8 @@ use crate::providers::common::{clean_optional_string, extract_json_object};
 
 use super::types::{
     AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, AnalysisSourceReference,
-    EspiClassificationCategory, EspiClassificationOutput, ExtractedKpiFact, ExtractedPeriod,
+    ClaimExtractionProviderOutput, ClaimExtractionRequest, EspiClassificationCategory,
+    EspiClassificationOutput, ExtractedClaim, ExtractedKpiFact, ExtractedPeriod,
     KpiExtractionProviderOutput, KpiExtractionRequest, ResearchBriefCitationOutput,
     ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
     ResearchDigestRequest,
@@ -22,8 +23,18 @@ use super::types::{
 /// Bump when the prompt's contract changes materially.
 pub const KPI_EXTRACTION_PROMPT_VERSION: &str = "kpi-extraction.v1";
 
+/// Stable identifier of the claim-extraction prompt, recorded as claim provenance.
+/// Bump when the prompt's contract changes materially.
+pub const CLAIM_EXTRACTION_PROMPT_VERSION: &str = "claim-extraction.v1";
+
+/// Marker phrase the deterministic test-sample provider branches on for claims.
+const CLAIM_EXTRACTION_MARKER: &str = "extract management claims";
+
 /// Allowed reporting period types for extraction (primary period only).
 const EXTRACTION_PERIOD_TYPES: [&str; 7] = ["Q1", "Q2", "Q3", "Q4", "H1", "H2", "FY"];
+
+/// Allowed comparators for a quantitative claim's target.
+const CLAIM_COMPARATORS: [&str; 6] = ["gte", "lte", "gt", "lt", "approx", "eq"];
 
 /// Stable identifier of the ESPI classification fallback prompt, recorded as
 /// signal provenance. Bump when the prompt's contract changes materially.
@@ -602,6 +613,107 @@ pub fn parse_kpi_extraction_output(
         currency: clean_optional_string(parsed.currency),
         language: clean_optional_string(parsed.language),
         facts,
+    })
+}
+
+/// Build the claim-extraction prompt for one report document or transcript. The
+/// model lists forward-looking management promises and, where stated, a due period
+/// and a quantitative target. Claims require user confirmation before they are kept.
+pub fn claim_extraction_prompt(request: &ClaimExtractionRequest) -> String {
+    format!(
+        "Extract forward-looking management claims (promises, guidance, commitments, and \
+targets management states it will or expects to achieve) from the attached company \
+{source_kind} for an investor research workflow. Only include statements management makes \
+about the FUTURE that can later be verified — not past results or generic commentary.\n\n\
+Return only JSON with this exact shape: \
+{{\"language\":\"pl\",\"claims\":[{{\"statement\":\"concise paraphrase of the promise\",\"dueFiscalYear\":2026,\"duePeriodType\":\"Q1|Q2|Q3|Q4|H1|H2|FY\",\"targetMetricKey\":\"net_revenue\",\"targetComparator\":\"gte|lte|gt|lt|approx|eq\",\"targetValueNumeric\":\"1000000\",\"targetUnit\":\"PLN\",\"confidence\":\"low|medium|high\",\"sourceSnippet\":\"verbatim text from the source\"}}]}}.\n\n\
+Rules:\n\
+- {marker} only: each claim must be a future-oriented, checkable statement by management.\n\
+- statement is a concise, neutral paraphrase of the promise (no buy/sell/hold language).\n\
+- When management names a target period, set dueFiscalYear and duePeriodType (one of Q1, Q2, Q3, Q4, H1, H2, FY). Omit both if no period is stated; do not guess.\n\
+- When the promise is quantitative, set targetMetricKey (a short snake_case key), targetComparator (gte, lte, gt, lt, approx, or eq), targetValueNumeric (plain decimal string, base units, no separators), and targetUnit. Omit these for qualitative promises.\n\
+- For every claim include a verbatim sourceSnippet copied from the source and a confidence of low, medium, or high.\n\
+- Do not invent claims. If the source contains no forward-looking management promises, return an empty claims array.\n\
+- Do not include markdown fences, commentary outside JSON, or investment advice.\n\n\
+Company: {company}",
+        source_kind = request.source_kind,
+        marker = CLAIM_EXTRACTION_MARKER,
+        company = request.company_name,
+    )
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClaimExtractionJson {
+    language: Option<String>,
+    #[serde(default)]
+    claims: Vec<ExtractedClaimJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractedClaimJson {
+    statement: String,
+    due_fiscal_year: Option<i64>,
+    due_period_type: Option<String>,
+    target_metric_key: Option<String>,
+    target_comparator: Option<String>,
+    target_value_numeric: Option<String>,
+    target_unit: Option<String>,
+    confidence: Option<String>,
+    source_snippet: Option<String>,
+}
+
+/// Parse a model's claim-extraction text (JSON) into the neutral extraction output.
+/// `provider_label` is used only for error messages. Claims with an empty statement
+/// are dropped; an unsupported `duePeriodType` or `targetComparator` is dropped (the
+/// rest of the claim is kept). An empty claims array is a valid result.
+pub fn parse_claim_extraction_output(
+    text: &str,
+    provider_label: &str,
+) -> Result<ClaimExtractionProviderOutput, AnalysisProviderError> {
+    let json_text = extract_json_object(text, &format!("{provider_label} response"))
+        .map_err(AnalysisProviderError::ParseError)?;
+    let parsed: ClaimExtractionJson = serde_json::from_str(json_text).map_err(|error| {
+        AnalysisProviderError::ParseError(format!(
+            "{provider_label} claim extraction JSON: {error}"
+        ))
+    })?;
+
+    let claims = parsed
+        .claims
+        .into_iter()
+        .filter_map(|claim| {
+            let statement = claim.statement.trim().to_owned();
+            if statement.is_empty() {
+                return None;
+            }
+            let due_period_type = clean_optional_string(claim.due_period_type)
+                .map(|value| value.to_uppercase())
+                .filter(|value| EXTRACTION_PERIOD_TYPES.contains(&value.as_str()));
+            let target_comparator = clean_optional_string(claim.target_comparator)
+                .map(|value| value.to_lowercase())
+                .filter(|value| CLAIM_COMPARATORS.contains(&value.as_str()));
+            let confidence = clean_optional_string(claim.confidence)
+                .map(|value| value.to_lowercase())
+                .filter(|value| ["low", "medium", "high"].contains(&value.as_str()));
+            Some(ExtractedClaim {
+                statement,
+                due_fiscal_year: claim.due_fiscal_year,
+                due_period_type,
+                target_metric_key: clean_optional_string(claim.target_metric_key),
+                target_comparator,
+                target_value_numeric: clean_optional_string(claim.target_value_numeric),
+                target_unit: clean_optional_string(claim.target_unit),
+                confidence,
+                source_snippet: clean_optional_string(claim.source_snippet),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    Ok(ClaimExtractionProviderOutput {
+        language: clean_optional_string(parsed.language),
+        claims,
     })
 }
 

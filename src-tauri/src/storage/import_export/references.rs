@@ -65,10 +65,12 @@ pub(super) fn imported_or_existing_evidence_reference(
     evidence_type: &str,
     evidence_id: &str,
     imported_note_ids: &HashSet<String>,
+    imported_claim_ids: &HashSet<String>,
     imported_question_ids: &HashSet<String>,
 ) -> bool {
     match evidence_type {
-        "notebook_entry" | "claim" if imported_note_ids.contains(evidence_id) => true,
+        "notebook_entry" if imported_note_ids.contains(evidence_id) => true,
+        "claim" if imported_claim_ids.contains(evidence_id) => true,
         "research_question" if imported_question_ids.contains(evidence_id) => true,
         _ => evidence_reference_exists_for_import(connection, evidence_type, evidence_id)
             .unwrap_or(false),
@@ -80,6 +82,7 @@ pub(super) fn imported_or_existing_evidence_reference_with_reminders(
     evidence_type: &str,
     evidence_id: &str,
     imported_note_ids: &HashSet<String>,
+    imported_claim_ids: &HashSet<String>,
     imported_question_ids: &HashSet<String>,
     imported_reminder_ids: &HashSet<String>,
 ) -> bool {
@@ -90,6 +93,7 @@ pub(super) fn imported_or_existing_evidence_reference_with_reminders(
             evidence_type,
             evidence_id,
             imported_note_ids,
+            imported_claim_ids,
             imported_question_ids,
         ),
     }
@@ -102,9 +106,8 @@ pub(super) fn evidence_reference_exists_for_import(
 ) -> StorageResult<bool> {
     match evidence_type {
         "feed_item" => table_reference_exists(connection, "feed_items", evidence_id),
-        "notebook_entry" | "claim" => {
-            table_reference_exists(connection, "notebook_entries", evidence_id)
-        }
+        "notebook_entry" => table_reference_exists(connection, "notebook_entries", evidence_id),
+        "claim" => table_reference_exists(connection, "management_claims", evidence_id),
         "transcript_segment" => {
             table_reference_exists(connection, "transcript_segments", evidence_id)
         }

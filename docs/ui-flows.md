@@ -138,6 +138,26 @@ Acceptance criteria:
 - Values display in their original as-reported scale with localized KPI names, never raw integers or internal ids.
 - A document that is a web page rather than a report PDF is rejected with an actionable message, not a misleading partial extraction.
 
+## Journey: Track A Management Claim To Verdict
+
+Intent: capture a management promise, then resolve whether it was delivered when the due period's report arrives ([ADR 0040](adr/0040-management-claims-tracker.md)).
+
+Flow:
+
+1. From a report document or a transcript, the user opens the AI claim-extraction launcher (a modal, like KPI extraction). The app proposes candidate claims with the statement, a suggested due period, an optional quantitative target, confidence, and the verbatim source snippet.
+2. The user reviews each proposal — confirm (with optional edits), or reject. No claim is created without confirmation. The user can also add a claim manually from the Claims tab.
+3. The confirmed claim appears in the company workspace **Claims** tab with verdict `pending` and its due period, source-linked back to the report/transcript.
+4. Later, when the due period's report arrives, the claim resurfaces in the **claims to verify** review queue (bucketed due / overdue / upcoming). For a quantitative claim, the matching confirmed financial fact is shown beside the claim.
+5. The user sets the verdict (delivered / partially delivered / missed / revised), optionally linking the verifying fact as supporting or contradicting evidence.
+
+Acceptance criteria:
+
+- No AI-proposed claim becomes a tracked claim without explicit confirmation.
+- A claim with a due period resurfaces in the review queue when the due-period report arrives, and can be resolved with a verdict linked to evidence (the milestone exit criterion).
+- Verdicts are always user-set; the app never assigns a verdict automatically.
+- Claims appear in the company research timeline and feed reminders/digests; they are exported with research data.
+- Heavy extraction interaction happens in a modal, not crammed into the fixed-width detail rail.
+
 ## Journey: YouTube Conference To Notes
 
 Intent: capture relevant management statements from a press conference.

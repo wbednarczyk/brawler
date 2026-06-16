@@ -5,6 +5,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let watchlists = export_watchlists(connection)?;
     let memberships = export_memberships(connection)?;
     let notebook_entries = export_notebook_entries(connection)?;
+    let management_claims = export_management_claims(connection)?;
     let research_questions = export_research_questions(connection)?;
     let evidence_links = export_evidence_links(connection)?;
     let ai_research_briefs = export_ai_research_briefs(connection)?;
@@ -22,6 +23,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "companies".to_owned(),
             "watchlists".to_owned(),
             "notebooks".to_owned(),
+            "management_claims".to_owned(),
             "research_questions".to_owned(),
             "evidence_links".to_owned(),
             "ai_research_briefs".to_owned(),
@@ -32,6 +34,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         watchlists,
         memberships,
         notebook_entries,
+        management_claims,
         research_questions,
         evidence_links,
         ai_research_briefs,
@@ -45,6 +48,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         watchlists: document.watchlists.len(),
         memberships: document.memberships.len(),
         notebook_entries: document.notebook_entries.len(),
+        management_claims: document.management_claims.len(),
         research_questions: document.research_questions.len(),
         evidence_links: document.evidence_links.len(),
         ai_research_briefs: document.ai_research_briefs.len(),
@@ -202,6 +206,56 @@ fn export_notebook_entries(connection: &Connection) -> StorageResult<Vec<ExportN
         entry.tags = notebooks::notebook_entry_tags(connection, &entry.id)?;
     }
     Ok(entries)
+}
+
+fn export_management_claims(connection: &Connection) -> StorageResult<Vec<ExportManagementClaim>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            management_claims.id,
+            companies.qualified_ticker,
+            management_claims.statement,
+            management_claims.body,
+            management_claims.body_format,
+            management_claims.made_at,
+            management_claims.due_fiscal_year,
+            management_claims.due_period_type,
+            management_claims.status,
+            management_claims.source_evidence_type,
+            management_claims.source_evidence_id,
+            management_claims.target_metric_key,
+            management_claims.target_comparator,
+            management_claims.target_value_numeric,
+            management_claims.target_unit,
+            management_claims.created_at,
+            management_claims.updated_at
+        FROM management_claims
+        INNER JOIN companies ON companies.id = management_claims.company_id
+        ORDER BY companies.qualified_ticker, management_claims.updated_at DESC, management_claims.id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportManagementClaim {
+            id: row.get(0)?,
+            company_qualified_ticker: row.get(1)?,
+            statement: row.get(2)?,
+            body: row.get(3)?,
+            body_format: row.get(4)?,
+            made_at: row.get(5)?,
+            due_fiscal_year: row.get(6)?,
+            due_period_type: row.get(7)?,
+            status: row.get(8)?,
+            source_evidence_type: row.get(9)?,
+            source_evidence_id: row.get(10)?,
+            target_metric_key: row.get(11)?,
+            target_comparator: row.get(12)?,
+            target_value_numeric: row.get(13)?,
+            target_unit: row.get(14)?,
+            created_at: row.get(15)?,
+            updated_at: row.get(16)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<Vec<_>, _>>()?)
 }
 
 fn export_notebook_origins(

@@ -15,26 +15,18 @@ fn lists_company_evidence_from_canonical_domains() {
         .expect("feed items should list")
         .pop()
         .expect("feed item should exist");
-    let note = state
-        .create_notebook_entry(NewNotebookEntry {
+    // Claims are a first-class entity (ADR 0040); they surface in the timeline from
+    // management_claims, not from notebook_entries.
+    let claim = state
+        .create_management_claim(NewManagementClaim {
             company_id: company.id.clone(),
-            title: "Management claim about schedule".to_owned(),
-            body: "Management said the next milestone should happen in two quarters.".to_owned(),
-            body_format: None,
-            tags: vec!["management".to_owned()],
-            kind: "claim".to_owned(),
-            claim_status: Some("open".to_owned()),
-            event_date: Some("2026-05-30".to_owned()),
-            follow_up_after: Some("2026-Q4".to_owned()),
-            follow_up_date: Some("2026-11-30".to_owned()),
-            origins: vec![NewNotebookOrigin {
-                source_type: "feed_item".to_owned(),
-                source_id: Some(feed_item.id.clone()),
-                source_url: Some(feed_item.source_url.clone()),
-                label: Some("Source report".to_owned()),
-            }],
+            statement: "Management said the next milestone should happen in two quarters."
+                .to_owned(),
+            due_fiscal_year: Some(2026),
+            due_period_type: Some("Q4".to_owned()),
+            ..Default::default()
         })
-        .expect("claim note should create");
+        .expect("claim should create");
 
     let timeline = state
         .list_research_evidence(ResearchEvidenceInput {
@@ -54,7 +46,7 @@ fn lists_company_evidence_from_canonical_domains() {
         && item.source_id == feed_item.id
         && item.trust_category == "official_report"));
     assert!(evidence.iter().any(|item| item.evidence_type == "claim"
-        && item.source_id == note.id
+        && item.source_id == claim.id
         && item.trust_category == "user_note"));
     assert!(evidence.iter().all(|item| item.company_id == company.id));
 }

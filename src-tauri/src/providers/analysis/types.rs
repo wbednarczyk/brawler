@@ -136,6 +136,41 @@ pub struct KpiExtractionProviderOutput {
     pub facts: Vec<ExtractedKpiFact>,
 }
 
+/// Request to extract management claims from a single report document or transcript.
+/// The source text/bytes are delivered separately via [`AiAnalysisProvider::complete_document`].
+#[derive(Debug, Clone)]
+pub struct ClaimExtractionRequest {
+    pub company_name: String,
+    /// Human label of the source kind for the prompt ("report document" | "transcript").
+    pub source_kind: String,
+}
+
+/// One proposed management claim. Never materialized as a claim without explicit
+/// user confirmation; every proposal carries the verbatim source snippet it came from.
+#[derive(Debug, Clone)]
+pub struct ExtractedClaim {
+    pub statement: String,
+    /// Optional due period the statement points at (e.g. "by Q4 2026").
+    pub due_fiscal_year: Option<i64>,
+    /// Q1 | Q2 | Q3 | Q4 | H1 | H2 | FY when discernible.
+    pub due_period_type: Option<String>,
+    /// For a quantitative claim, the metric/comparator/value the promise targets.
+    pub target_metric_key: Option<String>,
+    pub target_comparator: Option<String>,
+    pub target_value_numeric: Option<String>,
+    pub target_unit: Option<String>,
+    /// low | medium | high.
+    pub confidence: Option<String>,
+    pub source_snippet: Option<String>,
+}
+
+/// Provider-neutral claim extraction output parsed from the model's response.
+#[derive(Debug, Clone)]
+pub struct ClaimExtractionProviderOutput {
+    pub language: Option<String>,
+    pub claims: Vec<ExtractedClaim>,
+}
+
 /// One candidate category offered to the ESPI classification fallback prompt.
 #[derive(Debug, Clone)]
 pub struct EspiClassificationCategory {

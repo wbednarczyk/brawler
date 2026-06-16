@@ -37,6 +37,7 @@ pub struct ImportExportSummary {
     pub watchlists: usize,
     pub memberships: usize,
     pub notebook_entries: usize,
+    pub management_claims: usize,
     pub research_questions: usize,
     pub evidence_links: usize,
     pub ai_research_briefs: usize,
@@ -66,6 +67,8 @@ pub struct ImportApplySummary {
     pub memberships_created: usize,
     pub notebook_entries_created: usize,
     pub notebook_entries_skipped: usize,
+    pub management_claims_created: usize,
+    pub management_claims_skipped: usize,
     pub research_questions_created: usize,
     pub research_questions_merged: usize,
     pub evidence_links_created: usize,
@@ -101,6 +104,8 @@ pub(super) struct ResearchExportDocument {
     pub(super) watchlists: Vec<ExportWatchlist>,
     pub(super) memberships: Vec<ExportMembership>,
     pub(super) notebook_entries: Vec<ExportNotebookEntry>,
+    #[serde(default)]
+    pub(super) management_claims: Vec<ExportManagementClaim>,
     #[serde(default)]
     pub(super) research_questions: Vec<ExportResearchQuestion>,
     #[serde(default)]
@@ -162,6 +167,28 @@ pub(super) struct ExportNotebookEntry {
     pub(super) created_at: String,
     pub(super) updated_at: String,
     pub(super) origins: Vec<ExportNotebookOrigin>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ExportManagementClaim {
+    pub(super) id: String,
+    pub(super) company_qualified_ticker: String,
+    pub(super) statement: String,
+    pub(super) body: String,
+    pub(super) body_format: String,
+    pub(super) made_at: Option<String>,
+    pub(super) due_fiscal_year: Option<i64>,
+    pub(super) due_period_type: Option<String>,
+    pub(super) status: String,
+    pub(super) source_evidence_type: String,
+    pub(super) source_evidence_id: Option<String>,
+    pub(super) target_metric_key: Option<String>,
+    pub(super) target_comparator: Option<String>,
+    pub(super) target_value_numeric: Option<String>,
+    pub(super) target_unit: Option<String>,
+    pub(super) created_at: String,
+    pub(super) updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -15,6 +15,7 @@ mod feed_sources;
 mod financials;
 mod import_export;
 mod licensing;
+mod management_claims;
 mod notebooks;
 mod report_documents;
 mod research;

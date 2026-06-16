@@ -1,4 +1,5 @@
 import type { AiAnalysisJob, CompanySignal, Watchlist, WatchlistMembership } from "../../api/types";
+import type { ManagementClaim } from "../../api/managementClaims";
 import type {
   EvidenceLink,
   ResearchBriefJob,
@@ -53,6 +54,7 @@ export const appTestState = {
     },
   ] as WatchlistMembership[],
   notebookEntriesResponse: [] as TestNotebookEntry[],
+  managementClaimsResponse: [] as ManagementClaim[],
   aiAnalysisJobsResponse: {} as Record<string, AiAnalysisJob[]>,
   settingsResponse: initialSettings,
   refreshSourcesError: null as string | null,
@@ -164,6 +166,7 @@ export function resetAppTestState() {
     },
   ];
   appTestState.notebookEntriesResponse = [];
+  appTestState.managementClaimsResponse = [];
   appTestState.aiAnalysisJobsResponse = {};
   appTestState.settingsResponse = initialSettings;
   appTestState.refreshSourcesError = null;

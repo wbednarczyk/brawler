@@ -1,5 +1,6 @@
 pub mod ai_analysis;
 pub mod backups;
+pub mod claim_extraction;
 pub mod companies;
 pub mod credentials;
 pub mod diagnostics;
@@ -11,6 +12,7 @@ pub mod import_export;
 pub mod kpi_extraction;
 pub mod licensing;
 pub mod logs;
+pub mod management_claims;
 pub mod metrics;
 pub mod notebooks;
 pub mod research;

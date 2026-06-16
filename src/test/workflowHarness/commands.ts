@@ -1,5 +1,6 @@
 import type { AiAnalysisJob, AccentPalette, AppLocale, ShortcutBindingSetting, Theme, Watchlist } from "../../api/types";
 import type { EvidenceLink, ResearchBriefJob, ResearchDigestJob, ResearchEvidenceInput, ResearchQuestion, ResearchReminder } from "../../api/researchTypes";
+import type { ManagementClaim } from "../../api/managementClaims";
 import {
   initialFeedItems,
   initialGeminiCredentialStatus,
@@ -1110,6 +1111,64 @@ export function handleAppCommand(command: string, args?: unknown): Promise<unkno
       return Promise.resolve(
         appTestState.notebookEntriesResponse.filter((entry) => entry.companyId === companyId),
       );
+    }
+
+    if (command === "list_management_claims") {
+      const companyId = (args as { companyId: string }).companyId;
+      return Promise.resolve(
+        appTestState.managementClaimsResponse.filter((claim) => claim.companyId === companyId),
+      );
+    }
+
+    if (command === "list_claims_to_verify") {
+      return Promise.resolve({ due: [], overdue: [], upcoming: [] });
+    }
+
+    if (command === "create_management_claim") {
+      const input = (args as {
+        input: {
+          companyId: string;
+          statement: string;
+          dueFiscalYear?: number | null;
+          duePeriodType?: string | null;
+        };
+      }).input;
+      const created = {
+        id: `claim_${appTestState.managementClaimsResponse.length + 1}`,
+        companyId: input.companyId,
+        statement: input.statement,
+        body: "",
+        bodyFormat: "markdown",
+        madeAt: null,
+        sourcePeriodId: null,
+        dueFiscalYear: input.dueFiscalYear ?? null,
+        duePeriodType: input.duePeriodType ?? null,
+        status: "pending",
+        sourceEvidenceType: "manual",
+        sourceEvidenceId: null,
+        extractionProposalId: null,
+        targetMetricKey: null,
+        targetComparator: null,
+        targetValueNumeric: null,
+        targetUnit: null,
+        verifyingFactId: null,
+        revisesClaimId: null,
+        createdAt: "2026-06-01T10:00:00Z",
+        updatedAt: "2026-06-01T10:00:00Z",
+      } as ManagementClaim;
+      appTestState.managementClaimsResponse = [created, ...appTestState.managementClaimsResponse];
+      return Promise.resolve(created);
+    }
+
+    if (command === "set_claim_verdict") {
+      const input = (args as { input: { claimId: string; status: string } }).input;
+      let updated: ManagementClaim | null = null;
+      appTestState.managementClaimsResponse = appTestState.managementClaimsResponse.map((claim) => {
+        if (claim.id !== input.claimId) return claim;
+        updated = { ...claim, status: input.status as ManagementClaim["status"] };
+        return updated;
+      });
+      return Promise.resolve(updated ?? appTestState.managementClaimsResponse[0]);
     }
 
     if (command === "create_notebook_entry") {

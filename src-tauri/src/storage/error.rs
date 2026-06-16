@@ -36,6 +36,10 @@ pub enum StorageError {
     InvalidFinancialsValue { key: &'static str, value: String },
     #[error("missing financials reference for {table}: {id}")]
     MissingFinancialsReference { table: String, id: String },
+    #[error("invalid claim value for {key}: {value}")]
+    InvalidClaimValue { key: &'static str, value: String },
+    #[error("missing claim reference for {table}: {id}")]
+    MissingClaimReference { table: String, id: String },
     #[error("classification error: {0}")]
     Classification(String),
 }

@@ -40,6 +40,7 @@ type SqlitePool = r2d2::Pool<SqliteConnectionManager>;
 
 mod ai_analysis;
 mod backup;
+mod claim_extraction;
 mod companies;
 mod diagnostics;
 mod error;
@@ -50,6 +51,7 @@ mod financials;
 mod import_export;
 mod kpi_extraction;
 mod licensing;
+mod management_claims;
 mod metrics;
 mod migrations;
 mod notebooks;
@@ -73,6 +75,10 @@ pub use ai_analysis::{
     NewAiAnalysisJob, NewAiAnalysisSourceReference,
 };
 pub use backup::{BackupEntry, BackupStatus};
+pub use claim_extraction::{
+    ClaimExtractionJob, ClaimExtractionProposal, CompletedClaimExtraction,
+    ConfirmClaimProposalInput, NewClaimExtractionJob, NewClaimProposal,
+};
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
 pub use error::{StorageError, StorageResult};
 pub use financials::{
@@ -87,6 +93,10 @@ pub use kpi_extraction::{
     NewKpiExtractionJob, NewKpiProposal,
 };
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
+pub use management_claims::{
+    ClaimToVerify, ClaimsToVerify, ManagementClaim, ManagementClaimUpdate, NewManagementClaim,
+    SetClaimVerdictInput, VerifyingFactCandidate,
+};
 pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
@@ -849,6 +859,117 @@ impl AppState {
         let connection = self.checkout()?;
 
         notebooks::delete_notebook_entry(&connection, notebook_entry_id)
+    }
+
+    pub fn list_management_claims(&self, company_id: &str) -> StorageResult<Vec<ManagementClaim>> {
+        let connection = self.checkout()?;
+
+        management_claims::list_management_claims(&connection, company_id)
+    }
+
+    pub fn create_management_claim(
+        &self,
+        input: NewManagementClaim,
+    ) -> StorageResult<ManagementClaim> {
+        let connection = self.checkout()?;
+
+        management_claims::create_management_claim(&connection, input)
+    }
+
+    pub fn update_management_claim(
+        &self,
+        input: ManagementClaimUpdate,
+    ) -> StorageResult<ManagementClaim> {
+        let connection = self.checkout()?;
+
+        management_claims::update_management_claim(&connection, input)
+    }
+
+    pub fn set_claim_verdict(&self, input: SetClaimVerdictInput) -> StorageResult<ManagementClaim> {
+        let connection = self.checkout()?;
+
+        management_claims::set_claim_verdict(&connection, input)
+    }
+
+    pub fn delete_management_claim(&self, claim_id: &str) -> StorageResult<()> {
+        let connection = self.checkout()?;
+
+        management_claims::delete_management_claim(&connection, claim_id)
+    }
+
+    pub fn list_claims_to_verify(&self, company_id: &str) -> StorageResult<ClaimsToVerify> {
+        let connection = self.checkout()?;
+
+        management_claims::list_claims_to_verify(&connection, company_id)
+    }
+
+    pub fn create_claim_extraction_job(
+        &self,
+        input: NewClaimExtractionJob,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.checkout()?;
+
+        claim_extraction::create_claim_extraction_job(&connection, input)
+    }
+
+    pub fn get_claim_extraction_job(&self, job_id: &str) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.checkout()?;
+
+        claim_extraction::get_claim_extraction_job(&connection, job_id)
+    }
+
+    pub fn list_claim_extraction_jobs_by_source(
+        &self,
+        source_type: &str,
+        source_id: &str,
+    ) -> StorageResult<Vec<ClaimExtractionJob>> {
+        let connection = self.checkout()?;
+
+        claim_extraction::list_claim_extraction_jobs_by_source(&connection, source_type, source_id)
+    }
+
+    pub fn mark_claim_extraction_job_running(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.checkout()?;
+
+        claim_extraction::mark_claim_extraction_job_running(&connection, job_id)
+    }
+
+    pub fn mark_claim_extraction_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.checkout()?;
+
+        claim_extraction::mark_claim_extraction_job_failed(&connection, job_id, error_code, error)
+    }
+
+    pub fn complete_claim_extraction_job(
+        &self,
+        input: CompletedClaimExtraction,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let mut connection = self.checkout()?;
+
+        claim_extraction::complete_claim_extraction_job(&mut connection, input)
+    }
+
+    pub fn confirm_claim_proposal(
+        &self,
+        input: ConfirmClaimProposalInput,
+    ) -> StorageResult<ManagementClaim> {
+        let connection = self.checkout()?;
+
+        claim_extraction::confirm_claim_proposal(&connection, input)
+    }
+
+    pub fn reject_claim_proposal(&self, proposal_id: &str) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.checkout()?;
+
+        claim_extraction::reject_claim_proposal(&connection, proposal_id)
     }
 
     pub fn list_company_events(

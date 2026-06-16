@@ -403,10 +403,34 @@ describe("Companies screen workflows", () => {
     expect(screen.getByLabelText("Selected notebook body")).toHaveTextContent("Board mentioned margin pressure.");
   });
 
-  it("lists company claims and updates claim status", async () => {
+  it("lists management claims and sets a verdict", async () => {
     const user = userEvent.setup();
 
-    appTestState.notebookEntriesResponse = [initialNotebookEntry];
+    appTestState.managementClaimsResponse = [
+      {
+        id: "claim_company_gpw_cdr_release",
+        companyId: "company_gpw_cdr",
+        statement: "Management promised a release milestone in the next two quarters.",
+        body: "",
+        bodyFormat: "markdown",
+        madeAt: null,
+        sourcePeriodId: null,
+        dueFiscalYear: 2026,
+        duePeriodType: "Q4",
+        status: "pending",
+        sourceEvidenceType: "manual",
+        sourceEvidenceId: null,
+        extractionProposalId: null,
+        targetMetricKey: null,
+        targetComparator: null,
+        targetValueNumeric: null,
+        targetUnit: null,
+        verifyingFactId: null,
+        revisesClaimId: null,
+        createdAt: "2026-05-29T10:00:00Z",
+        updatedAt: "2026-05-29T10:00:00Z",
+      },
+    ];
 
     renderApp();
 
@@ -415,35 +439,15 @@ describe("Companies screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Claims" }));
 
     const claims = await screen.findByLabelText("Company claims");
-    const claimRow = within(claims).getByRole("button", {
-      name: "Open claim: Release schedule promise",
-    });
-
-    expect(claimRow).toBeInTheDocument();
-    expect(claims).toHaveTextContent("1 follow-up item for GPW:CDR");
-
-    await user.click(claimRow);
-
-    expect(screen.getByLabelText("Claim detail")).toHaveTextContent(
+    expect(claims).toHaveTextContent(
       "Management promised a release milestone in the next two quarters.",
     );
 
-    await user.selectOptions(screen.getByLabelText("Claim status"), "delivered");
-    await user.click(within(screen.getByLabelText("Claim detail")).getByRole("button", { name: "Save" }));
+    await user.selectOptions(screen.getByLabelText("Claim verdict"), "delivered");
 
     await waitFor(() => {
-      expect(invoke).toHaveBeenCalledWith("update_notebook_entry", {
-        input: {
-          id: "note_company_gpw_cdr_release_schedule",
-          title: "Release schedule promise",
-          body: "Management promised a release milestone in the next two quarters.",
-          tags: ["management-guidance", "product"],
-          kind: "claim",
-          claimStatus: "delivered",
-          eventDate: "2026-05-29",
-          followUpAfter: "2026-Q4",
-          followUpDate: "2026-11-30",
-        },
+      expect(invoke).toHaveBeenCalledWith("set_claim_verdict", {
+        input: { claimId: "claim_company_gpw_cdr_release", status: "delivered" },
       });
     });
   });

@@ -198,14 +198,16 @@ Read mode renders common Markdown structure locally. Edit mode exposes the raw M
 
 Notebook date and follow-up-quarter fields should support direct typing plus compact picker controls. Date fields use the native date picker so the operating system/browser can provide localized calendar behavior. Follow-up-quarter fields use a small quarter picker, with `Today` setting the current quarter.
 
-Claims tab:
+Claims tab (management claims tracker, [ADR 0040](adr/0040-management-claims-tracker.md)):
 
-- claim notes only
-- grouped by open, due soon, delivered, missed, unknown
-- visible follow-up quarter and follow-up date
-- quick status update
+- first-class claims for this company (statement, due period, optional quantitative target, source evidence, verdict)
+- a **review queue** ("claims to verify") at the top, bucketed due / overdue / upcoming, surfaced when the due-period report arrives
+- the verdicts: pending, delivered, partially delivered, missed, revised — user-set
+- for a quantitative claim, the matching confirmed financial fact shown beside the claim for in-place verdict resolution
+- AI claim extraction launcher (modal) over a report document or transcript, proposing claims for mandatory confirmation
+- add/edit a claim manually; claim rows expand in place under the clicked row, following the app-wide row interaction pattern
 
-Milestone 4 starts this as a compact claim follow-up list backed by notebook entries. Claim rows expand in place under the clicked row, following the app-wide row interaction pattern. The first status workflow updates only claim status and preserves the rest of the note. Later refinement can add stronger grouping, due-soon logic, and batch follow-up.
+Milestone v0.42.0 makes claims a first-class entity (existing claim notes are migrated). The review queue is the primary verification surface; reminders and digests remain the cross-cutting paths. No verdict is ever assigned automatically — the queue surfaces the evidence and the user decides. Heavy extraction interaction happens in a modal, not in the fixed-width detail rail (mirroring KPI extraction).
 
 Transcripts tab:
 

@@ -46,9 +46,6 @@ export type CompaniesScreenProps = {
   notebookEditForm: NotebookForm;
   isNotebookEditDirty: boolean;
   notebookError: string | null;
-  selectedCompanyClaimEntries: NotebookEntry[];
-  selectedClaimEntry: NotebookEntry | null;
-  claimStatusDraft: string;
   companiesError: string | null;
   lookupStatus: string | null;
   createCompany: (event: React.FormEvent<HTMLFormElement>) => void;
@@ -80,9 +77,6 @@ export type CompaniesScreenProps = {
   cancelNotebookEdit: () => void;
   setNotebookEditMode: (value: boolean) => void;
   updateNotebookEditForm: (field: keyof NotebookForm, value: string) => void;
-  toggleClaimEntry: (entry: NotebookEntry) => void;
-  setClaimStatusDraft: (value: string) => void;
-  saveClaimStatus: (entry: NotebookEntry) => void;
   NotebookDateField: React.ComponentType<NotebookDateLikeFieldProps>;
   NotebookQuarterField: React.ComponentType<NotebookDateLikeFieldProps>;
   MarkdownNoteBody: React.ComponentType<MarkdownNoteBodyProps>;
@@ -138,9 +132,6 @@ export function CompaniesScreen({
   notebookEditForm,
   isNotebookEditDirty,
   notebookError,
-  selectedCompanyClaimEntries,
-  selectedClaimEntry,
-  claimStatusDraft,
   companiesError,
   lookupStatus,
   createCompany,
@@ -172,9 +163,6 @@ export function CompaniesScreen({
   cancelNotebookEdit,
   setNotebookEditMode,
   updateNotebookEditForm,
-  toggleClaimEntry,
-  setClaimStatusDraft,
-  saveClaimStatus,
   NotebookDateField,
   NotebookQuarterField,
   MarkdownNoteBody,
@@ -432,9 +420,6 @@ export function CompaniesScreen({
                           notebookEditForm={notebookEditForm}
                           isNotebookEditDirty={isNotebookEditDirty}
                           notebookError={notebookError}
-                          selectedCompanyClaimEntries={selectedCompanyClaimEntries}
-                          selectedClaimEntry={selectedClaimEntry}
-                          claimStatusDraft={claimStatusDraft}
                           setCompanyWorkspaceTab={setCompanyWorkspaceTab}
                           toggleCompanyFeedItem={toggleCompanyFeedItem}
                           selectCompanyFeedItemFromKeyboard={selectCompanyFeedItemFromKeyboard}
@@ -452,9 +437,6 @@ export function CompaniesScreen({
                           cancelNotebookEdit={cancelNotebookEdit}
                           setNotebookEditMode={setNotebookEditMode}
                           updateNotebookEditForm={updateNotebookEditForm}
-                          toggleClaimEntry={toggleClaimEntry}
-                          setClaimStatusDraft={setClaimStatusDraft}
-                          saveClaimStatus={saveClaimStatus}
                           NotebookDateField={NotebookDateField}
                           NotebookQuarterField={NotebookQuarterField}
                           MarkdownNoteBody={MarkdownNoteBody}

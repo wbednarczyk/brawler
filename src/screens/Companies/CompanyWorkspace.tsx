@@ -16,6 +16,7 @@ import {
 import type { Company } from "../../api/types";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { CompanyBackfillPanel } from "../../shared/components/CompanyBackfillPanel";
+import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -61,9 +62,6 @@ type CompanyWorkspaceProps = Pick<
   | "notebookEditForm"
   | "isNotebookEditDirty"
   | "notebookError"
-  | "selectedCompanyClaimEntries"
-  | "selectedClaimEntry"
-  | "claimStatusDraft"
   | "setCompanyWorkspaceTab"
   | "toggleCompanyFeedItem"
   | "selectCompanyFeedItemFromKeyboard"
@@ -81,9 +79,6 @@ type CompanyWorkspaceProps = Pick<
   | "cancelNotebookEdit"
   | "setNotebookEditMode"
   | "updateNotebookEditForm"
-  | "toggleClaimEntry"
-  | "setClaimStatusDraft"
-  | "saveClaimStatus"
   | "NotebookDateField"
   | "NotebookQuarterField"
   | "MarkdownNoteBody"
@@ -134,9 +129,6 @@ export function CompanyWorkspace({
   notebookEditForm,
   isNotebookEditDirty,
   notebookError,
-  selectedCompanyClaimEntries,
-  selectedClaimEntry,
-  claimStatusDraft,
   setCompanyWorkspaceTab,
   toggleCompanyFeedItem,
   selectCompanyFeedItemFromKeyboard,
@@ -154,9 +146,6 @@ export function CompanyWorkspace({
   cancelNotebookEdit,
   setNotebookEditMode,
   updateNotebookEditForm,
-  toggleClaimEntry,
-  setClaimStatusDraft,
-  saveClaimStatus,
   NotebookDateField,
   NotebookQuarterField,
   MarkdownNoteBody,
@@ -751,100 +740,7 @@ export function CompanyWorkspace({
     
       {companyWorkspaceTab === "Claims" ? (
         <div className="company-tab-panel claims-panel" aria-label={text("Company claims")}>
-          <SectionHeader
-            level="h3"
-            title={text("Claims")}
-            description={
-              <>
-                {selectedCompanyClaimEntries.length} {text(selectedCompanyClaimEntries.length === 1 ? "follow-up item" : "follow-up items")} {text("for")}{" "}
-                <TickerLabel value={selectedCompany.qualifiedTicker} />
-              </>
-            }
-          />
-          <div className="claims-list">
-            {selectedCompanyClaimEntries.map((entry) => (
-              <div className="claim-row-block" key={entry.id}>
-                <button
-                  aria-label={`${text("Open claim")}: ${entry.title}`}
-                  className={[
-                    "notebook-row",
-                    selectedClaimEntry?.id === entry.id ? "notebook-row-selected" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={() => toggleClaimEntry(entry)}
-                  type="button"
-                >
-                  <div>
-                    <div className="notebook-row-top">
-                      <h3>{entry.title}</h3>
-                      <span>{entry.claimStatus ? text(entry.claimStatus.replace("_", " ")) : text("Status open")}</span>
-                    </div>
-                  </div>
-                  <div className="notebook-row-meta">
-                    {entry.followUpAfter ? <span>{entry.followUpAfter}</span> : null}
-                    {entry.followUpDate ? <span>{entry.followUpDate}</span> : null}
-                    {entry.tags.slice(0, 2).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                </button>
-    
-                {selectedClaimEntry?.id === entry.id ? (
-                  <div className="claim-detail" aria-label={text("Claim detail")}>
-                    <div className="notebook-entry-header">
-                      <div>
-                        <span className="eyebrow">
-                          {entry.kind.replace("_", " ")}
-                        </span>
-                        <h3>{entry.title}</h3>
-                      </div>
-                      <div className="claim-status-control">
-                        <SelectField
-                          label={text("Status")}
-                          aria-label={text("Claim status")}
-                          value={claimStatusDraft}
-                          onChange={(event) => setClaimStatusDraft(event.target.value)}
-                        >
-                          <option value="open">{text("Status open")}</option>
-                          <option value="delivered">{text("Delivered")}</option>
-                          <option value="partially_delivered">{text("Partially delivered")}</option>
-                          <option value="missed">{text("Missed")}</option>
-                          <option value="unknown">{text("Unknown")}</option>
-                          <option value="not_applicable">{text("Not applicable")}</option>
-                        </SelectField>
-                        <Button
-                          className="compact-button"
-                          disabled={(entry.claimStatus ?? "open") === claimStatusDraft}
-                          onClick={() => saveClaimStatus(entry)}
-                          variant="primary"
-                        >
-                          <Save size={15} />
-                          {text("Save")}
-                        </Button>
-                      </div>
-                    </div>
-                    <MarkdownNoteBody body={entry.body} />
-                    <InfoGrid
-                      className="metadata-grid notebook-entry-meta"
-                      items={[
-                        { label: text("Event"), value: entry.eventDate ?? text("Not set") },
-                        { label: text("Follow-up quarter"), value: entry.followUpAfter ?? text("Not set") },
-                        { label: text("Follow-up date"), value: entry.followUpDate ?? text("Not set") },
-                        { label: text("Origin"), value: renderNotebookOrigins(entry.origins, entry.companyId) },
-                      ]}
-                    />
-                  </div>
-                ) : null}
-              </div>
-            ))}
-            {selectedCompanyClaimEntries.length === 0 ? (
-              <EmptyState>{text("No claim notes for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</EmptyState>
-            ) : null}
-          </div>
-          {notebookError ? (
-            <ErrorText>{text("Notebook command failed")}: {notebookError}</ErrorText>
-          ) : null}
+          <CompanyClaimsPanel companyId={selectedCompany.id} />
         </div>
       ) : null}
     

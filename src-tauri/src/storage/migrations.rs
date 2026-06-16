@@ -228,6 +228,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "generalize_own_shares_signal",
         sql: include_str!("../../migrations/0044_generalize_own_shares_signal.sql"),
     },
+    Migration {
+        version: 45,
+        name: "management_claims",
+        sql: include_str!("../../migrations/0045_management_claims.sql"),
+    },
+    Migration {
+        version: 46,
+        name: "claim_extraction",
+        sql: include_str!("../../migrations/0046_claim_extraction.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

@@ -53,7 +53,6 @@ type AppViewModelInput = {
   notebookScreenKindFilter: string;
   notebookScreenTagFilter: string;
   searchQuery: string;
-  selectedClaimEntryId: string | null;
   selectedCompanyFeedItemId: string | null;
   selectedCompanyId: string | null;
   selectedCompanyRegistryTicker: string | null;
@@ -96,7 +95,6 @@ export function useAppViewModel({
   notebookScreenKindFilter,
   notebookScreenTagFilter,
   searchQuery,
-  selectedClaimEntryId,
   selectedCompanyFeedItemId,
   selectedCompanyId,
   selectedCompanyRegistryTicker,
@@ -321,15 +319,6 @@ export function useAppViewModel({
     selectedCompanyNotebookEntries.find((entry) => entry.id === selectedNotebookEntryId) ??
     selectedCompanyNotebookEntries[0] ??
     null;
-  const selectedCompanyClaimEntries = useMemo(
-    () =>
-      selectedCompanyNotebookEntries.filter(
-        (entry) => entry.kind === "claim" || Boolean(entry.claimStatus),
-      ),
-    [selectedCompanyNotebookEntries],
-  );
-  const selectedClaimEntry =
-    selectedCompanyClaimEntries.find((entry) => entry.id === selectedClaimEntryId) ?? null;
   const isNotebookEditDirty = selectedNotebookEntry
     ? JSON.stringify(notebookEditForm) !== JSON.stringify(notebookFormFromEntry(selectedNotebookEntry))
     : false;
@@ -583,9 +572,7 @@ export function useAppViewModel({
     registryAdapter,
     scheduledSourceAdapterKey,
     scheduledSourceAdapters,
-    selectedClaimEntry,
     selectedCompany,
-    selectedCompanyClaimEntries,
     selectedCompanyEvent,
     selectedCompanyFeedItem,
     selectedCompanyFeedItems,

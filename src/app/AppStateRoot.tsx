@@ -214,8 +214,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
   const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<string | null>(null);
   const [isNotebookComposerOpen, setNotebookComposerOpen] = useState(false);
   const [isNotebookEditMode, setNotebookEditMode] = useState(false);
-  const [selectedClaimEntryId, setSelectedClaimEntryId] = useState<string | null>(null);
-  const [claimStatusDraft, setClaimStatusDraft] = useState("");
   const [selectedNotebookCompanyId, setSelectedNotebookCompanyId] = useState<string | null>(null);
   const [selectedNotebookScreenEntryId, setSelectedNotebookScreenEntryId] = useState<string | null>(null);
   const [isNotebookScreenComposerOpen, setNotebookScreenComposerOpen] = useState(false);
@@ -309,9 +307,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     registryAdapter,
     scheduledSourceAdapterKey,
     scheduledSourceAdapters,
-    selectedClaimEntry,
     selectedCompany,
-    selectedCompanyClaimEntries,
     selectedCompanyFeedItem,
     selectedCompanyFeedItems,
     selectedCompanyFeedStats,
@@ -352,7 +348,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     notebookScreenKindFilter,
     notebookScreenTagFilter,
     searchQuery,
-    selectedClaimEntryId,
     selectedCompanyFeedItemId,
     selectedCompanyId,
     selectedCompanyRegistryTicker,
@@ -695,13 +690,11 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     feedItemSummary,
     openFeedItemNoteDraft,
     refreshNotebookEntries,
-    saveClaimStatus,
     saveNotebookEntry,
     saveNotebookScreenEntry,
     selectNotebookScreenCompany,
     showNotebookCompanyFollowUps,
     showNotebookCompanyOpenClaims,
-    toggleClaimEntry,
     toggleNotebookScreenComposer,
     toggleNotebookScreenEntry,
     updateNotebookEditForm,
@@ -709,7 +702,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     updateNotebookScreenEditForm,
     updateNotebookScreenForm,
   } = useNotebookController({
-    claimStatusDraft,
     companies,
     notebookEditForm,
     notebookForm,
@@ -737,7 +729,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     setNotebookScreenKindFilter,
     setNotebookScreenClaimStatusFilter,
     setNotebookScreenTagFilter,
-    setSelectedClaimEntryId,
     setSelectedNotebookCompanyId,
     setSelectedNotebookEntryId,
     setSelectedNotebookScreenEntryId,
@@ -1082,7 +1073,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     registryAdapter,
     scheduledSourceAdapterKey,
     scheduledSourceAdapters,
-    selectedClaimEntry,
     selectedCompanyId,
     selectedFeedItemId,
     selectedNotebookCompanyId,
@@ -1090,14 +1080,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     selectedNotebookScreenEntry,
     settings,
     licenseCanUseApp,
-    setClaimStatusDraft,
     setNextRegistryRefreshAt,
     setNextSourceRefreshAtByAdapterId,
     setNotebookEditForm,
     setNotebookEditMode,
     setNotebookScreenEditForm,
     setNotebookScreenEditMode,
-    setSelectedClaimEntryId,
     setSelectedFeedItemId,
     setSelectedNotebookCompanyId,
     setSelectedNotebookEntryId,
@@ -1543,9 +1531,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               notebookEditForm={notebookEditForm}
               isNotebookEditDirty={isNotebookEditDirty}
               notebookError={notebookError}
-              selectedCompanyClaimEntries={selectedCompanyClaimEntries}
-              selectedClaimEntry={selectedClaimEntry}
-              claimStatusDraft={claimStatusDraft}
               companiesError={companiesError}
               lookupStatus={lookupStatus}
               createCompany={createCompany}
@@ -1577,9 +1562,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               cancelNotebookEdit={cancelNotebookEdit}
               setNotebookEditMode={setNotebookEditMode}
               updateNotebookEditForm={updateNotebookEditForm}
-              toggleClaimEntry={toggleClaimEntry}
-              setClaimStatusDraft={setClaimStatusDraft}
-              saveClaimStatus={saveClaimStatus}
               NotebookDateField={NotebookDateField}
               NotebookQuarterField={NotebookQuarterField}
               MarkdownNoteBody={MarkdownNoteBody}

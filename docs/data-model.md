@@ -207,8 +207,8 @@ Rules:
 
 - `body_format` is `markdown` in v1.
 - Notes belong to exactly one company.
-- Claim notes may use both `follow_up_after` and `follow_up_date`.
 - Origin links are required for notes created from feed items, AI outputs, or transcript segments.
+- `claim_status`, `event_date`, `follow_up_after`, and `follow_up_date` are **legacy** claim columns. As of `v0.42.0` ([ADR 0040](adr/0040-management-claims-tracker.md)) management claims are a first-class entity (see [Management Claims](#management-claims)); the `0045` forward migration moves existing `kind = 'claim'` rows into `management_claims`. The columns remain for backward-compatible reads of any non-claim note that set them; new claims are not written here.
 
 ### Company Events
 
@@ -609,6 +609,57 @@ Rules:
 - A fact may exist for a KPI not yet active in the relevance profile (agent-extracted, awaiting curation).
 - Industry-specific classified stocks (reserves with proven/probable, 1P/2P/3P categories) are modeled as company-scoped custom KPIs, not core enums.
 - Import/export, retention, and backup must treat fundamentals as owner durable state.
+
+### Management Claims
+
+First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`): a tracked management promise from a report or transcript, with a normalized due period and a user-set verdict. Replaces the legacy `notebook_entries(kind='claim')` model. Migration `0045_management_claims.sql`.
+
+`management_claims`:
+
+- `id`, `company_id` → `companies(id)`.
+- `statement`: the promise text (verbatim where AI-extracted), `body`: optional user context, `body_format` (`markdown`).
+- `made_at`: date the statement was made (`YYYY-MM-DD`, optional); `source_period_id` → `financial_periods(id)` optional (the period it was stated in/about).
+- Due period (the resurfacing match key): `due_fiscal_year` (integer, optional) + `due_period_type` (reuses the `financial_periods` vocabulary: `FY`/`H1`/`H2`/`Q1`–`Q4`/`9M`/`M01`–`M12`, optional). A claim with no due period never resurfaces and stays user-managed.
+- `status` (verdict): `pending` (default) | `delivered` | `partially_delivered` | `missed` | `revised`. User-set; never auto-assigned.
+- Provenance: `source_evidence_type` (`report_document` | `transcript_segment` | `transcript` | `manual` | `feed_item`) + `source_evidence_id` (soft reference; a transcript-extracted claim is attributed to its transcript job, a report-extracted claim to its report document); `extraction_proposal_id` → `claim_extraction_proposals(id)` when AI-extracted (null for manual).
+- Quantitative target (optional, drives fact lookup): `target_metric_key`, `target_comparator` (`gte`/`lte`/`gt`/`lt`/`approx`/`eq`), `target_value_numeric` (decimal-exact text), `target_unit`.
+- Verification: `verifying_fact_id` → `financial_facts(id)` soft reference (set when a fact is linked from the review queue); `revises_claim_id` → `management_claims(id)` (set on a `revised` supersession, history kept).
+- `created_at`, `updated_at`.
+
+Rules:
+
+- A claim belongs to exactly one canonical company.
+- The verdict is set by the user; there are no automated verdicts (out of [ADR 0040](adr/0040-management-claims-tracker.md) scope). The review queue surfaces the matching fact; the user decides.
+- A claim is evidence: it surfaces in the research timeline as `evidence_type = 'claim'` (now resolving against `management_claims.id`) and participates in `evidence_links`. The verifying fact for a quantitative claim is the direct `verifying_fact_id` soft reference; registering that link in the generic `evidence_links` graph is deferred (the graph does not yet model `financial_fact` as an evidence type — see [ADR 0040](adr/0040-management-claims-tracker.md) Decision 5).
+- The `0045` migration is idempotent and self-healing: existing `notebook_entries(kind='claim' OR claim_status IS NOT NULL)` rows converge into `management_claims` (status `open → pending`; `delivered`/`partially_delivered`/`missed` unchanged; `unknown`/`not_applicable → pending`), `follow_up_after` parsed into `due_fiscal_year`/`due_period_type` where it matches a period token, and existing `evidence_links`/reminders pointing at the note id are re-pointed at the claim id.
+- Import/export, retention, and backup treat claims as owner durable state via a first-class `claims` bundle section.
+
+### Claim Extraction
+
+AI claim extraction with mandatory user confirmation ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`), mirroring the KPI extraction job→proposal→confirm/reject pattern. Sources are report documents **and** transcripts. Migration `0046_claim_extraction.sql`.
+
+`claim_extraction_jobs`:
+
+- `id`, `company_id` → `companies(id)`.
+- Source: `source_type` (`report_document` | `transcript`), `source_id` (→ `report_documents(id)` or `transcript_jobs(id)`).
+- `provider_id`, `model`, `prompt_version`.
+- `status`: `queued` | `running` | `succeeded` | `failed`; `error_code`, `error`.
+- `created_at`, `started_at`, `finished_at`.
+
+`claim_extraction_proposals`:
+
+- `id`, `job_id` → `claim_extraction_jobs(id)`.
+- `statement` (candidate claim text), suggested `due_fiscal_year`/`due_period_type`, optional quantitative target (`target_metric_key`/`target_comparator`/`target_value_numeric`/`target_unit`).
+- `confidence`, `source_snippet` (verbatim evidence), `source_evidence_type`/`source_evidence_id` (the document or transcript segment the snippet came from).
+- `status`: `pending` (default) | `confirmed` | `rejected`; `claim_id` → `management_claims(id)` (set on confirm).
+- `created_at`, `updated_at`.
+
+Rules:
+
+- Only a **confirmed** proposal materializes a `management_claims` row; confirmation may carry user overrides of the extracted fields. No claim is created without user review.
+- Rejected proposals are retained (audit, and to suppress re-proposal of the same statement).
+- One job targets one source document or transcript; extraction is idempotent per `(source_type, source_id, prompt_version)` for re-runs.
+- Provider/model/prompt provenance is recorded for audit and reversibility, consistent with KPI extraction and signal classification.
 
 ### Jobs
 
