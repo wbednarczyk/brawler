@@ -2,10 +2,46 @@
 
 ## v0.44.0 - 2026-06-17
 
+Score a company against your own quantitative quality checklists, built from its
+reported fundamentals — no AI, fully deterministic, decision support only.
+Design: [ADR 0046](docs/adr/0046-quality-frameworks-quantitative.md).
 
-### Features
+### Added
 
-- **quality**: quality frameworks — quantitative checks
+- **Quality** tab in the company workspace. Build *quality frameworks* — named
+  checklists of criteria written in a small expression language (e.g.
+  `roic >= 15%`, `net_debt_to_ebitda < 2.5 AND fcf > 0`, `cagr(revenue, 5) > 10%`)
+  — entirely from the UI. Pick metrics from a dropdown instead of recalling key
+  names, with live validation as you type.
+- **Scorecard.** *Evaluate* scores the company against a framework over its latest
+  confirmed financial period: each criterion gets a pass / partial / fail /
+  no-data verdict with the measured value shown next to it. Runs are saved as
+  immutable snapshots, and the **evaluation history** (each run prunable) reflects
+  what the figures were at the time, even after newer numbers arrive.
+- **Kroeze-style quality template** ships with the app — a general quality
+  checklist (durable returns, healthy margins, conservative leverage, cash
+  generation, growth). Every framework, templates included, is editable in place,
+  clonable, and (for templates) resettable to its shipped defaults.
+- **A broader computed-metric library** out of the box — liquidity
+  (`current_ratio`, `quick_ratio`), leverage/coverage (`debt_to_equity`,
+  `interest_coverage`), `payout_ratio`, `fcf_margin`, and more — plus a new global
+  `user` scope so custom metrics can be defined and referenced by criteria.
+- **A new `wiki/`** with user-facing guides, including a full
+  [DSL reference](wiki/dsl-reference.md) for writing criteria.
+- Frameworks, their criteria, and any referenced custom metrics are included in
+  the data export/import bundle, so a framework you build travels with your data.
+
+### Fixed
+
+- The shared `Modal` no longer steals focus back to the dialog on each render, so
+  typing in a field inside a modal (e.g. naming a new framework) keeps focus.
+
+### Internal
+
+- New `fundamentals/` domain core: a hand-written expression engine (lexer, Pratt
+  parser, evaluator) shared by metric formulas and criteria, a deterministic
+  shared derived-metrics service (reused by the planned comparison/valuation
+  work), and the rule engine. Migration `0048_quality_frameworks.sql`.
 
 ## v0.43.0 - 2026-06-17
 
