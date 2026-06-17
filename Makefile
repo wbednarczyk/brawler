@@ -7,7 +7,12 @@ WINDOWS_TARGET := x86_64-pc-windows-msvc
 RELEASE_OUT_DIR ?= release-artifacts
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
-APP_VERSION := $(shell node -p "require('./package.json').version" 2>/dev/null)
+# Read the app version without depending on `node` being on the bare PATH. The
+# Makefile is evaluated by the host shell (outside `nix develop`), where node is
+# not available after the Node 18 removal; a node-based read silently returned
+# empty and produced `## v -` changelog headings. This pure-shell read of the
+# first `"version"` key (the root package version) needs no toolchain.
+APP_VERSION := $(shell sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -1)
 WINDOWS_ARTIFACT_NAME := brawler-$(APP_VERSION)-windows-x64-portable.exe
 WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
