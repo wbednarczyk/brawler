@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.43.0 - 2026-06-17
+
+The Report-Season Cockpit prepares you for earnings season in one place: a
+time-driven view, next to the Inbox, of upcoming report dates across your
+watchlists, each with a pre-report card of what to check before the company
+reports. Design: [ADR 0044](docs/adr/0044-report-season-cockpit.md).
+
+### Added
+
+- **Report Season** screen (in the sidebar, next to Inbox). Lists upcoming
+  report dates across your watchlists, ordered by date, with a past-reports
+  section and a stale-calendar indicator when the calendar data is out of date.
+  Scope it to a single watchlist or view all tracked companies.
+- **Pre-report card** per upcoming report, composed from your existing data:
+  open research questions, unresolved management claims (bucketed due / overdue
+  / upcoming), the last reported period's confirmed KPIs, and recent evidence —
+  with one-click drill-in to the company workspace and its claims.
+- **Prepare → process workflow.** Mark a company *prepared* once you have
+  reviewed its card, and *processed* once you have handled the published report.
+  The state persists per report occurrence and survives calendar refreshes.
+
+### Changed
+
+- Tickers in the cockpit use the shared exchange-colored `TickerLabel`, matching
+  the rest of the app.
+
+### Internal
+
+- **Guardrail-harvest feedback loop** ([ADR 0045](docs/adr/0045-guardrail-harvest-loop.md)):
+  flagged defects are converted into a precise automated gate or a documented
+  rule in the same change, so a class of mistake is closed rather than repeated.
+  Adds a tiered Definition-of-Done checklist, a `make check-epic` target that
+  runs all suites (gate + knip + Playwright smoke) at epic closure, and
+  screen-scaffold + domain-component authoring guidance.
+- Report-season read models are backend-owned with no stored projection and no
+  duplicated domain logic; the only new schema is `report_preparations`
+  (migration 0047, idempotent).
+
 ## v0.42.0 - 2026-06-16
 
 The Management Claims Tracker turns management promises into first-class,
