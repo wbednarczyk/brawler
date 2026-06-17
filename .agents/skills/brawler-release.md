@@ -2,6 +2,8 @@
 
 Use this workflow only from the Brawler repository root when the user explicitly asks to wrap up, close, or release a milestone/epic.
 
+> **This workflow is the driver, not a reference.** When closure is signed off, do the scope-specific closure it cannot infer (roadmap/kanban text, Radicle/Radboard issue state), then run **`make release VERSION=x.y.z`** for the mechanical bump/changelog/check/commit/tag/push. **Do not** hand-edit version files or run `scripts/release/bump-version.mjs` yourself — the target performs the bump and **aborts if the version is already bumped**, so a manual bump actively fights it. Reach for the target; do not re-assemble its steps by hand.
+
 ## Release Boundary
 
 The normal workflow is:
