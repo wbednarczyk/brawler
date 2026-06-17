@@ -677,9 +677,9 @@ Per-occurrence preparation state for the report-season cockpit ([ADR 0044](adr/0
 Rules:
 
 - Absence of a row means `status = 'upcoming'`; reads default a missing row to `upcoming` so the cockpit never crashes on un-prepared companies or an absent migration.
-- `mark_report_prepared` / `mark_report_processed` are explicit user actions; there is no automated transition (the autonomous path is the North Star, `v0.50.0`).
+- `mark_report_prepared` / `mark_report_processed` are explicit user actions; there is no automated transition (the autonomous path is the North Star, `v0.49.0`).
 - The migration is idempotent and self-healing (`CREATE TABLE IF NOT EXISTS`).
-- Preparation state is owner durable state; its inclusion in the import/export bundle is a future per-feature coverage item ([roadmap](roadmap.md) `v0.53.0`), not part of `v0.43.0`.
+- Preparation state is owner durable state; its inclusion in the import/export bundle is a future per-feature coverage item ([roadmap](roadmap.md) `v0.52.0`), not part of `v0.43.0`.
 
 ### Jobs
 

@@ -2128,7 +2128,7 @@ Commands:
 The report-document source ladder ([ADR 0029](adr/0029-ir-page-report-resolution.md)) is: ESPI/EBI attachment (primary), per-company IR reports page (fallback), manual PDF URL paste (last resort).
 
 - `get_company_ir_reports_url(companyId)` / `set_company_ir_reports_url(companyId, url)`: read/write the durable per-company IR reports page URL (empty clears it).
-- `resolve_ir_report(input)`: fetches the company's IR page, extracts candidate links generically (no per-company scrapers), and has the AI pick the report matching the event context (`companyId`, optional `periodHint`/`reportType`/`publishedAt`). A confident pick is captured into `report_documents` and returned as `document`; otherwise `document` is null and `candidates` is returned for the user to choose. Event-driven automatic resolution is deferred to v0.50.0.
+- `resolve_ir_report(input)`: fetches the company's IR page, extracts candidate links generically (no per-company scrapers), and has the AI pick the report matching the event context (`companyId`, optional `periodHint`/`reportType`/`publishedAt`). A confident pick is captured into `report_documents` and returned as `document`; otherwise `document` is null and `candidates` is returned for the user to choose. Event-driven automatic resolution is deferred to v0.49.0.
 
 ## UI-Facing Command Boundaries
 

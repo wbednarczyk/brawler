@@ -50,7 +50,7 @@ Fetching a user-configured IR page's HTML for the purpose of locating an officia
 
 ### 5. User-triggered now; event-driven automation later
 
-In v0.36.0 the resolver is **user-triggered** (a "fetch report from IR page" action). Wiring it to fire automatically on report-event detection is the v0.50.0 autonomous report pipeline (task `05ebf07`/epic `9a607da`), behind the per-company trust ladder. v0.36.0 delivers the durable building block; v0.50.0 delivers the automation.
+In v0.36.0 the resolver is **user-triggered** (a "fetch report from IR page" action). Wiring it to fire automatically on report-event detection is the v0.49.0 autonomous report pipeline (task `05ebf07`/epic `9a607da`), behind the per-company trust ladder. v0.36.0 delivers the durable building block; v0.49.0 delivers the automation.
 
 ## Consequences
 
@@ -58,7 +58,7 @@ Positive:
 
 - Extraction is no longer blocked when a filing lacks an attachment; the durable IR URL covers the common gap.
 - No per-company scrapers; the resolver is one generic, testable path that reuses the AI provider boundary.
-- The IR URL field and resolver are exactly the building blocks the autonomous pipeline (v0.50.0) needs, drawn before automation so the trust ladder composes them rather than retrofitting.
+- The IR URL field and resolver are exactly the building blocks the autonomous pipeline (v0.49.0) needs, drawn before automation so the trust ladder composes them rather than retrofitting.
 
 Negative / costs:
 
@@ -68,7 +68,7 @@ Negative / costs:
 ## Alternatives Considered
 
 - **Per-company deterministic IR scrapers**: rejected — per-company × per-layout maintenance burden, consistent with the per-company-PDF-parser rejection in ADR 0027.
-- **Manual-assist only** (open the IR page, user clicks the report): viable and lower-risk, but more clicks and no path to the v0.50.0 automation; kept as the graceful-degradation fallback rather than the primary mechanism.
+- **Manual-assist only** (open the IR page, user clicks the report): viable and lower-risk, but more clicks and no path to the v0.49.0 automation; kept as the graceful-degradation fallback rather than the primary mechanism.
 - **Crawling the IR site / search engines to find reports**: rejected — fragile, broad, and outside the source policy; the durable per-company URL is both simpler and more reliable.
 
 ## Implementation
@@ -79,4 +79,4 @@ Tracked under epic `9879941` (milestone v0.36.0):
 2. Per-company `ir_reports_url` field (migration, storage, command, company UI) — task `8ab19a4`.
 3. AI-assisted IR-page report resolver, user-triggered, with candidate-pick fallback and a deterministic test path — task `9d6a3a5`.
 
-Event-driven automation over this building block is deferred to v0.50.0 (epic `9a607da`).
+Event-driven automation over this building block is deferred to v0.49.0 (epic `9a607da`).

@@ -49,4 +49,4 @@ reschedules a scoped decision journal into the valuation & decision arc.
 - Thesis versioning granularity vs valuation-run versioning, and how what-changed diffs are computed.
 - Exact decision-journal fields and how outcome review is prompted without drifting into portfolio
   accounting.
-- Import/export coverage for theses and journal entries (ties to `v0.53.0`).
+- Import/export coverage for theses and journal entries (ties to `v0.52.0`).

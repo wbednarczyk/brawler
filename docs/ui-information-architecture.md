@@ -134,7 +134,7 @@ Empty states:
 - no upcoming reports in scope: show the empty cockpit with a hint to widen the watchlist scope
 - stale calendar: show the staleness indicator and link to Sources
 
-The cockpit composes existing domains and adds no per-company data of its own except the prepared/processed workflow state; it never auto-fetches or auto-extracts (the autonomous path is the `v0.50.0` North Star).
+The cockpit composes existing domains and adds no per-company data of its own except the prepared/processed workflow state; it never auto-fetches or auto-extracts (the autonomous path is the `v0.49.0` North Star).
 
 ## Companies Screen
 

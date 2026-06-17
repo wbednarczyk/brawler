@@ -42,7 +42,7 @@ We chose a dedicated table over extending `company_events` because derived calen
 
 ### 3. Workflow transitions, not automation
 
-`mark_report_prepared` and `mark_report_processed` are explicit user actions. On processing, the card links to the arrived filing and the existing KPI-extraction entry point, and ties back to the claims-review queue — it does **not** auto-extract or auto-confirm anything. The confirm-before-commit guarantee is unchanged; the autonomous path is the separate North Star (`v0.50.0`).
+`mark_report_prepared` and `mark_report_processed` are explicit user actions. On processing, the card links to the arrived filing and the existing KPI-extraction entry point, and ties back to the claims-review queue — it does **not** auto-extract or auto-confirm anything. The confirm-before-commit guarantee is unchanged; the autonomous path is the separate North Star (`v0.49.0`).
 
 ### 4. IA: a time-driven surface adjacent to Inbox
 
@@ -58,11 +58,11 @@ The cockpit is a primary-navigation surface placed next to Inbox (a "what's comi
 ## Consequences
 
 - The milestone stays small: two derived read models, one tiny new table, three new commands, and one new screen. No new external source, no new ingestion.
-- Preparation state is portable: it joins the import/export research-data bundle as a future per-feature coverage item (`v0.53.0`), not in this milestone.
-- The cockpit becomes the launch point the North Star (`v0.50.0`) autonomous pipeline later automates; the manual prepare→process loop defined here is the workflow autopilot will eventually drive.
+- Preparation state is portable: it joins the import/export research-data bundle as a future per-feature coverage item (`v0.52.0`), not in this milestone.
+- The cockpit becomes the launch point the North Star (`v0.49.0`) autonomous pipeline later automates; the manual prepare→process loop defined here is the workflow autopilot will eventually drive.
 
 ## Out of Scope
 
 - Price-reaction views and market-wide earnings calendars beyond tracked companies.
-- Any auto-fetch/auto-extract on report arrival (North Star, `v0.50.0`).
+- Any auto-fetch/auto-extract on report arrival (North Star, `v0.49.0`).
 - A stored cockpit projection table (additive future optimization only).

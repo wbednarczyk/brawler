@@ -2,15 +2,15 @@
 
 Status: Accepted
 
-This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.46.0`); runtime/model defaults remain proposed and require owner confirmation, validated by the eval harness, before implementation. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
+This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.45.0`); runtime/model defaults remain proposed and require owner confirmation, validated by the eval harness, before implementation. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
 
 ## Context
 
 Multiple current and upcoming milestones independently need *interpretative lookup* over local content — "what is this," "what is this similar to," "what does this match":
 
 - ESPI classification (`v0.40.0`) — classify a filing into a typed category.
-- Story clustering (`v0.47.0`) — group near-duplicate multi-source coverage.
-- Management claims (`v0.42.0`) and the autonomous pipeline (`v0.50.0`) — match claims to facts, evidence to questions.
+- Story clustering (`v0.46.0`) — group near-duplicate multi-source coverage.
+- Management claims (`v0.42.0`) and the autonomous pipeline (`v0.49.0`) — match claims to facts, evidence to questions.
 - Global search (`v0.38.0`, [ADR 0032](0032-search-and-backup-boundaries.md)) is keyword-only (FTS5) today and would benefit from semantic (hybrid) retrieval.
 
 Today the only "AI" boundary is the generative, BYO-key, remote provider boundary ([ADR 0028](0028-multi-provider-ai-boundary.md)). Routing every interpretative lookup through a remote generative model is slow, costs per call, requires an API key, and sends content off-device — at odds with the local-first and privacy principles. A small **on-device encoder** (text → vector) can serve interpretative lookup locally: fast, free, offline, private.
@@ -88,7 +88,7 @@ These are proposed; the eval harness (§7) confirms the encoder choice.
 
 ## Scope boundary
 
-- In scope (this design): the two-layer split, the capability and engine boundaries, the static baselines, the disposable derived-index rule, registry/config selection, and the eval policy. The capability surface grows only with real consumers: `Classifier` (`v0.40.0`), `SimilarityProvider` (`v0.47.0` clustering), `Matcher`/`SemanticSearch` (claims, hybrid search).
+- In scope (this design): the two-layer split, the capability and engine boundaries, the static baselines, the disposable derived-index rule, registry/config selection, and the eval policy. The capability surface grows only with real consumers: `Classifier` (`v0.40.0`), `SimilarityProvider` (`v0.46.0` clustering), `Matcher`/`SemanticSearch` (claims, hybrid search).
 - Out of scope (deferred): a local **generative** LLM (remains a possible future adapter behind the [ADR 0028](0028-multi-provider-ai-boundary.md) boundary, not part of the interpretative layer); speculative capabilities with no near-term caller.
 
 ## Consequences
@@ -103,7 +103,7 @@ These are proposed; the eval harness (§7) confirms the encoder choice.
 The interpretative layer is split into two milestones:
 
 - `v0.39.0` — **static foundation**: capability contracts + registry/config selection + static baselines + eval harness. No embedding model or vector store (the static baselines need neither). Built before its consumers; epic `8e94b2f`. Its first consumer is ESPI classification (`v0.40.0`), which binds to the `Classifier` capability.
-- `v0.46.0` — **embedding model**: the on-device embedder + `sqlite-vec`-class vector store, enabling the model-backed implementation per capability only where the eval beats static. Sequenced immediately before story clustering (`v0.47.0`), its first high-value consumer; epic `64980da`.
+- `v0.45.0` — **embedding model**: the on-device embedder + `sqlite-vec`-class vector store, enabling the model-backed implementation per capability only where the eval beats static. Sequenced immediately before story clustering (`v0.46.0`), its first high-value consumer; epic `64980da`.
 
 ## Open decisions for owner confirmation
 

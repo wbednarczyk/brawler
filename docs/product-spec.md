@@ -287,7 +287,7 @@ User-facing behavior:
 - a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog; the add-fact KPI picker supports inline search
 - AI assistance that reads a stored report and proposes figures, reviewed in a centered modal where the user confirms, edits, or rejects each value, with bulk "confirm all known" and "accept all suggestions" actions; the modal auto-closes when nothing is left to review and no AI-proposed number is stored as a confirmed figure without review
 - the user can also enter and correct figures manually against a report
-- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.44.0) side-by-side comparison of the same figure across companies
+- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.53.0) side-by-side comparison of the same figure across companies
 - the panel and the review modal remain usable in tall, narrow windows (e.g. a quarter of an ultrawide monitor), stacking or shrinking rather than clipping
 
 Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.

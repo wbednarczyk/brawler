@@ -58,7 +58,7 @@ Report files inherit [ADR 0033](0033-feed-retention-policy.md)'s protection-firs
 - **Calendar is out of scope for backfill.** Historical calendar entries are not backfilled; the existing forward-looking calendar adapters (`official_calendar`/`public_calendar`) own upcoming events. Backfilled past filings still classify into `company_signals` and surface on the research timeline with their **original publication dates preserved**.
 - **Idempotent.** Backfilled items flow through normal ingestion and reuse existing dedup keys (feed-item `(source_adapter_id, source_event_key)`, report-document `(company_id, url)`, signal `(feed_item_id, category)`). Re-running backfill produces no duplicate feed items, documents, signals, or events.
 - **Throttled.** Backfill obeys the existing Bankier rate policy: serialized requests, waits between pages/companies, `LocalInvestorNewsfeed/{version}` user agent. It runs as an async, cancellable job with **progress and per-stage diagnostics** (pages fetched, items ingested, documents stored, errors) surfaced to the user; a partial/cancelled run is safe to resume because of idempotency.
-- Backfill runs only while the app is open (it is not the `v0.50.0` autopilot; no closed-app fetching).
+- Backfill runs only while the app is open (it is not the `v0.49.0` autopilot; no closed-app fetching).
 
 ### 5. Derived calendar events from dated signals
 
@@ -74,7 +74,7 @@ Completing the [ADR 0034](0034-espi-event-classification.md) §4 derivation defe
 ## Scope boundary
 
 - In scope (`v0.41.0`): the ESPI/EBI attachment fetch/storage path (periodic-only full files), the user-URL/IR-page full-file rungs already wired, report-file retention reusing the ADR 0033 model, the explicit on-track 3-year backfill of reports + filings, and deterministic-first/AI-fallback/confirm-before-create derivation of dividend + general-meeting calendar events.
-- Out of scope: per-company PDF parsers and deterministic ESEF/iXBRL parsing (rejected in ADR 0027 / separate study); backfilling non-official media sources; historical **calendar** backfill; automatic backfill without user action; closed-app fetching (that is the `v0.50.0` autopilot frontier).
+- Out of scope: per-company PDF parsers and deterministic ESEF/iXBRL parsing (rejected in ADR 0027 / separate study); backfilling non-official media sources; historical **calendar** backfill; automatic backfill without user action; closed-app fetching (that is the `v0.49.0` autopilot frontier).
 
 ## Consequences
 
@@ -83,4 +83,4 @@ Completing the [ADR 0034](0034-espi-event-classification.md) §4 derivation defe
 - New surfaces/behaviors: the attachment fetch path, the `metadata_only` fetch state (additive, no destructive migration — extends the existing `fetch_status` value set), a report-document retention window in Settings, the backfill job + progress/diagnostics + command, and the dividend/GM event-derivation job with confirmation. Contracts and data-model are updated in the same change.
 - The `report_documents` schema (migration 0035) is **unchanged** except for the additive `metadata_only` value convention; no new columns are required, so no new migration is needed for storage. Any seed/registry change (e.g. marking categories `derives_event`) already shipped in `v0.40.0`.
 - Owner-confirmed decisions (milestone `v0.41.0` start): (a) **full files for periodic reports only**, metadata-only for other filings; (b) **3-year backfill of reports + filings**, calendar left to the existing forward-looking adapters; (c) **deterministic-first → opt-in AI fallback → always confirm-before-create** for derived dividend/GM event dates; (d) this ADR is the canonical home for report-file storage/retention + backfill policy, with event derivation owned jointly with ADR 0034.
-- Related: this is the building block under the autonomous report pipeline ([roadmap.md](../roadmap.md) North Star, `v0.50.0`); detection there reuses the attachment path and classified signals, and the backfill job is the manual precursor to autopilot fetch.
+- Related: this is the building block under the autonomous report pipeline ([roadmap.md](../roadmap.md) North Star, `v0.49.0`); detection there reuses the attachment path and classified signals, and the backfill job is the manual precursor to autopilot fetch.

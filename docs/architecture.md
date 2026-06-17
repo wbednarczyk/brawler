@@ -79,7 +79,7 @@ Idle-session study (v0.38.0, issue `28d6409`):
 - For the current cadence (poll intervals of minutes), coarse background throttling (~once per minute) does not materially break a multi-minute interval, and screen lock alone does not stop timers. The real stall risk is OS-level app/process suspension, which a Rust-side timer cannot avoid either while the app is suspended.
 - Boundary reminder: refresh runs only while the app is open (background/closed fetching is out of scope until the managed-AI frontier; see [roadmap.md](roadmap.md)).
 
-Decision: keep frontend-driven scheduling for v0.38.0. Move scheduling ownership to a Rust-side scheduler as future hardening — it is more resilient to webview timer throttling and centralizes timing for the autonomous report pipeline (v0.50.0). Tracked as a follow-up implementation issue; not required for this milestone.
+Decision: keep frontend-driven scheduling for v0.38.0. Move scheduling ownership to a Rust-side scheduler as future hardening — it is more resilient to webview timer throttling and centralizes timing for the autonomous report pipeline (v0.49.0). Tracked as a follow-up implementation issue; not required for this milestone.
 
 ## Extensibility Boundaries
 

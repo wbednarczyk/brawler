@@ -21,8 +21,8 @@ It builds on:
 ## Context
 
 Brawler already builds the substrate for valuation: AI KPI extraction with mandatory confirmation,
-the three-layer KPI model, cross-company comparison (`v0.44.0`), and a versioned quality scorecard
-(`v0.45.0`). What does not exist is a layer that **values** a company from those facts: scenario price
+the three-layer KPI model, cross-company comparison (`v0.53.0`), and a versioned quality scorecard
+(`v0.44.0`). What does not exist is a layer that **values** a company from those facts: scenario price
 targets, an FCF sanity cross-check, and peer-relative context.
 
 Constraints specific to Brawler's universe:
@@ -42,7 +42,7 @@ Constraints specific to Brawler's universe:
      inspectable assumptions.
    - **Multiple-based bear/base/bull scenarios** (e.g. EV/EBITDA) where peer sets are deep enough.
    - **FCF cross-check**: normalize maintenance vs growth capex → EV/normalized-FCF sanity multiple.
-   - **Peer-relative multiple** with an explicit thin-flag (reuses `v0.44.0` comparison + materialized
+   - **Peer-relative multiple** with an explicit thin-flag (reuses `v0.53.0` comparison + materialized
      sector sets); surfaced as context, not a sole basis, when N is small.
 3. **Outputs:** bear/base/bull fair-value per share, upside vs current price (and vs analyst consensus
    later, behind a separate adapter/ADR), and a **what-if / sensitivity** capability (instant local

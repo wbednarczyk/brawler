@@ -10,7 +10,7 @@ It builds on:
 
 - [ADR 0041](0041-deterministic-valuation-engine.md) — the valuation outputs that feed the scoring
   dimension and any downstream advisory provider.
-- The `v0.45.0` quality-frameworks scorecard (rule engine over fundamentals facts, versioned scorecard,
+- The `v0.44.0` quality-frameworks scorecard (rule engine over fundamentals facts, versioned scorecard,
   clonable templates) — this ADR **extends** that scorecard rather than introducing a parallel one.
 - [ADR 0039](0039-ports-and-adapters-posture.md) and [ADR 0035](0035-two-layer-ai-and-local-interpretative-layer.md)
   — ports-and-adapters and capability contracts; the advisory verdict is modelled as a port with a
