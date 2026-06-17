@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.44.0 - 2026-06-17
+
+
+### Features
+
+- **quality**: quality frameworks — quantitative checks
+
 ## v0.43.0 - 2026-06-17
 
 The Report-Season Cockpit prepares you for earnings season in one place: a
