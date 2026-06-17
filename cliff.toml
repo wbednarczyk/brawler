@@ -4,19 +4,22 @@
 
 [changelog]
 header = "# Changelog\n\n"
+# This template produces a clean scaffold (one line per commit, with scope).
+# Detailed, user-facing release notes are curated by hand on top of this scaffold
+# before the release commit — see the curation step in the release workflow. A
+# fully-automatic body render is deliberately avoided: git-cliff's footer parser
+# truncates structured commit bodies (lines like "Backend:" are read as footers).
 body = """
 {% if version %}\
 ## {{ version }} - {{ timestamp | date(format="%Y-%m-%d") }}
 {% else %}\
 ## Unreleased
 {% endif %}
-
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group }}
 {% for commit in commits %}
-- {{ commit.message | split(pat="\n") | first | trim }}
+- {% if commit.scope %}**{{ commit.scope }}**: {% endif %}{{ commit.message | split(pat="\n") | first | trim }}
 {% endfor %}
-
 {% endfor %}\
 """
 trim = true

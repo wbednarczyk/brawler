@@ -2,20 +2,50 @@
 
 ## v0.42.0 - 2026-06-16
 
+The Management Claims Tracker turns management promises into first-class,
+trackable claims that resurface for verification when the relevant report
+arrives. Design: [ADR 0040](docs/adr/0040-management-claims-tracker.md).
 
+### Added
 
-### Features
+- **Management claims tracker** on the company Claims tab. Track a management
+  promise with a due period (e.g. FY2026 Q4) and a user-set verdict — pending,
+  delivered, partially delivered, missed, or revised. Add and resolve claims
+  in place.
+- **Due-period review queue** ("claims to verify"). When the report for a
+  claim's due period arrives, the claim automatically resurfaces, bucketed as
+  due / overdue / upcoming. For a quantitative claim, the matching confirmed
+  financial figure is shown next to it so you can resolve the verdict against
+  the evidence.
+- **AI claim extraction** from report documents and earnings-call transcripts.
+  The model proposes forward-looking management claims — each with a suggested
+  due period, an optional quantitative target, and a verbatim source snippet —
+  for your review. Nothing is created without explicit confirmation, and
+  rejected proposals are remembered so they are not re-proposed.
+- Claims participate in the rest of the research workspace — the research
+  timeline, reminders, and digests — and are included in research data
+  export/import.
 
-- management claims tracker (v0.42.0)
+### Changed
+
+- Claims are now a first-class entity instead of a flavor of notebook note.
+  Existing claim notes are migrated automatically on first launch, preserving
+  each claim's identity, status, due period, and existing evidence links and
+  reminders.
 
 
 ## v0.41.2 - 2026-06-16
 
-
+Internal quality hardening; no user-facing behavior change.
 
 ### Changed
 
-- enforce ErrorText, add primitive/a11y tests, extract AI-analysis controller
+- Encoded more of the project's practices as automated stop-gates: enforce the
+  shared `ErrorText` primitive, add primitive and accessibility tests and a
+  primitive gallery, and add dead-code, lint, and stylelint checks.
+- Aligned the toolchain to Node 22 (Vite 8 / Vitest 4) so local and CI builds
+  use one version, and extracted the AI-analysis controller out of the app
+  root for clearer module boundaries.
 
 
 ## v0.41.1 - 2026-06-16

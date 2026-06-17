@@ -71,7 +71,14 @@ Use the Makefile target dedicated to changelog generation:
 make changelog
 ```
 
-After running the target, review the generated output for obviously broken formatting or incorrect release boundaries. If the Makefile-generated output is wrong, fix the release tooling or ask the user before manually curating the changelog.
+`make changelog` produces a **scaffold**: one terse line per commit (the commit subject, with scope). It is not the finished release notes.
+
+After running the target:
+
+1. **Verify the heading is versioned**, not `## v -`. An empty version means `APP_VERSION` did not resolve (it is read from `package.json` by the Makefile). A `## v -` heading silently breaks the GitHub release: the release workflow runs `extract-changelog-entry.sh "vX.Y.Z"` against the **tagged** `CHANGELOG.md`, finds no `## vX.Y.Z` section, exits non-zero, and **no GitHub release or binaries are published**. This happened to `v0.41.2` and `v0.42.0` after the Node 18 removal left `node` off the bare PATH.
+2. **Curate the new section into detailed, user-facing release notes** before the release commit — this is the published GitHub release body. Expand the scaffold's one-liners into what changed and why it matters for a user (grouped under `### Added` / `### Changed` / `### Fixed`), drawing on the commit bodies. This curation is expected every release; the scaffold is the starting point, not the deliverable.
+
+Because the GitHub release notes are sliced from the `CHANGELOG.md` **at the release tag**, the curated section must be in the release commit (i.e. curate before `make release`, or the curation must land in the tagged commit). Curating on `master` after the tag does not change an already-published release — update it with `gh release edit vX.Y.Z --notes-file <file>` (or move the tag, only with explicit approval).
 
 After milestone docs and Radicle/Radboard issue state are updated, prefer the Makefile release target for the mechanical release commit/tag/push:
 
