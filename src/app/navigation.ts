@@ -1,8 +1,9 @@
-import { Activity, BookOpenText, Bug, Building2, CalendarDays, Inbox, ListChecks, SearchCheck, Settings, Video } from "lucide-react";
+import { Activity, BookOpenText, Bug, Building2, CalendarClock, CalendarDays, Inbox, ListChecks, SearchCheck, Settings, Video } from "lucide-react";
 import type { LocaleKey } from "../shared/locale";
 
 export type Section =
   | "Inbox"
+  | "ReportSeason"
   | "Companies"
   | "Watchlists"
   | "Research"
@@ -15,6 +16,7 @@ export type Section =
 
 export const sections = [
   { label: "Inbox" as const, icon: Inbox, localeKey: "nav.inbox" },
+  { label: "ReportSeason" as const, icon: CalendarClock, localeKey: "nav.reportSeason" },
   { label: "Companies" as const, icon: Building2, localeKey: "nav.companies" },
   { label: "Watchlists" as const, icon: ListChecks, localeKey: "nav.watchlists" },
   { label: "Research" as const, icon: SearchCheck, localeKey: "nav.research" },

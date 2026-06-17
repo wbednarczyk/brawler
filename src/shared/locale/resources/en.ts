@@ -22,6 +22,7 @@ export const en = {
   "app.sources.refreshed": "Sources refreshed",
   "app.sources.failed": "Source refresh failed",
   "nav.inbox": "Inbox",
+  "nav.reportSeason": "Report Season",
   "nav.companies": "Companies",
   "nav.watchlists": "Watchlists",
   "nav.research": "Research",

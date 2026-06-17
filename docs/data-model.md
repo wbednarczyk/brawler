@@ -661,6 +661,26 @@ Rules:
 - One job targets one source document or transcript; extraction is idempotent per `(source_type, source_id, prompt_version)` for re-runs.
 - Provider/model/prompt provenance is recorded for audit and reversibility, consistent with KPI extraction and signal classification.
 
+### Report Preparations
+
+Per-occurrence preparation state for the report-season cockpit ([ADR 0044](adr/0044-report-season-cockpit.md), `v0.43.0`). The cockpit's calendar and pre-report card are backend-owned **read models** assembled from canonical domains (`company_events`, `research_questions`, `management_claims`, `financial_facts`/`financial_periods`, the research-timeline read model) with no stored projection; this is the only new persisted state the milestone adds. Migration `0047_report_preparations.sql`.
+
+`report_preparations`:
+
+- `id`, `company_id` → `companies(id)`.
+- `event_key`: the stable `company_events.source_event_key` of the report occurrence (not the volatile event row id), so the state survives calendar re-derivation ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
+- `status`: `upcoming` (default) | `prepared` | `processed`. User-set via workflow actions; never auto-assigned.
+- `prepared_at`, `processed_at`: transition timestamps (`YYYY-MM-DDTHH:MM:SSZ`, nullable).
+- `linked_report_document_id` → `report_documents(id)` soft reference, set on processing when the arrived report is known (nullable).
+- `created_at`, `updated_at`. Unique on `(company_id, event_key)`.
+
+Rules:
+
+- Absence of a row means `status = 'upcoming'`; reads default a missing row to `upcoming` so the cockpit never crashes on un-prepared companies or an absent migration.
+- `mark_report_prepared` / `mark_report_processed` are explicit user actions; there is no automated transition (the autonomous path is the North Star, `v0.50.0`).
+- The migration is idempotent and self-healing (`CREATE TABLE IF NOT EXISTS`).
+- Preparation state is owner durable state; its inclusion in the import/export bundle is a future per-feature coverage item ([roadmap](roadmap.md) `v0.53.0`), not part of `v0.43.0`.
+
 ### Jobs
 
 Supports Sources screen, background ingestion, manual refresh, and transcript processing status.

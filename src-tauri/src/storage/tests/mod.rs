@@ -18,6 +18,7 @@ mod licensing;
 mod management_claims;
 mod notebooks;
 mod report_documents;
+mod report_season;
 mod research;
 mod research_briefs;
 mod research_reminders;

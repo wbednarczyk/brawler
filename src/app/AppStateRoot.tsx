@@ -48,6 +48,7 @@ import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
 import { EventsScreen } from "../screens/Events/EventsScreen";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
+import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
 import { ResearchScreen } from "../screens/Research/ResearchScreen";
@@ -1731,6 +1732,16 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               NotebookQuarterField={NotebookQuarterField}
               MarkdownNoteBody={MarkdownNoteBody}
               renderNotebookOrigins={renderNotebookOrigins}
+            />
+          ) : null}
+          {activeSection === "ReportSeason" ? (
+            <ReportSeasonScreen
+              watchlists={watchlists}
+              openCompanyWorkspace={(companyId, tab) => {
+                setSelectedCompanyId(companyId);
+                setCompanyWorkspaceTab(tab);
+                setActiveSection("Companies");
+              }}
             />
           ) : null}
           {activeSection === "Events" ? (

@@ -158,6 +158,24 @@ Acceptance criteria:
 - Claims appear in the company research timeline and feed reminders/digests; they are exported with research data.
 - Heavy extraction interaction happens in a modal, not crammed into the fixed-width detail rail.
 
+## Journey: Prepare For Report Season
+
+Intent: arrive at each tracked company's report date already knowing what to check, then close the loop when the report lands ([ADR 0044](adr/0044-report-season-cockpit.md)).
+
+Flow:
+
+1. The user opens **Report Season** (next to Inbox). The cockpit lists upcoming report dates across the watchlists, ordered by date; a stale-calendar indicator shows when the calendar is out of date.
+2. Each upcoming report shows a pre-report card composed from the company's open research questions, unresolved claims (due / overdue / upcoming), last-period confirmed KPIs, and recent evidence.
+3. The user reviews a card and marks the company **prepared**; from the card they can drill into the company workspace, its research questions, or its claims-review queue.
+4. When the report arrives, the user marks it **processed**; the card links to the arrived filing and to KPI extraction for the new report, and the resurfaced claims appear in the claims-review queue.
+
+Acceptance criteria:
+
+- For a watchlist with upcoming reports, the cockpit shows dated cards whose contents match the company workspaces (the milestone exit criterion).
+- A company can be taken from upcoming → prepared → processed against a real report cycle.
+- The cockpit composes existing domains with no duplicated logic and adds no per-company data beyond the prepared/processed workflow state.
+- The cockpit never auto-fetches or auto-extracts; processing links to the manual KPI-extraction and claims-review entry points.
+
 ## Journey: YouTube Conference To Notes
 
 Intent: capture relevant management statements from a press conference.

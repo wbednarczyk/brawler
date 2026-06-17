@@ -18,6 +18,7 @@ Regions:
 Primary sections:
 
 - Inbox
+- Report Season
 - Companies
 - Notebooks
 - Transcripts
@@ -109,6 +110,31 @@ Empty states:
 - source errors: link to Sources screen
 
 The UI-facing feed is scoped to tracked companies. Create-note is available for feed items that match a locally tracked company, and the note draft attaches to that company automatically.
+
+## Report Season Screen
+
+Purpose: a time-driven "what's coming" surface ([ADR 0044](adr/0044-report-season-cockpit.md)) placed next to Inbox — the report-season cockpit. It prepares the investor for report season by listing upcoming report dates across watchlists, each with a pre-report card.
+
+Main regions:
+
+- watchlist scope filter (all tracked companies by default)
+- upcoming reports list ordered by date, with a stale-calendar indicator when the calendar is out of date
+- per-company pre-report card: open research questions, unresolved claims, last-period KPIs, and recent evidence
+- a past-reports section for recently passed report dates
+
+Actions:
+
+- mark a company prepared ahead of its report; mark processed once the report has been handled
+- drill into the company workspace, its research questions, and its claims-review queue
+- when a report has arrived, jump to KPI extraction for the new filing
+
+Empty states:
+
+- no watchlists/companies tracked: prompt to add a company
+- no upcoming reports in scope: show the empty cockpit with a hint to widen the watchlist scope
+- stale calendar: show the staleness indicator and link to Sources
+
+The cockpit composes existing domains and adds no per-company data of its own except the prepared/processed workflow state; it never auto-fetches or auto-extracts (the autonomous path is the `v0.50.0` North Star).
 
 ## Companies Screen
 

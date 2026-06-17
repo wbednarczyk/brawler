@@ -38,7 +38,7 @@ Milestones through `v0.38.0` are shipped. This roadmap does not restate complete
 
 The next milestone is `v0.43.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
 
-- `v0.43.0` — **Report-season cockpit**: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence.
+- `v0.43.0` — **Report-season cockpit**: upcoming report dates with pre-report cards built from questions, claims, KPIs, and evidence, plus a prepare→process workflow. Backend-owned read models (no stored projection) over existing domains; the only new state is per-occurrence preparation status. Design in [ADR 0044](adr/0044-report-season-cockpit.md).
 - `v0.44.0` — **Cross-company KPI comparison**: side-by-side tables and multi-series trend charts.
 - `v0.45.0` — **Quality frameworks (quantitative checks)**: a rule engine evaluates user frameworks against the fundamentals facts and produces a versioned scorecard; ships clonable templates including a Kroeze-style quality template. Depends only on facts (`v0.37.0`); resequenceable.
 - `v0.46.0` — **Interpretative AI layer — embedding model**: add the on-device embedding model + vector store (`sqlite-vec`-class, a disposable derived index) behind the existing capability boundary, and enable the model-backed implementation per capability only where the eval shows it beats the static baseline. Sequenced immediately before its first high-value consumer (story clustering). Design in [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md).

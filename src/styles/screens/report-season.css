@@ -1,0 +1,111 @@
+/* Report-season cockpit (ADR 0044). Mirrors the padded, scrollable body and
+   card idiom used by the events/companies layouts. */
+
+.report-season-layout {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.report-season-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.report-season-stale {
+  align-self: flex-start;
+}
+
+.report-season-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Each report reads as a self-contained card. */
+.report-season-row,
+.report-season-row-static {
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
+}
+
+.report-season-row {
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.report-season-row:hover,
+.report-season-row:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+}
+
+/* The active (expanded) report stands out and visually fuses with its card. */
+.report-season-row[aria-expanded="true"] {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* The ListRow inside a card should not draw its own divider. */
+.report-season-row .ui-list-row,
+.report-season-row-static .ui-list-row {
+  padding: 0;
+  border-bottom: none;
+}
+
+.report-season-row-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.report-season-company {
+  color: var(--text);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-season-row-meta {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* Detail card continues the expanded row: shared accent border, squared top. */
+.report-season-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--accent);
+  border-top: none;
+  border-radius: 0 0 8px 8px;
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+}
+
+.report-season-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: var(--text);
+}
+
+.report-season-claim-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}

@@ -1,4 +1,26 @@
 export const plText: Record<string, string> = {
+  "Report Season": "Sezon raportów",
+  "Upcoming report dates across your watchlists, each with a pre-report card.":
+    "Nadchodzące terminy raportów z Twoich list obserwowanych, każdy z kartą przedraportową.",
+  "Watchlist scope": "Zakres listy obserwowanych",
+  "Calendar may be out of date": "Kalendarz może być nieaktualny",
+  "Upcoming reports": "Nadchodzące raporty",
+  "Past reports": "Minione raporty",
+  "No upcoming reports in scope. Widen the watchlist scope to see more.":
+    "Brak nadchodzących raportów w tym zakresie. Poszerz zakres listy, aby zobaczyć więcej.",
+  "Mark prepared": "Oznacz jako przygotowane",
+  "Mark processed": "Oznacz jako przetworzone",
+  "Prepared": "Przygotowane",
+  "Processed": "Przetworzone",
+  "Open workspace": "Otwórz przestrzeń",
+  "Open claims": "Otwórz deklaracje",
+  "Open research questions": "Otwarte pytania badawcze",
+  "Unresolved claims": "Nierozstrzygnięte deklaracje",
+  "Due": "Wymagalne",
+  "Last-period KPIs": "Wskaźniki KPI z ostatniego okresu",
+  "No KPIs from the last reported period.": "Brak wskaźników KPI z ostatniego raportowanego okresu.",
+  "Recent evidence": "Najnowsze dowody",
+  "Loading…": "Ładowanie…",
   "Database": "Baza danych",
   "Advanced connection-pool tuning. Changes apply on the next app launch.":
     "Zaawansowane strojenie puli połączeń. Zmiany działają po następnym uruchomieniu aplikacji.",

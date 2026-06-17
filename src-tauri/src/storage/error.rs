@@ -40,6 +40,10 @@ pub enum StorageError {
     InvalidClaimValue { key: &'static str, value: String },
     #[error("missing claim reference for {table}: {id}")]
     MissingClaimReference { table: String, id: String },
+    #[error("invalid report season value for {key}: {value}")]
+    InvalidReportSeasonValue { key: &'static str, value: String },
+    #[error("missing report season reference for {table}: {id}")]
+    MissingReportSeasonReference { table: String, id: String },
     #[error("classification error: {0}")]
     Classification(String),
 }

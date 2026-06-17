@@ -475,6 +475,60 @@ Rules:
 - Resurfacing is idempotent: re-running the derivation never duplicates queue entries for the same `(claim, period)`.
 - The same arrival may also create a `claim_follow_up` reminder; the queue is the primary verification surface, reminders/digests are the cross-cutting paths.
 
+## Report-Season Cockpit
+
+The report-season cockpit ([ADR 0044](adr/0044-report-season-cockpit.md), `v0.43.0`): upcoming report dates across watchlists, each with a pre-report card composed from open questions, unresolved claims, last-period KPIs, and recent evidence, plus a prepare→process workflow. The calendar and card are backend-owned **read models** assembled from canonical domains; the only new persisted state is per-occurrence preparation status (`report_preparations`).
+
+`list_report_season(input)` returns the calendar read model. `input` is `{ watchlistId?: string }` (omit for all tracked companies). It aggregates `company_events` with `eventType = 'periodic_report'`, split into `upcoming` (event date ≥ today) and `past`, ordered by date, with calendar freshness so a stale calendar is visible rather than silently empty:
+
+```json
+{
+  "upcoming": [
+    {
+      "companyId": "company_gpw_cdr",
+      "qualifiedTicker": "GPW:CDR",
+      "displayName": "CD Projekt",
+      "eventKey": "cdr-periodic_report-2026-05-28",
+      "eventDate": "2026-05-28",
+      "eventTime": null,
+      "title": "Raport za Q1 2026",
+      "preparationStatus": "prepared"
+    }
+  ],
+  "past": [],
+  "calendarFreshness": { "lastFetchedAt": "2026-06-16T04:00:00Z", "stale": false }
+}
+```
+
+`get_pre_report_card(input)` returns the per-company pre-report card. `input` is `{ companyId: string, eventKey: string }`. It composes the four owning domains plus the company's preparation state — no duplicated domain logic:
+
+```json
+{
+  "companyId": "company_gpw_cdr",
+  "eventKey": "cdr-periodic_report-2026-05-28",
+  "eventDate": "2026-05-28",
+  "preparationStatus": "prepared",
+  "linkedReportDocumentId": null,
+  "openQuestions": [{ "id": "q_01", "prompt": "Czy marża brutto się utrzyma?" }],
+  "unresolvedClaims": { "due": [], "overdue": [], "upcoming": [{ "claim": { "id": "claim_02" } }] },
+  "lastPeriodKpis": [{ "metricKey": "revenue", "valueNumeric": "950000000", "periodId": "period_cdr_2025_q4" }],
+  "recentEvidence": [{ "evidenceType": "company_signal", "id": "sig_12", "occurredAt": "2026-06-10" }]
+}
+```
+
+Workflow actions write `report_preparations` and are explicit user actions (no automation):
+
+- `mark_report_prepared(input)`: `{ companyId, eventKey }` → sets `status = 'prepared'`, stamps `preparedAt`. Idempotent.
+- `mark_report_processed(input)`: `{ companyId, eventKey, linkedReportDocumentId? }` → sets `status = 'processed'`, stamps `processedAt`, links the arrived report when known. On processing the card links to the arrived filing and the existing KPI-extraction entry point and ties back to the claims-review queue; it never auto-extracts or auto-confirms. Idempotent.
+
+Rules:
+
+- Absence of a `report_preparations` row means `preparationStatus = 'upcoming'`; reads default a missing row to `upcoming`.
+- `list_report_season` with a `watchlistId` restricts to that watchlist's companies; unscoped returns all tracked companies.
+- Allowed `preparationStatus`: `upcoming`, `prepared`, `processed`, validated at the storage boundary.
+
+Error codes: `company_not_found`, `watchlist_not_found`, `invalid_preparation_status`.
+
 ## Company Event
 
 Company events represent dated items the user may want to track across watchlists. Upcoming events are the default attention focus, but historical events are retained for context. They are separate from feed items and notebook entries, but may link to source items or notes later.

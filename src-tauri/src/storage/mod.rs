@@ -58,6 +58,7 @@ mod notebooks;
 mod pool;
 mod registry;
 mod report_documents;
+mod report_season;
 mod research;
 mod research_briefs;
 mod research_digests;
@@ -103,6 +104,11 @@ pub use metrics::{
 pub use migrations::{open_database, open_in_memory_database};
 pub use pool::open_pool;
 pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
+pub use report_season::{
+    CalendarFreshness, MarkReportPreparedInput, MarkReportProcessedInput, PreReportCard,
+    PreReportCardInput, PreReportKpi, ReportPreparation, ReportSeasonEntry, ReportSeasonInput,
+    ReportSeasonResult,
+};
 pub use research_briefs::{
     CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
     ResearchBriefCitation, ResearchBriefEvidenceContext, ResearchBriefJob, ResearchBriefScopeInput,
@@ -901,6 +907,39 @@ impl AppState {
         let connection = self.checkout()?;
 
         management_claims::list_claims_to_verify(&connection, company_id)
+    }
+
+    pub fn list_report_season(
+        &self,
+        input: ReportSeasonInput,
+    ) -> StorageResult<ReportSeasonResult> {
+        let connection = self.checkout()?;
+
+        report_season::list_report_season(&connection, input)
+    }
+
+    pub fn get_pre_report_card(&self, input: PreReportCardInput) -> StorageResult<PreReportCard> {
+        let connection = self.checkout()?;
+
+        report_season::get_pre_report_card(&connection, input)
+    }
+
+    pub fn mark_report_prepared(
+        &self,
+        input: MarkReportPreparedInput,
+    ) -> StorageResult<ReportPreparation> {
+        let connection = self.checkout()?;
+
+        report_season::mark_report_prepared(&connection, input)
+    }
+
+    pub fn mark_report_processed(
+        &self,
+        input: MarkReportProcessedInput,
+    ) -> StorageResult<ReportPreparation> {
+        let connection = self.checkout()?;
+
+        report_season::mark_report_processed(&connection, input)
     }
 
     pub fn create_claim_extraction_job(
