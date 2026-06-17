@@ -17,6 +17,7 @@ mod import_export;
 mod licensing;
 mod management_claims;
 mod notebooks;
+mod quality_frameworks;
 mod report_documents;
 mod report_season;
 mod research;

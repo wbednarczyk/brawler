@@ -45,6 +45,8 @@ pub struct ImportExportSummary {
     pub research_reminders: usize,
     pub ai_research_digests: usize,
     pub ai_research_digest_citations: usize,
+    pub quality_frameworks: usize,
+    pub user_metrics: usize,
     pub settings: usize,
 }
 
@@ -83,6 +85,10 @@ pub struct ImportApplySummary {
     pub ai_research_digests_skipped: usize,
     pub ai_research_digest_citations_created: usize,
     pub ai_research_digest_citations_skipped: usize,
+    pub quality_frameworks_created: usize,
+    pub quality_frameworks_skipped: usize,
+    pub user_metrics_created: usize,
+    pub user_metrics_skipped: usize,
     pub settings_updated: usize,
 }
 
@@ -120,6 +126,51 @@ pub(super) struct ResearchExportDocument {
     pub(super) ai_research_digests: Vec<ExportAiResearchDigest>,
     #[serde(default)]
     pub(super) ai_research_digest_citations: Vec<ExportAiResearchDigestCitation>,
+    #[serde(default)]
+    pub(super) quality_frameworks: Vec<ExportQualityFramework>,
+    #[serde(default)]
+    pub(super) user_metrics: Vec<ExportUserMetric>,
+}
+
+/// A quality framework with its criteria nested (ADR 0046). Frameworks are
+/// global (not company-scoped), so they travel independently of company merges.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ExportQualityFramework {
+    pub(super) id: String,
+    pub(super) name: String,
+    pub(super) description: Option<String>,
+    pub(super) origin: String,
+    pub(super) template_key: Option<String>,
+    pub(super) cloned_from: Option<String>,
+    pub(super) version: i64,
+    pub(super) criteria: Vec<ExportFrameworkCriterion>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ExportFrameworkCriterion {
+    pub(super) id: String,
+    pub(super) ordinal: i64,
+    pub(super) label: String,
+    pub(super) expression: String,
+    pub(super) weight: Option<String>,
+    pub(super) partial_band: Option<String>,
+}
+
+/// A user-defined (global `user`-scope) custom metric definition, carried so a
+/// framework that references one imports cleanly (ADR 0046).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ExportUserMetric {
+    pub(super) id: String,
+    pub(super) metric_key: String,
+    pub(super) label: String,
+    pub(super) value_kind: String,
+    pub(super) unit: Option<String>,
+    pub(super) computation: String,
+    pub(super) formula: Option<String>,
+    pub(super) display_format: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

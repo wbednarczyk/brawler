@@ -13,6 +13,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let research_reminders = export_research_reminders(connection)?;
     let ai_research_digests = export_ai_research_digests(connection)?;
     let ai_research_digest_citations = export_ai_research_digest_citations(connection)?;
+    let quality_frameworks = export_quality_frameworks(connection)?;
+    let user_metrics = export_user_metrics(connection)?;
     let exported_at = now_rfc3339()?;
 
     let document = ResearchExportDocument {
@@ -29,6 +31,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "ai_research_briefs".to_owned(),
             "research_reminders".to_owned(),
             "ai_research_digests".to_owned(),
+            "quality_frameworks".to_owned(),
         ],
         companies,
         watchlists,
@@ -42,6 +45,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         research_reminders,
         ai_research_digests,
         ai_research_digest_citations,
+        quality_frameworks,
+        user_metrics,
     };
     let summary = ImportExportSummary {
         companies: document.companies.len(),
@@ -56,6 +61,8 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         research_reminders: document.research_reminders.len(),
         ai_research_digests: document.ai_research_digests.len(),
         ai_research_digest_citations: document.ai_research_digest_citations.len(),
+        quality_frameworks: document.quality_frameworks.len(),
+        user_metrics: document.user_metrics.len(),
         settings: 0,
     };
 
@@ -589,6 +596,76 @@ fn export_ai_research_digest_citations(
         })
     })?;
 
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+/// Export quality frameworks with their criteria nested (ADR 0046). Both app
+/// templates and user frameworks are durable owner state and travel together.
+fn export_quality_frameworks(
+    connection: &Connection,
+) -> StorageResult<Vec<ExportQualityFramework>> {
+    let mut statement = connection.prepare(
+        "SELECT id, name, description, origin, template_key, cloned_from, version
+         FROM quality_frameworks ORDER BY name COLLATE NOCASE, id",
+    )?;
+    let frameworks = statement
+        .query_map([], |row| {
+            Ok(ExportQualityFramework {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                description: row.get(2)?,
+                origin: row.get(3)?,
+                template_key: row.get(4)?,
+                cloned_from: row.get(5)?,
+                version: row.get(6)?,
+                criteria: Vec::new(),
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut with_criteria = Vec::with_capacity(frameworks.len());
+    for mut framework in frameworks {
+        let mut criteria_statement = connection.prepare(
+            "SELECT id, ordinal, label, expression, weight, partial_band
+             FROM framework_criteria WHERE framework_id = ?1 ORDER BY ordinal, id",
+        )?;
+        framework.criteria = criteria_statement
+            .query_map([&framework.id], |row| {
+                Ok(ExportFrameworkCriterion {
+                    id: row.get(0)?,
+                    ordinal: row.get(1)?,
+                    label: row.get(2)?,
+                    expression: row.get(3)?,
+                    weight: row.get(4)?,
+                    partial_band: row.get(5)?,
+                })
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        with_criteria.push(framework);
+    }
+    Ok(with_criteria)
+}
+
+/// Export user-defined (global `user`-scope) custom metric definitions so a
+/// framework that references one imports cleanly (ADR 0046).
+fn export_user_metrics(connection: &Connection) -> StorageResult<Vec<ExportUserMetric>> {
+    let mut statement = connection.prepare(
+        "SELECT id, metric_key, label, value_kind, unit, computation, formula, display_format
+         FROM kpi_definitions WHERE scope = 'user' ORDER BY metric_key COLLATE NOCASE, id",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportUserMetric {
+            id: row.get(0)?,
+            metric_key: row.get(1)?,
+            label: row.get(2)?,
+            value_kind: row.get(3)?,
+            unit: row.get(4)?,
+            computation: row.get(5)?,
+            formula: row.get(6)?,
+            display_format: row.get(7)?,
+        })
+    })?;
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
 }

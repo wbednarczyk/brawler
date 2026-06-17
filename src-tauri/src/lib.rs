@@ -4,6 +4,7 @@ use tauri::Manager;
 pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
+pub mod fundamentals;
 pub mod interpretation;
 pub mod ir_resolution;
 pub mod jobs;
@@ -156,6 +157,22 @@ pub fn run() {
             commands::financials::capture_report_document,
             commands::financials::list_report_documents,
             commands::financials::resolve_ir_report,
+            commands::quality_frameworks::list_quality_frameworks,
+            commands::quality_frameworks::get_quality_framework,
+            commands::quality_frameworks::create_quality_framework,
+            commands::quality_frameworks::update_quality_framework,
+            commands::quality_frameworks::delete_quality_framework,
+            commands::quality_frameworks::clone_framework,
+            commands::quality_frameworks::reset_framework_to_template,
+            commands::quality_frameworks::create_framework_criterion,
+            commands::quality_frameworks::update_framework_criterion,
+            commands::quality_frameworks::delete_framework_criterion,
+            commands::quality_frameworks::validate_criterion_expression,
+            commands::quality_frameworks::evaluate_framework,
+            commands::quality_frameworks::list_framework_evaluations,
+            commands::quality_frameworks::get_framework_evaluation,
+            commands::quality_frameworks::delete_framework_evaluation,
+            commands::quality_frameworks::list_available_metric_keys,
             commands::kpi_extraction::start_kpi_extraction,
             commands::kpi_extraction::retry_kpi_extraction,
             commands::kpi_extraction::list_kpi_extraction,

@@ -2109,6 +2109,31 @@ Initial local commands:
 
 Input shapes follow the corresponding domain types above. Return shapes include all domain fields plus timestamps. Company fundamentals data must be treated as owner-durable state in import/export and backup workflows.
 
+### Quality Frameworks
+
+Quality frameworks ([ADR 0046](adr/0046-quality-frameworks-quantitative.md), `v0.44.0`) are user-owned checklists of criteria expressed in a free-text DSL over KPI metric keys, evaluated deterministically against confirmed `financial_facts` into a versioned scorecard. The same expression engine that evaluates `kpi_definitions.formula` evaluates criteria; the criterion grammar adds comparators (`>= <= > < == ~=`), boolean `AND`/`OR`/`NOT`, and percent literals. The user-facing grammar reference is `wiki/dsl-reference.md`. Criteria are decision-support only and must not encode buy/sell/hold output.
+
+Domain types follow the `quality_frameworks` / `framework_criteria` / `framework_evaluations` / `criterion_results` shapes in [data-model.md](data-model.md). Commands:
+
+- `list_quality_frameworks()`: returns all frameworks (origin, version, criteria counts).
+- `get_quality_framework(id)`: returns one framework with its criteria.
+- `create_quality_framework(input)`: creates a `user`-origin framework.
+- `update_quality_framework(input)`: updates name/description; bumps `version`.
+- `delete_quality_framework(id)`: removes a framework and its criteria/evaluations (any origin is deletable).
+- `clone_framework(input)`: `{ frameworkId, name? }` → duplicates any framework into a new `user`-origin framework with `clonedFrom` set.
+- `reset_framework_to_template(id)`: `app_template`-origin only; re-derives the framework's criteria from the shipped Rust template constant. Errors with `not_a_template` for `user`-origin frameworks.
+- `create_framework_criterion(input)`: `{ frameworkId, label, expression, weight?, partialBand?, ordinal? }`; validates the expression, caches the AST.
+- `update_framework_criterion(input)`: updates label/expression/weight/ordinal; re-validates and re-caches the AST.
+- `delete_framework_criterion(id)`: removes one criterion.
+- `validate_criterion_expression(expression)`: parses without evaluating; returns `{ ok, error?, referencedMetricKeys[] }` for live editor feedback. Errors carry a human-readable parse message.
+- `evaluate_framework(input)`: `{ frameworkId, companyId }` → runs the engine over the company's latest available period/TTM, writes an immutable `framework_evaluations` + `criterion_results` snapshot, and returns the scorecard. `verdict = unavailable` when a referenced metric cannot be computed (missing fact), distinct from `fail`.
+- `list_framework_evaluations(input)`: `{ frameworkId, companyId }` → returns the evaluation history (latest first).
+- `get_framework_evaluation(id)`: returns one evaluation with its `criterion_results`.
+- `delete_framework_evaluation(id)`: removes one evaluation run and its `criterion_results` from the history. This is history pruning, not snapshot mutation — the remaining runs stay immutable.
+- `list_available_metric_keys(input?)`: returns the computable metric keys (catalog + derived + `user`-scope) with labels/units, for the criteria editor's discovery/autocomplete.
+
+Frameworks, criteria, and any `user`-scope `kpi_definitions` a criterion references are owner-durable state carried in the import/export bundle so an exported framework imports cleanly; evaluations are reproducible snapshots whose export is optional.
+
 ### AI KPI Extraction
 
 AI KPI extraction ([ADR 0028](adr/0028-multi-provider-ai-boundary.md), [ADR 0029](adr/0029-ir-page-report-resolution.md)) reads a stored report document with the selected AI provider and produces **proposals**. A proposal never becomes a `financial_fact` until the user confirms it; confirming materialises the period, resolves (or, for accepted suggestions, creates) the KPI definition, and writes the fact with `extractionMethod = "ai"` and the source document reference. Confirmed proposals are retained as the provenance trail (provider, model, prompt version live on the job; the verbatim source snippet and confidence on the proposal). Rejected proposals never persist a value.

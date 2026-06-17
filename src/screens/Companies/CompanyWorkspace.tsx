@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   ExternalLink,
   FileText,
+  Gauge,
   Inbox,
   Mail,
   MailOpen,
@@ -18,6 +19,7 @@ import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/fi
 import { CompanyBackfillPanel } from "../../shared/components/CompanyBackfillPanel";
 import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
+import { QualityPanel } from "../../shared/components/QualityPanel";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
@@ -231,7 +233,7 @@ export function CompanyWorkspace({
       </div>
     
       <SegmentedControl ariaLabel={text("Company workspace tabs")} className="company-tabs">
-        {(["Feed", "Notebook", "Claims", "Transcripts", "Fundamentals", "Metadata"] as const).map(
+        {(["Feed", "Notebook", "Claims", "Transcripts", "Fundamentals", "Quality", "Metadata"] as const).map(
           (tab) => {
             const TabIcon =
               tab === "Feed"
@@ -244,7 +246,9 @@ export function CompanyWorkspace({
                       ? Video
                       : tab === "Fundamentals"
                         ? TrendingUp
-                        : FileText;
+                        : tab === "Quality"
+                          ? Gauge
+                          : FileText;
 
             return (
               <SegmentedControlOption active={companyWorkspaceTab === tab} key={tab} onClick={() => setCompanyWorkspaceTab(tab)}>
@@ -778,6 +782,10 @@ export function CompanyWorkspace({
           companyId={selectedCompany.id}
           reloadKey={reportDocsReloadKey}
         />
+      ) : null}
+
+      {companyWorkspaceTab === "Quality" ? (
+        <QualityPanel companyId={selectedCompany.id} />
       ) : null}
 
       {companyWorkspaceTab === "Metadata" ? (

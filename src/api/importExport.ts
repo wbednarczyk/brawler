@@ -12,6 +12,8 @@ export type ImportExportSummary = {
   researchReminders: number;
   aiResearchDigests: number;
   aiResearchDigestCitations: number;
+  qualityFrameworks: number;
+  userMetrics: number;
   settings: number;
 };
 
@@ -37,6 +39,10 @@ export type ImportApplySummary = {
   aiResearchDigestsSkipped: number;
   aiResearchDigestCitationsCreated: number;
   aiResearchDigestCitationsSkipped: number;
+  qualityFrameworksCreated: number;
+  qualityFrameworksSkipped: number;
+  userMetricsCreated: number;
+  userMetricsSkipped: number;
   settingsUpdated: number;
 };
 

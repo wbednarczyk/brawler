@@ -96,3 +96,32 @@
   display: grid;
   gap: 6px;
 }
+
+/* Quality frameworks (ADR 0046): the panel reuses SectionHeader + ui-list-rows; these rules
+   only handle the framework selector bar, scorecard summary chips, the add-criterion row, and
+   the per-criterion trailing cluster (measured value + verdict chip + delete). The bars wrap so
+   the panel stays usable in the narrow tall-window range. */
+.quality-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.quality-framework-bar,
+.quality-scorecard-summary,
+.quality-add-criterion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.quality-criterion-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.quality-measured {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}

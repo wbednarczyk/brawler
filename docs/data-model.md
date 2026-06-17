@@ -587,7 +587,7 @@ Company columns added to `companies`:
 
 `kpi_definitions` (catalog — what a metric *is*):
 
-- `scope`: `canonical` (app-owned, global) | `sector` (shared within a `sector`) | `company` (bespoke, set `company_id`).
+- `scope`: `canonical` (app-owned, global) | `sector` (shared within a `sector`) | `company` (bespoke, set `company_id`) | `user` (user-owned, global custom metric — added in `v0.44.0` for quality frameworks, [ADR 0046](adr/0046-quality-frameworks-quantitative.md)).
 - `metric_key`, `label`, `value_kind` (`monetary` | `percentage` | `ratio` | `count` | `physical` | `duration`), `unit` (typed: `PLN`/`EUR`/`t`/`m2`/`shares`/`per_share`/`years`/…), `computation` (`reported` | `derived`), `formula` (for derived, over other metric keys), `display_format`.
 - Unique on `(metric_key, scope, IFNULL(company_id,''), IFNULL(sector,''))`.
 - Seeded packs: universal, industrial, cash flow, capital efficiency (derived), and sector packs `insurance`, `banking`, `specialty_finance`, `reit`.
@@ -605,7 +605,7 @@ Company columns added to `companies`:
 
 Rules:
 
-- Derived metrics (margins, FCF, ROE/ROIC, net-debt/EBITDA) are computed at read time from confirmed facts (TTM where conventional); unavailable when an input is missing.
+- Derived metrics (margins, FCF, ROE/ROIC, net-debt/EBITDA) are computed at read time from confirmed facts (TTM where conventional); unavailable when an input is missing. The `formula` is an expression over other metric keys, evaluated by the shared derived-metrics service (`v0.44.0`, [ADR 0046](adr/0046-quality-frameworks-quantitative.md)) using the same expression engine that evaluates quality-framework criteria. The service computes across **all** scopes, so adding a `user`-scope definition extends the computed-metrics list with no code change.
 - A fact may exist for a KPI not yet active in the relevance profile (agent-extracted, awaiting curation).
 - Industry-specific classified stocks (reserves with proven/probable, 1P/2P/3P categories) are modeled as company-scoped custom KPIs, not core enums.
 - Import/export, retention, and backup must treat fundamentals as owner durable state.
@@ -680,6 +680,48 @@ Rules:
 - `mark_report_prepared` / `mark_report_processed` are explicit user actions; there is no automated transition (the autonomous path is the North Star, `v0.49.0`).
 - The migration is idempotent and self-healing (`CREATE TABLE IF NOT EXISTS`).
 - Preparation state is owner durable state; its inclusion in the import/export bundle is a future per-feature coverage item ([roadmap](roadmap.md) `v0.52.0`), not part of `v0.43.0`.
+
+### Quality Frameworks
+
+User-owned quality checklists evaluated against the fundamentals facts by a deterministic rule engine, producing a versioned scorecard ([ADR 0046](adr/0046-quality-frameworks-quantitative.md), `v0.44.0`). A *framework* is a named set of criteria expressed in a free-text DSL over metric keys; the engine evaluates each criterion against confirmed `financial_facts` (latest period/TTM) and records the measured value. No AI; decision-support only (criteria cannot encode buy/sell output). Migration `0048_quality_frameworks.sql`.
+
+`quality_frameworks` (the checklist):
+
+- `id`, `name`, `description`.
+- `origin`: `app_template` (ships with the app) | `user` (user-created or cloned) — a **provenance label, not an edit lock**: every framework is editable and deletable in place regardless of origin.
+- `template_key`: stable key for an app template (e.g. `kroeze_quality`), null for user frameworks; `cloned_from` → `quality_frameworks(id)` (set when cloned).
+- `version`: integer, bumped on edit; pinned into each evaluation.
+- `created_at`, `updated_at`.
+
+`framework_criteria` (a single check):
+
+- `id`, `framework_id` → `quality_frameworks(id)`, `ordinal` (display order).
+- `label`, `expression` (DSL text, e.g. `roic >= 15%`, `net_debt_to_ebitda < 2.5 AND fcf > 0`), `expression_ast` (cached parsed AST JSON).
+- `weight`/`rank` (optional, for scorecard emphasis), `partial_band` (optional near-threshold band that yields a `partial` verdict).
+- `created_at`, `updated_at`.
+
+`framework_evaluations` (one immutable run):
+
+- `id`, `framework_id` → `quality_frameworks(id)`, `framework_version` (pinned at run time), `company_id` → `companies(id)`, `period_id` → `financial_periods(id)` (the assessed period).
+- Summary counts: `pass_count`, `partial_count`, `fail_count`, `unavailable_count`; `engine_version`.
+- `created_at`. Immutable once written.
+
+`criterion_results` (one immutable per-criterion outcome):
+
+- `id`, `evaluation_id` → `framework_evaluations(id)`, `criterion_id` → `framework_criteria(id)`.
+- `expression` (snapshot of the criterion text at run time), `verdict` (`pass` | `partial` | `fail` | `unavailable`).
+- `measured_value` (decimal-exact text, the leading metric's measured value), `measured_unit`, `threshold` (snapshot), `inputs_json` (the facts/periods/metric keys used, for audit), `note`.
+- Immutable once written.
+
+Rules:
+
+- Evaluation is a manual user action (`evaluate_framework`) over the latest available period/TTM; the autonomous re-evaluation path is deferred (`v0.49.0`/`v0.50.0`).
+- A run computes an in-memory metric table (never persisted) via the shared derived-metrics service, then persists only the `framework_evaluations` + `criterion_results` rows. The `measured_value` is pinned to the run and does **not** change when underlying facts later change (a final supersedes an estimate) — the scorecard is the latest run; history is queryable.
+- `verdict = unavailable` when a referenced metric cannot be computed (missing fact), distinct from `fail`.
+- An evaluation run may be **deleted** from the history (pruning); deletion cascades to its `criterion_results`. Deletion removes a whole run — it never mutates a retained run's snapshotted values, so the immutability guarantee holds for what remains.
+- App-template updates never overwrite an edited framework: the seed is `INSERT OR IGNORE` on a stable id; an `app_template`-origin framework offers an explicit **Reset to template defaults** (`reset_framework_to_template`) that re-derives its criteria from the shipped Rust template constant (single source for both the seed and the reset).
+- Frameworks + criteria (and any `user`-scope `kpi_definitions` a criterion references) are owner durable state, carried in the import/export bundle so an exported framework imports cleanly. Evaluations are reproducible snapshots; their export is optional.
+- The migration is append-only, idempotent, and self-healing; adding the `user` value to the `kpi_definitions.scope` CHECK is handled by a guarded table rebuild if the constraint is restrictive.
 
 ### Jobs
 

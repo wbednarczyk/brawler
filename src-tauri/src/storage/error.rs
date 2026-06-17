@@ -44,6 +44,14 @@ pub enum StorageError {
     InvalidReportSeasonValue { key: &'static str, value: String },
     #[error("missing report season reference for {table}: {id}")]
     MissingReportSeasonReference { table: String, id: String },
+    #[error("invalid quality framework value for {key}: {value}")]
+    InvalidFrameworkValue { key: &'static str, value: String },
+    #[error("missing quality framework reference for {table}: {id}")]
+    MissingFrameworkReference { table: String, id: String },
+    #[error("invalid criterion expression: {message}")]
+    InvalidCriterionExpression { message: String },
+    #[error("framework {id} is not an app template and cannot be reset")]
+    NotATemplate { id: String },
     #[error("classification error: {0}")]
     Classification(String),
 }

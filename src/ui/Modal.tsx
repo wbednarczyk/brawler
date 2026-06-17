@@ -24,6 +24,13 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
   const dialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocused = useRef<HTMLElement | null>(null);
 
+  // Keep the latest onClose without making it an effect dependency. Otherwise an
+  // unstable onClose (a fresh arrow on each render of the consumer) re-runs the
+  // focus-on-open effect on every render, stealing focus back to the dialog —
+  // which makes typing in a field inside the modal lose focus after each letter.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
 
@@ -33,7 +40,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     }
 
@@ -42,7 +49,7 @@ export function Modal({ open, onClose, title, children, footer, ariaLabel, class
       document.removeEventListener("keydown", onKeyDown);
       previouslyFocused.current?.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

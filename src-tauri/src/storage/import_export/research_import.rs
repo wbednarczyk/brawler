@@ -30,6 +30,7 @@ pub(super) fn apply_research_import(
         &company_id_by_ticker,
         planned_summary,
     )?;
+    let summary = apply_quality_frameworks(&transaction, &document, summary)?;
     transaction.commit()?;
 
     Ok(ImportApplyResult {
@@ -589,12 +590,152 @@ fn plan_research_import(
         summary.ai_research_digest_citations_created += 1;
     }
 
+    // Quality frameworks + user metrics (ADR 0046): global, keyed by id; created
+    // when absent, skipped when already present. Counts are advisory (the apply
+    // step is the source of truth and re-counts).
+    let existing_framework_ids = existing_ids(connection, "quality_frameworks").unwrap_or_default();
+    for framework in &document.quality_frameworks {
+        if framework.id.trim().is_empty() || framework.name.trim().is_empty() {
+            errors.push("Quality framework id and name are required".to_owned());
+            continue;
+        }
+        if existing_framework_ids.contains(&framework.id) {
+            summary.quality_frameworks_skipped += 1;
+        } else {
+            summary.quality_frameworks_created += 1;
+        }
+    }
+    let existing_metric_ids = existing_ids(connection, "kpi_definitions").unwrap_or_default();
+    for metric in &document.user_metrics {
+        if existing_metric_ids.contains(&metric.id) {
+            summary.user_metrics_skipped += 1;
+        } else {
+            summary.user_metrics_created += 1;
+        }
+    }
+
     ImportPreview {
         valid: errors.is_empty(),
         summary,
         warnings,
         errors,
     }
+}
+
+/// Apply imported quality frameworks + user metrics (ADR 0046). Global state,
+/// keyed by id: created when absent, skipped when present. User metrics import
+/// first so a framework referencing one resolves. An `app_template` framework
+/// whose `template_key` the receiving app already has is skipped (the template
+/// is already shipped), and a dangling `cloned_from` is dropped to null.
+fn apply_quality_frameworks(
+    connection: &Connection,
+    document: &ResearchExportDocument,
+    mut summary: ImportApplySummary,
+) -> StorageResult<ImportApplySummary> {
+    summary.quality_frameworks_created = 0;
+    summary.quality_frameworks_skipped = 0;
+    summary.user_metrics_created = 0;
+    summary.user_metrics_skipped = 0;
+
+    for metric in &document.user_metrics {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM kpi_definitions WHERE id = ?1)",
+            [&metric.id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            summary.user_metrics_skipped += 1;
+            continue;
+        }
+        connection.execute(
+            "INSERT INTO kpi_definitions
+                (id, scope, metric_key, label, value_kind, unit, computation, formula, display_format)
+             VALUES (?1, 'user', ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![
+                metric.id.trim(),
+                metric.metric_key.trim(),
+                metric.label.trim(),
+                metric.value_kind.trim(),
+                empty_string_to_none(metric.unit.clone()),
+                metric.computation.trim(),
+                empty_string_to_none(metric.formula.clone()),
+                empty_string_to_none(metric.display_format.clone()),
+            ],
+        )?;
+        summary.user_metrics_created += 1;
+    }
+
+    for framework in &document.quality_frameworks {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM quality_frameworks WHERE id = ?1)",
+            [&framework.id],
+            |row| row.get(0),
+        )?;
+        // Skip if the template is already shipped here (template_key is unique).
+        let template_taken: bool = match framework.template_key.as_deref() {
+            Some(key) if !key.is_empty() => connection.query_row(
+                "SELECT EXISTS(SELECT 1 FROM quality_frameworks WHERE template_key = ?1)",
+                [key],
+                |row| row.get(0),
+            )?,
+            _ => false,
+        };
+        if exists || template_taken {
+            summary.quality_frameworks_skipped += 1;
+            continue;
+        }
+
+        // Drop a dangling cloned_from rather than violate the FK.
+        let cloned_from = match framework.cloned_from.as_deref() {
+            Some(id) if !id.is_empty() => {
+                let present: bool = connection.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM quality_frameworks WHERE id = ?1)",
+                    [id],
+                    |row| row.get(0),
+                )?;
+                if present {
+                    Some(id.to_owned())
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        };
+
+        connection.execute(
+            "INSERT INTO quality_frameworks
+                (id, name, description, origin, template_key, cloned_from, version)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                framework.id.trim(),
+                framework.name.trim(),
+                empty_string_to_none(framework.description.clone()),
+                framework.origin.trim(),
+                empty_string_to_none(framework.template_key.clone()),
+                cloned_from,
+                framework.version,
+            ],
+        )?;
+        for criterion in &framework.criteria {
+            connection.execute(
+                "INSERT INTO framework_criteria
+                    (id, framework_id, ordinal, label, expression, weight, partial_band)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    criterion.id.trim(),
+                    framework.id.trim(),
+                    criterion.ordinal,
+                    criterion.label.trim(),
+                    criterion.expression.trim(),
+                    empty_string_to_none(criterion.weight.clone()),
+                    empty_string_to_none(criterion.partial_band.clone()),
+                ],
+            )?;
+        }
+        summary.quality_frameworks_created += 1;
+    }
+
+    Ok(summary)
 }
 
 fn apply_companies(

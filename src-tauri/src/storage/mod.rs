@@ -56,6 +56,7 @@ mod metrics;
 mod migrations;
 mod notebooks;
 mod pool;
+mod quality_frameworks;
 mod registry;
 mod report_documents;
 mod report_season;
@@ -103,6 +104,12 @@ pub use metrics::{
 };
 pub use migrations::{open_database, open_in_memory_database};
 pub use pool::open_pool;
+pub use quality_frameworks::{
+    CloneFrameworkInput, CriterionResult, EvaluateFrameworkInput, FrameworkCriterion,
+    FrameworkEvaluation, ListFrameworkEvaluationsInput, MetricKeyInfo, NewFrameworkCriterion,
+    NewQualityFramework, QualityFramework, UpdateFrameworkCriterion, UpdateQualityFramework,
+    ValidateCriterionResult,
+};
 pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
 pub use report_season::{
     CalendarFreshness, MarkReportPreparedInput, MarkReportProcessedInput, PreReportCard,
@@ -210,20 +217,33 @@ impl AppState {
     }
 
     pub fn with_data_dir(connection: Connection, data_dir: PathBuf) -> Self {
-        Self {
+        let state = Self {
             db: Db::Single(Arc::new(Mutex::new(connection))),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
-        }
+        };
+        state.seed_app_data();
+        state
     }
 
     pub(super) fn with_pool(pool: SqlitePool, data_dir: PathBuf) -> Self {
-        Self {
+        let state = Self {
             db: Db::Pool(pool),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
+        };
+        state.seed_app_data();
+        state
+    }
+
+    /// Idempotent startup seeding that cannot be expressed as a pure SQL migration
+    /// (it derives from Rust constants). Seeds app framework templates (ADR 0046).
+    /// Non-fatal: a failure leaves the templates unseeded rather than crashing startup.
+    fn seed_app_data(&self) {
+        if let Ok(connection) = self.checkout() {
+            let _ = quality_frameworks::seed_templates(&connection);
         }
     }
 
@@ -907,6 +927,108 @@ impl AppState {
         let connection = self.checkout()?;
 
         management_claims::list_claims_to_verify(&connection, company_id)
+    }
+
+    // ---- Quality frameworks (ADR 0046) -----------------------------------
+
+    pub fn list_quality_frameworks(&self) -> StorageResult<Vec<QualityFramework>> {
+        let connection = self.checkout()?;
+        quality_frameworks::list_quality_frameworks(&connection)
+    }
+
+    pub fn get_quality_framework(&self, id: &str) -> StorageResult<QualityFramework> {
+        let connection = self.checkout()?;
+        quality_frameworks::get_quality_framework(&connection, id)
+    }
+
+    pub fn create_quality_framework(
+        &self,
+        input: NewQualityFramework,
+    ) -> StorageResult<QualityFramework> {
+        let connection = self.checkout()?;
+        quality_frameworks::create_quality_framework(&connection, input)
+    }
+
+    pub fn update_quality_framework(
+        &self,
+        input: UpdateQualityFramework,
+    ) -> StorageResult<QualityFramework> {
+        let connection = self.checkout()?;
+        quality_frameworks::update_quality_framework(&connection, input)
+    }
+
+    pub fn delete_quality_framework(&self, id: &str) -> StorageResult<()> {
+        let connection = self.checkout()?;
+        quality_frameworks::delete_quality_framework(&connection, id)
+    }
+
+    pub fn clone_framework(&self, input: CloneFrameworkInput) -> StorageResult<QualityFramework> {
+        let connection = self.checkout()?;
+        quality_frameworks::clone_framework(&connection, input)
+    }
+
+    pub fn reset_framework_to_template(&self, id: &str) -> StorageResult<QualityFramework> {
+        let connection = self.checkout()?;
+        quality_frameworks::reset_framework_to_template(&connection, id)
+    }
+
+    pub fn create_framework_criterion(
+        &self,
+        input: NewFrameworkCriterion,
+    ) -> StorageResult<FrameworkCriterion> {
+        let connection = self.checkout()?;
+        quality_frameworks::create_framework_criterion(&connection, input)
+    }
+
+    pub fn update_framework_criterion(
+        &self,
+        input: UpdateFrameworkCriterion,
+    ) -> StorageResult<FrameworkCriterion> {
+        let connection = self.checkout()?;
+        quality_frameworks::update_framework_criterion(&connection, input)
+    }
+
+    pub fn delete_framework_criterion(&self, id: &str) -> StorageResult<()> {
+        let connection = self.checkout()?;
+        quality_frameworks::delete_framework_criterion(&connection, id)
+    }
+
+    pub fn validate_criterion_expression(&self, expression: &str) -> ValidateCriterionResult {
+        quality_frameworks::validate_criterion_expression(expression)
+    }
+
+    pub fn evaluate_framework(
+        &self,
+        input: EvaluateFrameworkInput,
+    ) -> StorageResult<FrameworkEvaluation> {
+        let connection = self.checkout()?;
+        quality_frameworks::evaluate_framework(&connection, input)
+    }
+
+    pub fn list_framework_evaluations(
+        &self,
+        input: ListFrameworkEvaluationsInput,
+    ) -> StorageResult<Vec<FrameworkEvaluation>> {
+        let connection = self.checkout()?;
+        quality_frameworks::list_framework_evaluations(&connection, input)
+    }
+
+    pub fn get_framework_evaluation(&self, id: &str) -> StorageResult<FrameworkEvaluation> {
+        let connection = self.checkout()?;
+        quality_frameworks::get_framework_evaluation(&connection, id)
+    }
+
+    pub fn delete_framework_evaluation(&self, id: &str) -> StorageResult<()> {
+        let connection = self.checkout()?;
+        quality_frameworks::delete_framework_evaluation(&connection, id)
+    }
+
+    pub fn list_available_metric_keys(
+        &self,
+        company_id: Option<&str>,
+    ) -> StorageResult<Vec<MetricKeyInfo>> {
+        let connection = self.checkout()?;
+        quality_frameworks::list_available_metric_keys(&connection, company_id)
     }
 
     pub fn list_report_season(

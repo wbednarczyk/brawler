@@ -25,6 +25,7 @@ quick-xml = "0.39"
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
 rusqlite = { version = "0.32", features = ["bundled"] }
+rust_decimal = { version = "1", default-features = false, features = ["serde-str"] }
 scraper = "0.22"
 semver = "1"
 sha2 = "0.10"

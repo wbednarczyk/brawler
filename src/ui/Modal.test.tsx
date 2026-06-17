@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -40,5 +41,25 @@ describe("Modal", () => {
 
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps focus in an input while typing, even with an unstable onClose", async () => {
+    // Regression: a fresh onClose arrow on each render must not re-run the
+    // focus-on-open effect and steal focus back to the dialog after each letter.
+    const user = userEvent.setup();
+    function Harness() {
+      const [value, setValue] = useState("");
+      return (
+        <Modal open onClose={() => {}} title="Name">
+          <input aria-label="name" value={value} onChange={(e) => setValue(e.target.value)} />
+        </Modal>
+      );
+    }
+    render(<Harness />);
+    const input = screen.getByLabelText("name");
+    await user.click(input);
+    await user.keyboard("hello");
+    expect(input).toHaveValue("hello");
+    expect(input).toHaveFocus();
   });
 });
