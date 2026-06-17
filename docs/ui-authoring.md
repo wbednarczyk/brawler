@@ -14,10 +14,33 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related: [
 
 Before writing JSX for a piece of UI, ask:
 
-1. **Is there a primitive for this?** Skim `src/ui/index.ts`. A titled section, a labelled input, a status badge, an error line, a list row, a modal, an empty state, a chart — there already is one.
-2. **Am I about to write a raw `<input>`, `<select>`, `<textarea>`, a `*-header`/`*-toolbar` div, or `style={{…}}`?** That is almost always a primitive bypass. Stop and use the primitive.
-3. **Is this shape new but recurring** (used or about to be used in ≥2 places)? Add a primitive, don't copy markup.
-4. **Strings**: every user-visible string goes through `text("…")` (see [i18n](#i18n)) with an entry in **both** `en.ts` and `pl.ts`.
+1. **Have I opened the closest sibling screen and matched its scaffold?** This is step zero, not optional — building a screen from the catalog in the abstract is how views end up structurally "raw". Open an existing screen in the same shape (a full screen → `src/screens/Events/EventsScreen.tsx`; a panel → a `src/screens/Research/*Panel.tsx`) and copy its outer structure. See [Screen scaffold](#screen-scaffold).
+2. **Is there a primitive for this?** Skim `src/ui/index.ts`. A titled section, a labelled input, a status badge, an error line, a list row, a modal, an empty state, a chart — there already is one.
+3. **Is there a domain component for this data shape?** Skim `src/shared/components/`. A **qualified ticker → `TickerLabel`** (never render `qualifiedTicker`/`company` as plain text — it loses the exchange coloring every other screen shows), markdown note body → `MarkdownNoteBody`, a quarter/date field → `NotebookQuarterField`/`NotebookDateField`, etc. These live **outside** `src/ui` so they will not show up when you only skim the primitive barrel. See [Domain components](#domain-components).
+4. **Am I about to write a raw `<input>`, `<select>`, `<textarea>`, a `*-header`/`*-toolbar` div, or `style={{…}}`?** That is almost always a primitive bypass. Stop and use the primitive.
+5. **Is this shape new but recurring** (used or about to be used in ≥2 places)? Add a primitive, don't copy markup.
+6. **Strings**: every user-visible string goes through `text("…")` (see [i18n](#i18n)) with an entry in **both** `en.ts` and `pl.ts`.
+
+## Screen scaffold
+
+A full-screen view has a fixed outer structure. Copy it from a sibling (e.g. `EventsScreen`) rather than re-deriving it — getting this wrong is what makes a view feel raw next to the others (headers flush to the border, no internal scroll, double-wrapped chrome):
+
+```tsx
+<section className="feed-panel" aria-labelledby="x-title">
+  <PanelHeader title={…} description={…} titleId="x-title" actions={…} />
+  {/* The padded, independently-scrolling body. Without it, content sits flush
+     against the panel border. Match the .events-layout / .companies-layout idiom. */}
+  <div className="x-layout">
+    {/* sections, rows, empty states … */}
+  </div>
+</section>
+```
+
+Rules:
+
+- The screen root is `feed-panel` (the panel chrome: border, radius, `overflow: hidden`, full height). Do **not** also wrap the body in the `Panel` primitive — that double-wraps the chrome. `Panel`/`PanelHeader` is for nested sub-panels inside a screen, not the screen shell.
+- Put screen content in a **padded, `overflow:auto`, `flex:1; min-height:0`** body container (the `.events-layout`/`.companies-layout` pattern). The panel itself has no body padding by design.
+- Rows that read as cards use the shared card idiom: a `var(--border)`-ish border, `border-radius: 8px`, and a `color-mix(... var(--surface-raised) …)` fill (see `.event-week-day`, `.report-season-row`). A selectable/expandable row gets a visible hover and active state; use the `ExpandableRow` primitive for expand-in-place.
 
 ## Primitive catalog (what to use instead of hand-rolling)
 
@@ -50,6 +73,17 @@ Before writing JSX for a piece of UI, ask:
 | A filter bar | `FilterToolbar` | bespoke filter rows |
 | A row of actions | `ActionRow` | a flex div of buttons |
 | Sparkline / trend chart | `Sparkline` / `TrendChart` | a charting dependency or hand-drawn SVG |
+
+## Domain components (`src/shared/components`)
+
+`src/ui` holds generic primitives; `src/shared/components` holds **domain-level** shared components that render a specific Brawler data shape consistently across screens. They are **not** in the `src/ui/index.ts` barrel, so skimming the primitive catalog alone will miss them — check this folder for the data you are rendering.
+
+| You are rendering… | Use | Do NOT |
+| --- | --- | --- |
+| A qualified ticker (`GPW:CDR`) | `TickerLabel` | render `qualifiedTicker`/`company` as plain text (loses the exchange coloring shown everywhere else). Passing it as a prop or building an `aria-label`/`title` string from it is fine; the **visible** label uses `TickerLabel`. A `<select>` `<option>` is the one place it stays plain text (options can't render styled spans). |
+| A markdown note/claim body | `MarkdownNoteBody` | a hand-rolled markdown renderer |
+| A fiscal quarter / date input | `NotebookQuarterField` / `NotebookDateField` | a bespoke period picker |
+| A company claims / report-docs / KPI / backfill panel | the matching `Company*Panel` / `Feed*Panel` | a re-implementation |
 
 ## Decision rules where two primitives look similar
 

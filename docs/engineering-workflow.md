@@ -218,6 +218,44 @@ Once the scaffold exists, the repo should expose a small set of predictable comm
 
 The Makefile is the preferred local command surface from WSL. Targets must remain thin wrappers around documented project commands.
 
+## Definition Of Done (Per-Change Checklist)
+
+The canonical loop for any feature or fix. It is **tiered** — run the tier(s) your change touches, not all of it for a one-line doc edit — and it is a **living checklist**: when the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)) produces a lesson that cannot be a clean automated gate, add a line here. Command reference is in [Agent Day-To-Day Check Loop](#agent-day-to-day-check-loop) and [Quality Gates](#quality-gates).
+
+**Before coding (every non-trivial change):**
+
+- [ ] Read the canonical doc(s) for the area (the [Required Reading](../AGENTS.md) map) and implement to spec. Do not infer architecture/field/command names from code alone.
+- [ ] ADR checkpoint: if the change alters durable architecture or policy, add/update an ADR before coding.
+
+**Building UI (`src/` frontend):**
+
+- [ ] Open the closest sibling screen/panel and **match its scaffold** (`feed-panel` shell + `PanelHeader` + padded scrollable body) — do not assemble from the catalog in the abstract. See [ui-authoring.md → Screen scaffold](ui-authoring.md).
+- [ ] Run the [pre-write self-check](ui-authoring.md): primitive for the shape (`src/ui`), **domain component for the data shape (`src/shared/components` — e.g. `TickerLabel` for any qualified ticker)**, no raw `<input>/<select>/<textarea>`, no inline `style={{…}}`.
+- [ ] Every user-visible string via `text("…")` with **both** `en.ts` and `pl.ts` entries; counts use `pluralNoun`.
+- [ ] Frontend gate green — `rtk npm run check:frontend` (= `typecheck` → `lint` (ESLint) → `stylelint` → `test` → `build`), or the steps individually. There is **no jest**: tests are **Vitest** (`npm test` = `vitest run src`), which also runs the `jest-axe` a11y suite (`primitives.a11y.test.tsx`) and the primitive contract tests (`primitives.test.tsx`).
+- [ ] New UI workflow/behavior has a Vitest component or workflow test.
+- [ ] Added/changed a primitive → added it to `PrimitiveGallery.tsx` **and** `primitives.test.tsx` (and it stays clean under the a11y suite).
+
+**Backend (`src-tauri/` Rust):**
+
+- [ ] Rust gate green — `rtk npm run check:rust` (= `cargo fmt --check` → `clippy --all-targets -D warnings` → `cargo test`); `rtk cargo nextest run` is the faster local equivalent of `cargo test`.
+- [ ] New contract/command, read model, migration, adapter, or mapping has automated tests. Migrations are append-only, idempotent, and self-healing.
+
+**Opt-in / periodic suites (NOT in `make check` — run when relevant):**
+
+- [ ] **Playwright browser UI smoke** (`make ui-smoke` / `npm run test:browser`, Chromium via `make ui-smoke-install`): run when you add a screen or change layout/scaffold/scroll/responsive behavior. It catches overflow, scroll-ownership, and clipping regressions Vitest/jsdom cannot ([ADR 0021](adr/0021-browser-ui-regression-testing.md)); add or adjust a sample in the `playwright.config.ts` viewport matrix when introducing a new layout shape.
+- [ ] **`rtk npm run knip`** (dead-code audit — unused files/exports/deps): run after removing or refactoring code. It is a periodic audit, not a `make check` gate step.
+
+**Keeping the docs honest (same change, not a later pass):**
+
+- [ ] Updated the canonical doc(s) whose behavior changed (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
+
+**Closing out:**
+
+- [ ] **Guardrail harvest**: for anything the user or a review flagged, the *class* is closed with a gate or a doc/checklist rule in this change ([.agents/skills/guardrail-harvest.md](../.agents/skills/guardrail-harvest.md)).
+- [ ] **Epic/milestone closure: run ALL suites, not just the per-change gate** — `make check-epic` (the hard gate + the opt-in/periodic suites that otherwise rot unrun: **knip** and the **Playwright browser UI smoke**). This is a **closure-cadence** requirement, not per-change: it adds only ~1–2 min over `make check` and runs once per epic. Triage every failure — fix it, or file a tracked Radicle issue — before sign-off; a known-tracked failure does not silently block, but it must be visible (this is how `2d9825a` was caught).
+- [ ] Milestone closure only: version bump across the five manifests and CHANGELOG via the release workflow — **and only on explicit user sign-off** (agents never close a milestone or commit/push unprompted).
+
 ## Agent Day-To-Day Check Loop
 
 Agents should minimize token usage during normal implementation by using direct `rtk` commands and the locally installed WSL toolchain whenever possible.
