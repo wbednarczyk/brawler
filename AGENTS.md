@@ -14,8 +14,12 @@ These three rules apply at all times, in every session, before anything else. Th
 
 Before making non-trivial changes, agents must read enough project context to understand the affected behavior without loading unrelated reference material.
 
+**Two docs are mandatory in every session state — new, resumed, compacted, already-large-context, any other — and rank above all other docs: this file (`AGENTS.md`) and [docs/engineering-workflow.md](docs/engineering-workflow.md).** They are non-optional; every other doc below is loaded as the task requires. This is a **spec-driven-development** project: the docs define intent before code — implement to spec and never invent architecture, data shapes, command names, scopes, or error codes. If a session has drifted (e.g. after compaction or in a large context), re-ground in these two before acting.
+
 Always read:
 
+- **This file — `AGENTS.md`** (loaded every session; treat as read at all times): the Three Always-On Rules, the Single-Source-Of-Truth map, and the standing operating rules.
+- **[docs/engineering-workflow.md](docs/engineering-workflow.md)**: the build/test/toolchain/validation discipline and the Definition of Done — e.g. the host toolchain can be split, so validate under Nix; host "green" is a hint, not a verdict.
 - [docs/project-brief.md](docs/project-brief.md) for product intent and the documentation map.
 - [docs/project-practices.md](docs/project-practices.md) for standing operating rules.
 - The active Radicle issue, epic, or task being implemented. Use [docs/kanban.md](docs/kanban.md) for the Radicle/Radboard tracking pointer.
@@ -28,7 +32,6 @@ Then read only the relevant canonical references for the work being done:
 - User-facing behavior or UI flows: [docs/product-spec.md](docs/product-spec.md), [docs/ui-flows.md](docs/ui-flows.md), and [docs/ui-information-architecture.md](docs/ui-information-architecture.md).
 - **Building or editing any frontend UI (components, screens, styling): [docs/ui-authoring.md](docs/ui-authoring.md) — compose from the `src/ui` primitives; never hand-roll a control, section, badge, row, or layout a primitive already provides, and do not use inline `style={{…}}`. Run the pre-write self-check in that guide before writing JSX.** Policy: [ADR 0037](docs/adr/0037-ui-component-framework-and-authoring-contract.md).
 - Source adapters and source policy: [docs/source-strategy.md](docs/source-strategy.md) and source-specific ADRs.
-- Build, test, CI, packaging, or local environment behavior: [docs/engineering-workflow.md](docs/engineering-workflow.md).
 - Module ownership or refactoring: [docs/modularization-design.md](docs/modularization-design.md).
 - Historical completed-card context only when needed: [docs/kanban-archive.md](docs/kanban-archive.md).
 

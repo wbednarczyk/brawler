@@ -11,10 +11,11 @@ repoctx prime 2>/dev/null
 
 # --- your session-start context below (preserved across `repoctx init`) ---
 # Brawler live repo snapshot: branch/commits, working-tree state, version,
-# active Radicle work, the milestone load, and the doc load order. Read-only and
-# best-effort — every command is guarded and the script always exits 0, so a
-# hook hiccup never blocks session start. The standing RULES live in
-# session-context.sh; this is only the dynamic SNAPSHOT and does not repeat them.
+# active Radicle work, and the milestone load. Read-only and best-effort — every
+# command is guarded and the script always exits 0, so a hook hiccup never blocks
+# session start. The standing RULES and the doc load order live in
+# session-context.sh (the committed, all-agents hook); this is only the dynamic
+# SNAPSHOT and does not repeat them.
 # Commands run raw here (this is a hook, not an agent action — the `rtk` prefix
 # rule applies to commands the agent issues, not to this script).
 set -u
@@ -63,19 +64,5 @@ else
   print_section "radicle"
   echo "(rad not on PATH)"
 fi
-
-print_section "load order"
-cat <<'EOF'
-1. AGENTS.md — Three Always-On Rules (rtk · doc-first · enforcement-is-a-hard-stop),
-   Required Reading, and the Single-Source-Of-Truth table.
-2. docs/project-brief.md + docs/project-practices.md — product intent + operating rules.
-3. rad issue show <hex7> — the active epic/task and its recent comments
-   (docs/kanban.md is the Radicle pointer + label conventions; `rad issue list --all` for the full board).
-4. Only the canonical doc(s) for the area being touched:
-   contracts.md · data-model.md · product-spec.md · ui-flows.md · ui-information-architecture.md ·
-   architecture.md + docs/adr/* · source-strategy.md · engineering-workflow.md · modularization-design.md.
-   Building/editing UI → docs/ui-authoring.md (primitive-first, ADR 0037) first.
-   Milestone/release closure → .agents/skills/brawler-release.md.
-EOF
 
 exit 0
