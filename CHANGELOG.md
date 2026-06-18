@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.44.1 - 2026-06-18
+
+
+### Features
+
+- **quality**: expandable per-run detail in evaluation history
+
 ## v0.44.0 - 2026-06-17
 
 Score a company against your own quantitative quality checklists, built from its
