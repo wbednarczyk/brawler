@@ -59,6 +59,7 @@ Keep only the app/package version changed; do not touch dependency versions.
 
 For milestone closure, update:
 
+- **`wiki/` — required.** Create or update the user-facing `wiki/` entries (how-to guides, references, instructions) for every new or changed user-facing capability in the release. The wiki is the end-user documentation, distinct from the canonical `docs/` specs; a feature is not release-ready until its user-facing guide exists or is updated. Do this as part of `release-prepare`, before the release commit, so the docs ship with the release.
 - `docs/roadmap.md`: add or update `Status: completed in `X.Y.Z`.` under the milestone heading.
 - `docs/kanban.md`: move completed milestone work to the correct completed/archive state and record the version bump where the project currently tracks delivered work.
 - Radicle/Radboard issues: close or relabel the relevant milestone/epic/task issues, using existing project label conventions.
@@ -82,13 +83,20 @@ After running the target:
 
 Because the GitHub release notes are sliced from the `CHANGELOG.md` **at the release tag**, the curated section must be in the release commit (i.e. curate before `make release`, or the curation must land in the tagged commit). Curating on `master` after the tag does not change an already-published release — update it with `gh release edit vX.Y.Z --notes-file <file>` (or move the tag, only with explicit approval).
 
-After milestone docs and Radicle/Radboard issue state are updated, prefer the Makefile release target for the mechanical release commit/tag/push:
+### Preferred flow: prepare → curate → finalize
+
+`make release` in one shot generates a **terse** scaffold and immediately commits it, so the tagged notes are terse — forcing a post-hoc `gh release edit` and a second `CHANGELOG` commit (the second commit is a common source of unasked-follow-up-commit mistakes). To get **curated notes into the tagged commit with a single release commit**, use the two-step flow:
 
 ```bash
-make release VERSION=X.Y.Z
+make release-prepare VERSION=X.Y.Z   # bumps version + generates the changelog scaffold, then stops
+# → curate the new "## vX.Y.Z" section in CHANGELOG.md into real release notes
+# → also ensure wiki/ entries for new/changed user-facing behavior exist (see above)
+make release VERSION=X.Y.Z           # validates, makes the single chore(release) commit, tags, pushes
 ```
 
-That target bumps synchronized version files, runs `make changelog`, runs `make release-check`, runs `make check`, stages release files, creates `chore(release): bump version to X.Y.Z`, creates annotated tag `vX.Y.Z`, and pushes `master` plus the tag to both `origin` and `rad`.
+`release` is skip-if-already-done: it sees the version already bumped and the `## vX.Y.Z` section present, skips regenerating, and commits the **curated** changelog. No `gh release edit`, no second commit.
+
+A one-shot `make release VERSION=X.Y.Z` (without `release-prepare`) still works for a trivial release — it bumps, generates the terse scaffold, and commits it inline, exactly as before. That target also runs `make release-check`, `make check`, creates the annotated tag `vX.Y.Z`, and pushes `master` plus the tag to both `origin` and `rad`. Run `make check` validation under Nix counts — the host toolchain can be split (see [engineering-workflow.md](../../docs/engineering-workflow.md) Agent Day-To-Day Check Loop).
 
 Do not use the target before completing scope-specific closure work that it cannot infer, such as roadmap text, kanban archive entries, and Radicle/Radboard issue state.
 

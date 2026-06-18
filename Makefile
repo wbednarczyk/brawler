@@ -18,7 +18,7 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: help install dev frontend-preview build check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -35,8 +35,10 @@ help:
 	@printf "  make changelog-check     Validate git-cliff changelog generation\n"
 	@printf "  make release-notes TAG=vX.Y.Z\n"
 	@printf "                            Print the changelog entry used for GitHub Release notes\n"
+	@printf "  make release-prepare VERSION=X.Y.Z\n"
+	@printf "                            Bump version + generate the changelog scaffold, then stop for curation\n"
 	@printf "  make release VERSION=X.Y.Z\n"
-	@printf "                            Bump version, changelog, validate, commit, tag, and push release\n"
+	@printf "                            Finalize: validate, commit, tag, and push (bumps + generates changelog if not prepared)\n"
 	@printf "  make dev                 Start Tauri dev mode inside nix develop, requires Linux GUI/WSLg\n"
 	@printf "  make frontend-preview    Serve built frontend preview to Windows browser, not native Tauri\n"
 	@printf "  make license-keygen-author\n"
@@ -133,21 +135,46 @@ release-notes:
 release-check:
 	$(NIX) npm run release:check
 
-release:
-	@test -n "$(VERSION)" || { printf "Usage: make release VERSION=X.Y.Z\n" >&2; exit 64; }
-	@test "$(VERSION)" != "$(APP_VERSION)" || { printf "App version is already $(VERSION).\n" >&2; exit 1; }
+# Prepare a release for curation: bump the version and generate the changelog
+# scaffold, then STOP. This is the seam the one-shot `release` lacks — it lets the
+# `## vX.Y.Z` section be curated into real release notes *before* the release
+# commit, so the curated notes land in the tagged commit (the GitHub release notes
+# are sliced from CHANGELOG.md at the tag). After curating, run `make release`.
+release-prepare:
+	@test -n "$(VERSION)" || { printf "Usage: make release-prepare VERSION=X.Y.Z\n" >&2; exit 64; }
 	@test "$$(git branch --show-current)" = "master" || { printf "Release target must run from master.\n" >&2; exit 1; }
 	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
 		printf "Tag v$(VERSION) already exists.\n" >&2; \
 		exit 1; \
 	fi
+	$(NIX) node scripts/release/assert-release-worktree.mjs
+	@if [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
+		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
+	else printf "Version already at $(VERSION); skipping bump.\n"; fi
 	@if grep -q "^## v$(VERSION) " CHANGELOG.md; then \
-		printf "CHANGELOG.md already contains v$(VERSION).\n" >&2; \
+		printf "CHANGELOG.md already has v$(VERSION); skipping generation.\n"; \
+	else $(MAKE) changelog; fi
+	@printf "\nPrepared v$(VERSION). Curate the '## v$(VERSION)' section in CHANGELOG.md into\nuser-facing release notes, then run:  make release VERSION=$(VERSION)\n"
+
+# Finalize a release: validate, make the single chore(release) commit, tag, and
+# push. Works whether or not `release-prepare` ran first — the bump and changelog
+# steps are skip-if-already-done (so a prepared+curated changelog is preserved),
+# and run inline for a one-shot `make release` (which then commits the terse
+# scaffold, same as before).
+release:
+	@test -n "$(VERSION)" || { printf "Usage: make release VERSION=X.Y.Z\n" >&2; exit 64; }
+	@test "$$(git branch --show-current)" = "master" || { printf "Release target must run from master.\n" >&2; exit 1; }
+	@if git rev-parse -q --verify "refs/tags/v$(VERSION)" >/dev/null; then \
+		printf "Tag v$(VERSION) already exists.\n" >&2; \
 		exit 1; \
 	fi
 	$(NIX) node scripts/release/assert-release-worktree.mjs
-	$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"
-	$(MAKE) changelog
+	@if [ "$(VERSION)" != "$(APP_VERSION)" ]; then \
+		$(NIX) node scripts/release/bump-version.mjs "$(VERSION)"; \
+	else printf "Version already bumped to $(VERSION) (prepared); skipping bump.\n"; fi
+	@if grep -q "^## v$(VERSION) " CHANGELOG.md; then \
+		printf "CHANGELOG.md already has v$(VERSION) (prepared/curated); skipping generation.\n"; \
+	else $(MAKE) changelog; fi
 	$(MAKE) release-check
 	$(MAKE) check
 	git add $(RELEASE_FILES)

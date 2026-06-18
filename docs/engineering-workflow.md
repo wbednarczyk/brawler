@@ -262,6 +262,8 @@ Agents should minimize token usage during normal implementation by using direct 
 
 This is a convenience loop, not a replacement for the canonical Nix workflow. `nix develop` and `make check` remain the reproducible parity path for milestone closure, pre-commit confidence, and CI-equivalent verification.
 
+**The host toolchain can be silently split, so host "green" does not count — only Nix is authoritative.** A host shell may have a `cargo`/`rustc` (e.g. from `rustup`) at a *different version* than the Nix-pinned `rustdoc`/`clippy`. This bit `v0.44.0`: the host (cargo 1.96 / rustdoc 1.95) produced **false** `cargo test --doc` failures (`E0514`) and **hid a real `clippy` lint** that only the Nix toolchain (1.95) flags. So a `rtk cargo …` pass on the host is a hint, not a verdict. **Before claiming a Rust change green — and always before any release/closure — run the Rust gate under Nix** (`make check`, or `env -u LD_LIBRARY_PATH nix develop -c npm run check:rust`). Do not mix host and Nix `cargo` runs on the same `target/` dir: their artifacts are mutually incompatible and force a full clean rebuild (the real cost of "going Nix" is this cache-thrash from *mixing*, not the wrapper — staying Nix-only keeps the cache warm).
+
 Preferred agent commands for targeted iteration:
 
 - `rtk grep "pattern" path`: search code and docs with compact grouped output.
