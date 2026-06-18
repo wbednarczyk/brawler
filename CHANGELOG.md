@@ -2,10 +2,15 @@
 
 ## v0.44.1 - 2026-06-18
 
+A follow-up to the quality frameworks feature.
 
-### Features
+### Added
 
-- **quality**: expandable per-run detail in evaluation history
+- **Drill into evaluation history.** Each past run in a framework's evaluation
+  history now expands in place to reveal its full per-criterion detail — every
+  criterion's verdict and the measured value as it stood when that run was made
+  (from the immutable snapshot, so it shows the figures at the time, not the
+  current ones). History goes from a bare log to a record you can inspect.
 
 ## v0.44.0 - 2026-06-17
 
