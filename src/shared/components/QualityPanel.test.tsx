@@ -169,6 +169,25 @@ describe("QualityPanel", () => {
     expect(screen.getByPlaceholderText("roe >= 15%")).toHaveValue("roe");
   });
 
+  it("expands a history run to reveal its per-criterion snapshot", async () => {
+    const user = userEvent.setup();
+    const run = evaluation();
+    // A distinct snapshot label so it can only come from the expanded history
+    // detail, not the live scorecard (which renders the framework's criteria).
+    run.results = [{ ...run.results[0], label: "Snapshot criterion", verdict: "fail" }];
+    listFrameworkEvaluationsMock.mockResolvedValue([run]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Strong return on equity");
+
+    // Collapsed by default: the snapshot detail is not shown.
+    expect(screen.queryByText("Snapshot criterion")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /2026-06-10/ }));
+
+    expect(await screen.findByText("Snapshot criterion")).toBeInTheDocument();
+  });
+
   it("shows the empty state when there are no frameworks", async () => {
     listQualityFrameworksMock.mockResolvedValue([]);
     render(<QualityPanel companyId="company_gpw_cdr" />);

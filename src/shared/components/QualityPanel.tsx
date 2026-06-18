@@ -27,6 +27,7 @@ import {
   Button,
   EmptyState,
   ErrorText,
+  ExpandableRow,
   Hint,
   ListRow,
   Modal,
@@ -64,6 +65,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [latest, setLatest] = useState<FrameworkEvaluation | null>(null);
   const [history, setHistory] = useState<FrameworkEvaluation[]>([]);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -435,31 +437,73 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           {history.length > 0 ? (
             <>
               <SectionHeader level="h4" title={text("Evaluation history")} meta={history.length} />
-              <ul className="ui-list-rows">
-                {history.map((evaluation) => (
-                  <ListRow
-                    key={evaluation.id}
-                    title={evaluation.createdAt}
-                    titleAttr={evaluation.createdAt}
-                    meta={`${evaluation.passCount}/${
-                      evaluation.passCount +
-                      evaluation.partialCount +
-                      evaluation.failCount +
-                      evaluation.unavailableCount
-                    } ${text("pass")}`}
-                    trailing={
-                      <Button
-                        icon={<Trash2 size={12} />}
-                        variant="icon"
-                        className="danger-button"
-                        disabled={busy}
-                        onClick={() => handleDeleteEvaluation(evaluation.id)}
-                        aria-label={text("Delete evaluation")}
-                      />
-                    }
-                  />
-                ))}
-              </ul>
+              <div className="ui-list-rows">
+                {history.map((evaluation) => {
+                  const total =
+                    evaluation.passCount +
+                    evaluation.partialCount +
+                    evaluation.failCount +
+                    evaluation.unavailableCount;
+                  const expanded = expandedRunId === evaluation.id;
+                  return (
+                    <ExpandableRow
+                      key={evaluation.id}
+                      className="quality-history-row"
+                      label={`${evaluation.createdAt} — ${evaluation.passCount}/${total} ${text("pass")}`}
+                      isExpanded={expanded}
+                      onToggle={() => setExpandedRunId(expanded ? null : evaluation.id)}
+                      detail={
+                        <ul className="ui-list-rows quality-history-detail">
+                          {evaluation.results.map((result) => {
+                            const measured =
+                              result.measuredValue != null
+                                ? `${result.measuredValue}${
+                                    result.measuredUnit ? ` ${result.measuredUnit}` : ""
+                                  }`
+                                : null;
+                            return (
+                              <ListRow
+                                key={result.id}
+                                title={result.label}
+                                titleAttr={result.label}
+                                meta={result.expression}
+                                trailing={
+                                  <span className="quality-criterion-trailing">
+                                    {measured ? (
+                                      <span className="quality-measured">{measured}</span>
+                                    ) : null}
+                                    <StatusChip tone={verdictTone(result.verdict)}>
+                                      {verdictLabel(result.verdict)}
+                                    </StatusChip>
+                                  </span>
+                                }
+                              />
+                            );
+                          })}
+                        </ul>
+                      }
+                    >
+                      <span className="quality-history-header">
+                        <span className="quality-history-when">{evaluation.createdAt}</span>
+                        <span className="quality-criterion-trailing">
+                          <span className="quality-measured">{`${evaluation.passCount}/${total} ${text("pass")}`}</span>
+                          <Button
+                            icon={<Trash2 size={12} />}
+                            variant="icon"
+                            className="danger-button"
+                            disabled={busy}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleDeleteEvaluation(evaluation.id);
+                            }}
+                            aria-label={text("Delete evaluation")}
+                          />
+                        </span>
+                      </span>
+                    </ExpandableRow>
+                  );
+                })}
+              </div>
             </>
           ) : null}
         </>

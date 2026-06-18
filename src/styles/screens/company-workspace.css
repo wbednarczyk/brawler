@@ -125,3 +125,25 @@
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
+
+/* Evaluation-history rows expand in place to reveal that run's per-criterion
+   snapshot (ExpandableRow). The header spans the row; the detail is indented. */
+.quality-history-row {
+  cursor: pointer;
+}
+
+.quality-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+}
+
+.quality-history-when {
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-history-detail {
+  margin-left: 16px;
+}

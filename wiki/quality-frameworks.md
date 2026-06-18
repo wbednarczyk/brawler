@@ -68,7 +68,10 @@ Every evaluation is saved as an immutable snapshot. The measured values are
 **pinned to the moment you ran it**, so when newer figures arrive (e.g. a
 preliminary number is replaced by the audited final), past scorecards still show
 what they showed then. The **Evaluation history** list lets you see how a
-company has tracked against the framework over time.
+company has tracked against the framework over time. **Click a run to expand it**
+and see that run's full per-criterion detail — each criterion's verdict and the
+measured value as it stood then. Remove a run with its delete button to prune the
+history.
 
 ## Which metrics can I use?
 
