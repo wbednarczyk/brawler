@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.45.0 - 2026-06-19
+
+On-device semantic similarity: an optional, local embedding model that matches
+your feed by *meaning*, not just keywords — the foundation for upcoming
+cross-source story clustering. Decision support only, fully local, no API key.
+Design: [ADR 0035](docs/adr/0035-two-layer-ai-and-local-interpretative-layer.md).
+
+### Added
+
+- **On-device embedding model (optional, local, no API key).** Under
+  **Settings → AI → Semantic similarity** you can download a small multilingual
+  model (`intfloat/multilingual-e5-small`, ~450 MB, one-time) that runs entirely
+  on your machine — offline after the download, with nothing leaving your computer
+  — and switch similarity matching from keywords to the model. On a Polish
+  ESPI/EBI test it surfaced the right related filing first ~83% of the time versus
+  ~42% for keyword matching: Polish word endings break plain keyword matching,
+  while the model matches on meaning. It is fully optional and reversible — the
+  similarity index is disposable and you can switch back to keywords at any time.
+- **Developer-mode similarity check.** Diagnostics → *Similarity check* ranks your
+  feed items by similarity to a chosen one and shows which method produced the
+  ranking — a way to see the model at work ahead of the story-clustering feature.
+
+### Changed
+
+- Packaged Windows and Linux builds now ship the on-device similarity engine; the
+  model weights themselves remain an optional, on-demand download.
+
 ## v0.44.1 - 2026-06-18
 
 A follow-up to the quality frameworks feature.
