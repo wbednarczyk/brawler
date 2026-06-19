@@ -1,11 +1,4 @@
-import {
-  useMemo,
-  useState,
-  type CSSProperties,
-  type KeyboardEvent,
-  type PointerEvent,
-  type ReactNode,
-} from "react";
+import { useMemo, type ReactNode } from "react";
 import { Activity, CheckCircle2, Moon, RefreshCw, Sun } from "lucide-react";
 import type {
   HealthResponse,
@@ -55,10 +48,6 @@ type AppShellProps = {
   developerMode: boolean;
 };
 
-const defaultSidebarWidth = 190;
-const minSidebarWidth = 160;
-const maxSidebarWidth = 280;
-
 export function AppShell({
   activeSection,
   children,
@@ -84,8 +73,6 @@ export function AppShell({
 }: AppShellProps) {
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
-  const [sidebarWidth, setSidebarWidth] = useState(defaultSidebarWidth);
-  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const shortcuts = useMemo(() => createAppShortcutDefinitions(
     {
       "app.openInbox": () => setActiveSection("Inbox"),
@@ -165,66 +152,9 @@ export function AppShell({
     return text("Fetch GPW ESPI/EBI public listings");
   }
 
-  function clampSidebarWidth(width: number) {
-    return Math.min(maxSidebarWidth, Math.max(minSidebarWidth, Math.round(width)));
-  }
-
-  function resizeSidebarFromPointer(event: PointerEvent<HTMLDivElement>) {
-    setSidebarWidth(clampSidebarWidth(event.clientX));
-  }
-
-  function startSidebarResize(event: PointerEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setIsSidebarResizing(true);
-    event.currentTarget.setPointerCapture(event.pointerId);
-    resizeSidebarFromPointer(event);
-  }
-
-  function resizeSidebar(event: PointerEvent<HTMLDivElement>) {
-    if (!isSidebarResizing) {
-      return;
-    }
-
-    resizeSidebarFromPointer(event);
-  }
-
-  function stopSidebarResize(event: PointerEvent<HTMLDivElement>) {
-    if (!isSidebarResizing) {
-      return;
-    }
-
-    setIsSidebarResizing(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
-
-  function resizeSidebarWithKeyboard(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight" && event.key !== "Home" && event.key !== "End") {
-      return;
-    }
-
-    event.preventDefault();
-    if (event.key === "Home") {
-      setSidebarWidth(minSidebarWidth);
-      return;
-    }
-    if (event.key === "End") {
-      setSidebarWidth(maxSidebarWidth);
-      return;
-    }
-
-    const delta = event.key === "ArrowLeft" ? -12 : 12;
-    setSidebarWidth((currentWidth) => clampSidebarWidth(currentWidth + delta));
-  }
-
   return (
-    <div
-      className="app-shell"
-      // eslint-disable-next-line no-restricted-syntax -- the one tolerated inline style (ADR 0037): a dynamic `--sidebar-width` CSS custom property driven by the resizable sidebar's runtime state; a static stylesheet cannot express a live px value
-      style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
-    >
-      <aside className="sidebar" aria-label={text("Primary navigation")}>
+    <div className="app-shell">
+      <header className="topbar">
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
@@ -232,8 +162,59 @@ export function AppShell({
             <div className="brand-subtitle">{t("app.brand.subtitle")}</div>
           </div>
         </div>
+        <GlobalSearch locale={locale} onNavigate={onNavigateToSearchResult} />
+        <div className="topbar-actions">
+          <button
+            aria-label={t("app.sources.openStatus")}
+            className={[
+              "source-status-pill",
+              sourceStatusSummary.tone === "ok" ? "source-status-pill-ok" : "",
+              sourceStatusSummary.tone === "warn" ? "source-status-pill-warn" : "",
+              sourceStatusSummary.tone === "danger" ? "source-status-pill-danger" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            onClick={openSourceStatus}
+            title={sourceStatusSummary.title}
+            type="button"
+          >
+            <Activity size={14} aria-hidden="true" />
+            <span>{t("app.sources.label")}</span>
+            <strong>{sourceStatusSummary.label}</strong>
+          </button>
+          <button
+            aria-label={sourceRefreshButtonLabel()}
+            className={[
+              "icon-button",
+              sourceRefreshState === "refreshing" ? "icon-button-spinning" : "",
+              sourceRefreshState === "done" ? "topbar-action-success" : "",
+              sourceRefreshError ? "source-refresh-button-danger" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            disabled={sourceRefreshState === "refreshing"}
+            onClick={() => {
+              void refreshSources("manual");
+            }}
+            type="button"
+            title={sourceRefreshButtonTitle()}
+          >
+            {sourceRefreshState === "done" ? <CheckCircle2 size={18} /> : <RefreshCw size={18} />}
+          </button>
+          <label className="theme-control" title={t("settings.appearance.theme")}>
+            {effectiveTheme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
+            {/* eslint-disable-next-line no-restricted-syntax -- compact topbar theme switcher: a bare <select> inside an icon label; SelectField's labelled layout does not fit this inline control */}
+            <select value={theme} onChange={(event) => updateTheme(event.target.value as Theme)}>
+              <option value="dark">{t("theme.dark")}</option>
+              <option value="light">{t("theme.light")}</option>
+              <option value="system">{t("theme.system")}</option>
+            </select>
+          </label>
+        </div>
+      </header>
 
-        <nav className="nav-list">
+      <nav className="navbar" aria-label={text("Primary navigation")}>
+        <div className="nav-list">
           {sections
             .filter((section) => section.label !== "Diagnostics" || developerMode)
             .map((section) => {
@@ -257,84 +238,11 @@ export function AppShell({
                 </button>
               );
             })}
-        </nav>
-
-        <div className="sidebar-footer">
           <span className="version-label">{health ? `v${health.version}` : "v..."}</span>
         </div>
-      </aside>
+      </nav>
 
-      <div
-        aria-label={text("Resize navigation")}
-        aria-orientation="vertical"
-        aria-valuemax={maxSidebarWidth}
-        aria-valuemin={minSidebarWidth}
-        aria-valuenow={sidebarWidth}
-        className="sidebar-resizer"
-        onKeyDown={resizeSidebarWithKeyboard}
-        onPointerDown={startSidebarResize}
-        onPointerMove={resizeSidebar}
-        onPointerUp={stopSidebarResize}
-        role="separator"
-        tabIndex={0}
-        title={text("Drag to resize navigation")}
-      />
-
-      <main className="workspace">
-        <header className="topbar">
-          <GlobalSearch locale={locale} onNavigate={onNavigateToSearchResult} />
-          <div className="topbar-actions">
-            <button
-              aria-label={t("app.sources.openStatus")}
-              className={[
-                "source-status-pill",
-                sourceStatusSummary.tone === "ok" ? "source-status-pill-ok" : "",
-                sourceStatusSummary.tone === "warn" ? "source-status-pill-warn" : "",
-                sourceStatusSummary.tone === "danger" ? "source-status-pill-danger" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              onClick={openSourceStatus}
-              title={sourceStatusSummary.title}
-              type="button"
-            >
-              <Activity size={14} aria-hidden="true" />
-              <span>{t("app.sources.label")}</span>
-              <strong>{sourceStatusSummary.label}</strong>
-            </button>
-            <button
-              aria-label={sourceRefreshButtonLabel()}
-              className={[
-                "icon-button",
-                sourceRefreshState === "refreshing" ? "icon-button-spinning" : "",
-                sourceRefreshState === "done" ? "topbar-action-success" : "",
-                sourceRefreshError ? "source-refresh-button-danger" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              disabled={sourceRefreshState === "refreshing"}
-              onClick={() => {
-                void refreshSources("manual");
-              }}
-              type="button"
-              title={sourceRefreshButtonTitle()}
-            >
-              {sourceRefreshState === "done" ? <CheckCircle2 size={18} /> : <RefreshCw size={18} />}
-            </button>
-            <label className="theme-control" title={t("settings.appearance.theme")}>
-              {effectiveTheme === "dark" ? <Moon size={16} /> : <Sun size={16} />}
-              {/* eslint-disable-next-line no-restricted-syntax -- compact topbar theme switcher: a bare <select> inside an icon label; SelectField's labelled layout does not fit this inline control */}
-              <select value={theme} onChange={(event) => updateTheme(event.target.value as Theme)}>
-                <option value="dark">{t("theme.dark")}</option>
-                <option value="light">{t("theme.light")}</option>
-                <option value="system">{t("theme.system")}</option>
-              </select>
-            </label>
-          </div>
-        </header>
-
-        {children}
-      </main>
+      <main className="workspace">{children}</main>
     </div>
   );
 }

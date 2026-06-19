@@ -264,7 +264,7 @@ Preferred agent commands for targeted iteration:
 - `rtk read path --max-lines N --line-numbers`: inspect focused files or short files.
 - `rtk sed -n 'start,endp' path`: inspect tight line ranges only when `rtk read` is not suitable.
 - `rtk npm typecheck`: TypeScript checks.
-- `rtk npm test`: frontend tests.
+- `rtk npm test`: frontend tests. Use this, **not** a bare `vitest run` — `npm test` is scoped to `vitest run src`, whereas bare `vitest run` also sweeps in the Playwright specs under `tests/browser/` and fails with a confusing `test.describe() not expected here` error.
 - `rtk npm test -- -t "test name"`: focused frontend test run.
 - `rtk npm build`: frontend production build when UI/build behavior changed.
 - `rtk cargo fmt --check`: Rust formatting check

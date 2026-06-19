@@ -1,30 +1,31 @@
 import type { Dispatch, KeyboardEvent, MutableRefObject, PointerEvent, SetStateAction } from "react";
-import { detailPaneMaxWidth, detailPaneMinWidth } from "./layout";
+import { detailPaneMaxFraction, detailPaneMinFraction } from "./layout";
+
+const keyboardStep = 0.03;
 
 type DetailPaneResizeInput = {
   contentGridRef: MutableRefObject<HTMLElement | null>;
-  setDetailPaneWidth: Dispatch<SetStateAction<number>>;
+  setDetailPaneFraction: Dispatch<SetStateAction<number>>;
 };
 
 export function useDetailPaneResize({
   contentGridRef,
-  setDetailPaneWidth,
+  setDetailPaneFraction,
 }: DetailPaneResizeInput) {
-  function clampDetailPaneWidth(width: number) {
-    const gridWidth = contentGridRef.current?.getBoundingClientRect().width ?? 0;
-    const responsiveMaxWidth = gridWidth > 0 ? Math.min(detailPaneMaxWidth, gridWidth * 0.55) : detailPaneMaxWidth;
-
-    return Math.round(Math.min(Math.max(width, detailPaneMinWidth), responsiveMaxWidth));
+  function clampDetailPaneFraction(fraction: number) {
+    return Math.min(detailPaneMaxFraction, Math.max(detailPaneMinFraction, fraction));
   }
 
   function resizeDetailPaneFromPointer(clientX: number) {
     const gridBounds = contentGridRef.current?.getBoundingClientRect();
 
-    if (!gridBounds) {
+    if (!gridBounds || gridBounds.width <= 0) {
       return;
     }
 
-    setDetailPaneWidth(clampDetailPaneWidth(gridBounds.right - clientX));
+    // The detail pane is the right region of the grid, so its size is the
+    // distance from the pointer across to the grid's right edge.
+    setDetailPaneFraction(clampDetailPaneFraction((gridBounds.right - clientX) / gridBounds.width));
   }
 
   function startDetailPaneResize(event: PointerEvent<HTMLDivElement>) {
@@ -47,14 +48,16 @@ export function useDetailPaneResize({
   }
 
   function resizeDetailPaneWithKeyboard(event: KeyboardEvent<HTMLDivElement>) {
+    // The divider is vertical: ArrowLeft moves it left, growing the right detail
+    // pane; ArrowRight shrinks it.
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      setDetailPaneWidth((current) => clampDetailPaneWidth(current + 24));
+      setDetailPaneFraction((current) => clampDetailPaneFraction(current + keyboardStep));
     }
 
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      setDetailPaneWidth((current) => clampDetailPaneWidth(current - 24));
+      setDetailPaneFraction((current) => clampDetailPaneFraction(current - keyboardStep));
     }
   }
 

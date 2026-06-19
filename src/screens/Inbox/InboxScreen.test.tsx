@@ -401,12 +401,14 @@ describe("Inbox screen workflows", () => {
 
     const resizer = await screen.findByRole("separator", { name: "Resize feed details" });
 
-    expect(resizer).toHaveAttribute("aria-valuenow", "360");
+    // The feed and detail panes split 50/50 by default (ADR 0047); ArrowLeft
+    // moves the divider left, widening the detail pane by 3 percentage points.
+    expect(resizer).toHaveAttribute("aria-valuenow", "50");
 
     resizer.focus();
     await user.keyboard("{ArrowLeft}");
 
-    expect(resizer).toHaveAttribute("aria-valuenow", "384");
+    expect(resizer).toHaveAttribute("aria-valuenow", "53");
   });
 
   it("filters inbox sample items by watchlist", async () => {

@@ -10,9 +10,9 @@ V1 uses a desktop app shell with persistent navigation and work-focused density.
 
 Regions:
 
-- left sidebar: primary sections and pinned companies
-- top toolbar: manual refresh, source health indicator, theme/settings access
-- main workspace: current screen content
+- top toolbar: brand, search, manual refresh, source health indicator, theme/settings access
+- top navigation bar: the primary sections, directly beneath the toolbar; wraps to a second line on narrow windows rather than scrolling or hiding items (see [ADR 0047](adr/0047-top-navigation-bar.md))
+- main workspace: current screen content, full-width beneath the chrome
 - right detail pane: selected feed item, note, transcript segment, or job detail
 
 Primary sections:
@@ -32,10 +32,10 @@ Developer-only section:
 Shell behavior:
 
 - Dark theme is the first-run default.
-- Sidebar should be collapsible after v1 if space becomes tight, but v1 can keep it fixed.
-- The top toolbar stays visible while the current workspace scrolls.
+- The top toolbar and navigation bar stay fixed while the current workspace scrolls.
 - The app shell owns the viewport height; screens should use internal panel/list scroll areas instead of relying on page/body scrolling.
-- The browser page should not expose a global application scrollbar. The left navigation, top toolbar, and each screen's primary header or control bar should remain visible while long lists, detail panes, or subpanels scroll internally.
+- The browser page should not expose a global application scrollbar. The top toolbar, the navigation bar, and each screen's primary header or control bar should remain visible while long lists, detail panes, or subpanels scroll internally.
+- The Inbox workspace splits the feed list and detail pane 50/50 by default, **side by side (horizontal)**; the divider is draggable between 25% and 75% of the row. The feed list must remain the dominant flexible scroll region — the feed pane carries heavy fixed chrome (tabs, stats, the filter toolbar, the cleanup footer), so do not stack the panes vertically without first collapsing that chrome (see [ADR 0047](adr/0047-top-navigation-bar.md), "Rejected alternative").
 - Desktop layouts must remain usable outside maximized windows, including a side-region window on an ultrawide monitor. Multi-column screens should stack or simplify around this size before text, buttons, filters, or panels become cramped.
 - The Inbox navigation item shows an unread count badge when unread feed items exist.
 - The top toolbar source health indicator summarizes locally registered sources and opens the Sources screen with the most relevant source expanded. Manual source refresh remains a separate disabled control until ingestion jobs exist.
@@ -172,7 +172,7 @@ Actions:
 - add already-tracked companies to the selected watchlist
 - remove companies from the selected watchlist
 
-The Watchlists screen is a dedicated left-menu panel. It should use a watchlist-first dual-pane workflow: select a watchlist, then manage that watchlist's member companies. Renaming a watchlist should preserve the watchlist's stable internal id. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies. If a deleted watchlist is active in a view filter, that filter should reset to `All`.
+The Watchlists screen is a dedicated navigation section. It should use a watchlist-first dual-pane workflow: select a watchlist, then manage that watchlist's member companies. Renaming a watchlist should preserve the watchlist's stable internal id. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies. If a deleted watchlist is active in a view filter, that filter should reset to `All`.
 
 Milestone 3 implementation starts the company workspace from the Companies screen. Clicking a company row expands the ticker-focused workspace inline directly under that row, and clicking the same row again collapses it. Up and Down arrows move through company rows while preserving expansion state: collapsed lists stay collapsed, and an already-open workspace moves to the focused company. This keeps the expanded context anchored to the company the user selected and avoids adding another row-level button.
 

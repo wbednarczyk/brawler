@@ -50,19 +50,21 @@ function mediaBlock(css: string, query: string) {
 describe("layout scroll contracts", () => {
   it("keeps app chrome fixed and routes overflow into workspace panels", () => {
     const appShellRule = ruleFor(shellCss, ".app-shell");
-    const sidebarRule = ruleFor(shellCss, ".sidebar");
+    const navbarRule = ruleFor(shellCss, ".navbar");
     const workspaceRule = ruleFor(shellCss, ".workspace");
-    const topbarRule = ruleFor(shellCss, ".topbar");
     const feedPanelRule = ruleFor(layoutCss, ".feed-panel");
 
     expect(appShellRule).toContain("height: 100dvh");
     expect(appShellRule).toContain("min-height: 0");
     expect(appShellRule).toContain("overflow: hidden");
-    expect(sidebarRule).toContain("display: flex");
-    expect(sidebarRule).toContain("flex-direction: column");
-    expect(workspaceRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    // Navigation is a stacked top row (ADR 0047), not a left sidebar: the shell
+    // defines rows, never columns, and the navbar wraps rather than scrolling.
+    expect(appShellRule).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
+    expect(appShellRule).not.toContain("grid-template-columns");
+    expect(navbarRule).toContain("display: flex");
+    expect(navbarRule).toContain("flex-wrap: wrap");
+    expect(workspaceRule).toContain("grid-template-rows: minmax(0, 1fr)");
     expect(workspaceRule).toContain("overflow: hidden");
-    expect(topbarRule).toContain("position: sticky");
     expect(feedPanelRule).toContain("height: 100%");
     expect(feedPanelRule).toContain("overflow: hidden");
   });
@@ -86,7 +88,9 @@ describe("layout scroll contracts", () => {
     const filterResetRule = ruleFor(controlsCss, ".filter-reset-row");
     const detailPaneRule = ruleFor(inboxCss, ".detail-pane");
 
-    expect(contentGridRule).toContain("grid-template-columns: minmax(460px, 1fr) 10px var(--detail-pane-width, 360px)");
+    // Inbox places the feed and detail panes side by side (ADR 0047): feed
+    // minmax(0,1fr), a 10px resizer, and a percentage detail track (50% default).
+    expect(contentGridRule).toContain("grid-template-columns: minmax(0, 1fr) 10px var(--detail-pane-width, 50%)");
     expect(contentGridRule).toContain("overflow: auto hidden");
     expect(panelHeaderRule).toContain("flex-wrap: wrap");
     expect(feedPanelRule).toContain("display: flex");
@@ -126,19 +130,35 @@ describe("layout scroll contracts", () => {
     expect(tableRule).toContain("overflow: auto");
   });
 
-  it("shrinks only the two-column grid at narrow widths, never single-column screens", () => {
-    // The narrow-band override that shrinks the Inbox feed+detail tracks must not
-    // apply to .content-grid-single (Watchlists/Companies/Sources/Notebooks/
-    // Settings). Clobbering them with the 2-column template squeezed their content
-    // into the 320px-min track and overflowed (issue 58fbffd). Keep it scoped.
+  it("lets the fractional Inbox grid adapt at narrow widths without a track override", () => {
+    // The Inbox content-grid now uses fractional 50/50 columns (minmax(0,1fr) +
+    // a percentage detail track) that adapt to width on their own, and there is
+    // no left sidebar to fit beside (ADR 0047). The old ~1120px track-shrink
+    // override (which fixed the fixed-min overflow that clipped the detail pane)
+    // is therefore removed — no .content-grid rule may live in this band, or it
+    // would re-clobber the fractional default and single-column screens alike.
     const narrowBand = mediaBlock(responsiveCss, "(max-width: 1120px)");
 
-    expect(narrowBand).toContain(
-      ".content-grid:not(.content-grid-single) {",
-    );
-    // A bare `.content-grid {` rule in this block would re-clobber single-column
-    // screens — it must stay scoped with :not(.content-grid-single).
+    expect(narrowBand).not.toContain(".content-grid:not(.content-grid-single) {");
     expect(narrowBand).not.toContain(".content-grid {");
+  });
+
+  it("keeps the top navigation bar and 50/50 Inbox split (ADR 0047)", () => {
+    const appShellRule = ruleFor(shellCss, ".app-shell");
+    const navbarRule = ruleFor(shellCss, ".navbar");
+    const navListRule = ruleFor(shellCss, ".nav-list");
+    const contentGridRule = ruleFor(shellCss, ".content-grid");
+
+    // Primary nav is a stacked top row that wraps, not a resizable left rail.
+    expect(appShellRule).not.toContain("grid-template-columns");
+    expect(appShellRule).not.toContain("--sidebar-width");
+    expect(navbarRule).toContain("flex-wrap: wrap");
+    expect(navListRule).toContain("flex-wrap: wrap");
+    // No sidebar styles should survive the move to the top nav.
+    expect(shellCss).not.toContain(".sidebar-resizer");
+    expect(shellCss).not.toContain(".sidebar {");
+    // Inbox splits feed/detail side by side, 50/50 by default (percentage track).
+    expect(contentGridRule).toContain("var(--detail-pane-width, 50%)");
   });
 
   it("keeps Notebooks subpanels independently scrollable on desktop", () => {

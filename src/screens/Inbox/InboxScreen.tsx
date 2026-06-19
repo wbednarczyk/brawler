@@ -58,9 +58,9 @@ export function InboxScreen({
   hasActiveInboxFilters,
   deleteUnsavedFeedState,
   sourceRefreshState,
-  detailPaneWidth,
-  detailPaneMinWidth,
-  detailPaneMaxWidth,
+  detailPaneFraction,
+  detailPaneMinFraction,
+  detailPaneMaxFraction,
   feedError,
   deleteUnsavedFeedError,
   sourceRefreshError,
@@ -379,9 +379,9 @@ export function InboxScreen({
       <div
         aria-label={text("Resize feed details")}
         aria-orientation="vertical"
-        aria-valuemax={detailPaneMaxWidth}
-        aria-valuemin={detailPaneMinWidth}
-        aria-valuenow={detailPaneWidth}
+        aria-valuemax={Math.round(detailPaneMaxFraction * 100)}
+        aria-valuemin={Math.round(detailPaneMinFraction * 100)}
+        aria-valuenow={Math.round(detailPaneFraction * 100)}
         className="pane-resizer"
         onKeyDown={resizeDetailPaneWithKeyboard}
         onPointerDown={startDetailPaneResize}

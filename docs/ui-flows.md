@@ -20,10 +20,12 @@ The default screen is the investor inbox. The second most important surface is t
 
 V1 navigation should use persistent desktop app regions:
 
-- left sidebar for watchlists, companies, and primary sections
-- central list or workspace for the current task
+- top toolbar for the brand, search, refresh, and source status
+- top navigation bar (directly beneath the toolbar) for the primary sections; it wraps to a second line on narrow windows rather than scrolling or hiding items
+- central list or workspace for the current task, full-width beneath the chrome
 - right detail pane when reviewing a feed item, company, note, or transcript segment
-- top toolbar for search, refresh, source status, and settings access
+
+The Inbox workspace splits the feed list and detail pane 50/50 by default; the divider is draggable between 25% and 75% of the row. See [ADR 0047](adr/0047-top-navigation-bar.md) for the navigation-region decision.
 
 Primary sections:
 

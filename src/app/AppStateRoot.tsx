@@ -18,7 +18,7 @@ import {
   emptyCompanyEventForm,
 } from "./eventForms";
 import { useFeedController } from "./useFeedController";
-import { detailPaneDefaultWidth, detailPaneMaxWidth, detailPaneMinWidth } from "./layout";
+import { detailPaneDefaultFraction, detailPaneMaxFraction, detailPaneMinFraction } from "./layout";
 import { type Section } from "./navigation";
 import {
   emptyNotebookForm,
@@ -229,7 +229,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     useState<NotebookDraftOrigin[]>(manualNotebookOrigins);
   const [notebookScreenEditForm, setNotebookScreenEditForm] = useState<NotebookForm>(emptyNotebookForm);
   const [companyWorkspaceTab, setCompanyWorkspaceTab] = useState<CompanyWorkspaceTab>("Feed");
-  const [detailPaneWidth, setDetailPaneWidth] = useState(detailPaneDefaultWidth);
+  const [detailPaneFraction, setDetailPaneFraction] = useState(detailPaneDefaultFraction);
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
   const [deleteUnsavedFeedState, setDeleteUnsavedFeedState] = useState<DbRefreshState>("idle");
   const [deleteUnsavedFeedError, setDeleteUnsavedFeedError] = useState<string | null>(null);
@@ -1033,7 +1033,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     stopDetailPaneResize,
   } = useDetailPaneResize({
     contentGridRef,
-    setDetailPaneWidth,
+    setDetailPaneFraction,
   });
 
   useAppLifecycleEffects({
@@ -1427,7 +1427,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
           ref={contentGridRef}
           style={
             activeSection === "Inbox"
-              ? ({ "--detail-pane-width": `${detailPaneWidth}px` } as CSSProperties)
+              ? ({ "--detail-pane-width": `${Math.round(detailPaneFraction * 100)}%` } as CSSProperties)
               : undefined
           }
         >
@@ -1461,9 +1461,9 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               hasActiveInboxFilters={hasActiveInboxFilters}
               deleteUnsavedFeedState={deleteUnsavedFeedState}
               sourceRefreshState={sourceRefreshState}
-              detailPaneWidth={detailPaneWidth}
-              detailPaneMinWidth={detailPaneMinWidth}
-              detailPaneMaxWidth={detailPaneMaxWidth}
+              detailPaneFraction={detailPaneFraction}
+              detailPaneMinFraction={detailPaneMinFraction}
+              detailPaneMaxFraction={detailPaneMaxFraction}
               feedError={feedError}
               deleteUnsavedFeedError={deleteUnsavedFeedError}
               sourceRefreshError={sourceRefreshError}

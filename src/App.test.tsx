@@ -32,22 +32,12 @@ describe("App shell", () => {
   });
 
   it("shows unread feed count in the Inbox navigation item", async () => {
-    const user = userEvent.setup();
-
     renderApp();
 
     const inboxNav = await screen.findByRole("button", { name: /Inbox/ });
 
     expect(within(inboxNav).getByText("1")).toHaveClass("nav-badge");
     expect(within(inboxNav).getByLabelText("1 unread feed item")).toBeInTheDocument();
-
-    const navigationResizer = screen.getByRole("separator", { name: "Resize navigation" });
-    expect(navigationResizer).toHaveAttribute("aria-valuenow", "190");
-
-    navigationResizer.focus();
-    await user.keyboard("{ArrowRight}");
-
-    expect(navigationResizer).toHaveAttribute("aria-valuenow", "202");
   });
 
   it("shows Diagnostics navigation only in Developer mode", async () => {

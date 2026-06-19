@@ -1,21 +1,9 @@
-/* Between ~980px and ~1120px the sidebar still shows, but the default two-column
-   feed + detail grid (feed min 460 + detail 360) no longer fits beside it and
-   used to overflow horizontally, clipping the detail pane. Keep both columns
-   side-by-side but shrink their minimums so they fit — no mode change (stacking a
-   half-height feed panel makes its sticky toolbar/footer overlap the list). This
-   covers the ~1000px effective width of a 1280x1440 quarter-ultrawide window at
-   125% OS scaling with FancyZones margins. */
+/* Between ~980px and ~1120px the two-column feed + detail grid is tight. The
+   Inbox grid now uses fractional 50/50 columns (minmax(0,1fr) + a percentage
+   detail track) with min-width:0 inner content, so it adapts to the available
+   width without a track override here — the old fixed-min overflow that clipped
+   the detail pane is gone. Only the toolbar/row tweaks below remain. */
 @media (max-width: 1120px) {
-  /* Only the two-column feed+detail grid (Inbox) shrinks its tracks here. Scope
-     it away from .content-grid-single (Watchlists, Companies, Sources, Notebooks,
-     Settings): those declare a single full-width column, and clobbering them with
-     this 2-column template squeezed their content into the 320px-min track and
-     left an empty phantom detail column — e.g. the Watchlists inner workspace
-     collapsed its detail column to ~94px and overflowed (issue 58fbffd). */
-  .content-grid:not(.content-grid-single) {
-    grid-template-columns: minmax(320px, 1fr) 10px minmax(300px, 360px);
-  }
-
   .detail-pane dl {
     grid-template-columns: 1fr;
   }
@@ -64,15 +52,6 @@
 }
 
 @media (max-width: 980px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar,
-  .sidebar-resizer {
-    display: none;
-  }
-
   .content-grid {
     grid-template-columns: 1fr;
     overflow: hidden;

@@ -24,7 +24,7 @@ test.describe("browser UI regression smoke", () => {
     await expect(page.locator(".topbar")).toBeInViewport();
   });
 
-  test("navigates the main screens through the sidebar", async ({ page }) => {
+  test("navigates the main screens through the top navigation bar", async ({ page }) => {
     await openApp(page);
 
     for (const screenName of ["Companies", "Watchlists", "Sources", "Notebooks", "Settings", "Inbox"]) {
@@ -78,9 +78,13 @@ test.describe("browser UI regression smoke", () => {
       .click();
     await expect(detailPane.getByLabel("AI KPI extraction")).toBeVisible();
 
-    // At this width the two-column grid shrinks its columns to fit beside the
-    // sidebar (rather than overflowing and clipping the detail pane). Both panes
-    // stay visible side-by-side and there is no horizontal overflow.
+    // The top navigation bar wraps to a second line at this width (ADR 0047)
+    // rather than scrolling sideways — it must not introduce horizontal overflow.
+    await expectNoHorizontalOverflow(page.getByLabel("Primary navigation"));
+
+    // At this width the fractional 50/50 grid keeps both panes side-by-side
+    // (feed minmax(0,1fr) + a percentage detail track), with no left sidebar to
+    // fit beside and no horizontal overflow.
     expect((await expectBox(feedPanel)).width).toBeGreaterThanOrEqual(320);
     expect((await expectBox(detailPane)).width).toBeGreaterThanOrEqual(300);
     await expectNoHorizontalOverflow(feedPanel);
@@ -109,9 +113,13 @@ test.describe("browser UI regression smoke", () => {
     await expect(noteList).toBeVisible();
     await expect(detailPane).toBeVisible();
 
+    // The top navigation bar (ADR 0047) adds a second header row, so the
+    // shortest supported window (1366x768) has ~28px less workspace height than
+    // the old single-row shell. The three panes stay independently usable and
+    // scrollable; the per-pane minimums reflect that reduced vertical budget.
     expect((await expectBox(companyNav)).height).toBeGreaterThan(260);
-    expect((await expectBox(noteList)).height).toBeGreaterThan(220);
-    expect((await expectBox(detailPane)).height).toBeGreaterThan(220);
+    expect((await expectBox(noteList)).height).toBeGreaterThan(180);
+    expect((await expectBox(detailPane)).height).toBeGreaterThan(180);
 
     await expectScrollable(companyNav);
     await expectScrollable(noteList);

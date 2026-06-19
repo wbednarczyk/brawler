@@ -51,9 +51,9 @@ export type InboxScreenProps = {
   hasActiveInboxFilters: boolean;
   deleteUnsavedFeedState: string;
   sourceRefreshState: string;
-  detailPaneWidth: number;
-  detailPaneMinWidth: number;
-  detailPaneMaxWidth: number;
+  detailPaneFraction: number;
+  detailPaneMinFraction: number;
+  detailPaneMaxFraction: number;
   feedError: string | null;
   deleteUnsavedFeedError: string | null;
   sourceRefreshError: string | null;

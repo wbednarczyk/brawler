@@ -1,3 +1,3 @@
-export const detailPaneMinWidth = 300;
-export const detailPaneMaxWidth = 620;
-export const detailPaneDefaultWidth = 360;
+export const detailPaneMinFraction = 0.25;
+export const detailPaneMaxFraction = 0.75;
+export const detailPaneDefaultFraction = 0.5;
