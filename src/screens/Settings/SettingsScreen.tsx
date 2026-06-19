@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiSettings } from "./AiSettings";
+import { EmbeddingSettings } from "./EmbeddingSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
@@ -146,15 +147,18 @@ export function SettingsScreen({
             />
           ) : null}
           {activeSettingsTab === "ai" ? (
-            <AiSettings
-              settings={settings}
-              onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
-              onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
-              onGeneralAnalysisProviderChange={onGeneralAnalysisProviderChange}
-              onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
-              onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
-              onEspiAiFallbackChange={onEspiAiFallbackChange}
-            />
+            <>
+              <AiSettings
+                settings={settings}
+                onYoutubeTranscriptionModelChange={onYoutubeTranscriptionModelChange}
+                onYoutubeTranscriptionTimeoutChange={onYoutubeTranscriptionTimeoutChange}
+                onGeneralAnalysisProviderChange={onGeneralAnalysisProviderChange}
+                onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
+                onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
+                onEspiAiFallbackChange={onEspiAiFallbackChange}
+              />
+              <EmbeddingSettings />
+            </>
           ) : null}
           {activeSettingsTab === "credentials" ? (
             <CredentialSettings

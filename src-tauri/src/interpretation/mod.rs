@@ -24,21 +24,39 @@
 //! embedding model, and the eval harness are added in later slices of the
 //! interpretative-layer epic.
 
+#[cfg(feature = "embedding-model")]
+mod candle_embedder;
 mod capabilities;
+mod embedder;
+mod embedding_similarity;
 mod eval;
 mod lexical_similarity;
+mod model;
 mod registry;
 mod rule_classifier;
 mod types;
+mod vector;
 
 pub use capabilities::{Classifier, Matcher, SemanticSearch, SimilarityProvider};
-pub use eval::{evaluate_classifier, ClassifierEvalReport, LabeledSample};
+pub use embedder::{model_dir_name, Embedder, DEFAULT_EMBEDDING_DIM, DEFAULT_EMBEDDING_MODEL_ID};
+#[cfg(test)]
+pub(crate) use embedding_similarity::test_support::HashingEmbedder;
+pub use embedding_similarity::{EmbeddingSimilarity, EMBEDDING_SIMILARITY_ID};
+pub use eval::{
+    evaluate_classifier, evaluate_similarity, ClassifierEvalReport, LabeledSample,
+    SimilarityEvalReport, SimilarityRankingSample,
+};
 pub use lexical_similarity::{LexicalSimilarity, LEXICAL_SIMILARITY_ID};
+pub use model::{
+    download_weights, feature_compiled, model_dir, try_load_default_embedder, try_load_embedder,
+    weights_present, weights_state, WeightsState,
+};
 pub use registry::{
-    build_classifier, build_similarity, InterpretationSelection, EMBEDDING_STRATEGY,
-    STATIC_STRATEGY,
+    build_classifier, build_similarity, build_similarity_with, InterpretationSelection,
+    EMBEDDING_STRATEGY, STATIC_STRATEGY,
 };
 pub use rule_classifier::{CategoryRule, RuleClassifier, RULE_CLASSIFIER_ID};
 pub use types::{
     Classification, ClassificationRequest, InterpretationError, ScoredItem, SearchScope, TextItem,
 };
+pub use vector::{cosine, similarity_score};

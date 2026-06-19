@@ -248,6 +248,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "quality_frameworks",
         sql: include_str!("../../migrations/0048_quality_frameworks.sql"),
     },
+    Migration {
+        version: 49,
+        name: "content_embeddings",
+        sql: include_str!("../../migrations/0049_content_embeddings.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

@@ -2,7 +2,7 @@
 
 This document defines the code organization rules for Brawler after the M13 modularization pass. The broad modularization effort is complete; this document is now an operating guide for keeping future development modular by default.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Project Practices](project-practices.md), [Kanban](kanban.md), and [Contracts](contracts.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Contracts](contracts.md).
 
 ## Goals
 

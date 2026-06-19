@@ -118,7 +118,7 @@ Portable runtime data is stored in a `data` folder next to the executable.
 - It relies on the system WebView2 runtime.
 - Secrets stay in the OS keychain and may need re-entry after moving the portable folder to another machine.
 
-Manual checklist → [Packaging Smoke Tests](docs/packaging-smoke-tests.md).
+Manual checklist → [Testing → Packaging smoke tests](docs/testing.md#packaging-smoke-tests).
 
 ## 🚧 Status
 

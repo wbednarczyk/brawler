@@ -4,6 +4,11 @@ SHELL := /usr/bin/env bash
 NIX := env -u LD_LIBRARY_PATH nix develop -c
 NIX_WINDOWS := env -u LD_LIBRARY_PATH nix develop .\#windows-cross -c
 WINDOWS_TARGET := x86_64-pc-windows-msvc
+# Cargo features compiled into shipped/packaged builds. The on-device embedding
+# model (ADR 0035) is off by default for fast/offline dev + `make check`, but the
+# packaged app enables it. Override with `make ... RELEASE_FEATURES=` to omit it.
+RELEASE_FEATURES ?= embedding-model
+RELEASE_FEATURE_FLAG := $(if $(RELEASE_FEATURES),--features $(RELEASE_FEATURES))
 RELEASE_OUT_DIR ?= release-artifacts
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
@@ -240,15 +245,15 @@ flake-check:
 	nix flake check --no-build
 
 tauri-build:
-	$(NIX) npm run tauri -- build
+	$(NIX) npm run tauri -- build $(RELEASE_FEATURE_FLAG)
 
 package-linux-amd64:
-	$(NIX) npm run tauri -- build --bundles deb,rpm
-	APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri -- build --bundles appimage --verbose
+	$(NIX) npm run tauri -- build --bundles deb,rpm $(RELEASE_FEATURE_FLAG)
+	APPIMAGE_EXTRACT_AND_RUN=1 npm run tauri -- build --bundles appimage --verbose $(RELEASE_FEATURE_FLAG)
 	$(NIX) scripts/release/collect-linux-artifacts.sh "$(APP_VERSION)" "$(RELEASE_OUT_DIR)"
 
 package-windows-from-linux:
-	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle $(RELEASE_FEATURE_FLAG)
 	@if [ ! -f "$(WINDOWS_EXE)" ]; then \
 		printf "Expected Windows executable not found: $(WINDOWS_EXE)\n"; \
 		exit 1; \
@@ -262,7 +267,7 @@ package-windows-from-linux:
 	@printf "Copied portable Windows executable to %s\n" "$(WINDOWS_ARTIFACT)"
 
 package-windows-portable-zip:
-	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle
+	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle $(RELEASE_FEATURE_FLAG)
 	$(NIX_WINDOWS) scripts/release/package-windows-portable-zip.sh "$(APP_VERSION)" "$(WINDOWS_EXE)" "$(RELEASE_OUT_DIR)"
 
 package-release-artifacts: package-linux-amd64 package-windows-portable-zip

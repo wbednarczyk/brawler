@@ -54,6 +54,8 @@ pub enum StorageError {
     NotATemplate { id: String },
     #[error("classification error: {0}")]
     Classification(String),
+    #[error("invalid embedding value: {message}")]
+    InvalidEmbeddingValue { message: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

@@ -2,7 +2,7 @@
 
 This roadmap turns the current product and architecture plan into implementation milestones. It is intentionally milestone-based instead of date-based. It is **forward-looking**: it covers the active and upcoming milestones plus unscheduled future work. Delivered milestone history lives in [CHANGELOG.md](../CHANGELOG.md) (authoritative per-version release notes) and [Kanban Archive](kanban-archive.md) (completed-card detail); live epic/task status lives in Radicle/Radboard (see [Radicle/Radboard Tracking](kanban.md)).
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Radicle/Radboard Tracking](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Engineering Workflow](engineering-workflow.md), [Radicle/Radboard Tracking](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
 
 ## Roadmap Principles
 
@@ -40,7 +40,7 @@ Milestones through `v0.38.0` are shipped. This roadmap does not restate complete
 
 The next milestone is `v0.45.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
 
-- `v0.45.0` — **Interpretative AI layer — embedding model**: add the on-device embedding model + vector store (`sqlite-vec`-class, a disposable derived index) behind the existing capability boundary, and enable the model-backed implementation per capability only where the eval shows it beats the static baseline. Sequenced immediately before its first high-value consumer (story clustering). Design in [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md).
+- `v0.45.0` — **Interpretative AI layer — embedding model**: add the on-device embedding model (`candle`, pure-Rust; default encoder `intfloat/multilingual-e5-small`, weights an optional one-time download) + a disposable vector store (`content_embeddings`, pure-Rust brute-force cosine; no `sqlite-vec` extension at this corpus scale) behind the existing capability boundary. This milestone wires the model-backed **`SimilarityProvider`** only — its first high-value consumer, story clustering (`v0.46.0`), is the next milestone — with a model-vs-lexical eval gating adoption; model `Classifier`/`Matcher`/`SemanticSearch` follow their consumers. Demoable via developer-mode diagnostics (download model, embed real feed items, run "most similar"). Confirmed runtime defaults recorded in [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md).
 - `v0.46.0` — **Story clustering across sources**: cluster near-duplicate multi-source coverage into single stories with the official source ranked first; first model consumer of the `SimilarityProvider` capability.
 - `v0.47.0` — **Report-over-report diff**: diff consecutive periodic reports section by section with a cited AI delta summary.
 - `v0.48.0` — **Feed triage mode and command palette**: keyboard feed triage and a global command palette over search, navigation, and actions.

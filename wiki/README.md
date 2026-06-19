@@ -19,6 +19,9 @@ per feature.
 - **[DSL reference](dsl-reference.md)** — the small expression language used to
   write quality-framework criteria (e.g. `roic >= 15%`,
   `net_debt_to_ebitda < 2.5 AND fcf > 0`).
+- **[On-device semantic similarity](embedding-model.md)** — an optional, local,
+  no-API-key embedding model that finds feed items similar *in meaning*, not just
+  by keyword.
 
 ## A note on what Brawler is — and isn't
 

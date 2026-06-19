@@ -66,6 +66,21 @@
   font-size: 12px;
 }
 
+/* A distinct sub-section within a tab (e.g. semantic similarity under AI). */
+.settings-group--divided {
+  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 16px;
+}
+
+/* One bundled "model state + action" line: caption and its button on one row. */
+.embedding-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
 .settings-link-button {
   width: fit-content;
 }

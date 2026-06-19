@@ -1,6 +1,6 @@
 # Release Workflow
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Kanban Archive](kanban-archive.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Kanban Archive](kanban-archive.md). The repository-owned step-by-step closure runbook is the [brawler-release skill](../.agents/skills/brawler-release.md).
 
 ## Intent
 
@@ -16,12 +16,13 @@ Rules:
 - Patch releases bump the patch version, for example `0.24.0` to `0.24.1`.
 - Prerelease and build metadata are allowed only when there is a concrete packaging or testing need, for example `0.25.0-rc.1`.
 - `1.0.0` waits until the app is stable enough for external users.
-- Version files must stay synchronized:
+- Version files must stay synchronized (the `make release` bump covers all six):
   - `package.json`
   - `package-lock.json`
   - `src-tauri/Cargo.toml`
   - `src-tauri/Cargo.lock`
   - `src-tauri/tauri.conf.json`
+  - `src-tauri/src/lib.rs` — the health-version assertion
 - Milestone version bump still requires manual user signoff before closure.
 
 ## Commit Convention
@@ -102,11 +103,12 @@ Agents own changelog updates during milestone and patch closure. The project own
 2. The project owner asks the agent to close or wrap up the epic or milestone.
 3. The agent confirms the feature work is committed before generating the release changelog.
 4. The agent performs the closure-only work:
+   - write the milestone retrospective (both domains, still-open items honest) for owner review, and create/update the `wiki/` guide for every new or changed user-facing capability — both are required closure steps before the release commit
+   - update roadmap/kanban text and Radicle/Radboard issue state (the version-bump target cannot infer these)
    - bump synchronized version files
    - run `make changelog`
    - review/edit the generated `CHANGELOG.md` entry for clarity
    - run release and relevant validation checks
-   - update Radicle/Radboard issue state
    - create the final release commit
    - create the matching annotated release tag
    - push the release commit and tag to both `origin` and `rad`
@@ -136,6 +138,8 @@ This target:
 - pushes `master` and the tag to both `origin` and `rad`
 
 The target does not infer milestone scope, update roadmap text, archive kanban entries, or close Radicle issues. Those remain explicit closure tasks before running the target.
+
+To land curated, human-readable changelog notes in the single tagged release commit, use the **split**: `make release-prepare VERSION=X.Y.Z` (bump + scaffold the changelog, then stop) → curate the notes → `make release VERSION=X.Y.Z` (finalize). The one-shot `make release` is for trivial releases only. Packaged builds compile the shipped cargo features named by `RELEASE_FEATURES` (e.g. `embedding-model`); see [Engineering Workflow](engineering-workflow.md).
 
 Release remote sync updates both project remotes:
 

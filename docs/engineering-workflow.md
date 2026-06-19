@@ -2,7 +2,7 @@
 
 This document defines how Brawler should be built, checked, and tested during development.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Project Practices](project-practices.md), [Release Workflow](release-workflow.md), [Roadmap](roadmap.md), [Kanban](kanban.md), [Live Smoke Tests](live-smoke-tests.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
+Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Testing](testing.md), [Release Workflow](release-workflow.md), [Roadmap](roadmap.md), [Kanban](kanban.md), and [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md).
 
 ## Goals
 
@@ -63,26 +63,7 @@ Recommended workflow:
 
 Do not routinely run Windows npm/Rust builds inside the same working tree used by WSL/Nix. Mixing Windows and Linux `node_modules` and Rust `target` artifacts in one tree can create slow, confusing, and noisy changes. Prefer `package-windows-from-linux` if the spike proves stable. If native Windows packaging is needed, use a separate Windows checkout/worktree.
 
-## M18 Polish Smoke Checklist
-
-M18 visual regression is manual. Do not add Playwright or another browser automation dependency for this milestone.
-
-Run the app in the normal desktop path when possible. `make frontend-preview` is acceptable for browser-only layout review, but it does not validate Tauri commands, keychain behavior, or native window behavior.
-
-Manual review path:
-
-- Settings: open every local settings section, verify the subnavigation stays stable, controls remain readable, and the active panel scrolls independently.
-- Appearance: switch dark/light/system, then switch `night-neon` and `midnight-horizon`; verify the palette changes the app tokens without changing the brightness mode unexpectedly.
-- Notebooks: select a company, select a note, create a note, edit a long note, use tag filtering and clear it; verify the company list, note list, and detail/editor pane scroll independently.
-- Inbox: scan feed rows, change filters, clear representative filter/search inputs, open details, and verify the destructive feed cleanup action is separated from routine review controls.
-- Sources: verify adapters are grouped by purpose, disabled/review candidates are visually distinct, expanded rows remain readable, registry search works, and the clear control resets it.
-- Companies: create a watchlist, toggle company membership on and off, verify feedback and selected states, and clear representative company form fields.
-- Global search: open the top-toolbar search, type a query, verify ranked results grouped by content type with snippets, select a result and confirm navigation, then clear it with the field button and verify focus returns to the search input.
-- Database settings: open Settings → Database, adjust pool values within range, verify out-of-range values are clamped and reset-to-defaults works, and confirm the "applied on next launch" note is shown.
-- Backups and restore: in Developer Diagnostics, verify backup status and the backup list, create a backup, then exercise restore and confirm it warns about and applies on relaunch (restore recovers a verified earlier state).
-- Polish locale: switch to Polish and check the updated labels in Settings, Sources, Notebooks, Companies, and licensing views.
-
-Record pass/fail notes in the milestone review before asking for closure signoff.
+**Cross-build constraint — runtime engine dependencies must be pure-Rust (no transitive native/C deps).** The `cargo-xwin` Linux→Windows path compiles C/asm sources with `clang-cl` against the xwin SDK, which fails for many native crates. Adding a dependency that transitively pulls a C/native crate — `ring`, `*-sys` bindings (`onig-sys`), `openssl-sys`, etc. — silently breaks `make package-windows-from-linux` even when the host/Nix build is green. This bit the `v0.45.0` embedding engine: `hf-hub`→`ureq`→`rustls`→`ring` and `tokenizers`'s default `onig` both failed the cross-build and were replaced with the existing `reqwest` (native-tls/SChannel, already cross-compiles) and `tokenizers`' pure-Rust `fancy-regex` backend. Rule: when adding a runtime dependency that will ship in the packaged app (especially under the interpretative-layer / engine boundaries), prefer pure-Rust crates and verify with `make package-windows-from-linux` before relying on it; reuse the already-cross-compiling stack (`reqwest`, `rustls`-free TLS) rather than introducing a parallel one. A host or Nix `cargo build` passing is not evidence the cross-build works.
 
 ## Nix Development Environment
 
@@ -218,43 +199,56 @@ Once the scaffold exists, the repo should expose a small set of predictable comm
 
 The Makefile is the preferred local command surface from WSL. Targets must remain thin wrappers around documented project commands.
 
-## Definition Of Done (Per-Change Checklist)
+## Definition of Done (the handover gate)
 
-The canonical loop for any feature or fix. It is **tiered** — run the tier(s) your change touches, not all of it for a one-line doc edit — and it is a **living checklist**: when the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)) produces a lesson that cannot be a clean automated gate, add a line here. Command reference is in [Agent Day-To-Day Check Loop](#agent-day-to-day-check-loop) and [Quality Gates](#quality-gates).
+**This is the single stop gate before you report "done" or hand changes back.** "Done" is a claim that the *whole thing* is working and verified — not that the slice you touched compiles. The recurring failure is handing over on a *subset* of checks ("it compiles", "host is green", "tests pass" but not the periodic ones / not under Nix / never actually looked at the UI / never ran the real feature). **Do not hand over until every box that applies is checked, and your handoff message states what you verified and how (and what you did not).**
 
-**Before coding (every non-trivial change):**
+It is **scope-aware** (do the sections your change touches; always do §A, §H, §K) and a **living checklist** — when the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)) produces a lesson that can't be a clean automated gate, add a line here. Command reference: [Agent Day-To-Day Check Loop](#agent-day-to-day-check-loop) and [Testing](testing.md). When unsure whether something is testable a given way, assume it is and check [Testing](testing.md) — "I didn't know I could test that" is not an acceptable handoff.
 
-- [ ] Read the canonical doc(s) for the area (the [Required Reading](../AGENTS.md) map) and implement to spec. Do not infer architecture/field/command names from code alone.
-- [ ] ADR checkpoint: if the change alters durable architecture or policy, add/update an ADR before coding.
+### §0 — Triage: what changed?
+Frontend/UI · Rust/backend · dependency or packaging · migration · feature-gated code · code removed/refactored · docs only. Tick the sections below that apply.
 
-**Building UI (`src/` frontend):**
+### §A — Always
+- [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../AGENTS.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
+- [ ] **`make check` passes under Nix** (not host) — `cargo fmt --check` → `clippy --all-targets -D warnings` → typecheck → ESLint → stylelint → Vitest → `build`. A host pass is a hint, not a verdict (the toolchain can be split). **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
+- [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
+- [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
-- [ ] Open the closest sibling screen/panel and **match its scaffold** (`feed-panel` shell + `PanelHeader` + padded scrollable body) — do not assemble from the catalog in the abstract. See [ui-authoring.md → Screen scaffold](ui-authoring.md).
-- [ ] Run the [pre-write self-check](ui-authoring.md): primitive for the shape (`src/ui`), **domain component for the data shape (`src/shared/components` — e.g. `TickerLabel` for any qualified ticker)**, no raw `<input>/<select>/<textarea>`, no inline `style={{…}}`.
-- [ ] Every user-visible string via `text("…")` with **both** `en.ts` and `pl.ts` entries; counts use `pluralNoun`.
-- [ ] Frontend gate green — `rtk npm run check:frontend` (= `typecheck` → `lint` (ESLint) → `stylelint` → `test` → `build`), or the steps individually. There is **no jest**: tests are **Vitest** (`npm test` = `vitest run src`), which also runs the `jest-axe` a11y suite (`primitives.a11y.test.tsx`) and the primitive contract tests (`primitives.test.tsx`).
-- [ ] New UI workflow/behavior has a Vitest component or workflow test.
-- [ ] Added/changed a primitive → added it to `PrimitiveGallery.tsx` **and** `primitives.test.tsx` (and it stays clean under the a11y suite).
+### §B — If frontend/UI changed
+- [ ] Matched the **destination** screen's scaffold (`feed-panel` shell + `PanelHeader` + padded scrollable body) **and its control idioms** (which `Button` variant, status pattern). **On a relocation, re-check against the new screen's siblings — old-screen conventions don't travel** (Diagnostics uses `compact-button`; Settings uses the `Button` primitive / `secondary-button`). See [ui-authoring.md](ui-authoring.md).
+- [ ] Pre-write self-check: primitive for the shape (`src/ui`), domain component for the data shape (`src/shared/components` — e.g. `TickerLabel` for any qualified ticker), no raw `<input>/<select>/<textarea>`, no inline `style={{…}}`.
+- [ ] Every user-visible string via `text("…")` with **both** `en.ts`/`pl.ts` (or `plText`) entries — translation guard green; counts use `pluralNoun`.
+- [ ] New UI workflow/behavior has a Vitest component/workflow test. Added/changed a primitive → added to `PrimitiveGallery.tsx` **and** `primitives.test.tsx` (clean under the a11y suite).
+- [ ] **You rendered the changed screen and looked at it** — don't defer the visual check to the user. "No GUI in WSL" is not a reason: the browser harness renders any screen headlessly in Chromium ([Testing → Browser UI regression smoke](testing.md#browser-ui-regression-smoke-playwright)). Drive a throwaway Playwright spec to the screen, `await page.screenshot(...)`, read the PNG; add any command it calls to `src/test/browserSmokeRuntime.ts`.
+- [ ] **`make ui-smoke` (Playwright) green**, including the narrow tall-window viewport matrix in `playwright.config.ts`. Triage every failure — fix or file a tracked issue.
 
-**Backend (`src-tauri/` Rust):**
+### §C — If Rust/backend changed
+- [ ] Rust gate validated **under Nix** specifically (host clippy/fmt can differ — this is where lints like `is_multiple_of` / `zip(into_iter())` hide).
+- [ ] New command / read model / migration / adapter / mapping has automated tests. Migrations are append-only, idempotent, self-healing; reads of new columns/settings tolerate a missing row with a safe default.
+- [ ] Non-trivial CPU/inference/IO work runs **off the UI thread** (`async fn` + `spawn_blocking`) and reads the persisted derived index rather than recomputing the corpus per call.
+- [ ] **A background/derived-index job has every trigger it needs** — it (re)runs on the events that invalidate it *and* on app startup; verified to populate from a cold/persisted-but-stale state, not just the one action you wired.
 
-- [ ] Rust gate green — `rtk npm run check:rust` (= `cargo fmt --check` → `clippy --all-targets -D warnings` → `cargo test`); `rtk cargo nextest run` is the faster local equivalent of `cargo test`.
-- [ ] New contract/command, read model, migration, adapter, or mapping has automated tests. Migrations are append-only, idempotent, and self-healing.
+### §D — If feature-gated code (e.g. `embedding-model`)
+- [ ] Built **and tested with the feature on** — `cargo check/test --features <feature>` — because the default gate does not compile it. Compile-green is not "works".
+- [ ] A feature-gated runtime test exists, ran against the real resource where available (e.g. the cached model), and **skips cleanly** when absent. (Embedding model: also run the model-vs-lexical eval — [Testing](testing.md).)
 
-**Opt-in / periodic suites (NOT in `make check` — run when relevant):**
+### §E — If a dependency was added/changed, or packaging touched
+- [ ] **Windows cross-build green** — `make package-windows-from-linux`. Host/Nix green is not cross-build evidence. Shipped engine deps stay pure-Rust (no transitive C/native: `ring`, `*-sys`, `onig`, openssl).
 
-- [ ] **Playwright browser UI smoke** (`make ui-smoke` / `npm run test:browser`, Chromium via `make ui-smoke-install`): run when you add a screen or change layout/scaffold/scroll/responsive behavior. It catches overflow, scroll-ownership, and clipping regressions Vitest/jsdom cannot ([ADR 0021](adr/0021-browser-ui-regression-testing.md)); add or adjust a sample in the `playwright.config.ts` viewport matrix when introducing a new layout shape.
-- [ ] **`rtk npm run knip`** (dead-code audit — unused files/exports/deps): run after removing or refactoring code. It is a periodic audit, not a `make check` gate step.
+### §F — If code was removed or refactored
+- [ ] `rtk npm run knip` (dead-code) clean.
 
-**Keeping the docs honest (same change, not a later pass):**
+### §G — Real-behavior verification (every functional change)
+- [ ] **The feature actually works end-to-end against the real runtime/data it names — not just compiles and passes tests.** Mocks/samples are not completion evidence (roadmap rule). Desktop behavior is verified through the packaged Windows `.exe` / hands-on path, not a WSL Linux build.
 
-- [ ] Updated the canonical doc(s) whose behavior changed (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
+### §H — Guardrail harvest (when anything was flagged or discovered) — always check
+- [ ] Every defect the user/a review/a gate/you flagged has its **class** closed in this change — a precise gate, or a documented rule + checklist line ([guardrail-harvest](../.agents/skills/guardrail-harvest.md)). A discovered bug not fixed now → a tracked Radicle issue.
 
-**Closing out:**
+### §I — Milestone/epic closure only
+- [ ] `make check-epic` (all suites incl. knip + Playwright); triage every failure (fix or file a tracked issue — this is how `2d9825a` was caught). · Retrospective written (both domains, still-open items honest). · `wiki/` created/updated for every user-facing change. · Version bump via the release workflow — **only on explicit user sign-off**.
 
-- [ ] **Guardrail harvest**: for anything the user or a review flagged, the *class* is closed with a gate or a doc/checklist rule in this change ([.agents/skills/guardrail-harvest.md](../.agents/skills/guardrail-harvest.md)).
-- [ ] **Epic/milestone closure: run ALL suites, not just the per-change gate** — `make check-epic` (the hard gate + the opt-in/periodic suites that otherwise rot unrun: **knip** and the **Playwright browser UI smoke**). This is a **closure-cadence** requirement, not per-change: it adds only ~1–2 min over `make check` and runs once per epic. Triage every failure — fix it, or file a tracked Radicle issue — before sign-off; a known-tracked failure does not silently block, but it must be visible (this is how `2d9825a` was caught).
-- [ ] Milestone closure only: version bump across the five manifests and CHANGELOG via the release workflow — **and only on explicit user sign-off** (agents never close a milestone or commit/push unprompted).
+### §K — Honest handover report — always
+- [ ] The handoff states **what was validated and how** (Nix vs host, which suites ran) and **what was NOT run or verified** ("not run on real Windows", "eval not run against the real model", "browser smoke has a pre-existing unrelated failure, filed as X"). No victory lap; surface still-open items rather than implying completeness.
 
 ## Agent Day-To-Day Check Loop
 
@@ -386,136 +380,9 @@ Implementation direction:
 - Linux release builds store runtime data under `~/.brawler`.
 - Installed Linux packages must not write runtime data beside package-managed executable paths.
 
-## Lean Testing Strategy
+## Testing
 
-Testing should be fast, focused, and layered.
-
-Default test layers:
-
-- Rust unit tests for domain logic, contracts, parsing, dedupe, migrations, and provider mapping.
-- Frontend unit/component tests for UI state and critical workflow components.
-- Test-sample-based adapter tests for external sources.
-- Smoke tests for app startup and command availability.
-
-Avoid by default:
-
-- large end-to-end suites for every UI path
-- live network tests in normal CI
-- brittle screenshot tests for routine UI
-- testing implementation details that do not protect behavior
-
-Use broader tests only when the risk justifies them:
-
-- source adapter parsing
-- migration safety
-- note origin
-- transcript-to-note workflow
-- packaging startup
-- local data persistence
-
-### Browser UI Regression Smoke
-
-M23 accepts a small Playwright-based browser smoke layer for UI/layout regressions that Vitest/jsdom cannot reliably catch. The first implementation targets the Vite preview app in Chromium and remains opt-in until it proves stable.
-
-Setup and run:
-
-- `make ui-smoke-install`: first-time Chromium download for the local Playwright cache
-- `make ui-smoke`: run the browser UI smoke suite
-- `npm run test:browser:install` and `npm run test:browser` are the direct npm equivalents
-
-The command starts a Vite preview/test server with deterministic browser-smoke data. It does not read live sources or the user's local app database.
-
-Use browser UI smoke tests for repeated layout risks:
-
-- fixed app chrome and absence of a global application scrollbar
-- independently scrollable panels in Companies, Watchlists, Notebooks, Inbox, Events, and Sources
-- dense row and category sizing in Sources and other list-heavy screens
-- viewport regressions across the matrix in `playwright.config.ts`: compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide window at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [AGENTS.md](../AGENTS.md)
-- cross-screen navigation smoke when it helps prove the preview harness is wired correctly
-
-The browser layer is assertion-driven, not screenshot-only (see [ADR 0021](adr/0021-browser-ui-regression-testing.md)):
-
-- a shared harness (`tests/browser/helpers/harness.ts`) provides an auto console-error gate (any `console.error`/uncaught error fails the test) and reusable layout invariants (`expectNoPageOverflow`, a deep `expectNoHorizontalOverflow` scan, `expectInternalScroll`)
-- journey scenarios (`tests/browser/journeys.spec.ts`) assert full flows end to end (extract → review → confirm; open-company focuses the workspace without scrolling the app; confirmed KPI surfaces in the fundamentals matrix)
-- a layout smoke-walk (`tests/browser/smoke-walk.spec.ts`) walks every primary screen asserting no page-level horizontal overflow, and deep-scans the detail rail where `overflow:hidden` hides the symptom
-- run a subset with `npx playwright test journeys smoke-walk`; the page-level overflow gate is the low-noise invariant while the per-element deep scan is reserved for the rail/modal
-
-Do not use the first Playwright suite for:
-
-- live external source/API testing
-- real Tauri desktop file dialogs, keychain, taskbar, packaging, or WebView2 validation
-- broad end-to-end coverage of every product workflow
-- screenshot comparison as pass/fail evidence
-
-Evidence policy:
-
-- DOM/layout assertions are the pass/fail signal.
-- Screenshots and traces are retained only on failure.
-- Visual snapshot comparisons are deferred until a specific stable use case justifies the maintenance cost.
-
-Runtime split:
-
-- WSL/Nix owns automated Playwright smoke against the Vite preview app.
-- Native Windows remains responsible for hands-on desktop behavior, native OS integrations, and packaged executable smoke testing.
-- Browser smoke tests should use deterministic frontend test data, not live sources or the user's local app database.
-
-## Test Pyramid For V1
-
-Preferred distribution:
-
-- many small Rust unit tests
-- some frontend component tests
-- test-sample-backed integration tests for adapters and migrations
-- a few desktop smoke tests
-
-The app does not need exhaustive full-stack end-to-end tests in early v1.
-
-## External Source Testing
-
-Source adapters must be tested with saved test samples.
-
-Rules:
-
-- Normal CI must not depend on GPW, Gemini, SEC, Nasdaq, or media sites being reachable.
-- Live source checks may exist as manual jobs later.
-- Test sample refresh should be deliberate and reviewable.
-- Adapter tests should cover parsing, dedupe keys, company matching, and error handling.
-
-## AI Provider Testing
-
-AI provider integrations must be mockable.
-
-Rules:
-
-- Normal CI must not require API keys.
-- Provider contract mapping should be tested with test samples.
-- Prompt/result shape should be tested without making live calls.
-- Live provider checks should be manual or local-only.
-- Required milestone live checks are documented in [Live Smoke Tests](live-smoke-tests.md) and must remain outside default CI/local checks.
-
-## Quality Gates
-
-Minimum gate for ordinary changes:
-
-- docs/contracts updated when behavior changes
-- relevant Rust tests pass
-- relevant frontend tests pass
-- formatting/lint checks pass
-- dependency additions are justified and license-reviewed when they affect runtime
-
-Minimum gate for source adapters:
-
-- test-sample tests pass
-- dedupe and matching tests pass
-- source policy documented
-
-Minimum gate for packaging:
-
-- app starts
-- Rust command boundary works
-- local database opens
-- primary screen renders
-- packaged builds keep normal open-core navigation available and preserve optional entitlement workflows
+Strategy, test layers/pyramid, per-area minimum gates, and the browser / manual / live / packaging smoke procedures all live in **[Testing](testing.md)**. Run the suites relevant to your change per the [Definition of Done](#definition-of-done-the-handover-gate).
 
 ## GitHub Actions Design
 

@@ -2398,3 +2398,70 @@ Initial `list_unmatched_source_items` behavior:
 - Returns source URL, source-derived company name, title, publication timestamp, and fetched timestamp when available.
 
 Feed, job, transcript, and notebook changes should be emitted as Tauri events.
+
+## Interpretation — Embedding Model
+
+Typed commands for the interpretative AI layer's embedding-model strategy ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)), added in `v0.45.0`. All are local-only: the model runs on-device, no content leaves the machine, no API key.
+
+### Embedding Model Status
+
+`get_embedding_model_status` read model — the local model + index state surfaced in Settings and Developer-mode diagnostics.
+
+```json
+{
+  "modelId": "intfloat/multilingual-e5-small",
+  "dim": 384,
+  "weightsState": "absent",
+  "downloadProgress": null,
+  "activeSimilarityStrategy": "static",
+  "embeddedCounts": { "feed_item": 0 },
+  "indexModelId": null
+}
+```
+
+Rules:
+
+- `weightsState` is one of `absent`, `downloading`, `ready`, `error`.
+- `downloadProgress` is `null` unless `weightsState` is `downloading`; then it is a 0–100 integer percent.
+- `activeSimilarityStrategy` is `static` or `embedding`; it must never report `embedding` while `weightsState` is not `ready`.
+- `indexModelId` is the `model_id` the current vectors were built with, or `null` when the index is empty. A mismatch with `modelId` means a re-embed is pending.
+- The command must not return weight bytes, file paths to secrets, or any provider key.
+
+### Download Embedding Model
+
+`download_embedding_model` — begin the optional one-time weights download into the app data directory; idempotent (a no-op when already `ready`).
+
+Rules:
+
+- Downloads `safetensors` + `tokenizer.json` for `modelId` and checksum-verifies before marking `ready`.
+- Runs async; progress is observed via `get_embedding_model_status` (or an emitted event), not by blocking.
+- A failed or interrupted download leaves `weightsState` at `error`/`absent` and never partially activates the model.
+- Default CI and tests must not invoke a live download; the model-backed eval uses the locally-cached model and skips when absent.
+
+### Select Similarity Strategy
+
+`set_similarity_strategy` — choose the active `SimilarityProvider` implementation.
+
+```json
+{ "strategy": "embedding" }
+```
+
+Rules:
+
+- `strategy` is `static` or `embedding`. Selecting `embedding` while weights are not `ready` is rejected with a recoverable error; it does not silently fall back.
+- The selection is persisted as a local setting (see [Settings](data-model.md#settings)); the default is `static`.
+- Switching to `embedding` enqueues the embed job to populate any missing vectors; switching to `static` leaves the index in place (it is disposable and may be reused later).
+
+### Find Similar Content (diagnostics)
+
+`find_similar_content` — developer-mode/diagnostics command to exercise the active `SimilarityProvider` over real stored content; the basis for the `v0.45.0` demoable surface ahead of story clustering (`v0.46.0`).
+
+```json
+{
+  "contentType": "feed_item",
+  "contentId": "feed_01",
+  "k": 10
+}
+```
+
+Returns ranked `{ contentType, contentId, score }` items, highest score first, plus the `strategyId` that produced them so the model-vs-static result is visible. Scores are relative within one call and not comparable across strategies.

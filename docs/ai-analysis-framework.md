@@ -1,6 +1,6 @@
 # AI Analysis Framework
 
-This document records the M13 implementation boundary for source-grounded AI analysis. Use it with [Architecture](architecture.md), [Contracts](contracts.md), [Data Model](data-model.md), [Project Practices](project-practices.md), and [Kanban](kanban.md).
+This document records the M13 implementation boundary for source-grounded AI analysis. Use it with [Architecture](architecture.md), [Contracts](contracts.md), [Data Model](data-model.md), [Engineering Workflow](engineering-workflow.md), and [Kanban](kanban.md).
 
 ## M13 Goal
 

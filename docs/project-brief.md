@@ -6,7 +6,6 @@ Use this map to load only the docs needed for the current task.
 
 Core orientation:
 
-- [Project Practices](project-practices.md): standing rules for feature completion, secrets, dependencies, security, AI, testing, releases, and modularity.
 - [Architecture](architecture.md): stack, runtime ownership, storage posture, command boundaries, and extensibility boundaries.
 - [Modularization Design](modularization-design.md): current module structure and the checklist for keeping future work modular.
 
@@ -30,9 +29,9 @@ Planning and workflow:
 - [Roadmap](roadmap.md): milestone intent and exit criteria.
 - [Radicle/Radboard Tracking](kanban.md): pointer to active Radicle issue tracking and board labels.
 - [Kanban Archive](kanban-archive.md): completed-card history.
-- [Engineering Workflow](engineering-workflow.md): local commands, Nix, WSL/Windows split, CI, quality gates, and packaging posture.
+- [Engineering Workflow](engineering-workflow.md): local commands, Nix, WSL/Windows split, CI, the Definition of Done (handover gate), standing operating rules, and packaging posture.
+- [Testing](testing.md): testing strategy and layers, and the browser/manual/live/packaging smoke procedures.
 - [Release Workflow](release-workflow.md): SemVer policy, Conventional Commits, local commit hooks, git-cliff changelog generation, and retroactive tag policy.
-- [Live Smoke Tests](live-smoke-tests.md): opt-in real-provider validation procedures.
 - [Public/Private Documentation Split](adr/0023-public-private-documentation-split.md): public docs versus owner-only operational context.
 - [Dependency License Audit](dependency-licenses.md): current dependency-license posture for public-opening work.
 

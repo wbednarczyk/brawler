@@ -747,6 +747,32 @@ Rules:
 - `transcript_job_id` is used for transcript jobs when represented in the shared job list.
 - Warnings can be JSON in v1 unless they need filtering.
 
+### Content Embeddings
+
+Supports the interpretative AI layer's embedding-model strategy ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)): an on-device vector index over canonical text content, used by the model-backed `SimilarityProvider` (and later model capabilities). Added in `v0.45.0`.
+
+This table is a **disposable, derived index**, never a source of truth. Every row is computed from canonical content (a feed item, note, report document, etc.). Dropping the table loses zero canonical data — it only forces a re-embed.
+
+Fields:
+
+- `content_type` — the canonical content kind being embedded (aligned with the unified search content types, [ADR 0032](adr/0032-search-and-backup-boundaries.md): `feed_item`, `company`, `notebook_entry`, …).
+- `content_id` — the opaque id of the canonical row.
+- `model_id` — the embedding model that produced this vector (e.g. `intfloat/multilingual-e5-small`).
+- `dim` — the vector dimensionality (e.g. `384`).
+- `vector` — the embedding as a little-endian f32 `BLOB`.
+- `content_hash` — hash of the embedded text, so re-embedding can skip unchanged content.
+- `created_at`
+
+Primary key: (`content_type`, `content_id`, `model_id`).
+
+Rules:
+
+- Vectors from different `model_id`s are **never mixed** in a similarity computation; changing the active model re-runs the embed job and rebuilds the index for the new `model_id`, and old-`model_id` rows are pruned.
+- Stored as a pure-Rust brute-force index: similarity is a cosine scan over the candidate `vector` blobs in Rust. No `sqlite-vec`/ANN extension in `v0.45.0` (corpus is single-user, thousands of vectors; brute-force is sub-millisecond). The vector-store boundary allows a later `sqlite-vec` swap without a data migration.
+- Co-located with the main SQLite database so it inherits the WAL pool and backup posture ([ADR 0032](adr/0032-search-and-backup-boundaries.md)); pre-migration snapshots and rotating backups still apply, but the index is rebuildable regardless.
+- Population is opt-in: rows are only written when the user enables the `embedding` strategy and the model weights are present. Until then the static (lexical) baseline serves `SimilarityProvider` and this table stays empty.
+- Embedding/re-embedding runs as an async background job (see [Jobs](#jobs) / [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)); reads of similarity tolerate a partially-populated index.
+
 ### Diagnostic Events
 
 Supports the Developer mode Diagnostics panel and module-scoped local troubleshooting timelines.

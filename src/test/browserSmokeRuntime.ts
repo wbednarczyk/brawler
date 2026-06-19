@@ -375,6 +375,18 @@ export function installBrowserSmokeRuntime() {
   mockIPC((command, args) => handleCommand(command, args as InvokeArgs), { shouldMockEvents: true });
 }
 
+const embeddingModelStatus = {
+  modelId: "intfloat/multilingual-e5-small",
+  dim: 384,
+  weightsState: "ready",
+  downloadProgress: null,
+  downloadError: null,
+  activeSimilarityStrategy: "embedding",
+  embeddedCounts: [{ contentType: "feed_item", count: 374 }],
+  indexModelId: "intfloat/multilingual-e5-small",
+  featureCompiled: true,
+};
+
 function handleCommand(command: string, args: InvokeArgs) {
   switch (command) {
     case "health":
@@ -523,6 +535,14 @@ function handleCommand(command: string, args: InvokeArgs) {
       return confirmKpiProposal(args);
     case "reject_kpi_proposal":
       return rejectKpiProposal(args);
+
+    case "get_embedding_model_status":
+    case "set_similarity_strategy":
+    case "download_embedding_model":
+    case "rebuild_embedding_index":
+      return embeddingModelStatus;
+    case "find_similar_content":
+      return { strategyId: "similarity_embedding", items: [] };
 
     default:
       throw new Error(`Unhandled browser smoke command: ${command}`);

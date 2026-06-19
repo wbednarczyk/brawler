@@ -148,6 +148,42 @@ pub(crate) fn set_developer_mode_enabled(
     get_settings(connection)
 }
 
+/// The active interpretative-layer similarity strategy (`static` | `embedding`),
+/// defaulting to `static` when the row is absent so a database that recorded
+/// migration 0049 before the seed row materialized never fails to load (ADR 0035).
+pub(crate) fn get_similarity_strategy(connection: &Connection) -> StorageResult<String> {
+    match connection.query_row(
+        "SELECT value FROM settings WHERE key = 'similarity_strategy'",
+        [],
+        |row| row.get::<_, String>(0),
+    ) {
+        Ok(value) => Ok(value),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok("static".to_owned()),
+        Err(error) => Err(StorageError::from(error)),
+    }
+}
+
+/// Persist the active similarity strategy. Upserts (self-healing) and validates
+/// the value; readiness checks for the `embedding` model live in the command layer.
+pub(crate) fn set_similarity_strategy(
+    connection: &Connection,
+    strategy: &str,
+) -> StorageResult<()> {
+    validate_allowed_setting("similarity_strategy", strategy, &["static", "embedding"])?;
+    connection.execute(
+        "
+        INSERT INTO settings (key, value, value_type)
+        VALUES ('similarity_strategy', ?1, 'string')
+        ON CONFLICT (key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![strategy],
+    )?;
+
+    Ok(())
+}
+
 pub(crate) fn update_settings(
     connection: &Connection,
     input: SettingsUpdate,

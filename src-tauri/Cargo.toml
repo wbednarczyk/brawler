@@ -14,7 +14,31 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[features]
+# On-device embedding model for the interpretative AI layer (ADR 0035, v0.45.0).
+# OFF by default so the standard `make check`/CI build stays fast and offline:
+# the candle inference engine and hf-hub downloader are heavy and only needed for
+# the opt-in embedding similarity strategy. Release/dev builds and the periodic
+# model eval enable this feature; with it off, the registry reports the embedding
+# strategy as unavailable and the static (lexical) baseline serves similarity.
+embedding-model = [
+    "dep:candle-core",
+    "dep:candle-nn",
+    "dep:candle-transformers",
+    "dep:tokenizers",
+]
+
 [dependencies]
+candle-core = { version = "0.10", optional = true }
+candle-nn = { version = "0.10", optional = true }
+candle-transformers = { version = "0.10", optional = true }
+# `fancy-regex` is the pure-Rust regex backend (vs the default `onig`/C oniguruma),
+# so the whole engine stays pure-Rust and cross-compiles to windows-msvc via
+# cargo-xwin. Weights are fetched with the existing `reqwest` (native-tls/SChannel),
+# not `hf-hub` (which pulls ureq+rustls+ring and fails the cross-build).
+tokenizers = { version = "0.21", optional = true, default-features = false, features = [
+    "fancy-regex",
+] }
 async-trait = "0.1"
 base64 = "0.22"
 ed25519-dalek = "2"

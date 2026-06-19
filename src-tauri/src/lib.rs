@@ -54,6 +54,24 @@ pub fn run() {
             // keychain entries so no orphaned secrets linger. Best-effort, no fallback.
             providers::credentials::clear_legacy_credentials();
 
+            // Keep the disposable embedding index fresh: when the embedding
+            // similarity strategy is active and the model is available, run the
+            // embed/re-embed job at startup (ADR 0035). Idempotent (skips unchanged
+            // content); best-effort and non-fatal.
+            let embedding_state = state.clone();
+            if matches!(
+                embedding_state.get_similarity_strategy().as_deref(),
+                Ok(interpretation::EMBEDDING_STRATEGY)
+            ) {
+                tauri::async_runtime::spawn_blocking(move || {
+                    if let Err(error) =
+                        jobs::content_embedding::run_content_embedding_job(&embedding_state)
+                    {
+                        log::warn!("startup content embedding job failed: {error}");
+                    }
+                });
+            }
+
             app.manage(state);
 
             Ok(())
@@ -197,6 +215,11 @@ pub fn run() {
             commands::diagnostics::list_diagnostic_events,
             commands::diagnostics::clear_diagnostic_events,
             commands::diagnostics::get_diagnostic_summary,
+            commands::interpretation::get_embedding_model_status,
+            commands::interpretation::download_embedding_model,
+            commands::interpretation::set_similarity_strategy,
+            commands::interpretation::rebuild_embedding_index,
+            commands::interpretation::find_similar_content,
             commands::logs::get_log_status,
             commands::logs::list_log_entries,
             commands::logs::open_logs_directory,

@@ -43,6 +43,7 @@ mod backup;
 mod claim_extraction;
 mod companies;
 mod diagnostics;
+mod embeddings;
 mod error;
 mod events;
 mod feed;
@@ -82,6 +83,10 @@ pub use claim_extraction::{
     ConfirmClaimProposalInput, NewClaimExtractionJob, NewClaimProposal,
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
+pub use embeddings::{
+    EmbeddableContent, EmbeddedCount, EmbeddedVector, NewContentEmbedding, FEED_ITEM_CONTENT_TYPE,
+};
+// `EmbeddingDownloadState` and `AppState` are defined in this module.
 pub use error::{StorageError, StorageResult};
 pub use financials::{
     FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance, ListFinancialFactsInput,
@@ -203,12 +208,22 @@ pub struct BackfillProgress {
     pub updated_at: String,
 }
 
+/// In-memory state of the optional embedding-model weights download (ADR 0035).
+/// Not persisted: the download is an explicit, app-open-only action and the
+/// on-disk weights are the durable truth; a lost in-flight flag is harmless.
+#[derive(Clone, Debug, Default)]
+pub struct EmbeddingDownloadState {
+    pub in_progress: bool,
+    pub error: Option<String>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     db: Db,
     runtime_metrics: Arc<RuntimeMetricCounters>,
     data_dir: PathBuf,
     backfill_progress: Arc<Mutex<HashMap<String, BackfillProgress>>>,
+    embedding_download: Arc<Mutex<EmbeddingDownloadState>>,
 }
 
 impl AppState {
@@ -222,6 +237,7 @@ impl AppState {
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
+            embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
         };
         state.seed_app_data();
         state
@@ -233,6 +249,7 @@ impl AppState {
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
+            embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
         };
         state.seed_app_data();
         state
@@ -1384,6 +1401,132 @@ impl AppState {
         let connection = self.checkout()?;
 
         settings::set_developer_mode_enabled(&connection, enabled)
+    }
+
+    /// Read the active similarity strategy setting (`static` | `embedding`),
+    /// tolerating a missing row with the static default (ADR 0035).
+    pub fn get_similarity_strategy(&self) -> StorageResult<String> {
+        let connection = self.checkout()?;
+
+        settings::get_similarity_strategy(&connection)
+    }
+
+    /// Persist the active similarity strategy. Validation that the embedding
+    /// model is ready lives in the command layer.
+    pub fn set_similarity_strategy(&self, strategy: &str) -> StorageResult<()> {
+        let connection = self.checkout()?;
+
+        settings::set_similarity_strategy(&connection, strategy)
+    }
+
+    /// Insert or replace one content embedding (vector store, ADR 0035).
+    pub fn upsert_content_embedding(&self, embedding: &NewContentEmbedding) -> StorageResult<()> {
+        let connection = self.checkout()?;
+
+        embeddings::upsert_embedding(&connection, embedding)
+    }
+
+    /// Feed items as embeddable content for the embed job (ADR 0035).
+    pub fn feed_item_embeddable_contents(&self) -> StorageResult<Vec<EmbeddableContent>> {
+        let connection = self.checkout()?;
+
+        embeddings::feed_item_contents(&connection)
+    }
+
+    /// `content_id -> content_hash` already embedded for a content type/model.
+    pub fn embedded_content_hashes(
+        &self,
+        content_type: &str,
+        model_id: &str,
+    ) -> StorageResult<std::collections::HashMap<String, String>> {
+        let connection = self.checkout()?;
+
+        embeddings::existing_hashes(&connection, content_type, model_id)
+    }
+
+    /// All stored vectors for a content type/model — the brute-force scan input.
+    pub fn scan_content_vectors(
+        &self,
+        content_type: &str,
+        model_id: &str,
+    ) -> StorageResult<Vec<EmbeddedVector>> {
+        let connection = self.checkout()?;
+
+        embeddings::scan_vectors(&connection, content_type, model_id)
+    }
+
+    /// The stored vector for a single content row under a model, if embedded.
+    pub fn content_vector(
+        &self,
+        content_type: &str,
+        content_id: &str,
+        model_id: &str,
+    ) -> StorageResult<Option<Vec<f32>>> {
+        let connection = self.checkout()?;
+
+        embeddings::get_vector(&connection, content_type, content_id, model_id)
+    }
+
+    /// Drop every vector not built with `keep_model_id` (model change). Returns
+    /// the number of pruned rows.
+    pub fn prune_embeddings_other_models(&self, keep_model_id: &str) -> StorageResult<usize> {
+        let connection = self.checkout()?;
+
+        embeddings::prune_other_models(&connection, keep_model_id)
+    }
+
+    /// Per-content-type embedded counts for one model (status read model).
+    pub fn embedding_counts(&self, model_id: &str) -> StorageResult<Vec<EmbeddedCount>> {
+        let connection = self.checkout()?;
+
+        embeddings::counts_by_content_type(&connection, model_id)
+    }
+
+    /// The `model_id` the current index was built with, or `None` when empty.
+    pub fn embedding_index_model_id(&self) -> StorageResult<Option<String>> {
+        let connection = self.checkout()?;
+
+        embeddings::index_model_id(&connection)
+    }
+
+    /// Drop the entire (disposable) vector index. Returns dropped row count.
+    pub fn clear_content_embeddings(&self) -> StorageResult<usize> {
+        let connection = self.checkout()?;
+
+        embeddings::clear_all(&connection)
+    }
+
+    /// Read the in-memory embedding-model download state.
+    pub fn embedding_download_state(&self) -> EmbeddingDownloadState {
+        self.embedding_download
+            .lock()
+            .expect("embedding download mutex poisoned")
+            .clone()
+    }
+
+    /// Mark a download as started (clears any prior error). Returns `false` when
+    /// one is already in progress, so callers don't launch a duplicate.
+    pub fn begin_embedding_download(&self) -> bool {
+        let mut guard = self
+            .embedding_download
+            .lock()
+            .expect("embedding download mutex poisoned");
+        if guard.in_progress {
+            return false;
+        }
+        guard.in_progress = true;
+        guard.error = None;
+        true
+    }
+
+    /// Record the outcome of a download attempt.
+    pub fn finish_embedding_download(&self, result: Result<(), String>) {
+        let mut guard = self
+            .embedding_download
+            .lock()
+            .expect("embedding download mutex poisoned");
+        guard.in_progress = false;
+        guard.error = result.err();
     }
 
     pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {

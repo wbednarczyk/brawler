@@ -9,6 +9,7 @@ pub mod feed;
 pub mod financials;
 pub mod health;
 pub mod import_export;
+pub mod interpretation;
 pub mod kpi_extraction;
 pub mod licensing;
 pub mod logs;

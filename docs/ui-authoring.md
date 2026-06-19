@@ -101,6 +101,8 @@ Rules:
 
 Every user-visible string is `text("English text")` from `useLocale()`. The locale resources are typed: add the key to **both** `src/shared/locale/resources/en.ts` and `pl.ts`, or the build fails. See the en/pl maps and [ADR-tracked locale model]. Do not concatenate translated fragments where a single key reads better.
 
+**Use product language, not implementation terms.** Normal user-facing copy must avoid `SQLite`, `Tauri`, `adapter`, `schema`, `database`, `module`, `collector`, and `local`/`Local` — say what the user gets, not how it's built. Developer-only Diagnostics may use implementation terms (it's gated on Developer mode). Source-provided content/URLs may contain anything, but test samples in normal UI tests should not accidentally include the forbidden terms.
+
 ## When a native element is acceptable
 
 Per [Modularization Design](modularization-design.md), a few natives may stay when a primitive would obscure semantics or accessibility: segmented controls, **toggle switches** (track + thumb, `role="switch"`) and **selectable list rows** that contain a checkbox (use the row primitive, not `Checkbox`), field-clear buttons, collapsible headers, suggestion rows, anchor links, and the inherently-native input types the lint rule exempts (`checkbox`/`radio`/`file`/`date`/`time`/…). For a **plain** checkbox-with-label, prefer `Checkbox`. "It was faster to write raw" is **not** an acceptable reason. When in doubt, use the primitive.

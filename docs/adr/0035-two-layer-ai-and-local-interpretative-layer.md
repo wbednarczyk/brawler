@@ -2,7 +2,7 @@
 
 Status: Accepted
 
-This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.45.0`); runtime/model defaults remain proposed and require owner confirmation, validated by the eval harness, before implementation. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
+This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.45.0`); the runtime/model/vector-store defaults were **confirmed at v0.45.0 planning** — see [Amendment (v0.45.0): confirmed runtime defaults](#amendment-v0450-confirmed-runtime-defaults) — and the per-capability eval validates the encoder choice. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
 
 ## Context
 
@@ -78,13 +78,13 @@ Active implementation per capability is chosen through a registry/factory + sett
 
 The model is kept only where it measurably beats the static baseline. Each capability ships with a small deterministic eval (sample-backed) so the model-vs-static decision is data-driven, not assumed. A capability where the model does not win stays static.
 
-### 8. Proposed runtime/model defaults (for confirmation)
+### 8. Runtime/model defaults (confirmed at v0.45.0 planning)
 
-- Inference engine: a pure-Rust path (`candle` or `fastembed`-class) preferred over an onnxruntime C++ dependency, to keep the cross-build-from-Linux packaging path simple.
-- Encoder: a multilingual model evaluated on Polish (e5-small/base or bge-m3 class). Weights distributed as an optional download, not bundled into the default installer.
-- Vector store: `sqlite-vec`-class SQLite extension.
+These were proposed for confirmation; the choices made at v0.45.0 planning are recorded in [Amendment (v0.45.0)](#amendment-v0450-confirmed-runtime-defaults). In brief:
 
-These are proposed; the eval harness (§7) confirms the encoder choice.
+- Inference engine: **`candle`** (pure-Rust) — chosen over a `fastembed`/`ort` (onnxruntime C++) path to keep the cross-build-from-Linux packaging path free of native dependencies.
+- Encoder: **`intfloat/multilingual-e5-small`** (384-dim) as the default candidate, evaluated on Polish; the eval harness (§7) confirms the final encoder. Weights distributed as an **optional runtime download**, not bundled into the default installer.
+- Vector store: a **pure-Rust brute-force cosine** scan over an f32 `BLOB` column — chosen over a `sqlite-vec`-class C extension because the single-user corpus is small (thousands of vectors) and brute-force is sub-millisecond there, keeping the layer pure-Rust and cross-buildable. `sqlite-vec` remains a future swap behind the same vector-store boundary if scale ever demands ANN.
 
 ## Scope boundary
 
@@ -103,9 +103,24 @@ These are proposed; the eval harness (§7) confirms the encoder choice.
 The interpretative layer is split into two milestones:
 
 - `v0.39.0` — **static foundation**: capability contracts + registry/config selection + static baselines + eval harness. No embedding model or vector store (the static baselines need neither). Built before its consumers; epic `8e94b2f`. Its first consumer is ESPI classification (`v0.40.0`), which binds to the `Classifier` capability.
-- `v0.45.0` — **embedding model**: the on-device embedder + `sqlite-vec`-class vector store, enabling the model-backed implementation per capability only where the eval beats static. Sequenced immediately before story clustering (`v0.46.0`), its first high-value consumer; epic `64980da`.
+- `v0.45.0` — **embedding model**: the on-device `candle` embedder + pure-Rust brute-force vector store, enabling the model-backed implementation per capability only where the eval beats static. This milestone wires **`SimilarityProvider`** only (its first high-value consumer, story clustering, is the next milestone); model `Classifier`/`Matcher`/`SemanticSearch` are deferred to their consumers per the just-in-time rule above. Sequenced immediately before story clustering (`v0.46.0`); epic `64980da`. Confirmed runtime defaults below.
 
 ## Open decisions for owner confirmation
 
-- **Runtime/model defaults** (§8) — confirmed by the eval harness.
-- **Hybrid search timing** — when semantic retrieval augments the existing FTS5 search ([ADR 0032](0032-search-and-backup-boundaries.md)) versus remaining keyword-only.
+- **Runtime/model defaults** (§8) — **confirmed at v0.45.0 planning** (see amendment below); the encoder is further validated by the eval harness.
+- **Hybrid search timing** — when semantic retrieval augments the existing FTS5 search ([ADR 0032](0032-search-and-backup-boundaries.md)) versus remaining keyword-only. Still open — deferred to the `SemanticSearch` consumer, not part of `v0.45.0`.
+
+## Amendment (v0.45.0): confirmed runtime defaults
+
+The §8 defaults left open for confirmation were decided at v0.45.0 planning. The guiding constraint was to keep the **entire** interpretative layer pure-Rust and free of native dependencies, so the Linux→Windows cross-build packaging path (`make package-windows-from-linux`) stays simple — the same reason §8 already preferred a pure-Rust inference path.
+
+1. **Inference engine — `candle` (pure-Rust).** Chosen over `fastembed`-rs / `ort`, which wrap onnxruntime (C++) and would add a native dependency to the cross-build. `candle` runs BERT-family encoders on CPU with no C/C++ toolchain.
+2. **Encoder — `intfloat/multilingual-e5-small`** (384-dim, ~118 MB) as the default candidate: multilingual with strong Polish coverage and desktop-friendly size. `bge-m3`-class models were rejected for v0.45.0 as too heavy (≫500M params, slow CPU embedding) for a local similarity index. The eval harness (§7) confirms or revises the final encoder; the `Embedder` boundary makes a later swap a config change, never a consumer rewrite.
+3. **Weights — optional runtime download.** Not bundled in the installer. On first opt-in into the `embedding` strategy, weights (safetensors + `tokenizer.json`) download into the app data directory and are checksum-verified before activation; the capability falls back to the static (lexical) baseline until they are present. This keeps the installer lean and the model fully optional and reversible.
+4. **Vector store — pure-Rust brute-force cosine** over an f32 `BLOB` column in a `content_embeddings` table co-located with the main SQLite database (inheriting WAL + backup posture, [ADR 0032](0032-search-and-backup-boundaries.md)). Chosen over the §8-proposed `sqlite-vec` C extension: the single-user, watchlist-scoped corpus is thousands of vectors, where a full cosine scan is sub-millisecond, so ANN indexing is unnecessary complexity and a native dependency we avoid. `sqlite-vec` remains a clean future swap behind the same vector-store boundary if a corpus ever outgrows brute-force. The table records `model_id` and `dim` per the §4 versioning rule and is a disposable derived index per §5 (drop = zero canonical data loss).
+5. **Capability scope — `SimilarityProvider` only this milestone.** Per the just-in-time rule (§Scope boundary), the embedding model is wired behind `SimilarityProvider` (the substrate story clustering, `v0.46.0`, will consume) plus its model-vs-lexical eval. Model `Classifier`, `Matcher`, and hybrid `SemanticSearch` are deferred until their consumers arrive.
+6. **Eval execution.** The similarity eval runs against the **real cached model** (downloaded once into the local/CI model cache), not committed precomputed vectors. To keep default `make check` offline and fast, the model-backed eval is an **opt-in/periodic** suite (the `make check-epic` tier, alongside `knip`/Playwright) and **skips gracefully** when the model cache is absent — it never triggers a download from the per-change gate. See [engineering-workflow.md](../engineering-workflow.md).
+
+Dependency note (conservative-dependency review, per [AGENTS.md](../../AGENTS.md)): v0.45.0 adds `candle-core`, `candle-nn`, `candle-transformers`, `tokenizers`, and `hf-hub` (download). These are net-new and non-trivial in size; they are justified by the local-first dividend (on-device semantic similarity with no API key, no per-call cost, no data leaving the device) and are confined behind the `Embedder` boundary so they are removable with the model.
+
+7. **The candle engine is gated behind an off-by-default `embedding-model` cargo feature.** These crates are heavy to compile, so making them unconditional would slow every `make check`/CI build for an opt-in capability. They are therefore `optional` dependencies enabled by the `embedding-model` feature: the default build compiles none of them (the lockfile still resolves them), keeping the per-change gate fast and offline; release/dev builds and the periodic model eval build with `--features embedding-model`. With the feature off, `weights_state` reports `unsupported`, the registry's embedding strategy is `Unavailable`, and the static lexical baseline serves similarity — so the capability degrades cleanly rather than failing. This realizes the §3 "removing the model is switching a strategy" reversibility at the build level too. The shipped desktop app enables the feature.

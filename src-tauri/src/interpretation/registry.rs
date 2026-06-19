@@ -1,24 +1,27 @@
 //! Capability selection registry for the interpretative layer (ADR 0035,
 //! section 6).
 //!
-//! Each capability resolves to an active *strategy* — currently only `static`
-//! (the shipped baseline). The `embedding` strategy is reserved for the
-//! embedding-model milestone (v0.46.0) and is not yet available; requesting it
-//! returns [`InterpretationError::Unavailable`] rather than a wrong result.
+//! Each capability resolves to an active *strategy*: `static` (the deterministic
+//! baseline) or `embedding` (the on-device model, ADR 0035, v0.45.0). The
+//! embedding strategy requires a loaded [`Embedder`]; without one (feature off,
+//! weights absent, or load failure) [`build_similarity_with`] returns
+//! [`InterpretationError::Unavailable`] rather than a wrong result, and callers
+//! fall back to static.
 //!
 //! Consumers build a capability through these factories instead of constructing
-//! a concrete implementation, so swapping the active strategy later requires no
-//! consumer change. Selection defaults to static; a user-facing selection UI is
-//! deferred until there is a real model-vs-static choice (v0.46.0).
+//! a concrete implementation, so swapping the active strategy requires no
+//! consumer change. Selection defaults to static.
+
+use std::sync::Arc;
 
 use super::{
-    CategoryRule, Classifier, InterpretationError, LexicalSimilarity, RuleClassifier,
-    SimilarityProvider,
+    CategoryRule, Classifier, Embedder, EmbeddingSimilarity, InterpretationError,
+    LexicalSimilarity, RuleClassifier, SimilarityProvider,
 };
 
 /// The deterministic, always-available baseline strategy.
 pub const STATIC_STRATEGY: &str = "static";
-/// The on-device embedding-model strategy. Reserved; available from v0.46.0.
+/// The on-device embedding-model strategy (v0.45.0).
 pub const EMBEDDING_STRATEGY: &str = "embedding";
 
 /// The active strategy per capability. Defaults to static for every capability.
@@ -41,13 +44,13 @@ impl Default for InterpretationSelection {
     }
 }
 
-/// Map a requested strategy that is known-but-not-yet-implemented to the right
-/// error, or an unknown strategy to an invalid-request error.
+/// Map a requested strategy to the right error: a known-but-unavailable strategy
+/// (embedding, with no loaded model) to `Unavailable`, an unknown one to
+/// `InvalidRequest`.
 fn unavailable_or_invalid(strategy: &str) -> InterpretationError {
     if strategy == EMBEDDING_STRATEGY {
         InterpretationError::Unavailable(
-            "embedding strategy is not available until the embedding-model milestone (v0.46.0)"
-                .to_string(),
+            "embedding model is not loaded (feature disabled or weights absent)".to_string(),
         )
     } else {
         InterpretationError::InvalidRequest(format!("unknown interpretation strategy: {strategy}"))
@@ -56,7 +59,9 @@ fn unavailable_or_invalid(strategy: &str) -> InterpretationError {
 
 /// Build the [`Classifier`] for the given strategy. The `static` strategy returns
 /// a rule classifier configured with `rules` (the taxonomy is supplied by the
-/// consumer, e.g. the ESPI `signal_categories` rules).
+/// consumer, e.g. the ESPI `signal_categories` rules). The model-backed
+/// classifier is deferred to its consumer (ADR 0035), so `embedding` is
+/// unavailable here.
 pub fn build_classifier(
     strategy: &str,
     rules: Vec<CategoryRule>,
@@ -67,13 +72,29 @@ pub fn build_classifier(
     }
 }
 
-/// Build the [`SimilarityProvider`] for the given strategy. The `static` strategy
-/// returns the lexical (token-Jaccard) baseline.
+/// Build the [`SimilarityProvider`] for the `static` strategy (lexical baseline).
+/// Requesting `embedding` here is unavailable — use [`build_similarity_with`]
+/// with a loaded embedder. Kept for static-only call sites.
 pub fn build_similarity(
     strategy: &str,
 ) -> Result<Box<dyn SimilarityProvider>, InterpretationError> {
+    build_similarity_with(strategy, None)
+}
+
+/// Build the [`SimilarityProvider`] for the given strategy, supplying an optional
+/// loaded [`Embedder`]. `static` returns the lexical baseline; `embedding`
+/// returns the model-backed provider when `embedder` is `Some`, else
+/// `Unavailable` so the caller falls back to static.
+pub fn build_similarity_with(
+    strategy: &str,
+    embedder: Option<Arc<dyn Embedder>>,
+) -> Result<Box<dyn SimilarityProvider>, InterpretationError> {
     match strategy {
         STATIC_STRATEGY => Ok(Box::new(LexicalSimilarity::new())),
+        EMBEDDING_STRATEGY => match embedder {
+            Some(embedder) => Ok(Box::new(EmbeddingSimilarity::new(embedder))),
+            None => Err(unavailable_or_invalid(EMBEDDING_STRATEGY)),
+        },
         other => Err(unavailable_or_invalid(other)),
     }
 }

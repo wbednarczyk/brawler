@@ -451,7 +451,7 @@ Delivered:
 - Optional `BRAWLER_GEMINI_SMOKE_MODEL` can validate alternatives.
 - Smoke output records the model and transcript segment count.
 - Default Rust tests ignore the live smoke test.
-- Added [Live Smoke Tests](live-smoke-tests.md) with command, expected result, failure interpretation, and M10 closure rule.
+- Added [Testing](testing.md#live-smoke-tests) with command, expected result, failure interpretation, and M10 closure rule.
 
 Docs/contracts touched: engineering workflow, live smoke docs, kanban.
 
