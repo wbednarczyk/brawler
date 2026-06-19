@@ -234,4 +234,82 @@ mod tests {
         assert!(parse("@@@").is_err());
         assert!(parse("foo(revenue)").is_err()); // unknown function
     }
+
+    #[test]
+    fn covers_all_comparison_operators() {
+        let r = MapResolver::new().with("a", 5).with("b", 5).with("c", 7);
+        assert_eq!(eval_str("a <= b", &r), Value::Bool(true));
+        assert_eq!(eval_str("a < c", &r), Value::Bool(true));
+        assert_eq!(eval_str("a == b", &r), Value::Bool(true));
+        assert_eq!(eval_str("a = b", &r), Value::Bool(true)); // single '=' ergonomic alias
+        assert_eq!(eval_str("a == c", &r), Value::Bool(false));
+        assert_eq!(eval_str("c > a", &r), Value::Bool(true));
+    }
+
+    #[test]
+    fn approx_operator_uses_one_percent_tolerance() {
+        let r = MapResolver::new();
+        // |100 - 100.5| = 0.5 <= 1% of 100.5 (1.005) -> within tolerance.
+        assert_eq!(eval_str("100 ~= 100.5", &r), Value::Bool(true));
+        // |100 - 102| = 2 > 1% of 102 (1.02) -> outside tolerance.
+        assert_eq!(eval_str("100 ~= 102", &r), Value::Bool(false));
+        assert_eq!(eval_str("0 ~= 0", &r), Value::Bool(true));
+    }
+
+    #[test]
+    fn unary_negation_and_subtraction_and_division() {
+        let r = MapResolver::new().with("roic", 3);
+        assert_eq!(eval_str("-5", &r), Value::Num(Decimal::new(-5, 0)));
+        assert_eq!(eval_str("-roic < 0", &r), Value::Bool(true));
+        assert_eq!(eval_str("10 - 3", &r), Value::Num(Decimal::new(7, 0)));
+        assert_eq!(eval_str("10 / 4", &r), Value::Num(Decimal::new(25, 1)));
+    }
+
+    #[test]
+    fn percent_participates_in_arithmetic() {
+        let r = MapResolver::new().with("revenue", 200);
+        // 200 * 0.50 == 100; compared rather than asserted by scale.
+        assert_eq!(eval_str("revenue * 50% == 100", &r), Value::Bool(true));
+    }
+
+    #[test]
+    fn ttm_avg_and_trend_window_functions() {
+        let r = MapResolver::new()
+            .with_window(Func::Ttm, "revenue", 0, Decimal::new(150, 0))
+            .with_window(Func::Avg, "eps", 4, Decimal::new(12, 1)) // 1.2
+            .with_window(Func::Trend, "revenue", 3, Decimal::new(5, 0));
+        assert_eq!(eval_str("ttm(revenue) > 100", &r), Value::Bool(true));
+        assert_eq!(eval_str("avg(eps, 4) > 1", &r), Value::Bool(true));
+        assert_eq!(eval_str("trend(revenue, 3) > 0", &r), Value::Bool(true));
+    }
+
+    #[test]
+    fn unavailable_propagates_through_arithmetic_and_comparison() {
+        let r = MapResolver::new();
+        assert_eq!(eval_str("missing + 1 > 0", &r), Value::Unavailable);
+        assert_eq!(eval_str("missing > 1", &r), Value::Unavailable);
+    }
+
+    #[test]
+    fn or_short_circuits_to_true_on_unavailable_operand() {
+        // fcf > 0 is decisively true, so the unavailable right operand never
+        // turns the verdict into Unavailable.
+        let r = MapResolver::new().with("fcf", 1);
+        assert_eq!(eval_str("fcf > 0 OR roic >= 15%", &r), Value::Bool(true));
+    }
+
+    #[test]
+    fn type_mismatches_are_unavailable_not_panics() {
+        let r = MapResolver::new().with("fcf", 1);
+        assert_eq!(eval_str("NOT 5", &r), Value::Unavailable); // NOT on a number
+        assert_eq!(eval_str("5 AND fcf > 0", &r), Value::Unavailable); // AND on a number
+        // A window function whose first argument is not a metric key.
+        assert_eq!(eval_str("cagr(2 + 3, 5) > 1", &r), Value::Unavailable);
+    }
+
+    #[test]
+    fn referenced_metrics_dedupes_repeated_keys() {
+        let expr = parse("roic + roic > roic").unwrap();
+        assert_eq!(referenced_metrics(&expr), vec!["roic".to_owned()]);
+    }
 }

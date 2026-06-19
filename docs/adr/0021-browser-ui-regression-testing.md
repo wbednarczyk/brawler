@@ -42,8 +42,15 @@ A cluster of UI bugs (clipped detail pane, modal blink, a no-op bulk action, bro
 
 Preference order remains: make a bug structurally impossible (e.g. the `DetailSection` containment primitive, ADR 0030) > assert an invariant > assert a journey > screenshot. The deep-scan immediately surfaced a pre-existing contained overflow on the Watchlists header, filed as a separate bug.
 
+## Update (foundational test-architecture epic): broad clickable coverage + gate promotion
+
+The foundational test-architecture epic ([ADR 0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)) extends this layer in two ways while keeping it mock-Tauri (no real-Tauri E2E):
+
+- **Broad clickable coverage.** Real clickable journeys are extended to all 12 primary screens, riding a now-**stateful, per-test-isolated** browser mock runtime seeded from the canonical sample-data factory (writes reflect into subsequent reads, so create/edit/delete journeys can be asserted).
+- **Gate promotion.** The "later milestone may promote a small subset" anticipated above is now decided: once the extended clickable suite is fast, stable, and parallel (`fullyParallel`, enabled by per-test isolation), it is promoted from opt-in/periodic **toward a default/pre-merge gate** — but only while it keeps `make check` within the seconds-to-low-minutes range; otherwise it stays in `check-epic`. Live/credentialed/packaging smoke remain opt-in/periodic and never enter the default gate.
+
 ## Consequences
 
 The project gains a practical guardrail for layout regressions that have already consumed iteration time. The suite is intentionally narrow and opt-in so it does not slow the default development loop or add CI/browser-install complexity before it proves stable.
 
-Native Windows desktop behavior remains a separate smoke-testing path. If the Playwright suite becomes stable and high-value, a later milestone may promote a small subset to default local checks or CI.
+Native Windows desktop behavior remains a separate smoke-testing path. The gate-promotion path anticipated here is decided in the Update above ([ADR 0048](0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).

@@ -50,6 +50,7 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
+            cargo-nextest
             cargo-watch
             dpkg
             file

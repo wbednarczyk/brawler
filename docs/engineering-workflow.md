@@ -285,6 +285,8 @@ Use full parity checks when appropriate:
 - Nix-wrapped commands: when validating the canonical environment or investigating environment drift
 - `make package-windows-from-linux`: portable Windows executable packaging path for M21 candidate validation
 
+**Layered parallelism (see [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).** The suites run in parallel both within and across frameworks to keep the loop fast: Rust uses `cargo nextest` (parallel by default), Vitest uses its default pool, and Playwright runs `fullyParallel` (safe only because the browser mock runtime is per-test isolated). `make check` is a staged concurrent orchestrator — a fast-fail stage (typecheck ‖ fmt ‖ lint ‖ stylelint) then the heavy independent suites (Rust clippy+nextest ‖ Vitest ‖ build) concurrently; the real win is overlapping the Rust compile with the JS suites. **Guardrails:** per-framework worker counts are capped so the sum ≈ core count (oversubscription causes false timeout failures — a quality regression, not a speedup), output is captured and printed grouped with hard-stop on first failure (a serial mode stays available for clean logs), and any parallelism change is kept only if a measured before/after on the WSL2 reference machine actually wins.
+
 The local convenience toolchain currently expected in WSL includes Rust through `rustup`, `clippy`, `rustfmt`, `cargo-nextest`, Node/npm, `ripgrep`, `fd`/`fdfind`, `jq`, `sqlite3`, and the native libraries needed by the Rust/Tauri tests. Keep `flake.nix` as the source of truth for reproducible dependency intent even when agents use the direct toolchain for faster feedback.
 
 Recommended WSL commands:

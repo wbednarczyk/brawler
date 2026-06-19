@@ -158,7 +158,10 @@ export function AppShell({
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
-            <div className="brand-title">Brawler</div>
+            <div className="brand-heading">
+              <div className="brand-title">Brawler</div>
+              <span className="brand-version">{health ? `v${health.version}` : "v…"}</span>
+            </div>
             <div className="brand-subtitle">{t("app.brand.subtitle")}</div>
           </div>
         </div>
@@ -238,7 +241,6 @@ export function AppShell({
                 </button>
               );
             })}
-          <span className="version-label">{health ? `v${health.version}` : "v..."}</span>
         </div>
       </nav>
 

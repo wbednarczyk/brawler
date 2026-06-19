@@ -27,8 +27,9 @@
     "release:changelog-check": "git-cliff --config cliff.toml --strip header HEAD..HEAD",
     "release:check": "npm run release:commit-msg-check && npm run release:version-check && npm run release:changelog-check",
     "check:frontend": "npm run typecheck && npm run lint && npm run stylelint && npm run test && npm run build",
-    "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test",
-    "check": "npm run check:frontend && npm run check:rust"
+    "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo nextest run && cargo test --doc",
+    "check": "npm run check:frontend && npm run check:rust",
+    "check:parallel": "node scripts/check/parallel-check.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

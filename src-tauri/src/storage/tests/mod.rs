@@ -16,6 +16,7 @@ mod financials;
 mod import_export;
 mod licensing;
 mod management_claims;
+mod migration_safety;
 mod notebooks;
 mod quality_frameworks;
 mod report_documents;

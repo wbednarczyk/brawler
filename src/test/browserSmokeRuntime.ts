@@ -27,7 +27,7 @@ import type { IrReportResolution } from "../api/ir";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
-const companies: Company[] = [
+let companies: Company[] = [
   company("company_gpw_cdr", "GPW", "CDR", "CD PROJEKT S.A.", "PLOPTTC00011"),
   company("company_gpw_pkn", "GPW", "PKN", "ORLEN S.A.", "PLPKN0000018"),
   company("company_gpw_kgh", "GPW", "KGH", "KGHM POLSKA MIEDZ S.A.", "PLKGHM000017"),
@@ -51,12 +51,12 @@ const companies: Company[] = [
   }),
 ];
 
-const watchlists: Watchlist[] = [
+let watchlists: Watchlist[] = [
   { id: "watchlist_main_gpw", name: "Main GPW", description: null, companyCount: 6 },
   { id: "watchlist_followups", name: "Follow-up", description: null, companyCount: 3 },
 ];
 
-const watchlistMemberships: WatchlistMembership[] = [
+let watchlistMemberships: WatchlistMembership[] = [
   ...companies.slice(0, 16).map((entry) => membership("watchlist_main_gpw", "Main GPW", entry.id)),
   membership("watchlist_followups", "Follow-up", "company_gpw_cdr"),
   membership("watchlist_followups", "Follow-up", "company_gpw_acp"),
@@ -153,7 +153,7 @@ const companySignals: CompanySignal[] = [
   },
 ];
 
-const sourceAdapters: SourceAdapter[] = [
+let sourceAdapters: SourceAdapter[] = [
   sourceAdapter("gpw-company-registry", "GPW Company Directory", "company_registry", "required", true, ["GPW"], 470),
   sourceAdapter("newconnect-company-directory", "NewConnect Company Directory", "company_registry", "required", true, ["NEWCONNECT"], 350),
   sourceAdapter("bankier-company-komunikaty", "Bankier Company Komunikaty", "official_report", "optional", true, ["GPW"], 7),
@@ -175,7 +175,7 @@ const registryEntries: CompanyRegistryEntry[] = companies.map((entry) => ({
   tracked: true,
 }));
 
-const notebookEntries: NotebookEntry[] = companies.flatMap((entry, index) =>
+let notebookEntries: NotebookEntry[] = companies.flatMap((entry, index) =>
   Array.from({ length: 18 }, (_, noteIndex) =>
     notebookEntry(
       `note_${entry.id}_${noteIndex + 1}`,
@@ -186,7 +186,7 @@ const notebookEntries: NotebookEntry[] = companies.flatMap((entry, index) =>
   ),
 );
 
-const companyEvents: CompanyEvent[] = companies.slice(0, 4).map((entry, index) => ({
+let companyEvents: CompanyEvent[] = companies.slice(0, 4).map((entry, index) => ({
   id: `event_${entry.id}`,
   companyId: entry.id,
   company: entry.qualifiedTicker,
@@ -470,6 +470,37 @@ function handleCommand(command: string, args: InvokeArgs) {
     case "plugin:opener|open_url":
       return null;
 
+    // ---- Stateful CRUD for clickable journeys (ADR 0048) ------------------
+    // Writes reflect into subsequent reads so create/edit/delete journeys can
+    // be asserted end to end. State is module-scoped and re-seeded fresh on
+    // each page load (one Playwright context per test = per-test isolation).
+    case "create_watchlist":
+      return createWatchlist(args);
+    case "rename_watchlist":
+      return renameWatchlist(args);
+    case "delete_watchlist":
+      return deleteWatchlist(args);
+    case "add_company_to_watchlist":
+      return addCompanyToWatchlist(args);
+    case "remove_company_from_watchlist":
+      return removeCompanyFromWatchlist(args);
+    case "create_company":
+      return createCompany(args);
+    case "delete_company":
+      return deleteCompany(args);
+    case "create_company_event":
+      return createCompanyEvent(args);
+    case "create_notebook_entry":
+      return createNotebookEntry(args);
+    case "update_notebook_entry":
+      return updateNotebookEntry(args);
+    case "delete_notebook_entry":
+      return deleteNotebookEntry(args);
+    case "set_source_adapter_enabled":
+      return setSourceAdapterEnabled(args);
+    case "update_settings":
+      return updateSettings(args);
+
     // ---- Fundamentals -----------------------------------------------------
     case "list_kpi_definitions":
       return listKpiDefinitions(args);
@@ -632,6 +663,209 @@ function listSourceAdapters(args: InvokeArgs) {
   return includeDeveloperOnly
     ? sourceAdapters
     : sourceAdapters.filter((adapter) => adapter.visibility !== "developer");
+}
+
+// ---------------------------------------------------------------------------
+// Stateful CRUD handlers (ADR 0048) — mutate module state so clickable
+// journeys (create → assert → delete) reflect the real backend's behavior.
+// ---------------------------------------------------------------------------
+
+function inputArg(args: InvokeArgs): Record<string, unknown> {
+  return (args as { input?: Record<string, unknown> })?.input ?? {};
+}
+
+function createWatchlist(args: InvokeArgs): Watchlist {
+  const input = inputArg(args);
+  const created: Watchlist = {
+    id: `watchlist_new_${watchlists.length + 1}`,
+    name: (input.name as string) ?? "Untitled watchlist",
+    description: (input.description as string | null) ?? null,
+    companyCount: 0,
+  };
+  watchlists = [...watchlists, created];
+  return created;
+}
+
+function renameWatchlist(args: InvokeArgs): Watchlist {
+  const input = inputArg(args);
+  const id = input.id as string;
+  let updated: Watchlist | undefined;
+  watchlists = watchlists.map((entry) => {
+    if (entry.id !== id) return entry;
+    updated = {
+      ...entry,
+      name: (input.name as string) ?? entry.name,
+      description: (input.description as string | null) ?? null,
+    };
+    return updated;
+  });
+  if (updated) {
+    const name = updated.name;
+    watchlistMemberships = watchlistMemberships.map((entry) =>
+      entry.watchlistId === id ? { ...entry, watchlistName: name } : entry,
+    );
+  }
+  return updated ?? watchlists[0];
+}
+
+function deleteWatchlist(args: InvokeArgs): null {
+  const id = (args as { watchlistId?: string })?.watchlistId ?? "";
+  watchlists = watchlists.filter((entry) => entry.id !== id);
+  watchlistMemberships = watchlistMemberships.filter((entry) => entry.watchlistId !== id);
+  return null;
+}
+
+function addCompanyToWatchlist(args: InvokeArgs): null {
+  const input = inputArg(args);
+  const watchlistId = input.watchlistId as string;
+  const companyId = input.companyId as string;
+  const exists = watchlistMemberships.some(
+    (entry) => entry.watchlistId === watchlistId && entry.companyId === companyId,
+  );
+  if (!exists) {
+    const wl = watchlists.find((entry) => entry.id === watchlistId);
+    watchlistMemberships = [...watchlistMemberships, membership(watchlistId, wl?.name ?? "", companyId)];
+    watchlists = watchlists.map((entry) =>
+      entry.id === watchlistId ? { ...entry, companyCount: entry.companyCount + 1 } : entry,
+    );
+  }
+  return null;
+}
+
+function removeCompanyFromWatchlist(args: InvokeArgs): null {
+  const input = inputArg(args);
+  const watchlistId = input.watchlistId as string;
+  const companyId = input.companyId as string;
+  const before = watchlistMemberships.length;
+  watchlistMemberships = watchlistMemberships.filter(
+    (entry) => !(entry.watchlistId === watchlistId && entry.companyId === companyId),
+  );
+  if (watchlistMemberships.length < before) {
+    watchlists = watchlists.map((entry) =>
+      entry.id === watchlistId ? { ...entry, companyCount: Math.max(0, entry.companyCount - 1) } : entry,
+    );
+  }
+  return null;
+}
+
+function createCompany(args: InvokeArgs): Company {
+  const input = inputArg(args);
+  const exchange = (input.exchange as string) ?? "GPW";
+  const ticker = (input.ticker as string) ?? `NEW${companies.length + 1}`;
+  const created = company(
+    `company_${exchange.toLowerCase()}_${ticker.toLowerCase()}`,
+    exchange,
+    ticker,
+    (input.displayName as string) ?? `${ticker} S.A.`,
+    (input.isin as string | null) ?? `PL${ticker.padEnd(10, "0")}`,
+  );
+  created.cik = (input.cik as string | null) ?? null;
+  created.lei = (input.lei as string | null) ?? null;
+  companies = [...companies, created];
+  return created;
+}
+
+function deleteCompany(args: InvokeArgs): null {
+  const id = (args as { companyId?: string })?.companyId ?? "";
+  companies = companies.filter((entry) => entry.id !== id);
+  watchlistMemberships = watchlistMemberships.filter((entry) => entry.companyId !== id);
+  return null;
+}
+
+function createCompanyEvent(args: InvokeArgs): CompanyEvent {
+  const input = inputArg(args);
+  const companyId = (input.companyId as string) ?? companies[0]?.id ?? "";
+  const comp = companies.find((entry) => entry.id === companyId);
+  const created: CompanyEvent = {
+    id: `event_manual_${companyEvents.length + 1}`,
+    companyId,
+    company: comp?.qualifiedTicker ?? "GPW:NEW",
+    companyName: comp?.displayName ?? "",
+    eventType: (input.eventType as string) ?? "periodic_report",
+    title: (input.title as string) ?? "Manual event",
+    eventDate: (input.eventDate as string) ?? "2026-07-01",
+    eventTime: (input.eventTime as string | null) ?? null,
+    status: (input.status as string) ?? "scheduled",
+    sourceType: "manual",
+    sourceAdapterId: null,
+    sourceEventKey: null,
+    sourceUrl: null,
+    attribution: "Manual",
+    fetchedAt: null,
+    manual: true,
+    createdAt: NOW,
+    updatedAt: NOW,
+  };
+  companyEvents = [...companyEvents, created];
+  return created;
+}
+
+function createNotebookEntry(args: InvokeArgs): NotebookEntry {
+  const input = inputArg(args);
+  const kind = (input.kind as string) ?? "note";
+  const created: NotebookEntry = {
+    id: `note_manual_${notebookEntries.length + 1}`,
+    companyId: (input.companyId as string) ?? companies[0]?.id ?? "",
+    title: (input.title as string) ?? "Untitled note",
+    body: (input.body as string) ?? "",
+    bodyFormat: (input.bodyFormat as string) ?? "markdown",
+    tags: (input.tags as string[]) ?? [],
+    kind,
+    claimStatus: (input.claimStatus as string | null) ?? (kind === "claim" ? "open" : null),
+    eventDate: (input.eventDate as string | null) ?? null,
+    followUpAfter: (input.followUpAfter as string | null) ?? null,
+    followUpDate: (input.followUpDate as string | null) ?? null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    origins: [],
+  };
+  notebookEntries = [...notebookEntries, created];
+  return created;
+}
+
+function updateNotebookEntry(args: InvokeArgs): NotebookEntry {
+  const input = inputArg(args);
+  const id = input.id as string;
+  let updated: NotebookEntry | undefined;
+  notebookEntries = notebookEntries.map((entry) => {
+    if (entry.id !== id) return entry;
+    updated = {
+      ...entry,
+      title: (input.title as string) ?? entry.title,
+      body: (input.body as string) ?? entry.body,
+      tags: (input.tags as string[]) ?? entry.tags,
+      kind: (input.kind as string) ?? entry.kind,
+      claimStatus: (input.claimStatus as string | null) ?? entry.claimStatus,
+      updatedAt: NOW,
+    };
+    return updated;
+  });
+  return updated ?? notebookEntries[0];
+}
+
+function deleteNotebookEntry(args: InvokeArgs): null {
+  const id = (args as { id?: string })?.id ?? "";
+  notebookEntries = notebookEntries.filter((entry) => entry.id !== id);
+  return null;
+}
+
+function setSourceAdapterEnabled(args: InvokeArgs): SourceAdapter {
+  const input = inputArg(args);
+  const id = (input.adapterId as string) ?? "";
+  const enabled = Boolean(input.enabled);
+  let updated: SourceAdapter | undefined;
+  sourceAdapters = sourceAdapters.map((adapter) => {
+    if (adapter.id !== id) return adapter;
+    updated = { ...adapter, enabled, healthStatus: enabled ? "healthy" : "off" };
+    return updated;
+  });
+  return updated ?? sourceAdapters[0];
+}
+
+function updateSettings(args: InvokeArgs): UserSettings {
+  const input = inputArg(args) as Partial<UserSettings>;
+  Object.assign(settings, input);
+  return settings;
 }
 
 // ---------------------------------------------------------------------------

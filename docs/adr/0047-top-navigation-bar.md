@@ -24,10 +24,11 @@ the primary navigation as a horizontal row 2 directly beneath it.
 The app shell is a stacked three-row grid (`grid-template-rows: auto auto
 minmax(0,1fr)`):
 
-1. **Top toolbar** — brand (logo + "Brawler / Investor newsfeed"), global search,
-   source-status pill, manual refresh, theme switch.
+1. **Top toolbar** — brand (logo + "Brawler / Investor newsfeed" + the version
+   label beside the title), global search, source-status pill, manual refresh,
+   theme switch.
 2. **Navigation bar** — the primary section buttons (icons + labels, active item
-   badged) and the version label.
+   badged).
 3. **Workspace** — the current screen, full-width.
 
 The left `aside.sidebar` and its drag-to-resize handle are removed entirely.

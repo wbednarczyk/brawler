@@ -39,7 +39,11 @@ Milestones through `v0.38.0` are shipped. This roadmap does not restate complete
 
 ## Active And Upcoming Milestones
 
-The next milestone is `v0.46.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
+### Foundational (cross-cutting, lands next, ahead of `v0.46.0`)
+
+- **Test architecture & coverage foundation** — a foundational, cross-cutting epic (not a product-capability milestone, so it carries no `milestone:vX.Y.0` label; it lands ahead of `v0.46.0`). Closes the pre-policy test-coverage debt found in the audit and builds the regression loop the full-coverage policy needs. Sequenced **keystone-first**: (1) a canonical, deterministic, per-test-isolated **sample-data factory** projected into both the Rust seed builder and a now-**stateful browser mock runtime**; (2) **layered parallelism** (`cargo nextest`, Playwright `fullyParallel`, a staged concurrent `make check`); (3) high-risk backend backfill (migration safety/idempotency + a historical-schema migration corpus, `restore_backup`, destructive feed cleanup); (4) **broad clickable Playwright journeys** across all 12 primary screens; (5) Vitest fill (`Watchlists`, `Diagnostics`, error/empty states) + remaining command contracts. The extended clickable suite is promoted toward a default/pre-merge gate once fast and stable. Design in [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md), amending [ADR 0021](adr/0021-browser-ui-regression-testing.md).
+
+The next product milestone is `v0.46.0`. This is the forward plan (milestone intent only; live epic/task status and IDs are in Radicle/Radboard, see [kanban.md](kanban.md)):
 
 - `v0.46.0` — **Story clustering across sources**: cluster near-duplicate multi-source coverage into single stories with the official source ranked first; first model consumer of the `SimilarityProvider` capability.
 - `v0.47.0` — **Report-over-report diff**: diff consecutive periodic reports section by section with a cited AI delta summary.

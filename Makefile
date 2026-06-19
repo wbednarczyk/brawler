@@ -85,6 +85,13 @@ build:
 check:
 	$(NIX) npm run check
 
+# Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
+# suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
+# Rust compile with the JS suites. Opt-in until a measured win promotes it to
+# the default; `make check` stays the sequential release-gate parity path.
+check-fast:
+	$(NIX) npm run check:parallel
+
 # Full epic/milestone-closure suite: the hard gate first, then the opt-in/periodic
 # suites (knip dead-code audit, Playwright browser UI smoke) that are NOT in
 # `make check` and otherwise rot unrun (see docs/engineering-workflow.md and

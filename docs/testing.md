@@ -21,16 +21,31 @@ The constraint is that the suite stays **lean and fast** — coverage of everyth
 - **browser UI smoke** (Playwright) for layout/scroll/overflow regressions Vitest/jsdom cannot catch — periodic;
 - a few **desktop / packaging / live-provider smoke** checks for what only the real runtime, package, or provider can prove — periodic/manual.
 
+## Sample-data factory and per-test isolation
+
+Realistic test data comes from a **canonical sample-data factory**, not a checked-in mutable `.sqlite` snapshot (a binary golden DB is rejected — it is not diff-reviewable, drifts against migrations, and sharing one mutable instance breaks isolation and parallelism). Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
+
+- The factory defines a few **named scenarios** (`empty`, `minimal`, `rich`, plus per-area as needed); each test picks the **smallest** scenario that proves its behavior — never one mega-dataset that every test loads.
+- Datasets are **materialized fresh per test** (a fresh in-memory DB for Rust via `open_in_memory_database`; a fresh runtime-state clone for the browser layer) and are **deterministic** (fixed IDs/timestamps, no random/wall-clock data) so they are stable across parallel workers.
+- The same canonical dataset shape is projected into both the **Rust seed builder** and the **browser mock runtime's initial state** (`src/test/browserSmokeRuntime.ts`), which is **stateful and per-test isolated** so create/edit/delete clickable journeys can be asserted end to end.
+- **Migration corpus:** a small set of historical-schema `.sqlite` snapshots is the one place a binary DB earns its keep — used **only** by migration tests to prove migrations upgrade real old data without loss (the `v0.40.0` failure class), not as the general fixture.
+- **Going forward:** adding a feature also extends the factory with that feature's seed entities, so the dataset stays current as the app grows (a per-area Definition-of-Done step, not a periodic catch-up).
+
+## Parallel execution
+
+Suites run in parallel within and across frameworks to keep the loop fast, with isolation (above) as the precondition that keeps quality intact. Within frameworks: Rust uses `cargo nextest`, Vitest uses its default pool, Playwright runs `fullyParallel`. Across frameworks: `make check` is a staged concurrent orchestrator (fast-fail typecheck/fmt/lint stage, then heavy suites concurrently), the main win being the Rust compile overlapping the JS suites. Worker counts are capped so the sum ≈ core count (oversubscription causes false-timeout flakiness), output is grouped with hard-stop on first failure, and changes are kept only on a measured win. See [Engineering Workflow](engineering-workflow.md) and [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
+
 ## Per-area minimum gates
 
 - **Ordinary change:** docs/contracts updated when behavior changes; relevant Rust + frontend tests pass; formatting/lint pass; dependency additions justified and license-reviewed when they affect runtime.
 - **Source adapter:** test-sample parse/dedupe/matching/error-handling tests pass; source policy documented. Normal CI must not depend on GPW/Gemini/SEC/Nasdaq/media reachability; sample refresh is deliberate and reviewable.
 - **AI provider:** provider contract mapping + prompt/result shape tested with samples, no live calls; normal CI requires no API keys; live checks manual/local-only.
 - **Packaging:** app starts; Rust command boundary works; local SQLite opens; primary screen renders; packaged builds keep open-core navigation and preserve optional entitlement workflows.
+- **Command / IPC layer (`#[tauri::command]`):** a `#[tauri::command]` fn takes `tauri::State<'_, AppState>`, which Tauri's DI constructs at runtime and which is **not** meaningfully constructible in a unit test — so do **not** write tests that build a `State` to call a command wrapper. Most wrappers are thin pass-throughs (`state.x().map_err(to_string)`) whose behavior is already covered at the **storage/jobs layer** (the `AppState` method and the `jobs::*` function it delegates to, tested with `open_in_memory_database`). When a wrapper carries **non-trivial logic** (input defaulting/parsing, branching, mapping), extract that logic into a pure helper or a function taking `&AppState` and test **that** — the established pattern (e.g. `commands::settings::developer_unlock_code_matches_value`). Adding `State`-construction tests for thin pass-throughs is redundant coverage and is rejected (see Strategy). Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
 ## Browser UI regression smoke (Playwright)
 
-A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Opt-in/periodic (not in `make check`). Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md).
+A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Opt-in/periodic (not in `make check`). Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) this layer is being extended to **broad clickable coverage of all 12 primary screens** on a stateful, per-test-isolated mock runtime, and — once fast, stable, and parallel — **promoted toward a default/pre-merge gate** (only while it keeps `make check` within the seconds-to-low-minutes range).
 
 Setup and run:
 

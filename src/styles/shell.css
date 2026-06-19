@@ -37,9 +37,22 @@
   font-weight: 800;
 }
 
+.brand-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
 .brand-title {
   font-size: 14px;
   font-weight: 800;
+}
+
+.brand-version {
+  color: color-mix(in srgb, var(--muted) 86%, transparent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
 }
 
 .brand-subtitle {
@@ -97,16 +110,6 @@
   border-color: color-mix(in srgb, var(--primary) 38%, var(--border));
   color: var(--text);
   background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
-}
-
-.version-label {
-  display: inline-flex;
-  flex: 0 0 auto;
-  margin-left: 6px;
-  padding: 0 4px;
-  color: color-mix(in srgb, var(--muted) 86%, transparent);
-  font-size: 11px;
-  line-height: 1.2;
 }
 
 .status-dot,

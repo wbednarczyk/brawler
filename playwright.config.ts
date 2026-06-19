@@ -8,7 +8,12 @@ export default defineConfig({
   expect: {
     timeout: 5_000,
   },
-  fullyParallel: false,
+  // Per-test isolation (the browser mock runtime is re-seeded fresh on each
+  // page load, one context per test) makes full parallelism safe — ADR 0048.
+  // Workers are capped at half the cores so the browser fleet does not
+  // oversubscribe the CPU and cause false-timeout flakiness.
+  fullyParallel: true,
+  workers: process.env.CI ? 2 : "50%",
   retries: 0,
   reporter: [["list"]],
   use: {
