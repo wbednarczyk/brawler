@@ -11,7 +11,7 @@ function navTo(page: Page, name: string) {
   return page.getByLabel("Primary navigation").getByRole("button", { name });
 }
 
-test.describe("sources", () => {
+test.describe("sources", { tag: "@clickable" }, () => {
   test("toggle a source adapter off and back on", async ({ page }) => {
     await openApp(page);
     await navTo(page, "Sources").click();

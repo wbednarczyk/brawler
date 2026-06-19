@@ -29,7 +29,9 @@
     "check:frontend": "npm run typecheck && npm run lint && npm run stylelint && npm run test && npm run build",
     "check:rust": "cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo nextest run && cargo test --doc",
     "check": "npm run check:frontend && npm run check:rust",
-    "check:parallel": "node scripts/check/parallel-check.mjs"
+    "check:parallel": "node scripts/check/parallel-check.mjs",
+    "test:coverage": "vitest run src --coverage",
+    "coverage:ratchet": "node scripts/check/coverage-ratchet.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",
@@ -51,6 +53,7 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^6.0.2",
+    "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^9.39.4",
     "eslint-plugin-react-hooks": "^5.2.0",
     "globals": "^15.15.0",

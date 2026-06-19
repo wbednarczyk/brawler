@@ -23,7 +23,7 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: help install dev frontend-preview build check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check check-fast coverage mutants check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -91,6 +91,27 @@ check:
 # the default; `make check` stays the sequential release-gate parity path.
 check-fast:
 	$(NIX) npm run check:parallel
+
+# Coverage measurement + ratchet (ADR 0048): frontend (Vitest v8) + Rust
+# (cargo-llvm-cov) line coverage, then fail if either drops below the committed
+# floor in coverage-baseline.json. Periodic (slow instrumented Rust build), not
+# part of `make check`.
+coverage:
+	$(NIX) npm run test:coverage
+	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov --summary-only --json --output-path ../coverage/rust-summary.json'
+	$(NIX) npm run coverage:ratchet
+
+# Mutation testing of the deterministic cores (ADR 0048): verifies tests catch
+# behavior changes, not just execute code. Scoped (via -f) to the DSL
+# parser/evaluator, the migration runner, and feed dedup/matching — where a
+# surviving mutant is the strongest signal. Uses nextest for a fast per-mutant
+# test pass. Periodic/manual — slow (rebuilds + runs the suite per mutant),
+# never in `make check`. Triage survivors by adding assertions.
+mutants:
+	$(NIX) bash -c "cd src-tauri && cargo mutants --test-tool nextest \
+	  -f 'src/fundamentals/expr/**' \
+	  -f 'src/storage/migrations.rs' \
+	  -f 'src/storage/feed_matching.rs'"
 
 # Full epic/milestone-closure suite: the hard gate first, then the opt-in/periodic
 # suites (knip dead-code audit, Playwright browser UI smoke) that are NOT in

@@ -63,3 +63,8 @@ tauri-plugin-opener = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 url = "2"
+
+[dev-dependencies]
+# Property-based tests for the deterministic cores (DSL parser/evaluator, feed
+# dedup). Test-only; not shipped in the binary.
+proptest = "1"

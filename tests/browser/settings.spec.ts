@@ -9,7 +9,7 @@ function navTo(page: Page, name: string) {
   return page.getByLabel("Primary navigation").getByRole("button", { name });
 }
 
-test.describe("settings", () => {
+test.describe("settings", { tag: "@clickable" }, () => {
   test("switching the theme applies it to the document", async ({ page }) => {
     await openApp(page);
     await navTo(page, "Settings").click();

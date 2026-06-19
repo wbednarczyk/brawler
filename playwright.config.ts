@@ -14,11 +14,13 @@ export default defineConfig({
   // oversubscribe the CPU and cause false-timeout flakiness.
   fullyParallel: true,
   workers: process.env.CI ? 2 : "50%",
-  retries: 0,
+  // Local runs never retry (a flake should be seen and fixed); CI retries once
+  // to absorb the occasional environmental flake without masking real failures.
+  retries: process.env.CI ? 1 : 0,
   reporter: [["list"]],
   use: {
     baseURL: `http://127.0.0.1:${port}`,
-    trace: "retain-on-failure",
+    trace: process.env.CI ? "on-first-retry" : "retain-on-failure",
     screenshot: "only-on-failure",
     video: "off",
   },

@@ -303,13 +303,56 @@ mod tests {
         let r = MapResolver::new().with("fcf", 1);
         assert_eq!(eval_str("NOT 5", &r), Value::Unavailable); // NOT on a number
         assert_eq!(eval_str("5 AND fcf > 0", &r), Value::Unavailable); // AND on a number
-        // A window function whose first argument is not a metric key.
+                                                                       // A window function whose first argument is not a metric key.
         assert_eq!(eval_str("cagr(2 + 3, 5) > 1", &r), Value::Unavailable);
+    }
+
+    #[test]
+    fn boolean_mixed_operand_combinations() {
+        // AND/OR with one decisive and one opposite operand. (The residual
+        // && / || mutants cargo-mutants reports at eval.rs:99-100 are equivalent
+        // mutants: the decisive-operand guard arms above them make the only
+        // reachable inputs there degenerate, so no test can distinguish && from
+        // ||. Accepted as known-equivalent, not a coverage gap.)
+        // fcf > 0 is true; roic > 100% is false.
+        let r = MapResolver::new()
+            .with("fcf", 1)
+            .with_dec("roic", Decimal::new(18, 2)); // 0.18
+        assert_eq!(eval_str("fcf > 0 AND roic > 100%", &r), Value::Bool(false));
+        assert_eq!(eval_str("roic > 100% OR fcf > 0", &r), Value::Bool(true));
     }
 
     #[test]
     fn referenced_metrics_dedupes_repeated_keys() {
         let expr = parse("roic + roic > roic").unwrap();
         assert_eq!(referenced_metrics(&expr), vec!["roic".to_owned()]);
+    }
+
+    mod properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // The lexer/parser must never panic on arbitrary input — it only ever
+            // returns Ok(expr) or Err(ExprError). This is the criteria editor's
+            // contract: any string a user types is handled gracefully.
+            #[test]
+            fn parse_never_panics(input in ".*") {
+                let _ = parse(&input);
+            }
+
+            // Any comparison of two numeric literals parses and evaluates to a
+            // Bool (never Unavailable or a panic), across every comparison op.
+            #[test]
+            fn numeric_comparison_evaluates_to_bool(
+                a in -100_000i64..100_000,
+                b in -100_000i64..100_000,
+                op in prop::sample::select(vec![">", "<", ">=", "<=", "==", "~="]),
+            ) {
+                let resolver = MapResolver::new();
+                let expr = parse(&format!("{a} {op} {b}")).expect("generated comparison parses");
+                prop_assert!(matches!(eval(&expr, &resolver), Value::Bool(_)));
+            }
+        }
     }
 }

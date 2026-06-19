@@ -68,3 +68,38 @@ fn older_database_upgrades_to_latest_without_losing_data() {
         .expect("query legacy company");
     assert_eq!(survived, 1, "legacy data must survive the upgrade");
 }
+
+#[test]
+fn upgrades_committed_v1_snapshot_to_latest() {
+    // A REAL historical-schema snapshot captured at migration v1 (see
+    // corpus/legacy_v1.sqlite, generated with sqlite3 from 0001_initial.sql +
+    // a seeded company). Upgrading it with the full runner must reach the
+    // latest schema with the pre-existing data intact — the strongest guard for
+    // the "edited/incompatible migration breaks real old data" class (ADR 0048).
+    const SNAPSHOT: &[u8] = include_bytes!("corpus/legacy_v1.sqlite");
+    let path =
+        std::env::temp_dir().join(format!("brawler_corpus_v1_{}.sqlite", std::process::id()));
+    std::fs::write(&path, SNAPSHOT).expect("materialize the snapshot to a temp file");
+
+    let connection = open_database(&path).expect("open + upgrade the v1 snapshot");
+
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        expected_migration_count(),
+        "the committed v1 snapshot should upgrade to the latest migration",
+    );
+    let legacy: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM companies WHERE id = 'legacy_corpus'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query the seeded legacy company");
+    assert_eq!(
+        legacy, 1,
+        "the snapshot's pre-existing data must survive the upgrade"
+    );
+
+    drop(connection);
+    let _ = std::fs::remove_file(&path);
+}

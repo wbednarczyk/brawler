@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./helpers/harness";
+import { test, expect, openApp, acceptDialogs } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Clickable Watchlists CRUD journeys against the stateful browser mock runtime
@@ -14,7 +14,7 @@ function watchlistRows(page: Page) {
   return page.getByLabel("Watchlists", { exact: true }).getByRole("button");
 }
 
-test.describe("watchlists", () => {
+test.describe("watchlists", { tag: "@clickable" }, () => {
   test("create a watchlist, then add a company that reflects as a member", async ({ page }) => {
     await openApp(page);
     await navTo(page, "Watchlists").click();
@@ -66,7 +66,7 @@ test.describe("watchlists", () => {
     await expect(watchlistRows(page).filter({ hasText: "Temp list" })).toHaveCount(0);
 
     // Delete — confirms via window.confirm, then the row disappears (stateful).
-    page.once("dialog", (dialog) => dialog.accept());
+    acceptDialogs(page);
     await detail.getByRole("button", { name: "Delete" }).click();
     await expect(watchlistRows(page).filter({ hasText: "Renamed list" })).toHaveCount(0);
   });

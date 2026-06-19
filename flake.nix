@@ -23,6 +23,7 @@
           extensions = [
             "clippy"
             "rustfmt"
+            "llvm-tools-preview" # for cargo-llvm-cov (coverage)
           ];
         };
         rustWindowsToolchain = pkgs.rust-bin.stable.latest.default.override {
@@ -50,6 +51,8 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
+            cargo-llvm-cov
+            cargo-mutants
             cargo-nextest
             cargo-watch
             dpkg

@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./helpers/harness";
+import { test, expect, openApp, acceptDialogs } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Clickable Notebooks lifecycle against the stateful browser mock runtime
@@ -9,7 +9,7 @@ function navTo(page: Page, name: string) {
   return page.getByLabel("Primary navigation").getByRole("button", { name });
 }
 
-test.describe("notebooks", () => {
+test.describe("notebooks", { tag: "@clickable" }, () => {
   test("create, edit, and delete a note for a company", async ({ page }) => {
     await openApp(page);
     await navTo(page, "Notebooks").click();
@@ -45,7 +45,7 @@ test.describe("notebooks", () => {
 
     // Delete (confirms via window.confirm) — the entry leaves the list. The
     // edited note stays selected in view mode, so Delete is already reachable.
-    page.once("dialog", (dialog) => dialog.accept());
+    acceptDialogs(page);
     await detail.getByRole("button", { name: "Delete" }).click();
     await expect(
       page.getByLabel("Select notebook screen entry: Margin watch Q3 (rev)"),

@@ -9,7 +9,7 @@ function navTo(page: Page, name: string) {
   return page.getByLabel("Primary navigation").getByRole("button", { name });
 }
 
-test.describe("companies", () => {
+test.describe("companies", { tag: "@clickable" }, () => {
   test("add a company; it appears in the tracked list", async ({ page }) => {
     await openApp(page);
     await navTo(page, "Companies").click();
