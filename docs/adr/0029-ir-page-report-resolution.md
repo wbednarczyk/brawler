@@ -37,6 +37,8 @@ Locating the report on the IR page is done generically:
 - on low confidence or ambiguity, surface the candidates for the user to pick;
 - the chosen URL flows through the existing `report_documents` capture + fetch path, so downstream extraction is unchanged.
 
+Candidate hygiene (issue `3d9f7f9`): the extractor **excludes the IR landing page's own URL** (path-equal, ignoring trailing slash / query / fragment) so the resolver can never capture the landing page itself as the report, and it **biases hard to PDFs** — PDF links rank ahead of keyword-only HTML links — because a real periodic report is a PDF. The AI pick is still constrained to the provided candidate list. Because a captured document can nonetheless be `text/html` (a user-pasted IR page, or a page with no PDF), the KPI-extraction panel **flags an HTML document as a web page, not a report PDF** (warn, not block — a user may deliberately extract the figures shown on a page).
+
 One generic resolver, no per-company code, with a deterministic test path for tests.
 
 ### 4. Source-policy approval (scoped)

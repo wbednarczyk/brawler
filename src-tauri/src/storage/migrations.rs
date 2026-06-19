@@ -253,6 +253,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "content_embeddings",
         sql: include_str!("../../migrations/0049_content_embeddings.sql"),
     },
+    Migration {
+        version: 50,
+        name: "roic_roce_resolvable",
+        sql: include_str!("../../migrations/0050_roic_roce_resolvable.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

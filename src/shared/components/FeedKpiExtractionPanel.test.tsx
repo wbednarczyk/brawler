@@ -281,6 +281,45 @@ describe("FeedKpiExtractionPanel", () => {
     expect(confirmKpiProposal).not.toHaveBeenCalled();
   });
 
+  it("warns when the extracted document is a web page, not a report PDF", async () => {
+    const user = userEvent.setup();
+    // The captured document behind the job is text/html (an IR landing page).
+    vi.mocked(listReportDocuments).mockResolvedValue([
+      {
+        id: "doc1",
+        companyId: "co1",
+        periodId: null,
+        sourceType: "user_url",
+        originRef: null,
+        url: "https://ir.example.com/reports",
+        localPath: "doc1.html",
+        contentType: "text/html; charset=utf-8",
+        contentHash: null,
+        byteSize: 150000,
+        title: "Investor relations",
+        attribution: null,
+        fetchStatus: "fetched",
+        fetchError: null,
+        fetchedAt: "",
+        createdAt: "",
+        updatedAt: "",
+      },
+    ]);
+    vi.mocked(startKpiExtraction).mockResolvedValue(
+      succeededJob([proposal({ id: "p_rev", label: "Revenue" })])
+    );
+
+    render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
+
+    await openExtractor(user);
+    await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
+    await screen.findByText("Revenue");
+
+    expect(
+      screen.getByText(/this looks like a web page, not a report pdf/i)
+    ).toBeInTheDocument();
+  });
+
   it("falls back to candidate selection when IR resolution is not confident", async () => {
     const user = userEvent.setup();
     vi.mocked(resolveIrReport).mockResolvedValue({

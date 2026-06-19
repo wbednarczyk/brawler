@@ -126,6 +126,21 @@ describe("layout scroll contracts", () => {
     expect(tableRule).toContain("overflow: auto");
   });
 
+  it("shrinks only the two-column grid at narrow widths, never single-column screens", () => {
+    // The narrow-band override that shrinks the Inbox feed+detail tracks must not
+    // apply to .content-grid-single (Watchlists/Companies/Sources/Notebooks/
+    // Settings). Clobbering them with the 2-column template squeezed their content
+    // into the 320px-min track and overflowed (issue 58fbffd). Keep it scoped.
+    const narrowBand = mediaBlock(responsiveCss, "(max-width: 1120px)");
+
+    expect(narrowBand).toContain(
+      ".content-grid:not(.content-grid-single) {",
+    );
+    // A bare `.content-grid {` rule in this block would re-clobber single-column
+    // screens — it must stay scoped with :not(.content-grid-single).
+    expect(narrowBand).not.toContain(".content-grid {");
+  });
+
   it("keeps Notebooks subpanels independently scrollable on desktop", () => {
     const screenRule = ruleFor(notebooksCss, ".notebooks-screen");
     const companiesRule = ruleFor(notebooksCss, ".notebooks-company-nav");

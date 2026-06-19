@@ -15,7 +15,7 @@ import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { FeedItem } from "../../api/types";
 import { Button } from "./Button";
 import { StatusPill } from "./StatusPill";
-import { Checkbox, DetailSection, ErrorText, Modal, TextField } from "../../ui";
+import { Checkbox, DetailSection, ErrorText, Hint, Modal, TextField } from "../../ui";
 import { useLocale } from "../locale";
 import { formatFinancialValue } from "../format/financialValue";
 
@@ -23,6 +23,13 @@ export type FeedKpiExtractionPanelProps = {
   feedItem: FeedItem;
   providerConfigured: boolean;
 };
+
+// A captured document whose content-type is HTML is an IR/web page, not a report
+// PDF. Extraction still runs but only sees the figures on the page, which is
+// misleading — so the panel flags it (issue 3d9f7f9).
+function isLikelyWebPage(contentType: string | null): boolean {
+  return (contentType ?? "").toLowerCase().includes("text/html");
+}
 
 function fileNameFromUrl(url: string): string {
   try {
@@ -257,6 +264,8 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
   );
 
   const fetchedDocuments = documents.filter((document) => document.fetchStatus === "fetched");
+  const jobDocument = job ? documents.find((document) => document.id === job.reportDocumentId) : undefined;
+  const jobDocumentIsWebPage = jobDocument ? isLikelyWebPage(jobDocument.contentType) : false;
   const proposals = job?.proposals ?? [];
   const hasPendingProposals = proposals.some((proposal) => proposal.status === "pending");
   // Split pending proposals by kind so each bulk action is only enabled when it
@@ -419,6 +428,9 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
                       <span title={document.url}>
                         {document.title ?? fileNameFromUrl(document.url)}{" "}
                         <small>({fileNameFromUrl(document.url)})</small>
+                        {isLikelyWebPage(document.contentType) ? (
+                          <StatusPill tone="warn">{text("Web page — limited")}</StatusPill>
+                        ) : null}
                       </span>
                       <Button className="compact-button" disabled={busy} onClick={() => void extractDocument(document.id)}>
                         {text("Extract KPIs")}
@@ -474,6 +486,14 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
               value={periodType}
             />
           </div>
+          {jobDocumentIsWebPage ? (
+            <Hint>
+              <StatusPill tone="warn">{text("Web page — limited")}</StatusPill>{" "}
+              {text(
+                "This looks like a web page, not a report PDF — extraction will be limited to the figures shown on the page.",
+              )}
+            </Hint>
+          ) : null}
           {proposals.length === 0 ? (
             <p className="ai-analysis-empty">{text("No KPI values were proposed.")}</p>
           ) : (

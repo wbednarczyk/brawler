@@ -137,6 +137,11 @@ fn resolve_with_provider(
 /// report-looking links come first. No per-company selectors (ADR 0029).
 fn extract_candidate_links(html: &str, base_url: &str, limit: usize) -> Vec<IrReportCandidate> {
     let base = Url::parse(base_url).ok();
+    // The IR landing page routinely links back to itself (logo, breadcrumb,
+    // "Reports" nav). That self-link is never the report — excluding it stops the
+    // resolver from ever capturing the landing page itself as a report document
+    // (issue 3d9f7f9).
+    let self_key = base.as_ref().map(normalize_for_self_compare);
     let document = Html::parse_document(html);
     let selector = match Selector::parse("a[href]") {
         Ok(selector) => selector,
@@ -167,6 +172,13 @@ fn extract_candidate_links(html: &str, base_url: &str, limit: usize) -> Vec<IrRe
         if !absolute.starts_with("http") || !seen.insert(absolute.clone()) {
             continue;
         }
+        // Drop self-references to the IR landing page (path-equal, ignoring
+        // fragment/query/trailing slash).
+        if let (Some(self_key), Ok(candidate_url)) = (&self_key, Url::parse(&absolute)) {
+            if &normalize_for_self_compare(&candidate_url) == self_key {
+                continue;
+            }
+        }
         let label = element
             .text()
             .collect::<String>()
@@ -179,14 +191,45 @@ fn extract_candidate_links(html: &str, base_url: &str, limit: usize) -> Vec<IrRe
         });
     }
 
-    candidates.sort_by_key(|candidate| !looks_like_report(candidate));
+    // Hard bias to PDFs: a real periodic report is a PDF, so PDF links rank first,
+    // then other report-looking links (keywords), then everything else.
+    candidates.sort_by_key(candidate_rank);
     candidates.truncate(limit);
     candidates
 }
 
+/// Scheme + host + path (trailing slash trimmed), ignoring query and fragment —
+/// used to recognise a link that points back at the IR page itself.
+fn normalize_for_self_compare(url: &Url) -> String {
+    let host = url.host_str().unwrap_or("");
+    let path = url.path().trim_end_matches('/');
+    format!("{}://{}{}", url.scheme(), host, path)
+}
+
+/// True when the URL's path (ignoring query/fragment) ends in `.pdf`.
+fn is_pdf_url(url: &str) -> bool {
+    url.split(['?', '#'])
+        .next()
+        .unwrap_or(url)
+        .to_lowercase()
+        .ends_with(".pdf")
+}
+
+/// Ranking key (lower is better): PDFs first, then keyword-matching report links,
+/// then everything else.
+fn candidate_rank(candidate: &IrReportCandidate) -> u8 {
+    if is_pdf_url(&candidate.url) {
+        0
+    } else if looks_like_report(candidate) {
+        1
+    } else {
+        2
+    }
+}
+
 fn looks_like_report(candidate: &IrReportCandidate) -> bool {
     let haystack = format!("{} {}", candidate.url, candidate.label).to_lowercase();
-    haystack.ends_with(".pdf")
+    is_pdf_url(&candidate.url)
         || [
             "raport",
             "report",
@@ -302,6 +345,44 @@ mod tests {
         // Report-looking links rank ahead of the plain "About us" link.
         assert!(candidates[0].url.ends_with(".pdf"));
         assert!(candidates.iter().any(|c| c.url == TEST_SAMPLE_IR_PICK_URL));
+    }
+
+    #[test]
+    fn excludes_links_back_to_the_ir_landing_page() {
+        // The landing page often links to itself; that self-link must never become
+        // a candidate (issue 3d9f7f9), across trailing-slash/query/fragment variants.
+        let html = r##"
+            <html><body>
+                <a href="https://example.com/investors/">Investor relations</a>
+                <a href="/investors">Reports</a>
+                <a href="https://example.com/investors/?utm=nav#top">Home</a>
+                <a href="https://reports.example.com/q3-2025.pdf">Raport Q3 2025</a>
+            </body></html>
+        "##;
+        let candidates = extract_candidate_links(html, "https://example.com/investors/", 40);
+        assert!(
+            candidates
+                .iter()
+                .all(|c| !c.url.contains("example.com/investors")),
+            "the IR landing page itself must not be a candidate: {candidates:?}"
+        );
+        assert!(candidates.iter().any(|c| c.url.ends_with("q3-2025.pdf")));
+    }
+
+    #[test]
+    fn ranks_pdf_candidates_ahead_of_keyword_html_links() {
+        // Both links read as report-ish, but the PDF must win — bias hard to PDFs.
+        let html = r##"
+            <html><body>
+                <a href="https://example.com/results-overview">Quarterly results overview</a>
+                <a href="https://reports.example.com/q3-2025.pdf">Q3 2025</a>
+            </body></html>
+        "##;
+        let candidates = extract_candidate_links(html, "https://example.com/investors/", 40);
+        assert!(
+            candidates[0].url.ends_with(".pdf"),
+            "a PDF report must rank ahead of a keyword-only HTML link: {candidates:?}"
+        );
     }
 
     #[test]

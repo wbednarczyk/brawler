@@ -928,6 +928,9 @@ export const plText: Record<string, string> = {
   "Capture & extract": "Pobierz i wyodrębnij",
   "Extract KPIs": "Wyodrębnij KPI",
   "Stored report documents": "Zapisane dokumenty raportów",
+  "Web page — limited": "Strona WWW — ograniczone",
+  "This looks like a web page, not a report PDF — extraction will be limited to the figures shown on the page.":
+    "To wygląda na stronę WWW, a nie raport PDF — ekstrakcja ograniczy się do danych widocznych na stronie.",
   "Pick the report on the IR page:": "Wybierz raport na stronie relacji inwestorskich:",
   "No report links found on the IR page.":
     "Nie znaleziono linków do raportów na stronie relacji inwestorskich.",

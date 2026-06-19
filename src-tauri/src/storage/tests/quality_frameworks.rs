@@ -510,3 +510,80 @@ fn every_seeded_formula_parses_with_the_engine() {
         }
     }
 }
+
+#[test]
+fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set() {
+    // Regression guard for issue 674cb5a: ROIC/ROCE silently returned Unavailable
+    // because their formulas referenced synthetic intermediates (nopat,
+    // invested_capital, capital_employed) that were never seeded or resolved. The
+    // grammar-drift gate above only proves a formula *parses* — it does not prove
+    // its inputs *resolve*. This gate asserts that, given a full set of reported
+    // canonical inputs, every canonical derived metric actually computes a value.
+    use crate::fundamentals::expr::MetricResolver as _;
+    use crate::fundamentals::metrics::{
+        parse_formula, Computation, MetricDef, MetricsContext, PeriodFacts,
+    };
+    use rust_decimal::Decimal;
+    use std::collections::HashMap;
+
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions");
+
+    // One annual period in which every reported input carries a distinct nonzero
+    // value, so no denominator is zero. Reported inputs of every scope are included
+    // so a canonical formula never lacks a dependency.
+    let mut defs: HashMap<String, MetricDef> = HashMap::new();
+    let mut reported: HashMap<String, Decimal> = HashMap::new();
+    let mut next: i64 = 100;
+    for def in &definitions {
+        let computation = if def.computation == "derived" {
+            Computation::Derived
+        } else {
+            Computation::Reported
+        };
+        let formula = def
+            .formula
+            .clone()
+            .filter(|f| !f.trim().is_empty())
+            .and_then(|f| parse_formula(&f));
+        defs.entry(def.metric_key.clone()).or_insert(MetricDef {
+            computation,
+            formula,
+            value_kind: def.value_kind.clone(),
+            unit: def.unit.clone(),
+        });
+        if def.computation == "reported" {
+            next += 7;
+            reported
+                .entry(def.metric_key.clone())
+                .or_insert(Decimal::from(next));
+        }
+    }
+
+    let period = PeriodFacts {
+        period_id: "period-representative".to_owned(),
+        fiscal_year: 2024,
+        is_annual: true,
+        reported,
+    };
+    let context = MetricsContext::new(defs, vec![period]);
+    let resolver = context.resolver();
+
+    for def in &definitions {
+        if def.scope == "canonical" && def.computation == "derived" {
+            assert!(
+                resolver.value(&def.metric_key).is_some(),
+                "canonical derived metric `{}` (formula {:?}) is not computable from a full canonical fact set",
+                def.metric_key,
+                def.formula
+            );
+        }
+    }
+}

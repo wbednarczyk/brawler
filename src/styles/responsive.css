@@ -6,7 +6,13 @@
    covers the ~1000px effective width of a 1280x1440 quarter-ultrawide window at
    125% OS scaling with FancyZones margins. */
 @media (max-width: 1120px) {
-  .content-grid {
+  /* Only the two-column feed+detail grid (Inbox) shrinks its tracks here. Scope
+     it away from .content-grid-single (Watchlists, Companies, Sources, Notebooks,
+     Settings): those declare a single full-width column, and clobbering them with
+     this 2-column template squeezed their content into the 320px-min track and
+     left an empty phantom detail column — e.g. the Watchlists inner workspace
+     collapsed its detail column to ~94px and overflowed (issue 58fbffd). */
+  .content-grid:not(.content-grid-single) {
     grid-template-columns: minmax(320px, 1fr) 10px minmax(300px, 360px);
   }
 
@@ -25,6 +31,35 @@
 
   .company-row-context {
     grid-template-columns: 1fr;
+  }
+
+  /* The Inbox filter toolbar has six controls (search + five selects). At this
+     narrow panel width each select drops to its own row, so the toolbar grows
+     very tall (~425px). The scrollable feed list was the only flex child able to
+     shrink (min-height:0), so in a short window the chrome consumed the whole
+     panel and collapsed the list to zero height — feed rows rendered at the panel
+     bottom and their click target fell onto the maintenance row/body, so clicks
+     were intercepted and never landed (see issues 885b3d9 / 2d9825a). Let the
+     selects share rows so the toolbar is shorter, let the toolbar itself scroll
+     instead of starving the list, and guarantee the list a usable minimum height
+     so rows stay clickable. */
+  .filter-toolbar {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .filter-toolbar label:not(.inbox-search-field) {
+    flex: 1 1 150px;
+    min-width: 0;
+  }
+
+  .filter-toolbar select,
+  .filter-toolbar input {
+    min-width: 0;
+  }
+
+  .feed-list {
+    min-height: 200px;
   }
 }
 
