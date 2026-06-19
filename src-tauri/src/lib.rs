@@ -17,7 +17,17 @@ pub mod signal_dates;
 pub mod source_adapters;
 pub mod storage;
 
+/// TypeScript marker enums for API string-literal unions (ADR 0048); compiled
+/// only for `make types`. See the module docs.
+#[cfg(feature = "ts-export")]
+mod api_ts_unions;
+
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthResponse {
     pub(crate) status: &'static str,

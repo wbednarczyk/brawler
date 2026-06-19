@@ -26,11 +26,17 @@ use crate::fundamentals::templates;
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct QualityFramework {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"app_template\" | \"user\""))]
     pub origin: String,
     pub template_key: Option<String>,
     pub cloned_from: Option<String>,
@@ -41,6 +47,11 @@ pub struct QualityFramework {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameworkCriterion {
     pub id: String,
@@ -55,6 +66,11 @@ pub struct FrameworkCriterion {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameworkEvaluation {
     pub id: String,
@@ -72,6 +88,11 @@ pub struct FrameworkEvaluation {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CriterionResult {
     pub id: String,
@@ -80,6 +101,10 @@ pub struct CriterionResult {
     pub ordinal: i64,
     pub label: String,
     pub expression: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::CriterionVerdict")
+    )]
     pub verdict: String,
     pub measured_value: Option<String>,
     pub measured_unit: Option<String>,
@@ -89,6 +114,11 @@ pub struct CriterionResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateCriterionResult {
     pub ok: bool,
@@ -97,6 +127,11 @@ pub struct ValidateCriterionResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricKeyInfo {
     pub key: String,
@@ -110,6 +145,15 @@ pub struct MetricKeyInfo {
 // ---- inputs ----------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewQualityFramework {
     pub name: String,
@@ -118,6 +162,15 @@ pub struct NewQualityFramework {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateQualityFramework {
     pub id: String,
@@ -128,6 +181,15 @@ pub struct UpdateQualityFramework {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CloneFrameworkInput {
     pub framework_id: String,
@@ -136,6 +198,15 @@ pub struct CloneFrameworkInput {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewFrameworkCriterion {
     pub framework_id: String,
@@ -150,6 +221,15 @@ pub struct NewFrameworkCriterion {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateFrameworkCriterion {
     pub id: String,
@@ -166,6 +246,11 @@ pub struct UpdateFrameworkCriterion {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluateFrameworkInput {
     pub framework_id: String,
@@ -173,6 +258,11 @@ pub struct EvaluateFrameworkInput {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFrameworkEvaluationsInput {
     pub framework_id: String,

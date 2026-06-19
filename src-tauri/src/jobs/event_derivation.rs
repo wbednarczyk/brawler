@@ -19,6 +19,11 @@ const DEFAULT_BATCH_LIMIT: i64 = 25;
 
 /// Outcome of one AI event-derivation run.
 #[derive(Debug, Clone, serde::Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiEventDerivationSummary {
     /// Whether the opt-in fallback is enabled. When `false` nothing ran.

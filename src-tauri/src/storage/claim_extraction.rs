@@ -14,15 +14,28 @@ use super::management_claims::{create_management_claim, NewManagementClaim};
 use super::{slug_part, ManagementClaim, StorageError, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimExtractionJob {
     pub id: String,
     pub company_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ClaimExtractionSourceType")
+    )]
     pub source_type: String,
     pub source_id: String,
     pub provider_id: String,
     pub model: String,
     pub prompt_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"queued\" | \"running\" | \"succeeded\" | \"failed\"")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -33,6 +46,11 @@ pub struct ClaimExtractionJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimExtractionProposal {
     pub id: String,
@@ -48,6 +66,10 @@ pub struct ClaimExtractionProposal {
     pub source_snippet: Option<String>,
     pub source_evidence_type: Option<String>,
     pub source_evidence_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"pending\" | \"confirmed\" | \"rejected\"")
+    )]
     pub status: String,
     pub claim_id: Option<String>,
     pub created_at: String,
@@ -91,6 +113,15 @@ pub struct CompletedClaimExtraction {
 /// User overrides applied when confirming a proposal into a claim. Absent fields
 /// keep the proposed value.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmClaimProposalInput {
     pub proposal_id: String,

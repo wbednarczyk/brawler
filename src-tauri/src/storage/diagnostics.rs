@@ -10,6 +10,11 @@ const RETENTION_EVENT_LIMIT: i64 = 1_000;
 const RETENTION_DAYS: i64 = 7;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticEvent {
     pub id: String,
@@ -17,13 +22,23 @@ pub struct DiagnosticEvent {
     pub module: String,
     pub scope: Option<DiagnosticScope>,
     pub stage: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"debug\" | \"info\" | \"warning\" | \"error\"")
+    )]
     pub severity: String,
     pub message: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "Record<string, unknown>"))]
     pub metadata: Value,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticScope {
     #[serde(rename = "type")]

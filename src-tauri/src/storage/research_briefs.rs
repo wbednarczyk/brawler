@@ -10,16 +10,34 @@ pub const RESEARCH_BRIEF_COLLECTOR_VERSION: &str = "m30.collector.v1";
 pub const RESEARCH_BRIEF_RENDERER_VERSION: &str = "m30.renderer.v1";
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBriefScopeInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBriefJob {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub provider_id: String,
@@ -27,6 +45,10 @@ pub struct ResearchBriefJob {
     pub prompt_version: String,
     pub evidence_collector_version: String,
     pub renderer_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchBriefJobStatus")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -37,10 +59,19 @@ pub struct ResearchBriefJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBrief {
     pub id: String,
     pub job_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub provider_id: String,
@@ -58,11 +89,20 @@ pub struct ResearchBrief {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBriefCitation {
     pub id: String,
     pub brief_id: String,
     pub citation_key: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub evidence_type: String,
     pub evidence_id: String,
     pub label: String,

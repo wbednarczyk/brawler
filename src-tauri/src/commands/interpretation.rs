@@ -18,6 +18,11 @@ use crate::{app_state, jobs};
 const DEFAULT_SIMILAR_LIMIT: usize = 10;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddedTypeCount {
     pub content_type: String,
@@ -25,17 +30,27 @@ pub struct EmbeddedTypeCount {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddingModelStatus {
     pub model_id: String,
     pub dim: usize,
     /// `unsupported` | `absent` | `downloading` | `ready` | `error`.
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"unsupported\" | \"absent\" | \"downloading\" | \"ready\" | \"error\"")
+    )]
     pub weights_state: String,
     /// Best-effort percent while downloading; `null` when the downloader cannot
     /// report progress or no download is in flight.
     pub download_progress: Option<u8>,
     pub download_error: Option<String>,
     /// Effective active strategy — never `embedding` unless the model is ready.
+    #[cfg_attr(feature = "ts-export", ts(type = "\"static\" | \"embedding\""))]
     pub active_similarity_strategy: String,
     pub embedded_counts: Vec<EmbeddedTypeCount>,
     pub index_model_id: Option<String>,
@@ -58,6 +73,11 @@ pub struct FindSimilarContentInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoredContent {
     pub content_type: String,
@@ -66,6 +86,11 @@ pub struct ScoredContent {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FindSimilarContentResult {
     pub strategy_id: String,

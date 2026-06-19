@@ -1,61 +1,17 @@
 import type { ManagementClaim } from "./managementClaims";
 import { callCommand } from "./tauri";
+import type { ClaimExtractionSourceType } from "./generated/ClaimExtractionSourceType";
+import type { ClaimExtractionJob } from "./generated/ClaimExtractionJob";
+import type { StartClaimExtractionInput } from "./generated/StartClaimExtractionInput";
+import type { ConfirmClaimProposalInput } from "./generated/ConfirmClaimProposalInput";
 
-export type ClaimExtractionSourceType = "report_document" | "transcript";
-
-export type ClaimExtractionProposal = {
-  id: string;
-  jobId: string;
-  statement: string;
-  dueFiscalYear: number | null;
-  duePeriodType: string | null;
-  targetMetricKey: string | null;
-  targetComparator: string | null;
-  targetValueNumeric: string | null;
-  targetUnit: string | null;
-  confidence: string | null;
-  sourceSnippet: string | null;
-  sourceEvidenceType: string | null;
-  sourceEvidenceId: string | null;
-  status: "pending" | "confirmed" | "rejected";
-  claimId: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ClaimExtractionJob = {
-  id: string;
-  companyId: string;
-  sourceType: ClaimExtractionSourceType;
-  sourceId: string;
-  providerId: string;
-  model: string;
-  promptVersion: string;
-  status: "queued" | "running" | "succeeded" | "failed";
-  errorCode: string | null;
-  error: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  proposals: ClaimExtractionProposal[];
-};
-
-export type StartClaimExtractionInput = {
-  sourceType: ClaimExtractionSourceType;
-  sourceId: string;
-  providerMode?: string | null;
-};
-
-export type ConfirmClaimProposalInput = {
-  proposalId: string;
-  statement?: string | null;
-  dueFiscalYear?: number | null;
-  duePeriodType?: string | null;
-  targetMetricKey?: string | null;
-  targetComparator?: string | null;
-  targetValueNumeric?: string | null;
-  targetUnit?: string | null;
-};
+// GENERATED from src-tauri/src/storage/claim_extraction.rs + commands via ts-rs
+// (ADR 0048); ClaimExtractionSourceType is a marker enum (api_ts_unions.rs).
+export type { ClaimExtractionSourceType } from "./generated/ClaimExtractionSourceType";
+export type { ClaimExtractionProposal } from "./generated/ClaimExtractionProposal";
+export type { ClaimExtractionJob } from "./generated/ClaimExtractionJob";
+export type { StartClaimExtractionInput } from "./generated/StartClaimExtractionInput";
+export type { ConfirmClaimProposalInput } from "./generated/ConfirmClaimProposalInput";
 
 export function startClaimExtraction(input: StartClaimExtractionInput) {
   return callCommand<ClaimExtractionJob>("start_claim_extraction", { input });

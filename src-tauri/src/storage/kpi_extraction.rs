@@ -12,6 +12,11 @@ use super::financials::create_financial_fact;
 use super::{slug_part, FinancialFact, NewFinancialFact, StorageError, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct KpiExtractionJob {
     pub id: String,
@@ -36,6 +41,11 @@ pub struct KpiExtractionJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct KpiExtractionProposal {
     pub id: String,
@@ -100,6 +110,11 @@ pub struct CompletedKpiExtraction {
 /// default to the job's detected period; the model-detected period is confirmed,
 /// not trusted blindly.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmKpiProposalInput {
     pub proposal_id: String,
@@ -111,6 +126,7 @@ pub struct ConfirmKpiProposalInput {
     /// When the proposal is a model-suggested KPI beyond the taxonomy, create a
     /// company-scoped definition for it before committing the fact.
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional, as = "Option<bool>"))]
     pub accept_as_new_kpi: bool,
 }
 

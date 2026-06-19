@@ -4,13 +4,10 @@ import type {
   AiSignalClassificationSummary,
   CompanySignal,
 } from "./types";
+import type { ListCompanySignalsInput } from "./generated/ListCompanySignalsInput";
 
-export type ListCompanySignalsInput = {
-  companyId: string | null;
-  watchlistId: string | null;
-  category: string | null;
-  status: string | null;
-};
+// Input type GENERATED from src-tauri/src/storage/types.rs via ts-rs (ADR 0048).
+export type { ListCompanySignalsInput } from "./generated/ListCompanySignalsInput";
 
 export function listCompanySignals(input: ListCompanySignalsInput) {
   return callCommand<CompanySignal[]>("list_company_signals", { input });

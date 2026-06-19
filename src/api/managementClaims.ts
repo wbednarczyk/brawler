@@ -1,101 +1,24 @@
 import { callCommand } from "./tauri";
 
-export type ClaimStatus =
-  | "pending"
-  | "delivered"
-  | "partially_delivered"
-  | "missed"
-  | "revised";
+// Types GENERATED from src-tauri/src/storage/management_claims.rs via ts-rs
+// (ADR 0048): change the struct and run `make types`. The Claim* unions come
+// from the marker enums in src-tauri/src/api_ts_unions.rs.
+import type { ManagementClaim } from "./generated/ManagementClaim";
+import type { ClaimsToVerify } from "./generated/ClaimsToVerify";
+import type { NewManagementClaimInput } from "./generated/NewManagementClaimInput";
+import type { UpdateManagementClaimInput } from "./generated/UpdateManagementClaimInput";
+import type { SetClaimVerdictInput } from "./generated/SetClaimVerdictInput";
 
-export type ClaimSourceEvidenceType =
-  | "report_document"
-  | "transcript_segment"
-  | "feed_item"
-  | "manual";
-
-export type ClaimTargetComparator = "gte" | "lte" | "gt" | "lt" | "approx" | "eq";
-
-export type ManagementClaim = {
-  id: string;
-  companyId: string;
-  statement: string;
-  body: string;
-  bodyFormat: string;
-  madeAt: string | null;
-  sourcePeriodId: string | null;
-  dueFiscalYear: number | null;
-  duePeriodType: string | null;
-  status: ClaimStatus;
-  sourceEvidenceType: ClaimSourceEvidenceType;
-  sourceEvidenceId: string | null;
-  extractionProposalId: string | null;
-  targetMetricKey: string | null;
-  targetComparator: ClaimTargetComparator | null;
-  targetValueNumeric: string | null;
-  targetUnit: string | null;
-  verifyingFactId: string | null;
-  revisesClaimId: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type NewManagementClaimInput = {
-  companyId: string;
-  statement: string;
-  body?: string | null;
-  madeAt?: string | null;
-  sourcePeriodId?: string | null;
-  dueFiscalYear?: number | null;
-  duePeriodType?: string | null;
-  status?: ClaimStatus | null;
-  sourceEvidenceType?: ClaimSourceEvidenceType | null;
-  sourceEvidenceId?: string | null;
-  extractionProposalId?: string | null;
-  targetMetricKey?: string | null;
-  targetComparator?: ClaimTargetComparator | null;
-  targetValueNumeric?: string | null;
-  targetUnit?: string | null;
-};
-
-export type UpdateManagementClaimInput = {
-  id: string;
-  statement?: string | null;
-  body?: string | null;
-  madeAt?: string | null;
-  dueFiscalYear?: number | null;
-  duePeriodType?: string | null;
-  sourceEvidenceType?: ClaimSourceEvidenceType | null;
-  sourceEvidenceId?: string | null;
-  targetMetricKey?: string | null;
-  targetComparator?: ClaimTargetComparator | null;
-  targetValueNumeric?: string | null;
-  targetUnit?: string | null;
-};
-
-export type SetClaimVerdictInput = {
-  claimId: string;
-  status: ClaimStatus;
-  verifyingFactId?: string | null;
-  verifyingRelation?: "supports" | "contradicts" | null;
-  revisesClaimId?: string | null;
-};
-
-export type VerifyingFactCandidate = {
-  factId: string;
-  valueNumeric: string;
-};
-
-export type ClaimToVerify = {
-  claim: ManagementClaim;
-  arrivedPeriodId: string | null;
-  verifyingFactCandidate: VerifyingFactCandidate | null;
-};
-
-export type ClaimsToVerify = {
-  due: ClaimToVerify[];
-  overdue: ClaimToVerify[];
-  upcoming: ClaimToVerify[];
-};
+export type { ClaimStatus } from "./generated/ClaimStatus";
+export type { ClaimSourceEvidenceType } from "./generated/ClaimSourceEvidenceType";
+export type { ClaimTargetComparator } from "./generated/ClaimTargetComparator";
+export type { ManagementClaim } from "./generated/ManagementClaim";
+export type { NewManagementClaimInput } from "./generated/NewManagementClaimInput";
+export type { UpdateManagementClaimInput } from "./generated/UpdateManagementClaimInput";
+export type { SetClaimVerdictInput } from "./generated/SetClaimVerdictInput";
+export type { VerifyingFactCandidate } from "./generated/VerifyingFactCandidate";
+export type { ClaimToVerify } from "./generated/ClaimToVerify";
+export type { ClaimsToVerify } from "./generated/ClaimsToVerify";
 
 export function listManagementClaims(companyId: string) {
   return callCommand<ManagementClaim[]>("list_management_claims", { companyId });

@@ -39,6 +39,21 @@ Suites run in parallel within and across frameworks to keep the loop fast, with 
 
 `make coverage` measures line coverage — frontend via Vitest's v8 provider, Rust via `cargo-llvm-cov` — then runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if either layer drops below the committed floor in `coverage-baseline.json`. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. It is periodic (the instrumented Rust build is slow), not part of `make check`. Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
+## Generated API types (Rust → TypeScript)
+
+The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if the committed bindings drift from the Rust source. `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded (regenerate, don't hand-edit).
+
+**Generation conventions** (so the generated shape matches the hand-written contract exactly):
+
+- **Integers.** `make types` runs with `TS_RS_LARGE_INT=number`, so `i64`/`u64` render as `number` (not ts-rs's default `bigint`) — matching our JS-safe row counts, millis, and ids. `usize`/`isize`/`f64` are already `number`. **No per-field numeric override is needed**; do not add `#[ts(type = "number")]`.
+- **`Decimal` / monetary.** ts-rs cannot derive `rust_decimal::Decimal`; we serialize those as strings, so annotate the field `#[ts(type = "string")]`. (Most "numeric-looking" string fields, e.g. `valueNumeric`, are already `String` in Rust — no override.)
+- **String-literal unions.** Many DTO fields are `String` in Rust but a closed string-literal union in TS. Define the union **once** as a marker enum in [`src-tauri/src/api_ts_unions.rs`](../src-tauri/src/api_ts_unions.rs) (gated behind `ts-export`, `#[serde(rename_all = ...)]` reproduces the wire values) and reference it from the field with `#[ts(as = "crate::api_ts_unions::Foo")]` (or `#[ts(as = "Option<crate::api_ts_unions::Foo>")]` for an optional field). ts-rs emits a named union + import — never a widened `string`. A genuinely one-off inline union may instead use `#[ts(type = "\"a\" | \"b\"")]`.
+- **Optional vs nullable inputs.** Output DTOs render `Option<T>` as `T | null`. Input DTOs vary by module convention: `field?: T` → struct-level `#[ts(... optional_fields)]`; `field?: T | null` → `#[ts(... optional_fields = nullable)]`. Match the module's existing convention.
+- **Name mismatch.** When the Rust struct name differs from the TS contract name (e.g. `NewManagementClaim` vs `NewManagementClaimInput`), add `rename = "TsName"` to the `ts(...)` attr so the generated type/file uses the contract name.
+- **Frontend-only types** (string-literal unions and input shapes with **no** backing Rust DTO, e.g. `Theme`, `CompanyForm`) stay hand-written in the `*Types.ts` barrel alongside the re-exports.
+
+**Migration is incremental** (tracked under `6214fd5`). Migrated: report-documents, financials, `types.ts`, research, quality-frameworks, management-claims, report-season. To migrate a module: add the gated `TS` derive to its Rust struct(s) applying the conventions above, run `make types`, confirm each generated shape matches the hand-written one, then replace the bodies in the `*Types.ts` barrel with `export type { X } from "./generated/X"` (keep any command-wrapper functions and frontend-only types).
+
 ## Per-area minimum gates
 
 - **Ordinary change:** docs/contracts updated when behavior changes; relevant Rust + frontend tests pass; formatting/lint pass; dependency additions justified and license-reviewed when they affect runtime.

@@ -1,24 +1,11 @@
 import { callCommand } from "./tauri";
-import type { ReportDocument } from "./reportDocumentsTypes";
+import type { ResolveIrReportInput } from "./generated/ResolveIrReportInput";
+import type { IrReportResolution } from "./generated/IrReportResolution";
 
-export type ResolveIrReportInput = {
-  companyId: string;
-  periodHint?: string;
-  reportType?: string;
-  publishedAt?: string;
-};
-
-export type IrReportCandidate = {
-  url: string;
-  label: string;
-};
-
-export type IrReportResolution = {
-  document: ReportDocument | null;
-  candidates: IrReportCandidate[];
-  pickedUrl: string | null;
-  confidence: string | null;
-};
+// GENERATED from src-tauri/src/ir_resolution.rs via ts-rs (ADR 0048).
+export type { ResolveIrReportInput } from "./generated/ResolveIrReportInput";
+export type { IrReportCandidate } from "./generated/IrReportCandidate";
+export type { IrReportResolution } from "./generated/IrReportResolution";
 
 export function resolveIrReport(input: ResolveIrReportInput) {
   return callCommand<IrReportResolution>("resolve_ir_report", { input });

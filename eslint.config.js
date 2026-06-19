@@ -63,6 +63,7 @@ export default tseslint.config(
       "playwright-report/**",
       "test-results/**",
       "coverage/**",
+      "src/api/generated/**", // ts-rs-generated DTOs (ADR 0048); regenerate, don't hand-edit
       "node_modules/**",
       "**/*.config.js",
       "**/*.config.ts",

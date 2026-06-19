@@ -7,6 +7,11 @@ use super::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateNoteFromTranscriptSelectionInput {
     pub transcript_job_id: String,
@@ -15,6 +20,11 @@ pub struct CreateNoteFromTranscriptSelectionInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptNoteDraft {
     pub title: String,
@@ -28,6 +38,11 @@ pub struct TranscriptNoteDraft {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptJob {
     pub id: String,
@@ -49,12 +64,30 @@ pub struct TranscriptJob {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "ListVideoTranscriptJobsInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptJobListInput {
     pub company_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "CreateVideoTranscriptJobInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewTranscriptJob {
     pub company_id: Option<String>,
@@ -65,6 +98,15 @@ pub struct NewTranscriptJob {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateVideoTranscriptJobInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTranscriptJobInput {
     pub job_id: String,
@@ -72,6 +114,11 @@ pub struct UpdateTranscriptJobInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveTranscriptJobCompanyInput {
     pub job_id: String,
@@ -79,6 +126,11 @@ pub struct ResolveTranscriptJobCompanyInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
     pub id: String,

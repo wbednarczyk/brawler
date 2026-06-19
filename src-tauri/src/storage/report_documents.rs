@@ -5,6 +5,11 @@ use super::*;
 // ============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportDocument {
     pub id: String,
@@ -27,14 +32,23 @@ pub struct ReportDocument {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureReportDocumentInput {
     pub company_id: String,
     pub source_type: String,
     pub url: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub period_id: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub origin_ref: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub title: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub attribution: Option<String>,
 }
 

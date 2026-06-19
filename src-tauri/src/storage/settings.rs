@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use super::{StorageError, StorageResult};
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderSettings {
     pub youtube_transcription_provider: String,
@@ -17,6 +22,11 @@ pub struct AiProviderSettings {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct LogSettings {
     pub level: String,
@@ -25,6 +35,11 @@ pub struct LogSettings {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutBindingSetting {
     pub key: String,
@@ -36,6 +51,11 @@ pub struct ShortcutBindingSetting {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseSettings {
     pub max_connections: u32,
@@ -44,10 +64,21 @@ pub struct DatabaseSettings {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UserSettings {
+    #[cfg_attr(feature = "ts-export", ts(type = "\"dark\" | \"light\" | \"system\""))]
     pub theme: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"en\" | \"pl\""))]
     pub locale: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"night-neon\" | \"midnight-horizon\"")
+    )]
     pub accent_palette: String,
     pub developer_mode: bool,
     pub poll_interval_seconds: i64,
@@ -63,10 +94,29 @@ pub struct UserSettings {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateSettingsInput",
+        optional_fields
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsUpdate {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(optional, type = "\"dark\" | \"light\" | \"system\"")
+    )]
     pub theme: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(optional, type = "\"night-neon\" | \"midnight-horizon\"")
+    )]
     pub accent_palette: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "\"en\" | \"pl\""))]
     pub locale: Option<String>,
     pub poll_interval_seconds: Option<i64>,
     pub youtube_transcription_provider: Option<String>,

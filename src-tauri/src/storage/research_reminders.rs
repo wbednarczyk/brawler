@@ -14,26 +14,64 @@ const REMINDER_KINDS: &[&str] = &[
 const REMINDER_STATUSES: &[&str] = &["open", "completed", "dismissed"];
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchReminderListInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchReminderStatus>")
+    )]
     pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchReminder {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub company_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReminderKind")
+    )]
     pub reminder_kind: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchEvidenceType>")
+    )]
     pub source_type: Option<String>,
     pub source_id: Option<String>,
     pub title: String,
     pub body: String,
     pub due_at: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReminderStatus")
+    )]
     pub status: String,
     pub snoozed_until: Option<String>,
     pub completed_at: Option<String>,
@@ -43,12 +81,33 @@ pub struct ResearchReminder {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewResearchReminder {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub company_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReminderKind")
+    )]
     pub reminder_kind: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchEvidenceType>")
+    )]
     pub source_type: Option<String>,
     pub source_id: Option<String>,
     pub title: String,
@@ -57,9 +116,22 @@ pub struct NewResearchReminder {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchReminderUpdate {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchReminderStatus>")
+    )]
     pub status: Option<String>,
     pub due_at: Option<String>,
     pub snoozed_until: Option<String>,

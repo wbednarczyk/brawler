@@ -16,10 +16,20 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct StartClaimExtractionInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ClaimExtractionSourceType")
+    )]
     source_type: String,
     source_id: String,
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "string | null"))]
     provider_mode: Option<String>,
 }
 

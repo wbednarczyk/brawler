@@ -194,10 +194,19 @@ impl std::ops::DerefMut for DbGuard<'_> {
 /// memory (not persisted): backfill is an explicit, app-open-only action, and idempotent
 /// re-runs mean a lost in-flight status is never harmful.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct BackfillProgress {
     pub company_id: String,
     /// `running` | `completed` | `failed`.
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"running\" | \"completed\" | \"failed\"")
+    )]
     pub status: String,
     pub pages_fetched: usize,
     pub items_ingested: usize,

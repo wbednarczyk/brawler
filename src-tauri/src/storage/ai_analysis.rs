@@ -7,6 +7,11 @@ const DEFAULT_PROMPT_PRESET_ID: &str = "default_summary";
 const DEFAULT_PROMPT_VERSION: &str = "m13.source_grounded.v1";
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAnalysisJob {
     pub id: String,
@@ -16,6 +21,10 @@ pub struct AiAnalysisJob {
     pub provider_id: String,
     pub model: String,
     pub prompt_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"queued\" | \"running\" | \"succeeded\" | \"failed\" | \"cancelled\"")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -26,6 +35,11 @@ pub struct AiAnalysisJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAnalysisResult {
     pub id: String,
@@ -35,6 +49,10 @@ pub struct AiAnalysisResult {
     pub model: String,
     pub prompt_version: String,
     pub summary: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"low\" | \"medium\" | \"high\" | \"unknown\"")
+    )]
     pub significance: String,
     pub reasoning: String,
     pub language: Option<String>,
@@ -44,6 +62,11 @@ pub struct AiAnalysisResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAnalysisSourceReference {
     pub id: String,

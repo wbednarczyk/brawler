@@ -131,6 +131,34 @@ buys this headroom); if it would balloon the per-change gate, it stays in
 `check-epic`. Live/credentialed/packaging smoke remain opt-in/periodic and never
 enter the default gate.
 
+### 7. Generated API types — Rust is the single source for the IPC contract
+
+The TypeScript DTOs crossing the Tauri IPC boundary are **generated from the Rust
+structs** with `ts-rs` (behind the off-by-default `ts-export` feature), so a Rust
+DTO and its hand-written TS shape can no longer silently drift — a whole class of
+contract bug that previously slipped through (the `v0.45.0` KPI scope mismatch was
+of this family). `make types` emits `src/api/generated/`; the `src/api/*Types.ts`
+barrels re-export those bindings (keeping stable import paths and any command-wrapper
+functions); `make types-check` is the drift guard. The mechanics and per-field
+conventions live in [testing.md → Generated API types](../testing.md#generated-api-types-rust--typescript); the durable decisions are:
+
+- **`make types` runs with `TS_RS_LARGE_INT=number`** so `i64`/`u64` render as JS
+  `number`, not ts-rs's default `bigint` — one global setting instead of a per-field
+  override on every count/timestamp/id. This is sound because Brawler has no DTO
+  field that exceeds `Number.MAX_SAFE_INTEGER` (row counts, millis, slug ids).
+- **String-literal unions are single-sourced via marker enums** in
+  [`src-tauri/src/api_ts_unions.rs`](../../src-tauri/src/api_ts_unions.rs) (gated,
+  generation-only) and referenced from `String` fields with `#[ts(as = "...")]`.
+  This preserves the **narrowed** union contract (not a widened `string`) without
+  forcing the storage layer to adopt Rust enums, and keeps each union defined once.
+  Genuinely frontend-only unions/inputs (no backing Rust DTO) stay hand-written.
+- **Migration is incremental** (`6214fd5`), one module at a time behind the drift
+  guard, so the contract is never half-generated in a broken state.
+
+This extends the enforcement-as-guardrails posture ([ADR 0038](0038-enforcement-as-guardrails.md)):
+the generator + `types-check` is the gate that keeps the cross-language contract
+coherent without every agent holding both sides in context.
+
 ## Consequences
 
 - The foundational test-architecture epic is sequenced **keystone-first**:

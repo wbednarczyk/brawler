@@ -14,6 +14,11 @@ use crate::storage::LogSettings;
 const LOG_FILE_NAME: &str = "brawler.log";
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct LogStatus {
     pub logs_dir: String,
@@ -25,10 +30,16 @@ pub struct LogStatus {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct LogEntry {
     pub file_name: String,
     pub line_number: usize,
+    #[cfg_attr(feature = "ts-export", ts(type = "Record<string, unknown>"))]
     pub record: Value,
 }
 

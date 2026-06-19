@@ -1,63 +1,21 @@
 import { callCommand } from "./tauri";
-import type { ClaimsToVerify } from "./managementClaims";
-import type { ResearchEvidenceItem, ResearchQuestion } from "./researchTypes";
 
-export type ReportPreparationStatus = "upcoming" | "prepared" | "processed";
+// Types GENERATED from src-tauri/src/storage/report_season.rs via ts-rs
+// (ADR 0048): change the struct and run `make types`. ReportPreparationStatus
+// comes from the marker enum in src-tauri/src/api_ts_unions.rs.
+import type { ReportSeasonResult } from "./generated/ReportSeasonResult";
+import type { PreReportCard } from "./generated/PreReportCard";
+import type { ReportPreparation } from "./generated/ReportPreparation";
+import type { ListReportSeasonInput } from "./generated/ListReportSeasonInput";
 
-export type ReportSeasonEntry = {
-  companyId: string;
-  qualifiedTicker: string;
-  displayName: string;
-  eventKey: string;
-  eventDate: string;
-  eventTime: string | null;
-  title: string;
-  preparationStatus: ReportPreparationStatus;
-};
-
-export type CalendarFreshness = {
-  lastFetchedAt: string | null;
-  stale: boolean;
-};
-
-export type ReportSeasonResult = {
-  upcoming: ReportSeasonEntry[];
-  past: ReportSeasonEntry[];
-  calendarFreshness: CalendarFreshness;
-};
-
-export type PreReportKpi = {
-  periodId: string;
-  metricKey: string;
-  label: string;
-  unit: string | null;
-  valueNumeric: string;
-};
-
-export type PreReportCard = {
-  companyId: string;
-  eventKey: string;
-  eventDate: string | null;
-  preparationStatus: ReportPreparationStatus;
-  linkedReportDocumentId: string | null;
-  openQuestions: ResearchQuestion[];
-  unresolvedClaims: ClaimsToVerify;
-  lastPeriodKpis: PreReportKpi[];
-  recentEvidence: ResearchEvidenceItem[];
-};
-
-export type ReportPreparation = {
-  companyId: string;
-  eventKey: string;
-  status: ReportPreparationStatus;
-  preparedAt: string | null;
-  processedAt: string | null;
-  linkedReportDocumentId: string | null;
-};
-
-export type ListReportSeasonInput = {
-  watchlistId: string | null;
-};
+export type { ReportPreparationStatus } from "./generated/ReportPreparationStatus";
+export type { ReportSeasonEntry } from "./generated/ReportSeasonEntry";
+export type { CalendarFreshness } from "./generated/CalendarFreshness";
+export type { ReportSeasonResult } from "./generated/ReportSeasonResult";
+export type { PreReportKpi } from "./generated/PreReportKpi";
+export type { PreReportCard } from "./generated/PreReportCard";
+export type { ReportPreparation } from "./generated/ReportPreparation";
+export type { ListReportSeasonInput } from "./generated/ListReportSeasonInput";
 
 export function listReportSeason(input: ListReportSeasonInput) {
   return callCommand<ReportSeasonResult>("list_report_season", { input });

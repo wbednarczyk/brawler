@@ -1,360 +1,25 @@
+// ============================================================================
+// API DTOs
+//
+// Most types below are GENERATED from the Rust source via ts-rs (ADR 0048):
+// change the struct in src-tauri and run `make types`. The handful of
+// FRONTEND-ONLY types (string-literal unions and input shapes with no backing
+// Rust DTO) are declared here by hand — there is no struct to generate them
+// from. Do not hand-edit a shape that has a generated binding; edit the Rust
+// struct and regenerate.
+// ============================================================================
+
+// --- Frontend-only union + input types (no Rust source) ---
+
 export type Theme = "dark" | "light" | "system";
 export type AccentPalette = "night-neon" | "midnight-horizon";
 export type AppLocale = "en" | "pl";
-
-export type HealthResponse = {
-  status: string;
-  version: string;
-};
-
-export type DatabaseStatus = {
-  appliedMigrations: number;
-  companies: number;
-  sourceAdapters: number;
-  settings: number;
-};
-
 export type SourceRefreshTrigger = "manual" | "scheduler";
-
-export type FeedItem = {
-  id: string;
-  company: string;
-  type: string;
-  source: string;
-  time: string;
-  title: string;
-  unread: boolean;
-  saved: boolean;
-  sourceUrl: string;
-  language: string;
-  publishedAt: string;
-  fetchedAt: string;
-  attribution: string;
-  summary: string;
-  bodyText: string;
-  attachments: FeedItemAttachment[];
-};
-
-export type FeedItemAttachment = {
-  id: string;
-  label: string;
-  url: string;
-};
-
-export type AiAnalysisJob = {
-  id: string;
-  feedItemId: string;
-  promptPresetId: string;
-  customQuestion: string | null;
-  providerId: string;
-  model: string;
-  promptVersion: string;
-  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
-  errorCode: string | null;
-  error: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  result: AiAnalysisResult | null;
-};
-
-export type AiAnalysisResult = {
-  id: string;
-  aiAnalysisJobId: string | null;
-  feedItemId: string;
-  providerId: string;
-  model: string;
-  promptVersion: string;
-  summary: string;
-  significance: "low" | "medium" | "high" | "unknown";
-  reasoning: string;
-  language: string | null;
-  tags: string[];
-  sourceReferences: AiAnalysisSourceReference[];
-  createdAt: string;
-};
-
-export type AiAnalysisSourceReference = {
-  id: string;
-  sourceUrl: string;
-  label: string | null;
-  createdAt: string;
-};
-
 export type DiagnosticSeverity = "debug" | "info" | "warning" | "error";
 
-export type DiagnosticScope = {
-  type: string;
-  id: string | null;
-};
-
-export type DiagnosticEvent = {
-  id: string;
-  occurredAt: string;
-  module: string;
-  scope: DiagnosticScope | null;
-  stage: string;
-  severity: DiagnosticSeverity;
-  message: string;
-  metadata: Record<string, unknown>;
-  createdAt: string;
-};
-
-export type DiagnosticSummary = {
-  summary: string;
-  eventCount: number;
-};
-
-export type ClearDiagnosticEventsResult = {
-  eventsDeleted: number;
-};
-
-export type LogStatus = {
-  logsDir: string;
-  currentFileBytes: number;
-  rotatedFileCount: number;
-  level: string;
-  maxFiles: number;
-  maxFileBytes: number;
-};
-
-export type LogEntry = {
-  fileName: string;
-  lineNumber: number;
-  record: Record<string, unknown>;
-};
-
-export type MetricKind = "counter" | "gauge";
-
-export type MetricUnit = "count" | "seconds" | "bytes";
-
-export type MetricLabel = {
-  key: string;
-  value: string;
-};
-
-export type MetricSample = {
-  name: string;
-  description: string;
-  kind: MetricKind;
-  unit: MetricUnit;
-  value: number;
-  labels: MetricLabel[];
-  collectedAt: string;
-};
-
-export type LocalMetricsSnapshot = {
-  collectedAt: string;
-  samples: MetricSample[];
-};
-
-export type LicenseStatusKind =
-  | "valid"
-  | "missing"
-  | "invalid"
-  | "expired"
-  | "wrong_version"
-  | "unsupported_version"
-  | "storage_error";
-
-export type LicenseDisplayMetadata = {
-  licenseId: string;
-  holder: string;
-  channel: string;
-  edition: string;
-  features: string[];
-  issuedAt: string;
-  expiresAt: string;
-  appVersionRange: string;
-  keyId: string;
-};
-
-export type LicenseStatus = {
-  status: LicenseStatusKind;
-  canUseApp: boolean;
-  reason: string | null;
-  license: LicenseDisplayMetadata | null;
-  checkedAt: string;
-};
-
-export type SourceIngestionResult = {
-  adapterId: string;
-  itemsFetched: number;
-  itemsCreated: number;
-  itemsMatched: number;
-  itemsUnmatched: number;
-  detailItemsAttempted: number;
-  detailItemsStored: number;
-  detailItemsFailed: number;
-  fetchedAt: string | null;
-};
-
-export type FeedDeleteResult = {
-  itemsDeleted: number;
-  deletedAt: string;
-};
-
-export type FeedPruneResult = {
-  retentionDays: number;
-  itemsDeleted: number;
-  prunedAt: string;
-};
-
-export type CompanyRegistryRefreshResult = {
-  adapterId: string;
-  entriesFetched: number;
-  entriesUpserted: number;
-  entriesDeactivated: number;
-  fetchedAt: string;
-};
-
-export type UnmatchedSourceItem = {
-  id: string;
-  adapterId: string;
-  companyName: string;
-  title: string;
-  sourceUrl: string;
-  publishedAt: string;
-  fetchedAt: string;
-};
-
-export type Company = {
-  id: string;
-  exchange: string;
-  ticker: string;
-  qualifiedTicker: string;
-  displayName: string;
-  isin: string | null;
-  cik: string | null;
-  lei: string | null;
-};
-
-export type CompanyForm = {
-  exchange: string;
-  ticker: string;
-  displayName: string;
-  isin: string;
-};
-
-export type CompanyLookupResult = {
-  exchange: string;
-  ticker: string;
-  qualifiedTicker: string;
-  displayName: string;
-  isin: string;
-  source: string;
-};
-
-export type Watchlist = {
-  id: string;
-  name: string;
-  description: string | null;
-  companyCount: number;
-};
-
-export type WatchlistMembership = {
-  watchlistId: string;
-  watchlistName: string;
-  companyId: string;
-};
-
-export type NotebookOrigin = {
-  id: string;
-  sourceType: string;
-  sourceId: string | null;
-  sourceUrl: string | null;
-  label: string | null;
-  createdAt: string;
-};
-
-export type NotebookEntry = {
-  id: string;
-  companyId: string;
-  title: string;
-  body: string;
-  bodyFormat: string;
-  tags: string[];
-  kind: string;
-  claimStatus: string | null;
-  eventDate: string | null;
-  followUpAfter: string | null;
-  followUpDate: string | null;
-  createdAt: string;
-  updatedAt: string;
-  origins: NotebookOrigin[];
-};
-
-export type NotebookDraftOrigin = {
-  sourceType: string;
-  sourceId: string | null;
-  sourceUrl: string | null;
-  label: string | null;
-};
-
-export type SourceAdapter = {
-  id: string;
-  displayName: string;
-  sourceType: string;
-  fetchMode: string;
-  visibility: "required" | "optional" | "developer";
-  userConfigurable: boolean;
-  healthStatus: "healthy" | "attention" | "notRefreshed" | "off";
-  enabled: boolean;
-  defaultPollIntervalSeconds: number;
-  sourceUrl: string;
-  rateLimitPolicy: string;
-  policyNote: string;
-  lastAttemptAt: string | null;
-  lastTrigger: string | null;
-  lastSuccessAt: string | null;
-  lastErrorAt: string | null;
-  lastError: string | null;
-  lastItemsFetched: number | null;
-  lastItemsCreated: number | null;
-  lastItemsMatched: number | null;
-  lastItemsUnmatched: number | null;
-  lastDetailItemsAttempted: number | null;
-  lastDetailItemsStored: number | null;
-  lastDetailItemsFailed: number | null;
-  lastDetailWarning: string | null;
-  markets: string[];
-};
-
-export type CompanyRegistryEntry = {
-  sourceAdapterId: string;
-  exchange: string;
-  ticker: string;
-  qualifiedTicker: string;
-  displayName: string;
-  isin: string | null;
-  sourceUrl: string;
-  fetchedAt: string;
-  tracked: boolean;
-};
-
-export type CompanyEvent = {
-  id: string;
-  companyId: string;
-  company: string;
-  companyName: string;
-  eventType: string;
-  title: string;
-  eventDate: string;
-  eventTime: string | null;
-  status: string;
-  sourceType: string;
-  sourceAdapterId: string | null;
-  sourceEventKey: string | null;
-  sourceUrl: string | null;
-  attribution: string | null;
-  fetchedAt: string | null;
-  manual: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
-// Typed ESPI/EBI classification signal (ADR 0034). `classifiedBy` is "rule" or
-// "ai"; `status` is "confirmed" or "proposed" (AI proposals await confirmation).
+// Typed ESPI/EBI classification signal categories (ADR 0034). The Rust
+// `CompanySignal.category` is a `String`; this union narrows it for the UI and
+// is mirrored by an inline `#[ts(type = ...)]` override on the generated DTO.
 export type CompanySignalCategory =
   | "insider_transaction"
   | "dividend"
@@ -365,85 +30,18 @@ export type CompanySignalCategory =
   | "general_meeting"
   | "other";
 
-export type CompanySignal = {
-  id: string;
-  companyId: string;
-  company: string;
-  companyName: string;
-  feedItemId: string;
-  category: CompanySignalCategory;
-  categoryDisplayName: string;
-  confidence: number;
-  classifiedBy: "rule" | "ai";
-  status: "confirmed" | "proposed";
-  signalDate: string | null;
-  providerId: string | null;
-  modelId: string | null;
-  derivedEventId: string | null;
-  title: string;
-  sourceUrl: string;
-  createdAt: string;
-  updatedAt: string;
+export type CompanyForm = {
+  exchange: string;
+  ticker: string;
+  displayName: string;
+  isin: string;
 };
 
-export type AiSignalClassificationSummary = {
-  enabled: boolean;
-  examined: number;
-  proposed: number;
-  skipped: number;
-};
-
-// Outcome of the opt-in AI date-extraction fallback (ADR 0036). Derives proposed
-// calendar events for dividend/general-meeting signals the deterministic parser missed.
-export type AiEventDerivationSummary = {
-  enabled: boolean;
-  examined: number;
-  derived: number;
-  skipped: number;
-};
-
-// Live progress/diagnostics for an on-track history backfill (ADR 0036).
-export type BackfillProgress = {
-  companyId: string;
-  status: "running" | "completed" | "failed";
-  pagesFetched: number;
-  itemsIngested: number;
-  documentsStored: number;
-  detailErrors: number;
-  error: string | null;
-  startedAt: string;
-  updatedAt: string;
-};
-
-export type TranscriptJob = {
-  id: string;
-  companyId: string | null;
-  company: string | null;
-  companyName: string | null;
-  providerId: string;
+export type NotebookDraftOrigin = {
   sourceType: string;
-  sourceUrl: string;
-  sourceLabel: string | null;
-  companyResolutionStatus: string;
-  recognizedCompanyCandidates: CompanyLookupResult[];
-  status: string;
-  errorCode: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  error: string | null;
-};
-
-export type TranscriptSegment = {
-  id: string;
-  transcriptJobId: string;
-  companyId: string | null;
-  startSeconds: number | null;
-  endSeconds: number | null;
-  speaker: string | null;
-  text: string;
-  language: string | null;
-  createdAt: string;
+  sourceId: string | null;
+  sourceUrl: string | null;
+  label: string | null;
 };
 
 export type ShortcutKeyBinding = {
@@ -454,56 +52,66 @@ export type ShortcutKeyBinding = {
   shiftKey?: boolean;
 };
 
-export type ShortcutBindingSetting = ShortcutKeyBinding & {
-  disabled?: boolean;
-};
+// --- Generated DTOs (re-exported from ./generated; run `make types`) ---
 
-export type UserSettings = {
-  theme: Theme;
-  locale: AppLocale;
-  accentPalette: AccentPalette;
-  developerMode: boolean;
-  pollIntervalSeconds: number;
-  settingsSource: string;
-  settingsImportExportFormat: string;
-  yamlImportExportStatus: string;
-  aiProviders: {
-    youtubeTranscriptionProvider: string;
-    youtubeTranscriptionModel: string;
-    youtubeTranscriptionTimeoutSeconds: number;
-    generalAnalysisProvider: string | null;
-    generalAnalysisModel: string;
-    generalAnalysisTimeoutSeconds: number;
-  };
-  aiAnalysisMode: string;
-  espiAiFallbackEnabled: boolean;
-  logs: {
-    level: string;
-    maxFiles: number;
-    maxFileBytes: number;
-  };
-  shortcutBindings: Record<string, ShortcutBindingSetting>;
-  database: {
-    maxConnections: number;
-    busyTimeoutMs: number;
-    acquireTimeoutMs: number;
-  };
-};
+export type { HealthResponse } from "./generated/HealthResponse";
+export type { DatabaseStatus } from "./generated/DatabaseStatus";
 
-export type AiProviderCatalogEntry = {
-  providerId: string;
-  label: string;
-  models: string[];
-  defaultModel: string;
-  requiresCredential: boolean;
-};
+export type { FeedItem } from "./generated/FeedItem";
+export type { FeedItemAttachment } from "./generated/FeedItemAttachment";
+export type { FeedDeleteResult } from "./generated/FeedDeleteResult";
+export type { FeedPruneResult } from "./generated/FeedPruneResult";
 
-export type CredentialStatus = {
-  providerId: string;
-  secretKind: string;
-  configured: boolean;
-  storage: string;
-  label: string;
-  devFallbackAvailable: boolean;
-  error: string | null;
-};
+export type { AiAnalysisJob } from "./generated/AiAnalysisJob";
+export type { AiAnalysisResult } from "./generated/AiAnalysisResult";
+export type { AiAnalysisSourceReference } from "./generated/AiAnalysisSourceReference";
+
+export type { DiagnosticScope } from "./generated/DiagnosticScope";
+export type { DiagnosticEvent } from "./generated/DiagnosticEvent";
+export type { DiagnosticSummary } from "./generated/DiagnosticSummary";
+export type { ClearDiagnosticEventsResult } from "./generated/ClearDiagnosticEventsResult";
+
+export type { LogStatus } from "./generated/LogStatus";
+export type { LogEntry } from "./generated/LogEntry";
+
+export type { MetricKind } from "./generated/MetricKind";
+export type { MetricUnit } from "./generated/MetricUnit";
+export type { MetricLabel } from "./generated/MetricLabel";
+export type { MetricSample } from "./generated/MetricSample";
+export type { LocalMetricsSnapshot } from "./generated/LocalMetricsSnapshot";
+
+export type { LicenseStatusKind } from "./generated/LicenseStatusKind";
+export type { LicenseDisplayMetadata } from "./generated/LicenseDisplayMetadata";
+export type { LicenseStatus } from "./generated/LicenseStatus";
+
+export type { SourceIngestionResult } from "./generated/SourceIngestionResult";
+export type { UnmatchedSourceItem } from "./generated/UnmatchedSourceItem";
+export type { SourceAdapter } from "./generated/SourceAdapter";
+export type { CompanyRegistryEntry } from "./generated/CompanyRegistryEntry";
+export type { CompanyRegistryRefreshResult } from "./generated/CompanyRegistryRefreshResult";
+
+export type { Company } from "./generated/Company";
+export type { CompanyLookupResult } from "./generated/CompanyLookupResult";
+export type { CompanyEvent } from "./generated/CompanyEvent";
+export type { CompanySignal } from "./generated/CompanySignal";
+
+export type { Watchlist } from "./generated/Watchlist";
+export type { WatchlistMembership } from "./generated/WatchlistMembership";
+
+export type { NotebookOrigin } from "./generated/NotebookOrigin";
+export type { NotebookEntry } from "./generated/NotebookEntry";
+
+export type { AiSignalClassificationSummary } from "./generated/AiSignalClassificationSummary";
+export type { AiEventDerivationSummary } from "./generated/AiEventDerivationSummary";
+export type { BackfillProgress } from "./generated/BackfillProgress";
+
+export type { TranscriptJob } from "./generated/TranscriptJob";
+export type { TranscriptSegment } from "./generated/TranscriptSegment";
+
+export type { UserSettings } from "./generated/UserSettings";
+export type { AiProviderSettings } from "./generated/AiProviderSettings";
+export type { LogSettings } from "./generated/LogSettings";
+export type { DatabaseSettings } from "./generated/DatabaseSettings";
+export type { ShortcutBindingSetting } from "./generated/ShortcutBindingSetting";
+export type { AiProviderCatalogEntry } from "./generated/AiProviderCatalogEntry";
+export type { CredentialStatus } from "./generated/CredentialStatus";

@@ -17,15 +17,26 @@ const RESTORE_STAGING_FILE: &str = "restore-pending.sqlite3";
 const DATABASE_FILE: &str = "brawler.sqlite3";
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupEntry {
     pub file_name: String,
     pub created_at: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"rotating\" | \"snapshot\""))]
     pub kind: String,
     pub size_bytes: u64,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct BackupStatus {
     pub last_backup_at: Option<String>,

@@ -1,288 +1,70 @@
-export type ResearchEvidenceType =
-  | "feed_item"
-  | "notebook_entry"
-  | "claim"
-  | "transcript_segment"
-  | "company_event"
-  | "ai_analysis"
-  | "research_question"
-  | "company_signal"
-  | "reminder"
-  | "ai_brief"
-  | "digest";
+// ============================================================================
+// Research-workspace API DTOs (ADR 0048)
+//
+// Every shape below is GENERATED from the Rust source via ts-rs: change the
+// struct in src-tauri (src/storage/types.rs, research_briefs.rs,
+// research_reminders.rs, research_digests.rs) and run `make types`. The
+// string-literal unions are generated from the marker enums in
+// src-tauri/src/api_ts_unions.rs. Only the three pure type aliases at the
+// bottom are hand-written (they mirror another generated type 1:1).
+// ============================================================================
 
-export type ResearchEvidenceSourceDomain =
-  | "feed"
-  | "notebooks"
-  | "transcripts"
-  | "events"
-  | "ai_analysis"
-  | "research";
+// --- String-literal unions (generated from api_ts_unions.rs) ---
+export type { ResearchEvidenceType } from "./generated/ResearchEvidenceType";
+export type { ResearchEvidenceSourceDomain } from "./generated/ResearchEvidenceSourceDomain";
+export type { ResearchTrustCategory } from "./generated/ResearchTrustCategory";
+export type { ResearchReviewScopeType } from "./generated/ResearchReviewScopeType";
+export type { EvidenceRelationType } from "./generated/EvidenceRelationType";
+export type { ResearchQuestionStatus } from "./generated/ResearchQuestionStatus";
+export type { ResearchBriefJobStatus } from "./generated/ResearchBriefJobStatus";
+export type { ResearchReminderKind } from "./generated/ResearchReminderKind";
+export type { ResearchReminderStatus } from "./generated/ResearchReminderStatus";
 
-export type ResearchTrustCategory =
-  | "official_report"
-  | "company_publication"
-  | "public_media"
-  | "market_calendar"
-  | "transcript"
-  | "user_note"
-  | "ai_generated"
-  | "unknown";
+// --- Timeline / evidence ---
+export type { ResearchEvidenceReviewState } from "./generated/ResearchEvidenceReviewState";
+export type { ResearchEvidenceItem } from "./generated/ResearchEvidenceItem";
+export type { ResearchEvidenceInput } from "./generated/ResearchEvidenceInput";
+export type { ResearchTimelineSummary } from "./generated/ResearchTimelineSummary";
+export type { ResearchCompanyTimelineSummary } from "./generated/ResearchCompanyTimelineSummary";
+export type { ResearchTimelineResult } from "./generated/ResearchTimelineResult";
 
-export type ResearchEvidenceReviewState = {
-  changedSinceCompanyReview: boolean;
-  changedSinceWatchlistReview: boolean;
-};
+// --- Review checkpoints ---
+export type { ResearchReviewCheckpointInput } from "./generated/ResearchReviewCheckpointInput";
+export type { ResearchReviewCheckpoint } from "./generated/ResearchReviewCheckpoint";
 
-export type ResearchEvidenceItem = {
-  id: string;
-  evidenceType: ResearchEvidenceType;
-  sourceDomain: ResearchEvidenceSourceDomain;
-  sourceId: string;
-  companyId: string;
-  occurredAt: string;
-  title: string;
-  summary: string | null;
-  sourceUrl: string | null;
-  attribution: string | null;
-  trustCategory: ResearchTrustCategory;
-  reviewState: ResearchEvidenceReviewState;
-};
+// --- Evidence links ---
+export type { NewEvidenceLink } from "./generated/NewEvidenceLink";
+export type { EvidenceLink } from "./generated/EvidenceLink";
+export type { EvidenceLinkListInput } from "./generated/EvidenceLinkListInput";
 
-export type ResearchEvidenceInput = {
-  companyId?: string | null;
-  watchlistId?: string | null;
-  evidenceTypes?: ResearchEvidenceType[] | null;
-  changedSinceReviewOnly?: boolean | null;
-  limit?: number | null;
-};
+// --- Research questions ---
+export type { ResearchQuestion } from "./generated/ResearchQuestion";
+export type { ResearchQuestionListInput } from "./generated/ResearchQuestionListInput";
+export type { NewResearchQuestion } from "./generated/NewResearchQuestion";
+export type { ResearchQuestionUpdate } from "./generated/ResearchQuestionUpdate";
 
-export type ResearchTimelineSummary = {
-  total: number;
-  changedSinceReview: number;
-  lastReviewedAt: string | null;
-  memberCompanyCount: number;
-  companiesWithChangedEvidence: number;
-  companySummaries: ResearchCompanyTimelineSummary[];
-};
+// --- AI research briefs ---
+export type { ResearchBriefScopeInput } from "./generated/ResearchBriefScopeInput";
+export type { ResearchBriefCitation } from "./generated/ResearchBriefCitation";
+export type { ResearchBrief } from "./generated/ResearchBrief";
+export type { ResearchBriefJob } from "./generated/ResearchBriefJob";
 
-export type ResearchCompanyTimelineSummary = {
-  companyId: string;
-  total: number;
-  changedSinceReview: number;
-  lastReviewedAt: string | null;
-};
+// --- Research reminders ---
+export type { ResearchReminder } from "./generated/ResearchReminder";
+export type { ResearchReminderListInput } from "./generated/ResearchReminderListInput";
+export type { NewResearchReminder } from "./generated/NewResearchReminder";
+export type { ResearchReminderUpdate } from "./generated/ResearchReminderUpdate";
 
-export type ResearchTimelineResult = {
-  items: ResearchEvidenceItem[];
-  summary: ResearchTimelineSummary;
-};
+// --- Research digests ---
+export type { ResearchDigestCitation } from "./generated/ResearchDigestCitation";
+export type { ResearchDigest } from "./generated/ResearchDigest";
+export type { ResearchDigestJob } from "./generated/ResearchDigestJob";
 
-export type ResearchReviewScopeType = "company" | "watchlist";
+// --- Hand-written aliases (each mirrors a generated type 1:1) ---
+import type { ResearchReviewScopeType } from "./generated/ResearchReviewScopeType";
+import type { ResearchBriefScopeInput } from "./generated/ResearchBriefScopeInput";
+import type { ResearchBriefJobStatus } from "./generated/ResearchBriefJobStatus";
 
-export type ResearchReviewCheckpointInput = {
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  reviewedAt?: string | null;
-  cascadeToCompanies?: boolean | null;
-};
-
-export type ResearchReviewCheckpoint = {
-  id: string;
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  reviewedAt: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type EvidenceRelationType =
-  | "originates_from"
-  | "cites"
-  | "supports"
-  | "contradicts"
-  | "updates"
-  | "follows_up"
-  | "answers"
-  | "related";
-
-export type NewEvidenceLink = {
-  fromType: ResearchEvidenceType;
-  fromId: string;
-  toType: ResearchEvidenceType;
-  toId: string;
-  relationType: EvidenceRelationType;
-};
-
-export type EvidenceLink = NewEvidenceLink & {
-  id: string;
-  createdAt: string;
-};
-
-export type ResearchQuestionStatus = "open" | "answered" | "closed";
-export type ResearchQuestionScopeType = "company" | "watchlist";
-
-export type ResearchQuestion = {
-  id: string;
-  scopeType: ResearchQuestionScopeType;
-  scopeId: string;
-  title: string;
-  body: string;
-  status: ResearchQuestionStatus;
-  closedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ResearchQuestionListInput = {
-  scopeType?: ResearchQuestionScopeType | null;
-  scopeId?: string | null;
-  status?: ResearchQuestionStatus | null;
-};
-
-export type NewResearchQuestion = {
-  scopeType: ResearchQuestionScopeType;
-  scopeId: string;
-  title: string;
-  body?: string | null;
-};
-
-export type ResearchQuestionUpdate = {
-  id: string;
-  title?: string | null;
-  body?: string | null;
-  status?: ResearchQuestionStatus | null;
-};
-
-export type EvidenceLinkListInput = {
-  endpointType: ResearchEvidenceType;
-  endpointId: string;
-};
-
-export type ResearchBriefScopeInput = {
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-};
-
-export type ResearchBriefJobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
-
-export type ResearchBriefCitation = {
-  id: string;
-  briefId: string;
-  citationKey: string;
-  evidenceType: ResearchEvidenceType;
-  evidenceId: string;
-  label: string;
-  snippet: string | null;
-  createdAt: string;
-};
-
-export type ResearchBrief = {
-  id: string;
-  jobId: string;
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  providerId: string;
-  model: string;
-  promptVersion: string;
-  evidenceCollectorVersion: string;
-  rendererVersion: string;
-  title: string;
-  summary: string;
-  contentMarkdown: string;
-  language: string | null;
-  generatedAt: string;
-  createdAt: string;
-  citations: ResearchBriefCitation[];
-};
-
-export type ResearchBriefJob = {
-  id: string;
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  providerId: string;
-  model: string;
-  promptVersion: string;
-  evidenceCollectorVersion: string;
-  rendererVersion: string;
-  status: ResearchBriefJobStatus;
-  errorCode: string | null;
-  error: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  brief: ResearchBrief | null;
-};
-
-export type ResearchReminderKind =
-  | "claim_follow_up"
-  | "event_review"
-  | "question_review"
-  | "manual_research"
-  | "digest_review"
-  | "signal_review";
-
-export type ResearchReminderStatus = "open" | "completed" | "dismissed";
-
-export type ResearchReminder = {
-  id: string;
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  companyId: string | null;
-  reminderKind: ResearchReminderKind;
-  sourceType: ResearchEvidenceType | null;
-  sourceId: string | null;
-  title: string;
-  body: string;
-  dueAt: string | null;
-  status: ResearchReminderStatus;
-  snoozedUntil: string | null;
-  completedAt: string | null;
-  dismissedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type ResearchReminderListInput = {
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  status?: ResearchReminderStatus | null;
-};
-
-export type NewResearchReminder = {
-  scopeType: ResearchReviewScopeType;
-  scopeId: string;
-  companyId?: string | null;
-  reminderKind: ResearchReminderKind;
-  sourceType?: ResearchEvidenceType | null;
-  sourceId?: string | null;
-  title: string;
-  body?: string | null;
-  dueAt?: string | null;
-};
-
-export type ResearchReminderUpdate = {
-  id: string;
-  status?: ResearchReminderStatus | null;
-  dueAt?: string | null;
-  snoozedUntil?: string | null;
-};
-
+export type ResearchQuestionScopeType = ResearchReviewScopeType;
 export type ResearchDigestScopeInput = ResearchBriefScopeInput;
 export type ResearchDigestJobStatus = ResearchBriefJobStatus;
-export type ResearchDigestCitation = {
-  id: string;
-  digestId: string;
-  citationKey: string;
-  evidenceType: ResearchEvidenceType;
-  evidenceId: string;
-  label: string;
-  snippet: string | null;
-  createdAt: string;
-};
-export type ResearchDigest = Omit<ResearchBrief, "citations"> & {
-  citations: ResearchDigestCitation[];
-};
-export type ResearchDigestJob = Omit<ResearchBriefJob, "brief"> & {
-  digest: ResearchDigest | null;
-};

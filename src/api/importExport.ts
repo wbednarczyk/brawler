@@ -1,69 +1,15 @@
 import { callCommand } from "./tauri";
+import type { ExportPayload } from "./generated/ExportPayload";
+import type { ImportPreview } from "./generated/ImportPreview";
+import type { ImportApplyResult } from "./generated/ImportApplyResult";
 
-export type ImportExportSummary = {
-  companies: number;
-  watchlists: number;
-  memberships: number;
-  notebookEntries: number;
-  researchQuestions: number;
-  evidenceLinks: number;
-  aiResearchBriefs: number;
-  aiResearchBriefCitations: number;
-  researchReminders: number;
-  aiResearchDigests: number;
-  aiResearchDigestCitations: number;
-  qualityFrameworks: number;
-  userMetrics: number;
-  settings: number;
-};
-
-export type ImportApplySummary = {
-  companiesCreated: number;
-  companiesMerged: number;
-  watchlistsCreated: number;
-  watchlistsMerged: number;
-  membershipsCreated: number;
-  notebookEntriesCreated: number;
-  notebookEntriesSkipped: number;
-  researchQuestionsCreated: number;
-  researchQuestionsMerged: number;
-  evidenceLinksCreated: number;
-  evidenceLinksSkipped: number;
-  aiResearchBriefsCreated: number;
-  aiResearchBriefsSkipped: number;
-  aiResearchBriefCitationsCreated: number;
-  aiResearchBriefCitationsSkipped: number;
-  researchRemindersCreated: number;
-  researchRemindersSkipped: number;
-  aiResearchDigestsCreated: number;
-  aiResearchDigestsSkipped: number;
-  aiResearchDigestCitationsCreated: number;
-  aiResearchDigestCitationsSkipped: number;
-  qualityFrameworksCreated: number;
-  qualityFrameworksSkipped: number;
-  userMetricsCreated: number;
-  userMetricsSkipped: number;
-  settingsUpdated: number;
-};
-
-export type ExportPayload = {
-  fileName: string;
-  mediaType: string;
-  contents: string;
-  summary: ImportExportSummary;
-};
-
-export type ImportPreview = {
-  valid: boolean;
-  summary: ImportApplySummary;
-  warnings: string[];
-  errors: string[];
-};
-
-export type ImportApplyResult = {
-  summary: ImportApplySummary;
-  warnings: string[];
-};
+// GENERATED from src-tauri/src/storage/import_export/types.rs via ts-rs (ADR 0048).
+// The summaries are the complete Rust-side counts (incl. managementClaims).
+export type { ImportExportSummary } from "./generated/ImportExportSummary";
+export type { ImportApplySummary } from "./generated/ImportApplySummary";
+export type { ExportPayload } from "./generated/ExportPayload";
+export type { ImportPreview } from "./generated/ImportPreview";
+export type { ImportApplyResult } from "./generated/ImportApplyResult";
 
 export function exportResearchData() {
   return callCommand<ExportPayload>("export_research_data");

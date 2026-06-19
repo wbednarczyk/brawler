@@ -7,25 +7,50 @@ const MAX_LIMIT: i64 = 200;
 /// Request for the unified global search (ADR 0032). `contentTypes` and
 /// `companyId` are optional scoping filters.
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchInput {
     pub query: String,
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(optional, as = "Option<Vec<crate::api_ts_unions::SearchContentType>>")
+    )]
     pub content_types: Vec<String>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "string | null"))]
     pub company_id: Option<String>,
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "number"))]
     pub limit: Option<i64>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchGroup {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::SearchContentType")
+    )]
     pub content_type: String,
     pub matches: Vec<storage::SearchMatch>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchResults {
     pub groups: Vec<SearchGroup>,

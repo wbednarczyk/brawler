@@ -9,25 +9,16 @@ import type {
   UnmatchedSourceItem,
 } from "./types";
 
-export type RefreshSourceInput = {
-  adapterId: string;
-  trigger: SourceRefreshTrigger;
-  date?: string | null;
-};
+// Input types GENERATED from src-tauri/src/commands/sources.rs via ts-rs (ADR 0048).
+import type { RefreshSourceInput } from "./generated/RefreshSourceInput";
+import type { SetSourceEnabledInput } from "./generated/SetSourceEnabledInput";
+import type { ListSourceAdaptersInput } from "./generated/ListSourceAdaptersInput";
+import type { RefreshCompanyRegistryIfStaleInput } from "./generated/RefreshCompanyRegistryIfStaleInput";
 
-export type RefreshCompanyRegistryIfStaleInput = {
-  trigger: "scheduler";
-  staleAfterSeconds: number;
-};
-
-export type ListSourceAdaptersInput = {
-  includeDeveloperOnly?: boolean;
-};
-
-export type SetSourceEnabledInput = {
-  adapterId: string;
-  enabled: boolean;
-};
+export type { RefreshSourceInput } from "./generated/RefreshSourceInput";
+export type { RefreshCompanyRegistryIfStaleInput } from "./generated/RefreshCompanyRegistryIfStaleInput";
+export type { ListSourceAdaptersInput } from "./generated/ListSourceAdaptersInput";
+export type { SetSourceEnabledInput } from "./generated/SetSourceEnabledInput";
 
 export function listSourceAdapters(input?: ListSourceAdaptersInput) {
   return callCommand<SourceAdapter[]>("list_source_adapters", input ? { input } : undefined);

@@ -28,6 +28,11 @@ embedding-model = [
     "dep:tokenizers",
 ]
 
+# Generate the TypeScript API types from the Rust DTOs (ADR 0048). OFF by
+# default so `ts-rs` stays out of the shipped binary; `make types` enables it to
+# emit src/api/generated/, and `make types-check` regenerates + fails on drift.
+ts-export = ["dep:ts-rs"]
+
 [dependencies]
 candle-core = { version = "0.10", optional = true }
 candle-nn = { version = "0.10", optional = true }
@@ -62,6 +67,7 @@ tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
+ts-rs = { version = "12", optional = true }
 url = "2"
 
 [dev-dependencies]
