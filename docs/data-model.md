@@ -748,6 +748,28 @@ Rules:
 - `transcript_job_id` is used for transcript jobs when represented in the shared job list.
 - Warnings can be JSON in v1 unless they need filtering.
 
+### Durable Job Queue
+
+The `job_queue` table (migration `0051`, Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) is the persisted work list that replaces fire-and-forget `spawn_blocking` tasks, so work survives a crash mid-job and can be retried/resumed. Distinct from the `jobs` activity log above: `jobs` records what *ran*; `job_queue` holds what *must run*. Driven by `storage::JobQueueStore` + the in-process `jobs::queue::JobWorker`.
+
+Fields:
+
+- `id` — primary key and idempotency key; re-enqueuing the same id is a no-op (dedup).
+- `kind` — handler discriminator (a registered `JobHandler` claims this kind).
+- `payload` — opaque JSON the handler deserializes.
+- `status` — `pending` | `running` | `succeeded` | `failed`.
+- `attempts` / `max_attempts` — attempts is incremented at claim time, so a crash mid-run still counts and cannot loop forever.
+- `available_at` — earliest claimable time; pushed out by exponential backoff on retry.
+- `locked_at` — when last claimed into `running`; used to reclaim crash residue.
+- `last_error`, `created_at`, `updated_at`.
+
+Rules:
+
+- **Claim is atomic.** The next runnable row (oldest `pending` with `available_at` passed) is moved to `running` and its `attempts` incremented in a single `UPDATE … RETURNING`, so two workers can never claim the same row.
+- **Retry with backoff.** A failed run with attempts left returns to `pending` with `available_at` pushed out (capped exponential); once `attempts == max_attempts` it becomes terminally `failed`.
+- **Crash resume.** On startup the worker requeues every `running` row back to `pending` (a `running` row with no live worker is crash residue).
+- Local-first: a single worker drains the queue only while the app is open. Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
+
 ### Content Embeddings
 
 Supports the interpretative AI layer's embedding-model strategy ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)): an on-device vector index over canonical text content, used by the model-backed `SimilarityProvider` (and later model capabilities). Added in `v0.45.0`.

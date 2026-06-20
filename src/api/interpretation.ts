@@ -1,39 +1,22 @@
 import { callCommand } from "./tauri";
+import type { EmbeddingModelStatus } from "./generated/EmbeddingModelStatus";
+import type { FindSimilarContentResult } from "./generated/FindSimilarContentResult";
 
 // Interpretative AI layer — embedding-model strategy (ADR 0035, v0.45.0).
 // Local-only: the model runs on-device, no content leaves the machine.
+//
+// Output DTOs are GENERATED from src-tauri/src/commands/interpretation.rs via
+// ts-rs (ADR 0048); the weightsState/strategy unions are inline overrides on
+// those fields. EmbeddingWeightsState and SimilarityStrategy are frontend-only
+// union aliases (no backing Rust enum — the Rust fields are `String`).
 
 export type EmbeddingWeightsState = "unsupported" | "absent" | "downloading" | "ready" | "error";
-
-export type EmbeddedTypeCount = {
-  contentType: string;
-  count: number;
-};
-
-export type EmbeddingModelStatus = {
-  modelId: string;
-  dim: number;
-  weightsState: EmbeddingWeightsState;
-  downloadProgress: number | null;
-  downloadError: string | null;
-  activeSimilarityStrategy: "static" | "embedding";
-  embeddedCounts: EmbeddedTypeCount[];
-  indexModelId: string | null;
-  featureCompiled: boolean;
-};
-
 export type SimilarityStrategy = "static" | "embedding";
 
-export type ScoredContent = {
-  contentType: string;
-  contentId: string;
-  score: number;
-};
-
-export type FindSimilarContentResult = {
-  strategyId: string;
-  items: ScoredContent[];
-};
+export type { EmbeddedTypeCount } from "./generated/EmbeddedTypeCount";
+export type { EmbeddingModelStatus } from "./generated/EmbeddingModelStatus";
+export type { ScoredContent } from "./generated/ScoredContent";
+export type { FindSimilarContentResult } from "./generated/FindSimilarContentResult";
 
 export function getEmbeddingModelStatus() {
   return callCommand<EmbeddingModelStatus>("get_embedding_model_status");

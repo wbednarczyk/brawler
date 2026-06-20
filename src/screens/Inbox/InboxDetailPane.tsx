@@ -14,6 +14,7 @@ import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel
 import { FeedKpiExtractionPanel } from "../../shared/components/FeedKpiExtractionPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { useAiAnalysisProviderConfigured } from "../../app/state/SettingsContext";
 import type { CompanySignal } from "../../api/types";
 import type { InboxScreenProps } from "./inboxTypes";
 
@@ -24,7 +25,6 @@ type InboxDetailPaneProps = Pick<
   | "aiAnalysisJobsByFeedItemId"
   | "aiAnalysisErrorByFeedItemId"
   | "aiAnalysisRequestInFlightByFeedItemId"
-  | "aiAnalysisProviderConfigured"
   | "healthError"
   | "databaseError"
   | "updateSelectedFeedItem"
@@ -61,7 +61,6 @@ export function InboxDetailPane({
   aiAnalysisJobsByFeedItemId,
   aiAnalysisErrorByFeedItemId,
   aiAnalysisRequestInFlightByFeedItemId,
-  aiAnalysisProviderConfigured,
   healthError,
   databaseError,
   updateSelectedFeedItem,
@@ -75,6 +74,7 @@ export function InboxDetailPane({
   formatTimestamp,
 }: InboxDetailPaneProps) {
   const { text } = useLocale();
+  const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
   const pdfAttachments = selectedFeedItem?.attachments.filter(isPdfAttachment) ?? [];
   const signals = selectedFeedSignals ?? [];
 

@@ -34,6 +34,11 @@ const PERIOD_TYPES: &[&str] = &[
 ];
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagementClaim {
     pub id: String,
@@ -45,11 +50,20 @@ pub struct ManagementClaim {
     pub source_period_id: Option<String>,
     pub due_fiscal_year: Option<i64>,
     pub due_period_type: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(as = "crate::api_ts_unions::ClaimStatus"))]
     pub status: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ClaimSourceEvidenceType")
+    )]
     pub source_evidence_type: String,
     pub source_evidence_id: Option<String>,
     pub extraction_proposal_id: Option<String>,
     pub target_metric_key: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ClaimTargetComparator>")
+    )]
     pub target_comparator: Option<String>,
     pub target_value_numeric: Option<String>,
     pub target_unit: Option<String>,
@@ -60,6 +74,16 @@ pub struct ManagementClaim {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "NewManagementClaimInput",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewManagementClaim {
     pub company_id: String,
@@ -75,8 +99,16 @@ pub struct NewManagementClaim {
     #[serde(default)]
     pub due_period_type: Option<String>,
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ClaimStatus>")
+    )]
     pub status: Option<String>,
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ClaimSourceEvidenceType>")
+    )]
     pub source_evidence_type: Option<String>,
     #[serde(default)]
     pub source_evidence_id: Option<String>,
@@ -85,6 +117,10 @@ pub struct NewManagementClaim {
     #[serde(default)]
     pub target_metric_key: Option<String>,
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ClaimTargetComparator>")
+    )]
     pub target_comparator: Option<String>,
     #[serde(default)]
     pub target_value_numeric: Option<String>,
@@ -93,6 +129,16 @@ pub struct NewManagementClaim {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateManagementClaimInput",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ManagementClaimUpdate {
     pub id: String,
@@ -107,12 +153,20 @@ pub struct ManagementClaimUpdate {
     #[serde(default)]
     pub due_period_type: Option<String>,
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ClaimSourceEvidenceType>")
+    )]
     pub source_evidence_type: Option<String>,
     #[serde(default)]
     pub source_evidence_id: Option<String>,
     #[serde(default)]
     pub target_metric_key: Option<String>,
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ClaimTargetComparator>")
+    )]
     pub target_comparator: Option<String>,
     #[serde(default)]
     pub target_value_numeric: Option<String>,
@@ -122,6 +176,11 @@ pub struct ManagementClaimUpdate {
 
 /// A confirmed financial fact that may verify a quantitative claim for its due period.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyingFactCandidate {
     pub fact_id: String,
@@ -131,6 +190,11 @@ pub struct VerifyingFactCandidate {
 /// One claim surfaced in the review queue, with the arrived period and (for
 /// quantitative claims) the matching confirmed fact.
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimToVerify {
     pub claim: ManagementClaim,
@@ -141,6 +205,11 @@ pub struct ClaimToVerify {
 /// The due-period resurfacing read model (ADR 0040): open claims bucketed by
 /// whether their due-period report has arrived.
 #[derive(Debug, Clone, Default, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimsToVerify {
     pub due: Vec<ClaimToVerify>,
@@ -149,15 +218,29 @@ pub struct ClaimsToVerify {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SetClaimVerdictInput {
     pub claim_id: String,
+    #[cfg_attr(feature = "ts-export", ts(as = "crate::api_ts_unions::ClaimStatus"))]
     pub status: String,
     #[serde(default)]
     pub verifying_fact_id: Option<String>,
     /// Relation recorded in the evidence graph when a verifying fact is linked
     /// (`supports` | `contradicts`); applied by the verification slice.
     #[serde(default)]
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(optional, type = "\"supports\" | \"contradicts\" | null")
+    )]
     pub verifying_relation: Option<String>,
     #[serde(default)]
     pub revises_claim_id: Option<String>,
@@ -607,5 +690,61 @@ fn none_if_blank(value: String) -> Option<String> {
         None
     } else {
         Some(trimmed.to_owned())
+    }
+}
+
+use super::database::Database;
+/// management_claims domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::management_claims()`.
+#[derive(Clone)]
+pub struct ManagementClaimStore {
+    db: Database,
+}
+
+impl ManagementClaimStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_management_claims(&self, company_id: &str) -> StorageResult<Vec<ManagementClaim>> {
+        let connection = self.db.checkout()?;
+
+        list_management_claims(&connection, company_id)
+    }
+
+    pub fn create_management_claim(
+        &self,
+        input: NewManagementClaim,
+    ) -> StorageResult<ManagementClaim> {
+        let connection = self.db.checkout()?;
+
+        create_management_claim(&connection, input)
+    }
+
+    pub fn update_management_claim(
+        &self,
+        input: ManagementClaimUpdate,
+    ) -> StorageResult<ManagementClaim> {
+        let connection = self.db.checkout()?;
+
+        update_management_claim(&connection, input)
+    }
+
+    pub fn set_claim_verdict(&self, input: SetClaimVerdictInput) -> StorageResult<ManagementClaim> {
+        let connection = self.db.checkout()?;
+
+        set_claim_verdict(&connection, input)
+    }
+
+    pub fn delete_management_claim(&self, claim_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_management_claim(&connection, claim_id)
+    }
+
+    pub fn list_claims_to_verify(&self, company_id: &str) -> StorageResult<ClaimsToVerify> {
+        let connection = self.db.checkout()?;
+
+        list_claims_to_verify(&connection, company_id)
     }
 }

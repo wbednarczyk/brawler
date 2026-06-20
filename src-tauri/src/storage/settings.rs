@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use super::{StorageError, StorageResult};
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderSettings {
     pub youtube_transcription_provider: String,
@@ -17,6 +22,11 @@ pub struct AiProviderSettings {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct LogSettings {
     pub level: String,
@@ -25,6 +35,11 @@ pub struct LogSettings {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ShortcutBindingSetting {
     pub key: String,
@@ -36,6 +51,11 @@ pub struct ShortcutBindingSetting {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseSettings {
     pub max_connections: u32,
@@ -44,10 +64,21 @@ pub struct DatabaseSettings {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UserSettings {
+    #[cfg_attr(feature = "ts-export", ts(type = "\"dark\" | \"light\" | \"system\""))]
     pub theme: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"en\" | \"pl\""))]
     pub locale: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"night-neon\" | \"midnight-horizon\"")
+    )]
     pub accent_palette: String,
     pub developer_mode: bool,
     pub poll_interval_seconds: i64,
@@ -63,10 +94,29 @@ pub struct UserSettings {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateSettingsInput",
+        optional_fields
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsUpdate {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(optional, type = "\"dark\" | \"light\" | \"system\"")
+    )]
     pub theme: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(optional, type = "\"night-neon\" | \"midnight-horizon\"")
+    )]
     pub accent_palette: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "\"en\" | \"pl\""))]
     pub locale: Option<String>,
     pub poll_interval_seconds: Option<i64>,
     pub youtube_transcription_provider: Option<String>,
@@ -535,5 +585,49 @@ fn empty_setting_to_none(value: String) -> Option<String> {
         None
     } else {
         Some(value)
+    }
+}
+
+use super::database::Database;
+/// settings domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::settings()`.
+#[derive(Clone)]
+pub struct SettingsStore {
+    db: Database,
+}
+
+impl SettingsStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn get_settings(&self) -> StorageResult<UserSettings> {
+        let connection = self.db.checkout()?;
+
+        get_settings(&connection)
+    }
+
+    pub fn update_settings(&self, input: SettingsUpdate) -> StorageResult<UserSettings> {
+        let connection = self.db.checkout()?;
+
+        update_settings(&connection, input)
+    }
+
+    pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {
+        let connection = self.db.checkout()?;
+
+        set_developer_mode_enabled(&connection, enabled)
+    }
+
+    pub fn get_similarity_strategy(&self) -> StorageResult<String> {
+        let connection = self.db.checkout()?;
+
+        get_similarity_strategy(&connection)
+    }
+
+    pub fn set_similarity_strategy(&self, strategy: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        set_similarity_strategy(&connection, strategy)
     }
 }

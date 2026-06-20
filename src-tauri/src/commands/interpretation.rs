@@ -18,6 +18,11 @@ use crate::{app_state, jobs};
 const DEFAULT_SIMILAR_LIMIT: usize = 10;
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddedTypeCount {
     pub content_type: String,
@@ -25,17 +30,27 @@ pub struct EmbeddedTypeCount {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EmbeddingModelStatus {
     pub model_id: String,
     pub dim: usize,
     /// `unsupported` | `absent` | `downloading` | `ready` | `error`.
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"unsupported\" | \"absent\" | \"downloading\" | \"ready\" | \"error\"")
+    )]
     pub weights_state: String,
     /// Best-effort percent while downloading; `null` when the downloader cannot
     /// report progress or no download is in flight.
     pub download_progress: Option<u8>,
     pub download_error: Option<String>,
     /// Effective active strategy — never `embedding` unless the model is ready.
+    #[cfg_attr(feature = "ts-export", ts(type = "\"static\" | \"embedding\""))]
     pub active_similarity_strategy: String,
     pub embedded_counts: Vec<EmbeddedTypeCount>,
     pub index_model_id: Option<String>,
@@ -58,6 +73,11 @@ pub struct FindSimilarContentInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ScoredContent {
     pub content_type: String,
@@ -66,6 +86,11 @@ pub struct ScoredContent {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FindSimilarContentResult {
     pub strategy_id: String,
@@ -187,13 +212,13 @@ pub fn set_similarity_strategy(
                 .set_similarity_strategy(EMBEDDING_STRATEGY)
                 .map_err(|error| error.to_string())?;
 
-            // Populate any missing vectors in the background.
-            let job_state = owned.clone();
-            tauri::async_runtime::spawn_blocking(move || {
-                if let Err(error) = jobs::content_embedding::run_content_embedding_job(&job_state) {
-                    log::warn!("content embedding job failed: {error}");
-                }
-            });
+            // Populate any missing vectors in the background — enqueued onto the
+            // durable job queue (ADR 0050) so it resumes after a crash.
+            jobs::handlers::enqueue_per_job(
+                &owned,
+                jobs::handlers::CONTENT_EMBEDDING_KIND,
+                "strategy-selected",
+            );
         }
         other => return Err(format!("unknown similarity strategy: {other}")),
     }

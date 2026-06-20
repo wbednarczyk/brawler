@@ -10,6 +10,11 @@ const RETENTION_EVENT_LIMIT: i64 = 1_000;
 const RETENTION_DAYS: i64 = 7;
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticEvent {
     pub id: String,
@@ -17,13 +22,23 @@ pub struct DiagnosticEvent {
     pub module: String,
     pub scope: Option<DiagnosticScope>,
     pub stage: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"debug\" | \"info\" | \"warning\" | \"error\"")
+    )]
     pub severity: String,
     pub message: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "Record<string, unknown>"))]
     pub metadata: Value,
     pub created_at: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DiagnosticScope {
     #[serde(rename = "type")]
@@ -263,5 +278,40 @@ fn validate_allowed_severity(value: &str) -> StorageResult<()> {
             key: "severity",
             value: value.to_owned(),
         })
+    }
+}
+
+use super::database::Database;
+/// diagnostics domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::diagnostics()`.
+#[derive(Clone)]
+pub struct DiagnosticsStore {
+    db: Database,
+}
+
+impl DiagnosticsStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn record_diagnostic_event(
+        &self,
+        input: NewDiagnosticEvent,
+    ) -> StorageResult<Option<DiagnosticEvent>> {
+        let mut connection = self.db.checkout()?;
+
+        record_diagnostic_event(&mut connection, input)
+    }
+
+    pub fn list_diagnostic_events(&self, limit: i64) -> StorageResult<Vec<DiagnosticEvent>> {
+        let connection = self.db.checkout()?;
+
+        list_diagnostic_events(&connection, limit)
+    }
+
+    pub fn clear_diagnostic_events(&self) -> StorageResult<usize> {
+        let connection = self.db.checkout()?;
+
+        clear_diagnostic_events(&connection)
     }
 }

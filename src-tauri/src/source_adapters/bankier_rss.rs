@@ -264,7 +264,7 @@ fn should_insert_text_separator(current: &str, next: &str) -> bool {
 mod tests {
     use super::*;
 
-    const FIXTURE: &str = include_str!("../../fixtures/bankier_gielda_rss.xml");
+    const FIXTURE: &str = include_str!("../../samples/bankier_gielda_rss.xml");
 
     struct FixtureFetcher;
 

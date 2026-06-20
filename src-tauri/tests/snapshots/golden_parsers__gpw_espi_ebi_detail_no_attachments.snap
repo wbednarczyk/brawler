@@ -1,0 +1,9 @@
+---
+source: tests/golden_parsers.rs
+expression: detail
+---
+GpwReportDetail {
+    title: "Powzięcie informacji o wysokim prawdopodobieństwie zawarcia znaczącej umowy LUBAWA SPÓŁKA AKCYJNA (PLLUBAW00013)",
+    body_text: "Zarząd LUBAWA S.A. informuje o wysokim prawdopodobieństwie zawarcia wieloletniej umowy na dostawy elementów systemu NAREW.\nO finalnym podpisaniu umowy Emitent poinformuje w odrębnym komunikacie bieżącym.",
+    attachments: [],
+}

@@ -7,5 +7,6 @@ pub mod gpw_espi_ebi;
 pub mod gpw_market_events;
 pub mod newconnect_company_directory;
 pub(crate) mod parsing;
+pub mod registry;
 
 pub const USER_AGENT: &str = concat!("LocalInvestorNewsfeed/", env!("CARGO_PKG_VERSION"));

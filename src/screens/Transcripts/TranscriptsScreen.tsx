@@ -1,12 +1,13 @@
 import { RefreshCw } from "lucide-react";
 import { Button, EmptyState, ErrorText, PanelHeader } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { useTranscriptsViewModel } from "../../app/state/screenViewModels";
 import { TranscriptJobComposer } from "./TranscriptJobComposer";
 import { TranscriptJobRow } from "./TranscriptJobRow";
 import { TranscriptRuntimeStrip } from "./TranscriptRuntimeStrip";
-import type { TranscriptsScreenProps } from "./transcriptTypes";
 
-export function TranscriptsScreen({
+export function TranscriptsScreen() {
+  const {
   companies,
   settings,
   geminiCredentialStatus,
@@ -58,7 +59,7 @@ export function TranscriptsScreen({
   formatGeminiModel,
   formatCredentialConfigured,
   formatEnumLabel,
-}: TranscriptsScreenProps) {
+  } = useTranscriptsViewModel();
   const { t, text } = useLocale();
 
   return (

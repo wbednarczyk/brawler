@@ -227,6 +227,8 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] New command / read model / migration / adapter / mapping has automated tests. Migrations are append-only, idempotent, self-healing; reads of new columns/settings tolerate a missing row with a safe default.
 - [ ] Non-trivial CPU/inference/IO work runs **off the UI thread** (`async fn` + `spawn_blocking`) and reads the persisted derived index rather than recomputing the corpus per call.
 - [ ] **A background/derived-index job has every trigger it needs** — it (re)runs on the events that invalidate it *and* on app startup; verified to populate from a cold/persisted-but-stale state, not just the one action you wired.
+- [ ] **A new data transform** (dedup / normalization / matching / merge) ships with its **invariants** (idempotence, order-independence, round-trip, stable identity, associativity, no-panic — the `proptest` helpers) and a **golden `insta` snapshot** of its output. A new **hot path** adds a **behavioral scale gate** (offloaded + algorithmically bounded over a volume dataset, not wall-clock). [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md), [Testing](testing.md#data-transform-correctness-property-golden-scale-fuzz-fidelity-pipeline).
+- [ ] **A new IPC command** adds a step to the **dual-execution mock-fidelity corpus** (replayed against both the TS mock runtime and the real Rust `AppState`/storage layer) so the mock cannot silently drift from backend behavior.
 
 ### §D — If feature-gated code (e.g. `embedding-model`)
 - [ ] Built **and tested with the feature on** — `cargo check/test --features <feature>` — because the default gate does not compile it. Compile-green is not "works".
@@ -246,6 +248,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §I — Milestone/epic closure only
 - [ ] `make check-epic` (all suites incl. knip + Playwright); triage every failure (fix or file a tracked issue — this is how `2d9825a` was caught). · Retrospective written (both domains, still-open items honest). · `wiki/` created/updated for every user-facing change. · Version bump via the release workflow — **only on explicit user sign-off**.
+- [ ] **`make mutants`** at closure cadence (ADR 0049): mutation-tests the deterministic transform cores (DSL eval, migrations, feed dedup/matching, source normalization) to prove the property/golden tests *kill* defects, not just execute them. Slow + periodic (never in `make check`); when a new dedup/normalization/matching transform lands, extend the `-f` scope in the `mutants` target. · **`make bench`** when a hot kernel changed — the bench-ratchet flags relative regressions against `bench-baseline.json` (informational, machine-dependent, never a hard gate).
 
 ### §K — Honest handover report — always
 - [ ] The handoff states **what was validated and how** (Nix vs host, which suites ran) and **what was NOT run or verified** ("not run on real Windows", "eval not run against the real model", "browser smoke has a pre-existing unrelated failure, filed as X"). No victory lap; surface still-open items rather than implying completeness.
@@ -257,6 +260,8 @@ Agents should minimize token usage during normal implementation by using direct 
 This is a convenience loop, not a replacement for the canonical Nix workflow. `nix develop` and `make check` remain the reproducible parity path for milestone closure, pre-commit confidence, and CI-equivalent verification.
 
 **The host toolchain can be silently split, so host "green" does not count — only Nix is authoritative.** A host shell may have a `cargo`/`rustc` (e.g. from `rustup`) at a *different version* than the Nix-pinned `rustdoc`/`clippy`. This bit `v0.44.0`: the host (cargo 1.96 / rustdoc 1.95) produced **false** `cargo test --doc` failures (`E0514`) and **hid a real `clippy` lint** that only the Nix toolchain (1.95) flags. So a `rtk cargo …` pass on the host is a hint, not a verdict. **Before claiming a Rust change green — and always before any release/closure — run the Rust gate under Nix** (`make check`, or `env -u LD_LIBRARY_PATH nix develop -c npm run check:rust`). Do not mix host and Nix `cargo` runs on the same `target/` dir: their artifacts are mutually incompatible and force a full clean rebuild (the real cost of "going Nix" is this cache-thrash from *mixing*, not the wrapper — staying Nix-only keeps the cache warm).
+
+**`cargo check` proves compile, not tests — run `cargo nextest run` (or `cargo test`) before committing a storage- or test-touching change.** The library can compile while the *test* build breaks: e.g. removing an item that is unused in shipped code but still referenced via `use super::*;` in a `#[cfg(test)]` module. `cargo check --lib` passes; `nextest` fails. An interim commit checkpoint must be **test-green**, not merely compile-green (this bit an Architecture v2 storage commit that passed `cargo check --lib` but broke the test build, because a removed constant was still referenced from a `#[cfg(test)]` module).
 
 Preferred agent commands for targeted iteration:
 
@@ -284,6 +289,8 @@ Use full parity checks when appropriate:
 - `make check`: milestone closure, broad behavior changes, or before user commit/merge
 - Nix-wrapped commands: when validating the canonical environment or investigating environment drift
 - `make package-windows-from-linux`: portable Windows executable packaging path for M21 candidate validation
+
+**Layered parallelism (see [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).** The suites run in parallel both within and across frameworks to keep the loop fast: Rust uses `cargo nextest` (parallel by default), Vitest uses its default pool, and Playwright runs `fullyParallel` (safe only because the browser mock runtime is per-test isolated). `make check` is a staged concurrent orchestrator — a fast-fail stage (typecheck ‖ fmt ‖ lint ‖ stylelint) then the heavy independent suites (Rust clippy+nextest ‖ Vitest ‖ build) concurrently; the real win is overlapping the Rust compile with the JS suites. **Guardrails:** per-framework worker counts are capped so the sum ≈ core count (oversubscription causes false timeout failures — a quality regression, not a speedup), output is captured and printed grouped with hard-stop on first failure (a serial mode stays available for clean logs), and any parallelism change is kept only if a measured before/after on the WSL2 reference machine actually wins.
 
 The local convenience toolchain currently expected in WSL includes Rust through `rustup`, `clippy`, `rustfmt`, `cargo-nextest`, Node/npm, `ripgrep`, `fd`/`fdfind`, `jq`, `sqlite3`, and the native libraries needed by the Rust/Tauri tests. Keep `flake.nix` as the source of truth for reproducible dependency intent even when agents use the direct toolchain for faster feedback.
 

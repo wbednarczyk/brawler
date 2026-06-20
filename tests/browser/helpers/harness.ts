@@ -43,6 +43,15 @@ export async function openApp(page: Page, path = "/") {
   await expect(page.getByLabel(/Primary navigation|Nawigacja główna/)).toBeVisible();
 }
 
+// Auto-accept native confirm/alert dialogs for the remainder of the test. Use in
+// flows with a confirm-before-destroy step (delete watchlist / notebook entry)
+// instead of hand-writing `page.once("dialog", …)` at each call site.
+export function acceptDialogs(page: Page) {
+  page.on("dialog", (dialog) => {
+    void dialog.accept();
+  });
+}
+
 // No element whose content escapes its box (overflow-x visible) is wider than its
 // client box. Containers that scroll/clip (overflow auto/hidden) are excluded —
 // they are handling their own overflow on purpose. This is the precise detector

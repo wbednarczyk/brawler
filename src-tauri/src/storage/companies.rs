@@ -1,5 +1,98 @@
+use super::database::Database;
 use super::sources::set_source_adapter_state;
 use super::*;
+use crate::source_adapters::gpw_company_registry::{
+    GpwCompanyRegistryEntry, ADAPTER_ID as GPW_REGISTRY_ADAPTER_ID,
+};
+use crate::source_adapters::newconnect_company_directory::ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID;
+
+/// Company domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only company/registry operations. Reach it via `AppState::companies()`.
+#[derive(Clone)]
+pub struct CompanyStore {
+    db: Database,
+}
+
+impl CompanyStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
+        let connection = self.db.checkout()?;
+        list_companies(&connection)
+    }
+
+    pub fn create_company(&self, input: NewCompany) -> StorageResult<Company> {
+        let connection = self.db.checkout()?;
+        create_company(&connection, input)
+    }
+
+    pub fn get_company_ir_reports_url(&self, company_id: &str) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+        get_company_ir_reports_url(&connection, company_id)
+    }
+
+    pub fn set_company_ir_reports_url(
+        &self,
+        company_id: &str,
+        url: Option<&str>,
+    ) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+        set_company_ir_reports_url(&connection, company_id, url)
+    }
+
+    pub fn lookup_company(
+        &self,
+        input: CompanyLookupInput,
+    ) -> StorageResult<Option<CompanyLookupResult>> {
+        let connection = self.db.checkout()?;
+        lookup_company(&connection, input)
+    }
+
+    pub fn company_directories_need_bootstrap_refresh(&self) -> StorageResult<bool> {
+        let connection = self.db.checkout()?;
+        company_directories_need_bootstrap_refresh(&connection)
+    }
+
+    pub fn company_directories_are_stale(&self, stale_after_seconds: i64) -> StorageResult<bool> {
+        let connection = self.db.checkout()?;
+        company_directories_are_stale(&connection, stale_after_seconds)
+    }
+
+    pub fn refresh_gpw_company_registry(
+        &self,
+        entries: &[GpwCompanyRegistryEntry],
+        fetched_at: &str,
+    ) -> StorageResult<CompanyRegistryRefreshResult> {
+        let mut connection = self.db.checkout()?;
+        refresh_company_directory(
+            &mut connection,
+            GPW_REGISTRY_ADAPTER_ID,
+            entries,
+            fetched_at,
+        )
+    }
+
+    pub fn refresh_newconnect_company_directory(
+        &self,
+        entries: &[GpwCompanyRegistryEntry],
+        fetched_at: &str,
+    ) -> StorageResult<CompanyRegistryRefreshResult> {
+        let mut connection = self.db.checkout()?;
+        refresh_company_directory(
+            &mut connection,
+            NEWCONNECT_DIRECTORY_ADAPTER_ID,
+            entries,
+            fetched_at,
+        )
+    }
+
+    pub fn delete_company(&self, company_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        delete_company(&connection, company_id)
+    }
+}
 
 pub(super) fn list_companies(connection: &Connection) -> StorageResult<Vec<Company>> {
     let mut statement = connection.prepare(

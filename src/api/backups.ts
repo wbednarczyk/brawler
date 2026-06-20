@@ -1,19 +1,12 @@
 import { callCommand } from "./tauri";
+import type { BackupStatus } from "./generated/BackupStatus";
 
+// BackupEntry/BackupStatus GENERATED from src-tauri/src/storage/backup.rs via
+// ts-rs (ADR 0048); BackupEntry.kind carries the inline "rotating" | "snapshot"
+// union. BackupKind stays a hand-written alias for callers that name it.
 export type BackupKind = "rotating" | "snapshot";
-
-export type BackupEntry = {
-  fileName: string;
-  createdAt: string | null;
-  kind: BackupKind;
-  sizeBytes: number;
-};
-
-export type BackupStatus = {
-  lastBackupAt: string | null;
-  backupCount: number;
-  backups: BackupEntry[];
-};
+export type { BackupEntry } from "./generated/BackupEntry";
+export type { BackupStatus } from "./generated/BackupStatus";
 
 export function backupStatus() {
   return callCommand<BackupStatus>("backup_status");

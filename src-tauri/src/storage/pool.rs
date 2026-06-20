@@ -1,4 +1,5 @@
 use super::*;
+use r2d2_sqlite::SqliteConnectionManager;
 use std::time::Duration;
 
 const DEFAULT_MAX_CONNECTIONS: u32 = 4;

@@ -32,13 +32,11 @@ export type InboxScreenProps = {
   signalsByFeedItemId: Record<string, CompanySignal[]>;
   signalsError: string | null;
   aiSignalClassificationState: string;
-  aiSignalFallbackEnabled: boolean;
   selectedFeedItem: FeedItem | null;
   selectedFeedCompany: Company | null;
   aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
   aiAnalysisErrorByFeedItemId: Record<string, string | null>;
   aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
-  aiAnalysisProviderConfigured: boolean;
   inboxStatusFilter: InboxStatusFilter;
   searchQuery: string;
   inboxWatchlistFilter: string;

@@ -258,6 +258,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "roic_roce_resolvable",
         sql: include_str!("../../migrations/0050_roic_roce_resolvable.sql"),
     },
+    Migration {
+        version: 51,
+        name: "job_queue",
+        sql: include_str!("../../migrations/0051_job_queue.sql"),
+    },
+    Migration {
+        version: 52,
+        name: "feed_item_story_key",
+        sql: include_str!("../../migrations/0052_feed_item_story_key.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -348,4 +358,80 @@ pub(super) fn count_rows(connection: &Connection, table_name: &str) -> StorageRe
     connection
         .query_row(&sql, [], |row| row.get(0))
         .map_err(StorageError::from)
+}
+
+/// Test-only: apply migrations up to (and including) `max_version`, leaving the
+/// database at a historical schema so an upgrade path can be exercised without
+/// shipping binary `.sqlite` snapshots (ADR 0048 migration-safety coverage).
+#[cfg(test)]
+pub(super) fn apply_migrations_up_to(
+    connection: &mut Connection,
+    max_version: i64,
+) -> StorageResult<()> {
+    connection.pragma_update(None, "foreign_keys", "ON")?;
+    connection.execute_batch(
+        "
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        );
+        ",
+    )?;
+
+    let transaction = connection.transaction()?;
+
+    for migration in MIGRATIONS {
+        if migration.version > max_version {
+            break;
+        }
+
+        let already_applied: bool = transaction.query_row(
+            "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version = ?1)",
+            [migration.version],
+            |row| row.get(0),
+        )?;
+
+        if already_applied {
+            continue;
+        }
+
+        transaction.execute_batch(migration.sql)?;
+        transaction.execute(
+            "INSERT INTO schema_migrations (version, name) VALUES (?1, ?2)",
+            (migration.version, migration.name),
+        )?;
+    }
+
+    transaction.commit()?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod migration_invariants {
+    use super::MIGRATIONS;
+
+    #[test]
+    fn versions_are_contiguous_unique_and_ordered() {
+        // Migrations are append-only and immutable once shipped (AGENTS.md): a
+        // reused, out-of-order, or gapped version number is the mistake this
+        // guards. They must be exactly 1..=N in declaration order.
+        for (index, migration) in MIGRATIONS.iter().enumerate() {
+            let expected = index as i64 + 1;
+            assert_eq!(
+                migration.version, expected,
+                "migration #{index} ('{}') has version {} but must be {} (contiguous, ordered, unique)",
+                migration.name, migration.version, expected,
+            );
+        }
+    }
+
+    #[test]
+    fn names_are_unique() {
+        let mut names: Vec<&str> = MIGRATIONS.iter().map(|migration| migration.name).collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), total, "migration names must be unique");
+    }
 }

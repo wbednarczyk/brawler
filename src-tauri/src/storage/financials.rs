@@ -5,6 +5,11 @@ use super::*;
 // ============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FinancialPeriod {
     pub id: String,
@@ -18,6 +23,11 @@ pub struct FinancialPeriod {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct KpiDefinition {
     pub id: String,
@@ -36,6 +46,11 @@ pub struct KpiDefinition {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct KpiRelevance {
     pub id: String,
@@ -51,6 +66,11 @@ pub struct KpiRelevance {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FinancialFact {
     pub id: String,
@@ -77,6 +97,11 @@ pub struct FinancialFact {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewFinancialPeriod {
     pub company_id: String,
@@ -87,6 +112,11 @@ pub struct NewFinancialPeriod {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateFinancialPeriod {
     pub id: String,
@@ -95,6 +125,11 @@ pub struct UpdateFinancialPeriod {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewKpiDefinition {
     pub scope: String,
@@ -110,6 +145,11 @@ pub struct NewKpiDefinition {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewKpiRelevance {
     pub company_id: String,
@@ -121,6 +161,11 @@ pub struct NewKpiRelevance {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateKpiRelevance {
     pub id: String,
@@ -131,6 +176,11 @@ pub struct UpdateKpiRelevance {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewFinancialFact {
     pub company_id: String,
@@ -154,6 +204,11 @@ pub struct NewFinancialFact {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateFinancialFact {
     pub id: String,
@@ -166,6 +221,11 @@ pub struct UpdateFinancialFact {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListKpiDefinitionsInput {
     pub scope: Option<String>,
@@ -174,6 +234,11 @@ pub struct ListKpiDefinitionsInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFinancialPeriodsInput {
     pub company_id: String,
@@ -181,6 +246,11 @@ pub struct ListFinancialPeriodsInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFinancialFactsInput {
     pub company_id: Option<String>,
@@ -1126,5 +1196,121 @@ fn validate_reference_exists(
             table: table_name.to_owned(),
             id: id.to_owned(),
         })
+    }
+}
+
+use super::database::Database;
+/// financials domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::financials()`.
+#[derive(Clone)]
+pub struct FinancialsStore {
+    db: Database,
+}
+
+impl FinancialsStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_kpi_definitions(
+        &self,
+        input: ListKpiDefinitionsInput,
+    ) -> StorageResult<Vec<KpiDefinition>> {
+        let connection = self.db.checkout()?;
+
+        list_kpi_definitions(&connection, input)
+    }
+
+    pub fn create_kpi_definition(&self, input: NewKpiDefinition) -> StorageResult<KpiDefinition> {
+        let connection = self.db.checkout()?;
+
+        create_kpi_definition(&connection, input)
+    }
+
+    pub fn list_financial_periods(
+        &self,
+        input: ListFinancialPeriodsInput,
+    ) -> StorageResult<Vec<FinancialPeriod>> {
+        let connection = self.db.checkout()?;
+
+        list_financial_periods(&connection, input)
+    }
+
+    pub fn create_financial_period(
+        &self,
+        input: NewFinancialPeriod,
+    ) -> StorageResult<FinancialPeriod> {
+        let connection = self.db.checkout()?;
+
+        create_financial_period(&connection, input)
+    }
+
+    pub fn update_financial_period(
+        &self,
+        input: UpdateFinancialPeriod,
+    ) -> StorageResult<FinancialPeriod> {
+        let connection = self.db.checkout()?;
+
+        update_financial_period(&connection, input)
+    }
+
+    pub fn delete_financial_period(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_financial_period(&connection, id)
+    }
+
+    pub fn list_kpi_relevance(&self, company_id: &str) -> StorageResult<Vec<KpiRelevance>> {
+        let connection = self.db.checkout()?;
+
+        list_kpi_relevance(&connection, company_id)
+    }
+
+    pub fn create_kpi_relevance(&self, input: NewKpiRelevance) -> StorageResult<KpiRelevance> {
+        let connection = self.db.checkout()?;
+
+        create_kpi_relevance(&connection, input)
+    }
+
+    pub fn update_kpi_relevance(&self, input: UpdateKpiRelevance) -> StorageResult<KpiRelevance> {
+        let connection = self.db.checkout()?;
+
+        update_kpi_relevance(&connection, input)
+    }
+
+    pub fn delete_kpi_relevance(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_kpi_relevance(&connection, id)
+    }
+
+    pub fn list_financial_facts(
+        &self,
+        input: ListFinancialFactsInput,
+    ) -> StorageResult<Vec<FinancialFact>> {
+        let connection = self.db.checkout()?;
+
+        list_financial_facts(&connection, input)
+    }
+
+    pub fn create_financial_fact(&self, input: NewFinancialFact) -> StorageResult<FinancialFact> {
+        let connection = self.db.checkout()?;
+
+        create_financial_fact(&connection, input)
+    }
+
+    pub fn update_financial_fact(
+        &self,
+        input: UpdateFinancialFact,
+    ) -> StorageResult<FinancialFact> {
+        let connection = self.db.checkout()?;
+
+        update_financial_fact(&connection, input)
+    }
+
+    pub fn delete_financial_fact(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_financial_fact(&connection, id)
     }
 }

@@ -36,6 +36,7 @@ mod registry;
 mod rule_classifier;
 mod types;
 mod vector;
+mod vector_index;
 
 pub use capabilities::{Classifier, Matcher, SemanticSearch, SimilarityProvider};
 pub use embedder::{model_dir_name, Embedder, DEFAULT_EMBEDDING_DIM, DEFAULT_EMBEDDING_MODEL_ID};
@@ -60,3 +61,4 @@ pub use types::{
     Classification, ClassificationRequest, InterpretationError, ScoredItem, SearchScope, TextItem,
 };
 pub use vector::{cosine, similarity_score};
+pub use vector_index::{AnnVectorIndex, BruteForceVectorIndex, RankedCandidate, VectorIndex};

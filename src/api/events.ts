@@ -1,30 +1,11 @@
 import { callCommand } from "./tauri";
 import type { CompanyEvent } from "./types";
+import type { ListCompanyEventsInput } from "./generated/ListCompanyEventsInput";
+import type { CreateCompanyEventInput } from "./generated/CreateCompanyEventInput";
 
-export type ListCompanyEventsInput = {
-  mode: string;
-  companyId: string | null;
-  watchlistId: string | null;
-  eventType: string | null;
-  status: string | null;
-  dateFrom: string | null;
-  dateTo: string | null;
-};
-
-export type CreateCompanyEventInput = {
-  companyId: string;
-  eventType: string;
-  title: string;
-  eventDate: string;
-  eventTime: string | null;
-  status: string;
-  sourceType: string;
-  sourceAdapterId: string | null;
-  sourceEventKey: string | null;
-  sourceUrl: string | null;
-  attribution: string | null;
-  fetchedAt: string | null;
-};
+// Input types GENERATED from src-tauri/src/storage/types.rs via ts-rs (ADR 0048).
+export type { ListCompanyEventsInput } from "./generated/ListCompanyEventsInput";
+export type { CreateCompanyEventInput } from "./generated/CreateCompanyEventInput";
 
 export function listCompanyEvents(input: ListCompanyEventsInput) {
   return callCommand<CompanyEvent[]>("list_company_events", { input });

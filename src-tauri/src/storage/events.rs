@@ -327,40 +327,14 @@ pub(super) fn ingest_gpw_market_event_items(
         }
     }
 
-    transaction.execute(
-        "
-        UPDATE source_adapters
-        SET last_success_at = ?1,
-            last_error_at = NULL,
-            last_error = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?2
-        ",
-        params![&fetched_at, GPW_MARKET_EVENTS_ADAPTER_ID],
-    )?;
-    sources::set_source_adapter_state(
+    super::ingestion::record_source_outcome(
         &transaction,
         GPW_MARKET_EVENTS_ADAPTER_ID,
-        "last_items_fetched",
-        &items.len().to_string(),
-    )?;
-    sources::set_source_adapter_state(
-        &transaction,
-        GPW_MARKET_EVENTS_ADAPTER_ID,
-        "last_items_created",
-        &items_created.to_string(),
-    )?;
-    sources::set_source_adapter_state(
-        &transaction,
-        GPW_MARKET_EVENTS_ADAPTER_ID,
-        "last_items_matched",
-        &items_matched.to_string(),
-    )?;
-    sources::set_source_adapter_state(
-        &transaction,
-        GPW_MARKET_EVENTS_ADAPTER_ID,
-        "last_items_unmatched",
-        &items_unmatched.to_string(),
+        &fetched_at,
+        items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
     )?;
 
     transaction.commit()?;
@@ -480,40 +454,14 @@ pub(super) fn ingest_bankier_calendar_event_items(
         }
     }
 
-    transaction.execute(
-        "
-        UPDATE source_adapters
-        SET last_success_at = ?1,
-            last_error_at = NULL,
-            last_error = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?2
-        ",
-        params![&fetched_at, BANKIER_CALENDAR_ADAPTER_ID],
-    )?;
-    sources::set_source_adapter_state(
+    super::ingestion::record_source_outcome(
         &transaction,
         BANKIER_CALENDAR_ADAPTER_ID,
-        "last_items_fetched",
-        &items.len().to_string(),
-    )?;
-    sources::set_source_adapter_state(
-        &transaction,
-        BANKIER_CALENDAR_ADAPTER_ID,
-        "last_items_created",
-        &items_created.to_string(),
-    )?;
-    sources::set_source_adapter_state(
-        &transaction,
-        BANKIER_CALENDAR_ADAPTER_ID,
-        "last_items_matched",
-        &items_matched.to_string(),
-    )?;
-    sources::set_source_adapter_state(
-        &transaction,
-        BANKIER_CALENDAR_ADAPTER_ID,
-        "last_items_unmatched",
-        &items_unmatched.to_string(),
+        &fetched_at,
+        items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
     )?;
 
     transaction.commit()?;
@@ -663,4 +611,51 @@ pub(super) fn get_company_event(connection: &Connection, id: &str) -> StorageRes
             company_event_from_row,
         )
         .map_err(StorageError::from)
+}
+
+use super::database::Database;
+/// events domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::events()`.
+#[derive(Clone)]
+pub struct EventStore {
+    db: Database,
+}
+
+impl EventStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn ingest_gpw_market_event_items(
+        &self,
+        items: &[GpwMarketEventItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.db.checkout()?;
+
+        ingest_gpw_market_event_items(&mut connection, items)
+    }
+
+    pub fn ingest_bankier_calendar_event_items(
+        &self,
+        items: &[BankierCalendarEventItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.db.checkout()?;
+
+        ingest_bankier_calendar_event_items(&mut connection, items)
+    }
+
+    pub fn list_company_events(
+        &self,
+        input: CompanyEventListInput,
+    ) -> StorageResult<Vec<CompanyEvent>> {
+        let connection = self.db.checkout()?;
+
+        list_company_events(&connection, input)
+    }
+
+    pub fn create_company_event(&self, input: NewCompanyEvent) -> StorageResult<CompanyEvent> {
+        let connection = self.db.checkout()?;
+
+        create_company_event(&connection, input)
+    }
 }

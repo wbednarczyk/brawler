@@ -1,0 +1,56 @@
+---
+source: src/fundamentals/scorecard.rs
+expression: outcomes
+---
+[
+    (
+        "pass",
+        CriterionOutcome {
+            verdict: Pass,
+            measured_value: Some(
+                "0.18",
+            ),
+            measured_unit: None,
+            threshold: Some(
+                "0.15",
+            ),
+        },
+    ),
+    (
+        "fail",
+        CriterionOutcome {
+            verdict: Fail,
+            measured_value: Some(
+                "0.18",
+            ),
+            measured_unit: None,
+            threshold: Some(
+                "0.2",
+            ),
+        },
+    ),
+    (
+        "partial",
+        CriterionOutcome {
+            verdict: Partial,
+            measured_value: Some(
+                "0.13",
+            ),
+            measured_unit: None,
+            threshold: Some(
+                "0.15",
+            ),
+        },
+    ),
+    (
+        "unavailable",
+        CriterionOutcome {
+            verdict: Unavailable,
+            measured_value: None,
+            measured_unit: None,
+            threshold: Some(
+                "0.15",
+            ),
+        },
+    ),
+]

@@ -15,6 +15,7 @@ import { GlobalSearch } from "./GlobalSearch";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { sections, type Section } from "./navigation";
 import { createAppShortcutDefinitions, type AppShortcutActionMap } from "./shortcuts";
+import { useDeveloperMode } from "./state/SettingsContext";
 
 type SourceStatusTone = "ok" | "warn" | "danger";
 
@@ -45,7 +46,6 @@ type AppShellProps = {
   totalUnreadFeedItems: number;
   updateTheme: (theme: Theme) => void;
   openSourceStatus: () => void;
-  developerMode: boolean;
 };
 
 export function AppShell({
@@ -69,8 +69,8 @@ export function AppShell({
   totalUnreadFeedItems,
   updateTheme,
   openSourceStatus,
-  developerMode,
 }: AppShellProps) {
+  const developerMode = useDeveloperMode();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
   const shortcuts = useMemo(() => createAppShortcutDefinitions(
@@ -158,7 +158,10 @@ export function AppShell({
         <div className="brand">
           <div className="brand-mark">B</div>
           <div>
-            <div className="brand-title">Brawler</div>
+            <div className="brand-heading">
+              <div className="brand-title">Brawler</div>
+              <span className="brand-version">{health ? `v${health.version}` : "v…"}</span>
+            </div>
             <div className="brand-subtitle">{t("app.brand.subtitle")}</div>
           </div>
         </div>
@@ -238,7 +241,6 @@ export function AppShell({
                 </button>
               );
             })}
-          <span className="version-label">{health ? `v${health.version}` : "v..."}</span>
         </div>
       </nav>
 

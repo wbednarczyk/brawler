@@ -1,42 +1,14 @@
 import { callCommand } from "./tauri";
+import type { SearchInput } from "./generated/SearchInput";
+import type { SearchResults } from "./generated/SearchResults";
 
-export type SearchContentType =
-  | "company"
-  | "watchlist"
-  | "feed_item"
-  | "notebook_entry"
-  | "transcript_segment"
-  | "event"
-  | "research_brief"
-  | "digest";
-
-export type SearchMatch = {
-  contentType: SearchContentType;
-  sourceId: string;
-  companyId: string | null;
-  // Navigational container when the item's own id is not the target (e.g. the
-  // transcript job for a transcript segment).
-  parentId: string | null;
-  title: string;
-  snippet: string;
-  score: number;
-};
-
-export type SearchGroup = {
-  contentType: SearchContentType;
-  matches: SearchMatch[];
-};
-
-export type SearchResults = {
-  groups: SearchGroup[];
-};
-
-export type SearchInput = {
-  query: string;
-  contentTypes?: SearchContentType[];
-  companyId?: string | null;
-  limit?: number;
-};
+// GENERATED from src-tauri/src/commands/search.rs + storage/search.rs via ts-rs
+// (ADR 0048); SearchContentType comes from the marker enum in api_ts_unions.rs.
+export type { SearchContentType } from "./generated/SearchContentType";
+export type { SearchMatch } from "./generated/SearchMatch";
+export type { SearchGroup } from "./generated/SearchGroup";
+export type { SearchResults } from "./generated/SearchResults";
+export type { SearchInput } from "./generated/SearchInput";
 
 export function search(input: SearchInput) {
   return callCommand<SearchResults>("search", { input });

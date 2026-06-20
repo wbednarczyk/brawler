@@ -1,5 +1,21 @@
 use super::*;
 
+// The source URLs for the live adapters come from each adapter module; the
+// disabled-placeholder URLs are pinned here as an independent oracle (they no
+// longer live as constants in `storage::mod`, since the catalog now sources them
+// from the source-adapter registry — ADR 0050).
+use crate::source_adapters::bankier_calendar::SOURCE_URL as BANKIER_CALENDAR_SOURCE_URL;
+use crate::source_adapters::bankier_company::SOURCE_URL as BANKIER_COMPANY_SOURCE_URL;
+use crate::source_adapters::bankier_rss::SOURCE_URL as BANKIER_RSS_SOURCE_URL;
+use crate::source_adapters::gpw_market_events::SOURCE_URL as GPW_MARKET_EVENTS_SOURCE_URL;
+use crate::source_adapters::newconnect_company_directory::SOURCE_URL as NEWCONNECT_DIRECTORY_SOURCE_URL;
+
+const PORTAL_ANALIZ_SOURCE_URL: &str = "https://portalanaliz.pl/";
+const BANKIER_FIRMA_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/firma.xml";
+const BANKIER_WIADOMOSCI_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/wiadomosci.xml";
+const STREFA_REPORT_CALENDAR_SOURCE_URL: &str = "https://strefainwestorow.pl/dane/raporty";
+const MONEY_CALENDAR_SOURCE_URL: &str = "https://www.money.pl/gielda/raporty/";
+
 #[test]
 fn lists_seeded_source_adapters() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -283,4 +299,72 @@ fn records_source_adapter_attempt_state() {
 
     assert!(adapter.last_attempt_at.is_some());
     assert_eq!(adapter.last_trigger.as_deref(), Some("scheduler"));
+}
+
+/// Drift guard (ADR 0050 / ADR 0045): the source-adapter registry is the SSOT
+/// for catalog metadata, but `source_type`, `fetch_mode`, and `markets` are also
+/// seeded into the database by migrations. This binds the two so the Rust
+/// registry and the seed migrations cannot silently diverge — every catalog row
+/// must match its registry descriptor field-for-field.
+#[test]
+fn registry_matches_seeded_catalog() {
+    use crate::source_adapters::registry as adapter_registry;
+
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let adapters = state
+        .list_source_adapters_with_developer(true)
+        .expect("source adapters should list");
+
+    // Every seeded adapter has a registry descriptor, and vice versa.
+    assert_eq!(adapters.len(), adapter_registry::REGISTRY.len());
+
+    for adapter in &adapters {
+        let descriptor = adapter_registry::descriptor(&adapter.id).unwrap_or_else(|| {
+            panic!(
+                "catalog adapter {} missing a registry descriptor",
+                adapter.id
+            )
+        });
+
+        assert_eq!(
+            adapter.display_name, descriptor.display_name,
+            "{}",
+            adapter.id
+        );
+        assert_eq!(adapter.source_url, descriptor.source_url, "{}", adapter.id);
+        assert_eq!(
+            adapter.source_type, descriptor.source_type,
+            "{}",
+            adapter.id
+        );
+        assert_eq!(adapter.fetch_mode, descriptor.fetch_mode, "{}", adapter.id);
+        assert_eq!(
+            adapter.rate_limit_policy, descriptor.rate_limit_policy,
+            "{}",
+            adapter.id
+        );
+        assert_eq!(
+            adapter.policy_note, descriptor.policy_note,
+            "{}",
+            adapter.id
+        );
+        assert_eq!(
+            adapter.visibility,
+            descriptor.visibility.as_str(),
+            "{}",
+            adapter.id
+        );
+        assert_eq!(
+            adapter.markets,
+            descriptor
+                .markets
+                .iter()
+                .map(|m| (*m).to_owned())
+                .collect::<Vec<_>>(),
+            "{}",
+            adapter.id
+        );
+    }
 }

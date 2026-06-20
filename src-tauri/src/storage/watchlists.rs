@@ -1,4 +1,56 @@
+use super::database::Database;
 use super::*;
+
+/// Watchlist domain store (Architecture v2 / ADR 0050). Owns its own
+/// [`Database`] connection source and exposes only watchlist operations, so a
+/// command can depend on this store instead of the whole `AppState` facade. The
+/// SQL lives in the free functions below; the store is the thin checkout-and-call
+/// surface. Reach it via `AppState::watchlists()`.
+#[derive(Clone)]
+pub struct WatchlistStore {
+    db: Database,
+}
+
+impl WatchlistStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_watchlists(&self) -> StorageResult<Vec<Watchlist>> {
+        let connection = self.db.checkout()?;
+        list_watchlists(&connection)
+    }
+
+    pub fn list_watchlist_memberships(&self) -> StorageResult<Vec<WatchlistMembership>> {
+        let connection = self.db.checkout()?;
+        list_watchlist_memberships(&connection)
+    }
+
+    pub fn create_watchlist(&self, input: NewWatchlist) -> StorageResult<Watchlist> {
+        let connection = self.db.checkout()?;
+        create_watchlist(&connection, input)
+    }
+
+    pub fn rename_watchlist(&self, input: WatchlistUpdate) -> StorageResult<Watchlist> {
+        let connection = self.db.checkout()?;
+        rename_watchlist(&connection, input)
+    }
+
+    pub fn delete_watchlist(&self, watchlist_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        delete_watchlist(&connection, watchlist_id)
+    }
+
+    pub fn add_company_to_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        add_company_to_watchlist(&connection, input)
+    }
+
+    pub fn remove_company_from_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        remove_company_from_watchlist(&connection, input)
+    }
+}
 
 pub(super) fn list_watchlists(connection: &Connection) -> StorageResult<Vec<Watchlist>> {
     let mut statement = connection.prepare(

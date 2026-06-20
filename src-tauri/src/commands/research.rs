@@ -259,17 +259,9 @@ pub fn list_research_digests(
 }
 
 fn spawn_research_brief_job(state: app_state::AppState, job_id: String) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = jobs::research_briefs::run_research_brief_job(&state, &job_id) {
-            let _ = state.mark_research_brief_job_failed(&job_id, "unknown", &error);
-        }
-    });
+    jobs::handlers::enqueue_per_job(&state, jobs::handlers::RESEARCH_BRIEF_KIND, &job_id);
 }
 
 fn spawn_research_digest_job(state: app_state::AppState, job_id: String) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = jobs::research_digests::run_research_digest_job(&state, &job_id) {
-            let _ = state.mark_research_digest_job_failed(&job_id, "unknown", &error);
-        }
-    });
+    jobs::handlers::enqueue_per_job(&state, jobs::handlers::RESEARCH_DIGEST_KIND, &job_id);
 }

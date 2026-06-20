@@ -23,7 +23,7 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: help install dev frontend-preview build check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: help install dev frontend-preview build check check-fast coverage bench mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
@@ -84,6 +84,63 @@ build:
 
 check:
 	$(NIX) npm run check
+
+# Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
+# suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
+# Rust compile with the JS suites. Opt-in until a measured win promotes it to
+# the default; `make check` stays the sequential release-gate parity path.
+check-fast:
+	$(NIX) npm run check:parallel
+
+# Coverage measurement + ratchet (ADR 0048): frontend (Vitest v8) + Rust
+# (cargo-llvm-cov) line coverage, then fail if either drops below the committed
+# floor in coverage-baseline.json. Periodic (slow instrumented Rust build), not
+# part of `make check`.
+coverage:
+	$(NIX) npm run test:coverage
+	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov --summary-only --json --output-path ../coverage/rust-summary.json'
+	$(NIX) npm run coverage:ratchet
+
+# Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049): the
+# similarity scan, RSS parse, and formula parse. Runs criterion, then the
+# bench-ratchet flags any kernel that regressed beyond tolerance against
+# bench-baseline.json. Machine-dependent and slow — NEVER part of `make check`;
+# run on the reference machine and update the baseline deliberately.
+bench:
+	$(NIX) bash -c 'cd src-tauri && cargo bench --bench transforms'
+	$(NIX) npm run bench:ratchet
+
+# Mutation testing of the deterministic cores (ADR 0048, scope per ADR 0049):
+# verifies tests catch behavior changes, not just execute code — the strong
+# signal that the property/golden tests actually KILL defects (line coverage does
+# not prove this). Scope follows the highest-risk pure transform logic: the DSL
+# parser/evaluator, the migration runner, feed dedup/matching, and the source
+# normalization core (slug/Polish/link normalizers, now invariant-tested in T1).
+# Uses nextest for a fast per-mutant test pass. Periodic/manual — slow (rebuilds
+# + runs the suite per mutant), never in `make check`; run at epic/milestone
+# closure cadence and triage every survivor by adding an assertion.
+mutants:
+	$(NIX) bash -c "cd src-tauri && cargo mutants --test-tool nextest \
+	  -f 'src/fundamentals/expr/**' \
+	  -f 'src/storage/migrations.rs' \
+	  -f 'src/storage/feed_matching.rs' \
+	  -f 'src/source_adapters/parsing.rs' \
+	  -f 'src/entity_resolution.rs'"
+
+# Generate the TypeScript API DTOs from the Rust source (ADR 0048): ts-rs emits
+# src/api/generated/ from the #[ts(export)] structs (behind the ts-export feature).
+# TS_RS_LARGE_INT=number renders i64/u64 as `number` (not the ts-rs default
+# `bigint`) so generated DTOs match the hand-written contract — our row counts,
+# timestamps-as-millis, and id-free numeric fields are all JS-safe integers.
+# Decimal/monetary fields stay explicit `#[ts(type = "string")]` on the field.
+types:
+	$(NIX) bash -c 'cd src-tauri && TS_RS_LARGE_INT=number cargo test --features ts-export export_bindings'
+
+# Drift guard: regenerate, then fail if the committed bindings differ from the
+# Rust source (i.e. a struct changed but `make types` was not rerun).
+types-check: types
+	git diff --exit-code -- src/api/generated || \
+	  (echo "✖ src/api/generated is stale — run 'make types' and commit the result." && exit 1)
 
 # Full epic/milestone-closure suite: the hard gate first, then the opt-in/periodic
 # suites (knip dead-code audit, Playwright browser UI smoke) that are NOT in

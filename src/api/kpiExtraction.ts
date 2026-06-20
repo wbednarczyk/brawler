@@ -1,63 +1,15 @@
 import { callCommand } from "./tauri";
 import type { FinancialFact } from "./financialsTypes";
+import type { KpiExtractionProposal } from "./generated/KpiExtractionProposal";
+import type { KpiExtractionJob } from "./generated/KpiExtractionJob";
+import type { StartKpiExtractionInput } from "./generated/StartKpiExtractionInput";
+import type { ConfirmKpiProposalInput } from "./generated/ConfirmKpiProposalInput";
 
-export type KpiExtractionProposal = {
-  id: string;
-  jobId: string;
-  metricKey: string;
-  label: string;
-  valueNumeric: string;
-  unit: string | null;
-  currency: string | null;
-  asReportedValue: string | null;
-  asReportedScale: string | null;
-  measureWindow: string | null;
-  confidence: string | null;
-  sourceSnippet: string | null;
-  isProposedKpi: boolean;
-  status: string;
-  factId: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type KpiExtractionJob = {
-  id: string;
-  companyId: string;
-  reportDocumentId: string;
-  providerId: string;
-  model: string;
-  promptVersion: string;
-  periodHint: string | null;
-  status: string;
-  errorCode: string | null;
-  error: string | null;
-  detectedFiscalYear: number | null;
-  detectedPeriodType: string | null;
-  detectedPeriodEndDate: string | null;
-  detectedCurrency: string | null;
-  detectedLanguage: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  finishedAt: string | null;
-  proposals: KpiExtractionProposal[];
-};
-
-export type StartKpiExtractionInput = {
-  reportDocumentId: string;
-  periodHint?: string;
-  providerMode?: string;
-};
-
-export type ConfirmKpiProposalInput = {
-  proposalId: string;
-  valueNumeric?: string;
-  currency?: string;
-  fiscalYear?: number;
-  periodType?: string;
-  periodEndDate?: string;
-  acceptAsNewKpi?: boolean;
-};
+// GENERATED from src-tauri/src/storage/kpi_extraction.rs + commands via ts-rs (ADR 0048).
+export type { KpiExtractionProposal } from "./generated/KpiExtractionProposal";
+export type { KpiExtractionJob } from "./generated/KpiExtractionJob";
+export type { StartKpiExtractionInput } from "./generated/StartKpiExtractionInput";
+export type { ConfirmKpiProposalInput } from "./generated/ConfirmKpiProposalInput";
 
 export function startKpiExtraction(input: StartKpiExtractionInput) {
   return callCommand<KpiExtractionJob>("start_kpi_extraction", { input });

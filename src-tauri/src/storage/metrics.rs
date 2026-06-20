@@ -11,6 +11,11 @@ use serde::Serialize;
 use super::{settings, StorageError, StorageResult};
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricKind {
     Counter,
@@ -18,6 +23,11 @@ pub enum MetricKind {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "snake_case")]
 pub enum MetricUnit {
     Count,
@@ -26,6 +36,11 @@ pub enum MetricUnit {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricLabel {
     pub key: String,
@@ -33,6 +48,11 @@ pub struct MetricLabel {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricSample {
     pub name: String,
@@ -45,6 +65,11 @@ pub struct MetricSample {
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalMetricsSnapshot {
     pub collected_at: String,

@@ -1,15 +1,11 @@
 import { callCommand } from "./tauri";
 import type { FeedDeleteResult, FeedItem, FeedPruneResult } from "./types";
+import type { UpdateFeedItemStateInput } from "./generated/UpdateFeedItemStateInput";
+import type { PruneOldFeedItemsInput } from "./generated/PruneOldFeedItemsInput";
 
-export type UpdateFeedItemStateInput = {
-  id: string;
-  read: boolean;
-  saved: boolean;
-};
-
-export type PruneOldFeedItemsInput = {
-  retentionDays: number;
-};
+// Input types GENERATED via ts-rs (ADR 0048).
+export type { UpdateFeedItemStateInput } from "./generated/UpdateFeedItemStateInput";
+export type { PruneOldFeedItemsInput } from "./generated/PruneOldFeedItemsInput";
 
 export function listFeedItems() {
   return callCommand<FeedItem[]>("list_feed_items");

@@ -81,6 +81,19 @@ import {
   formatGeminiModel,
 } from "../shared/formatting/labels";
 import { LocaleContext, makeTextTranslator, makeTranslator } from "../shared/locale";
+import { SettingsProvider } from "./state/SettingsContext";
+import { SourcesProvider } from "./state/SourcesContext";
+import {
+  CompaniesProvider,
+  EventsProvider,
+  InboxProvider,
+  NotebooksProvider,
+  ReportSeasonProvider,
+  ResearchProvider,
+  SettingsScreenProvider,
+  TranscriptsProvider,
+  WatchlistsProvider,
+} from "./state/screenViewModels";
 import type { CompanyEventForm, CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { NotebookForm } from "../shared/types/notebook";
 import type {
@@ -1400,6 +1413,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
 
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
+      <SettingsProvider value={settings ?? null}>
       <AppShell
         activeSection={activeSection}
         dbRefreshState={dbRefreshState}
@@ -1420,7 +1434,6 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
         shortcutActions={shortcutActions}
         totalUnreadFeedItems={totalUnreadFeedItems}
         updateTheme={updateTheme}
-        developerMode={Boolean(settings?.developerMode)}
       >
         <section
           className={activeSection === "Inbox" ? "content-grid" : "content-grid content-grid-single"}
@@ -1432,536 +1445,570 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
           }
         >
           {activeSection === "Inbox" ? (
-            <InboxScreen
-              watchlists={watchlists}
-              companies={companies}
-              feedTypes={feedTypes}
-              feedSources={feedSources}
-              feedSignalCategories={feedSignalCategories}
-              filteredFeedItems={filteredFeedItems}
-              signalsByFeedItemId={signalsByFeedItemId}
-              signalsError={signalsError}
-              aiSignalClassificationState={aiSignalClassificationState}
-              aiSignalFallbackEnabled={Boolean(settings?.espiAiFallbackEnabled)}
-              selectedFeedItem={selectedFeedItem}
-              selectedFeedCompany={selectedFeedCompany}
-              aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
-              aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
-              aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
-              aiAnalysisProviderConfigured={Boolean(settings?.aiProviders.generalAnalysisProvider)}
-              inboxStatusFilter={inboxStatusFilter}
-              searchQuery={searchQuery}
-              inboxWatchlistFilter={inboxWatchlistFilter}
-              inboxCompanyFilter={inboxCompanyFilter}
-              inboxTypeFilter={inboxTypeFilter}
-              inboxSignalFilter={inboxSignalFilter}
-              inboxSourceFilter={inboxSourceFilter}
-              inboxReviewStats={inboxReviewStats}
-              inboxEmptyState={inboxEmptyState}
-              hasActiveInboxFilters={hasActiveInboxFilters}
-              deleteUnsavedFeedState={deleteUnsavedFeedState}
-              sourceRefreshState={sourceRefreshState}
-              detailPaneFraction={detailPaneFraction}
-              detailPaneMinFraction={detailPaneMinFraction}
-              detailPaneMaxFraction={detailPaneMaxFraction}
-              feedError={feedError}
-              deleteUnsavedFeedError={deleteUnsavedFeedError}
-              sourceRefreshError={sourceRefreshError}
-              healthError={healthError}
-              databaseError={databaseError}
-              setInboxStatusFilter={setInboxStatusFilter}
-              setSearchQuery={setSearchQuery}
-              setInboxWatchlistFilter={setInboxWatchlistFilter}
-              setInboxCompanyFilter={setInboxCompanyFilter}
-              setInboxTypeFilter={setInboxTypeFilter}
-              setInboxSignalFilter={setInboxSignalFilter}
-              setInboxSourceFilter={setInboxSourceFilter}
-              confirmCompanySignal={confirmCompanySignal}
-              rejectCompanySignal={rejectCompanySignal}
-              runAiSignalClassification={runAiSignalClassification}
-              setSelectedFeedItemId={setSelectedFeedItemId}
-              setActiveSection={setActiveSection}
-              markVisibleInboxAsRead={markVisibleInboxAsRead}
-              deleteUnsavedFeedItems={deleteUnsavedFeedItems}
-              clearInboxFilters={clearInboxFilters}
-              refreshSources={refreshSources}
-              openSourceStatus={openSourceStatus}
-              toggleFeedItemReadState={toggleFeedItemReadState}
-              selectFeedItemFromKeyboard={selectFeedItemFromKeyboard}
-              updateSelectedFeedItem={updateSelectedFeedItem}
-              openCompanyWorkspaceFromFeedItem={openCompanyWorkspaceFromFeedItem}
-              openFeedItemNoteDraft={openFeedItemNoteDraft}
-              startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-              retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
-              resizeDetailPaneWithKeyboard={resizeDetailPaneWithKeyboard}
-              startDetailPaneResize={startDetailPaneResize}
-              resizeDetailPane={resizeDetailPane}
-              stopDetailPaneResize={stopDetailPaneResize}
-              feedItemSummary={feedItemSummary}
-              formatTimestamp={formatTimestamp}
-            />
+            <InboxProvider
+              value={{
+                watchlists,
+                companies,
+                feedTypes,
+                feedSources,
+                feedSignalCategories,
+                filteredFeedItems,
+                signalsByFeedItemId,
+                signalsError,
+                aiSignalClassificationState,
+                selectedFeedItem,
+                selectedFeedCompany,
+                aiAnalysisJobsByFeedItemId,
+                aiAnalysisErrorByFeedItemId,
+                aiAnalysisRequestInFlightByFeedItemId,
+                inboxStatusFilter,
+                searchQuery,
+                inboxWatchlistFilter,
+                inboxCompanyFilter,
+                inboxTypeFilter,
+                inboxSignalFilter,
+                inboxSourceFilter,
+                inboxReviewStats,
+                inboxEmptyState,
+                hasActiveInboxFilters,
+                deleteUnsavedFeedState,
+                sourceRefreshState,
+                detailPaneFraction,
+                detailPaneMinFraction,
+                detailPaneMaxFraction,
+                feedError,
+                deleteUnsavedFeedError,
+                sourceRefreshError,
+                healthError,
+                databaseError,
+                setInboxStatusFilter,
+                setSearchQuery,
+                setInboxWatchlistFilter,
+                setInboxCompanyFilter,
+                setInboxTypeFilter,
+                setInboxSignalFilter,
+                setInboxSourceFilter,
+                confirmCompanySignal,
+                rejectCompanySignal,
+                runAiSignalClassification,
+                setSelectedFeedItemId,
+                setActiveSection,
+                markVisibleInboxAsRead,
+                deleteUnsavedFeedItems,
+                clearInboxFilters,
+                refreshSources,
+                openSourceStatus,
+                toggleFeedItemReadState,
+                selectFeedItemFromKeyboard,
+                updateSelectedFeedItem,
+                openCompanyWorkspaceFromFeedItem,
+                openFeedItemNoteDraft,
+                startFeedItemAiAnalysis,
+                retryFeedItemAiAnalysis,
+                resizeDetailPaneWithKeyboard,
+                startDetailPaneResize,
+                resizeDetailPane,
+                stopDetailPaneResize,
+                feedItemSummary,
+                formatTimestamp,
+              }}
+            >
+              <InboxScreen />
+            </InboxProvider>
           ) : null}
           {activeSection === "Companies" ? (
-            <CompaniesScreen
-              watchlists={watchlists}
-              companyFieldRefs={companyFieldRefs}
-              companyForm={companyForm}
-              companyFormRegistryMatches={companyFormRegistryMatches}
-              companyListSearch={companyListSearch}
-              companyWatchlistFilter={companyWatchlistFilter}
-              filteredCompanies={filteredCompanies}
-              companies={companies}
-              selectedCompany={selectedCompany}
-              workspaceAutoFocusId={workspaceAutoFocusId}
-              clearWorkspaceAutoFocus={() => setWorkspaceAutoFocusId(null)}
-              membershipsByCompany={membershipsByCompany}
-              selectedCompanyFeedStats={selectedCompanyFeedStats}
-              companyWorkspaceTab={companyWorkspaceTab}
-              selectedCompanyFeedItems={selectedCompanyFeedItems}
-              selectedCompanyFeedItem={selectedCompanyFeedItem}
-              aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
-              aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
-              aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
-              aiAnalysisProviderConfigured={Boolean(settings?.aiProviders.generalAnalysisProvider)}
-              selectedCompanyNotebookEntries={selectedCompanyNotebookEntries}
-              isNotebookComposerOpen={isNotebookComposerOpen}
-              notebookForm={notebookForm}
-              selectedNotebookEntryId={selectedNotebookEntryId}
-              selectedNotebookEntry={selectedNotebookEntry}
-              notebookEditMode={isNotebookEditMode}
-              notebookEditForm={notebookEditForm}
-              isNotebookEditDirty={isNotebookEditDirty}
-              notebookError={notebookError}
-              companiesError={companiesError}
-              lookupStatus={lookupStatus}
-              createCompany={createCompany}
-              updateCompanyForm={updateCompanyForm}
-              clearCompanyFormField={clearCompanyFormField}
-              lookupCompanyIfUseful={lookupCompanyIfUseful}
-              lookupCompany={lookupCompany}
-              applyRegistryEntryToCompanyForm={applyRegistryEntryToCompanyForm}
-              setCompanyListSearch={setCompanyListSearch}
-              setCompanyWatchlistFilter={setCompanyWatchlistFilter}
-              openWatchlistFromCompanyRow={openWatchlistFromCompanyRow}
-              openCompanyWorkspace={openCompanyWorkspace}
-              openCompanyWorkspaceFromKeyboard={openCompanyWorkspaceFromKeyboard}
-              deleteCompany={deleteCompany}
-              setCompanyWorkspaceTab={setCompanyWorkspaceTab}
-              toggleCompanyFeedItem={toggleCompanyFeedItem}
-              selectCompanyFeedItemFromKeyboard={selectCompanyFeedItemFromKeyboard}
-              updateFeedItemState={updateFeedItemState}
-              inspectCompanyFeedItem={inspectCompanyFeedItem}
-              openFeedItemNoteDraft={openFeedItemNoteDraft}
-              startFeedItemAiAnalysis={startFeedItemAiAnalysis}
-              retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
-              openCompanyInboxFilter={openCompanyInboxFilter}
-              setNotebookComposerOpen={setNotebookComposerOpen}
-              updateNotebookForm={updateNotebookForm}
-              createNotebookEntry={createNotebookEntry}
-              setSelectedNotebookEntryId={setSelectedNotebookEntryId}
-              saveNotebookEntry={saveNotebookEntry}
-              cancelNotebookEdit={cancelNotebookEdit}
-              setNotebookEditMode={setNotebookEditMode}
-              updateNotebookEditForm={updateNotebookEditForm}
-              NotebookDateField={NotebookDateField}
-              NotebookQuarterField={NotebookQuarterField}
-              MarkdownNoteBody={MarkdownNoteBody}
-              renderNotebookOrigins={renderNotebookOrigins}
-              formatTimestamp={formatTimestamp}
-              feedItemSummary={feedItemSummary}
-              financialPeriods={financialPeriods}
-              financialFacts={financialFacts}
-              kpiDefinitions={kpiDefinitions}
-              fundamentalsForm={fundamentalsForm}
-              financialFactForm={financialFactForm}
-              selectedFinancialFactId={selectedFinancialFactId}
-              isFinancialFactEditMode={isFinancialFactEditMode}
-              fundamentalsError={fundamentalsError}
-              fundamentalsLoadError={fundamentalsLoadError}
-              createFinancialPeriod={createFinancialPeriod}
-              saveFinancialFact={saveFinancialFact}
-              deleteFinancialFact={deleteFinancialFact}
-              selectFinancialFact={selectFinancialFact}
-              startEditingFinancialFact={startEditingFinancialFact}
-              cancelEditingFinancialFact={cancelEditingFinancialFact}
-              updateFundamentalsForm={updateFundamentalsForm}
-              updateFinancialFactForm={updateFinancialFactForm}
-            />
+            <CompaniesProvider
+              value={{
+                watchlists,
+                companyFieldRefs,
+                companyForm,
+                companyFormRegistryMatches,
+                companyListSearch,
+                companyWatchlistFilter,
+                filteredCompanies,
+                companies,
+                selectedCompany,
+                workspaceAutoFocusId,
+                clearWorkspaceAutoFocus: () => setWorkspaceAutoFocusId(null),
+                membershipsByCompany,
+                selectedCompanyFeedStats,
+                companyWorkspaceTab,
+                selectedCompanyFeedItems,
+                selectedCompanyFeedItem,
+                aiAnalysisJobsByFeedItemId,
+                aiAnalysisErrorByFeedItemId,
+                aiAnalysisRequestInFlightByFeedItemId,
+                selectedCompanyNotebookEntries,
+                isNotebookComposerOpen,
+                notebookForm,
+                selectedNotebookEntryId,
+                selectedNotebookEntry,
+                notebookEditMode: isNotebookEditMode,
+                notebookEditForm,
+                isNotebookEditDirty,
+                notebookError,
+                companiesError,
+                lookupStatus,
+                createCompany,
+                updateCompanyForm,
+                clearCompanyFormField,
+                lookupCompanyIfUseful,
+                lookupCompany,
+                applyRegistryEntryToCompanyForm,
+                setCompanyListSearch,
+                setCompanyWatchlistFilter,
+                openWatchlistFromCompanyRow,
+                openCompanyWorkspace,
+                openCompanyWorkspaceFromKeyboard,
+                deleteCompany,
+                setCompanyWorkspaceTab,
+                toggleCompanyFeedItem,
+                selectCompanyFeedItemFromKeyboard,
+                updateFeedItemState,
+                inspectCompanyFeedItem,
+                openFeedItemNoteDraft,
+                startFeedItemAiAnalysis,
+                retryFeedItemAiAnalysis,
+                openCompanyInboxFilter,
+                setNotebookComposerOpen,
+                updateNotebookForm,
+                createNotebookEntry,
+                setSelectedNotebookEntryId,
+                saveNotebookEntry,
+                cancelNotebookEdit,
+                setNotebookEditMode,
+                updateNotebookEditForm,
+                NotebookDateField,
+                NotebookQuarterField,
+                MarkdownNoteBody,
+                renderNotebookOrigins,
+                formatTimestamp,
+                feedItemSummary,
+                financialPeriods,
+                financialFacts,
+                kpiDefinitions,
+                fundamentalsForm,
+                financialFactForm,
+                selectedFinancialFactId,
+                isFinancialFactEditMode,
+                fundamentalsError,
+                fundamentalsLoadError,
+                createFinancialPeriod,
+                saveFinancialFact,
+                deleteFinancialFact,
+                selectFinancialFact,
+                startEditingFinancialFact,
+                cancelEditingFinancialFact,
+                updateFundamentalsForm,
+                updateFinancialFactForm,
+              }}
+            >
+              <CompaniesScreen />
+            </CompaniesProvider>
           ) : null}
           {activeSection === "Watchlists" ? (
-            <WatchlistsScreen
-              companies={companies}
-              watchlists={watchlists}
-              watchlistMemberships={watchlistMemberships}
-              watchlistsError={watchlistsError}
-              selectedWatchlistId={selectedManagedWatchlistId}
-              setSelectedWatchlistId={setSelectedManagedWatchlistId}
-              createWatchlist={createWatchlist}
-              renameWatchlist={renameWatchlist}
-              deleteWatchlist={deleteWatchlist}
-              addCompanyToWatchlist={addCompanyToWatchlist}
-              removeCompanyFromWatchlist={removeCompanyFromWatchlist}
-            />
+            <WatchlistsProvider
+              value={{
+                companies,
+                watchlists,
+                watchlistMemberships,
+                watchlistsError,
+                selectedWatchlistId: selectedManagedWatchlistId,
+                setSelectedWatchlistId: setSelectedManagedWatchlistId,
+                createWatchlist,
+                renameWatchlist,
+                deleteWatchlist,
+                addCompanyToWatchlist,
+                removeCompanyFromWatchlist,
+              }}
+            >
+              <WatchlistsScreen />
+            </WatchlistsProvider>
           ) : null}
           {activeSection === "Research" ? (
-            <ResearchScreen
-              companies={companies}
-              watchlists={watchlists}
-              watchlistMemberships={watchlistMemberships}
-              mode={researchMode}
-              selectedCompanyId={selectedResearchCompanyId}
-              selectedWatchlistId={selectedResearchWatchlistId}
-              selectedWatchlistCompanyId={selectedResearchWatchlistCompanyId}
-              cascadeToCompanies={researchCascadeToCompanies}
-              selectedEvidenceTypes={researchEvidenceTypes}
-              changedOnly={researchChangedOnly}
-              timeline={researchTimeline}
-              questions={researchQuestions}
-              selectedQuestionId={selectedResearchQuestionId}
-              questionTitle={researchQuestionTitle}
-              questionBody={researchQuestionBody}
-              questionLinks={researchQuestionLinks}
-              briefJobs={researchBriefJobs}
-              digestJobs={researchDigestJobs}
-              reminders={researchReminders}
-              error={researchError}
-              loading={researchLoading}
-              reviewInFlight={researchReviewInFlight}
-              questionInFlight={researchQuestionInFlight}
-              briefInFlight={researchBriefInFlight}
-              digestInFlight={researchDigestInFlight}
-              reminderInFlight={researchReminderInFlight}
-              setMode={setResearchMode}
-              setSelectedCompanyId={setSelectedResearchCompanyId}
-              setSelectedWatchlistId={setSelectedResearchWatchlistId}
-              setSelectedWatchlistCompanyId={setSelectedResearchWatchlistCompanyId}
-              setSelectedQuestionId={setSelectedResearchQuestionId}
-              setQuestionTitle={setResearchQuestionTitle}
-              setQuestionBody={setResearchQuestionBody}
-              setCascadeToCompanies={setResearchCascadeToCompanies}
-              setChangedOnly={setResearchChangedOnly}
-              toggleEvidenceType={toggleResearchEvidenceType}
-              clearEvidenceTypes={clearResearchEvidenceTypes}
-              refreshTimeline={() => {
-                void refreshResearchTimeline();
+            <ResearchProvider
+              value={{
+                companies,
+                watchlists,
+                watchlistMemberships,
+                mode: researchMode,
+                selectedCompanyId: selectedResearchCompanyId,
+                selectedWatchlistId: selectedResearchWatchlistId,
+                selectedWatchlistCompanyId: selectedResearchWatchlistCompanyId,
+                cascadeToCompanies: researchCascadeToCompanies,
+                selectedEvidenceTypes: researchEvidenceTypes,
+                changedOnly: researchChangedOnly,
+                timeline: researchTimeline,
+                questions: researchQuestions,
+                selectedQuestionId: selectedResearchQuestionId,
+                questionTitle: researchQuestionTitle,
+                questionBody: researchQuestionBody,
+                questionLinks: researchQuestionLinks,
+                briefJobs: researchBriefJobs,
+                digestJobs: researchDigestJobs,
+                reminders: researchReminders,
+                error: researchError,
+                loading: researchLoading,
+                reviewInFlight: researchReviewInFlight,
+                questionInFlight: researchQuestionInFlight,
+                briefInFlight: researchBriefInFlight,
+                digestInFlight: researchDigestInFlight,
+                reminderInFlight: researchReminderInFlight,
+                setMode: setResearchMode,
+                setSelectedCompanyId: setSelectedResearchCompanyId,
+                setSelectedWatchlistId: setSelectedResearchWatchlistId,
+                setSelectedWatchlistCompanyId: setSelectedResearchWatchlistCompanyId,
+                setSelectedQuestionId: setSelectedResearchQuestionId,
+                setQuestionTitle: setResearchQuestionTitle,
+                setQuestionBody: setResearchQuestionBody,
+                setCascadeToCompanies: setResearchCascadeToCompanies,
+                setChangedOnly: setResearchChangedOnly,
+                toggleEvidenceType: toggleResearchEvidenceType,
+                clearEvidenceTypes: clearResearchEvidenceTypes,
+                refreshTimeline: () => {
+                  void refreshResearchTimeline();
+                },
+                markReviewed: () => {
+                  void markResearchReviewed();
+                },
+                createQuestion: () => {
+                  void createResearchQuestion();
+                },
+                updateQuestionStatus: (questionId, status) => {
+                  void updateResearchQuestionStatus(questionId, status);
+                },
+                deleteQuestion: (questionId) => {
+                  void deleteResearchQuestion(questionId);
+                },
+                linkEvidence: (item) => {
+                  void linkEvidenceToSelectedQuestion(item);
+                },
+                unlinkEvidence: (linkId) => {
+                  void unlinkEvidenceFromSelectedQuestion(linkId);
+                },
+                startBrief: () => {
+                  void startResearchBrief();
+                },
+                startDigest: () => {
+                  void startResearchDigest();
+                },
+                createReminder: (title, body, dueAt) => {
+                  void createResearchReminder(title, body, dueAt);
+                },
+                completeReminder: (reminderId) => {
+                  void completeResearchReminder(reminderId);
+                },
+                snoozeReminder: (reminderId) => {
+                  void snoozeResearchReminder(reminderId);
+                },
+                reopenReminder: (reminderId) => {
+                  void reopenResearchReminder(reminderId);
+                },
+                deleteReminder: (reminderId) => {
+                  void deleteResearchReminder(reminderId);
+                },
+                openEvidence: openResearchEvidence,
+                openEvidenceUrl: openExternalUrl,
+                formatTimestamp,
               }}
-              markReviewed={() => {
-                void markResearchReviewed();
-              }}
-              createQuestion={() => {
-                void createResearchQuestion();
-              }}
-              updateQuestionStatus={(questionId, status) => {
-                void updateResearchQuestionStatus(questionId, status);
-              }}
-              deleteQuestion={(questionId) => {
-                void deleteResearchQuestion(questionId);
-              }}
-              linkEvidence={(item) => {
-                void linkEvidenceToSelectedQuestion(item);
-              }}
-              unlinkEvidence={(linkId) => {
-                void unlinkEvidenceFromSelectedQuestion(linkId);
-              }}
-              startBrief={() => {
-                void startResearchBrief();
-              }}
-              startDigest={() => {
-                void startResearchDigest();
-              }}
-              createReminder={(title, body, dueAt) => {
-                void createResearchReminder(title, body, dueAt);
-              }}
-              completeReminder={(reminderId) => {
-                void completeResearchReminder(reminderId);
-              }}
-              snoozeReminder={(reminderId) => {
-                void snoozeResearchReminder(reminderId);
-              }}
-              reopenReminder={(reminderId) => {
-                void reopenResearchReminder(reminderId);
-              }}
-              deleteReminder={(reminderId) => {
-                void deleteResearchReminder(reminderId);
-              }}
-              openEvidence={openResearchEvidence}
-              openEvidenceUrl={openExternalUrl}
-              formatTimestamp={formatTimestamp}
-            />
+            >
+              <ResearchScreen />
+            </ResearchProvider>
           ) : null}
           {activeSection === "Notebooks" ? (
-            <NotebooksScreen
-              companies={filteredNotebookScreenCompanies}
-              totalCompanyCount={companies.length}
-              watchlists={watchlists}
-              notebookEntries={notebookEntries}
-              selectedNotebookScreenCompany={selectedNotebookScreenCompany}
-              selectedNotebookScreenEntries={selectedNotebookScreenEntries}
-              selectedNotebookScreenEntry={selectedNotebookScreenEntry}
-              isNotebookScreenComposerOpen={isNotebookScreenComposerOpen}
-              isNotebookScreenEditMode={isNotebookScreenEditMode}
-              isNotebookScreenEditDirty={isNotebookScreenEditDirty}
-              notebookScreenKindFilter={notebookScreenKindFilter}
-              notebookScreenWatchlistFilter={notebookScreenWatchlistFilter}
-              notebookScreenClaimStatusFilter={notebookScreenClaimStatusFilter}
-              notebookScreenFollowUpFilter={notebookScreenFollowUpFilter}
-              notebookScreenTagFilter={notebookScreenTagFilter}
-              notebookScreenForm={notebookScreenForm}
-              notebookScreenEditForm={notebookScreenEditForm}
-              notebookError={notebookError}
-              selectNotebookScreenCompany={selectNotebookScreenCompany}
-              showNotebookCompanyOpenClaims={showNotebookCompanyOpenClaims}
-              showNotebookCompanyFollowUps={showNotebookCompanyFollowUps}
-              focusCompanyWorkspace={focusCompanyWorkspace}
-              toggleNotebookScreenComposer={toggleNotebookScreenComposer}
-              discardNotebookScreenDraft={discardNotebookScreenDraft}
-              createNotebookScreenEntry={createNotebookScreenEntry}
-              toggleNotebookScreenEntry={toggleNotebookScreenEntry}
-              saveNotebookScreenEntry={saveNotebookScreenEntry}
-              deleteNotebookScreenEntry={deleteNotebookScreenEntry}
-              cancelNotebookScreenEdit={cancelNotebookScreenEdit}
-              setNotebookScreenEditMode={setNotebookScreenEditMode}
-              setNotebookScreenKindFilter={setNotebookScreenKindFilter}
-              setNotebookScreenWatchlistFilter={setNotebookScreenWatchlistFilter}
-              setNotebookScreenClaimStatusFilter={setNotebookScreenClaimStatusFilter}
-              setNotebookScreenFollowUpFilter={setNotebookScreenFollowUpFilter}
-              setNotebookScreenTagFilter={setNotebookScreenTagFilter}
-              updateNotebookScreenForm={updateNotebookScreenForm}
-              updateNotebookScreenEditForm={updateNotebookScreenEditForm}
-              NotebookDateField={NotebookDateField}
-              NotebookQuarterField={NotebookQuarterField}
-              MarkdownNoteBody={MarkdownNoteBody}
-              renderNotebookOrigins={renderNotebookOrigins}
-            />
+            <NotebooksProvider
+              value={{
+                companies: filteredNotebookScreenCompanies,
+                totalCompanyCount: companies.length,
+                watchlists,
+                notebookEntries,
+                selectedNotebookScreenCompany,
+                selectedNotebookScreenEntries,
+                selectedNotebookScreenEntry,
+                isNotebookScreenComposerOpen,
+                isNotebookScreenEditMode,
+                isNotebookScreenEditDirty,
+                notebookScreenKindFilter,
+                notebookScreenWatchlistFilter,
+                notebookScreenClaimStatusFilter,
+                notebookScreenFollowUpFilter,
+                notebookScreenTagFilter,
+                notebookScreenForm,
+                notebookScreenEditForm,
+                notebookError,
+                selectNotebookScreenCompany,
+                showNotebookCompanyOpenClaims,
+                showNotebookCompanyFollowUps,
+                focusCompanyWorkspace,
+                toggleNotebookScreenComposer,
+                discardNotebookScreenDraft,
+                createNotebookScreenEntry,
+                toggleNotebookScreenEntry,
+                saveNotebookScreenEntry,
+                deleteNotebookScreenEntry,
+                cancelNotebookScreenEdit,
+                setNotebookScreenEditMode,
+                setNotebookScreenKindFilter,
+                setNotebookScreenWatchlistFilter,
+                setNotebookScreenClaimStatusFilter,
+                setNotebookScreenFollowUpFilter,
+                setNotebookScreenTagFilter,
+                updateNotebookScreenForm,
+                updateNotebookScreenEditForm,
+                NotebookDateField,
+                NotebookQuarterField,
+                MarkdownNoteBody,
+                renderNotebookOrigins,
+              }}
+            >
+              <NotebooksScreen />
+            </NotebooksProvider>
           ) : null}
           {activeSection === "ReportSeason" ? (
-            <ReportSeasonScreen
-              watchlists={watchlists}
-              openCompanyWorkspace={(companyId, tab) => {
-                setSelectedCompanyId(companyId);
-                setCompanyWorkspaceTab(tab);
-                setActiveSection("Companies");
+            <ReportSeasonProvider
+              value={{
+                watchlists,
+                openCompanyWorkspace: (companyId, tab) => {
+                  setSelectedCompanyId(companyId);
+                  setCompanyWorkspaceTab(tab);
+                  setActiveSection("Companies");
+                },
               }}
-            />
+            >
+              <ReportSeasonScreen />
+            </ReportSeasonProvider>
           ) : null}
           {activeSection === "Events" ? (
-            <EventsScreen
-              companies={companies}
-              watchlists={watchlists}
-              companyEvents={companyEvents}
-              companyEventsError={companyEventsError}
-              selectedCompanyEventId={selectedCompanyEventId}
-              sourceRefreshState={sourceRefreshState}
-              selectedSourceAdapterId={selectedSourceAdapterId}
-              sourceAdapterRefreshInFlight={sourceAdapterRefreshInFlight}
-              companyEventViewMode={companyEventViewMode}
-              companyEventMode={companyEventMode}
-              companyEventWeekRange={companyEventWeekRange}
-              companyEventWorkingWeekDays={companyEventWorkingWeekDays}
-              companyEventWeekendDays={companyEventWeekendDays}
-              companyEventWeekendEvents={companyEventWeekendEvents}
-              companyEventsByDate={companyEventsByDate}
-              companyEventWatchlistFilter={companyEventWatchlistFilter}
-              companyEventCompanyFilter={companyEventCompanyFilter}
-              companyEventTypeFilter={companyEventTypeFilter}
-              companyEventStatusFilter={companyEventStatusFilter}
-              companyEventDateFrom={companyEventDateFrom}
-              companyEventDateTo={companyEventDateTo}
-              companyEventTypes={companyEventTypes}
-              companyEventStatuses={companyEventStatuses}
-              isCompanyEventComposerOpen={isCompanyEventComposerOpen}
-              companyEventForm={companyEventForm}
-              companyEventCreateError={companyEventCreateError}
-              companyEventTypeOptions={companyEventTypeOptions}
-              companyEventStatusOptions={companyEventStatusOptions}
-              refreshEventSources={refreshEventSources}
-              confirmDerivedEvent={confirmDerivedEvent}
-              openCompanyEventComposer={openCompanyEventComposer}
-              setCompanyEventViewMode={setCompanyEventViewMode}
-              setCompanyEventMode={setCompanyEventMode}
-              setCompanyEventWeekAnchorDate={setCompanyEventWeekAnchorDate}
-              setCompanyEventWatchlistFilter={setCompanyEventWatchlistFilter}
-              setCompanyEventCompanyFilter={setCompanyEventCompanyFilter}
-              setCompanyEventTypeFilter={setCompanyEventTypeFilter}
-              setCompanyEventStatusFilter={setCompanyEventStatusFilter}
-              setCompanyEventDateFrom={setCompanyEventDateFrom}
-              setCompanyEventDateTo={setCompanyEventDateTo}
-              setCompanyEventComposerOpen={setCompanyEventComposerOpen}
-              setCompanyEventCreateError={setCompanyEventCreateError}
-              setCompanyEventForm={setCompanyEventForm}
-              setSelectedCompanyEventId={setSelectedCompanyEventId}
-              clearCompanyEventFilters={clearCompanyEventFilters}
-              createCompanyEvent={createCompanyEvent}
-              NotebookDateField={NotebookDateField}
-              formatLocalDate={formatLocalDate}
-              parseLocalDate={parseLocalDate}
-              addLocalDays={addLocalDays}
-              formatWeekRange={formatWeekRange}
-              formatTimestamp={formatTimestamp}
-              formatCompanyEventType={formatCompanyEventType}
-              formatCompanyEventStatus={formatCompanyEventStatus}
-              formatCompanyEventSourceType={formatCompanyEventSourceType}
-              companyEventDueLabel={companyEventDueLabel}
-              companyEventDueClass={companyEventDueClass}
-              openExternalUrl={openExternalUrl}
-            />
+            <EventsProvider
+              value={{
+                companies,
+                watchlists,
+                companyEvents,
+                companyEventsError,
+                selectedCompanyEventId,
+                sourceRefreshState,
+                selectedSourceAdapterId,
+                sourceAdapterRefreshInFlight,
+                companyEventViewMode,
+                companyEventMode,
+                companyEventWeekRange,
+                companyEventWorkingWeekDays,
+                companyEventWeekendDays,
+                companyEventWeekendEvents,
+                companyEventsByDate,
+                companyEventWatchlistFilter,
+                companyEventCompanyFilter,
+                companyEventTypeFilter,
+                companyEventStatusFilter,
+                companyEventDateFrom,
+                companyEventDateTo,
+                companyEventTypes,
+                companyEventStatuses,
+                isCompanyEventComposerOpen,
+                companyEventForm,
+                companyEventCreateError,
+                companyEventTypeOptions,
+                companyEventStatusOptions,
+                refreshEventSources,
+                confirmDerivedEvent,
+                openCompanyEventComposer,
+                setCompanyEventViewMode,
+                setCompanyEventMode,
+                setCompanyEventWeekAnchorDate,
+                setCompanyEventWatchlistFilter,
+                setCompanyEventCompanyFilter,
+                setCompanyEventTypeFilter,
+                setCompanyEventStatusFilter,
+                setCompanyEventDateFrom,
+                setCompanyEventDateTo,
+                setCompanyEventComposerOpen,
+                setCompanyEventCreateError,
+                setCompanyEventForm,
+                setSelectedCompanyEventId,
+                clearCompanyEventFilters,
+                createCompanyEvent,
+                NotebookDateField,
+                formatLocalDate,
+                parseLocalDate,
+                addLocalDays,
+                formatWeekRange,
+                formatTimestamp,
+                formatCompanyEventType,
+                formatCompanyEventStatus,
+                formatCompanyEventSourceType,
+                companyEventDueLabel,
+                companyEventDueClass,
+                openExternalUrl,
+              }}
+            >
+              <EventsScreen />
+            </EventsProvider>
           ) : null}
           {activeSection === "Transcripts" ? (
-            <TranscriptsScreen
-              companies={companies}
-              settings={settings}
-              geminiCredentialStatus={geminiCredentialStatus}
-              transcriptJobs={transcriptJobs}
-              transcriptJobsError={transcriptJobsError}
-              transcriptJobForm={transcriptJobForm}
-              transcriptJobCreateError={transcriptJobCreateError}
-              transcriptJobCreateState={transcriptJobCreateState}
-              transcriptJobRunInFlight={transcriptJobRunInFlight}
-              selectedTranscriptJobId={selectedTranscriptJobId}
-              transcriptSegmentsByJobId={transcriptSegmentsByJobId}
-              transcriptSegmentsErrorByJobId={transcriptSegmentsErrorByJobId}
-              transcriptSegmentSearchByJobId={transcriptSegmentSearchByJobId}
-              selectedTranscriptSegmentIdsByJobId={selectedTranscriptSegmentIdsByJobId}
-              transcriptNoteDraftJobId={transcriptNoteDraftJobId}
-              transcriptNoteForm={transcriptNoteForm}
-              transcriptNoteErrorByJobId={transcriptNoteErrorByJobId}
-              transcriptNoteSaveInFlight={transcriptNoteSaveInFlight}
-              transcriptLinkQueryByJobId={transcriptLinkQueryByJobId}
-              transcriptLinkErrorByJobId={transcriptLinkErrorByJobId}
-              transcriptLinkInFlight={transcriptLinkInFlight}
-              transcriptDeleteInFlight={transcriptDeleteInFlight}
-              transcriptDescriptionDraftByJobId={transcriptDescriptionDraftByJobId}
-              transcriptDescriptionErrorByJobId={transcriptDescriptionErrorByJobId}
-              transcriptDescriptionSaveInFlight={transcriptDescriptionSaveInFlight}
-              transcriptCompanySuggestions={transcriptCompanySuggestions}
-              NotebookDateField={NotebookDateField}
-              NotebookQuarterField={NotebookQuarterField}
-              setTranscriptJobForm={setTranscriptJobForm}
-              setTranscriptJobCreateError={setTranscriptJobCreateError}
-              setTranscriptSegmentSearchByJobId={setTranscriptSegmentSearchByJobId}
-              setTranscriptDescriptionDraftByJobId={setTranscriptDescriptionDraftByJobId}
-              refreshTranscriptJobs={refreshTranscriptJobs}
-              createTranscriptJob={createTranscriptJob}
-              toggleTranscriptJob={toggleTranscriptJob}
-              toggleTranscriptJobFromKeyboard={toggleTranscriptJobFromKeyboard}
-              runTranscriptJob={runTranscriptJob}
-              deleteTranscriptJob={deleteTranscriptJob}
-              updateTranscriptJobDescription={updateTranscriptJobDescription}
-              updateTranscriptLinkQuery={updateTranscriptLinkQuery}
-              linkTranscriptJobCompany={linkTranscriptJobCompany}
-              toggleTranscriptSegment={toggleTranscriptSegment}
-              openTranscriptNoteDraft={openTranscriptNoteDraft}
-              createTranscriptNotebookEntry={createTranscriptNotebookEntry}
-              discardTranscriptNoteDraft={discardTranscriptNoteDraft}
-              updateTranscriptNoteForm={updateTranscriptNoteForm}
-              selectTranscriptCompany={selectTranscriptCompany}
-              formatAiProvider={formatAiProvider}
-              formatGeminiModel={formatGeminiModel}
-              formatCredentialConfigured={formatCredentialConfigured}
-              formatEnumLabel={formatEnumLabel}
-            />
+            <TranscriptsProvider
+              value={{
+                companies,
+                settings,
+                geminiCredentialStatus,
+                transcriptJobs,
+                transcriptJobsError,
+                transcriptJobForm,
+                transcriptJobCreateError,
+                transcriptJobCreateState,
+                transcriptJobRunInFlight,
+                selectedTranscriptJobId,
+                transcriptSegmentsByJobId,
+                transcriptSegmentsErrorByJobId,
+                transcriptSegmentSearchByJobId,
+                selectedTranscriptSegmentIdsByJobId,
+                transcriptNoteDraftJobId,
+                transcriptNoteForm,
+                transcriptNoteErrorByJobId,
+                transcriptNoteSaveInFlight,
+                transcriptLinkQueryByJobId,
+                transcriptLinkErrorByJobId,
+                transcriptLinkInFlight,
+                transcriptDeleteInFlight,
+                transcriptDescriptionDraftByJobId,
+                transcriptDescriptionErrorByJobId,
+                transcriptDescriptionSaveInFlight,
+                transcriptCompanySuggestions,
+                NotebookDateField,
+                NotebookQuarterField,
+                setTranscriptJobForm,
+                setTranscriptJobCreateError,
+                setTranscriptSegmentSearchByJobId,
+                setTranscriptDescriptionDraftByJobId,
+                refreshTranscriptJobs,
+                createTranscriptJob,
+                toggleTranscriptJob,
+                toggleTranscriptJobFromKeyboard,
+                runTranscriptJob,
+                deleteTranscriptJob,
+                updateTranscriptJobDescription,
+                updateTranscriptLinkQuery,
+                linkTranscriptJobCompany,
+                toggleTranscriptSegment,
+                openTranscriptNoteDraft,
+                createTranscriptNotebookEntry,
+                discardTranscriptNoteDraft,
+                updateTranscriptNoteForm,
+                selectTranscriptCompany,
+                formatAiProvider,
+                formatGeminiModel,
+                formatCredentialConfigured,
+                formatEnumLabel,
+              }}
+            >
+              <TranscriptsScreen />
+            </TranscriptsProvider>
           ) : null}
           {activeSection === "Sources" ? (
-            <SourcesScreen
-              sourceAdapters={sourceAdapters}
-              sourceAdaptersError={sourceAdaptersError}
-              developerMode={Boolean(settings?.developerMode)}
-              selectedSourceAdapterId={selectedSourceAdapterId}
-              sourceRefreshState={sourceRefreshState}
-              sourceRefreshResult={sourceRefreshResult}
-              sourceRefreshError={sourceRefreshError}
-              sourceAdapterRefreshInFlight={sourceAdapterRefreshInFlight}
-              registryRefreshState={registryRefreshState}
-              registryRefreshResult={registryRefreshResult}
-              registryRefreshError={registryRefreshError}
-              companyRegistryEntries={companyRegistryEntries}
-              filteredCompanyRegistryEntries={filteredCompanyRegistryEntries}
-              companyRegistryEntriesError={companyRegistryEntriesError}
-              isCompanyRegistryListExpanded={isCompanyRegistryListExpanded}
-              companyRegistrySearch={companyRegistrySearch}
-              addingRegistryTicker={addingRegistryTicker}
-              unmatchedSourceItems={unmatchedSourceItems}
-              unmatchedSourceItemsError={unmatchedSourceItemsError}
-              expandedUnmatchedAdapters={expandedUnmatchedAdapters}
-              refreshSources={refreshSources}
-              refreshCompanyRegistry={refreshCompanyRegistry}
-              setSourceEnabled={setSourceEnabled}
-              toggleSourceAdapter={toggleSourceAdapter}
-              toggleSourceAdapterFromKeyboard={toggleSourceAdapterFromKeyboard}
-              toggleCompanyRegistryList={toggleCompanyRegistryList}
-              toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
-              setCompanyRegistrySearch={setCompanyRegistrySearch}
-              addCompanyFromRegistry={addCompanyFromRegistry}
-              openExternalUrl={openExternalUrl}
-              formatSourceScheduler={formatSourceScheduler}
-              formatNextRefresh={formatNextRefresh}
-              formatTimestamp={formatTimestamp}
-            />
+            <SourcesProvider
+              value={{
+                sourceAdapters,
+                sourceAdaptersError,
+                selectedSourceAdapterId,
+                sourceRefreshState,
+                sourceRefreshResult,
+                sourceRefreshError,
+                sourceAdapterRefreshInFlight,
+                registryRefreshState,
+                registryRefreshResult,
+                registryRefreshError,
+                companyRegistryEntries,
+                filteredCompanyRegistryEntries,
+                companyRegistryEntriesError,
+                isCompanyRegistryListExpanded,
+                companyRegistrySearch,
+                addingRegistryTicker,
+                unmatchedSourceItems,
+                unmatchedSourceItemsError,
+                expandedUnmatchedAdapters,
+                refreshSources,
+                refreshCompanyRegistry,
+                setSourceEnabled,
+                toggleSourceAdapter,
+                toggleSourceAdapterFromKeyboard,
+                toggleCompanyRegistryList,
+                toggleUnmatchedSourceItems,
+                setCompanyRegistrySearch,
+                addCompanyFromRegistry,
+                openExternalUrl,
+                formatSourceScheduler,
+                formatNextRefresh,
+                formatTimestamp,
+              }}
+            >
+              <SourcesScreen />
+            </SourcesProvider>
           ) : null}
           {activeSection === "Diagnostics" && settings?.developerMode ? (
-            <DiagnosticsScreen
-              developerMode={settings.developerMode}
-              onDisableDeveloperMode={disableDeveloperMode}
-            />
+            <DiagnosticsScreen onDisableDeveloperMode={disableDeveloperMode} />
           ) : null}
           {activeSection === "Settings" ? (
-            <SettingsScreen
-              theme={theme}
-              accentPalette={accentPalette}
-              locale={locale}
-              settings={settings}
-              settingsError={settingsError}
-              licenseError={licenseError}
-              licenseInFlight={licenseInFlight}
-              licenseKeyDraft={licenseKeyDraft}
-              licenseStatus={licenseStatus}
-              feedPruneRetentionDays={feedPruneRetentionDays}
-              feedPruneResult={feedPruneResult}
-              geminiCredentialStatus={geminiCredentialStatus}
-              geminiCredentialError={geminiCredentialError}
-              geminiCredentialInFlight={geminiCredentialInFlight}
-              geminiApiKeyDraft={geminiApiKeyDraft}
-              shortcutBindings={shortcutBindings}
-              shortcutReferences={shortcutReferences}
-              onThemeChange={updateTheme}
-              onAccentPaletteChange={updateAccentPalette}
-              onLocaleChange={updateLocale}
-              onPollIntervalChange={updatePollInterval}
-              onShortcutBindingsChange={updateShortcutBindings}
-              onYoutubeTranscriptionModelChange={updateYoutubeTranscriptionModel}
-              onYoutubeTranscriptionTimeoutChange={updateYoutubeTranscriptionTimeout}
-              onGeneralAnalysisProviderChange={updateGeneralAnalysisProvider}
-              onGeneralAnalysisModelChange={updateGeneralAnalysisModel}
-              onGeneralAnalysisTimeoutChange={updateGeneralAnalysisTimeout}
-              onEspiAiFallbackChange={updateEspiAiFallbackEnabled}
-              onLogLevelChange={updateLogLevel}
-              onLogMaxFilesChange={updateLogMaxFiles}
-              onLogMaxFileBytesChange={updateLogMaxFileBytes}
-              onDbMaxConnectionsChange={updateDbMaxConnections}
-              onDbBusyTimeoutMsChange={updateDbBusyTimeoutMs}
-              onDbAcquireTimeoutMsChange={updateDbAcquireTimeoutMs}
-              onResetDatabaseSettings={resetDatabaseSettings}
-              onClearLicenseKey={clearLicenseKey}
-              onLicenseKeyDraftChange={setLicenseKeyDraft}
-              onSubmitLicenseKey={submitLicenseKey}
-              onGeminiApiKeyDraftChange={setGeminiApiKeyDraft}
-              onSaveGeminiApiKey={saveGeminiApiKey}
-              onClearGeminiApiKey={clearGeminiApiKey}
-              onOpenGeminiApiKeyPage={() => {
-                void openUrl("https://aistudio.google.com/app/apikey");
+            <SettingsScreenProvider
+              value={{
+                theme,
+                accentPalette,
+                locale,
+                settings,
+                settingsError,
+                licenseError,
+                licenseInFlight,
+                licenseKeyDraft,
+                licenseStatus,
+                feedPruneRetentionDays,
+                feedPruneResult,
+                geminiCredentialStatus,
+                geminiCredentialError,
+                geminiCredentialInFlight,
+                geminiApiKeyDraft,
+                shortcutBindings,
+                shortcutReferences,
+                onThemeChange: updateTheme,
+                onAccentPaletteChange: updateAccentPalette,
+                onLocaleChange: updateLocale,
+                onPollIntervalChange: updatePollInterval,
+                onShortcutBindingsChange: updateShortcutBindings,
+                onYoutubeTranscriptionModelChange: updateYoutubeTranscriptionModel,
+                onYoutubeTranscriptionTimeoutChange: updateYoutubeTranscriptionTimeout,
+                onGeneralAnalysisProviderChange: updateGeneralAnalysisProvider,
+                onGeneralAnalysisModelChange: updateGeneralAnalysisModel,
+                onGeneralAnalysisTimeoutChange: updateGeneralAnalysisTimeout,
+                onEspiAiFallbackChange: updateEspiAiFallbackEnabled,
+                onLogLevelChange: updateLogLevel,
+                onLogMaxFilesChange: updateLogMaxFiles,
+                onLogMaxFileBytesChange: updateLogMaxFileBytes,
+                onDbMaxConnectionsChange: updateDbMaxConnections,
+                onDbBusyTimeoutMsChange: updateDbBusyTimeoutMs,
+                onDbAcquireTimeoutMsChange: updateDbAcquireTimeoutMs,
+                onResetDatabaseSettings: resetDatabaseSettings,
+                onClearLicenseKey: clearLicenseKey,
+                onLicenseKeyDraftChange: setLicenseKeyDraft,
+                onSubmitLicenseKey: submitLicenseKey,
+                onGeminiApiKeyDraftChange: setGeminiApiKeyDraft,
+                onSaveGeminiApiKey: saveGeminiApiKey,
+                onClearGeminiApiKey: clearGeminiApiKey,
+                onOpenGeminiApiKeyPage: () => {
+                  void openUrl("https://aistudio.google.com/app/apikey");
+                },
+                onImportApplied: refreshDatabaseBackedViews,
+                formatTimestamp,
+                formatPollInterval,
+                formatAiProvider,
+                formatGeminiModel,
+                formatCredentialConfigured,
+                formatCredentialKind,
               }}
-              onImportApplied={refreshDatabaseBackedViews}
-              formatTimestamp={formatTimestamp}
-              formatPollInterval={formatPollInterval}
-              formatAiProvider={formatAiProvider}
-              formatGeminiModel={formatGeminiModel}
-              formatCredentialConfigured={formatCredentialConfigured}
-              formatCredentialKind={formatCredentialKind}
-            />
+            >
+              <SettingsScreen />
+            </SettingsScreenProvider>
           ) : null}
 
         </section>
       </AppShell>
+      </SettingsProvider>
     </LocaleContext.Provider>
   );
 }

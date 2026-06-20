@@ -15,6 +15,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use super::vector::similarity_score;
+use super::vector_index::{BruteForceVectorIndex, VectorIndex};
 use super::{Embedder, InterpretationError, ScoredItem, SimilarityProvider, TextItem};
 
 /// Stable id of the embedding similarity implementation.
@@ -24,14 +25,25 @@ pub const EMBEDDING_SIMILARITY_ID: &str = "similarity_embedding";
 pub struct EmbeddingSimilarity {
     id: String,
     embedder: Arc<dyn Embedder>,
+    /// The nearest-neighbour ranking strategy (ADR 0050 swap boundary). Defaults
+    /// to the exhaustive cosine scan; an ANN index swaps in here.
+    index: Arc<dyn VectorIndex>,
 }
 
 impl EmbeddingSimilarity {
-    /// Build the embedding similarity provider over the given embedder.
+    /// Build the embedding similarity provider over the given embedder, ranking
+    /// with the default brute-force cosine index.
     pub fn new(embedder: Arc<dyn Embedder>) -> Self {
+        Self::with_index(embedder, Arc::new(BruteForceVectorIndex))
+    }
+
+    /// Build the provider with an explicit [`VectorIndex`] — the seam an ANN
+    /// index plugs into without changing any `SimilarityProvider` consumer.
+    pub fn with_index(embedder: Arc<dyn Embedder>, index: Arc<dyn VectorIndex>) -> Self {
         Self {
             id: EMBEDDING_SIMILARITY_ID.to_string(),
             embedder,
+            index,
         }
     }
 }
@@ -81,20 +93,24 @@ impl SimilarityProvider for EmbeddingSimilarity {
             ));
         }
 
-        let query_vector = &vectors[0];
-        let mut scored: Vec<ScoredItem> = candidates
+        let query_vector = vectors[0].clone();
+        // Pair each candidate id with its embedding, then rank through the
+        // swappable VectorIndex (ADR 0050): the brute-force cosine scan today, an
+        // ANN index later — with no change here.
+        let pairs: Vec<(String, Vec<f32>)> = candidates
             .into_iter()
-            .zip(vectors.iter().skip(1))
-            .map(|(candidate, candidate_vector)| ScoredItem {
-                id: candidate.id,
-                score: similarity_score(query_vector, candidate_vector),
-            })
+            .zip(vectors.into_iter().skip(1))
+            .map(|(candidate, candidate_vector)| (candidate.id, candidate_vector))
             .collect();
 
-        // Highest score first; ties keep input order (stable sort).
-        scored.sort_by(|a, b| b.score.total_cmp(&a.score));
-        scored.truncate(k);
-        Ok(scored)
+        let ranked = self.index.rank_top_k(&query_vector, &pairs, k);
+        Ok(ranked
+            .into_iter()
+            .map(|candidate| ScoredItem {
+                id: candidate.id,
+                score: candidate.score,
+            })
+            .collect())
     }
 }
 

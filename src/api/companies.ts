@@ -1,21 +1,11 @@
 import { callCommand } from "./tauri";
 import type { Company, CompanyLookupResult } from "./types";
+import type { LookupCompanyInput } from "./generated/LookupCompanyInput";
+import type { CreateCompanyInput } from "./generated/CreateCompanyInput";
 
-export type LookupCompanyInput = {
-  exchange: string;
-  ticker: string | null;
-  displayName: string | null;
-  isin: string | null;
-};
-
-export type CreateCompanyInput = {
-  exchange: string;
-  ticker: string;
-  displayName: string;
-  isin: string | null;
-  cik: string | null;
-  lei: string | null;
-};
+// Input types GENERATED from src-tauri/src/storage/types.rs via ts-rs (ADR 0048).
+export type { LookupCompanyInput } from "./generated/LookupCompanyInput";
+export type { CreateCompanyInput } from "./generated/CreateCompanyInput";
 
 export function listCompanies() {
   return callCommand<Company[]>("list_companies");

@@ -23,6 +23,7 @@ import { QualityPanel } from "../../shared/components/QualityPanel";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { useAiAnalysisProviderConfigured } from "../../app/state/SettingsContext";
 import {
   ActionRow,
   Button,
@@ -54,7 +55,6 @@ type CompanyWorkspaceProps = Pick<
   | "aiAnalysisJobsByFeedItemId"
   | "aiAnalysisErrorByFeedItemId"
   | "aiAnalysisRequestInFlightByFeedItemId"
-  | "aiAnalysisProviderConfigured"
   | "selectedCompanyNotebookEntries"
   | "isNotebookComposerOpen"
   | "notebookForm"
@@ -122,7 +122,6 @@ export function CompanyWorkspace({
   aiAnalysisJobsByFeedItemId,
   aiAnalysisErrorByFeedItemId,
   aiAnalysisRequestInFlightByFeedItemId,
-  aiAnalysisProviderConfigured,
   selectedCompanyNotebookEntries,
   isNotebookComposerOpen,
   notebookForm,
@@ -173,6 +172,7 @@ export function CompanyWorkspace({
   updateFinancialFactForm,
 }: CompanyWorkspaceProps) {
   const { text } = useLocale();
+  const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
   const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
   const workspaceRef = useRef<HTMLElement>(null);
   // Bumped when a backfill finishes so the report-documents panel reloads.

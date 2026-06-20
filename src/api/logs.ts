@@ -1,9 +1,8 @@
 import { callCommand } from "./tauri";
 import type { LogEntry, LogStatus } from "./types";
+import type { ListLogEntriesInput } from "./generated/ListLogEntriesInput";
 
-export type ListLogEntriesInput = {
-  limit?: number;
-};
+export type { ListLogEntriesInput } from "./generated/ListLogEntriesInput";
 
 export function getLogStatus() {
   return callCommand<LogStatus>("get_log_status");

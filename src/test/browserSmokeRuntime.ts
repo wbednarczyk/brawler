@@ -10,7 +10,6 @@ import type {
   LocalMetricsSnapshot,
   NotebookEntry,
   SourceAdapter,
-  TranscriptJob,
   UserSettings,
   Watchlist,
   WatchlistMembership,
@@ -23,7 +22,9 @@ import type {
 } from "../api/financialsTypes";
 import type { KpiExtractionJob, KpiExtractionProposal } from "../api/kpiExtraction";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
-import type { IrReportResolution } from "../api/ir";
+import type { EmbeddingModelStatus } from "../api/interpretation";
+import { createMockRuntime } from "./scenarios/runtime";
+import type { ScenarioData, ScenarioName } from "./scenarios/scenarios";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -287,7 +288,7 @@ const kpiDefinitions: KpiDefinition[] = [
   kpiDefinition("def_gross_margin", "gross_margin", "Gross margin", "percentage", null, "derived"),
 ];
 
-let financialPeriods: FinancialPeriod[] = [
+const financialPeriods: FinancialPeriod[] = [
   financialPeriod("period_cdr_2024_annual", 2024, "annual", "2024-12-31"),
   financialPeriod("period_cdr_2025_q1", 2025, "q1", "2025-03-31"),
   financialPeriod("period_cdr_2025_q2", 2025, "q2", "2025-06-30"),
@@ -297,7 +298,7 @@ let financialPeriods: FinancialPeriod[] = [
 // valueNumeric is the raw base-unit integer the DB stores; asReportedValue /
 // asReportedScale carry the original as-reported figure (the v0.37 540f931
 // formatting work renders these instead of the raw integer).
-let financialFacts: FinancialFact[] = [
+const financialFacts: FinancialFact[] = [
   financialFact("fact_rev_2024", "period_cdr_2024_annual", "def_revenue", "1093600000", "1 093,6", "mln"),
   financialFact("fact_rev_q1", "period_cdr_2025_q1", "def_revenue", "228400000", "228,4", "mln"),
   financialFact("fact_rev_q2", "period_cdr_2025_q2", "def_revenue", "251900000", "251,9", "mln"),
@@ -314,7 +315,7 @@ const kpiRelevance: KpiRelevance[] = [
   kpiRelevanceEntry("rel_eps", "def_eps", "secondary"),
 ];
 
-let reportDocuments: ReportDocument[] = [
+const reportDocuments: ReportDocument[] = [
   reportDocument(
     "doc_cdr_q3_2025",
     "period_cdr_2025_q3",
@@ -366,16 +367,8 @@ function seedExtractionJob(reportDocumentId: string): KpiExtractionJob {
   return job;
 }
 
-export function installBrowserSmokeRuntime() {
-  // Allow `?locale=pl` to preview the app in Polish (used by UI screenshot specs).
-  const requestedLocale = new URLSearchParams(window.location.search).get("locale");
-  if (requestedLocale === "pl" || requestedLocale === "en") {
-    settings.locale = requestedLocale;
-  }
-  mockIPC((command, args) => handleCommand(command, args as InvokeArgs), { shouldMockEvents: true });
-}
 
-const embeddingModelStatus = {
+const embeddingModelStatus: EmbeddingModelStatus = {
   modelId: "intfloat/multilingual-e5-small",
   dim: 384,
   weightsState: "ready",
@@ -387,167 +380,6 @@ const embeddingModelStatus = {
   featureCompiled: true,
 };
 
-function handleCommand(command: string, args: InvokeArgs) {
-  switch (command) {
-    case "health":
-      return { status: "ok", version: "0.22.0" };
-    case "database_status":
-      return { appliedMigrations: 29, companies: companies.length, sourceAdapters: sourceAdapters.length, settings: 12 };
-    case "get_license_status":
-      return licenseStatus;
-    case "get_settings":
-      return settings;
-    case "list_companies":
-      return companies;
-    case "list_watchlists":
-      return watchlists;
-    case "list_watchlist_memberships":
-      return watchlistMemberships;
-    case "list_feed_items":
-      return feedItems;
-    case "list_source_adapters":
-      return listSourceAdapters(args);
-    case "list_unmatched_source_items":
-      return [];
-    case "list_company_registry_entries":
-      return registryEntries;
-    case "list_company_events":
-      return companyEvents;
-    case "list_company_signals":
-      return companySignals;
-    case "confirm_company_signal":
-    case "reject_company_signal":
-      return null;
-    case "run_ai_signal_classification":
-      return { enabled: false, examined: 0, proposed: 0, skipped: 0 };
-    case "list_video_transcript_jobs":
-      return [] satisfies TranscriptJob[];
-    case "list_notebook_entries":
-      return notebookEntries.filter((entry) => entry.companyId === (args as { companyId?: string })?.companyId);
-    case "get_provider_credential_status":
-      return credentialStatus;
-    case "list_ai_provider_catalog":
-      return [
-        {
-          providerId: "provider_gemini",
-          label: "Gemini",
-          models: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-2.5-flash", "gemini-2.5-flash-lite"],
-          defaultModel: "gemini-3.5-flash",
-          requiresCredential: true,
-        },
-        {
-          providerId: "provider_anthropic",
-          label: "Claude (Anthropic)",
-          models: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
-          defaultModel: "claude-sonnet-4-6",
-          requiresCredential: true,
-        },
-        {
-          providerId: "provider_openai",
-          label: "OpenAI (ChatGPT)",
-          models: ["gpt-5.5", "gpt-5.1"],
-          defaultModel: "gpt-5.5",
-          requiresCredential: true,
-        },
-      ];
-    case "list_ai_analysis_jobs":
-      return [];
-    case "get_local_metrics_snapshot":
-      return localMetricsSnapshot;
-    case "refresh_gpw_company_registry_if_stale":
-      return null;
-    case "delete_unsaved_feed_items":
-      return { itemsDeleted: 0, deletedAt: "2026-06-05T09:00:00Z" };
-    case "prune_old_feed_items":
-      return { retentionDays: 30, itemsDeleted: 0, prunedAt: "2026-06-05T09:00:00Z" };
-    case "plugin:path|resolve_directory":
-      return "/tmp";
-    case "plugin:path|resolve":
-      return "/tmp/brawler-export.json";
-    case "plugin:dialog|save":
-      return "/tmp/brawler-export.json";
-    case "plugin:fs|write_text_file":
-    case "plugin:opener|open_url":
-      return null;
-
-    // ---- Fundamentals -----------------------------------------------------
-    case "list_kpi_definitions":
-      return listKpiDefinitions(args);
-    case "list_financial_periods":
-      return financialPeriods.filter((period) => period.companyId === companyIdArg(args));
-    case "list_financial_facts":
-      return listFinancialFacts(args);
-    case "list_kpi_relevance":
-      return kpiRelevance.filter((entry) => entry.companyId === companyIdArg(args));
-    case "create_financial_period":
-      return createFinancialPeriod(args);
-    case "create_financial_fact":
-      return createFinancialFact(args);
-    case "update_financial_fact":
-      return updateFinancialFact(args);
-    case "delete_financial_fact":
-      financialFacts = financialFacts.filter((fact) => fact.id !== (args as { id?: string })?.id);
-      return null;
-    case "create_kpi_definition":
-      return createKpiDefinition(args);
-
-    // ---- Report documents + IR -------------------------------------------
-    case "list_report_documents":
-      return reportDocuments.filter((document) => document.companyId === companyIdArg(args));
-    case "get_backfill_progress":
-      return null;
-    case "confirm_derived_event":
-      return null;
-    case "backfill_company_history":
-      return {
-        companyId: companyIdArg(args),
-        status: "completed",
-        pagesFetched: 0,
-        itemsIngested: 0,
-        documentsStored: 0,
-        detailErrors: 0,
-        error: null,
-        startedAt: "",
-        updatedAt: "",
-      };
-    case "get_company_ir_reports_url":
-      return irReportsUrls[companyIdArg(args)] ?? null;
-    case "set_company_ir_reports_url": {
-      const id = companyIdArg(args);
-      const url = (args as { url?: string | null })?.url ?? null;
-      if (url) irReportsUrls[id] = url;
-      else delete irReportsUrls[id];
-      return url;
-    }
-    case "capture_report_document":
-      return captureReportDocument(args);
-    case "resolve_ir_report":
-      return resolveIrReport();
-
-    // ---- KPI extraction ---------------------------------------------------
-    case "start_kpi_extraction":
-      return startKpiExtraction(args);
-    case "retry_kpi_extraction":
-      return retryKpiExtraction(args);
-    case "list_kpi_extraction":
-      return listKpiExtraction(args);
-    case "confirm_kpi_proposal":
-      return confirmKpiProposal(args);
-    case "reject_kpi_proposal":
-      return rejectKpiProposal(args);
-
-    case "get_embedding_model_status":
-    case "set_similarity_strategy":
-    case "download_embedding_model":
-    case "rebuild_embedding_index":
-      return embeddingModelStatus;
-    case "find_similar_content":
-      return { strategyId: "similarity_embedding", items: [] };
-
-    default:
-      throw new Error(`Unhandled browser smoke command: ${command}`);
-  }
-}
 
 function company(id: string, exchange: string, ticker: string, displayName: string, isin: string): Company {
   return {
@@ -622,27 +454,6 @@ function notebookEntry(id: string, companyId: string, title: string, kind: strin
     updatedAt: "2026-06-05T09:00:00Z",
     origins: [],
   };
-}
-
-function listSourceAdapters(args: InvokeArgs) {
-  const includeDeveloperOnly = Boolean(
-    (args as { input?: { includeDeveloperOnly?: boolean } } | undefined)?.input?.includeDeveloperOnly,
-  );
-
-  return includeDeveloperOnly
-    ? sourceAdapters
-    : sourceAdapters.filter((adapter) => adapter.visibility !== "developer");
-}
-
-// ---------------------------------------------------------------------------
-// Fundamentals + extraction factories and handlers
-// ---------------------------------------------------------------------------
-
-function companyIdArg(args: InvokeArgs): string {
-  const direct = (args as { companyId?: string })?.companyId;
-  if (direct) return direct;
-  const input = (args as { input?: { companyId?: string } })?.input;
-  return input?.companyId ?? "";
 }
 
 function kpiDefinition(
@@ -798,199 +609,98 @@ function proposal(
   };
 }
 
-function listKpiDefinitions(args: InvokeArgs): KpiDefinition[] {
-  const input = (args as { input?: { scope?: string; companyId?: string } })?.input;
-  return kpiDefinitions.filter((definition) => {
-    if (input?.scope && definition.scope !== input.scope) return false;
-    if (input?.companyId && definition.companyId !== input.companyId) return false;
-    return true;
-  });
-}
+// ---------------------------------------------------------------------------
+// Adapter onto the canonical mock runtime (ADR 0048 Keystone B/C, Radicle 749a5a8)
+//
+// The browser-smoke layer no longer carries its own command router: it builds
+// the ONE canonical `createMockRuntime`, injects the browser-specific seed above
+// into its store, and routes every IPC call through `runtime.invoke`. Only the
+// Tauri plugin commands (path/dialog/fs/opener) are handled locally. A
+// `window.__brawlerMockReset(scenario)` hook lets a Playwright test re-seed
+// between interactions.
+// ---------------------------------------------------------------------------
 
-function listFinancialFacts(args: InvokeArgs): FinancialFact[] {
-  const input = (args as { input?: { companyId?: string; periodId?: string; definitionId?: string } })?.input;
-  return financialFacts.filter((fact) => {
-    if (input?.companyId && fact.companyId !== input.companyId) return false;
-    if (input?.periodId && fact.periodId !== input.periodId) return false;
-    if (input?.definitionId && fact.definitionId !== input.definitionId) return false;
-    return true;
-  });
-}
+let activeRuntime: ReturnType<typeof createMockRuntime> | null = null;
 
-function createFinancialPeriod(args: InvokeArgs): FinancialPeriod {
-  const input = (args as { input?: { companyId?: string; fiscalYear?: number; periodType?: string; periodEndDate?: string } })?.input ?? {};
-  const created: FinancialPeriod = {
-    id: `period_${input.fiscalYear}_${input.periodType}_${financialPeriods.length}`,
-    companyId: input.companyId ?? FUNDAMENTALS_COMPANY_ID,
-    fiscalYear: input.fiscalYear ?? 2025,
-    periodType: input.periodType ?? "annual",
-    periodEndDate: input.periodEndDate ?? null,
-    reportEvidenceRef: null,
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-  financialPeriods = [...financialPeriods, created];
-  return created;
-}
-
-function createFinancialFact(args: InvokeArgs): FinancialFact {
-  const input = (args as { input?: Record<string, unknown> })?.input ?? {};
-  const created: FinancialFact = {
-    id: `fact_manual_${financialFacts.length}`,
-    companyId: (input.companyId as string) ?? FUNDAMENTALS_COMPANY_ID,
-    periodId: (input.periodId as string) ?? "period_cdr_2025_q3",
-    definitionId: (input.definitionId as string) ?? "def_revenue",
-    valueNumeric: (input.valueNumeric as string) ?? "0",
-    currency: (input.currency as string) ?? "PLN",
-    statementBasis: (input.statementBasis as string) ?? "consolidated",
-    attribution: (input.attribution as string) ?? "total",
-    variant: (input.variant as string) ?? "actual",
-    measureWindow: (input.measureWindow as string) ?? "period",
-    dataQuality: (input.dataQuality as string) ?? "final",
-    asReportedValue: (input.asReportedValue as string) ?? null,
-    asReportedScale: (input.asReportedScale as string) ?? null,
-    reportingStandard: (input.reportingStandard as string) ?? null,
-    extractionMethod: (input.extractionMethod as string) ?? "manual",
-    confidence: (input.confidence as string) ?? null,
-    confirmationState: (input.confirmationState as string) ?? "confirmed",
-    supersedesId: null,
-    sourceDocumentRef: (input.sourceDocumentRef as string) ?? null,
-    createdAt: NOW,
-    updatedAt: NOW,
-  };
-  financialFacts = [...financialFacts, created];
-  return created;
-}
-
-function updateFinancialFact(args: InvokeArgs): FinancialFact {
-  const input = (args as { input?: Record<string, unknown> })?.input ?? {};
-  const id = input.id as string;
-  let updated: FinancialFact | undefined;
-  financialFacts = financialFacts.map((fact) => {
-    if (fact.id !== id) return fact;
-    updated = {
-      ...fact,
-      valueNumeric: (input.valueNumeric as string) ?? fact.valueNumeric,
-      currency: (input.currency as string) ?? fact.currency,
-      dataQuality: (input.dataQuality as string) ?? fact.dataQuality,
-      confirmationState: (input.confirmationState as string) ?? fact.confirmationState,
-      updatedAt: NOW,
-    };
-    return updated;
-  });
-  return updated ?? financialFacts[0];
-}
-
-function createKpiDefinition(args: InvokeArgs): KpiDefinition {
-  const input = (args as { input?: Record<string, unknown> })?.input ?? {};
-  const created = kpiDefinition(
-    `def_custom_${kpiDefinitions.length}`,
-    (input.metricKey as string) ?? "custom",
-    (input.label as string) ?? "Custom KPI",
-    (input.valueKind as string) ?? "monetary",
-    (input.unit as string) ?? null,
-    (input.computation as string) ?? "reported",
-  );
-  created.scope = (input.scope as string) ?? "global";
-  created.companyId = (input.companyId as string) ?? null;
-  kpiDefinitions.push(created);
-  return created;
-}
-
-function captureReportDocument(args: InvokeArgs) {
-  const input = (args as { input?: { url?: string; title?: string } })?.input ?? {};
-  const id = `doc_captured_${reportDocuments.length}`;
-  reportDocuments = [
-    ...reportDocuments,
-    reportDocument(id, "period_cdr_2025_q3", input.title ?? "Captured report", input.url ?? "https://example.test/report.pdf"),
+function seedBrowserStore(data: ScenarioData) {
+  data.companies = structuredClone(companies);
+  data.watchlists = structuredClone(watchlists);
+  data.watchlistMemberships = structuredClone(watchlistMemberships);
+  data.feedItems = structuredClone(feedItems);
+  data.signals = structuredClone(companySignals);
+  data.sourceAdapters = structuredClone(sourceAdapters);
+  data.registry = structuredClone(registryEntries);
+  data.notebookEntries = structuredClone(notebookEntries);
+  data.events = structuredClone(companyEvents);
+  data.settings = structuredClone(settings);
+  data.licenseStatus = structuredClone(licenseStatus);
+  data.credentialStatuses = [structuredClone(credentialStatus)];
+  data.metricsSnapshot = structuredClone(localMetricsSnapshot);
+  data.embeddingModelStatus = structuredClone(embeddingModelStatus);
+  data.kpiDefinitions = structuredClone(kpiDefinitions);
+  data.financialPeriods = structuredClone(financialPeriods);
+  data.financialFacts = structuredClone(financialFacts);
+  data.kpiRelevance = structuredClone(kpiRelevance);
+  data.reportDocuments = structuredClone(reportDocuments);
+  data.kpiExtractionJobs = [structuredClone(seedExtractionJob("doc_cdr_q3_2025"))];
+  data.irResolutions = [
+    {
+      document: null,
+      candidates: [
+        { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_Q3_2025.pdf", label: "Q3 2025 consolidated report" },
+        { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_H1_2025.pdf", label: "H1 2025 report" },
+      ],
+      pickedUrl: null,
+      confidence: "low",
+    },
   ];
-  return { documentId: id, localPath: `${id}.pdf`, success: true, error: null };
-}
-
-function resolveIrReport(): IrReportResolution {
-  return {
-    document: null,
-    candidates: [
-      { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_Q3_2025.pdf", label: "Q3 2025 consolidated report" },
-      { url: "https://www.cdprojekt.com/en/wp-content/uploads/CDPROJEKT_H1_2025.pdf", label: "H1 2025 report" },
-    ],
-    pickedUrl: null,
-    confidence: "low",
+  data.transcriptJobs = [];
+  data.databaseStatus = {
+    appliedMigrations: 29,
+    companies: companies.length,
+    sourceAdapters: sourceAdapters.length,
+    settings: 12,
   };
 }
 
-function startKpiExtraction(args: InvokeArgs): KpiExtractionJob {
-  const reportDocumentId =
-    (args as { input?: { reportDocumentId?: string } })?.input?.reportDocumentId ?? "doc_cdr_q3_2025";
-  return seedExtractionJob(reportDocumentId);
-}
-
-function retryKpiExtraction(args: InvokeArgs): KpiExtractionJob {
-  const jobId = (args as { jobId?: string })?.jobId ?? "";
-  for (const jobs of Object.values(extractionJobs)) {
-    const match = jobs.find((job) => job.id === jobId);
-    if (match) return seedExtractionJob(match.reportDocumentId);
+function seedIrReportUrls(runtime: ReturnType<typeof createMockRuntime>) {
+  for (const [companyId, url] of Object.entries(irReportsUrls)) {
+    void runtime.invoke("set_company_ir_reports_url", { input: { companyId, url } });
   }
-  return seedExtractionJob("doc_cdr_q3_2025");
 }
 
-function listKpiExtraction(args: InvokeArgs): KpiExtractionJob[] {
-  const reportDocumentId =
-    (args as { input?: { reportDocumentId?: string } })?.input?.reportDocumentId ?? "";
-  return extractionJobs[reportDocumentId] ?? [];
-}
-
-function findProposal(proposalId: string): { job: KpiExtractionJob; proposal: KpiExtractionProposal } | null {
-  for (const jobs of Object.values(extractionJobs)) {
-    for (const job of jobs) {
-      const proposal = job.proposals.find((entry) => entry.id === proposalId);
-      if (proposal) return { job, proposal };
-    }
+export function installBrowserSmokeRuntime() {
+  // Allow `?locale=pl` to preview the app in Polish (used by UI screenshot specs).
+  const requestedLocale = new URLSearchParams(window.location.search).get("locale");
+  if (requestedLocale === "pl" || requestedLocale === "en") {
+    settings.locale = requestedLocale;
   }
-  return null;
-}
-
-function confirmKpiProposal(args: InvokeArgs): FinancialFact {
-  const input = (args as { input?: { proposalId?: string; valueNumeric?: string } })?.input ?? {};
-  const found = findProposal(input.proposalId ?? "");
-  const factId = `fact_confirmed_${financialFacts.length}`;
-  if (found) {
-    found.proposal.status = "confirmed";
-    found.proposal.factId = factId;
-  }
-  const created: FinancialFact = {
-    id: factId,
-    companyId: FUNDAMENTALS_COMPANY_ID,
-    periodId: "period_cdr_2025_q3",
-    definitionId: found ? `def_${found.proposal.metricKey}` : "def_revenue",
-    valueNumeric: input.valueNumeric ?? found?.proposal.valueNumeric ?? "0",
-    currency: "PLN",
-    statementBasis: "consolidated",
-    attribution: "total",
-    variant: "actual",
-    measureWindow: "period",
-    dataQuality: "final",
-    asReportedValue: found?.proposal.asReportedValue ?? null,
-    asReportedScale: found?.proposal.asReportedScale ?? null,
-    reportingStandard: "IFRS",
-    extractionMethod: "ai_confirmed",
-    confidence: found?.proposal.confidence ?? "high",
-    confirmationState: "confirmed",
-    supersedesId: null,
-    sourceDocumentRef: found?.job.reportDocumentId ?? null,
-    createdAt: NOW,
-    updatedAt: NOW,
+  const runtime = createMockRuntime("rich");
+  seedBrowserStore(runtime.data);
+  seedIrReportUrls(runtime);
+  activeRuntime = runtime;
+  (window as unknown as { __brawlerMockReset?: (scenario?: ScenarioName) => void }).__brawlerMockReset = (scenario) => {
+    runtime.reset(scenario ?? "rich");
+    seedBrowserStore(runtime.data);
+    seedIrReportUrls(runtime);
   };
-  financialFacts = [...financialFacts, created];
-  return created;
+  mockIPC((command, args) => dispatch(command, args as InvokeArgs), { shouldMockEvents: true });
 }
 
-function rejectKpiProposal(args: InvokeArgs): KpiExtractionProposal {
-  const proposalId = (args as { proposalId?: string })?.proposalId ?? "";
-  const found = findProposal(proposalId);
-  if (found) {
-    found.proposal.status = "rejected";
-    return found.proposal;
+function dispatch(command: string, args: InvokeArgs): unknown {
+  switch (command) {
+    case "plugin:path|resolve_directory":
+      return "/tmp";
+    case "plugin:path|resolve":
+      return "/tmp/brawler-export.json";
+    case "plugin:dialog|save":
+      return "/tmp/brawler-export.json";
+    case "plugin:fs|write_text_file":
+    case "plugin:opener|open_url":
+      return null;
+    default:
+      return activeRuntime
+        ? activeRuntime.invoke(command, args as Record<string, unknown> | undefined)
+        : null;
   }
-  throw new Error(`Unknown proposal: ${proposalId}`);
 }

@@ -1,0 +1,8 @@
+{
+  "_comment": "Benchmark ratchet floors in nanoseconds (ADR 0049, T5). `make bench` runs the criterion kernels then fails if any median exceeds its floor by more than the ratchet tolerance (1.6x). PERIODIC and machine-dependent — never part of `make check`. These were captured on the WSL2 reference machine; update deliberately when hardware or a kernel legitimately changes (the ratchet prints suggestions when a kernel gets faster).",
+  "benches": {
+    "similarity_scan_1000x384": 158557,
+    "bankier_rss_parse_200_items": 302870,
+    "parse_formula": 506
+  }
+}

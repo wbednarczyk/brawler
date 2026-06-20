@@ -5,6 +5,11 @@ use super::*;
 // ============================================================================
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportDocument {
     pub id: String,
@@ -27,14 +32,23 @@ pub struct ReportDocument {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CaptureReportDocumentInput {
     pub company_id: String,
     pub source_type: String,
     pub url: String,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub period_id: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub origin_ref: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub title: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional))]
     pub attribution: Option<String>,
 }
 
@@ -394,5 +408,85 @@ fn validate_reference_exists(
             table: table_name.to_owned(),
             id: id.to_owned(),
         })
+    }
+}
+
+use super::database::Database;
+/// report_documents domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::report_documents()`.
+#[derive(Clone)]
+pub struct ReportDocumentStore {
+    db: Database,
+}
+
+impl ReportDocumentStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_or_find_pending_report_document(
+        &self,
+        input: CaptureReportDocumentInput,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.db.checkout()?;
+
+        create_or_find_pending(&connection, input)
+    }
+
+    pub fn mark_report_document_fetched(
+        &self,
+        id: &str,
+        local_path: Option<&str>,
+        content_type: Option<&str>,
+        content_hash: Option<&str>,
+        byte_size: Option<i64>,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.db.checkout()?;
+
+        mark_fetched(
+            &connection,
+            id,
+            local_path,
+            content_type,
+            content_hash,
+            byte_size,
+        )
+    }
+
+    pub fn mark_report_document_failed(
+        &self,
+        id: &str,
+        error: &str,
+    ) -> StorageResult<ReportDocument> {
+        let connection = self.db.checkout()?;
+
+        mark_failed(&connection, id, error)
+    }
+
+    pub fn mark_report_document_metadata_only(&self, id: &str) -> StorageResult<ReportDocument> {
+        let connection = self.db.checkout()?;
+
+        mark_metadata_only(&connection, id)
+    }
+
+    pub fn list_pending_attachment_documents(&self) -> StorageResult<Vec<ReportDocument>> {
+        let connection = self.db.checkout()?;
+
+        list_pending_attachments(&connection)
+    }
+
+    pub fn get_report_document(&self, id: &str) -> StorageResult<ReportDocument> {
+        let connection = self.db.checkout()?;
+
+        get(&connection, id)
+    }
+
+    pub fn list_report_documents_by_company(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<ReportDocument>> {
+        let connection = self.db.checkout()?;
+
+        list_by_company(&connection, company_id)
     }
 }

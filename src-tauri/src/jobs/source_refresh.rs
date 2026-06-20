@@ -143,62 +143,156 @@ pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {
     );
 }
 
+/// How a registered source adapter is refreshed at runtime — the dispatch half
+/// of the `SourceAdapter` port (Architecture v2 / ADR 0050). Adding a runtime
+/// source means adding a [`RuntimeAdapter`] entry to [`runtime_adapters`], not
+/// editing a hardcoded dispatch match or sweep list.
+enum RefreshBehavior {
+    /// A feed/media/calendar source that joins the "refresh all" sweep and ingests items.
+    Feed(fn(&app_state::AppState, &str) -> Result<storage::SourceIngestionResult, String>),
+    /// A calendar source refreshable for an optional specific date; also joins the sweep.
+    Calendar(
+        fn(
+            &app_state::AppState,
+            &str,
+            Option<&str>,
+        ) -> Result<storage::SourceIngestionResult, String>,
+    ),
+    /// A company-directory source, refreshed on its own cadence (not in the sweep).
+    Directory(
+        fn(&app_state::AppState, &str) -> Result<storage::CompanyRegistryRefreshResult, String>,
+    ),
+    /// A registered-but-disabled source; refreshing it returns this reason.
+    Disabled(&'static str),
+}
+
+/// One registered runtime adapter: its id plus how it refreshes.
+struct RuntimeAdapter {
+    id: &'static str,
+    behavior: RefreshBehavior,
+}
+
+impl RuntimeAdapter {
+    /// Whether this source participates in the "refresh all runtime sources" sweep.
+    fn in_full_refresh(&self) -> bool {
+        matches!(
+            self.behavior,
+            RefreshBehavior::Feed(_) | RefreshBehavior::Calendar(_)
+        )
+    }
+
+    fn refresh(
+        &self,
+        state: &app_state::AppState,
+        trigger: &str,
+        date: Option<&str>,
+    ) -> Result<storage::SourceIngestionResult, String> {
+        match self.behavior {
+            RefreshBehavior::Feed(refresh) => refresh(state, trigger),
+            RefreshBehavior::Calendar(refresh) => refresh(state, trigger, date),
+            RefreshBehavior::Directory(refresh) => {
+                Ok(directory_ingestion_result(refresh(state, trigger)?))
+            }
+            RefreshBehavior::Disabled(reason) => Err(reason.to_owned()),
+        }
+    }
+}
+
+/// Map a company-directory refresh result onto the unified ingestion-result shape.
+fn directory_ingestion_result(
+    result: storage::CompanyRegistryRefreshResult,
+) -> storage::SourceIngestionResult {
+    storage::SourceIngestionResult {
+        adapter_id: result.adapter_id,
+        items_fetched: result.entries_fetched,
+        items_created: result.entries_upserted,
+        items_matched: 0,
+        items_unmatched: result.entries_deactivated,
+        detail_items_attempted: 0,
+        detail_items_stored: 0,
+        detail_items_failed: 0,
+        fetched_at: Some(result.fetched_at),
+    }
+}
+
+/// The registry the refresh path iterates (ADR 0050). Declaration order sets the
+/// full-refresh `fetched_at` precedence (first `Some` wins): company > calendar >
+/// market-events > rss. Sources not listed here are unknown to the refresh path.
+fn runtime_adapters() -> Vec<RuntimeAdapter> {
+    use source_adapters as sa;
+    vec![
+        RuntimeAdapter {
+            id: sa::bankier_company::ADAPTER_ID,
+            behavior: RefreshBehavior::Feed(refresh_bankier_company_for_trigger),
+        },
+        RuntimeAdapter {
+            id: sa::bankier_calendar::ADAPTER_ID,
+            behavior: RefreshBehavior::Calendar(refresh_bankier_calendar_for_trigger_and_date),
+        },
+        RuntimeAdapter {
+            id: sa::gpw_market_events::ADAPTER_ID,
+            behavior: RefreshBehavior::Feed(refresh_gpw_market_events_for_trigger),
+        },
+        RuntimeAdapter {
+            id: sa::bankier_rss::ADAPTER_ID,
+            behavior: RefreshBehavior::Feed(refresh_bankier_rss_for_trigger),
+        },
+        RuntimeAdapter {
+            id: sa::gpw_company_registry::ADAPTER_ID,
+            behavior: RefreshBehavior::Directory(refresh_gpw_company_registry_for_trigger),
+        },
+        RuntimeAdapter {
+            id: sa::newconnect_company_directory::ADAPTER_ID,
+            behavior: RefreshBehavior::Directory(refresh_newconnect_company_directory_for_trigger),
+        },
+        RuntimeAdapter {
+            id: sa::gpw_espi_ebi::ADAPTER_ID,
+            behavior: RefreshBehavior::Disabled(
+                "GPW ESPI/EBI is disabled while Bankier Company Komunikaty is the active official-report source",
+            ),
+        },
+        RuntimeAdapter {
+            id: "portal-analiz",
+            behavior: RefreshBehavior::Disabled(
+                "Portal Analiz is disabled until its authenticated adapter is implemented",
+            ),
+        },
+        RuntimeAdapter {
+            id: "bankier-firma-rss",
+            behavior: RefreshBehavior::Disabled(
+                "Bankier Firma RSS is disabled until matching quality is proven",
+            ),
+        },
+        RuntimeAdapter {
+            id: "bankier-wiadomosci-rss",
+            behavior: RefreshBehavior::Disabled(
+                "Bankier Wiadomosci RSS is disabled because broad news matching is not accepted for runtime ingestion",
+            ),
+        },
+    ]
+}
+
 fn refresh_sources_for_trigger_inner(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
-    let bankier_result = refresh_optional_source(
-        state,
-        source_adapters::bankier_rss::ADAPTER_ID,
-        trigger,
-        refresh_bankier_rss_for_trigger,
-    )?;
-    let bankier_company_result = refresh_optional_source(
-        state,
-        source_adapters::bankier_company::ADAPTER_ID,
-        trigger,
-        refresh_bankier_company_for_trigger,
-    )?;
-    let gpw_market_events_result = refresh_optional_source(
-        state,
-        source_adapters::gpw_market_events::ADAPTER_ID,
-        trigger,
-        refresh_gpw_market_events_for_trigger,
-    )?;
-    let bankier_calendar_result = refresh_optional_source(
-        state,
-        source_adapters::bankier_calendar::ADAPTER_ID,
-        trigger,
-        refresh_bankier_calendar_for_trigger,
-    )?;
+    let mut total = empty_source_result("all");
 
-    Ok(storage::SourceIngestionResult {
-        adapter_id: "all".to_owned(),
-        items_fetched: bankier_result.items_fetched
-            + bankier_company_result.items_fetched
-            + gpw_market_events_result.items_fetched
-            + bankier_calendar_result.items_fetched,
-        items_created: bankier_result.items_created
-            + bankier_company_result.items_created
-            + gpw_market_events_result.items_created
-            + bankier_calendar_result.items_created,
-        items_matched: bankier_result.items_matched
-            + bankier_company_result.items_matched
-            + gpw_market_events_result.items_matched
-            + bankier_calendar_result.items_matched,
-        items_unmatched: bankier_result.items_unmatched
-            + bankier_company_result.items_unmatched
-            + gpw_market_events_result.items_unmatched
-            + bankier_calendar_result.items_unmatched,
-        detail_items_attempted: bankier_company_result.detail_items_attempted,
-        detail_items_stored: bankier_company_result.detail_items_stored,
-        detail_items_failed: bankier_company_result.detail_items_failed,
-        fetched_at: bankier_company_result
-            .fetched_at
-            .or(bankier_calendar_result.fetched_at)
-            .or(gpw_market_events_result.fetched_at)
-            .or(bankier_result.fetched_at),
-    })
+    for adapter in runtime_adapters().iter().filter(|a| a.in_full_refresh()) {
+        let result = refresh_optional_source(state, adapter, trigger)?;
+        total.items_fetched += result.items_fetched;
+        total.items_created += result.items_created;
+        total.items_matched += result.items_matched;
+        total.items_unmatched += result.items_unmatched;
+        total.detail_items_attempted += result.detail_items_attempted;
+        total.detail_items_stored += result.detail_items_stored;
+        total.detail_items_failed += result.detail_items_failed;
+        if total.fetched_at.is_none() {
+            total.fetched_at = result.fetched_at;
+        }
+    }
+
+    Ok(total)
 }
 
 fn refresh_source_for_trigger_inner(
@@ -214,77 +308,26 @@ fn refresh_source_for_trigger_inner(
         return Err("Source is turned off".to_owned());
     }
 
-    match adapter_id {
-        source_adapters::gpw_espi_ebi::ADAPTER_ID => Err(
-            "GPW ESPI/EBI is disabled while Bankier Company Komunikaty is the active official-report source"
-                .to_owned(),
-        ),
-        source_adapters::bankier_rss::ADAPTER_ID => refresh_bankier_rss_for_trigger(state, trigger),
-        source_adapters::bankier_company::ADAPTER_ID => {
-            refresh_bankier_company_for_trigger(state, trigger)
-        }
-        source_adapters::gpw_market_events::ADAPTER_ID => {
-            refresh_gpw_market_events_for_trigger(state, trigger)
-        }
-        source_adapters::bankier_calendar::ADAPTER_ID => {
-            refresh_bankier_calendar_for_trigger_and_date(state, trigger, date)
-        }
-        source_adapters::gpw_company_registry::ADAPTER_ID => {
-            let registry_result = refresh_gpw_company_registry_for_trigger(state, trigger)?;
-            Ok(storage::SourceIngestionResult {
-                adapter_id: registry_result.adapter_id,
-                items_fetched: registry_result.entries_fetched,
-                items_created: registry_result.entries_upserted,
-                items_matched: 0,
-                items_unmatched: registry_result.entries_deactivated,
-                detail_items_attempted: 0,
-                detail_items_stored: 0,
-                detail_items_failed: 0,
-                fetched_at: Some(registry_result.fetched_at),
-            })
-        }
-        source_adapters::newconnect_company_directory::ADAPTER_ID => {
-            let registry_result = refresh_newconnect_company_directory_for_trigger(state, trigger)?;
-            Ok(storage::SourceIngestionResult {
-                adapter_id: registry_result.adapter_id,
-                items_fetched: registry_result.entries_fetched,
-                items_created: registry_result.entries_upserted,
-                items_matched: 0,
-                items_unmatched: registry_result.entries_deactivated,
-                detail_items_attempted: 0,
-                detail_items_stored: 0,
-                detail_items_failed: 0,
-                fetched_at: Some(registry_result.fetched_at),
-            })
-        }
-        "portal-analiz" => {
-            Err("Portal Analiz is disabled until its authenticated adapter is implemented".to_owned())
-        }
-        "bankier-firma-rss" => {
-            Err("Bankier Firma RSS is disabled until matching quality is proven".to_owned())
-        }
-        "bankier-wiadomosci-rss" => Err(
-            "Bankier Wiadomosci RSS is disabled because broad news matching is not accepted for runtime ingestion"
-                .to_owned(),
-        ),
-        _ => Err(format!("Unknown source adapter: {adapter_id}")),
+    match runtime_adapters().into_iter().find(|a| a.id == adapter_id) {
+        Some(adapter) => adapter.refresh(state, trigger, date),
+        None => Err(format!("Unknown source adapter: {adapter_id}")),
     }
 }
 
+/// Refresh one sweep source, skipping (empty result) when it is turned off.
 fn refresh_optional_source(
     state: &app_state::AppState,
-    adapter_id: &str,
+    adapter: &RuntimeAdapter,
     trigger: &str,
-    refresh: fn(&app_state::AppState, &str) -> Result<storage::SourceIngestionResult, String>,
 ) -> Result<storage::SourceIngestionResult, String> {
     if !state
-        .source_adapter_enabled(adapter_id)
+        .source_adapter_enabled(adapter.id)
         .map_err(|error| error.to_string())?
     {
-        return Ok(empty_source_result(adapter_id));
+        return Ok(empty_source_result(adapter.id));
     }
 
-    refresh(state, trigger)
+    adapter.refresh(state, trigger, None)
 }
 
 fn empty_source_result(adapter_id: &str) -> storage::SourceIngestionResult {
@@ -579,13 +622,6 @@ fn refresh_gpw_market_events_for_trigger(
     state
         .ingest_gpw_market_event_items(&event_items)
         .map_err(|error| error.to_string())
-}
-
-fn refresh_bankier_calendar_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::SourceIngestionResult, String> {
-    refresh_bankier_calendar_for_trigger_and_date(state, trigger, None)
 }
 
 fn refresh_bankier_calendar_for_trigger_and_date(

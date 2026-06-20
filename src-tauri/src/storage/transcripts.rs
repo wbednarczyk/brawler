@@ -7,6 +7,11 @@ use super::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateNoteFromTranscriptSelectionInput {
     pub transcript_job_id: String,
@@ -15,6 +20,11 @@ pub struct CreateNoteFromTranscriptSelectionInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptNoteDraft {
     pub title: String,
@@ -28,6 +38,11 @@ pub struct TranscriptNoteDraft {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptJob {
     pub id: String,
@@ -49,12 +64,30 @@ pub struct TranscriptJob {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "ListVideoTranscriptJobsInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptJobListInput {
     pub company_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "CreateVideoTranscriptJobInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewTranscriptJob {
     pub company_id: Option<String>,
@@ -65,6 +98,15 @@ pub struct NewTranscriptJob {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateVideoTranscriptJobInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateTranscriptJobInput {
     pub job_id: String,
@@ -72,6 +114,11 @@ pub struct UpdateTranscriptJobInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveTranscriptJobCompanyInput {
     pub job_id: String,
@@ -79,6 +126,11 @@ pub struct ResolveTranscriptJobCompanyInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscriptSegment {
     pub id: String,
@@ -734,5 +786,114 @@ fn transcript_segment_timestamp_label(segment: &TranscriptSegment) -> String {
         (Some(start_seconds), None) => format!("{start_seconds}s"),
         (None, Some(end_seconds)) => format!("0s-{end_seconds}s"),
         (None, None) => "no timestamp".to_owned(),
+    }
+}
+
+use super::database::Database;
+/// transcripts domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::transcripts()`.
+#[derive(Clone)]
+pub struct TranscriptStore {
+    db: Database,
+}
+
+impl TranscriptStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_note_from_transcript_selection(
+        &self,
+        input: CreateNoteFromTranscriptSelectionInput,
+    ) -> StorageResult<NotebookEntry> {
+        let connection = self.db.checkout()?;
+
+        create_note_from_transcript_selection(&connection, input)
+    }
+
+    pub fn list_transcript_jobs(
+        &self,
+        input: TranscriptJobListInput,
+    ) -> StorageResult<Vec<TranscriptJob>> {
+        let connection = self.db.checkout()?;
+
+        list_transcript_jobs(&connection, input)
+    }
+
+    pub fn delete_transcript_job(&self, job_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_transcript_job(&connection, job_id)
+    }
+
+    pub fn create_transcript_job(&self, input: NewTranscriptJob) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        create_transcript_job(&connection, input)
+    }
+
+    pub fn update_transcript_job(
+        &self,
+        input: UpdateTranscriptJobInput,
+    ) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        update_transcript_job(&connection, input)
+    }
+
+    pub fn list_transcript_segments(
+        &self,
+        transcript_job_id: &str,
+    ) -> StorageResult<Vec<TranscriptSegment>> {
+        let connection = self.db.checkout()?;
+
+        list_transcript_segments(&connection, transcript_job_id)
+    }
+
+    pub fn create_transcript_segment(
+        &self,
+        input: NewTranscriptSegment,
+    ) -> StorageResult<TranscriptSegment> {
+        let connection = self.db.checkout()?;
+
+        create_transcript_segment(&connection, input)
+    }
+
+    pub fn resolve_transcript_job_company(
+        &self,
+        input: ResolveTranscriptJobCompanyInput,
+    ) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        resolve_transcript_job_company(&connection, input)
+    }
+
+    pub fn get_transcript_job(&self, job_id: &str) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        get_transcript_job(&connection, job_id)
+    }
+
+    pub fn mark_transcript_job_running(&self, job_id: &str) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        mark_transcript_job_running(&connection, job_id)
+    }
+
+    pub fn mark_transcript_job_completed(&self, job_id: &str) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        mark_transcript_job_completed(&connection, job_id)
+    }
+
+    pub fn mark_transcript_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<TranscriptJob> {
+        let connection = self.db.checkout()?;
+
+        mark_transcript_job_failed(&connection, job_id, error_code, error)
     }
 }

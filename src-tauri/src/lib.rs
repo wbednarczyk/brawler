@@ -4,6 +4,7 @@ use tauri::Manager;
 pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
+pub mod entity_resolution;
 pub mod fundamentals;
 pub mod interpretation;
 pub mod ir_resolution;
@@ -17,7 +18,22 @@ pub mod signal_dates;
 pub mod source_adapters;
 pub mod storage;
 
+/// Reusable invariant assertions for data-transform property tests (ADR 0049).
+/// Test-only; never compiled into the shipped binary.
+#[cfg(test)]
+pub mod transform_invariants;
+
+/// TypeScript marker enums for API string-literal unions (ADR 0048); compiled
+/// only for `make types`. See the module docs.
+#[cfg(feature = "ts-export")]
+mod api_ts_unions;
+
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthResponse {
     pub(crate) status: &'static str,
@@ -55,22 +71,29 @@ pub fn run() {
             providers::credentials::clear_legacy_credentials();
 
             // Keep the disposable embedding index fresh: when the embedding
-            // similarity strategy is active and the model is available, run the
-            // embed/re-embed job at startup (ADR 0035). Idempotent (skips unchanged
-            // content); best-effort and non-fatal.
-            let embedding_state = state.clone();
+            // similarity strategy is active and the model is available, refresh the
+            // embed/re-embed job at startup (ADR 0035). Now enqueued onto the
+            // durable job queue (ADR 0050) instead of fire-and-forget, so a crash
+            // mid-embed resumes; the work is idempotent (skips unchanged content).
             if matches!(
-                embedding_state.get_similarity_strategy().as_deref(),
+                state.get_similarity_strategy().as_deref(),
                 Ok(interpretation::EMBEDDING_STRATEGY)
             ) {
-                tauri::async_runtime::spawn_blocking(move || {
-                    if let Err(error) =
-                        jobs::content_embedding::run_content_embedding_job(&embedding_state)
-                    {
-                        log::warn!("startup content embedding job failed: {error}");
-                    }
-                });
+                if let Err(error) = state.jobs().enqueue(
+                    jobs::handlers::CONTENT_EMBEDDING_KIND,
+                    jobs::handlers::CONTENT_EMBEDDING_KIND,
+                    "{}",
+                    3,
+                ) {
+                    log::warn!("failed to enqueue startup content embedding job: {error}");
+                }
             }
+
+            // Start the durable-queue worker: reclaim any jobs left `running` by a
+            // crash, then drain the queue off the UI thread (ADR 0050).
+            jobs::queue::spawn(std::sync::Arc::new(jobs::handlers::build_worker(
+                state.clone(),
+            )));
 
             app.manage(state);
 

@@ -51,3 +51,47 @@ pub(super) fn apply_settings_import(
 ) -> StorageResult<ImportApplyResult> {
     settings_import::apply_settings_import(connection, contents)
 }
+
+use super::database::Database;
+/// import_export domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::import_export()`.
+#[derive(Clone)]
+pub struct ImportExportStore {
+    db: Database,
+}
+
+impl ImportExportStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn export_research_data(&self) -> StorageResult<ExportPayload> {
+        let connection = self.db.checkout()?;
+
+        export_research_data(&connection)
+    }
+
+    pub fn preview_research_import(&self, contents: &str) -> StorageResult<ImportPreview> {
+        let connection = self.db.checkout()?;
+
+        preview_research_import(&connection, contents)
+    }
+
+    pub fn apply_research_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
+        let mut connection = self.db.checkout()?;
+
+        apply_research_import(&mut connection, contents)
+    }
+
+    pub fn export_settings_data(&self) -> StorageResult<ExportPayload> {
+        let connection = self.db.checkout()?;
+
+        export_settings_data(&connection)
+    }
+
+    pub fn apply_settings_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
+        let connection = self.db.checkout()?;
+
+        apply_settings_import(&connection, contents)
+    }
+}

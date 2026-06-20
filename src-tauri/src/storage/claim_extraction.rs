@@ -14,15 +14,28 @@ use super::management_claims::{create_management_claim, NewManagementClaim};
 use super::{slug_part, ManagementClaim, StorageError, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimExtractionJob {
     pub id: String,
     pub company_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ClaimExtractionSourceType")
+    )]
     pub source_type: String,
     pub source_id: String,
     pub provider_id: String,
     pub model: String,
     pub prompt_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"queued\" | \"running\" | \"succeeded\" | \"failed\"")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -33,6 +46,11 @@ pub struct ClaimExtractionJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ClaimExtractionProposal {
     pub id: String,
@@ -48,6 +66,10 @@ pub struct ClaimExtractionProposal {
     pub source_snippet: Option<String>,
     pub source_evidence_type: Option<String>,
     pub source_evidence_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"pending\" | \"confirmed\" | \"rejected\"")
+    )]
     pub status: String,
     pub claim_id: Option<String>,
     pub created_at: String,
@@ -91,6 +113,15 @@ pub struct CompletedClaimExtraction {
 /// User overrides applied when confirming a proposal into a claim. Absent fields
 /// keep the proposed value.
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmClaimProposalInput {
     pub proposal_id: String,
@@ -500,4 +531,87 @@ fn job_id(source_type: &str, source_id: &str) -> String {
 
 fn proposal_id(job_id: &str, statement: &str) -> String {
     format!("claim_prop_{}_{}", slug_part(job_id), slug_part(statement))
+}
+
+use super::database::Database;
+/// claim_extraction domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::claim_extraction()`.
+#[derive(Clone)]
+pub struct ClaimExtractionStore {
+    db: Database,
+}
+
+impl ClaimExtractionStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_claim_extraction_job(
+        &self,
+        input: NewClaimExtractionJob,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        create_claim_extraction_job(&connection, input)
+    }
+
+    pub fn get_claim_extraction_job(&self, job_id: &str) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        get_claim_extraction_job(&connection, job_id)
+    }
+
+    pub fn list_claim_extraction_jobs_by_source(
+        &self,
+        source_type: &str,
+        source_id: &str,
+    ) -> StorageResult<Vec<ClaimExtractionJob>> {
+        let connection = self.db.checkout()?;
+
+        list_claim_extraction_jobs_by_source(&connection, source_type, source_id)
+    }
+
+    pub fn mark_claim_extraction_job_running(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        mark_claim_extraction_job_running(&connection, job_id)
+    }
+
+    pub fn mark_claim_extraction_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        mark_claim_extraction_job_failed(&connection, job_id, error_code, error)
+    }
+
+    pub fn complete_claim_extraction_job(
+        &self,
+        input: CompletedClaimExtraction,
+    ) -> StorageResult<ClaimExtractionJob> {
+        let mut connection = self.db.checkout()?;
+
+        complete_claim_extraction_job(&mut connection, input)
+    }
+
+    pub fn confirm_claim_proposal(
+        &self,
+        input: ConfirmClaimProposalInput,
+    ) -> StorageResult<ManagementClaim> {
+        let connection = self.db.checkout()?;
+
+        confirm_claim_proposal(&connection, input)
+    }
+
+    pub fn reject_claim_proposal(&self, proposal_id: &str) -> StorageResult<ClaimExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        reject_claim_proposal(&connection, proposal_id)
+    }
 }

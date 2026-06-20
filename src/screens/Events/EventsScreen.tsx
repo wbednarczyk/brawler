@@ -21,11 +21,12 @@ import {
   TextField,
 } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { useEventsViewModel } from "../../app/state/screenViewModels";
 import { EventListView } from "./EventListView";
-import type { EventsScreenProps } from "./eventTypes";
 import { WeekEventsView } from "./WeekEventsView";
 
-export function EventsScreen({
+export function EventsScreen() {
+  const {
   companies,
   watchlists,
   companyEvents,
@@ -84,7 +85,7 @@ export function EventsScreen({
   companyEventDueClass,
   openExternalUrl,
   confirmDerivedEvent,
-}: EventsScreenProps) {
+  } = useEventsViewModel();
   const { t, text } = useLocale();
 
   return (

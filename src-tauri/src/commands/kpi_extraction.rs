@@ -14,6 +14,11 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct StartKpiExtractionInput {
     report_document_id: String,
@@ -113,9 +118,5 @@ pub fn reject_kpi_proposal(
 }
 
 fn spawn_extraction_job(state: app_state::AppState, job_id: String) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = jobs::kpi_extraction::run_kpi_extraction_job(&state, &job_id) {
-            let _ = state.mark_kpi_extraction_job_failed(&job_id, "unknown", &error);
-        }
-    });
+    jobs::handlers::enqueue_per_job(&state, jobs::handlers::KPI_EXTRACTION_KIND, &job_id);
 }

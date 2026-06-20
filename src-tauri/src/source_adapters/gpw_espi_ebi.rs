@@ -579,10 +579,10 @@ fn build_dedupe_key(
 mod tests {
     use super::*;
 
-    const FIXTURE: &str = include_str!("../../fixtures/gpw_espi_ebi_listing.html");
-    const DETAIL_FIXTURE: &str = include_str!("../../fixtures/gpw_espi_ebi_detail.html");
+    const FIXTURE: &str = include_str!("../../samples/gpw_espi_ebi_listing.html");
+    const DETAIL_FIXTURE: &str = include_str!("../../samples/gpw_espi_ebi_detail.html");
     const DETAIL_NO_ATTACHMENTS_FIXTURE: &str =
-        include_str!("../../fixtures/gpw_espi_ebi_detail_no_attachments.html");
+        include_str!("../../samples/gpw_espi_ebi_detail_no_attachments.html");
 
     struct FixtureFetcher;
 
@@ -794,5 +794,28 @@ mod tests {
         assert_eq!(policy.max_details_per_refresh, 5);
         assert_eq!(policy.min_delay_between_requests_seconds, 2);
         assert!(policy.matched_items_only);
+    }
+}
+
+#[cfg(test)]
+mod dedupe_key_proptests {
+    //! Invariant coverage of the dedup-key builder (ADR 0049): the key that
+    //! decides whether two ingested reports are the same item must be
+    //! deterministic, total (never panic on arbitrary source text), and always
+    //! namespaced to this adapter so keys cannot collide across adapters.
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn build_dedupe_key_is_deterministic_total_and_namespaced(
+            system in ".*", isin in ".*", report in ".*",
+            published in ".*", url in ".*", title in ".*"
+        ) {
+            let a = build_dedupe_key(&system, &isin, &report, &published, &url, &title);
+            let b = build_dedupe_key(&system, &isin, &report, &published, &url, &title);
+            prop_assert_eq!(&a, &b, "dedupe key is not deterministic");
+            prop_assert!(a.starts_with(ADAPTER_ID), "dedupe key not namespaced: {a:?}");
+        }
     }
 }

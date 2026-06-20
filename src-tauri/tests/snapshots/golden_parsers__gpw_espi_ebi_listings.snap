@@ -1,0 +1,36 @@
+---
+source: tests/golden_parsers.rs
+expression: listings
+---
+[
+    GpwReportListing {
+        report_type: "Bieżący",
+        system: "ESPI",
+        report_number: "7/2026",
+        company_ticker: "",
+        company_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA",
+        isin: "PLECMNG00019",
+        title: "Oświadczenie w sprawie formy przekazywania raportów kwartalnych.",
+        detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_start=show&ph_main_01_cmn_id=123456",
+        published_at: "2026-05-30T17:13:31+02:00",
+        fetched_at: "2026-06-08T10:00:00Z",
+        dedupe_key: "gpw-espi-ebi:espi:PLECMNG00019:7/2026:2026-05-30T17:13:31+02:00",
+        body_text: None,
+        attachments: [],
+    },
+    GpwReportListing {
+        report_type: "Kwartalny",
+        system: "ESPI",
+        report_number: "/2026",
+        company_ticker: "",
+        company_name: "WIRTUALNA POLSKA HOLDING SPÓŁKA AKCYJNA",
+        isin: "PLWRTPL00027",
+        title: "Skonsolidowany raport kwartalny za I kwartał 2026 roku",
+        detail_url: "https://www.gpw.pl/komunikaty?ph_main_01_start=show&ph_main_01_cmn_id=123457",
+        published_at: "2026-05-30T09:51:45+02:00",
+        fetched_at: "2026-06-08T10:00:00Z",
+        dedupe_key: "gpw-espi-ebi:espi:PLWRTPL00027:/2026:2026-05-30T09:51:45+02:00",
+        body_text: None,
+        attachments: [],
+    },
+]

@@ -1,0 +1,14 @@
+---
+source: tests/golden_parsers.rs
+expression: detail
+---
+GpwReportDetail {
+    title: "Oświadczenie w sprawie formy przekazywania raportów kwartalnych. NEW TECH CAPITAL SPÓŁKA AKCYJNA (PLECMNG00019)",
+    body_text: "Zarząd NEW TECH CAPITAL S.A. informuje, że raporty kwartalne będą przekazywane wyłącznie w formie skonsolidowanej.\nPodstawa prawna: Art. 56 ust. 1 pkt 2 Ustawy o ofercie.",
+    attachments: [
+        GpwReportAttachment {
+            label: "7_2026_oswiadczenie.pdf",
+            url: "https://www.gpw.pl/pub/GPW/ESPI/2026/7_2026_oswiadczenie.pdf",
+        },
+    ],
+}

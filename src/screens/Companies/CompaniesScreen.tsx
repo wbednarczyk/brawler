@@ -4,6 +4,7 @@ import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedIte
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { useCompaniesViewModel } from "../../app/state/screenViewModels";
 import { Button, ClearButton, DenseRow, EmptyState, ErrorText, PanelHeader, SearchField, TextField } from "../../ui";
 import type { FinancialFactForm, FundamentalsForm } from "../../app/useFundamentalsController";
 import type {
@@ -36,7 +37,6 @@ export type CompaniesScreenProps = {
   aiAnalysisJobsByFeedItemId: Record<string, AiAnalysisJob[]>;
   aiAnalysisErrorByFeedItemId: Record<string, string | null>;
   aiAnalysisRequestInFlightByFeedItemId: Record<string, boolean>;
-  aiAnalysisProviderConfigured: boolean;
   selectedCompanyNotebookEntries: NotebookEntry[];
   isNotebookComposerOpen: boolean;
   notebookForm: NotebookForm;
@@ -102,7 +102,8 @@ export type CompaniesScreenProps = {
   updateFinancialFactForm: (field: keyof FinancialFactForm, value: string) => void;
 };
 
-export function CompaniesScreen({
+export function CompaniesScreen() {
+  const {
   watchlists,
   companyFieldRefs,
   companyForm,
@@ -122,7 +123,6 @@ export function CompaniesScreen({
   aiAnalysisJobsByFeedItemId,
   aiAnalysisErrorByFeedItemId,
   aiAnalysisRequestInFlightByFeedItemId,
-  aiAnalysisProviderConfigured,
   selectedCompanyNotebookEntries,
   isNotebookComposerOpen,
   notebookForm,
@@ -186,7 +186,7 @@ export function CompaniesScreen({
   cancelEditingFinancialFact,
   updateFundamentalsForm,
   updateFinancialFactForm,
-}: CompaniesScreenProps) {
+  } = useCompaniesViewModel();
   const { t, text } = useLocale();
 
   return (
@@ -410,7 +410,6 @@ export function CompaniesScreen({
                           aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
                           aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
                           aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
-                          aiAnalysisProviderConfigured={aiAnalysisProviderConfigured}
                           selectedCompanyNotebookEntries={selectedCompanyNotebookEntries}
                           isNotebookComposerOpen={isNotebookComposerOpen}
                           notebookForm={notebookForm}

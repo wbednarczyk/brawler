@@ -2,8 +2,17 @@ use super::*;
 
 /// A single ranked match from the unified `search_index` FTS5 table (ADR 0032).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchMatch {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::SearchContentType")
+    )]
     pub content_type: String,
     pub source_id: String,
     pub company_id: Option<String>,

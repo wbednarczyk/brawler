@@ -21,8 +21,8 @@ import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
-import type { SettingsScreenProps } from "./settingsTypes";
 import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
+import { useSettingsScreenViewModel } from "../../app/state/screenViewModels";
 import { ErrorText, Panel, PanelHeader, Subnav } from "../../ui";
 
 type SettingsTab =
@@ -48,7 +48,8 @@ const settingsTabs = [
   { id: "license", icon: FileKey2, labelText: "License" },
 ] satisfies Array<{ id: SettingsTab; icon: LucideIcon; labelKey?: LocaleKey; labelText?: string }>;
 
-export function SettingsScreen({
+export function SettingsScreen() {
+  const {
   theme,
   accentPalette,
   locale,
@@ -96,7 +97,7 @@ export function SettingsScreen({
   formatPollInterval,
   formatCredentialConfigured,
   formatCredentialKind,
-}: SettingsScreenProps) {
+  } = useSettingsScreenViewModel();
   const t = makeTranslator(locale);
   const text = makeTextTranslator(locale);
   const [activeSettingsTab, setActiveSettingsTab] = useState<SettingsTab>("appearance");

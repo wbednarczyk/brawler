@@ -223,3 +223,38 @@ fn validate_optional_identifier(key: &'static str, value: Option<&str>) -> Stora
 
     Ok(())
 }
+
+use super::database::Database;
+/// licensing domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::licensing()`.
+#[derive(Clone)]
+pub struct LicensingStore {
+    db: Database,
+}
+
+impl LicensingStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {
+        let connection = self.db.checkout()?;
+
+        get_license_metadata(&connection)
+    }
+
+    pub fn upsert_license_metadata(
+        &self,
+        input: LicenseMetadataUpdate,
+    ) -> StorageResult<StoredLicenseMetadata> {
+        let connection = self.db.checkout()?;
+
+        upsert_license_metadata(&connection, input)
+    }
+
+    pub fn clear_license_metadata(&self) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        clear_license_metadata(&connection)
+    }
+}

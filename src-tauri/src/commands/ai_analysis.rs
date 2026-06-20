@@ -8,6 +8,11 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct StartAiAnalysisInput {
     feed_item_id: String,
@@ -17,6 +22,11 @@ pub struct StartAiAnalysisInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListAiAnalysisInput {
     feed_item_id: String,
@@ -134,9 +144,5 @@ fn record_ai_analysis_diagnostic(
 }
 
 fn spawn_analysis_job(state: app_state::AppState, job_id: String) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = jobs::ai_analysis::run_ai_analysis_job(&state, &job_id) {
-            let _ = state.mark_ai_analysis_job_failed(&job_id, "unknown", &error);
-        }
-    });
+    jobs::handlers::enqueue_per_job(&state, jobs::handlers::AI_ANALYSIS_KIND, &job_id);
 }

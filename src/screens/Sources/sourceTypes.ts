@@ -11,7 +11,6 @@ import type {
 export type SourcesScreenProps = {
   sourceAdapters: SourceAdapter[];
   sourceAdaptersError: string | null;
-  developerMode: boolean;
   selectedSourceAdapterId: string | null;
   sourceRefreshState: string;
   sourceRefreshResult: SourceIngestionResult | null;

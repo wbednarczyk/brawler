@@ -1,9 +1,8 @@
 import { callCommand } from "./tauri";
 import type { ClearDiagnosticEventsResult, DiagnosticEvent, DiagnosticSummary } from "./types";
+import type { ListDiagnosticEventsInput } from "./generated/ListDiagnosticEventsInput";
 
-export type ListDiagnosticEventsInput = {
-  limit?: number;
-};
+export type { ListDiagnosticEventsInput } from "./generated/ListDiagnosticEventsInput";
 
 export function listDiagnosticEvents(input?: ListDiagnosticEventsInput) {
   if (input === undefined) {

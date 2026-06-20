@@ -64,7 +64,7 @@ pub struct EmbeddedNewConnectCompanyDirectoryFetcher;
 #[cfg(test)]
 impl NewConnectCompanyDirectoryFetcher for EmbeddedNewConnectCompanyDirectoryFetcher {
     fn fetch_company_directory_page(&self) -> Result<String, NewConnectCompanyDirectoryFetchError> {
-        Ok(include_str!("../../fixtures/newconnect_company_directory.html").to_owned())
+        Ok(include_str!("../../samples/newconnect_company_directory.html").to_owned())
     }
 }
 
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn parses_fixture_directory_entries_from_newconnect_html() {
         let entries = parse_company_directory_page_html(include_str!(
-            "../../fixtures/newconnect_company_directory.html"
+            "../../samples/newconnect_company_directory.html"
         ))
         .expect("fixture should parse");
 

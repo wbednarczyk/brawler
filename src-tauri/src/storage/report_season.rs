@@ -14,12 +14,26 @@ const REPORT_EVENT_TYPE: &str = "periodic_report";
 const PREPARATION_STATUSES: &[&str] = &["upcoming", "prepared", "processed"];
 
 #[derive(Debug, Default, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "ListReportSeasonInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportSeasonInput {
     pub watchlist_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportSeasonEntry {
     pub company_id: String,
@@ -29,10 +43,19 @@ pub struct ReportSeasonEntry {
     pub event_date: String,
     pub event_time: Option<String>,
     pub title: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ReportPreparationStatus")
+    )]
     pub preparation_status: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CalendarFreshness {
     pub last_fetched_at: Option<String>,
@@ -40,6 +63,11 @@ pub struct CalendarFreshness {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportSeasonResult {
     pub upcoming: Vec<ReportSeasonEntry>,
@@ -55,6 +83,11 @@ pub struct PreReportCardInput {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct PreReportKpi {
     pub period_id: String,
@@ -65,11 +98,20 @@ pub struct PreReportKpi {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct PreReportCard {
     pub company_id: String,
     pub event_key: String,
     pub event_date: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ReportPreparationStatus")
+    )]
     pub preparation_status: String,
     pub linked_report_document_id: Option<String>,
     pub open_questions: Vec<ResearchQuestion>,
@@ -95,10 +137,19 @@ pub struct MarkReportProcessedInput {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportPreparation {
     pub company_id: String,
     pub event_key: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ReportPreparationStatus")
+    )]
     pub status: String,
     pub prepared_at: Option<String>,
     pub processed_at: Option<String>,
@@ -477,5 +528,52 @@ pub(super) fn validate_preparation_status(status: &str) -> StorageResult<()> {
             key: "status",
             value: status.to_owned(),
         })
+    }
+}
+
+use super::database::Database;
+/// report_season domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::report_season()`.
+#[derive(Clone)]
+pub struct ReportSeasonStore {
+    db: Database,
+}
+
+impl ReportSeasonStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_report_season(
+        &self,
+        input: ReportSeasonInput,
+    ) -> StorageResult<ReportSeasonResult> {
+        let connection = self.db.checkout()?;
+
+        list_report_season(&connection, input)
+    }
+
+    pub fn get_pre_report_card(&self, input: PreReportCardInput) -> StorageResult<PreReportCard> {
+        let connection = self.db.checkout()?;
+
+        get_pre_report_card(&connection, input)
+    }
+
+    pub fn mark_report_prepared(
+        &self,
+        input: MarkReportPreparedInput,
+    ) -> StorageResult<ReportPreparation> {
+        let connection = self.db.checkout()?;
+
+        mark_report_prepared(&connection, input)
+    }
+
+    pub fn mark_report_processed(
+        &self,
+        input: MarkReportProcessedInput,
+    ) -> StorageResult<ReportPreparation> {
+        let connection = self.db.checkout()?;
+
+        mark_report_processed(&connection, input)
     }
 }

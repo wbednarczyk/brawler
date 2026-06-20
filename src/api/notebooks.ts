@@ -1,31 +1,13 @@
 import { callCommand } from "./tauri";
-import type { NotebookDraftOrigin, NotebookEntry } from "./types";
+import type { NotebookEntry } from "./types";
+import type { CreateNotebookEntryInput } from "./generated/CreateNotebookEntryInput";
+import type { UpdateNotebookEntryInput } from "./generated/UpdateNotebookEntryInput";
 
-export type CreateNotebookEntryInput = {
-  companyId: string;
-  title: string;
-  body: string;
-  bodyFormat: string;
-  tags: string[];
-  kind: string;
-  claimStatus: string | null;
-  eventDate: string | null;
-  followUpAfter: string | null;
-  followUpDate: string | null;
-  origins: NotebookDraftOrigin[];
-};
-
-export type UpdateNotebookEntryInput = {
-  id: string;
-  title: string;
-  body: string;
-  tags: string[];
-  kind: string;
-  claimStatus: string | null;
-  eventDate: string | null;
-  followUpAfter: string | null;
-  followUpDate: string | null;
-};
+// Input types GENERATED from src-tauri/src/storage/types.rs via ts-rs (ADR 0048).
+// `origins` uses the generated NewNotebookOrigin (shape-identical to the
+// frontend NotebookDraftOrigin).
+export type { CreateNotebookEntryInput } from "./generated/CreateNotebookEntryInput";
+export type { UpdateNotebookEntryInput } from "./generated/UpdateNotebookEntryInput";
 
 export function listNotebookEntries(companyId: string) {
   return callCommand<NotebookEntry[]>("list_notebook_entries", { companyId });

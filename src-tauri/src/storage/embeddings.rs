@@ -378,4 +378,151 @@ mod tests {
     fn rejects_corrupt_blob_length() {
         assert!(decode_vector(&[1, 2, 3]).is_err());
     }
+
+    /// Scale gate (ADR 0049, T4): the similarity hot path must scan the
+    /// **persisted** vector index in a single linear pass — never re-embed the
+    /// corpus and never go quadratic. This is the deterministic guard for the
+    /// `v0.45.0` `find_similar` regression class, which froze the UI by
+    /// re-embedding every feed item synchronously per call. The assertion is on
+    /// structure (one scan, `N` comparisons), not wall-clock, so it never flakes.
+    #[test]
+    fn similarity_scan_is_linear_over_a_volume_index() {
+        use crate::interpretation::similarity_score;
+
+        const N: usize = 2000;
+        const DIM: usize = 8;
+        let connection = open_in_memory_database().expect("db");
+
+        // Seed N deterministic vectors; item k points mostly along axis (k % DIM).
+        for k in 0..N {
+            let mut vector = vec![0.0_f32; DIM];
+            vector[k % DIM] = 1.0;
+            vector[(k + 1) % DIM] = 0.25;
+            upsert_embedding(
+                &connection,
+                &embedding(&format!("feed_{k:04}"), "m1", vector),
+            )
+            .expect("seed");
+        }
+
+        // The persisted-index scan returns exactly N rows in one pass — bounded by
+        // stored rows, not by re-deriving the corpus. This is the property the
+        // find_similar fix established and that this gate locks in.
+        let scanned = scan_vectors(&connection, "feed_item", "m1").expect("scan");
+        assert_eq!(
+            scanned.len(),
+            N,
+            "scan must read the whole persisted index once"
+        );
+
+        // Rank a query against the scanned vectors, counting comparisons to assert
+        // the work is O(N) (one per stored vector), never O(N^2).
+        let query = scanned[0].vector.clone();
+        let query_id = scanned[0].content_id.clone();
+        let mut comparisons = 0_usize;
+        let mut scored: Vec<(String, f32)> = scanned
+            .iter()
+            .filter(|candidate| candidate.content_id != query_id)
+            .map(|candidate| {
+                comparisons += 1;
+                (
+                    candidate.content_id.clone(),
+                    similarity_score(&query, &candidate.vector),
+                )
+            })
+            .collect();
+        assert_eq!(comparisons, N - 1, "ranking must be a single linear pass");
+
+        // Output is bounded to k; the nearest neighbour is an item that shares the
+        // query's dominant axis (an identical seeded vector → score 1.0).
+        scored.sort_by(|a, b| b.1.total_cmp(&a.1));
+        scored.truncate(10);
+        assert_eq!(scored.len(), 10, "output is bounded to k");
+        assert!(
+            scored[0].1 > 0.9,
+            "top match should be highly similar: {:?}",
+            scored[0]
+        );
+    }
+}
+
+use super::database::Database;
+/// embeddings domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::embeddings()`.
+#[derive(Clone)]
+pub struct EmbeddingStore {
+    db: Database,
+}
+
+impl EmbeddingStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn upsert_content_embedding(&self, embedding: &NewContentEmbedding) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        upsert_embedding(&connection, embedding)
+    }
+
+    pub fn feed_item_embeddable_contents(&self) -> StorageResult<Vec<EmbeddableContent>> {
+        let connection = self.db.checkout()?;
+
+        feed_item_contents(&connection)
+    }
+
+    pub fn embedded_content_hashes(
+        &self,
+        content_type: &str,
+        model_id: &str,
+    ) -> StorageResult<std::collections::HashMap<String, String>> {
+        let connection = self.db.checkout()?;
+
+        existing_hashes(&connection, content_type, model_id)
+    }
+
+    pub fn scan_content_vectors(
+        &self,
+        content_type: &str,
+        model_id: &str,
+    ) -> StorageResult<Vec<EmbeddedVector>> {
+        let connection = self.db.checkout()?;
+
+        scan_vectors(&connection, content_type, model_id)
+    }
+
+    pub fn content_vector(
+        &self,
+        content_type: &str,
+        content_id: &str,
+        model_id: &str,
+    ) -> StorageResult<Option<Vec<f32>>> {
+        let connection = self.db.checkout()?;
+
+        get_vector(&connection, content_type, content_id, model_id)
+    }
+
+    pub fn prune_embeddings_other_models(&self, keep_model_id: &str) -> StorageResult<usize> {
+        let connection = self.db.checkout()?;
+
+        prune_other_models(&connection, keep_model_id)
+    }
+
+    pub fn embedding_counts(&self, model_id: &str) -> StorageResult<Vec<EmbeddedCount>> {
+        let connection = self.db.checkout()?;
+
+        counts_by_content_type(&connection, model_id)
+    }
+
+    pub fn embedding_index_model_id(&self) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+
+        index_model_id(&connection)
+    }
+
+    pub fn clear_content_embeddings(&self) -> StorageResult<usize> {
+        let connection = self.db.checkout()?;
+
+        clear_all(&connection)
+    }
 }

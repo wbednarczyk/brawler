@@ -5,6 +5,11 @@ use crate::{app_state, logging};
 const DEFAULT_LOG_ENTRY_LIMIT: usize = 300;
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListLogEntriesInput {
     limit: Option<usize>,

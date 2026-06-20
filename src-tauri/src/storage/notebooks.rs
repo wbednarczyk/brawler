@@ -394,3 +394,83 @@ pub(super) fn validate_allowed_notebook_value(
         })
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    //! Invariant coverage of `normalize_tags` (ADR 0049) — a dedup transform, so
+    //! it is the canonical place to prove **order-independence**: the same tags
+    //! arriving in any order must collapse to the same canonical set.
+    use super::*;
+    use crate::transform_invariants::{assert_idempotent_vec, assert_order_independent};
+    use proptest::prelude::*;
+
+    /// A small tag vocabulary deliberately seeded with duplicates, case variants,
+    /// surrounding whitespace, and blanks so generated inputs exercise the
+    /// dedup / lowercase / trim / empty-filter paths densely.
+    fn tag_vocab() -> impl Strategy<Value = String> {
+        prop::sample::select(vec![
+            "alpha", "Alpha", " alpha ", "BETA", "beta", "  ", "", "gamma", "Gamma ",
+        ])
+        .prop_map(str::to_owned)
+    }
+
+    proptest! {
+        #[test]
+        fn normalize_tags_dedups_idempotently_and_order_independently(
+            tags in prop::collection::vec(tag_vocab(), 0..10)
+        ) {
+            assert_idempotent_vec(normalize_tags, tags.clone());
+            assert_order_independent(normalize_tags, tags.clone());
+
+            let out = normalize_tags(tags);
+            // Sorted and strictly deduplicated.
+            prop_assert!(out.windows(2).all(|w| w[0] < w[1]), "not sorted/deduped: {out:?}");
+            // Every surviving tag is trimmed, lowercased, and non-empty.
+            prop_assert!(
+                out.iter().all(|t| !t.is_empty() && *t == t.trim().to_lowercase()),
+                "tag not normalized: {out:?}"
+            );
+        }
+    }
+}
+
+use super::database::Database;
+/// notebooks domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::notebooks()`.
+#[derive(Clone)]
+pub struct NotebookStore {
+    db: Database,
+}
+
+impl NotebookStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_notebook_entries(&self, company_id: &str) -> StorageResult<Vec<NotebookEntry>> {
+        let connection = self.db.checkout()?;
+
+        list_notebook_entries(&connection, company_id)
+    }
+
+    pub fn create_notebook_entry(&self, input: NewNotebookEntry) -> StorageResult<NotebookEntry> {
+        let connection = self.db.checkout()?;
+
+        create_notebook_entry(&connection, input)
+    }
+
+    pub fn update_notebook_entry(
+        &self,
+        input: NotebookEntryUpdate,
+    ) -> StorageResult<NotebookEntry> {
+        let connection = self.db.checkout()?;
+
+        update_notebook_entry(&connection, input)
+    }
+
+    pub fn delete_notebook_entry(&self, notebook_entry_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_notebook_entry(&connection, notebook_entry_id)
+    }
+}

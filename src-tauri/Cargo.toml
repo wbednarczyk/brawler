@@ -28,6 +28,11 @@ embedding-model = [
     "dep:tokenizers",
 ]
 
+# Generate the TypeScript API types from the Rust DTOs (ADR 0048). OFF by
+# default so `ts-rs` stays out of the shipped binary; `make types` enables it to
+# emit src/api/generated/, and `make types-check` regenerates + fails on drift.
+ts-export = ["dep:ts-rs"]
+
 [dependencies]
 candle-core = { version = "0.10", optional = true }
 candle-nn = { version = "0.10", optional = true }
@@ -42,6 +47,11 @@ tokenizers = { version = "0.21", optional = true, default-features = false, feat
 async-trait = "0.1"
 base64 = "0.22"
 ed25519-dalek = "2"
+# Pure-Rust HNSW approximate nearest-neighbour index (ADR 0050 decision 6) behind
+# the `VectorIndex` swap boundary. Pure Rust (no C/native deps) so it keeps the
+# cargo-xwin Linux->Windows cross-build working — `sqlite-vec` was rejected for
+# exactly that reason.
+instant-distance = "0.6"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
 keyring = { version = "3", features = ["windows-native"] }
 log = "0.4"
@@ -62,4 +72,22 @@ tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 thiserror = "2"
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
+ts-rs = { version = "12", optional = true }
 url = "2"
+
+[dev-dependencies]
+# Property-based tests for the deterministic cores (DSL parser/evaluator, feed
+# dedup) and the data-transform invariant layer (ADR 0049). Test-only; not
+# shipped in the binary.
+proptest = "1"
+# Golden snapshots of source-adapter parse outputs and normalization results
+# (ADR 0049). Reviewable, regenerated not hand-edited (`cargo insta` / INSTA_UPDATE).
+insta = "1"
+# Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049, T5):
+# similarity scan, RSS parse, formula parse. `make bench`; never a hard gate
+# (wall-clock is machine-dependent) — the bench-ratchet flags relative regressions.
+criterion = "0.5"
+
+[[bench]]
+name = "transforms"
+harness = false

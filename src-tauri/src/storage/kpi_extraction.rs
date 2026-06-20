@@ -12,6 +12,11 @@ use super::financials::create_financial_fact;
 use super::{slug_part, FinancialFact, NewFinancialFact, StorageError, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct KpiExtractionJob {
     pub id: String,
@@ -36,6 +41,11 @@ pub struct KpiExtractionJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct KpiExtractionProposal {
     pub id: String,
@@ -100,6 +110,11 @@ pub struct CompletedKpiExtraction {
 /// default to the job's detected period; the model-detected period is confirmed,
 /// not trusted blindly.
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfirmKpiProposalInput {
     pub proposal_id: String,
@@ -111,6 +126,7 @@ pub struct ConfirmKpiProposalInput {
     /// When the proposal is a model-suggested KPI beyond the taxonomy, create a
     /// company-scoped definition for it before committing the fact.
     #[serde(default)]
+    #[cfg_attr(feature = "ts-export", ts(optional, as = "Option<bool>"))]
     pub accept_as_new_kpi: bool,
 }
 
@@ -661,4 +677,83 @@ fn period_id(company_id: &str, fiscal_year: i64, period_type: &str) -> String {
 
 fn company_definition_id(company_id: &str, metric_key: &str) -> String {
     format!("kpidef_{}_{}", slug_part(company_id), slug_part(metric_key))
+}
+
+use super::database::Database;
+/// kpi_extraction domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::kpi_extraction()`.
+#[derive(Clone)]
+pub struct KpiExtractionStore {
+    db: Database,
+}
+
+impl KpiExtractionStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_kpi_extraction_job(
+        &self,
+        input: NewKpiExtractionJob,
+    ) -> StorageResult<KpiExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        create_kpi_extraction_job(&connection, input)
+    }
+
+    pub fn get_kpi_extraction_job(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        get_kpi_extraction_job(&connection, job_id)
+    }
+
+    pub fn list_kpi_extraction_jobs_by_document(
+        &self,
+        report_document_id: &str,
+    ) -> StorageResult<Vec<KpiExtractionJob>> {
+        let connection = self.db.checkout()?;
+
+        list_kpi_extraction_jobs_by_document(&connection, report_document_id)
+    }
+
+    pub fn mark_kpi_extraction_job_running(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        mark_kpi_extraction_job_running(&connection, job_id)
+    }
+
+    pub fn mark_kpi_extraction_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<KpiExtractionJob> {
+        let connection = self.db.checkout()?;
+
+        mark_kpi_extraction_job_failed(&connection, job_id, error_code, error)
+    }
+
+    pub fn complete_kpi_extraction_job(
+        &self,
+        input: CompletedKpiExtraction,
+    ) -> StorageResult<KpiExtractionJob> {
+        let mut connection = self.db.checkout()?;
+
+        complete_kpi_extraction_job(&mut connection, input)
+    }
+
+    pub fn confirm_kpi_proposal(
+        &self,
+        input: ConfirmKpiProposalInput,
+    ) -> StorageResult<FinancialFact> {
+        let connection = self.db.checkout()?;
+
+        confirm_kpi_proposal(&connection, input)
+    }
+
+    pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
+        let connection = self.db.checkout()?;
+
+        reject_kpi_proposal(&connection, proposal_id)
+    }
 }

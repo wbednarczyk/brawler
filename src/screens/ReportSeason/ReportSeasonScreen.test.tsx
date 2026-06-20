@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as reportSeasonApi from "../../api/reportSeason";
 import type { Watchlist } from "../../api/types";
 import { ReportSeasonScreen } from "./ReportSeasonScreen";
+import { ReportSeasonProvider } from "../../app/state/screenViewModels";
 
 vi.mock("../../api/reportSeason");
 
@@ -78,7 +79,11 @@ beforeEach(() => {
 describe("Report-season cockpit", () => {
   it("renders upcoming reports and expands a pre-report card", async () => {
     const user = userEvent.setup();
-    render(<ReportSeasonScreen watchlists={watchlists} openCompanyWorkspace={vi.fn()} />);
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
 
     expect(await screen.findByText("CD Projekt")).toBeInTheDocument();
 
@@ -95,7 +100,11 @@ describe("Report-season cockpit", () => {
 
   it("marks a report prepared and refreshes the season", async () => {
     const user = userEvent.setup();
-    render(<ReportSeasonScreen watchlists={watchlists} openCompanyWorkspace={vi.fn()} />);
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
 
     await user.click(await screen.findByText("CD Projekt"));
     await user.click(await screen.findByRole("button", { name: /Mark prepared/ }));
@@ -119,7 +128,11 @@ describe("Report-season cockpit", () => {
   it("drills into the company workspace and its claims tab", async () => {
     const user = userEvent.setup();
     const openCompanyWorkspace = vi.fn();
-    render(<ReportSeasonScreen watchlists={watchlists} openCompanyWorkspace={openCompanyWorkspace} />);
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
 
     await user.click(await screen.findByText("CD Projekt"));
     await user.click(await screen.findByRole("button", { name: "Open workspace" }));
@@ -135,7 +148,11 @@ describe("Report-season cockpit", () => {
       past: [],
       calendarFreshness: { lastFetchedAt: null, stale: true },
     });
-    render(<ReportSeasonScreen watchlists={watchlists} openCompanyWorkspace={vi.fn()} />);
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
 
     expect(
       await screen.findByText(/No upcoming reports in scope/),

@@ -26,11 +26,17 @@ use crate::fundamentals::templates;
 // ============================================================================
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct QualityFramework {
     pub id: String,
     pub name: String,
     pub description: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"app_template\" | \"user\""))]
     pub origin: String,
     pub template_key: Option<String>,
     pub cloned_from: Option<String>,
@@ -41,6 +47,11 @@ pub struct QualityFramework {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameworkCriterion {
     pub id: String,
@@ -55,6 +66,11 @@ pub struct FrameworkCriterion {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FrameworkEvaluation {
     pub id: String,
@@ -72,6 +88,11 @@ pub struct FrameworkEvaluation {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CriterionResult {
     pub id: String,
@@ -80,6 +101,10 @@ pub struct CriterionResult {
     pub ordinal: i64,
     pub label: String,
     pub expression: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::CriterionVerdict")
+    )]
     pub verdict: String,
     pub measured_value: Option<String>,
     pub measured_unit: Option<String>,
@@ -89,6 +114,11 @@ pub struct CriterionResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidateCriterionResult {
     pub ok: bool,
@@ -97,6 +127,11 @@ pub struct ValidateCriterionResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct MetricKeyInfo {
     pub key: String,
@@ -110,6 +145,15 @@ pub struct MetricKeyInfo {
 // ---- inputs ----------------------------------------------------------------
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewQualityFramework {
     pub name: String,
@@ -118,6 +162,15 @@ pub struct NewQualityFramework {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateQualityFramework {
     pub id: String,
@@ -128,6 +181,15 @@ pub struct UpdateQualityFramework {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CloneFrameworkInput {
     pub framework_id: String,
@@ -136,6 +198,15 @@ pub struct CloneFrameworkInput {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewFrameworkCriterion {
     pub framework_id: String,
@@ -150,6 +221,15 @@ pub struct NewFrameworkCriterion {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateFrameworkCriterion {
     pub id: String,
@@ -166,6 +246,11 @@ pub struct UpdateFrameworkCriterion {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EvaluateFrameworkInput {
     pub framework_id: String,
@@ -173,6 +258,11 @@ pub struct EvaluateFrameworkInput {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListFrameworkEvaluationsInput {
     pub framework_id: String,
@@ -1076,4 +1166,114 @@ fn criterion_result_id(evaluation_id: &str, criterion_id: &str) -> String {
         slug_part(evaluation_id),
         slug_part(criterion_id)
     )
+}
+
+use super::database::Database;
+/// quality_frameworks domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::quality_frameworks()`.
+#[derive(Clone)]
+pub struct QualityFrameworkStore {
+    db: Database,
+}
+
+impl QualityFrameworkStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_quality_frameworks(&self) -> StorageResult<Vec<QualityFramework>> {
+        let connection = self.db.checkout()?;
+        list_quality_frameworks(&connection)
+    }
+
+    pub fn get_quality_framework(&self, id: &str) -> StorageResult<QualityFramework> {
+        let connection = self.db.checkout()?;
+        get_quality_framework(&connection, id)
+    }
+
+    pub fn create_quality_framework(
+        &self,
+        input: NewQualityFramework,
+    ) -> StorageResult<QualityFramework> {
+        let connection = self.db.checkout()?;
+        create_quality_framework(&connection, input)
+    }
+
+    pub fn update_quality_framework(
+        &self,
+        input: UpdateQualityFramework,
+    ) -> StorageResult<QualityFramework> {
+        let connection = self.db.checkout()?;
+        update_quality_framework(&connection, input)
+    }
+
+    pub fn delete_quality_framework(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        delete_quality_framework(&connection, id)
+    }
+
+    pub fn clone_framework(&self, input: CloneFrameworkInput) -> StorageResult<QualityFramework> {
+        let connection = self.db.checkout()?;
+        clone_framework(&connection, input)
+    }
+
+    pub fn reset_framework_to_template(&self, id: &str) -> StorageResult<QualityFramework> {
+        let connection = self.db.checkout()?;
+        reset_framework_to_template(&connection, id)
+    }
+
+    pub fn create_framework_criterion(
+        &self,
+        input: NewFrameworkCriterion,
+    ) -> StorageResult<FrameworkCriterion> {
+        let connection = self.db.checkout()?;
+        create_framework_criterion(&connection, input)
+    }
+
+    pub fn update_framework_criterion(
+        &self,
+        input: UpdateFrameworkCriterion,
+    ) -> StorageResult<FrameworkCriterion> {
+        let connection = self.db.checkout()?;
+        update_framework_criterion(&connection, input)
+    }
+
+    pub fn delete_framework_criterion(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        delete_framework_criterion(&connection, id)
+    }
+
+    pub fn evaluate_framework(
+        &self,
+        input: EvaluateFrameworkInput,
+    ) -> StorageResult<FrameworkEvaluation> {
+        let connection = self.db.checkout()?;
+        evaluate_framework(&connection, input)
+    }
+
+    pub fn list_framework_evaluations(
+        &self,
+        input: ListFrameworkEvaluationsInput,
+    ) -> StorageResult<Vec<FrameworkEvaluation>> {
+        let connection = self.db.checkout()?;
+        list_framework_evaluations(&connection, input)
+    }
+
+    pub fn get_framework_evaluation(&self, id: &str) -> StorageResult<FrameworkEvaluation> {
+        let connection = self.db.checkout()?;
+        get_framework_evaluation(&connection, id)
+    }
+
+    pub fn delete_framework_evaluation(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        delete_framework_evaluation(&connection, id)
+    }
+
+    pub fn list_available_metric_keys(
+        &self,
+        company_id: Option<&str>,
+    ) -> StorageResult<Vec<MetricKeyInfo>> {
+        let connection = self.db.checkout()?;
+        list_available_metric_keys(&connection, company_id)
+    }
 }

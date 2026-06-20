@@ -1,21 +1,13 @@
 import { callCommand } from "./tauri";
 import type { Watchlist, WatchlistMembership } from "./types";
+import type { CreateWatchlistInput } from "./generated/CreateWatchlistInput";
+import type { RenameWatchlistInput } from "./generated/RenameWatchlistInput";
+import type { WatchlistMembershipInput } from "./generated/WatchlistMembershipInput";
 
-export type CreateWatchlistInput = {
-  name: string;
-  description: string | null;
-};
-
-export type RenameWatchlistInput = {
-  id: string;
-  name: string;
-  description: string | null;
-};
-
-export type WatchlistMembershipInput = {
-  watchlistId: string;
-  companyId: string;
-};
+// Input types GENERATED from src-tauri/src/storage/types.rs via ts-rs (ADR 0048).
+export type { CreateWatchlistInput } from "./generated/CreateWatchlistInput";
+export type { RenameWatchlistInput } from "./generated/RenameWatchlistInput";
+export type { WatchlistMembershipInput } from "./generated/WatchlistMembershipInput";
 
 export function listWatchlists() {
   return callCommand<Watchlist[]>("list_watchlists");

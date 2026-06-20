@@ -1,0 +1,26 @@
+---
+source: tests/golden_parsers.rs
+expression: items
+---
+[
+    BankierRssItem {
+        title: "\"Maluchy\" z nowym rekordem. CD Projekt rośnie po komentarzu zarządu",
+        link: "https://www.bankier.pl/wiadomosc/cd-projekt-komentarz-900001.html",
+        summary: "\"Kurs\" CD Projektu zyskuje po publikacji komentarza zarządu.",
+        published_at: Some(
+            "2026-05-31T09:15:00+02:00",
+        ),
+        fetched_at: "2026-06-08T10:00:00Z",
+        dedupe_key: "bankier-market-rss:bankier-900001",
+    },
+    BankierRssItem {
+        title: "Rynek czeka na decyzje banków centralnych",
+        link: "https://www.bankier.pl/wiadomosc/rynek-czeka-na-decyzje-900002.html",
+        summary: "Przegląd najważniejszych tematów na europejskich parkietach.",
+        published_at: Some(
+            "2026-05-31T08:45:00+02:00",
+        ),
+        fetched_at: "2026-06-08T10:00:00Z",
+        dedupe_key: "bankier-market-rss:bankier-900002",
+    },
+]

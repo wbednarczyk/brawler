@@ -1,39 +1,5 @@
 use super::*;
-
-const REQUIRED_SOURCE_IDS: &[&str] = &[GPW_REGISTRY_ADAPTER_ID, NEWCONNECT_DIRECTORY_ADAPTER_ID];
-const OPTIONAL_SOURCE_IDS: &[&str] = &[
-    BANKIER_COMPANY_ADAPTER_ID,
-    BANKIER_RSS_ADAPTER_ID,
-    GPW_MARKET_EVENTS_ADAPTER_ID,
-    BANKIER_CALENDAR_ADAPTER_ID,
-];
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SourceVisibility {
-    Required,
-    Optional,
-    Developer,
-}
-
-impl SourceVisibility {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Required => "required",
-            Self::Optional => "optional",
-            Self::Developer => "developer",
-        }
-    }
-}
-
-pub(super) fn source_visibility(adapter_id: &str) -> SourceVisibility {
-    if REQUIRED_SOURCE_IDS.contains(&adapter_id) {
-        SourceVisibility::Required
-    } else if OPTIONAL_SOURCE_IDS.contains(&adapter_id) {
-        SourceVisibility::Optional
-    } else {
-        SourceVisibility::Developer
-    }
-}
+use crate::source_adapters::registry::{self as adapter_registry, SourceVisibility};
 
 fn source_health_status(
     enabled: bool,
@@ -59,61 +25,20 @@ pub(super) fn list_source_adapters(
     connection: &Connection,
     include_developer_only: bool,
 ) -> StorageResult<Vec<SourceAdapter>> {
+    // The static catalog metadata (display name, source URL, rate-limit policy,
+    // policy note, visibility) comes from the source-adapter registry — the SSOT
+    // (ADR 0050). This query reads only the mutable/structured runtime state from
+    // the database; the row mapper merges in the descriptor. A drift-guard test
+    // (`registry_matches_seeded_catalog`) binds the registry to the seed rows.
     let mut statement = connection.prepare(
         "
         SELECT
             source_adapters.id,
-            CASE source_adapters.id
-                WHEN 'gpw-company-registry' THEN 'GPW Company Directory'
-                WHEN 'newconnect-company-directory' THEN 'NewConnect Company Directory'
-                ELSE source_adapters.display_name
-            END AS display_name,
+            source_adapters.display_name,
             source_adapters.source_type,
             source_adapters.fetch_mode,
             source_adapters.enabled,
             source_adapters.default_poll_interval_seconds,
-            CASE source_adapters.id
-                WHEN 'gpw-company-registry' THEN ?1
-                WHEN 'newconnect-company-directory' THEN ?2
-                WHEN 'bankier-market-rss' THEN ?3
-                WHEN 'bankier-company-komunikaty' THEN ?4
-                WHEN 'portal-analiz' THEN ?5
-                WHEN 'bankier-firma-rss' THEN ?6
-                WHEN 'bankier-wiadomosci-rss' THEN ?7
-                WHEN 'gpw-market-events-rss' THEN ?8
-                WHEN 'bankier-kalendarium-html' THEN ?9
-                WHEN 'strefa-report-calendar' THEN ?10
-                WHEN 'money-calendar' THEN ?11
-                ELSE 'https://www.gpw.pl/komunikaty'
-            END AS source_url,
-            CASE source_adapters.id
-                WHEN 'gpw-company-registry' THEN 'Manual refresh plus daily stale-cache scheduled refresh'
-                WHEN 'newconnect-company-directory' THEN 'Manual refresh plus daily stale-cache scheduled refresh'
-                WHEN 'bankier-market-rss' THEN 'Manual refresh plus normal in-app source scheduler; RSS feed only, no article crawling'
-                WHEN 'bankier-company-komunikaty' THEN 'Manual refresh plus normal in-app source scheduler; tracked GPW companies only; cached Bankier tag ids; one listing page plus matched article pages per company'
-                WHEN 'portal-analiz' THEN 'Late-v1 disabled placeholder; no automated access until the authenticated-source implementation is explicitly built'
-                WHEN 'bankier-firma-rss' THEN 'Reviewed public RSS candidate; disabled until matching quality is proven against tracked GPW companies'
-                WHEN 'bankier-wiadomosci-rss' THEN 'Reviewed public RSS candidate; disabled because expected listed-company signal is broad and noisy'
-                WHEN 'gpw-market-events-rss' THEN 'Manual refresh plus normal in-app source scheduler; official GPW market-events RSS; exact ticker matching only'
-                WHEN 'bankier-kalendarium-html' THEN 'Manual refresh plus normal in-app source scheduler; one public calendar page; tracked GPW companies only; exact ticker matching'
-                WHEN 'strefa-report-calendar' THEN 'Disabled event-source candidate; report-date extraction requires source-specific tests before runtime enablement'
-                WHEN 'money-calendar' THEN 'Disabled event-source candidate; calendar extraction requires source-specific tests before runtime enablement'
-                ELSE 'Disabled while Bankier Company Komunikaty is the active official-report source'
-            END AS rate_limit_policy,
-            CASE source_adapters.id
-                WHEN 'gpw-company-registry' THEN 'Fetches the complete public GPW company list and caches ticker and ISIN metadata locally for lookup, autocomplete, and ticker-first matching.'
-                WHEN 'newconnect-company-directory' THEN 'Fetches the complete public NewConnect company list and caches ticker and ISIN metadata for lookup, autocomplete, and ticker-first matching.'
-                WHEN 'bankier-market-rss' THEN 'Fetches Bankier.pl public Giełda RSS headlines as public media items; linked article pages are not crawled in this slice.'
-                WHEN 'bankier-company-komunikaty' THEN 'Fetches Bankier.pl per-company public komunikaty JSON and article pages for tracked GPW companies only. Bankier is the active v1 official-report source while GPW ESPI/EBI is disabled.'
-                WHEN 'portal-analiz' THEN 'Late-v1 planned authenticated private research adapter governed by ADR 0014. Credentials must use the OS keychain and no generic login or scraping subsystem is approved.'
-                WHEN 'bankier-firma-rss' THEN 'Reviewed M8 follow-up candidate. Public and RSS-native, but broader business coverage needs matching-quality tests before runtime enablement.'
-                WHEN 'bankier-wiadomosci-rss' THEN 'Reviewed M8 follow-up candidate. Public and RSS-native, but broad news coverage and stale backfill risk make it unsuitable for default v1 ingestion.'
-                WHEN 'gpw-market-events-rss' THEN 'Fetches GPW official market-events RSS for corporate-action and exchange calendar events. Creates company events only for tracked companies matched by exact ticker.'
-                WHEN 'bankier-kalendarium-html' THEN 'Active M9 public calendar source for broader GPW event coverage. Creates company events only for tracked companies matched by exact ticker, while preserving Bankier attribution and source URLs.'
-                WHEN 'strefa-report-calendar' THEN 'Fallback candidate for periodic-report publication dates. Disabled until source-specific sample parsing and attribution rules are accepted.'
-                WHEN 'money-calendar' THEN 'Fallback/cross-check candidate for calendar and report-date coverage. Disabled until source-specific sample parsing and matching quality are accepted.'
-                ELSE 'Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.'
-            END AS policy_note,
             source_adapter_attempts.state_value AS last_attempt_at,
             source_adapter_triggers.state_value AS last_trigger,
             source_adapters.last_success_at,
@@ -193,70 +118,71 @@ pub(super) fn list_source_adapters(
         ",
     )?;
 
-    let rows = statement.query_map(
-        [
-            GPW_REGISTRY_SOURCE_URL,
-            NEWCONNECT_DIRECTORY_SOURCE_URL,
-            BANKIER_RSS_SOURCE_URL,
-            BANKIER_COMPANY_SOURCE_URL,
-            PORTAL_ANALIZ_SOURCE_URL,
-            BANKIER_FIRMA_RSS_SOURCE_URL,
-            BANKIER_WIADOMOSCI_RSS_SOURCE_URL,
-            GPW_MARKET_EVENTS_SOURCE_URL,
-            BANKIER_CALENDAR_SOURCE_URL,
-            STREFA_REPORT_CALENDAR_SOURCE_URL,
-            MONEY_CALENDAR_SOURCE_URL,
-        ],
-        |row| {
-            let id: String = row.get(0)?;
-            let enabled: bool = row.get(4)?;
-            let last_success_at: Option<String> = row.get(11)?;
-            let last_error: Option<String> = row.get(13)?;
-            let visibility = source_visibility(&id);
-            if visibility == SourceVisibility::Developer && !include_developer_only {
-                return Ok(None);
-            }
-            let markets: String = row.get(22)?;
+    let rows = statement.query_map([], |row| {
+        let id: String = row.get(0)?;
+        let visibility = adapter_registry::source_visibility(&id);
+        if visibility == SourceVisibility::Developer && !include_developer_only {
+            return Ok(None);
+        }
 
-            Ok(Some(SourceAdapter {
-                id,
-                display_name: row.get(1)?,
-                source_type: row.get(2)?,
-                fetch_mode: row.get(3)?,
-                visibility: visibility.as_str().to_owned(),
-                user_configurable: visibility == SourceVisibility::Optional,
-                health_status: source_health_status(
-                    enabled,
-                    last_success_at.as_deref(),
-                    last_error.as_deref(),
-                )
-                .to_owned(),
+        let descriptor = adapter_registry::descriptor(&id);
+        let db_display_name: String = row.get(1)?;
+        let display_name = descriptor
+            .map(|adapter| adapter.display_name.to_owned())
+            .unwrap_or(db_display_name);
+        let source_url = descriptor
+            .map(|adapter| adapter.source_url.to_owned())
+            .unwrap_or_default();
+        let rate_limit_policy = descriptor
+            .map(|adapter| adapter.rate_limit_policy.to_owned())
+            .unwrap_or_default();
+        let policy_note = descriptor
+            .map(|adapter| adapter.policy_note.to_owned())
+            .unwrap_or_default();
+
+        let enabled: bool = row.get(4)?;
+        let last_success_at: Option<String> = row.get(8)?;
+        let last_error: Option<String> = row.get(10)?;
+        let markets: String = row.get(19)?;
+
+        Ok(Some(SourceAdapter {
+            id,
+            display_name,
+            source_type: row.get(2)?,
+            fetch_mode: row.get(3)?,
+            visibility: visibility.as_str().to_owned(),
+            user_configurable: visibility.user_configurable(),
+            health_status: source_health_status(
                 enabled,
-                default_poll_interval_seconds: row.get(5)?,
-                source_url: row.get(6)?,
-                rate_limit_policy: row.get(7)?,
-                policy_note: row.get(8)?,
-                last_attempt_at: row.get(9)?,
-                last_trigger: row.get(10)?,
-                last_success_at,
-                last_error_at: row.get(12)?,
-                last_error,
-                last_items_fetched: row.get(14)?,
-                last_items_created: row.get(15)?,
-                last_items_matched: row.get(16)?,
-                last_items_unmatched: row.get(17)?,
-                last_detail_items_attempted: row.get(18)?,
-                last_detail_items_stored: row.get(19)?,
-                last_detail_items_failed: row.get(20)?,
-                last_detail_warning: row.get(21)?,
-                markets: markets
-                    .split(',')
-                    .filter(|market| !market.is_empty())
-                    .map(str::to_owned)
-                    .collect(),
-            }))
-        },
-    )?;
+                last_success_at.as_deref(),
+                last_error.as_deref(),
+            )
+            .to_owned(),
+            enabled,
+            default_poll_interval_seconds: row.get(5)?,
+            source_url,
+            rate_limit_policy,
+            policy_note,
+            last_attempt_at: row.get(6)?,
+            last_trigger: row.get(7)?,
+            last_success_at,
+            last_error_at: row.get(9)?,
+            last_error,
+            last_items_fetched: row.get(11)?,
+            last_items_created: row.get(12)?,
+            last_items_matched: row.get(13)?,
+            last_items_unmatched: row.get(14)?,
+            last_detail_items_attempted: row.get(15)?,
+            last_detail_items_stored: row.get(16)?,
+            last_detail_items_failed: row.get(17)?,
+            last_detail_warning: row.get(18)?,
+            markets: markets
+                .split(',')
+                .filter(|market| !market.is_empty())
+                .map(str::to_owned)
+                .collect(),
+        }))
+    })?;
 
     let adapters = rows
         .collect::<Result<Vec<_>, _>>()?
@@ -272,7 +198,7 @@ pub(super) fn set_source_adapter_enabled(
     adapter_id: &str,
     enabled: bool,
 ) -> StorageResult<SourceAdapter> {
-    match source_visibility(adapter_id) {
+    match adapter_registry::source_visibility(adapter_id) {
         SourceVisibility::Required => {
             if !enabled {
                 return Err(StorageError::InvalidSourceValue {
@@ -406,4 +332,65 @@ pub(super) fn record_source_adapter_error(
     )?;
 
     Ok(())
+}
+
+use super::database::Database;
+/// registry domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::source_registry()`.
+#[derive(Clone)]
+pub struct SourceRegistryStore {
+    db: Database,
+}
+
+impl SourceRegistryStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_source_adapters_with_developer(
+        &self,
+        include_developer_only: bool,
+    ) -> StorageResult<Vec<SourceAdapter>> {
+        let connection = self.db.checkout()?;
+
+        list_source_adapters(&connection, include_developer_only)
+    }
+
+    pub fn set_source_adapter_enabled(
+        &self,
+        adapter_id: &str,
+        enabled: bool,
+    ) -> StorageResult<SourceAdapter> {
+        let connection = self.db.checkout()?;
+
+        set_source_adapter_enabled(&connection, adapter_id, enabled)
+    }
+
+    pub fn source_adapter_enabled(&self, adapter_id: &str) -> StorageResult<bool> {
+        let connection = self.db.checkout()?;
+
+        source_adapter_enabled(&connection, adapter_id)
+    }
+
+    pub fn list_company_registry_entries(&self) -> StorageResult<Vec<CompanyRegistryEntry>> {
+        let connection = self.db.checkout()?;
+
+        list_company_registry_entries(&connection)
+    }
+
+    pub fn record_source_adapter_error(&self, adapter_id: &str, error: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        record_source_adapter_error(&connection, adapter_id, error)
+    }
+
+    pub fn record_source_adapter_attempt(
+        &self,
+        adapter_id: &str,
+        trigger: &str,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        record_source_adapter_attempt(&connection, adapter_id, trigger)
+    }
 }

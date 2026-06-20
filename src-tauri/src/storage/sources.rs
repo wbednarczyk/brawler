@@ -26,52 +26,37 @@ pub(super) fn ingest_gpw_report_listings(
             .as_ref()
             .map(|company| company.qualified_ticker.clone())
             .unwrap_or_else(|| listing.company_name.clone());
+        let matched_tickers = matched_company
+            .as_ref()
+            .map(|company| vec![company.qualified_ticker.clone()])
+            .unwrap_or_default();
+        let story_key = super::ingestion::derive_story_key(
+            &listing.title,
+            &matched_tickers,
+            Some(&listing.published_at),
+        );
         let existed = feed_item_exists(&transaction, &feed_item_id)?;
 
-        transaction.execute(
-            "
-            INSERT INTO feed_items (
-                id,
-                type,
-                source_adapter_id,
-                source_name,
-                source_url,
-                title,
-                summary,
-                body_text,
-                language,
-                published_at,
-                fetched_at,
-                dedupe_key,
-                attribution,
-                display_company
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, ?7, 'pl', ?8, ?9, ?10, 'GPW', ?11)
-            ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
-                type = excluded.type,
-                source_name = excluded.source_name,
-                source_url = excluded.source_url,
-                title = excluded.title,
-                body_text = COALESCE(excluded.body_text, feed_items.body_text),
-                language = excluded.language,
-                published_at = excluded.published_at,
-                fetched_at = excluded.fetched_at,
-                attribution = excluded.attribution,
-                display_company = excluded.display_company,
-                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            ",
-            params![
-                feed_item_id,
-                "Official report",
-                ADAPTER_ID,
-                DISPLAY_NAME,
-                listing.detail_url,
-                listing.title,
-                listing.body_text.as_deref(),
-                listing.published_at,
-                listing.fetched_at,
-                listing.dedupe_key,
-                display_company,
-            ],
+        super::ingestion::upsert_feed_item(
+            &transaction,
+            &super::ingestion::NormalizedFeedItem {
+                id: &feed_item_id,
+                item_type: "Official report",
+                source_adapter_id: ADAPTER_ID,
+                source_name: DISPLAY_NAME,
+                source_url: &listing.detail_url,
+                title: &listing.title,
+                summary: None,
+                body_text: listing.body_text.as_deref(),
+                language: "pl",
+                published_at: Some(&listing.published_at),
+                fetched_at: &listing.fetched_at,
+                dedupe_key: &listing.dedupe_key,
+                attribution: "GPW",
+                display_company: &display_company,
+                duplicate_signature: None,
+                story_key: story_key.as_deref(),
+            },
         )?;
 
         if !existed {
@@ -101,40 +86,14 @@ pub(super) fn ingest_gpw_report_listings(
         }
     }
 
-    transaction.execute(
-        "
-        UPDATE source_adapters
-        SET last_success_at = ?1,
-            last_error_at = NULL,
-            last_error = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?2
-        ",
-        params![&fetched_at, ADAPTER_ID],
-    )?;
-    set_source_adapter_state(
+    super::ingestion::record_source_outcome(
         &transaction,
         ADAPTER_ID,
-        "last_items_fetched",
-        &listings.len().to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        ADAPTER_ID,
-        "last_items_created",
-        &items_created.to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        ADAPTER_ID,
-        "last_items_matched",
-        &items_matched.to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        ADAPTER_ID,
-        "last_items_unmatched",
-        &items_unmatched.to_string(),
+        &fetched_at,
+        listings.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
     )?;
 
     transaction.commit()?;
@@ -172,6 +131,15 @@ pub(super) fn ingest_bankier_rss_items(
     for item in items {
         let matched_companies = find_companies_for_media_item(&tracked_companies, item);
         let duplicate_signature = media_duplicate_signature(item, &matched_companies);
+        let matched_tickers = matched_companies
+            .iter()
+            .map(|company| company.qualified_ticker.clone())
+            .collect::<Vec<_>>();
+        let story_key = super::ingestion::derive_story_key(
+            &item.title,
+            &matched_tickers,
+            item.published_at.as_deref(),
+        );
         let existing_feed_item_id = find_bankier_feed_item_by_source_url(&transaction, &item.link)?;
         let existing_duplicate_feed_item_id = if existing_feed_item_id.is_none() {
             find_media_feed_item_by_duplicate_signature(
@@ -201,6 +169,7 @@ pub(super) fn ingest_bankier_rss_items(
                 item,
                 &display_company,
                 duplicate_signature.as_deref(),
+                story_key.as_deref(),
             )?;
         } else if existing_duplicate_feed_item_id.is_none() {
             insert_bankier_feed_item(
@@ -209,6 +178,7 @@ pub(super) fn ingest_bankier_rss_items(
                 item,
                 &display_company,
                 duplicate_signature.as_deref(),
+                story_key.as_deref(),
             )?;
         } else {
             record_media_duplicate_seen(&transaction, &feed_item_id, item)?;
@@ -249,40 +219,14 @@ pub(super) fn ingest_bankier_rss_items(
         }
     }
 
-    transaction.execute(
-        "
-        UPDATE source_adapters
-        SET last_success_at = ?1,
-            last_error_at = NULL,
-            last_error = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?2
-        ",
-        params![&fetched_at, BANKIER_RSS_ADAPTER_ID],
-    )?;
-    set_source_adapter_state(
+    super::ingestion::record_source_outcome(
         &transaction,
         BANKIER_RSS_ADAPTER_ID,
-        "last_items_fetched",
-        &items.len().to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        BANKIER_RSS_ADAPTER_ID,
-        "last_items_created",
-        &items_created.to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        BANKIER_RSS_ADAPTER_ID,
-        "last_items_matched",
-        &items_matched.to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        BANKIER_RSS_ADAPTER_ID,
-        "last_items_unmatched",
-        &items_unmatched.to_string(),
+        &fetched_at,
+        items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
     )?;
 
     transaction.commit()?;
@@ -549,40 +493,14 @@ pub(super) fn ingest_bankier_company_items(
         }
     }
 
-    transaction.execute(
-        "
-        UPDATE source_adapters
-        SET last_success_at = ?1,
-            last_error_at = NULL,
-            last_error = NULL,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        WHERE id = ?2
-        ",
-        params![&fetched_at, BANKIER_COMPANY_ADAPTER_ID],
-    )?;
-    set_source_adapter_state(
+    super::ingestion::record_source_outcome(
         &transaction,
         BANKIER_COMPANY_ADAPTER_ID,
-        "last_items_fetched",
-        &items.len().to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        BANKIER_COMPANY_ADAPTER_ID,
-        "last_items_created",
-        &items_created.to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        BANKIER_COMPANY_ADAPTER_ID,
-        "last_items_matched",
-        &items_matched.to_string(),
-    )?;
-    set_source_adapter_state(
-        &transaction,
-        BANKIER_COMPANY_ADAPTER_ID,
-        "last_items_unmatched",
-        &items_unmatched.to_string(),
+        &fetched_at,
+        items.len(),
+        items_created,
+        items_matched,
+        items_unmatched,
     )?;
     set_source_adapter_state(
         &transaction,
@@ -690,55 +608,32 @@ pub(super) fn upsert_bankier_company_feed_item(
     feed_item_id: &str,
     item: &BankierCompanyItem,
 ) -> StorageResult<()> {
-    connection.execute(
-        "
-        INSERT INTO feed_items (
-            id,
-            type,
-            source_adapter_id,
-            source_name,
-            source_url,
-            title,
-            summary,
-            body_text,
-            language,
-            published_at,
-            fetched_at,
-            dedupe_key,
-            attribution,
-            display_company,
-            duplicate_signature
-        ) VALUES (?1, 'Official report', ?2, ?3, ?4, ?5, ?6, ?7, 'pl', ?8, ?9, ?10, ?11, ?12, ?13)
-        ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
-            type = excluded.type,
-            source_name = excluded.source_name,
-            source_url = excluded.source_url,
-            title = excluded.title,
-            summary = excluded.summary,
-            body_text = COALESCE(excluded.body_text, feed_items.body_text),
-            language = excluded.language,
-            published_at = excluded.published_at,
-            fetched_at = excluded.fetched_at,
-            attribution = excluded.attribution,
-            display_company = excluded.display_company,
-            duplicate_signature = excluded.duplicate_signature,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        ",
-        params![
-            feed_item_id,
-            BANKIER_COMPANY_ADAPTER_ID,
-            BANKIER_COMPANY_DISPLAY_NAME,
-            &item.link,
-            &item.title,
-            empty_string_to_none(Some(format_bankier_company_summary(item))),
-            item.body_text.as_deref(),
-            item.published_at.as_deref(),
-            &item.fetched_at,
-            &item.dedupe_key,
-            BANKIER_COMPANY_ATTRIBUTION,
-            &item.qualified_ticker,
-            &item.duplicate_signature,
-        ],
+    let summary = empty_string_to_none(Some(format_bankier_company_summary(item)));
+    let story_key = super::ingestion::derive_story_key(
+        &item.title,
+        std::slice::from_ref(&item.qualified_ticker),
+        item.published_at.as_deref(),
+    );
+    super::ingestion::upsert_feed_item(
+        connection,
+        &super::ingestion::NormalizedFeedItem {
+            id: feed_item_id,
+            item_type: "Official report",
+            source_adapter_id: BANKIER_COMPANY_ADAPTER_ID,
+            source_name: BANKIER_COMPANY_DISPLAY_NAME,
+            source_url: &item.link,
+            title: &item.title,
+            summary: summary.as_deref(),
+            body_text: item.body_text.as_deref(),
+            language: "pl",
+            published_at: item.published_at.as_deref(),
+            fetched_at: &item.fetched_at,
+            dedupe_key: &item.dedupe_key,
+            attribution: BANKIER_COMPANY_ATTRIBUTION,
+            display_company: &item.qualified_ticker,
+            duplicate_signature: Some(&item.duplicate_signature),
+            story_key: story_key.as_deref(),
+        },
     )?;
     if item.body_text.is_some() {
         replace_bankier_company_feed_item_attachments(connection, feed_item_id, &item.attachments)?;
@@ -885,58 +780,30 @@ pub(super) fn insert_bankier_feed_item(
     item: &BankierRssItem,
     display_company: &str,
     duplicate_signature: Option<&str>,
+    story_key: Option<&str>,
 ) -> StorageResult<()> {
-    connection.execute(
-        "
-        INSERT INTO feed_items (
-            id,
-            type,
-            source_adapter_id,
-            source_name,
-            source_url,
-            title,
-            summary,
-            body_text,
-            language,
-            published_at,
-            fetched_at,
-            dedupe_key,
-            attribution,
-            display_company,
-            duplicate_signature
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, 'pl', ?8, ?9, ?10, ?11, ?12, ?13)
-        ON CONFLICT(source_adapter_id, dedupe_key) DO UPDATE SET
-            type = excluded.type,
-            source_name = excluded.source_name,
-            source_url = excluded.source_url,
-            title = excluded.title,
-            summary = excluded.summary,
-            language = excluded.language,
-            published_at = excluded.published_at,
-            fetched_at = excluded.fetched_at,
-            attribution = excluded.attribution,
-            display_company = excluded.display_company,
-            duplicate_signature = excluded.duplicate_signature,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        ",
-        params![
-            feed_item_id,
-            "Public media",
-            BANKIER_RSS_ADAPTER_ID,
-            BANKIER_RSS_DISPLAY_NAME,
-            &item.link,
-            &item.title,
-            empty_string_to_none(Some(item.summary.clone())),
-            item.published_at.as_deref(),
-            &item.fetched_at,
-            &item.dedupe_key,
-            BANKIER_RSS_ATTRIBUTION,
+    let summary = empty_string_to_none(Some(item.summary.clone()));
+    super::ingestion::upsert_feed_item(
+        connection,
+        &super::ingestion::NormalizedFeedItem {
+            id: feed_item_id,
+            item_type: "Public media",
+            source_adapter_id: BANKIER_RSS_ADAPTER_ID,
+            source_name: BANKIER_RSS_DISPLAY_NAME,
+            source_url: &item.link,
+            title: &item.title,
+            summary: summary.as_deref(),
+            body_text: None,
+            language: "pl",
+            published_at: item.published_at.as_deref(),
+            fetched_at: &item.fetched_at,
+            dedupe_key: &item.dedupe_key,
+            attribution: BANKIER_RSS_ATTRIBUTION,
             display_company,
             duplicate_signature,
-        ],
-    )?;
-
-    Ok(())
+            story_key,
+        },
+    )
 }
 
 pub(super) fn update_bankier_feed_item(
@@ -945,6 +812,7 @@ pub(super) fn update_bankier_feed_item(
     item: &BankierRssItem,
     display_company: &str,
     duplicate_signature: Option<&str>,
+    story_key: Option<&str>,
 ) -> StorageResult<()> {
     connection.execute(
         "
@@ -963,6 +831,7 @@ pub(super) fn update_bankier_feed_item(
             attribution = ?11,
             display_company = ?12,
             duplicate_signature = ?13,
+            story_key = ?14,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
         ",
@@ -980,6 +849,7 @@ pub(super) fn update_bankier_feed_item(
             BANKIER_RSS_ATTRIBUTION,
             display_company,
             duplicate_signature,
+            story_key,
         ],
     )?;
 
@@ -1075,4 +945,78 @@ pub(super) fn current_timestamp(connection: &Connection) -> StorageResult<String
             row.get(0)
         })
         .map_err(StorageError::from)
+}
+
+use super::database::Database;
+/// sources domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::sources()`.
+#[derive(Clone)]
+pub struct SourcesStore {
+    db: Database,
+}
+
+impl SourcesStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn ingest_gpw_report_listings(
+        &self,
+        listings: &[GpwReportListing],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.db.checkout()?;
+
+        ingest_gpw_report_listings(&mut connection, listings)
+    }
+
+    pub fn ingest_bankier_rss_items(
+        &self,
+        items: &[BankierRssItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.db.checkout()?;
+
+        ingest_bankier_rss_items(&mut connection, items)
+    }
+
+    pub fn list_bankier_company_targets(&self) -> StorageResult<Vec<BankierCompanyTarget>> {
+        let connection = self.db.checkout()?;
+
+        list_bankier_company_targets(&connection)
+    }
+
+    pub fn upsert_bankier_company_identifiers(
+        &self,
+        company_id: &str,
+        identifiers: &BankierCompanyIdentifiers,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        upsert_bankier_company_identifiers(&connection, company_id, identifiers)
+    }
+
+    pub fn list_bankier_company_detail_cached_urls(&self) -> StorageResult<Vec<String>> {
+        let connection = self.db.checkout()?;
+
+        list_bankier_company_detail_cached_urls(&connection)
+    }
+
+    pub fn ingest_bankier_company_items(
+        &self,
+        items: &[BankierCompanyItem],
+    ) -> StorageResult<SourceIngestionResult> {
+        let mut connection = self.db.checkout()?;
+
+        ingest_bankier_company_items(&mut connection, items)
+    }
+
+    pub fn record_source_adapter_state(
+        &self,
+        adapter_id: &str,
+        key: &str,
+        value: &str,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        set_source_adapter_state(&connection, adapter_id, key, value)
+    }
 }

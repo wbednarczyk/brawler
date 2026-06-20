@@ -1,25 +1,11 @@
 import { callCommand } from "./tauri";
-import type { AccentPalette, AppLocale, ShortcutBindingSetting, Theme, UserSettings } from "./types";
+import type { UserSettings } from "./types";
+import type { UpdateSettingsInput } from "./generated/UpdateSettingsInput";
 
-export type UpdateSettingsInput = {
-  theme?: Theme;
-  accentPalette?: AccentPalette;
-  locale?: AppLocale;
-  pollIntervalSeconds?: number;
-  youtubeTranscriptionModel?: string;
-  youtubeTranscriptionTimeoutSeconds?: number;
-  generalAnalysisProvider?: string;
-  generalAnalysisModel?: string;
-  generalAnalysisTimeoutSeconds?: number;
-  espiAiFallbackEnabled?: boolean;
-  logLevel?: string;
-  logMaxFiles?: number;
-  logMaxFileBytes?: number;
-  shortcutBindings?: Record<string, ShortcutBindingSetting>;
-  dbMaxConnections?: number;
-  dbBusyTimeoutMs?: number;
-  dbAcquireTimeoutMs?: number;
-};
+// GENERATED from src-tauri/src/storage/settings.rs (SettingsUpdate) via ts-rs
+// (ADR 0048). The Rust struct is the complete set of updatable settings; the
+// theme/locale/accentPalette unions come from inline overrides on those fields.
+export type { UpdateSettingsInput } from "./generated/UpdateSettingsInput";
 
 export function getSettings() {
   return callCommand<UserSettings>("get_settings");

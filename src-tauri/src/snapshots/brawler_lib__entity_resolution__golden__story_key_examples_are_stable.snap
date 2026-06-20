@@ -1,0 +1,14 @@
+---
+source: src/entity_resolution.rs
+expression: cases
+---
+[
+    Some(
+        "story:ABC:GPW:2026-06-08:spolka-abc-podpisala-znaczaca-umowe-z-kontrahentem",
+    ),
+    Some(
+        "story:ABC:GPW+XYZ:GPW:2026-06-08:wezwanie-do-zapisywania-sie-na-sprzedaz-akcji",
+    ),
+    None,
+    None,
+]

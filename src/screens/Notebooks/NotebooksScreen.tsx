@@ -2,6 +2,7 @@ import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerE
 import { LocateFixed, Plus, Save, X } from "lucide-react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { useNotebooksViewModel } from "../../app/state/screenViewModels";
 import {
   Button,
   ClearButton,
@@ -14,9 +15,9 @@ import {
   TextField,
 } from "../../ui";
 import { NotebookEntryEditor } from "./NotebookEntryEditor";
-import type { NotebooksScreenProps } from "./notebookTypes";
 
-export function NotebooksScreen({
+export function NotebooksScreen() {
+  const {
   companies,
   totalCompanyCount,
   watchlists,
@@ -58,7 +59,7 @@ export function NotebooksScreen({
   NotebookQuarterField,
   MarkdownNoteBody,
   renderNotebookOrigins,
-}: NotebooksScreenProps) {
+  } = useNotebooksViewModel();
   const { t, text } = useLocale();
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{

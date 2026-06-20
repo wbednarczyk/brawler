@@ -247,4 +247,30 @@ mod tests {
         assert_eq!(counts.fail, 1);
         assert_eq!(counts.unavailable, 1);
     }
+
+    /// Golden snapshot of the financial scoring derivation (ADR 0049, T2). Locks
+    /// the whole `CriterionOutcome` shape — verdict, decimal-exact measured value,
+    /// unit, threshold — across the representative bands (pass / fail / partial /
+    /// unavailable), so a change to the scoring normalization is a reviewable diff.
+    #[test]
+    fn criterion_outcomes_are_stable() {
+        let c = ctx(&[("roic", 18)]); // 0.18
+        let partial_ctx = ctx(&[("roic", 13)]); // within a relaxed band
+        let missing = ctx(&[]);
+
+        let outcomes = vec![
+            ("pass", evaluate_criterion("roic >= 15%", None, &c)),
+            ("fail", evaluate_criterion("roic >= 20%", None, &c)),
+            (
+                "partial",
+                evaluate_criterion("roic >= 15%", Some("12%"), &partial_ctx),
+            ),
+            (
+                "unavailable",
+                evaluate_criterion("roic >= 15%", None, &missing),
+            ),
+        ];
+
+        insta::assert_debug_snapshot!("criterion_outcomes", outcomes);
+    }
 }

@@ -1,0 +1,75 @@
+{
+  "_comment": "Dual-execution mock-fidelity corpus (ADR 0049, T6). Each journey is replayed against BOTH the TS mock runtime (src/test/scenarios/fidelity.test.ts) and the real Rust AppState/storage layer (src-tauri/src/storage/tests/mock_fidelity.rs). Both must satisfy every assertion, so the hand-written mock runtime cannot silently drift from real backend behavior (ts-rs guarantees DTO shapes; this guarantees behavior). Journeys use only seed-free root entities (watchlists, companies) so no scenario seeding is needed; assertions are seed-independent (create/rename/delete then assert the effect, never absolute counts), and a created entity's id is captured and reused so the assertions hold regardless of each side's id-derivation scheme. Step grammar: command, input (the invoke args, with \"$name\" leaves substituted from captures), optional capture (stores result.id), expectField (result object superset), expectContains / expectAbsent (result array contains / does not contain an element matching the subset).",
+  "journeys": [
+    {
+      "name": "watchlist create-list-rename-delete lifecycle",
+      "steps": [
+        {
+          "command": "create_watchlist",
+          "input": { "input": { "name": "Fidelity Watch", "description": null } },
+          "capture": "wid",
+          "expectField": { "name": "Fidelity Watch" }
+        },
+        {
+          "command": "list_watchlists",
+          "input": {},
+          "expectContains": { "name": "Fidelity Watch" }
+        },
+        {
+          "command": "rename_watchlist",
+          "input": { "input": { "id": "$wid", "name": "Fidelity Renamed", "description": null } },
+          "expectField": { "name": "Fidelity Renamed" }
+        },
+        {
+          "command": "list_watchlists",
+          "input": {},
+          "expectContains": { "name": "Fidelity Renamed" },
+          "expectAbsent": { "name": "Fidelity Watch" }
+        },
+        {
+          "command": "delete_watchlist",
+          "input": { "watchlistId": "$wid" }
+        },
+        {
+          "command": "list_watchlists",
+          "input": {},
+          "expectAbsent": { "name": "Fidelity Renamed" }
+        }
+      ]
+    },
+    {
+      "name": "company create-list-delete lifecycle with qualified ticker",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FDLTY",
+              "displayName": "Fidelity Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid",
+          "expectField": { "ticker": "FDLTY", "qualifiedTicker": "GPW:FDLTY" }
+        },
+        {
+          "command": "list_companies",
+          "input": {},
+          "expectContains": { "ticker": "FDLTY", "qualifiedTicker": "GPW:FDLTY" }
+        },
+        {
+          "command": "delete_company",
+          "input": { "companyId": "$cid" }
+        },
+        {
+          "command": "list_companies",
+          "input": {},
+          "expectAbsent": { "ticker": "FDLTY" }
+        }
+      ]
+    }
+  ]
+}

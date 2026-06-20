@@ -17,6 +17,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { useLocale } from "../../shared/locale";
+import { useResearchViewModel } from "../../app/state/screenViewModels";
 import { ActionRow, Button, ErrorText, PanelHeader } from "../../ui";
 import { ResearchAiPanel } from "./ResearchAiPanel";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
@@ -26,7 +27,7 @@ import { ResearchRemindersPanel } from "./ResearchRemindersPanel";
 import { ResearchScopeBar } from "./ResearchScopeBar";
 import { ResearchSummaryStrip } from "./ResearchSummaryStrip";
 
-type ResearchScreenProps = {
+export type ResearchScreenProps = {
   companies: Company[];
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
@@ -83,7 +84,8 @@ type ResearchScreenProps = {
   formatTimestamp: (value: string | null | undefined) => string;
 };
 
-export function ResearchScreen({
+export function ResearchScreen() {
+  const {
   companies,
   watchlists,
   watchlistMemberships,
@@ -138,7 +140,7 @@ export function ResearchScreen({
   openEvidence,
   openEvidenceUrl,
   formatTimestamp,
-}: ResearchScreenProps) {
+  } = useResearchViewModel();
   const { text } = useLocale();
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{

@@ -1,0 +1,42 @@
+---
+source: tests/golden_parsers.rs
+expression: items
+---
+[
+    BankierCompanyItem {
+        company_id: "company_gpw_cdr",
+        qualified_ticker: "GPW:CDR",
+        title: "Wyniki finansowe QSr 1/2026",
+        link: "https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-Wyniki-finansowe-QSr-1-2026-9141553.html",
+        summary: "Komunikat ESPI/EBI",
+        published_at: Some(
+            "2026-05-28T17:33:09",
+        ),
+        fetched_at: "2026-06-08T10:00:00Z",
+        article_id: "9141553",
+        pub_id: 3,
+        dedupe_key: "bankier-company-komunikaty:article:9141553",
+        duplicate_signature: "official-secondary:GPW:CDR:wyniki-finansowe-qsr-1-2026:9141553",
+        body_text: None,
+        attachments: [],
+        detail_fetch_attempted: false,
+    },
+    BankierCompanyItem {
+        company_id: "company_gpw_cdr",
+        qualified_ticker: "GPW:CDR",
+        title: "Projekty uchwal Zwyczajnego Walnego Zgromadzenia",
+        link: "https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-Projekty-uchwal-Zwyczajnego-Walnego-Zgromadzenia-9140612.html",
+        summary: "Komunikat ESPI/EBI",
+        published_at: Some(
+            "2026-05-27T17:08:56",
+        ),
+        fetched_at: "2026-06-08T10:00:00Z",
+        article_id: "9140612",
+        pub_id: 3,
+        dedupe_key: "bankier-company-komunikaty:article:9140612",
+        duplicate_signature: "official-secondary:GPW:CDR:projekty-uchwal-zwyczajnego-walnego-zgromadzenia:9140612",
+        body_text: None,
+        attachments: [],
+        detail_fetch_attempted: false,
+    },
+]

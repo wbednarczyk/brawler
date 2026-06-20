@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck } from "lucide-react";
 import { useLocale } from "../../shared/locale";
+import { useReportSeasonViewModel } from "../../app/state/screenViewModels";
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { ReportSeasonEntry } from "../../api/reportSeason";
 import {
@@ -29,7 +30,8 @@ export type ReportSeasonScreenProps = {
 
 const ALL_SCOPE = "all";
 
-export function ReportSeasonScreen({ watchlists, openCompanyWorkspace }: ReportSeasonScreenProps) {
+export function ReportSeasonScreen() {
+  const { watchlists, openCompanyWorkspace } = useReportSeasonViewModel();
   const { text } = useLocale();
   const [scope, setScope] = useState<string>(ALL_SCOPE);
   const {

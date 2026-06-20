@@ -9,27 +9,55 @@ pub struct RefreshSourcesInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshSourceInput {
     adapter_id: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"manual\" | \"scheduler\""))]
     trigger: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "string | null"))]
     date: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "RefreshCompanyRegistryIfStaleInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct RefreshRegistryIfStaleInput {
+    #[cfg_attr(feature = "ts-export", ts(type = "\"scheduler\""))]
     trigger: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "number"))]
     stale_after_seconds: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ListSourceAdaptersInput {
     include_developer_only: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SetSourceEnabledInput {
     adapter_id: String,

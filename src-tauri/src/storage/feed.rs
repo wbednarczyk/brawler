@@ -1,5 +1,54 @@
+use super::database::Database;
 use super::sources;
 use super::*;
+
+/// Feed domain store (Architecture v2 / ADR 0050). Owns its own [`Database`]
+/// connection source and exposes only feed operations, so a command can depend
+/// on this store instead of the whole `AppState` facade. Reach it via
+/// `AppState::feed()`.
+#[derive(Clone)]
+pub struct FeedStore {
+    db: Database,
+}
+
+impl FeedStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_feed_items(&self) -> StorageResult<Vec<FeedItem>> {
+        let connection = self.db.checkout()?;
+        list_feed_items(&connection)
+    }
+
+    pub fn list_unmatched_source_items(
+        &self,
+        adapter_id: &str,
+    ) -> StorageResult<Vec<UnmatchedSourceItem>> {
+        let connection = self.db.checkout()?;
+        list_unmatched_source_items(&connection, adapter_id)
+    }
+
+    pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {
+        let connection = self.db.checkout()?;
+        update_feed_item_state(&connection, input)
+    }
+
+    pub fn get_feed_item(&self, feed_item_id: &str) -> StorageResult<FeedItem> {
+        let connection = self.db.checkout()?;
+        get_feed_item(&connection, feed_item_id)
+    }
+
+    pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
+        let mut connection = self.db.checkout()?;
+        prune_old_feed_items(&mut connection, retention_days)
+    }
+
+    pub fn delete_unsaved_feed_items(&self) -> StorageResult<FeedDeleteResult> {
+        let mut connection = self.db.checkout()?;
+        delete_unsaved_feed_items(&mut connection)
+    }
+}
 
 pub(super) fn list_feed_items(connection: &Connection) -> StorageResult<Vec<FeedItem>> {
     let mut statement = connection.prepare(

@@ -165,3 +165,71 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod proptests {
+    //! Invariant (property-based) coverage of the pure normalization/slug
+    //! transforms (ADR 0049). These run against arbitrary input — the long tail
+    //! example-based tests miss — and assert the algebraic properties each
+    //! transform must hold for ingestion to stay correct as sources multiply.
+    use super::*;
+    use crate::transform_invariants::{
+        assert_charset, assert_deterministic_str, assert_idempotent_str,
+    };
+    use proptest::prelude::*;
+
+    /// Output alphabet for the ASCII slug transforms: lowercase, digits, dash.
+    fn is_slug_char(character: char) -> bool {
+        character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+    }
+
+    /// Precomposed Polish diacritics that `normalize_polish` must fold to ASCII.
+    const POLISH_DIACRITICS: &str = "ąćęłńóśżźĄĆĘŁŃÓŚŻŹ";
+
+    proptest! {
+        #[test]
+        fn slug_part_is_idempotent_deterministic_and_ascii(input in ".*") {
+            assert_idempotent_str(slug_part, &input);
+            assert_deterministic_str(slug_part, &input);
+            let out = slug_part(&input);
+            assert_charset(&out, is_slug_char, "slug_part");
+            prop_assert!(!out.starts_with('-') && !out.ends_with('-'), "edge dash in {out:?}");
+            prop_assert!(!out.contains("--"), "double dash in {out:?}");
+        }
+
+        #[test]
+        fn polish_slug_part_is_idempotent_and_ascii(input in ".*") {
+            assert_idempotent_str(polish_slug_part, &input);
+            assert_deterministic_str(polish_slug_part, &input);
+            let out = polish_slug_part(&input);
+            assert_charset(&out, is_slug_char, "polish_slug_part");
+            prop_assert!(!out.starts_with('-') && !out.ends_with('-'), "edge dash in {out:?}");
+            prop_assert!(!out.contains("--"), "double dash in {out:?}");
+        }
+
+        #[test]
+        fn normalize_link_without_tracking_is_idempotent_and_total(input in ".*") {
+            // Totality (never panics) is asserted by the call itself; re-stripping
+            // utm_/fragment from an already-clean URL must be a no-op.
+            assert_idempotent_str(normalize_link_without_tracking, &input);
+            assert_deterministic_str(normalize_link_without_tracking, &input);
+        }
+
+        #[test]
+        fn normalize_polish_is_idempotent_and_deterministic(input in ".*") {
+            assert_idempotent_str(normalize_polish, &input);
+            assert_deterministic_str(normalize_polish, &input);
+        }
+
+        #[test]
+        fn normalize_polish_folds_precomposed_diacritics_to_ascii(
+            input in "[a-zA-Z ąćęłńóśżźĄĆĘŁŃÓŚŻŹ]{0,32}"
+        ) {
+            let out = normalize_polish(&input);
+            prop_assert!(
+                !out.chars().any(|c| POLISH_DIACRITICS.contains(c)),
+                "precomposed Polish diacritic survived in {out:?}"
+            );
+        }
+    }
+}

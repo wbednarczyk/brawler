@@ -3,8 +3,14 @@ use serde::Deserialize;
 use crate::{app_state, jobs, storage};
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct PruneOldFeedItemsInput {
+    #[cfg_attr(feature = "ts-export", ts(type = "number"))]
     retention_days: Option<i64>,
 }
 

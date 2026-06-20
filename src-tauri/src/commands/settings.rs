@@ -8,6 +8,11 @@ pub struct DeveloperModeUnlockInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiProviderCatalogEntry {
     pub provider_id: String,

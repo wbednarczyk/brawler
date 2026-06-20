@@ -968,3 +968,98 @@ fn reference_exists(connection: &Connection, table_name: &str, id: &str) -> Stor
         .query_row(&sql, [id], |row| row.get(0))
         .map_err(StorageError::from)
 }
+
+use super::database::Database;
+/// research domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::research()`.
+#[derive(Clone)]
+pub struct ResearchStore {
+    db: Database,
+}
+
+impl ResearchStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn list_research_evidence(
+        &self,
+        input: ResearchEvidenceInput,
+    ) -> StorageResult<ResearchTimelineResult> {
+        let connection = self.db.checkout()?;
+
+        list_research_evidence(&connection, input)
+    }
+
+    pub fn mark_research_scope_reviewed(
+        &self,
+        input: ResearchReviewCheckpointInput,
+    ) -> StorageResult<ResearchReviewCheckpoint> {
+        let connection = self.db.checkout()?;
+
+        mark_research_scope_reviewed(&connection, input)
+    }
+
+    pub fn list_research_review_state(
+        &self,
+        input: ResearchReviewCheckpointInput,
+    ) -> StorageResult<Option<ResearchReviewCheckpoint>> {
+        let connection = self.db.checkout()?;
+
+        list_research_review_state(&connection, input)
+    }
+
+    pub fn list_research_questions(
+        &self,
+        input: ResearchQuestionListInput,
+    ) -> StorageResult<Vec<ResearchQuestion>> {
+        let connection = self.db.checkout()?;
+
+        list_research_questions(&connection, input)
+    }
+
+    pub fn create_research_question(
+        &self,
+        input: NewResearchQuestion,
+    ) -> StorageResult<ResearchQuestion> {
+        let connection = self.db.checkout()?;
+
+        create_research_question(&connection, input)
+    }
+
+    pub fn update_research_question(
+        &self,
+        input: ResearchQuestionUpdate,
+    ) -> StorageResult<ResearchQuestion> {
+        let connection = self.db.checkout()?;
+
+        update_research_question(&connection, input)
+    }
+
+    pub fn delete_research_question(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_research_question(&connection, id)
+    }
+
+    pub fn create_evidence_link(&self, input: NewEvidenceLink) -> StorageResult<EvidenceLink> {
+        let connection = self.db.checkout()?;
+
+        create_evidence_link(&connection, input)
+    }
+
+    pub fn list_evidence_links(
+        &self,
+        input: EvidenceLinkListInput,
+    ) -> StorageResult<Vec<EvidenceLink>> {
+        let connection = self.db.checkout()?;
+
+        list_evidence_links(&connection, input)
+    }
+
+    pub fn delete_evidence_link(&self, id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+
+        delete_evidence_link(&connection, id)
+    }
+}

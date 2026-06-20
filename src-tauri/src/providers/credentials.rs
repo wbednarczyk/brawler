@@ -45,6 +45,11 @@ pub struct CredentialDescriptor {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CredentialStatus {
     pub provider_id: &'static str,

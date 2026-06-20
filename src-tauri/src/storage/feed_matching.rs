@@ -79,61 +79,23 @@ pub(super) fn media_duplicate_signature(
     ))
 }
 
+// The pure text-normalization transforms below are owned by the
+// `entity_resolution` module (the SSOT, ADR 0050) and property-tested there;
+// these `pub(super)` wrappers keep the storage-internal call sites stable.
 pub(super) fn normalized_company_name_signal(value: &str) -> String {
-    let mut normalized = normalize_media_match_text(value);
-    for suffix in [" SPOLKA AKCYJNA", " S A", " SA"] {
-        if let Some(stripped) = normalized.strip_suffix(suffix) {
-            normalized = stripped.trim().to_owned();
-        }
-    }
-
-    if normalized.chars().count() < 4 {
-        String::new()
-    } else {
-        normalized
-    }
+    crate::entity_resolution::company_name_signal(value)
 }
 
 pub(super) fn normalized_text_contains_phrase(tokens: &[&str], phrase: &str) -> bool {
-    let phrase_tokens = phrase.split_whitespace().collect::<Vec<_>>();
-    if phrase_tokens.is_empty() || phrase_tokens.len() > tokens.len() {
-        return false;
-    }
-
-    tokens
-        .windows(phrase_tokens.len())
-        .any(|window| window == phrase_tokens.as_slice())
+    crate::entity_resolution::text_contains_phrase(tokens, phrase)
 }
 
 pub(super) fn normalize_media_match_text(value: &str) -> String {
-    value
-        .chars()
-        .map(normalize_media_character)
-        .map(|character| {
-            if character.is_alphanumeric() {
-                character
-            } else {
-                ' '
-            }
-        })
-        .collect::<String>()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::entity_resolution::normalize_match_text(value)
 }
 
 pub(super) fn normalize_media_character(character: char) -> char {
-    match character {
-        'ą' | 'Ą' => 'A',
-        'ć' | 'Ć' => 'C',
-        'ę' | 'Ę' => 'E',
-        'ł' | 'Ł' => 'L',
-        'ń' | 'Ń' => 'N',
-        'ó' | 'Ó' => 'O',
-        'ś' | 'Ś' => 'S',
-        'ż' | 'Ż' | 'ź' | 'Ź' => 'Z',
-        other => other.to_uppercase().next().unwrap_or(other),
-    }
+    crate::entity_resolution::normalize_match_char(character)
 }
 
 pub(super) struct MatchedCompany {

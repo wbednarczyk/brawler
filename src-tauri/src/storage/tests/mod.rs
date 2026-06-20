@@ -4,6 +4,8 @@ use super::migrations::{apply_migrations, database_status, expected_migration_co
 use super::*;
 
 const PORTAL_ANALIZ_ADAPTER_ID: &str = "portal-analiz";
+use crate::source_adapters::gpw_company_registry::ADAPTER_ID as GPW_REGISTRY_ADAPTER_ID;
+use crate::source_adapters::newconnect_company_directory::ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID;
 
 mod ai_analysis;
 mod backup_pool;
@@ -14,8 +16,11 @@ mod events;
 mod feed_sources;
 mod financials;
 mod import_export;
+mod job_queue;
 mod licensing;
 mod management_claims;
+mod migration_safety;
+mod mock_fidelity;
 mod notebooks;
 mod quality_frameworks;
 mod report_documents;

@@ -20,9 +20,18 @@ pub struct ResearchDigestScopeInput {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchDigestJob {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub provider_id: String,
@@ -30,6 +39,10 @@ pub struct ResearchDigestJob {
     pub prompt_version: String,
     pub evidence_collector_version: String,
     pub renderer_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchBriefJobStatus")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -40,10 +53,19 @@ pub struct ResearchDigestJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchDigest {
     pub id: String,
     pub job_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub provider_id: String,
@@ -61,11 +83,20 @@ pub struct ResearchDigest {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchDigestCitation {
     pub id: String,
     pub digest_id: String,
     pub citation_key: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub evidence_type: String,
     pub evidence_id: String,
     pub label: String,
@@ -571,4 +602,80 @@ fn research_digest_citation_id(digest_id: &str, citation_key: &str) -> String {
         slug_part(digest_id),
         slug_part(citation_key)
     )
+}
+
+use super::database::Database;
+/// research_digests domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::research_digests()`.
+#[derive(Clone)]
+pub struct ResearchDigestStore {
+    db: Database,
+}
+
+impl ResearchDigestStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_research_digest_job(
+        &self,
+        input: NewResearchDigestJob,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.db.checkout()?;
+
+        create_research_digest_job(&connection, input)
+    }
+
+    pub fn list_research_digest_jobs(
+        &self,
+        input: ResearchDigestScopeInput,
+    ) -> StorageResult<Vec<ResearchDigestJob>> {
+        let connection = self.db.checkout()?;
+
+        list_research_digest_jobs(&connection, input)
+    }
+
+    pub fn get_research_digest_job(&self, job_id: &str) -> StorageResult<ResearchDigestJob> {
+        let connection = self.db.checkout()?;
+
+        get_research_digest_job(&connection, job_id)
+    }
+
+    pub fn collect_research_digest_evidence(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ResearchDigestEvidenceContext> {
+        let connection = self.db.checkout()?;
+
+        collect_research_digest_evidence(&connection, job_id)
+    }
+
+    pub fn mark_research_digest_job_running(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.db.checkout()?;
+
+        mark_research_digest_job_running(&connection, job_id)
+    }
+
+    pub fn complete_research_digest_job(
+        &self,
+        input: CompletedResearchDigest,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.db.checkout()?;
+
+        complete_research_digest_job(&connection, input)
+    }
+
+    pub fn mark_research_digest_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<ResearchDigestJob> {
+        let connection = self.db.checkout()?;
+
+        mark_research_digest_job_failed(&connection, job_id, error_code, error)
+    }
 }

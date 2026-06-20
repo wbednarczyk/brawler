@@ -15,6 +15,7 @@ import type {
 } from "../../api/types";
 import { ActionRow, Button, EmptyState, ErrorText, FilterToolbar, InfoGrid, PanelHeader, SelectField } from "../../ui";
 import { useLocale } from "../../shared/locale";
+import { useDeveloperMode } from "../../app/state/SettingsContext";
 import { BackupsSection } from "./BackupsSection";
 import { EmbeddingModelSection } from "./EmbeddingModelSection";
 
@@ -28,15 +29,14 @@ const severityOptions: Array<DiagnosticSeverity | "all"> = [
 ];
 
 type DiagnosticsScreenProps = {
-  developerMode: boolean;
   onDisableDeveloperMode: () => void;
 };
 
 export function DiagnosticsScreen({
-  developerMode,
   onDisableDeveloperMode,
 }: DiagnosticsScreenProps) {
   const { t, text } = useLocale();
+  const developerMode = useDeveloperMode();
   const [events, setEvents] = useState<DiagnosticEvent[]>([]);
   const [moduleFilter, setModuleFilter] = useState("all");
   const [severityFilter, setSeverityFilter] = useState<DiagnosticSeverity | "all">("all");

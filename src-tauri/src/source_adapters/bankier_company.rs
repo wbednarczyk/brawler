@@ -735,8 +735,8 @@ mod tests {
     use super::*;
     use std::cell::RefCell;
 
-    const HTML: &str = include_str!("../../fixtures/bankier_company_cdr.html");
-    const JSON: &str = include_str!("../../fixtures/bankier_company_cdr_listing.json");
+    const HTML: &str = include_str!("../../samples/bankier_company_cdr.html");
+    const JSON: &str = include_str!("../../samples/bankier_company_cdr_listing.json");
 
     fn target() -> BankierCompanyTarget {
         BankierCompanyTarget {

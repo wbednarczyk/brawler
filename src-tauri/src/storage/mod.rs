@@ -6,42 +6,35 @@ use std::{
 
 use crate::source_adapters::bankier_calendar::{
     BankierCalendarEventItem, ADAPTER_ID as BANKIER_CALENDAR_ADAPTER_ID,
-    ATTRIBUTION as BANKIER_CALENDAR_ATTRIBUTION, SOURCE_URL as BANKIER_CALENDAR_SOURCE_URL,
+    ATTRIBUTION as BANKIER_CALENDAR_ATTRIBUTION,
 };
 use crate::source_adapters::bankier_company::{
     BankierCompanyAttachment, BankierCompanyIdentifiers, BankierCompanyItem, BankierCompanyTarget,
     ADAPTER_ID as BANKIER_COMPANY_ADAPTER_ID, ATTRIBUTION as BANKIER_COMPANY_ATTRIBUTION,
-    DISPLAY_NAME as BANKIER_COMPANY_DISPLAY_NAME, SOURCE_URL as BANKIER_COMPANY_SOURCE_URL,
+    DISPLAY_NAME as BANKIER_COMPANY_DISPLAY_NAME,
 };
 use crate::source_adapters::bankier_rss::{
     BankierRssItem, ADAPTER_ID as BANKIER_RSS_ADAPTER_ID, ATTRIBUTION as BANKIER_RSS_ATTRIBUTION,
-    DISPLAY_NAME as BANKIER_RSS_DISPLAY_NAME, SOURCE_URL as BANKIER_RSS_SOURCE_URL,
+    DISPLAY_NAME as BANKIER_RSS_DISPLAY_NAME,
 };
-use crate::source_adapters::gpw_company_registry::{
-    GpwCompanyRegistryEntry, ADAPTER_ID as GPW_REGISTRY_ADAPTER_ID,
-    SOURCE_URL as GPW_REGISTRY_SOURCE_URL,
-};
+use crate::source_adapters::gpw_company_registry::GpwCompanyRegistryEntry;
 use crate::source_adapters::gpw_espi_ebi::{
     GpwReportAttachment, GpwReportListing, ADAPTER_ID, DISPLAY_NAME,
 };
 use crate::source_adapters::gpw_market_events::{
     GpwMarketEventItem, ADAPTER_ID as GPW_MARKET_EVENTS_ADAPTER_ID,
-    ATTRIBUTION as GPW_MARKET_EVENTS_ATTRIBUTION, SOURCE_URL as GPW_MARKET_EVENTS_SOURCE_URL,
+    ATTRIBUTION as GPW_MARKET_EVENTS_ATTRIBUTION,
 };
-use crate::source_adapters::newconnect_company_directory::{
-    ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID, SOURCE_URL as NEWCONNECT_DIRECTORY_SOURCE_URL,
-};
-use r2d2::PooledConnection;
-use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-type SqlitePool = r2d2::Pool<SqliteConnectionManager>;
+use self::database::{Database, DbGuard};
 
 mod ai_analysis;
 mod backup;
 mod claim_extraction;
 mod companies;
+mod database;
 mod diagnostics;
 mod embeddings;
 mod error;
@@ -50,6 +43,8 @@ mod feed;
 mod feed_matching;
 mod financials;
 mod import_export;
+mod ingestion;
+mod jobs;
 mod kpi_extraction;
 mod licensing;
 mod management_claims;
@@ -87,19 +82,31 @@ pub use embeddings::{
     EmbeddableContent, EmbeddedCount, EmbeddedVector, NewContentEmbedding, FEED_ITEM_CONTENT_TYPE,
 };
 // `EmbeddingDownloadState` and `AppState` are defined in this module.
+pub use ai_analysis::AiAnalysisStore;
+pub use claim_extraction::ClaimExtractionStore;
+pub use diagnostics::DiagnosticsStore;
+pub use embeddings::EmbeddingStore;
 pub use error::{StorageError, StorageResult};
+pub use events::EventStore;
+pub use feed::FeedStore;
+pub use financials::FinancialsStore;
 pub use financials::{
     FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance, ListFinancialFactsInput,
     ListFinancialPeriodsInput, ListKpiDefinitionsInput, NewFinancialFact, NewFinancialPeriod,
     NewKpiDefinition, NewKpiRelevance, UpdateFinancialFact, UpdateFinancialPeriod,
     UpdateKpiRelevance,
 };
+pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
+pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore};
+pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
     CompletedKpiExtraction, ConfirmKpiProposalInput, KpiExtractionJob, KpiExtractionProposal,
     NewKpiExtractionJob, NewKpiProposal,
 };
+pub use licensing::LicensingStore;
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
+pub use management_claims::ManagementClaimStore;
 pub use management_claims::{
     ClaimToVerify, ClaimsToVerify, ManagementClaim, ManagementClaimUpdate, NewManagementClaim,
     SetClaimVerdictInput, VerifyingFactCandidate,
@@ -108,96 +115,77 @@ pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
 pub use migrations::{open_database, open_in_memory_database};
+pub use notebooks::NotebookStore;
 pub use pool::open_pool;
+pub use quality_frameworks::QualityFrameworkStore;
 pub use quality_frameworks::{
     CloneFrameworkInput, CriterionResult, EvaluateFrameworkInput, FrameworkCriterion,
     FrameworkEvaluation, ListFrameworkEvaluationsInput, MetricKeyInfo, NewFrameworkCriterion,
     NewQualityFramework, QualityFramework, UpdateFrameworkCriterion, UpdateQualityFramework,
     ValidateCriterionResult,
 };
+pub use registry::SourceRegistryStore;
+pub use report_documents::ReportDocumentStore;
 pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
+pub use report_season::ReportSeasonStore;
 pub use report_season::{
     CalendarFreshness, MarkReportPreparedInput, MarkReportProcessedInput, PreReportCard,
     PreReportCardInput, PreReportKpi, ReportPreparation, ReportSeasonEntry, ReportSeasonInput,
     ReportSeasonResult,
 };
+pub use research::ResearchStore;
+pub use research_briefs::ResearchBriefStore;
 pub use research_briefs::{
     CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
     ResearchBriefCitation, ResearchBriefEvidenceContext, ResearchBriefJob, ResearchBriefScopeInput,
     RESEARCH_BRIEF_COLLECTOR_VERSION, RESEARCH_BRIEF_PROMPT_VERSION,
     RESEARCH_BRIEF_RENDERER_VERSION,
 };
+pub use research_digests::ResearchDigestStore;
 pub use research_digests::{
     completed_digest_from_provider_output, CompletedResearchDigest, NewResearchDigestJob,
     ResearchDigest, ResearchDigestCitation, ResearchDigestEvidenceContext, ResearchDigestJob,
     ResearchDigestScopeInput, RESEARCH_DIGEST_COLLECTOR_VERSION, RESEARCH_DIGEST_PROMPT_VERSION,
     RESEARCH_DIGEST_RENDERER_VERSION,
 };
+pub use research_reminders::ResearchReminderStore;
 pub use research_reminders::{
     NewResearchReminder, ResearchReminder, ResearchReminderListInput, ResearchReminderUpdate,
 };
 pub use search::SearchMatch;
+pub use settings::SettingsStore;
 pub use settings::{
     AiProviderSettings, LogSettings, SettingsUpdate, ShortcutBindingSetting, UserSettings,
 };
 pub use signals::SignalNeedingDate;
+pub use signals::SignalStore;
+pub use sources::SourcesStore;
+pub use transcripts::TranscriptStore;
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
     ResolveTranscriptJobCompanyInput, TranscriptJob, TranscriptJobListInput, TranscriptNoteDraft,
     TranscriptSegment, UpdateTranscriptJobInput,
 };
 pub use types::*;
-
-const PORTAL_ANALIZ_SOURCE_URL: &str = "https://portalanaliz.pl/";
-const BANKIER_FIRMA_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/firma.xml";
-const BANKIER_WIADOMOSCI_RSS_SOURCE_URL: &str = "https://www.bankier.pl/rss/wiadomosci.xml";
-const STREFA_REPORT_CALENDAR_SOURCE_URL: &str = "https://strefainwestorow.pl/dane/raporty";
-const MONEY_CALENDAR_SOURCE_URL: &str = "https://www.money.pl/gielda/raporty/";
-
-/// How the app reaches SQLite. Production uses an r2d2 pool (concurrent readers
-/// under WAL); tests use a single shared connection so an in-memory database is
-/// not duplicated per pooled connection. See [ADR 0032].
-#[derive(Clone)]
-enum Db {
-    Pool(SqlitePool),
-    Single(Arc<Mutex<Connection>>),
-}
-
-/// A checked-out connection that derefs to `rusqlite::Connection`, regardless of
-/// whether it came from the pool or the single test connection.
-enum DbGuard<'a> {
-    Pooled(PooledConnection<SqliteConnectionManager>),
-    Locked(std::sync::MutexGuard<'a, Connection>),
-}
-
-impl std::ops::Deref for DbGuard<'_> {
-    type Target = Connection;
-
-    fn deref(&self) -> &Connection {
-        match self {
-            DbGuard::Pooled(connection) => connection,
-            DbGuard::Locked(connection) => connection,
-        }
-    }
-}
-
-impl std::ops::DerefMut for DbGuard<'_> {
-    fn deref_mut(&mut self) -> &mut Connection {
-        match self {
-            DbGuard::Pooled(connection) => connection,
-            DbGuard::Locked(connection) => connection,
-        }
-    }
-}
+pub use watchlists::WatchlistStore;
 
 /// Live progress/diagnostics for an on-track history backfill (ADR 0036). Held in shared
 /// memory (not persisted): backfill is an explicit, app-open-only action, and idempotent
 /// re-runs mean a lost in-flight status is never harmful.
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct BackfillProgress {
     pub company_id: String,
     /// `running` | `completed` | `failed`.
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"running\" | \"completed\" | \"failed\"")
+    )]
     pub status: String,
     pub pages_fetched: usize,
     pub items_ingested: usize,
@@ -219,7 +207,7 @@ pub struct EmbeddingDownloadState {
 
 #[derive(Clone)]
 pub struct AppState {
-    db: Db,
+    db: Database,
     runtime_metrics: Arc<RuntimeMetricCounters>,
     data_dir: PathBuf,
     backfill_progress: Arc<Mutex<HashMap<String, BackfillProgress>>>,
@@ -233,7 +221,7 @@ impl AppState {
 
     pub fn with_data_dir(connection: Connection, data_dir: PathBuf) -> Self {
         let state = Self {
-            db: Db::Single(Arc::new(Mutex::new(connection))),
+            db: Database::from_connection(connection),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
@@ -243,9 +231,9 @@ impl AppState {
         state
     }
 
-    pub(super) fn with_pool(pool: SqlitePool, data_dir: PathBuf) -> Self {
+    pub(super) fn with_pool(pool: database::SqlitePool, data_dir: PathBuf) -> Self {
         let state = Self {
-            db: Db::Pool(pool),
+            db: Database::from_pool(pool),
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
@@ -284,12 +272,140 @@ impl AppState {
 
     /// Check out a connection for a single storage operation.
     fn checkout(&self) -> StorageResult<DbGuard<'_>> {
-        match &self.db {
-            Db::Pool(pool) => Ok(DbGuard::Pooled(pool.get()?)),
-            Db::Single(connection) => Ok(DbGuard::Locked(
-                connection.lock().expect("database mutex poisoned"),
-            )),
-        }
+        self.db.checkout()
+    }
+
+    /// Watchlist operations as a focused domain store (Architecture v2 / ADR 0050).
+    /// Commands that only touch watchlists can depend on this store instead of the
+    /// whole `AppState` facade.
+    pub fn watchlists(&self) -> watchlists::WatchlistStore {
+        watchlists::WatchlistStore::new(self.db.clone())
+    }
+
+    /// Feed operations as a focused domain store (Architecture v2 / ADR 0050).
+    pub fn feed(&self) -> feed::FeedStore {
+        feed::FeedStore::new(self.db.clone())
+    }
+
+    /// Durable job-queue operations as a focused domain store (Architecture v2 /
+    /// ADR 0050). The in-process worker (`crate::jobs::queue`) drives it.
+    pub fn jobs(&self) -> jobs::JobQueueStore {
+        jobs::JobQueueStore::new(self.db.clone())
+    }
+
+    /// ai_analysis domain store (Architecture v2 / ADR 0050).
+    pub fn ai_analysis(&self) -> ai_analysis::AiAnalysisStore {
+        ai_analysis::AiAnalysisStore::new(self.db.clone())
+    }
+
+    /// claim_extraction domain store (Architecture v2 / ADR 0050).
+    pub fn claim_extraction(&self) -> claim_extraction::ClaimExtractionStore {
+        claim_extraction::ClaimExtractionStore::new(self.db.clone())
+    }
+
+    /// diagnostics domain store (Architecture v2 / ADR 0050).
+    pub fn diagnostics(&self) -> diagnostics::DiagnosticsStore {
+        diagnostics::DiagnosticsStore::new(self.db.clone())
+    }
+
+    /// embeddings domain store (Architecture v2 / ADR 0050).
+    pub fn embeddings(&self) -> embeddings::EmbeddingStore {
+        embeddings::EmbeddingStore::new(self.db.clone())
+    }
+
+    /// events domain store (Architecture v2 / ADR 0050).
+    pub fn events(&self) -> events::EventStore {
+        events::EventStore::new(self.db.clone())
+    }
+
+    /// financials domain store (Architecture v2 / ADR 0050).
+    pub fn financials(&self) -> financials::FinancialsStore {
+        financials::FinancialsStore::new(self.db.clone())
+    }
+
+    /// import_export domain store (Architecture v2 / ADR 0050).
+    pub fn import_export(&self) -> import_export::ImportExportStore {
+        import_export::ImportExportStore::new(self.db.clone())
+    }
+
+    /// kpi_extraction domain store (Architecture v2 / ADR 0050).
+    pub fn kpi_extraction(&self) -> kpi_extraction::KpiExtractionStore {
+        kpi_extraction::KpiExtractionStore::new(self.db.clone())
+    }
+
+    /// licensing domain store (Architecture v2 / ADR 0050).
+    pub fn licensing(&self) -> licensing::LicensingStore {
+        licensing::LicensingStore::new(self.db.clone())
+    }
+
+    /// management_claims domain store (Architecture v2 / ADR 0050).
+    pub fn management_claims(&self) -> management_claims::ManagementClaimStore {
+        management_claims::ManagementClaimStore::new(self.db.clone())
+    }
+
+    /// notebooks domain store (Architecture v2 / ADR 0050).
+    pub fn notebooks(&self) -> notebooks::NotebookStore {
+        notebooks::NotebookStore::new(self.db.clone())
+    }
+
+    /// quality_frameworks domain store (Architecture v2 / ADR 0050).
+    pub fn quality_frameworks(&self) -> quality_frameworks::QualityFrameworkStore {
+        quality_frameworks::QualityFrameworkStore::new(self.db.clone())
+    }
+
+    /// registry domain store (Architecture v2 / ADR 0050).
+    pub fn source_registry(&self) -> registry::SourceRegistryStore {
+        registry::SourceRegistryStore::new(self.db.clone())
+    }
+
+    /// report_documents domain store (Architecture v2 / ADR 0050).
+    pub fn report_documents(&self) -> report_documents::ReportDocumentStore {
+        report_documents::ReportDocumentStore::new(self.db.clone())
+    }
+
+    /// report_season domain store (Architecture v2 / ADR 0050).
+    pub fn report_season(&self) -> report_season::ReportSeasonStore {
+        report_season::ReportSeasonStore::new(self.db.clone())
+    }
+
+    /// research domain store (Architecture v2 / ADR 0050).
+    pub fn research(&self) -> research::ResearchStore {
+        research::ResearchStore::new(self.db.clone())
+    }
+
+    /// research_briefs domain store (Architecture v2 / ADR 0050).
+    pub fn research_briefs(&self) -> research_briefs::ResearchBriefStore {
+        research_briefs::ResearchBriefStore::new(self.db.clone())
+    }
+
+    /// research_digests domain store (Architecture v2 / ADR 0050).
+    pub fn research_digests(&self) -> research_digests::ResearchDigestStore {
+        research_digests::ResearchDigestStore::new(self.db.clone())
+    }
+
+    /// research_reminders domain store (Architecture v2 / ADR 0050).
+    pub fn research_reminders(&self) -> research_reminders::ResearchReminderStore {
+        research_reminders::ResearchReminderStore::new(self.db.clone())
+    }
+
+    /// settings domain store (Architecture v2 / ADR 0050).
+    pub fn settings(&self) -> settings::SettingsStore {
+        settings::SettingsStore::new(self.db.clone())
+    }
+
+    /// signals domain store (Architecture v2 / ADR 0050).
+    pub fn signals(&self) -> signals::SignalStore {
+        signals::SignalStore::new(self.db.clone())
+    }
+
+    /// sources domain store (Architecture v2 / ADR 0050).
+    pub fn sources(&self) -> sources::SourcesStore {
+        sources::SourcesStore::new(self.db.clone())
+    }
+
+    /// transcripts domain store (Architecture v2 / ADR 0050).
+    pub fn transcripts(&self) -> transcripts::TranscriptStore {
+        transcripts::TranscriptStore::new(self.db.clone())
     }
 
     pub fn data_dir(&self) -> &Path {
@@ -348,10 +464,13 @@ impl AppState {
         backup::request_restore(&self.data_dir, file_name)
     }
 
-    pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
-        let connection = self.checkout()?;
+    /// Company operations as a focused domain store (Architecture v2 / ADR 0050).
+    pub fn companies(&self) -> companies::CompanyStore {
+        companies::CompanyStore::new(self.db.clone())
+    }
 
-        companies::list_companies(&connection)
+    pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
+        self.companies().list_companies()
     }
 
     pub fn search(
@@ -367,15 +486,11 @@ impl AppState {
     }
 
     pub fn create_company(&self, input: NewCompany) -> StorageResult<Company> {
-        let connection = self.checkout()?;
-
-        companies::create_company(&connection, input)
+        self.companies().create_company(input)
     }
 
     pub fn get_company_ir_reports_url(&self, company_id: &str) -> StorageResult<Option<String>> {
-        let connection = self.checkout()?;
-
-        companies::get_company_ir_reports_url(&connection, company_id)
+        self.companies().get_company_ir_reports_url(company_id)
     }
 
     pub fn set_company_ir_reports_url(
@@ -383,30 +498,24 @@ impl AppState {
         company_id: &str,
         url: Option<&str>,
     ) -> StorageResult<Option<String>> {
-        let connection = self.checkout()?;
-
-        companies::set_company_ir_reports_url(&connection, company_id, url)
+        self.companies().set_company_ir_reports_url(company_id, url)
     }
 
     pub fn lookup_company(
         &self,
         input: CompanyLookupInput,
     ) -> StorageResult<Option<CompanyLookupResult>> {
-        let connection = self.checkout()?;
-
-        companies::lookup_company(&connection, input)
+        self.companies().lookup_company(input)
     }
 
     pub fn company_directories_need_bootstrap_refresh(&self) -> StorageResult<bool> {
-        let connection = self.checkout()?;
-
-        companies::company_directories_need_bootstrap_refresh(&connection)
+        self.companies()
+            .company_directories_need_bootstrap_refresh()
     }
 
     pub fn company_directories_are_stale(&self, stale_after_seconds: i64) -> StorageResult<bool> {
-        let connection = self.checkout()?;
-
-        companies::company_directories_are_stale(&connection, stale_after_seconds)
+        self.companies()
+            .company_directories_are_stale(stale_after_seconds)
     }
 
     pub fn refresh_gpw_company_registry(
@@ -414,14 +523,8 @@ impl AppState {
         entries: &[GpwCompanyRegistryEntry],
         fetched_at: &str,
     ) -> StorageResult<CompanyRegistryRefreshResult> {
-        let mut connection = self.checkout()?;
-
-        companies::refresh_company_directory(
-            &mut connection,
-            GPW_REGISTRY_ADAPTER_ID,
-            entries,
-            fetched_at,
-        )
+        self.companies()
+            .refresh_gpw_company_registry(entries, fetched_at)
     }
 
     pub fn refresh_newconnect_company_directory(
@@ -429,44 +532,28 @@ impl AppState {
         entries: &[GpwCompanyRegistryEntry],
         fetched_at: &str,
     ) -> StorageResult<CompanyRegistryRefreshResult> {
-        let mut connection = self.checkout()?;
-
-        companies::refresh_company_directory(
-            &mut connection,
-            NEWCONNECT_DIRECTORY_ADAPTER_ID,
-            entries,
-            fetched_at,
-        )
+        self.companies()
+            .refresh_newconnect_company_directory(entries, fetched_at)
     }
 
     pub fn delete_company(&self, company_id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        companies::delete_company(&connection, company_id)
+        self.companies().delete_company(company_id)
     }
 
     pub fn export_research_data(&self) -> StorageResult<ExportPayload> {
-        let connection = self.checkout()?;
-
-        import_export::export_research_data(&connection)
+        self.import_export().export_research_data()
     }
 
     pub fn preview_research_import(&self, contents: &str) -> StorageResult<ImportPreview> {
-        let connection = self.checkout()?;
-
-        import_export::preview_research_import(&connection, contents)
+        self.import_export().preview_research_import(contents)
     }
 
     pub fn apply_research_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
-        let mut connection = self.checkout()?;
-
-        import_export::apply_research_import(&mut connection, contents)
+        self.import_export().apply_research_import(contents)
     }
 
     pub fn export_settings_data(&self) -> StorageResult<ExportPayload> {
-        let connection = self.checkout()?;
-
-        import_export::export_settings_data(&connection)
+        self.import_export().export_settings_data()
     }
 
     pub fn preview_settings_import(&self, contents: &str) -> StorageResult<ImportPreview> {
@@ -474,228 +561,174 @@ impl AppState {
     }
 
     pub fn apply_settings_import(&self, contents: &str) -> StorageResult<ImportApplyResult> {
-        let connection = self.checkout()?;
-
-        import_export::apply_settings_import(&connection, contents)
+        self.import_export().apply_settings_import(contents)
     }
 
+    // Watchlist operations delegate to `WatchlistStore` (Architecture v2 / ADR
+    // 0050). These thin pass-throughs keep existing call sites working while the
+    // facade is dissolved incrementally; new code should prefer `watchlists()`.
     pub fn list_watchlists(&self) -> StorageResult<Vec<Watchlist>> {
-        let connection = self.checkout()?;
-
-        watchlists::list_watchlists(&connection)
+        self.watchlists().list_watchlists()
     }
 
     pub fn list_watchlist_memberships(&self) -> StorageResult<Vec<WatchlistMembership>> {
-        let connection = self.checkout()?;
-
-        watchlists::list_watchlist_memberships(&connection)
+        self.watchlists().list_watchlist_memberships()
     }
 
     pub fn create_watchlist(&self, input: NewWatchlist) -> StorageResult<Watchlist> {
-        let connection = self.checkout()?;
-
-        watchlists::create_watchlist(&connection, input)
+        self.watchlists().create_watchlist(input)
     }
 
     pub fn rename_watchlist(&self, input: WatchlistUpdate) -> StorageResult<Watchlist> {
-        let connection = self.checkout()?;
-
-        watchlists::rename_watchlist(&connection, input)
+        self.watchlists().rename_watchlist(input)
     }
 
     pub fn delete_watchlist(&self, watchlist_id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        watchlists::delete_watchlist(&connection, watchlist_id)
+        self.watchlists().delete_watchlist(watchlist_id)
     }
 
     pub fn add_company_to_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        watchlists::add_company_to_watchlist(&connection, input)
+        self.watchlists().add_company_to_watchlist(input)
     }
 
     pub fn remove_company_from_watchlist(&self, input: WatchlistCompanyInput) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        watchlists::remove_company_from_watchlist(&connection, input)
+        self.watchlists().remove_company_from_watchlist(input)
     }
 
+    // Feed operations delegate to `FeedStore` (Architecture v2 / ADR 0050).
     pub fn list_feed_items(&self) -> StorageResult<Vec<FeedItem>> {
-        let connection = self.checkout()?;
-
-        feed::list_feed_items(&connection)
+        self.feed().list_feed_items()
     }
 
     pub fn list_unmatched_source_items(
         &self,
         adapter_id: &str,
     ) -> StorageResult<Vec<UnmatchedSourceItem>> {
-        let connection = self.checkout()?;
-
-        feed::list_unmatched_source_items(&connection, adapter_id)
+        self.feed().list_unmatched_source_items(adapter_id)
     }
 
     pub fn list_research_evidence(
         &self,
         input: ResearchEvidenceInput,
     ) -> StorageResult<ResearchTimelineResult> {
-        let connection = self.checkout()?;
-
-        research::list_research_evidence(&connection, input)
+        self.research().list_research_evidence(input)
     }
 
     pub fn mark_research_scope_reviewed(
         &self,
         input: ResearchReviewCheckpointInput,
     ) -> StorageResult<ResearchReviewCheckpoint> {
-        let connection = self.checkout()?;
-
-        research::mark_research_scope_reviewed(&connection, input)
+        self.research().mark_research_scope_reviewed(input)
     }
 
     pub fn list_research_review_state(
         &self,
         input: ResearchReviewCheckpointInput,
     ) -> StorageResult<Option<ResearchReviewCheckpoint>> {
-        let connection = self.checkout()?;
-
-        research::list_research_review_state(&connection, input)
+        self.research().list_research_review_state(input)
     }
 
     pub fn list_research_questions(
         &self,
         input: ResearchQuestionListInput,
     ) -> StorageResult<Vec<ResearchQuestion>> {
-        let connection = self.checkout()?;
-
-        research::list_research_questions(&connection, input)
+        self.research().list_research_questions(input)
     }
 
     pub fn create_research_question(
         &self,
         input: NewResearchQuestion,
     ) -> StorageResult<ResearchQuestion> {
-        let connection = self.checkout()?;
-
-        research::create_research_question(&connection, input)
+        self.research().create_research_question(input)
     }
 
     pub fn update_research_question(
         &self,
         input: ResearchQuestionUpdate,
     ) -> StorageResult<ResearchQuestion> {
-        let connection = self.checkout()?;
-
-        research::update_research_question(&connection, input)
+        self.research().update_research_question(input)
     }
 
     pub fn delete_research_question(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        research::delete_research_question(&connection, id)
+        self.research().delete_research_question(id)
     }
 
     pub fn create_evidence_link(&self, input: NewEvidenceLink) -> StorageResult<EvidenceLink> {
-        let connection = self.checkout()?;
-
-        research::create_evidence_link(&connection, input)
+        self.research().create_evidence_link(input)
     }
 
     pub fn list_evidence_links(
         &self,
         input: EvidenceLinkListInput,
     ) -> StorageResult<Vec<EvidenceLink>> {
-        let connection = self.checkout()?;
-
-        research::list_evidence_links(&connection, input)
+        self.research().list_evidence_links(input)
     }
 
     pub fn delete_evidence_link(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        research::delete_evidence_link(&connection, id)
+        self.research().delete_evidence_link(id)
     }
 
     pub fn list_research_reminders(
         &self,
         input: ResearchReminderListInput,
     ) -> StorageResult<Vec<ResearchReminder>> {
-        let connection = self.checkout()?;
-
-        research_reminders::list_research_reminders(&connection, input)
+        self.research_reminders().list_research_reminders(input)
     }
 
     pub fn create_research_reminder(
         &self,
         input: NewResearchReminder,
     ) -> StorageResult<ResearchReminder> {
-        let connection = self.checkout()?;
-
-        research_reminders::create_research_reminder(&connection, input)
+        self.research_reminders().create_research_reminder(input)
     }
 
     pub fn update_research_reminder(
         &self,
         input: ResearchReminderUpdate,
     ) -> StorageResult<ResearchReminder> {
-        let connection = self.checkout()?;
-
-        research_reminders::update_research_reminder(&connection, input)
+        self.research_reminders().update_research_reminder(input)
     }
 
     pub fn delete_research_reminder(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        research_reminders::delete_research_reminder(&connection, id)
+        self.research_reminders().delete_research_reminder(id)
     }
 
     pub fn create_research_brief_job(
         &self,
         input: NewResearchBriefJob,
     ) -> StorageResult<ResearchBriefJob> {
-        let connection = self.checkout()?;
-
-        research_briefs::create_research_brief_job(&connection, input)
+        self.research_briefs().create_research_brief_job(input)
     }
 
     pub fn list_research_brief_jobs(
         &self,
         input: ResearchBriefScopeInput,
     ) -> StorageResult<Vec<ResearchBriefJob>> {
-        let connection = self.checkout()?;
-
-        research_briefs::list_research_brief_jobs(&connection, input)
+        self.research_briefs().list_research_brief_jobs(input)
     }
 
     pub fn get_research_brief_job(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
-        let connection = self.checkout()?;
-
-        research_briefs::get_research_brief_job(&connection, job_id)
+        self.research_briefs().get_research_brief_job(job_id)
     }
 
     pub fn collect_research_brief_evidence(
         &self,
         job_id: &str,
     ) -> StorageResult<ResearchBriefEvidenceContext> {
-        let connection = self.checkout()?;
-
-        research_briefs::collect_research_brief_evidence(&connection, job_id)
+        self.research_briefs()
+            .collect_research_brief_evidence(job_id)
     }
 
     pub fn mark_research_brief_job_running(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
-        let connection = self.checkout()?;
-
-        research_briefs::mark_research_brief_job_running(&connection, job_id)
+        self.research_briefs()
+            .mark_research_brief_job_running(job_id)
     }
 
     pub fn complete_research_brief_job(
         &self,
         input: CompletedResearchBrief,
     ) -> StorageResult<ResearchBriefJob> {
-        let connection = self.checkout()?;
-
-        research_briefs::complete_research_brief_job(&connection, input)
+        self.research_briefs().complete_research_brief_job(input)
     }
 
     pub fn mark_research_brief_job_failed(
@@ -704,60 +737,49 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<ResearchBriefJob> {
-        let connection = self.checkout()?;
-
-        research_briefs::mark_research_brief_job_failed(&connection, job_id, error_code, error)
+        self.research_briefs()
+            .mark_research_brief_job_failed(job_id, error_code, error)
     }
 
     pub fn create_research_digest_job(
         &self,
         input: NewResearchDigestJob,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.checkout()?;
-
-        research_digests::create_research_digest_job(&connection, input)
+        self.research_digests().create_research_digest_job(input)
     }
 
     pub fn list_research_digest_jobs(
         &self,
         input: ResearchDigestScopeInput,
     ) -> StorageResult<Vec<ResearchDigestJob>> {
-        let connection = self.checkout()?;
-
-        research_digests::list_research_digest_jobs(&connection, input)
+        self.research_digests().list_research_digest_jobs(input)
     }
 
     pub fn get_research_digest_job(&self, job_id: &str) -> StorageResult<ResearchDigestJob> {
-        let connection = self.checkout()?;
-
-        research_digests::get_research_digest_job(&connection, job_id)
+        self.research_digests().get_research_digest_job(job_id)
     }
 
     pub fn collect_research_digest_evidence(
         &self,
         job_id: &str,
     ) -> StorageResult<ResearchDigestEvidenceContext> {
-        let connection = self.checkout()?;
-
-        research_digests::collect_research_digest_evidence(&connection, job_id)
+        self.research_digests()
+            .collect_research_digest_evidence(job_id)
     }
 
     pub fn mark_research_digest_job_running(
         &self,
         job_id: &str,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.checkout()?;
-
-        research_digests::mark_research_digest_job_running(&connection, job_id)
+        self.research_digests()
+            .mark_research_digest_job_running(job_id)
     }
 
     pub fn complete_research_digest_job(
         &self,
         input: CompletedResearchDigest,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.checkout()?;
-
-        research_digests::complete_research_digest_job(&connection, input)
+        self.research_digests().complete_research_digest_job(input)
     }
 
     pub fn mark_research_digest_job_failed(
@@ -766,33 +788,26 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<ResearchDigestJob> {
-        let connection = self.checkout()?;
-
-        research_digests::mark_research_digest_job_failed(&connection, job_id, error_code, error)
+        self.research_digests()
+            .mark_research_digest_job_failed(job_id, error_code, error)
     }
 
     pub fn ingest_gpw_report_listings(
         &self,
         listings: &[GpwReportListing],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.checkout()?;
-
-        sources::ingest_gpw_report_listings(&mut connection, listings)
+        self.sources().ingest_gpw_report_listings(listings)
     }
 
     pub fn ingest_bankier_rss_items(
         &self,
         items: &[BankierRssItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.checkout()?;
-
-        sources::ingest_bankier_rss_items(&mut connection, items)
+        self.sources().ingest_bankier_rss_items(items)
     }
 
     pub fn list_bankier_company_targets(&self) -> StorageResult<Vec<BankierCompanyTarget>> {
-        let connection = self.checkout()?;
-
-        sources::list_bankier_company_targets(&connection)
+        self.sources().list_bankier_company_targets()
     }
 
     pub fn upsert_bankier_company_identifiers(
@@ -800,42 +815,33 @@ impl AppState {
         company_id: &str,
         identifiers: &BankierCompanyIdentifiers,
     ) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        sources::upsert_bankier_company_identifiers(&connection, company_id, identifiers)
+        self.sources()
+            .upsert_bankier_company_identifiers(company_id, identifiers)
     }
 
     pub fn list_bankier_company_detail_cached_urls(&self) -> StorageResult<Vec<String>> {
-        let connection = self.checkout()?;
-
-        sources::list_bankier_company_detail_cached_urls(&connection)
+        self.sources().list_bankier_company_detail_cached_urls()
     }
 
     pub fn ingest_bankier_company_items(
         &self,
         items: &[BankierCompanyItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.checkout()?;
-
-        sources::ingest_bankier_company_items(&mut connection, items)
+        self.sources().ingest_bankier_company_items(items)
     }
 
     pub fn ingest_gpw_market_event_items(
         &self,
         items: &[GpwMarketEventItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.checkout()?;
-
-        events::ingest_gpw_market_event_items(&mut connection, items)
+        self.events().ingest_gpw_market_event_items(items)
     }
 
     pub fn ingest_bankier_calendar_event_items(
         &self,
         items: &[BankierCalendarEventItem],
     ) -> StorageResult<SourceIngestionResult> {
-        let mut connection = self.checkout()?;
-
-        events::ingest_bankier_calendar_event_items(&mut connection, items)
+        self.events().ingest_bankier_calendar_event_items(items)
     }
 
     pub fn tracks_gpw_listing_company(&self, ticker: &str, isin: &str) -> StorageResult<bool> {
@@ -845,169 +851,130 @@ impl AppState {
     }
 
     pub fn update_feed_item_state(&self, input: FeedItemStateInput) -> StorageResult<FeedItem> {
-        let connection = self.checkout()?;
-
-        feed::update_feed_item_state(&connection, input)
+        self.feed().update_feed_item_state(input)
     }
 
     pub fn get_feed_item(&self, feed_item_id: &str) -> StorageResult<FeedItem> {
-        let connection = self.checkout()?;
-
-        feed::get_feed_item(&connection, feed_item_id)
+        self.feed().get_feed_item(feed_item_id)
     }
 
     pub fn prune_old_feed_items(&self, retention_days: i64) -> StorageResult<FeedPruneResult> {
-        let mut connection = self.checkout()?;
-
-        feed::prune_old_feed_items(&mut connection, retention_days)
+        self.feed().prune_old_feed_items(retention_days)
     }
 
     pub fn delete_unsaved_feed_items(&self) -> StorageResult<FeedDeleteResult> {
-        let mut connection = self.checkout()?;
-
-        feed::delete_unsaved_feed_items(&mut connection)
+        self.feed().delete_unsaved_feed_items()
     }
 
     pub fn list_notebook_entries(&self, company_id: &str) -> StorageResult<Vec<NotebookEntry>> {
-        let connection = self.checkout()?;
-
-        notebooks::list_notebook_entries(&connection, company_id)
+        self.notebooks().list_notebook_entries(company_id)
     }
 
     pub fn create_notebook_entry(&self, input: NewNotebookEntry) -> StorageResult<NotebookEntry> {
-        let connection = self.checkout()?;
-
-        notebooks::create_notebook_entry(&connection, input)
+        self.notebooks().create_notebook_entry(input)
     }
 
     pub fn create_note_from_transcript_selection(
         &self,
         input: CreateNoteFromTranscriptSelectionInput,
     ) -> StorageResult<NotebookEntry> {
-        let connection = self.checkout()?;
-
-        transcripts::create_note_from_transcript_selection(&connection, input)
+        self.transcripts()
+            .create_note_from_transcript_selection(input)
     }
 
     pub fn update_notebook_entry(
         &self,
         input: NotebookEntryUpdate,
     ) -> StorageResult<NotebookEntry> {
-        let connection = self.checkout()?;
-
-        notebooks::update_notebook_entry(&connection, input)
+        self.notebooks().update_notebook_entry(input)
     }
 
     pub fn delete_notebook_entry(&self, notebook_entry_id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        notebooks::delete_notebook_entry(&connection, notebook_entry_id)
+        self.notebooks().delete_notebook_entry(notebook_entry_id)
     }
 
     pub fn list_management_claims(&self, company_id: &str) -> StorageResult<Vec<ManagementClaim>> {
-        let connection = self.checkout()?;
-
-        management_claims::list_management_claims(&connection, company_id)
+        self.management_claims().list_management_claims(company_id)
     }
 
     pub fn create_management_claim(
         &self,
         input: NewManagementClaim,
     ) -> StorageResult<ManagementClaim> {
-        let connection = self.checkout()?;
-
-        management_claims::create_management_claim(&connection, input)
+        self.management_claims().create_management_claim(input)
     }
 
     pub fn update_management_claim(
         &self,
         input: ManagementClaimUpdate,
     ) -> StorageResult<ManagementClaim> {
-        let connection = self.checkout()?;
-
-        management_claims::update_management_claim(&connection, input)
+        self.management_claims().update_management_claim(input)
     }
 
     pub fn set_claim_verdict(&self, input: SetClaimVerdictInput) -> StorageResult<ManagementClaim> {
-        let connection = self.checkout()?;
-
-        management_claims::set_claim_verdict(&connection, input)
+        self.management_claims().set_claim_verdict(input)
     }
 
     pub fn delete_management_claim(&self, claim_id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        management_claims::delete_management_claim(&connection, claim_id)
+        self.management_claims().delete_management_claim(claim_id)
     }
 
     pub fn list_claims_to_verify(&self, company_id: &str) -> StorageResult<ClaimsToVerify> {
-        let connection = self.checkout()?;
-
-        management_claims::list_claims_to_verify(&connection, company_id)
+        self.management_claims().list_claims_to_verify(company_id)
     }
 
     // ---- Quality frameworks (ADR 0046) -----------------------------------
 
     pub fn list_quality_frameworks(&self) -> StorageResult<Vec<QualityFramework>> {
-        let connection = self.checkout()?;
-        quality_frameworks::list_quality_frameworks(&connection)
+        self.quality_frameworks().list_quality_frameworks()
     }
 
     pub fn get_quality_framework(&self, id: &str) -> StorageResult<QualityFramework> {
-        let connection = self.checkout()?;
-        quality_frameworks::get_quality_framework(&connection, id)
+        self.quality_frameworks().get_quality_framework(id)
     }
 
     pub fn create_quality_framework(
         &self,
         input: NewQualityFramework,
     ) -> StorageResult<QualityFramework> {
-        let connection = self.checkout()?;
-        quality_frameworks::create_quality_framework(&connection, input)
+        self.quality_frameworks().create_quality_framework(input)
     }
 
     pub fn update_quality_framework(
         &self,
         input: UpdateQualityFramework,
     ) -> StorageResult<QualityFramework> {
-        let connection = self.checkout()?;
-        quality_frameworks::update_quality_framework(&connection, input)
+        self.quality_frameworks().update_quality_framework(input)
     }
 
     pub fn delete_quality_framework(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-        quality_frameworks::delete_quality_framework(&connection, id)
+        self.quality_frameworks().delete_quality_framework(id)
     }
 
     pub fn clone_framework(&self, input: CloneFrameworkInput) -> StorageResult<QualityFramework> {
-        let connection = self.checkout()?;
-        quality_frameworks::clone_framework(&connection, input)
+        self.quality_frameworks().clone_framework(input)
     }
 
     pub fn reset_framework_to_template(&self, id: &str) -> StorageResult<QualityFramework> {
-        let connection = self.checkout()?;
-        quality_frameworks::reset_framework_to_template(&connection, id)
+        self.quality_frameworks().reset_framework_to_template(id)
     }
 
     pub fn create_framework_criterion(
         &self,
         input: NewFrameworkCriterion,
     ) -> StorageResult<FrameworkCriterion> {
-        let connection = self.checkout()?;
-        quality_frameworks::create_framework_criterion(&connection, input)
+        self.quality_frameworks().create_framework_criterion(input)
     }
 
     pub fn update_framework_criterion(
         &self,
         input: UpdateFrameworkCriterion,
     ) -> StorageResult<FrameworkCriterion> {
-        let connection = self.checkout()?;
-        quality_frameworks::update_framework_criterion(&connection, input)
+        self.quality_frameworks().update_framework_criterion(input)
     }
 
     pub fn delete_framework_criterion(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-        quality_frameworks::delete_framework_criterion(&connection, id)
+        self.quality_frameworks().delete_framework_criterion(id)
     }
 
     pub fn validate_criterion_expression(&self, expression: &str) -> ValidateCriterionResult {
@@ -1018,82 +985,66 @@ impl AppState {
         &self,
         input: EvaluateFrameworkInput,
     ) -> StorageResult<FrameworkEvaluation> {
-        let connection = self.checkout()?;
-        quality_frameworks::evaluate_framework(&connection, input)
+        self.quality_frameworks().evaluate_framework(input)
     }
 
     pub fn list_framework_evaluations(
         &self,
         input: ListFrameworkEvaluationsInput,
     ) -> StorageResult<Vec<FrameworkEvaluation>> {
-        let connection = self.checkout()?;
-        quality_frameworks::list_framework_evaluations(&connection, input)
+        self.quality_frameworks().list_framework_evaluations(input)
     }
 
     pub fn get_framework_evaluation(&self, id: &str) -> StorageResult<FrameworkEvaluation> {
-        let connection = self.checkout()?;
-        quality_frameworks::get_framework_evaluation(&connection, id)
+        self.quality_frameworks().get_framework_evaluation(id)
     }
 
     pub fn delete_framework_evaluation(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-        quality_frameworks::delete_framework_evaluation(&connection, id)
+        self.quality_frameworks().delete_framework_evaluation(id)
     }
 
     pub fn list_available_metric_keys(
         &self,
         company_id: Option<&str>,
     ) -> StorageResult<Vec<MetricKeyInfo>> {
-        let connection = self.checkout()?;
-        quality_frameworks::list_available_metric_keys(&connection, company_id)
+        self.quality_frameworks()
+            .list_available_metric_keys(company_id)
     }
 
     pub fn list_report_season(
         &self,
         input: ReportSeasonInput,
     ) -> StorageResult<ReportSeasonResult> {
-        let connection = self.checkout()?;
-
-        report_season::list_report_season(&connection, input)
+        self.report_season().list_report_season(input)
     }
 
     pub fn get_pre_report_card(&self, input: PreReportCardInput) -> StorageResult<PreReportCard> {
-        let connection = self.checkout()?;
-
-        report_season::get_pre_report_card(&connection, input)
+        self.report_season().get_pre_report_card(input)
     }
 
     pub fn mark_report_prepared(
         &self,
         input: MarkReportPreparedInput,
     ) -> StorageResult<ReportPreparation> {
-        let connection = self.checkout()?;
-
-        report_season::mark_report_prepared(&connection, input)
+        self.report_season().mark_report_prepared(input)
     }
 
     pub fn mark_report_processed(
         &self,
         input: MarkReportProcessedInput,
     ) -> StorageResult<ReportPreparation> {
-        let connection = self.checkout()?;
-
-        report_season::mark_report_processed(&connection, input)
+        self.report_season().mark_report_processed(input)
     }
 
     pub fn create_claim_extraction_job(
         &self,
         input: NewClaimExtractionJob,
     ) -> StorageResult<ClaimExtractionJob> {
-        let connection = self.checkout()?;
-
-        claim_extraction::create_claim_extraction_job(&connection, input)
+        self.claim_extraction().create_claim_extraction_job(input)
     }
 
     pub fn get_claim_extraction_job(&self, job_id: &str) -> StorageResult<ClaimExtractionJob> {
-        let connection = self.checkout()?;
-
-        claim_extraction::get_claim_extraction_job(&connection, job_id)
+        self.claim_extraction().get_claim_extraction_job(job_id)
     }
 
     pub fn list_claim_extraction_jobs_by_source(
@@ -1101,18 +1052,16 @@ impl AppState {
         source_type: &str,
         source_id: &str,
     ) -> StorageResult<Vec<ClaimExtractionJob>> {
-        let connection = self.checkout()?;
-
-        claim_extraction::list_claim_extraction_jobs_by_source(&connection, source_type, source_id)
+        self.claim_extraction()
+            .list_claim_extraction_jobs_by_source(source_type, source_id)
     }
 
     pub fn mark_claim_extraction_job_running(
         &self,
         job_id: &str,
     ) -> StorageResult<ClaimExtractionJob> {
-        let connection = self.checkout()?;
-
-        claim_extraction::mark_claim_extraction_job_running(&connection, job_id)
+        self.claim_extraction()
+            .mark_claim_extraction_job_running(job_id)
     }
 
     pub fn mark_claim_extraction_job_failed(
@@ -1121,69 +1070,52 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<ClaimExtractionJob> {
-        let connection = self.checkout()?;
-
-        claim_extraction::mark_claim_extraction_job_failed(&connection, job_id, error_code, error)
+        self.claim_extraction()
+            .mark_claim_extraction_job_failed(job_id, error_code, error)
     }
 
     pub fn complete_claim_extraction_job(
         &self,
         input: CompletedClaimExtraction,
     ) -> StorageResult<ClaimExtractionJob> {
-        let mut connection = self.checkout()?;
-
-        claim_extraction::complete_claim_extraction_job(&mut connection, input)
+        self.claim_extraction().complete_claim_extraction_job(input)
     }
 
     pub fn confirm_claim_proposal(
         &self,
         input: ConfirmClaimProposalInput,
     ) -> StorageResult<ManagementClaim> {
-        let connection = self.checkout()?;
-
-        claim_extraction::confirm_claim_proposal(&connection, input)
+        self.claim_extraction().confirm_claim_proposal(input)
     }
 
     pub fn reject_claim_proposal(&self, proposal_id: &str) -> StorageResult<ClaimExtractionJob> {
-        let connection = self.checkout()?;
-
-        claim_extraction::reject_claim_proposal(&connection, proposal_id)
+        self.claim_extraction().reject_claim_proposal(proposal_id)
     }
 
     pub fn list_company_events(
         &self,
         input: CompanyEventListInput,
     ) -> StorageResult<Vec<CompanyEvent>> {
-        let connection = self.checkout()?;
-
-        events::list_company_events(&connection, input)
+        self.events().list_company_events(input)
     }
 
     pub fn create_company_event(&self, input: NewCompanyEvent) -> StorageResult<CompanyEvent> {
-        let connection = self.checkout()?;
-
-        events::create_company_event(&connection, input)
+        self.events().create_company_event(input)
     }
 
     pub fn list_company_signals(
         &self,
         input: CompanySignalListInput,
     ) -> StorageResult<Vec<CompanySignal>> {
-        let connection = self.checkout()?;
-
-        signals::list_company_signals(&connection, input)
+        self.signals().list_company_signals(input)
     }
 
     pub fn propose_company_signal(&self, input: ProposedSignalInput) -> StorageResult<bool> {
-        let connection = self.checkout()?;
-
-        signals::create_proposed_signal(&connection, &input)
+        self.signals().propose_company_signal(input)
     }
 
     pub fn list_signal_categories_for_ai(&self) -> StorageResult<Vec<SignalCategorySummary>> {
-        let connection = self.checkout()?;
-
-        signals::list_categories_for_ai(&connection)
+        self.signals().list_signal_categories_for_ai()
     }
 
     pub fn list_unclassified_official_filings(
@@ -1191,28 +1123,21 @@ impl AppState {
         source_adapter_id: &str,
         limit: i64,
     ) -> StorageResult<Vec<UnclassifiedFiling>> {
-        let connection = self.checkout()?;
-
-        signals::list_unclassified_official_filings(&connection, source_adapter_id, limit)
+        self.signals()
+            .list_unclassified_official_filings(source_adapter_id, limit)
     }
 
     pub fn confirm_company_signal(&self, signal_id: &str) -> StorageResult<CompanySignal> {
-        let connection = self.checkout()?;
-
-        signals::confirm_company_signal(&connection, signal_id)
+        self.signals().confirm_company_signal(signal_id)
     }
 
     pub fn reject_company_signal(&self, signal_id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        signals::reject_company_signal(&connection, signal_id)
+        self.signals().reject_company_signal(signal_id)
     }
 
     /// Confirm (`confirm = true`) or reject a `proposed` derived calendar event (ADR 0036).
     pub fn confirm_derived_event(&self, event_id: &str, confirm: bool) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        signals::confirm_derived_event(&connection, event_id, confirm)
+        self.signals().confirm_derived_event(event_id, confirm)
     }
 
     /// Confirmed dividend / general-meeting signals still lacking a derived event — candidates
@@ -1221,9 +1146,7 @@ impl AppState {
         &self,
         limit: i64,
     ) -> StorageResult<Vec<signals::SignalNeedingDate>> {
-        let connection = self.checkout()?;
-
-        signals::list_signals_needing_event_date(&connection, limit)
+        self.signals().list_signals_needing_event_date(limit)
     }
 
     /// Derive a `proposed` event from an AI-extracted date for one signal (ADR 0036).
@@ -1232,84 +1155,64 @@ impl AppState {
         signal_id: &str,
         event_date: &str,
     ) -> StorageResult<bool> {
-        let connection = self.checkout()?;
-
-        signals::derive_event_from_extracted_date(&connection, signal_id, event_date)
+        self.signals()
+            .derive_event_from_extracted_date(signal_id, event_date)
     }
 
     pub fn list_transcript_jobs(
         &self,
         input: TranscriptJobListInput,
     ) -> StorageResult<Vec<TranscriptJob>> {
-        let connection = self.checkout()?;
-
-        transcripts::list_transcript_jobs(&connection, input)
+        self.transcripts().list_transcript_jobs(input)
     }
 
     pub fn delete_transcript_job(&self, job_id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        transcripts::delete_transcript_job(&connection, job_id)
+        self.transcripts().delete_transcript_job(job_id)
     }
 
     pub fn create_transcript_job(&self, input: NewTranscriptJob) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::create_transcript_job(&connection, input)
+        self.transcripts().create_transcript_job(input)
     }
 
     pub fn update_transcript_job(
         &self,
         input: UpdateTranscriptJobInput,
     ) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::update_transcript_job(&connection, input)
+        self.transcripts().update_transcript_job(input)
     }
 
     pub fn list_transcript_segments(
         &self,
         transcript_job_id: &str,
     ) -> StorageResult<Vec<TranscriptSegment>> {
-        let connection = self.checkout()?;
-
-        transcripts::list_transcript_segments(&connection, transcript_job_id)
+        self.transcripts()
+            .list_transcript_segments(transcript_job_id)
     }
 
     pub fn create_transcript_segment(
         &self,
         input: NewTranscriptSegment,
     ) -> StorageResult<TranscriptSegment> {
-        let connection = self.checkout()?;
-
-        transcripts::create_transcript_segment(&connection, input)
+        self.transcripts().create_transcript_segment(input)
     }
 
     pub fn resolve_transcript_job_company(
         &self,
         input: ResolveTranscriptJobCompanyInput,
     ) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::resolve_transcript_job_company(&connection, input)
+        self.transcripts().resolve_transcript_job_company(input)
     }
 
     pub fn get_transcript_job(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::get_transcript_job(&connection, job_id)
+        self.transcripts().get_transcript_job(job_id)
     }
 
     pub fn mark_transcript_job_running(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::mark_transcript_job_running(&connection, job_id)
+        self.transcripts().mark_transcript_job_running(job_id)
     }
 
     pub fn mark_transcript_job_completed(&self, job_id: &str) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::mark_transcript_job_completed(&connection, job_id)
+        self.transcripts().mark_transcript_job_completed(job_id)
     }
 
     pub fn mark_transcript_job_failed(
@@ -1318,9 +1221,8 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<TranscriptJob> {
-        let connection = self.checkout()?;
-
-        transcripts::mark_transcript_job_failed(&connection, job_id, error_code, error)
+        self.transcripts()
+            .mark_transcript_job_failed(job_id, error_code, error)
     }
 
     pub fn list_source_adapters(&self) -> StorageResult<Vec<SourceAdapter>> {
@@ -1331,9 +1233,8 @@ impl AppState {
         &self,
         include_developer_only: bool,
     ) -> StorageResult<Vec<SourceAdapter>> {
-        let connection = self.checkout()?;
-
-        registry::list_source_adapters(&connection, include_developer_only)
+        self.source_registry()
+            .list_source_adapters_with_developer(include_developer_only)
     }
 
     pub fn set_source_adapter_enabled(
@@ -1341,27 +1242,21 @@ impl AppState {
         adapter_id: &str,
         enabled: bool,
     ) -> StorageResult<SourceAdapter> {
-        let connection = self.checkout()?;
-
-        registry::set_source_adapter_enabled(&connection, adapter_id, enabled)
+        self.source_registry()
+            .set_source_adapter_enabled(adapter_id, enabled)
     }
 
     pub fn source_adapter_enabled(&self, adapter_id: &str) -> StorageResult<bool> {
-        let connection = self.checkout()?;
-
-        registry::source_adapter_enabled(&connection, adapter_id)
+        self.source_registry().source_adapter_enabled(adapter_id)
     }
 
     pub fn list_company_registry_entries(&self) -> StorageResult<Vec<CompanyRegistryEntry>> {
-        let connection = self.checkout()?;
-
-        registry::list_company_registry_entries(&connection)
+        self.source_registry().list_company_registry_entries()
     }
 
     pub fn record_source_adapter_error(&self, adapter_id: &str, error: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        registry::record_source_adapter_error(&connection, adapter_id, error)
+        self.source_registry()
+            .record_source_adapter_error(adapter_id, error)
     }
 
     pub fn record_source_adapter_attempt(
@@ -1369,9 +1264,8 @@ impl AppState {
         adapter_id: &str,
         trigger: &str,
     ) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        registry::record_source_adapter_attempt(&connection, adapter_id, trigger)
+        self.source_registry()
+            .record_source_adapter_attempt(adapter_id, trigger)
     }
 
     pub fn record_source_adapter_state(
@@ -1380,57 +1274,42 @@ impl AppState {
         key: &str,
         value: &str,
     ) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        sources::set_source_adapter_state(&connection, adapter_id, key, value)
+        self.sources()
+            .record_source_adapter_state(adapter_id, key, value)
     }
 
     pub fn get_settings(&self) -> StorageResult<UserSettings> {
-        let connection = self.checkout()?;
-
-        settings::get_settings(&connection)
+        self.settings().get_settings()
     }
 
     pub fn update_settings(&self, input: SettingsUpdate) -> StorageResult<UserSettings> {
-        let connection = self.checkout()?;
-
-        settings::update_settings(&connection, input)
+        self.settings().update_settings(input)
     }
 
     pub fn set_developer_mode_enabled(&self, enabled: bool) -> StorageResult<UserSettings> {
-        let connection = self.checkout()?;
-
-        settings::set_developer_mode_enabled(&connection, enabled)
+        self.settings().set_developer_mode_enabled(enabled)
     }
 
     /// Read the active similarity strategy setting (`static` | `embedding`),
     /// tolerating a missing row with the static default (ADR 0035).
     pub fn get_similarity_strategy(&self) -> StorageResult<String> {
-        let connection = self.checkout()?;
-
-        settings::get_similarity_strategy(&connection)
+        self.settings().get_similarity_strategy()
     }
 
     /// Persist the active similarity strategy. Validation that the embedding
     /// model is ready lives in the command layer.
     pub fn set_similarity_strategy(&self, strategy: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        settings::set_similarity_strategy(&connection, strategy)
+        self.settings().set_similarity_strategy(strategy)
     }
 
     /// Insert or replace one content embedding (vector store, ADR 0035).
     pub fn upsert_content_embedding(&self, embedding: &NewContentEmbedding) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        embeddings::upsert_embedding(&connection, embedding)
+        self.embeddings().upsert_content_embedding(embedding)
     }
 
     /// Feed items as embeddable content for the embed job (ADR 0035).
     pub fn feed_item_embeddable_contents(&self) -> StorageResult<Vec<EmbeddableContent>> {
-        let connection = self.checkout()?;
-
-        embeddings::feed_item_contents(&connection)
+        self.embeddings().feed_item_embeddable_contents()
     }
 
     /// `content_id -> content_hash` already embedded for a content type/model.
@@ -1439,9 +1318,8 @@ impl AppState {
         content_type: &str,
         model_id: &str,
     ) -> StorageResult<std::collections::HashMap<String, String>> {
-        let connection = self.checkout()?;
-
-        embeddings::existing_hashes(&connection, content_type, model_id)
+        self.embeddings()
+            .embedded_content_hashes(content_type, model_id)
     }
 
     /// All stored vectors for a content type/model — the brute-force scan input.
@@ -1450,9 +1328,8 @@ impl AppState {
         content_type: &str,
         model_id: &str,
     ) -> StorageResult<Vec<EmbeddedVector>> {
-        let connection = self.checkout()?;
-
-        embeddings::scan_vectors(&connection, content_type, model_id)
+        self.embeddings()
+            .scan_content_vectors(content_type, model_id)
     }
 
     /// The stored vector for a single content row under a model, if embedded.
@@ -1462,38 +1339,30 @@ impl AppState {
         content_id: &str,
         model_id: &str,
     ) -> StorageResult<Option<Vec<f32>>> {
-        let connection = self.checkout()?;
-
-        embeddings::get_vector(&connection, content_type, content_id, model_id)
+        self.embeddings()
+            .content_vector(content_type, content_id, model_id)
     }
 
     /// Drop every vector not built with `keep_model_id` (model change). Returns
     /// the number of pruned rows.
     pub fn prune_embeddings_other_models(&self, keep_model_id: &str) -> StorageResult<usize> {
-        let connection = self.checkout()?;
-
-        embeddings::prune_other_models(&connection, keep_model_id)
+        self.embeddings()
+            .prune_embeddings_other_models(keep_model_id)
     }
 
     /// Per-content-type embedded counts for one model (status read model).
     pub fn embedding_counts(&self, model_id: &str) -> StorageResult<Vec<EmbeddedCount>> {
-        let connection = self.checkout()?;
-
-        embeddings::counts_by_content_type(&connection, model_id)
+        self.embeddings().embedding_counts(model_id)
     }
 
     /// The `model_id` the current index was built with, or `None` when empty.
     pub fn embedding_index_model_id(&self) -> StorageResult<Option<String>> {
-        let connection = self.checkout()?;
-
-        embeddings::index_model_id(&connection)
+        self.embeddings().embedding_index_model_id()
     }
 
     /// Drop the entire (disposable) vector index. Returns dropped row count.
     pub fn clear_content_embeddings(&self) -> StorageResult<usize> {
-        let connection = self.checkout()?;
-
-        embeddings::clear_all(&connection)
+        self.embeddings().clear_content_embeddings()
     }
 
     /// Read the in-memory embedding-model download state.
@@ -1530,78 +1399,56 @@ impl AppState {
     }
 
     pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {
-        let connection = self.checkout()?;
-
-        licensing::get_license_metadata(&connection)
+        self.licensing().get_license_metadata()
     }
 
     pub fn upsert_license_metadata(
         &self,
         input: LicenseMetadataUpdate,
     ) -> StorageResult<StoredLicenseMetadata> {
-        let connection = self.checkout()?;
-
-        licensing::upsert_license_metadata(&connection, input)
+        self.licensing().upsert_license_metadata(input)
     }
 
     pub fn clear_license_metadata(&self) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        licensing::clear_license_metadata(&connection)
+        self.licensing().clear_license_metadata()
     }
 
     pub fn record_diagnostic_event(
         &self,
         input: NewDiagnosticEvent,
     ) -> StorageResult<Option<DiagnosticEvent>> {
-        let mut connection = self.checkout()?;
-
-        diagnostics::record_diagnostic_event(&mut connection, input)
+        self.diagnostics().record_diagnostic_event(input)
     }
 
     pub fn list_diagnostic_events(&self, limit: i64) -> StorageResult<Vec<DiagnosticEvent>> {
-        let connection = self.checkout()?;
-
-        diagnostics::list_diagnostic_events(&connection, limit)
+        self.diagnostics().list_diagnostic_events(limit)
     }
 
     pub fn clear_diagnostic_events(&self) -> StorageResult<usize> {
-        let connection = self.checkout()?;
-
-        diagnostics::clear_diagnostic_events(&connection)
+        self.diagnostics().clear_diagnostic_events()
     }
 
     pub fn create_ai_analysis_job(&self, input: NewAiAnalysisJob) -> StorageResult<AiAnalysisJob> {
-        let connection = self.checkout()?;
-
-        ai_analysis::create_ai_analysis_job(&connection, input)
+        self.ai_analysis().create_ai_analysis_job(input)
     }
 
     pub fn list_ai_analysis_jobs(&self, feed_item_id: &str) -> StorageResult<Vec<AiAnalysisJob>> {
-        let connection = self.checkout()?;
-
-        ai_analysis::list_ai_analysis_jobs(&connection, feed_item_id)
+        self.ai_analysis().list_ai_analysis_jobs(feed_item_id)
     }
 
     pub fn get_ai_analysis_job(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
-        let connection = self.checkout()?;
-
-        ai_analysis::get_ai_analysis_job(&connection, job_id)
+        self.ai_analysis().get_ai_analysis_job(job_id)
     }
 
     pub fn mark_ai_analysis_job_running(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
-        let connection = self.checkout()?;
-
-        ai_analysis::mark_ai_analysis_job_running(&connection, job_id)
+        self.ai_analysis().mark_ai_analysis_job_running(job_id)
     }
 
     pub fn complete_ai_analysis_job(
         &self,
         input: CompletedAiAnalysis,
     ) -> StorageResult<AiAnalysisJob> {
-        let connection = self.checkout()?;
-
-        ai_analysis::complete_ai_analysis_job(&connection, input)
+        self.ai_analysis().complete_ai_analysis_job(input)
     }
 
     pub fn mark_ai_analysis_job_failed(
@@ -1610,126 +1457,95 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<AiAnalysisJob> {
-        let connection = self.checkout()?;
-
-        ai_analysis::mark_ai_analysis_job_failed(&connection, job_id, error_code, error)
+        self.ai_analysis()
+            .mark_ai_analysis_job_failed(job_id, error_code, error)
     }
 
     pub fn list_kpi_definitions(
         &self,
         input: ListKpiDefinitionsInput,
     ) -> StorageResult<Vec<KpiDefinition>> {
-        let connection = self.checkout()?;
-
-        financials::list_kpi_definitions(&connection, input)
+        self.financials().list_kpi_definitions(input)
     }
 
     pub fn create_kpi_definition(&self, input: NewKpiDefinition) -> StorageResult<KpiDefinition> {
-        let connection = self.checkout()?;
-
-        financials::create_kpi_definition(&connection, input)
+        self.financials().create_kpi_definition(input)
     }
 
     pub fn list_financial_periods(
         &self,
         input: ListFinancialPeriodsInput,
     ) -> StorageResult<Vec<FinancialPeriod>> {
-        let connection = self.checkout()?;
-
-        financials::list_financial_periods(&connection, input)
+        self.financials().list_financial_periods(input)
     }
 
     pub fn create_financial_period(
         &self,
         input: NewFinancialPeriod,
     ) -> StorageResult<FinancialPeriod> {
-        let connection = self.checkout()?;
-
-        financials::create_financial_period(&connection, input)
+        self.financials().create_financial_period(input)
     }
 
     pub fn update_financial_period(
         &self,
         input: UpdateFinancialPeriod,
     ) -> StorageResult<FinancialPeriod> {
-        let connection = self.checkout()?;
-
-        financials::update_financial_period(&connection, input)
+        self.financials().update_financial_period(input)
     }
 
     pub fn delete_financial_period(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        financials::delete_financial_period(&connection, id)
+        self.financials().delete_financial_period(id)
     }
 
     pub fn list_kpi_relevance(&self, company_id: &str) -> StorageResult<Vec<KpiRelevance>> {
-        let connection = self.checkout()?;
-
-        financials::list_kpi_relevance(&connection, company_id)
+        self.financials().list_kpi_relevance(company_id)
     }
 
     pub fn create_kpi_relevance(&self, input: NewKpiRelevance) -> StorageResult<KpiRelevance> {
-        let connection = self.checkout()?;
-
-        financials::create_kpi_relevance(&connection, input)
+        self.financials().create_kpi_relevance(input)
     }
 
     pub fn update_kpi_relevance(&self, input: UpdateKpiRelevance) -> StorageResult<KpiRelevance> {
-        let connection = self.checkout()?;
-
-        financials::update_kpi_relevance(&connection, input)
+        self.financials().update_kpi_relevance(input)
     }
 
     pub fn delete_kpi_relevance(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        financials::delete_kpi_relevance(&connection, id)
+        self.financials().delete_kpi_relevance(id)
     }
 
     pub fn list_financial_facts(
         &self,
         input: ListFinancialFactsInput,
     ) -> StorageResult<Vec<FinancialFact>> {
-        let connection = self.checkout()?;
-
-        financials::list_financial_facts(&connection, input)
+        self.financials().list_financial_facts(input)
     }
 
     pub fn create_financial_fact(&self, input: NewFinancialFact) -> StorageResult<FinancialFact> {
-        let connection = self.checkout()?;
-
-        financials::create_financial_fact(&connection, input)
+        self.financials().create_financial_fact(input)
     }
 
     pub fn create_kpi_extraction_job(
         &self,
         input: NewKpiExtractionJob,
     ) -> StorageResult<KpiExtractionJob> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::create_kpi_extraction_job(&connection, input)
+        self.kpi_extraction().create_kpi_extraction_job(input)
     }
 
     pub fn get_kpi_extraction_job(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::get_kpi_extraction_job(&connection, job_id)
+        self.kpi_extraction().get_kpi_extraction_job(job_id)
     }
 
     pub fn list_kpi_extraction_jobs_by_document(
         &self,
         report_document_id: &str,
     ) -> StorageResult<Vec<KpiExtractionJob>> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::list_kpi_extraction_jobs_by_document(&connection, report_document_id)
+        self.kpi_extraction()
+            .list_kpi_extraction_jobs_by_document(report_document_id)
     }
 
     pub fn mark_kpi_extraction_job_running(&self, job_id: &str) -> StorageResult<KpiExtractionJob> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::mark_kpi_extraction_job_running(&connection, job_id)
+        self.kpi_extraction()
+            .mark_kpi_extraction_job_running(job_id)
     }
 
     pub fn mark_kpi_extraction_job_failed(
@@ -1738,57 +1554,45 @@ impl AppState {
         error_code: &str,
         error: &str,
     ) -> StorageResult<KpiExtractionJob> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::mark_kpi_extraction_job_failed(&connection, job_id, error_code, error)
+        self.kpi_extraction()
+            .mark_kpi_extraction_job_failed(job_id, error_code, error)
     }
 
     pub fn complete_kpi_extraction_job(
         &self,
         input: CompletedKpiExtraction,
     ) -> StorageResult<KpiExtractionJob> {
-        let mut connection = self.checkout()?;
-
-        kpi_extraction::complete_kpi_extraction_job(&mut connection, input)
+        self.kpi_extraction().complete_kpi_extraction_job(input)
     }
 
     pub fn confirm_kpi_proposal(
         &self,
         input: ConfirmKpiProposalInput,
     ) -> StorageResult<FinancialFact> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::confirm_kpi_proposal(&connection, input)
+        self.kpi_extraction().confirm_kpi_proposal(input)
     }
 
     pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
-        let connection = self.checkout()?;
-
-        kpi_extraction::reject_kpi_proposal(&connection, proposal_id)
+        self.kpi_extraction().reject_kpi_proposal(proposal_id)
     }
 
     pub fn update_financial_fact(
         &self,
         input: UpdateFinancialFact,
     ) -> StorageResult<FinancialFact> {
-        let connection = self.checkout()?;
-
-        financials::update_financial_fact(&connection, input)
+        self.financials().update_financial_fact(input)
     }
 
     pub fn delete_financial_fact(&self, id: &str) -> StorageResult<()> {
-        let connection = self.checkout()?;
-
-        financials::delete_financial_fact(&connection, id)
+        self.financials().delete_financial_fact(id)
     }
 
     pub fn create_or_find_pending_report_document(
         &self,
         input: CaptureReportDocumentInput,
     ) -> StorageResult<ReportDocument> {
-        let connection = self.checkout()?;
-
-        report_documents::create_or_find_pending(&connection, input)
+        self.report_documents()
+            .create_or_find_pending_report_document(input)
     }
 
     pub fn mark_report_document_fetched(
@@ -1799,10 +1603,7 @@ impl AppState {
         content_hash: Option<&str>,
         byte_size: Option<i64>,
     ) -> StorageResult<ReportDocument> {
-        let connection = self.checkout()?;
-
-        report_documents::mark_fetched(
-            &connection,
+        self.report_documents().mark_report_document_fetched(
             id,
             local_path,
             content_type,
@@ -1816,36 +1617,29 @@ impl AppState {
         id: &str,
         error: &str,
     ) -> StorageResult<ReportDocument> {
-        let connection = self.checkout()?;
-
-        report_documents::mark_failed(&connection, id, error)
+        self.report_documents()
+            .mark_report_document_failed(id, error)
     }
 
     pub fn mark_report_document_metadata_only(&self, id: &str) -> StorageResult<ReportDocument> {
-        let connection = self.checkout()?;
-
-        report_documents::mark_metadata_only(&connection, id)
+        self.report_documents()
+            .mark_report_document_metadata_only(id)
     }
 
     pub fn list_pending_attachment_documents(&self) -> StorageResult<Vec<ReportDocument>> {
-        let connection = self.checkout()?;
-
-        report_documents::list_pending_attachments(&connection)
+        self.report_documents().list_pending_attachment_documents()
     }
 
     pub fn get_report_document(&self, id: &str) -> StorageResult<ReportDocument> {
-        let connection = self.checkout()?;
-
-        report_documents::get(&connection, id)
+        self.report_documents().get_report_document(id)
     }
 
     pub fn list_report_documents_by_company(
         &self,
         company_id: &str,
     ) -> StorageResult<Vec<ReportDocument>> {
-        let connection = self.checkout()?;
-
-        report_documents::list_by_company(&connection, company_id)
+        self.report_documents()
+            .list_report_documents_by_company(company_id)
     }
 }
 
@@ -1859,6 +1653,34 @@ pub(super) fn feed_item_attachment_id(feed_item_id: &str, url: &str) -> String {
         slug_part(feed_item_id),
         slug_part(url)
     )
+}
+
+#[cfg(test)]
+mod feed_id_proptests {
+    //! Invariant coverage of the feed-item id derivation (ADR 0049): an id-
+    //! producing transform must have **stable identity** (same input → same id,
+    //! deterministically), be total over arbitrary dedup-key text, and always
+    //! carry its namespace prefix.
+    use super::{feed_item_attachment_id, feed_item_id};
+    use crate::transform_invariants::assert_deterministic_str;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn feed_item_id_is_deterministic_stable_and_prefixed(key in ".*") {
+            assert_deterministic_str(feed_item_id, &key);
+            let id = feed_item_id(&key);
+            prop_assert!(id.starts_with("feed_"), "missing namespace: {id:?}");
+        }
+
+        #[test]
+        fn feed_item_attachment_id_is_deterministic_and_prefixed(id in ".*", url in ".*") {
+            let a = feed_item_attachment_id(&id, &url);
+            let b = feed_item_attachment_id(&id, &url);
+            prop_assert_eq!(&a, &b, "attachment id is not deterministic");
+            prop_assert!(a.starts_with("feed_attachment_"), "missing namespace: {a:?}");
+        }
+    }
 }
 
 pub(super) fn validate_allowed_company_event_value(

@@ -1,6 +1,11 @@
 use super::*;
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseStatus {
     pub applied_migrations: i64,
@@ -10,6 +15,11 @@ pub struct DatabaseStatus {
 }
 
 #[derive(Clone, Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct Company {
     pub id: String,
@@ -23,6 +33,15 @@ pub struct Company {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "CreateCompanyInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewCompany {
     pub exchange: String,
@@ -34,6 +53,11 @@ pub struct NewCompany {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct Watchlist {
     pub id: String,
@@ -43,6 +67,11 @@ pub struct Watchlist {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchlistMembership {
     pub watchlist_id: String,
@@ -51,6 +80,15 @@ pub struct WatchlistMembership {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "CreateWatchlistInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewWatchlist {
     pub name: String,
@@ -58,6 +96,15 @@ pub struct NewWatchlist {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "RenameWatchlistInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchlistUpdate {
     pub id: String,
@@ -66,6 +113,15 @@ pub struct WatchlistUpdate {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "WatchlistMembershipInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct WatchlistCompanyInput {
     pub watchlist_id: String,
@@ -73,6 +129,11 @@ pub struct WatchlistCompanyInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedItem {
     pub id: String,
@@ -95,6 +156,11 @@ pub struct FeedItem {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedItemAttachment {
     pub id: String,
@@ -103,14 +169,30 @@ pub struct FeedItemAttachment {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateFeedItemStateInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedItemStateInput {
     pub id: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "boolean"))]
     pub read: Option<bool>,
+    #[cfg_attr(feature = "ts-export", ts(type = "boolean"))]
     pub saved: Option<bool>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceIngestionResult {
     pub adapter_id: String,
@@ -125,6 +207,11 @@ pub struct SourceIngestionResult {
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedPruneResult {
     pub retention_days: i64,
@@ -133,6 +220,11 @@ pub struct FeedPruneResult {
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct FeedDeleteResult {
     pub items_deleted: usize,
@@ -140,6 +232,11 @@ pub struct FeedDeleteResult {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct UnmatchedSourceItem {
     pub id: String,
@@ -152,16 +249,34 @@ pub struct UnmatchedSourceItem {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceInput {
     pub company_id: Option<String>,
     pub watchlist_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<Vec<crate::api_ts_unions::ResearchEvidenceType>>")
+    )]
     pub evidence_types: Option<Vec<String>>,
     pub changed_since_review_only: Option<bool>,
     pub limit: Option<i64>,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchTimelineResult {
     pub items: Vec<ResearchEvidenceItem>,
@@ -169,6 +284,11 @@ pub struct ResearchTimelineResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchTimelineSummary {
     pub total: usize,
@@ -180,6 +300,11 @@ pub struct ResearchTimelineSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchCompanyTimelineSummary {
     pub company_id: String,
@@ -189,10 +314,23 @@ pub struct ResearchCompanyTimelineSummary {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceItem {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub evidence_type: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceSourceDomain")
+    )]
     pub source_domain: String,
     pub source_id: String,
     pub company_id: String,
@@ -201,11 +339,20 @@ pub struct ResearchEvidenceItem {
     pub summary: Option<String>,
     pub source_url: Option<String>,
     pub attribution: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchTrustCategory")
+    )]
     pub trust_category: String,
     pub review_state: ResearchEvidenceReviewState,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchEvidenceReviewState {
     pub changed_since_company_review: bool,
@@ -213,8 +360,21 @@ pub struct ResearchEvidenceReviewState {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchReviewCheckpointInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub reviewed_at: Option<String>,
@@ -222,9 +382,18 @@ pub struct ResearchReviewCheckpointInput {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchReviewCheckpoint {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub reviewed_at: String,
@@ -233,38 +402,102 @@ pub struct ResearchReviewCheckpoint {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewEvidenceLink {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub from_type: String,
     pub from_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub to_type: String,
     pub to_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::EvidenceRelationType")
+    )]
     pub relation_type: String,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EvidenceLink {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub from_type: String,
     pub from_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub to_type: String,
     pub to_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::EvidenceRelationType")
+    )]
     pub relation_type: String,
     pub created_at: String,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchQuestionListInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchReviewScopeType>")
+    )]
     pub scope_type: Option<String>,
     pub scope_id: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchQuestionStatus>")
+    )]
     pub status: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewResearchQuestion {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub title: String,
@@ -272,22 +505,48 @@ pub struct NewResearchQuestion {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        optional_fields = nullable
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchQuestionUpdate {
     pub id: String,
     pub title: Option<String>,
     pub body: Option<String>,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "Option<crate::api_ts_unions::ResearchQuestionStatus>")
+    )]
     pub status: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchQuestion {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub title: String,
     pub body: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchQuestionStatus")
+    )]
     pub status: String,
     pub closed_at: Option<String>,
     pub created_at: String,
@@ -295,13 +554,27 @@ pub struct ResearchQuestion {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct EvidenceLinkListInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub endpoint_type: String,
     pub endpoint_id: String,
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NotebookEntry {
     pub id: String,
@@ -321,6 +594,11 @@ pub struct NotebookEntry {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NotebookOrigin {
     pub id: String,
@@ -332,11 +610,21 @@ pub struct NotebookOrigin {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "CreateNotebookEntryInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewNotebookEntry {
     pub company_id: String,
     pub title: String,
     pub body: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub body_format: Option<String>,
     pub tags: Vec<String>,
     pub kind: String,
@@ -348,6 +636,15 @@ pub struct NewNotebookEntry {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "UpdateNotebookEntryInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NotebookEntryUpdate {
     pub id: String,
@@ -362,6 +659,11 @@ pub struct NotebookEntryUpdate {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewNotebookOrigin {
     pub source_type: String,
@@ -371,14 +673,27 @@ pub struct NewNotebookOrigin {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceAdapter {
     pub id: String,
     pub display_name: String,
     pub source_type: String,
     pub fetch_mode: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"required\" | \"optional\" | \"developer\"")
+    )]
     pub visibility: String,
     pub user_configurable: bool,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"healthy\" | \"attention\" | \"notRefreshed\" | \"off\"")
+    )]
     pub health_status: String,
     pub enabled: bool,
     pub default_poll_interval_seconds: i64,
@@ -402,6 +717,11 @@ pub struct SourceAdapter {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyRegistryEntry {
     pub source_adapter_id: String,
@@ -416,6 +736,15 @@ pub struct CompanyRegistryEntry {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "LookupCompanyInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyLookupInput {
     pub exchange: String,
@@ -425,6 +754,11 @@ pub struct CompanyLookupInput {
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyLookupResult {
     pub exchange: String,
@@ -436,6 +770,11 @@ pub struct CompanyLookupResult {
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyRegistryRefreshResult {
     pub adapter_id: String,
@@ -446,6 +785,11 @@ pub struct CompanyRegistryRefreshResult {
 }
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyEvent {
     pub id: String,
@@ -469,8 +813,18 @@ pub struct CompanyEvent {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "ListCompanyEventsInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanyEventListInput {
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub mode: Option<String>,
     pub company_id: Option<String>,
     pub watchlist_id: Option<String>,
@@ -483,6 +837,11 @@ pub struct CompanyEventListInput {
 /// A typed ESPI/EBI classification (ADR 0034). Canonical output of
 /// classification, separate from the raw `feed_item` and any derived event.
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanySignal {
     pub id: String,
@@ -490,10 +849,18 @@ pub struct CompanySignal {
     pub company: String,
     pub company_name: String,
     pub feed_item_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(
+            type = "\"insider_transaction\" | \"dividend\" | \"profit_warning\" | \"significant_contract\" | \"own_shares\" | \"guidance_change\" | \"general_meeting\" | \"other\""
+        )
+    )]
     pub category: String,
     pub category_display_name: String,
     pub confidence: f64,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"rule\" | \"ai\""))]
     pub classified_by: String,
+    #[cfg_attr(feature = "ts-export", ts(type = "\"confirmed\" | \"proposed\""))]
     pub status: String,
     pub signal_date: Option<String>,
     pub provider_id: Option<String>,
@@ -506,6 +873,15 @@ pub struct CompanySignal {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "ListCompanySignalsInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct CompanySignalListInput {
     pub company_id: Option<String>,
@@ -552,6 +928,15 @@ pub struct ProposedSignalInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(
+        export,
+        export_to = "../../src/api/generated/",
+        rename = "CreateCompanyEventInput"
+    )
+)]
 #[serde(rename_all = "camelCase")]
 pub struct NewCompanyEvent {
     pub company_id: String,
@@ -559,7 +944,9 @@ pub struct NewCompanyEvent {
     pub title: String,
     pub event_date: String,
     pub event_time: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub status: Option<String>,
+    #[cfg_attr(feature = "ts-export", ts(type = "string"))]
     pub source_type: Option<String>,
     pub source_adapter_id: Option<String>,
     pub source_event_key: Option<String>,

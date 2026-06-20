@@ -16,6 +16,8 @@ The normal workflow is:
 
 Do not merge, publish, seed publicly, or rewrite history unless the user explicitly asks for that operation.
 
+**Integrating a feature branch to master for release uses squash-merge by default.** When the work for a milestone/epic is on a feature branch and the user asks to wrap/release, the default integration is a squash-merge into master (`git checkout master && git merge --squash <branch> && git commit`), producing **one** feature commit for the milestone — then the separate single `chore(release)` commit on top. Do not ask which merge strategy to use; squash is the default. (A non-squash merge or a different strategy is used only if the user asks for it.)
+
 ## Standing Release Permissions
 
 The project owner grants standing permission for agents to run these commands unattended when they are part of this Brawler release workflow:

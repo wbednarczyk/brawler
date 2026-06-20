@@ -1,47 +1,20 @@
 import { callCommand } from "./tauri";
 import type { NotebookEntry, TranscriptJob, TranscriptSegment } from "./types";
+import type { ListVideoTranscriptJobsInput } from "./generated/ListVideoTranscriptJobsInput";
+import type { ResolveTranscriptJobCompanyInput } from "./generated/ResolveTranscriptJobCompanyInput";
+import type { UpdateVideoTranscriptJobInput } from "./generated/UpdateVideoTranscriptJobInput";
+import type { CreateNoteFromTranscriptSelectionInput } from "./generated/CreateNoteFromTranscriptSelectionInput";
+import type { CreateVideoTranscriptJobInput } from "./generated/CreateVideoTranscriptJobInput";
+import type { RunVideoTranscriptJobInput } from "./generated/RunVideoTranscriptJobInput";
 
-export type ListVideoTranscriptJobsInput = {
-  companyId: string | null;
-};
-
-export type ResolveTranscriptJobCompanyInput = {
-  jobId: string;
-  companyId: string;
-};
-
-export type UpdateVideoTranscriptJobInput = {
-  jobId: string;
-  sourceLabel: string | null;
-};
-
-export type CreateNoteFromTranscriptSelectionInput = {
-  transcriptJobId: string;
-  transcriptSegmentIds: string[];
-  noteDraft: {
-    title: string;
-    body: string;
-    tags: string[];
-    kind: string;
-    claimStatus: string | null;
-    eventDate: string | null;
-    followUpAfter: string | null;
-    followUpDate: string | null;
-  };
-};
-
-export type CreateVideoTranscriptJobInput = {
-  sourceUrl: string;
-  companyId: string | null;
-  providerId: string;
-  sourceLabel: string | null;
-  recognizedCompanyCandidates: null;
-};
-
-export type RunVideoTranscriptJobInput = {
-  jobId: string;
-  providerMode: string;
-};
+// Input types GENERATED via ts-rs (ADR 0048); `noteDraft` uses the generated
+// TranscriptNoteDraft (shape-identical to the previous inline object).
+export type { ListVideoTranscriptJobsInput } from "./generated/ListVideoTranscriptJobsInput";
+export type { ResolveTranscriptJobCompanyInput } from "./generated/ResolveTranscriptJobCompanyInput";
+export type { UpdateVideoTranscriptJobInput } from "./generated/UpdateVideoTranscriptJobInput";
+export type { CreateNoteFromTranscriptSelectionInput } from "./generated/CreateNoteFromTranscriptSelectionInput";
+export type { CreateVideoTranscriptJobInput } from "./generated/CreateVideoTranscriptJobInput";
+export type { RunVideoTranscriptJobInput } from "./generated/RunVideoTranscriptJobInput";
 
 export function listVideoTranscriptJobs(input: ListVideoTranscriptJobsInput) {
   return callCommand<TranscriptJob[]>("list_video_transcript_jobs", { input });

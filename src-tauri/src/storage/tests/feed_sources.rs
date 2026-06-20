@@ -351,6 +351,51 @@ fn ingests_bankier_rss_items_and_matches_tracked_company_by_strong_signal() {
 }
 
 #[test]
+fn ingestion_persists_cross_source_story_key_for_matched_items() {
+    // The ingestion pipeline (ADR 0050) derives a canonical story key from the
+    // matched company + day + title and persists it, so items from different
+    // sources about the same event cluster together. Driven through the free
+    // ingest functions so the persisted column can be read back directly.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+    crate::storage::companies::create_company(
+        &connection,
+        NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: Some("PLOPTTC00011".to_owned()),
+            cik: None,
+            lei: None,
+        },
+    )
+    .expect("company should create");
+
+    crate::storage::sources::ingest_bankier_rss_items(&mut connection, &sample_bankier_items())
+        .expect("RSS items should ingest");
+
+    // The matched item is keyed by company + publication day + title slug.
+    let key: Option<String> = connection
+        .query_row(
+            "SELECT story_key FROM feed_items WHERE display_company = 'GPW:CDR'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("matched feed item should exist");
+    let key = key.expect("a matched item gets a story key");
+    assert!(key.starts_with("story:GPW:CDR:2026-05-31:"), "{key}");
+
+    // The unmatched item (no company) is not clustered.
+    let null_keys: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM feed_items WHERE story_key IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count should run");
+    assert_eq!(null_keys, 1);
+}
+
+#[test]
 fn media_ingestion_matches_tracked_companies_from_future_exchanges() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -384,6 +429,101 @@ fn media_ingestion_matches_tracked_companies_from_future_exchanges() {
 
     assert_eq!(visible_items.len(), 1);
     assert_eq!(visible_items[0].company, "XETRA:SAP");
+}
+
+#[test]
+fn end_to_end_pipeline_parses_ingests_dedupes_and_unifies_across_sources() {
+    // ADR 0049 T7: the full ingestion seam in one go — a REAL adapter parse of a
+    // checked-in sample, into real storage, out to the unified read model — proving
+    // cross-source unification and dedup as a *pipeline*. This is distinct from the
+    // isolated parse tests (T2 golden) and the per-source ingest tests above; it is
+    // the only layer that proves the "many sources into one set" thesis composes.
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+
+    // Track two companies the real samples reference.
+    state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "NTC".to_owned(),
+            display_name: "NEW TECH CAPITAL SPÓŁKA AKCYJNA".to_owned(),
+            isin: Some("PLECMNG00019".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("NTC company should create");
+    state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: Some("PLOPTTC00011".to_owned()),
+            cik: None,
+            lei: None,
+        })
+        .expect("CDR company should create");
+
+    // SOURCE 1: parse the real GPW ESPI/EBI listing sample, then ingest it. The
+    // NEW TECH CAPITAL report matches the tracked company by ISIN.
+    let gpw_listings = crate::source_adapters::gpw_espi_ebi::parse_report_listings(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/samples/gpw_espi_ebi_listing.html"
+        )),
+        "2026-05-30T17:30:00Z",
+    )
+    .expect("GPW ESPI/EBI sample should parse");
+    state
+        .ingest_gpw_report_listings(&gpw_listings)
+        .expect("parsed GPW listings should ingest");
+
+    // SOURCE 2: the canonical Bankier RSS market sample, matched to CD PROJEKT by
+    // strong name signal — a different adapter feeding the same unified read model.
+    state
+        .ingest_bankier_rss_items(&sample_bankier_items())
+        .expect("Bankier RSS items should ingest");
+
+    // Unified read model: one feed carries the ISIN-matched GPW report AND the
+    // signal-matched Bankier item — two different adapters, one set.
+    let feed = state.list_feed_items().expect("feed should list");
+    assert!(
+        feed.iter().any(|item| item.company == "GPW:NTC"),
+        "the GPW-sourced NTC report should appear in the unified feed: {feed:#?}"
+    );
+    assert!(
+        feed.iter().any(|item| item.company == "GPW:CDR"),
+        "the Bankier-sourced CD Projekt item should appear in the unified feed: {feed:#?}"
+    );
+    let sources: std::collections::BTreeSet<&str> =
+        feed.iter().map(|item| item.source.as_str()).collect();
+    assert!(
+        sources.len() >= 2,
+        "the feed should unify items from multiple distinct sources: {sources:?}"
+    );
+    let count_after_first = feed.len();
+
+    // DEDUP: re-parse and re-ingest BOTH sources. Ingestion is idempotent on the
+    // dedupe key, so the unified feed must not grow — the property that keeps
+    // re-fetching many overlapping sources from multiplying the same story.
+    let gpw_again = crate::source_adapters::gpw_espi_ebi::parse_report_listings(
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/samples/gpw_espi_ebi_listing.html"
+        )),
+        "2026-05-31T09:00:00Z",
+    )
+    .expect("GPW sample should re-parse");
+    state
+        .ingest_gpw_report_listings(&gpw_again)
+        .expect("re-ingest should be idempotent");
+    state
+        .ingest_bankier_rss_items(&sample_bankier_items())
+        .expect("re-ingest should be idempotent");
+    let feed_after = state.list_feed_items().expect("feed should list");
+    assert_eq!(
+        feed_after.len(),
+        count_after_first,
+        "re-ingesting identical items across sources must not duplicate the unified feed"
+    );
 }
 
 #[test]

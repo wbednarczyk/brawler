@@ -1,167 +1,26 @@
 // ============================================================================
 // Data Structures (DTOs from storage layer)
+//
+// Every type below is GENERATED from the Rust source via ts-rs (ADR 0048):
+// change the struct in storage/financials.rs and run `make types`. Do not edit
+// the shapes here — this barrel only re-exports the generated bindings.
 // ============================================================================
 
-export type FinancialPeriod = {
-  id: string;
-  companyId: string;
-  fiscalYear: number;
-  periodType: string;
-  periodEndDate: string | null;
-  reportEvidenceRef: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
+export type { FinancialPeriod } from "./generated/FinancialPeriod";
+export type { KpiDefinition } from "./generated/KpiDefinition";
+export type { KpiRelevance } from "./generated/KpiRelevance";
+export type { FinancialFact } from "./generated/FinancialFact";
 
-export type KpiDefinition = {
-  id: string;
-  scope: string;
-  companyId: string | null;
-  sector: string | null;
-  metricKey: string;
-  label: string;
-  valueKind: string;
-  unit: string | null;
-  computation: string;
-  formula: string | null;
-  displayFormat: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type KpiRelevance = {
-  id: string;
-  companyId: string;
-  definitionId: string;
-  status: string;
-  source: string;
-  rank: string | null;
-  firstSeenPeriod: string | null;
-  lastSeenPeriod: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type FinancialFact = {
-  id: string;
-  companyId: string;
-  periodId: string;
-  definitionId: string;
-  valueNumeric: string;
-  currency: string | null;
-  statementBasis: string;
-  attribution: string;
-  variant: string;
-  measureWindow: string;
-  dataQuality: string;
-  asReportedValue: string | null;
-  asReportedScale: string | null;
-  reportingStandard: string | null;
-  extractionMethod: string;
-  confidence: string | null;
-  confirmationState: string;
-  supersedesId: string | null;
-  sourceDocumentRef: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-// ============================================================================
 // Input DTOs (for mutations)
-// ============================================================================
+export type { NewFinancialPeriod } from "./generated/NewFinancialPeriod";
+export type { UpdateFinancialPeriod } from "./generated/UpdateFinancialPeriod";
+export type { NewKpiDefinition } from "./generated/NewKpiDefinition";
+export type { NewKpiRelevance } from "./generated/NewKpiRelevance";
+export type { UpdateKpiRelevance } from "./generated/UpdateKpiRelevance";
+export type { NewFinancialFact } from "./generated/NewFinancialFact";
+export type { UpdateFinancialFact } from "./generated/UpdateFinancialFact";
 
-export type NewFinancialPeriod = {
-  companyId: string;
-  fiscalYear: number;
-  periodType: string;
-  periodEndDate?: string;
-  reportEvidenceRef?: string;
-};
-
-export type UpdateFinancialPeriod = {
-  id: string;
-  periodEndDate?: string;
-  reportEvidenceRef?: string;
-};
-
-export type NewKpiDefinition = {
-  scope: string;
-  companyId?: string;
-  sector?: string;
-  metricKey: string;
-  label: string;
-  valueKind: string;
-  unit?: string;
-  computation: string;
-  formula?: string;
-  displayFormat?: string;
-};
-
-export type NewKpiRelevance = {
-  companyId: string;
-  definitionId: string;
-  source: string;
-  rank?: string;
-  firstSeenPeriod?: string;
-  lastSeenPeriod?: string;
-};
-
-export type UpdateKpiRelevance = {
-  id: string;
-  status?: string;
-  rank?: string;
-  firstSeenPeriod?: string;
-  lastSeenPeriod?: string;
-};
-
-export type NewFinancialFact = {
-  companyId: string;
-  periodId: string;
-  definitionId: string;
-  valueNumeric: string;
-  currency?: string;
-  statementBasis?: string;
-  attribution?: string;
-  variant?: string;
-  measureWindow?: string;
-  dataQuality?: string;
-  asReportedValue?: string;
-  asReportedScale?: string;
-  reportingStandard?: string;
-  extractionMethod?: string;
-  confidence?: string;
-  confirmationState?: string;
-  supersedesId?: string;
-  sourceDocumentRef?: string;
-};
-
-export type UpdateFinancialFact = {
-  id: string;
-  valueNumeric?: string;
-  currency?: string;
-  dataQuality?: string;
-  confirmationState?: string;
-  supersedesId?: string;
-  sourceDocumentRef?: string;
-};
-
-// ============================================================================
-// Query Input DTOs
-// ============================================================================
-
-export type ListKpiDefinitionsInput = {
-  scope?: string;
-  sector?: string;
-  companyId?: string;
-};
-
-export type ListFinancialPeriodsInput = {
-  companyId: string;
-  fiscalYear?: number;
-};
-
-export type ListFinancialFactsInput = {
-  companyId?: string;
-  periodId?: string;
-  definitionId?: string;
-};
+// Query input DTOs
+export type { ListKpiDefinitionsInput } from "./generated/ListKpiDefinitionsInput";
+export type { ListFinancialPeriodsInput } from "./generated/ListFinancialPeriodsInput";
+export type { ListFinancialFactsInput } from "./generated/ListFinancialFactsInput";

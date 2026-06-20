@@ -10,16 +10,34 @@ pub const RESEARCH_BRIEF_COLLECTOR_VERSION: &str = "m30.collector.v1";
 pub const RESEARCH_BRIEF_RENDERER_VERSION: &str = "m30.renderer.v1";
 
 #[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBriefScopeInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBriefJob {
     pub id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub provider_id: String,
@@ -27,6 +45,10 @@ pub struct ResearchBriefJob {
     pub prompt_version: String,
     pub evidence_collector_version: String,
     pub renderer_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchBriefJobStatus")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -37,10 +59,19 @@ pub struct ResearchBriefJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBrief {
     pub id: String,
     pub job_id: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchReviewScopeType")
+    )]
     pub scope_type: String,
     pub scope_id: String,
     pub provider_id: String,
@@ -58,11 +89,20 @@ pub struct ResearchBrief {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct ResearchBriefCitation {
     pub id: String,
     pub brief_id: String,
     pub citation_key: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ResearchEvidenceType")
+    )]
     pub evidence_type: String,
     pub evidence_id: String,
     pub label: String,
@@ -609,4 +649,77 @@ fn research_brief_citation_id(brief_id: &str, citation_key: &str) -> String {
         slug_part(brief_id),
         slug_part(citation_key)
     )
+}
+
+use super::database::Database;
+/// research_briefs domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::research_briefs()`.
+#[derive(Clone)]
+pub struct ResearchBriefStore {
+    db: Database,
+}
+
+impl ResearchBriefStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_research_brief_job(
+        &self,
+        input: NewResearchBriefJob,
+    ) -> StorageResult<ResearchBriefJob> {
+        let connection = self.db.checkout()?;
+
+        create_research_brief_job(&connection, input)
+    }
+
+    pub fn list_research_brief_jobs(
+        &self,
+        input: ResearchBriefScopeInput,
+    ) -> StorageResult<Vec<ResearchBriefJob>> {
+        let connection = self.db.checkout()?;
+
+        list_research_brief_jobs(&connection, input)
+    }
+
+    pub fn get_research_brief_job(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
+        let connection = self.db.checkout()?;
+
+        get_research_brief_job(&connection, job_id)
+    }
+
+    pub fn collect_research_brief_evidence(
+        &self,
+        job_id: &str,
+    ) -> StorageResult<ResearchBriefEvidenceContext> {
+        let connection = self.db.checkout()?;
+
+        collect_research_brief_evidence(&connection, job_id)
+    }
+
+    pub fn mark_research_brief_job_running(&self, job_id: &str) -> StorageResult<ResearchBriefJob> {
+        let connection = self.db.checkout()?;
+
+        mark_research_brief_job_running(&connection, job_id)
+    }
+
+    pub fn complete_research_brief_job(
+        &self,
+        input: CompletedResearchBrief,
+    ) -> StorageResult<ResearchBriefJob> {
+        let connection = self.db.checkout()?;
+
+        complete_research_brief_job(&connection, input)
+    }
+
+    pub fn mark_research_brief_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<ResearchBriefJob> {
+        let connection = self.db.checkout()?;
+
+        mark_research_brief_job_failed(&connection, job_id, error_code, error)
+    }
 }

@@ -4,6 +4,11 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 #[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentCaptureResult {
     pub document_id: String,

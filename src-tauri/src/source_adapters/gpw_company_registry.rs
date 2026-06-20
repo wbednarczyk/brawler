@@ -65,7 +65,7 @@ pub struct EmbeddedGpwCompanyRegistryFetcher;
 #[cfg(test)]
 impl GpwCompanyRegistryFetcher for EmbeddedGpwCompanyRegistryFetcher {
     fn fetch_company_registry_page(&self) -> Result<String, GpwCompanyRegistryFetchError> {
-        Ok(include_str!("../../fixtures/gpw_company_registry.html").to_owned())
+        Ok(include_str!("../../samples/gpw_company_registry.html").to_owned())
     }
 }
 
@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn parses_fixture_registry_entries_from_gpw_html() {
         let entries =
-            parse_company_registry_html(include_str!("../../fixtures/gpw_company_registry.html"))
+            parse_company_registry_html(include_str!("../../samples/gpw_company_registry.html"))
                 .expect("fixture should parse");
 
         assert_eq!(entries.len(), 2);

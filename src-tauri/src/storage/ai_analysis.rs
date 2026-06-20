@@ -7,6 +7,11 @@ const DEFAULT_PROMPT_PRESET_ID: &str = "default_summary";
 const DEFAULT_PROMPT_VERSION: &str = "m13.source_grounded.v1";
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAnalysisJob {
     pub id: String,
@@ -16,6 +21,10 @@ pub struct AiAnalysisJob {
     pub provider_id: String,
     pub model: String,
     pub prompt_version: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"queued\" | \"running\" | \"succeeded\" | \"failed\" | \"cancelled\"")
+    )]
     pub status: String,
     pub error_code: Option<String>,
     pub error: Option<String>,
@@ -26,6 +35,11 @@ pub struct AiAnalysisJob {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAnalysisResult {
     pub id: String,
@@ -35,6 +49,10 @@ pub struct AiAnalysisResult {
     pub model: String,
     pub prompt_version: String,
     pub summary: String,
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(type = "\"low\" | \"medium\" | \"high\" | \"unknown\"")
+    )]
     pub significance: String,
     pub reasoning: String,
     pub language: Option<String>,
@@ -44,6 +62,11 @@ pub struct AiAnalysisResult {
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct AiAnalysisSourceReference {
     pub id: String,
@@ -518,4 +541,62 @@ fn ai_analysis_source_reference_id(result_id: &str, source_url: &str) -> String 
         super::slug_part(result_id),
         super::slug_part(source_url)
     )
+}
+
+use super::database::Database;
+/// ai_analysis domain store (Architecture v2 / ADR 0050). Owns a [`Database`] and
+/// exposes only this domain's operations. Reach it via `AppState::ai_analysis()`.
+#[derive(Clone)]
+pub struct AiAnalysisStore {
+    db: Database,
+}
+
+impl AiAnalysisStore {
+    pub(super) fn new(db: Database) -> Self {
+        Self { db }
+    }
+
+    pub fn create_ai_analysis_job(&self, input: NewAiAnalysisJob) -> StorageResult<AiAnalysisJob> {
+        let connection = self.db.checkout()?;
+
+        create_ai_analysis_job(&connection, input)
+    }
+
+    pub fn list_ai_analysis_jobs(&self, feed_item_id: &str) -> StorageResult<Vec<AiAnalysisJob>> {
+        let connection = self.db.checkout()?;
+
+        list_ai_analysis_jobs(&connection, feed_item_id)
+    }
+
+    pub fn get_ai_analysis_job(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
+        let connection = self.db.checkout()?;
+
+        get_ai_analysis_job(&connection, job_id)
+    }
+
+    pub fn mark_ai_analysis_job_running(&self, job_id: &str) -> StorageResult<AiAnalysisJob> {
+        let connection = self.db.checkout()?;
+
+        mark_ai_analysis_job_running(&connection, job_id)
+    }
+
+    pub fn complete_ai_analysis_job(
+        &self,
+        input: CompletedAiAnalysis,
+    ) -> StorageResult<AiAnalysisJob> {
+        let connection = self.db.checkout()?;
+
+        complete_ai_analysis_job(&connection, input)
+    }
+
+    pub fn mark_ai_analysis_job_failed(
+        &self,
+        job_id: &str,
+        error_code: &str,
+        error: &str,
+    ) -> StorageResult<AiAnalysisJob> {
+        let connection = self.db.checkout()?;
+
+        mark_ai_analysis_job_failed(&connection, job_id, error_code, error)
+    }
 }

@@ -16,10 +16,20 @@ use crate::{
 };
 
 #[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
 #[serde(rename_all = "camelCase")]
 pub struct StartClaimExtractionInput {
+    #[cfg_attr(
+        feature = "ts-export",
+        ts(as = "crate::api_ts_unions::ClaimExtractionSourceType")
+    )]
     source_type: String,
     source_id: String,
+    #[cfg_attr(feature = "ts-export", ts(optional, type = "string | null"))]
     provider_mode: Option<String>,
 }
 
@@ -132,9 +142,5 @@ fn resolve_company_id(
 }
 
 fn spawn_extraction_job(state: app_state::AppState, job_id: String) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = jobs::claim_extraction::run_claim_extraction_job(&state, &job_id) {
-            let _ = state.mark_claim_extraction_job_failed(&job_id, "extraction_failed", &error);
-        }
-    });
+    jobs::handlers::enqueue_per_job(&state, jobs::handlers::CLAIM_EXTRACTION_KIND, &job_id);
 }

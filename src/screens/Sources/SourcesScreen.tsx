@@ -1,46 +1,48 @@
 import { CheckCircle2, RefreshCw } from "lucide-react";
 import { useLocale } from "../../shared/locale";
+import { useDeveloperMode } from "../../app/state/SettingsContext";
+import { useSourcesViewModel } from "../../app/state/SourcesContext";
 import { Button, EmptyState, ErrorText, InfoGrid, PanelHeader, SectionHeader } from "../../ui";
 import { groupSourceAdapters } from "./sourceHelpers";
 import { SourceAdapterRow } from "./SourceAdapterRow";
-import type { SourcesScreenProps } from "./sourceTypes";
 
-export function SourcesScreen({
-  sourceAdapters,
-  sourceAdaptersError,
-  developerMode,
-  selectedSourceAdapterId,
-  sourceRefreshState,
-  sourceRefreshResult,
-  sourceRefreshError,
-  sourceAdapterRefreshInFlight,
-  registryRefreshState,
-  registryRefreshResult,
-  registryRefreshError,
-  companyRegistryEntries,
-  filteredCompanyRegistryEntries,
-  companyRegistryEntriesError,
-  isCompanyRegistryListExpanded,
-  companyRegistrySearch,
-  addingRegistryTicker,
-  unmatchedSourceItems,
-  unmatchedSourceItemsError,
-  expandedUnmatchedAdapters,
-  refreshSources,
-  refreshCompanyRegistry,
-  setSourceEnabled,
-  toggleSourceAdapter,
-  toggleSourceAdapterFromKeyboard,
-  toggleCompanyRegistryList,
-  toggleUnmatchedSourceItems,
-  setCompanyRegistrySearch,
-  addCompanyFromRegistry,
-  openExternalUrl,
-  formatSourceScheduler,
-  formatNextRefresh,
-  formatTimestamp,
-}: SourcesScreenProps) {
+export function SourcesScreen() {
+  const {
+    sourceAdapters,
+    sourceAdaptersError,
+    selectedSourceAdapterId,
+    sourceRefreshState,
+    sourceRefreshResult,
+    sourceRefreshError,
+    sourceAdapterRefreshInFlight,
+    registryRefreshState,
+    registryRefreshResult,
+    registryRefreshError,
+    companyRegistryEntries,
+    filteredCompanyRegistryEntries,
+    companyRegistryEntriesError,
+    isCompanyRegistryListExpanded,
+    companyRegistrySearch,
+    addingRegistryTicker,
+    unmatchedSourceItems,
+    unmatchedSourceItemsError,
+    expandedUnmatchedAdapters,
+    refreshSources,
+    refreshCompanyRegistry,
+    setSourceEnabled,
+    toggleSourceAdapter,
+    toggleSourceAdapterFromKeyboard,
+    toggleCompanyRegistryList,
+    toggleUnmatchedSourceItems,
+    setCompanyRegistrySearch,
+    addCompanyFromRegistry,
+    openExternalUrl,
+    formatSourceScheduler,
+    formatNextRefresh,
+    formatTimestamp,
+  } = useSourcesViewModel();
   const { t, text } = useLocale();
+  const developerMode = useDeveloperMode();
   const groupedAdapters = groupSourceAdapters(sourceAdapters);
 
   return (
