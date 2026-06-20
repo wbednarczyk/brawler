@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.45.1 - 2026-06-20
+
+A foundations release: mostly internal architecture and test-harness work that
+makes the upcoming data-heavy features (story clustering, the autonomous report
+pipeline, cross-company comparison) safe to build — plus a navigation change and
+bug fixes you'll notice. Schema changes are automatic and idempotent; nothing
+user-facing was removed.
+
+### Changed
+
+- **Primary navigation moved to a top bar** ([ADR 0047](docs/adr/0047-top-navigation-bar.md)) — the main screens are now reached from a top navigation bar.
+
+### Fixed
+
+- Four open bugs resolved: Inbox/Watchlist layout, ROIC/ROCE computation, and KPI-extraction guards.
+
+### Under the hood (no user-facing change)
+
+- **Architecture v2** ([ADR 0050](docs/adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)): the storage layer is split into focused per-domain stores; source adapters declare themselves through a single registry; ingestion runs through one shared pipeline that records a cross-source *story key* (the basis for upcoming story clustering); the frontend reads per-screen view-model contexts instead of a prop-drilled god-component; and background work runs on a new **durable, crash-resumable SQLite job queue**. A pure-Rust approximate-nearest-neighbour index is in place behind the similarity boundary for future scale.
+- **Test architecture** ([ADR 0048](docs/adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) / [ADR 0049](docs/adr/0049-test-architecture-v2-data-transform-correctness.md)): a canonical sample-data factory, layered parallel test execution, property/invariant + golden tests, parser fuzzing, a mock-runtime fidelity contract, migration-safety coverage, and broad clickable browser journeys — a large expansion of automated coverage.
+
 ## v0.45.0 - 2026-06-19
 
 On-device semantic similarity: an optional, local embedding model that matches
