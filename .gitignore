@@ -31,6 +31,10 @@ src-tauri/gen/
 private/
 data/
 
+# Retrospectives are local working artifacts for the maintainer to review, not
+# canonical public docs. Durable outcomes get harvested into AGENTS.md/ADRs/docs.
+docs/retros/
+
 # Logs
 *.log
 npm-debug.log*

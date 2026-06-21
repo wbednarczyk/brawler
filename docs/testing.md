@@ -45,11 +45,26 @@ Suites run in parallel within and across frameworks to keep the loop fast, with 
 
 `make coverage` measures line coverage — frontend via Vitest's v8 provider, Rust via `cargo-llvm-cov` — then runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if either layer drops below the committed floor in `coverage-baseline.json`. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. It is periodic (the instrumented Rust build is slow), not part of `make check`. Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
+## Real-data validation precedes implementation for matching/ranking features
+
+Any feature whose value rests on a **similarity / dedup / clustering / matching /
+ranking** decision must be validated for precision/recall against a **real,
+representative dataset before committing to an implementation approach** — not
+after. Build a small hand-labeled ground-truth set from real data and measure the
+candidate signals; a feature that only "works" on synthetic samples or the happy
+path can be confidently semi-working and shipped before anyone notices. This is a
+harvested guardrail ([ADR 0045](adr/0045-guardrail-harvest-loop.md)): cross-source
+story clustering (`v0.46.0`) passed every synthetic test and a green `make check`,
+yet real-data validation showed no local method reached trustworthy precision at
+useful recall, and the feature was dropped ([ADR 0051](adr/0051-story-clustering-across-sources.md)).
+The cost of the up-front measurement is an afternoon; the cost of skipping it is a
+fully-built feature that has to be reverted.
+
 ## Data-transform correctness (property, golden, scale, fuzz, fidelity, pipeline)
 
 Brawler's roadmap is about munching a lot of structured data from many sources
-into one unified set (story clustering, the autonomous report pipeline,
-report-over-report diff, cross-company KPI comparison). That correctness risk
+into one unified set (the autonomous report pipeline, report-over-report diff,
+cross-company KPI comparison). That correctness risk
 lives in **data transforms** — dedup, normalization, entity matching/reconciliation,
 merge — which fail on the long tail and at volume, not on the happy path. The
 following layers test that class. Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md)
@@ -59,8 +74,8 @@ following layers test that class. Policy: [ADR 0049](adr/0049-test-architecture-
 
 Data transforms are tested by the **invariants** they satisfy, not only by
 examples. `proptest` generates inputs; reusable invariant helpers assert the
-algebraic properties this domain shares, so a new transform (and the v0.46+ data
-epics) plug into the same harness instead of re-deriving it. The committed
+algebraic properties this domain shares, so a new transform (and the data-heavy
+roadmap epics) plug into the same harness instead of re-deriving it. The committed
 invariants: **idempotence** (`f(f(x)) == f(x)`), **order-independence /
 commutativity** (same canonical set regardless of arrival order — the core
 property for "the same entity arrives from multiple sources"), **round-trip**

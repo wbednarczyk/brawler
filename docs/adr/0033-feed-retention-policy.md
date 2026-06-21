@@ -24,8 +24,9 @@ The local data store should not grow without bound, but no durable, decision-rel
    - saved by the user;
    - linked as research evidence;
    - the origin of a notebook entry;
-   - the subject of a stored AI analysis;
-   - part of a clustered story whose representative is protected (future, once clustering exists in `v0.46.0`).
+   - the subject of a stored AI analysis.
+
+   (An earlier draft listed "part of a clustered story" as a future protection criterion; cross-source story clustering was evaluated and dropped — [ADR 0051](0051-story-clustering-across-sources.md) — so it is not a retention criterion.)
 
 3. **User-adjustable settings.** A Settings → Data retention section exposes the per-category windows (from a bounded set of options, with an "indefinite" choice) and clamps/validates like other settings. Defaults apply when unset.
 

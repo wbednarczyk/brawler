@@ -2,6 +2,18 @@
 
 Status: Accepted
 
+> **Update (post-v0.45.1):** this ADR cites **story clustering (`v0.46`)** as a
+> motivating consumer of the entity-resolution `story_key` and the embedding
+> `SimilarityProvider`. That milestone was subsequently implemented, evaluated
+> against real data, and **dropped** — no local method reached trustworthy
+> precision at useful recall ([ADR 0051](0051-story-clustering-across-sources.md)).
+> The Architecture v2 foundations here are unaffected and stand as delivered; the
+> `story_key` remains a cross-source identity primitive, and the embedding model is
+> re-pointed at ranking/retrieval consumers (semantic search `v0.48`, RAG for the AI
+> milestones). The two carried-forward consumers named below — the **Rust-side
+> scheduler** (decision 5, lands with the autonomous pipeline `v0.49`) and **ANN
+> activation** (decision 6, near `v0.53`) — are still open as described.
+
 ## Context
 
 A whole-application architecture review (the QA-architect pass that followed the

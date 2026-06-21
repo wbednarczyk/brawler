@@ -2454,7 +2454,7 @@ Rules:
 
 ### Find Similar Content (diagnostics)
 
-`find_similar_content` — developer-mode/diagnostics command to exercise the active `SimilarityProvider` over real stored content; the basis for the `v0.45.0` demoable surface ahead of story clustering (`v0.46.0`).
+`find_similar_content` — developer-mode/diagnostics command to exercise the active `SimilarityProvider` over real stored content; the `v0.45.0` demoable surface for the embedding model. (Its first intended product consumer, story clustering `v0.46`, was evaluated and dropped — see [ADR 0051](adr/0051-story-clustering-across-sources.md); the `SimilarityProvider` / embedding model is re-pointed at ranking/retrieval consumers — semantic search `v0.48` and RAG retrieval for the AI milestones — where the user or an LLM makes the final call.)
 
 ```json
 {

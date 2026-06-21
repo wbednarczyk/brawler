@@ -2,6 +2,17 @@
 
 Status: Accepted
 
+> **Update (post-v0.45.1):** this ADR names **story clustering (`v0.46`)** as the
+> `SimilarityProvider`'s first high-value consumer. That milestone was implemented,
+> evaluated against real data, and **dropped** — no local lexical/embedding method
+> reached trustworthy precision at useful recall for cross-source dedup
+> ([ADR 0051](0051-story-clustering-across-sources.md)). The two-layer design and
+> the `v0.45.0` embedding model stand; the model's consumers are re-pointed to
+> **ranking/retrieval**, which is forgiving of the precision wall that sank
+> clustering: `SemanticSearch` for the command palette (`v0.48`) and RAG evidence
+> retrieval for the AI milestones (`v0.47`/`v0.49`/`v0.50`). The reversible-to-static
+> property recorded below is the safety valve if no consumer lands.
+
 This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.45.0`); the runtime/model/vector-store defaults were **confirmed at v0.45.0 planning** — see [Amendment (v0.45.0): confirmed runtime defaults](#amendment-v0450-confirmed-runtime-defaults) — and the per-capability eval validates the encoder choice. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
 
 ## Context
