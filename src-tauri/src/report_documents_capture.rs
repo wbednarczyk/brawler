@@ -90,6 +90,42 @@ pub fn fetch_pending_attachments(
     Ok(summary)
 }
 
+/// Fetch and store a single report document by id, returning the updated document.
+/// Idempotent: a document that already has a stored file is returned unchanged.
+/// Used by the report-over-report diff's fetch-on-demand (ADR 0052), so a pending
+/// statement can be compared without a full backfill. A fetch failure is recorded
+/// on the document and surfaced as an error string.
+pub fn fetch_report_document(
+    state: &crate::storage::AppState,
+    fetcher: &dyn DocumentFetcher,
+    doc_id: &str,
+) -> Result<crate::storage::ReportDocument, String> {
+    let document = state
+        .get_report_document(doc_id)
+        .map_err(|error| error.to_string())?;
+    if document
+        .local_path
+        .as_deref()
+        .is_some_and(|path| !path.trim().is_empty())
+    {
+        return Ok(document); // already fetched
+    }
+    match fetcher.fetch(&document.url) {
+        Ok(fetched) => {
+            store_fetched_document(state, &document.id, &document.url, &fetched)
+                .map_err(|error| error.to_string())?;
+            state
+                .get_report_document(doc_id)
+                .map_err(|error| error.to_string())
+        }
+        Err(err) => {
+            let message = err.to_string();
+            let _ = state.mark_report_document_failed(&document.id, &message);
+            Err(message)
+        }
+    }
+}
+
 /// Write fetched bytes under `report_documents/`, recording the relative path, content type,
 /// SHA-256 content hash, and byte size on the document. Returns the relative `local_path`.
 fn store_fetched_document(

@@ -1187,6 +1187,76 @@ function buildHandlers(): Record<string, Handler> {
       const companyId = str(unwrap(a).companyId);
       return companyId ? d.reportDocuments.filter((r) => r.companyId === companyId) : d.reportDocuments;
     },
+
+    // --- Report-over-report diff (ADR 0052) ---
+    list_report_diff_candidates: (_d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return {
+        companyId,
+        candidates: [
+          {
+            statementType: "ssf",
+            sourceFormat: "pdf",
+            older: {
+              reportDocumentId: "rd_older",
+              title: "2025 Q3 SSF",
+              periodLabel: "2025 Q3",
+              extractionStatus: "extracted",
+            },
+            newer: {
+              reportDocumentId: "rd_newer",
+              title: "2026 Q1 SSF",
+              periodLabel: "2026 Q1",
+              extractionStatus: "extracted",
+            },
+          },
+        ],
+      };
+    },
+    fetch_report_document: (_d, a) => ({
+      reportDocumentId: str(unwrap(a).reportDocumentId) ?? "",
+      fetched: true,
+    }),
+    extract_report_sections: () => ({
+      extractionState: "extracted",
+      sourceFormat: "pdf",
+      sectionCount: 5,
+      skipped: false,
+    }),
+    get_report_diff: () => ({
+      statementType: "ssf",
+      status: "ok",
+      diff: {
+        alignedCount: 12,
+        sections: [
+          {
+            status: "changed",
+            heading:
+              "skonsolidowane sprawozdanie z zysków i strat oraz innych całkowitych dochodów",
+            olderOrdinal: 1,
+            newerOrdinal: 1,
+            addedLines: 43,
+            removedLines: 54,
+          },
+          {
+            status: "only_older",
+            heading: "informacje o standardach i interpretacjach mssf",
+            olderOrdinal: 2,
+            newerOrdinal: null,
+            addedLines: 0,
+            removedLines: 0,
+          },
+          {
+            status: "changed",
+            heading: "skonsolidowane sprawozdanie z sytuacji finansowej",
+            olderOrdinal: 3,
+            newerOrdinal: 3,
+            addedLines: 42,
+            removedLines: 43,
+          },
+        ],
+      },
+    }),
     capture_report_document: (d, a, ctx) => {
       const input = unwrap(a);
       const documentId = ctx.nextId("report_doc");

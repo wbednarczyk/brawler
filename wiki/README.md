@@ -22,6 +22,9 @@ per feature.
 - **[On-device semantic similarity](embedding-model.md)** — an optional, local,
   no-API-key embedding model that finds feed items similar *in meaning*, not just
   by keyword.
+- **[Report comparison](report-comparison.md)** — see what changed between a
+  company's two most recent financial statements of the same kind, section by
+  section — fully local, deterministic, no AI.
 
 ## A note on what Brawler is — and isn't
 

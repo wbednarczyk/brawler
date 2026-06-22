@@ -256,6 +256,8 @@ Fundamentals tab:
 
 The Fundamentals tab is the panel half of the company-fundamentals feature; the ingestion/extraction half is launched from report feed item detail (see the AI KPI extraction flow in [UI Flows](ui-flows.md)). The matrix and charts must remain readable across the supported narrow window range; values never render as raw integers or internal ids.
 
+The Fundamentals tab also hosts the **report-over-report diff** entry ([ADR 0052](adr/0052-report-over-report-diff.md), `v0.47.0`): a stored financial statement offers a **Compare with previous** action that opens a section-aligned diff against the prior same-type statement (SSF↔SSF, JSF↔JSF). The diff view lists aligned sections (unchanged / changed / only-in-one) with the changed-section text delta and a citation into each report; it must remain readable across the narrow window range (sections stack rather than clip). Extraction-pending and no-text-layer states are shown explicitly rather than as an empty diff. The narrative management report (MD&A) is not diffable in v0.47.0.
+
 Metadata tab:
 
 - display name

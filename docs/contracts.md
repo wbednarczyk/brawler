@@ -529,6 +529,53 @@ Rules:
 
 Error codes: `company_not_found`, `watchlist_not_found`, `invalid_preparation_status`.
 
+## Report-Over-Report Diff
+
+The report-over-report diff ([ADR 0052](adr/0052-report-over-report-diff.md), `v0.47.0`): a pure-Rust, deterministic section-level diff between two consecutive same-type **financial statements** (consolidated SSF / standalone JSF) of one company. Extraction populates the derived `report_document_sections` index; the diff itself is an on-demand backend **read model**, never stored. No AI command this milestone — the narrative MD&A diff and AI delta summary are deferred ([ADR 0052](adr/0052-report-over-report-diff.md)).
+
+`fetch_report_document(input)` downloads a single report document's file on demand. `input` is `{ reportDocumentId: string }`; returns `{ reportDocumentId, fetched }`. Idempotent — an already-downloaded document is a no-op. Reuses the shared report-document fetch/store path; lets the diff compare a `pending` statement without a full backfill (ADR 0052).
+
+`extract_report_sections(input)` enqueues the async extraction job for one stored financial-statement document. `input` is `{ reportDocumentId: string }`. It offloads PDF text extraction off the UI thread and upserts `report_document_sections`; it is idempotent (skips when `content_hash` + `extractor_version` are unchanged). Progress is observed via the document's `extractionStatus` on the read models below.
+
+`list_report_diff_candidates(input)` returns, for a company, the consecutive same-type financial-statement pairs available to diff. Candidates include not-yet-downloaded (`pending`) statements (fetched on demand via `fetch_report_document` when compared), exclude `metadata_only` and non-statement filing components (supervisory-board/audit reports, signature/data files), and are deduplicated to one representative document per period (Polish preferred over an English duplicate). `input` is `{ companyId: string }`. Each candidate carries both documents' identity, period labels, source format (`pdf` | `xhtml` — ESEF/iXBRL is a first-class second format), statement type (`ssf` | `jsf`), and an `extractionStatus` per side (`extracted` | `extraction_pending` | `no_text_layer` | `extraction_failed`):
+
+```json
+{
+  "companyId": "company_gpw_cbf",
+  "candidates": [
+    {
+      "statementType": "ssf",
+      "older": { "reportDocumentId": "doc_…q3", "periodLabel": "2025 Q3", "extractionStatus": "extracted" },
+      "newer": { "reportDocumentId": "doc_…q1", "periodLabel": "2026 Q1", "extractionStatus": "extracted" }
+    }
+  ]
+}
+```
+
+`get_report_diff(input)` returns the on-demand section diff read model for a chosen pair. `input` is `{ olderReportDocumentId: string, newerReportDocumentId: string }`. Both documents must be the same company and statement type. Sections are aligned by heading + ordinal (positional consumption — duplicate headings never cross-match) with the optional `content_embeddings` similarity enhancer when the embedding strategy is active; each section is classified `unchanged` | `changed` | `only_older` | `only_newer`, and `changed` sections carry a line-level diff with citations (ordinal + offset) into both documents:
+
+```json
+{
+  "statementType": "ssf",
+  "alignedCount": 47,
+  "sections": [
+    {
+      "status": "changed",
+      "heading": "skonsolidowane sprawozdanie z sytuacji finansowej",
+      "olderOrdinal": 12,
+      "newerOrdinal": 12,
+      "addedLines": 42,
+      "removedLines": 43
+    }
+  ]
+}
+```
+
+- The diff is **deterministic**: the same two documents always produce the same diff, and a document diffed against itself yields an all-`unchanged`, zero-delta result (a hard test gate).
+- If either side is `extraction_pending` the read model returns `extractionStatus: "extraction_pending"` rather than an empty diff; if either side is `no_text_layer` (scanned) or `extraction_failed` (a caught `pdf-extract` panic) it returns `not_diffable`.
+
+Error codes: `company_not_found`, `report_document_not_found`, `statement_type_mismatch`, `company_mismatch`, `not_a_financial_statement`, `extraction_pending`, `not_diffable`.
+
 ## Company Event
 
 Company events represent dated items the user may want to track across watchlists. Upcoming events are the default attention focus, but historical events are retained for context. They are separate from feed items and notebook entries, but may link to source items or notes later.

@@ -17,6 +17,7 @@ pub mod management_claims;
 pub mod metrics;
 pub mod notebooks;
 pub mod quality_frameworks;
+pub mod report_diff;
 pub mod report_season;
 pub mod research;
 pub mod search;

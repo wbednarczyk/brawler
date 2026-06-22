@@ -19,6 +19,7 @@ import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/fi
 import { CompanyBackfillPanel } from "../../shared/components/CompanyBackfillPanel";
 import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
+import { ReportDiffPanel } from "./ReportDiffPanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -782,6 +783,10 @@ export function CompanyWorkspace({
           companyId={selectedCompany.id}
           reloadKey={reportDocsReloadKey}
         />
+      ) : null}
+
+      {companyWorkspaceTab === "Fundamentals" ? (
+        <ReportDiffPanel companyId={selectedCompany.id} />
       ) : null}
 
       {companyWorkspaceTab === "Quality" ? (

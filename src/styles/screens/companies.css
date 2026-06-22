@@ -305,6 +305,10 @@
 
 .company-list {
   display: grid;
+  /* Constrain the single column to the container width (minmax(0,1fr) removes the
+     implicit min-content floor) so the inline-expanded workspace and its long ESPI
+     filenames truncate within the list rather than forcing a horizontal scrollbar. */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   min-height: 0;
   overflow: auto;
@@ -315,6 +319,9 @@
 
 .company-row-block {
   border-bottom: 1px solid var(--border);
+  /* Grid item of the scrollable .company-list; must shrink so the inline expanded
+     workspace (with long ESPI filenames) truncates instead of scrolling sideways. */
+  min-width: 0;
 }
 
 .company-row-block:last-child {

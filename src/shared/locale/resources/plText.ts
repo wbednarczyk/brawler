@@ -1059,4 +1059,24 @@ export const plText: Record<string, string> = {
   "Claim verdict": "Werdykt obietnicy",
   "No management claims tracked yet.": "Brak śledzonych obietnic zarządu.",
   "Claims command failed": "Polecenie obietnic nie powiodło się",
+
+  // Report-over-report diff (ADR 0052, v0.47.0)
+  "Report comparison": "Porównanie raportów",
+  "Compare consecutive financial statements section by section.":
+    "Porównaj kolejne sprawozdania finansowe sekcja po sekcji.",
+  "No comparable financial statements yet.": "Brak porównywalnych sprawozdań finansowych.",
+  "Report comparison command failed": "Polecenie porównania raportów nie powiodło się",
+  "Compare": "Porównaj",
+  "Back": "Wstecz",
+  "Comparing…": "Porównywanie…",
+  "Extract & compare": "Wyodrębnij i porównaj",
+  "Sections are still being extracted.": "Sekcje są nadal wyodrębniane.",
+  "Can't compare — no extractable text (scanned report).":
+    "Nie można porównać — brak tekstu do wyodrębnienia (raport skanowany).",
+  "No changes between these statements.": "Brak zmian między tymi sprawozdaniami.",
+  "changed section": "zmieniona sekcja",
+  "changed sections": "zmienione sekcje",
+  "aligned": "dopasowanych",
+  "Removed": "Usunięto",
+  "Unchanged": "Bez zmian",
 };

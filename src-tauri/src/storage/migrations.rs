@@ -268,6 +268,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "feed_item_story_key",
         sql: include_str!("../../migrations/0052_feed_item_story_key.sql"),
     },
+    Migration {
+        version: 53,
+        name: "report_document_sections",
+        sql: include_str!("../../migrations/0053_report_document_sections.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

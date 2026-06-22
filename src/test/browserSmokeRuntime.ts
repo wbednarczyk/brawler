@@ -319,7 +319,7 @@ const reportDocuments: ReportDocument[] = [
   reportDocument(
     "doc_cdr_q3_2025",
     "period_cdr_2025_q3",
-    "CD PROJEKT Q3 2025 consolidated report",
+    "26_06_17_formularz_do_wykonywana_prawa_glosu_przez_pelnomocnika_na_NWZ_cyber_Folks_S.A._w_dn._20.07.2026.pdf",
     "https://example.test/reports/CDPROJEKT_Q3_2025.pdf",
   ),
 ];

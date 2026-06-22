@@ -7,6 +7,13 @@
 .company-workspace {
   display: grid;
   gap: 14px;
+  /* The workspace renders inline inside the scrollable .company-list. Its grid items
+     (report-documents, the report-diff panel, etc.) hold long, unbreakable ESPI
+     filenames. A plain auto-sized grid column grows to that content and forces the
+     workspace — and .company-list — wider than the window (a horizontal scrollbar).
+     minmax(0, 1fr) pins the column to the available width so the panels' rows truncate. */
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   margin: 0 12px 12px;
   padding: 16px;
   border: 1px solid var(--border);
@@ -90,11 +97,25 @@
   gap: 8px;
 }
 
+/* Report-over-report diff (ADR 0052): a workspace-level section (sibling of the
+   report-documents panel) reusing the .company-report-documents layout. min-width: 0
+   keeps it shrinkable as a grid item so the ui-list-row titles (long, nowrap section
+   headings) truncate with an ellipsis instead of forcing a horizontal scrollbar. */
+.report-diff-panel,
+.report-diff-panel .ui-list-rows {
+  min-width: 0;
+}
+
 /* Report documents (ADR 0036): a SectionHeader + ui-list-rows (ui/ListRow). Rows own their
-   own compact layout/truncation; this only spaces the panel. */
+   own compact layout/truncation; min-width: 0 lets this grid item shrink so the row
+   titles (long unbreakable ESPI filenames) truncate instead of forcing horizontal scroll. */
 .company-report-documents {
   display: grid;
+  /* Pin the column to the available width so the row titles (long unbreakable ESPI
+     filenames) truncate instead of growing the panel and forcing horizontal scroll. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
+  min-width: 0;
 }
 
 /* Quality frameworks (ADR 0046): the panel reuses SectionHeader + ui-list-rows; these rules

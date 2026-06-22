@@ -56,6 +56,7 @@ mod quality_frameworks;
 mod registry;
 mod report_documents;
 mod report_season;
+mod report_sections;
 mod research;
 mod research_briefs;
 mod research_digests;
@@ -133,6 +134,7 @@ pub use report_season::{
     PreReportCardInput, PreReportKpi, ReportPreparation, ReportSeasonEntry, ReportSeasonInput,
     ReportSeasonResult,
 };
+pub use report_sections::{ReportSectionStore, StoredExtraction, StoredSection};
 pub use research::ResearchStore;
 pub use research_briefs::ResearchBriefStore;
 pub use research_briefs::{
@@ -361,6 +363,10 @@ impl AppState {
     /// report_documents domain store (Architecture v2 / ADR 0050).
     pub fn report_documents(&self) -> report_documents::ReportDocumentStore {
         report_documents::ReportDocumentStore::new(self.db.clone())
+    }
+
+    pub fn report_sections(&self) -> report_sections::ReportSectionStore {
+        report_sections::ReportSectionStore::new(self.db.clone())
     }
 
     /// report_season domain store (Architecture v2 / ADR 0050).

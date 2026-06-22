@@ -319,6 +319,20 @@ Flow:
 
 V1 decision: backfill is user-triggered, app-open-only, ~3-year depth, official sources only; historical calendar entries are not backfilled.
 
+### Report-Over-Report Diff (v0.47.0)
+
+Decision: a stored periodic **financial statement** can be diffed section-by-section against the previous same-type filing, from the company workspace and on new-report arrival. See [ADR 0052](adr/0052-report-over-report-diff.md).
+
+Why it matters: an investor should see what changed since last quarter without rereading an 80-page filing.
+
+Flow:
+
+1. From the company's report documents (Fundamentals/timeline) the user picks a financial statement and chooses **Compare with previous**; the app pairs it with the prior same-type statement (SSF↔SSF, JSF↔JSF). When a new periodic report arrives, the diff is offered as an entry point.
+2. The diff view shows aligned sections: unchanged, changed, only-in-older, only-in-newer. Changed sections show the textual delta with both reports cited (the user can open either source).
+3. The diff is deterministic and local (no AI, no network); reopening the same pair shows the same result. While a report's text is still being extracted, the view shows an extraction-pending state; a scanned report with no text layer shows an explicit "can't diff" state.
+
+V1 decision: structured financial statements only; the narrative management report (MD&A) and an AI delta summary are deferred ([ADR 0052](adr/0052-report-over-report-diff.md)); no cross-company diff.
+
 ### Claim Follow-up Periods
 
 Decision: when you write a note like "management said X should happen soon", the app supports both a follow-up quarter and an exact follow-up date.

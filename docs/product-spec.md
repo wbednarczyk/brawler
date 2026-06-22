@@ -306,6 +306,19 @@ User-facing behavior:
 
 Scope boundary: backfill covers official report sources only (not media), does not backfill historical calendar entries (the calendar focuses on upcoming events), and does no per-company PDF parsing or ESEF/iXBRL parsing.
 
+### Report-Over-Report Diff
+
+Milestone v0.47.0 lets the investor see what actually changed between two consecutive periodic **financial statements** instead of rereading the whole filing ([ADR 0052](adr/0052-report-over-report-diff.md)).
+
+User-facing behavior:
+
+- from a company's report documents (and on new periodic-report arrival), the investor can open a **section-by-section diff** of a financial statement against the previous same-type filing (consolidated SSF vs the prior SSF, standalone JSF vs the prior JSF)
+- each section is shown as unchanged, changed, or only-in-one-report; changed sections show the textual differences, with both reports cited so the investor can jump to the source
+- the diff is **deterministic and fully local** — pure-Rust text extraction, no AI and no network; the same two reports always produce the same diff, and a report compared against itself shows no changes
+- a report whose PDF has no extractable text layer (scanned) shows an explicit "can't diff — no extractable text" state rather than a misleading empty diff
+
+Scope boundary: v0.47.0 diffs the **structured financial statements only**. The narrative management report (MD&A) diff and an AI-written "what changed / new risks / tone shift" delta summary are deferred to a later milestone — a real-data spike showed narrative section headings drift too much for trustworthy deterministic alignment ([ADR 0052](adr/0052-report-over-report-diff.md)). Financial-table *value* reconciliation stays with KPI extraction, not the diff. No cross-company diffing.
+
 ### Terminal Interface
 
 A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.

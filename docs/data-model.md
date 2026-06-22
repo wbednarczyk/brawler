@@ -1002,6 +1002,32 @@ Storage, dedup, and retention rules:
 - Identity is `UNIQUE(company_id, url)`; capture, refresh, and backfill **upsert** on this key. `content_hash` is a secondary same-company dedup signal so a re-fetch of identical bytes is not duplicated.
 - Retention reuses the feed-retention protection model ([ADR 0033](adr/0033-feed-retention-policy.md)): a document referenced by a confirmed `financial_fact`, linked as research evidence, or backing a confirmed signal derivation is **protected** and never pruned. Unprotected full files past the retention window have their **bytes** pruned (file deleted, row downgraded to `metadata_only`); the metadata row itself is never deleted. On-disk report-document size and the retention window are surfaced in Settings → Data retention alongside the feed controls.
 
+### Report Document Sections
+
+Supports the report-over-report diff ([ADR 0052](adr/0052-report-over-report-diff.md), `v0.47.0`): the extracted-text section structure of a stored **financial-statement** report document (consolidated SSF / standalone JSF), used as the deterministic substrate the diff compares.
+
+This table is a **disposable, derived index**, never a source of truth. Every row is computed from a `report_documents` row's stored bytes via pure-Rust text extraction ([ADR 0052](adr/0052-report-over-report-diff.md)). Dropping the table loses zero canonical data — it only forces re-extraction.
+
+Fields:
+
+- `report_document_id` → `report_documents(id)` (the source document; cascade-cleaned with it).
+- `ordinal` — 0-based position of the section within the document; the stable per-document section identity (heading text is **not** unique, so alignment keys on heading + ordinal, never heading alone — exact-heading-only matching breaks the deterministic self-diff invariant).
+- `heading` — the detected section heading text (normalized: leading numbering stripped, lowercased) or `<preamble>` for pre-first-heading content.
+- `body` — the section's extracted plain text.
+- `content_hash` — sha256 of the source document bytes the extraction ran over, so re-extraction skips unchanged documents and the diff read model can detect staleness.
+- `extractor_version` — the extraction-heuristic version, so a heuristic change can invalidate and rebuild affected rows.
+- `created_at`
+
+Primary key: (`report_document_id`, `ordinal`).
+
+Rules:
+
+- Population is an async background job offloaded off the UI thread (extraction over a multi-page PDF is CPU work); reads of the diff tolerate a not-yet-extracted document (the diff read model reports `extraction_pending`).
+- Extraction handles **both source formats** found across the GPW + NewConnect market ([ADR 0052](adr/0052-report-over-report-diff.md)): **PDF** (`pdf-extract`, run inside `catch_unwind` — it panics on a small fraction of real PDFs) and **ESEF/iXBRL `.xhtml`** (HTML parse, stripping the inline-XBRL header / `display:none` facts; increasingly common under the EU ESEF mandate — some large issuers file xhtml-only with no PDF). Each document records an `extraction_state`: `extracted` | `no_text_layer` | `extraction_failed`. A `pdf-extract` panic is caught and recorded as `extraction_failed` (flagged, not-diffable), never crashing the job.
+- Only **financial-statement** report documents are extracted in `v0.47.0`; the narrative management report (MD&A) is out of scope (deferred — [ADR 0052](adr/0052-report-over-report-diff.md)). A scanned/image document with text density (chars/page) below threshold records `no_text_layer` and is not diffable (no OCR) — a real ~10% class across the market, concentrated in small NewConnect issuers.
+- The **diff itself is never stored** — it is an on-demand backend read model computed from two documents' sections (heading + lexical alignment, with the optional `content_embeddings` similarity enhancer when the embedding strategy is active). No AI summary is produced or cached this milestone.
+- Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`); rebuildable regardless of prior state.
+
 ## Search Index
 
 Global full-text search is served by a single unified SQLite FTS5 virtual table, `search_index`. See [ADR 0032](adr/0032-search-and-backup-boundaries.md).

@@ -60,13 +60,45 @@ useful recall, and the feature was dropped ([ADR 0051](adr/0051-story-clustering
 The cost of the up-front measurement is an afternoon; the cost of skipping it is a
 fully-built feature that has to be reverted.
 
+The **report-over-report diff** (`v0.47.0`, [ADR 0052](adr/0052-report-over-report-diff.md))
+followed this rule and is the worked example of it paying off: a pure-Rust
+extraction + section-alignment spike measured against real watchlist report PDFs
+(11 PDFs, 6 issuers) showed extraction is reliable everywhere, structured
+financial statements align 85–92% by heading, but the narrative management report
+(MD&A) aligns only 4% — so the milestone was narrowed to statements and the
+MD&A/AI-summary work deferred *before* any production code was written. Its
+shipped gates:
+
+- **Golden extraction snapshot per issuer format** — an `insta` snapshot of the
+  extracted section structure for a sample financial statement per issuer layout,
+  so an extractor/heuristic change is visible in review.
+- **Deterministic self-diff = empty (hard gate).** A financial statement diffed
+  against itself must produce an all-`unchanged`, zero-delta result. This is the
+  invariant that caught the naive exact-heading matcher cross-matching duplicate
+  headings; alignment keys on heading + ordinal with positional consumption.
+- **Alignment eval with a precision floor** over the real consecutive same-type
+  pairs (kept under `private/`, out of CI), measured before relying on the
+  heuristic — the same precision/recall discipline as above.
+- **Panic-safety + no-text-layer gates.** Extraction was validated against the
+  **whole GPW + NewConnect market** (613 real reports across 770 companies, via the
+  shipped resolver): 89.4% extract clean, 10.4% are scanned/no-text-layer (correctly
+  flagged), 0.16% panic `pdf-extract`, 0% silent garbage. That run surfaced three
+  requirements now under test: `pdf-extract` runs in `catch_unwind` (a known-panicking
+  PDF must yield `extraction_failed`, not a crash); a scanned report must classify
+  `no_text_layer` by text density; and **ESEF/iXBRL `.xhtml`** is a first-class
+  second format (some large issuers file xhtml-only). The 613-report corpus is the
+  extraction-robustness reference set under `private/`.
+- The diff transform also carries the property/invariant gates below
+  (idempotence, order-stability).
+
 ## Data-transform correctness (property, golden, scale, fuzz, fidelity, pipeline)
 
 Brawler's roadmap is about munching a lot of structured data from many sources
 into one unified set (the autonomous report pipeline, report-over-report diff,
 cross-company KPI comparison). That correctness risk
 lives in **data transforms** — dedup, normalization, entity matching/reconciliation,
-merge — which fail on the long tail and at volume, not on the happy path. The
+classification (denylist/keyword routing of inputs into typed buckets), merge —
+which fail on the long tail and at volume, not on the happy path. The
 following layers test that class. Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md)
 (extends [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md)).
 
@@ -88,8 +120,12 @@ panic). Property tests run in the normal stable test binary and are part of
 
 ### Golden snapshots (`insta`)
 
-Complex structured outputs — source-adapter parse results and KPI/financial
-normalization results — are locked with **`insta` snapshots**, not hand-asserted
+Complex structured outputs — source-adapter parse results, KPI/financial
+normalization results, and **classification/routing decisions over a representative
+input corpus** (e.g. the report-over-report diff's statement classifier, which routes
+real GPW/NewConnect filing-component titles into SSF/JSF or rejects them — its golden
+is `report_diff::classify::tests::classification_corpus_golden`) — are locked with
+**`insta` snapshots**, not hand-asserted
 field-by-field. Snapshots are committed, **diff-reviewable, and regenerated, not
 hand-edited** (`cargo insta review` / `cargo insta accept`). They lock *output
 shape* and make a deliberate shape change a reviewable diff instead of silent
@@ -128,6 +164,16 @@ generator; **`arbitrary`/`cargo-fuzz` are deliberately not used** (raw-bytes
 deriving + coverage-guidance earn their keep on byte-oriented parsers Brawler
 does not have, and `cargo-fuzz` needs a nightly toolchain that would split the
 single Nix-pinned toolchain — full rationale in [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md)).
+
+**A third-party parser we don't control runs inside `catch_unwind`, and a test
+asserts a known-bad input is *flagged*, not a panic.** Our own parsers are total
+(above), but `pdf-extract` panics on a small fraction of real PDFs (~0.16% across
+the 613-report market corpus, ADR 0052). A panic on the offloaded extraction
+thread would crash the job, so extraction wraps the call and turns a panic into an
+`extraction_failed` state — covered by a panic-safety test
+(`report_diff::extraction::tests::unreadable_pdf_is_flagged_not_panicked`). Any
+new dependency that parses real-world files gets the same `catch_unwind` + a
+flagged-not-crashed test.
 
 ### Mock-runtime fidelity — the dual-execution contract
 
@@ -229,6 +275,11 @@ How it's wired (assertion-driven, not screenshot-only):
 - a shared harness (`tests/browser/helpers/harness.ts`) gives an auto console-error gate (any `console.error`/uncaught error fails the test) and reusable invariants (`expectNoPageOverflow`, a deep `expectNoHorizontalOverflow` scan, `expectInternalScroll`);
 - `tests/browser/journeys.spec.ts` asserts full flows end to end; `tests/browser/smoke-walk.spec.ts` walks every primary screen asserting no page-level horizontal overflow and deep-scans the detail rail where `overflow:hidden` hides the symptom;
 - mock data comes from the canonical factory (`src/test/scenarios/`): `browserSmokeRuntime.ts` builds `createMockRuntime("rich")`, injects the browser-specific seed into its store, and routes Tauri `invoke` through the one runtime (only Tauri plugin commands are handled locally). The runtime **rejects** an unknown command (the "add a case to `runtime.ts`" signal); a new screen command is added once, in the shared router, not per layer. `?locale=pl` previews the app in Polish for screenshot specs; `window.__brawlerMockReset(scenario)` re-seeds between interactions.
+
+Two harvested rules (ADR 0045), both from the `v0.47.0` report-diff panel:
+
+- **A no-horizontal-scroll check must assert the inner scroll containers, not just the document.** `document.documentElement.scrollWidth` is **0** when the overflow lives in an inner `overflow: auto` element (which shows *its own* scrollbar) — so a document-level check passes while the user sees a scrollbar. Assert `scrollWidth <= clientWidth + 1` on the actual scroll container(s) in the subtree (e.g. `.company-list`) and on the offending panel, across the narrow viewports. The report-diff overflow was invisible to the document check for several rounds because the scroll lived on `.company-list`.
+- **A new IPC command that drives a primary-screen panel ships with (a) its case in the shared runtime router and (b) a narrow-window layout assertion for that panel.** Vitest mocks the api module, so a panel can be green in Vitest yet untested for layout (the Playwright runtime didn't know the command, so the panel never rendered with data under `make check`/`check-epic`). Add the router case + a `tests/browser/*-layout.spec.ts` overflow assertion in the same change as the command. Example: `report-diff-layout.spec.ts`.
 
 **The harness also renders any screen for visual review** — drive a throwaway spec to the screen and `await page.screenshot(...)`. "No GUI in WSL" is not a reason to skip looking at a UI change (see [Engineering Workflow → Definition of Done](engineering-workflow.md#definition-of-done-the-handover-gate)).
 

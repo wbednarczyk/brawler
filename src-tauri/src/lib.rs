@@ -13,6 +13,7 @@ pub mod licensing;
 pub mod logging;
 pub mod observability;
 pub mod providers;
+pub mod report_diff;
 pub mod report_documents_capture;
 pub mod signal_dates;
 pub mod source_adapters;
@@ -168,6 +169,10 @@ pub fn run() {
             commands::report_season::get_pre_report_card,
             commands::report_season::mark_report_prepared,
             commands::report_season::mark_report_processed,
+            commands::report_diff::extract_report_sections,
+            commands::report_diff::fetch_report_document,
+            commands::report_diff::list_report_diff_candidates,
+            commands::report_diff::get_report_diff,
             commands::claim_extraction::start_claim_extraction,
             commands::claim_extraction::retry_claim_extraction,
             commands::claim_extraction::list_claim_extraction,

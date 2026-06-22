@@ -1,0 +1,158 @@
+---
+source: src/report_diff/classify.rs
+expression: rows
+---
+[
+    (
+        "cyber_Folks 2026 Q1 SSF",
+        Some(
+            "ssf",
+        ),
+        Some(
+            "2026 Q1",
+        ),
+    ),
+    (
+        "cyber_Folks 2026 Q1 JSF",
+        Some(
+            "jsf",
+        ),
+        Some(
+            "2026 Q1",
+        ),
+    ),
+    (
+        "Skonsolidowane sprawozdanie finansowe GK za 2025",
+        Some(
+            "ssf",
+        ),
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "Jednostkowe sprawozdanie finansowe za I półrocze 2025",
+        Some(
+            "jsf",
+        ),
+        Some(
+            "2025 Q2/H1",
+        ),
+    ),
+    (
+        "Raport kwartalny QSr 1/2026",
+        Some(
+            "ssf",
+        ),
+        Some(
+            "2026",
+        ),
+    ),
+    (
+        "Raport okresowy PSr 2025",
+        Some(
+            "ssf",
+        ),
+        Some(
+            "2025 Q2/H1",
+        ),
+    ),
+    (
+        "Consolidated financial statement 2025",
+        Some(
+            "ssf",
+        ),
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "JSF_CBF Jednostkowe Sprawozdanie finansowe",
+        Some(
+            "jsf",
+        ),
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "Skonsolidowany raport okresowy grupy 2025",
+        Some(
+            "ssf",
+        ),
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "26_03_17_sprawozdanie_RN_cyber_FolksSA_z_oceny",
+        None,
+        None,
+    ),
+    (
+        "SzB_GK_cyber_Folks Sprawozdanie z badania",
+        None,
+        None,
+    ),
+    (
+        "Sprawozdanie z przeglądu śródrocznego skróconego",
+        None,
+        None,
+    ),
+    (
+        "JSF_CBF-2025-12-31-1-pl.xhtml.xades",
+        None,
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "CBF-2025-12-31-1-pl.xbri",
+        None,
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "Podpisanie umowy o badanie sprawozdania finansowego",
+        None,
+        None,
+    ),
+    (
+        "Opóźnienie publikacji raportu rocznego",
+        None,
+        None,
+    ),
+    (
+        "Szacunkowa wysokość przychodów w 2025",
+        None,
+        Some(
+            "2025",
+        ),
+    ),
+    (
+        "Projekty uchwał ZWZ",
+        None,
+        None,
+    ),
+    (
+        "Ogłoszenie o zwołaniu ZWZ",
+        None,
+        None,
+    ),
+    (
+        "List Prezesa Zarządu do akcjonariuszy",
+        None,
+        None,
+    ),
+    (
+        "Wybrane dane finansowe",
+        None,
+        None,
+    ),
+    (
+        "Opinia i raport biegłego rewidenta",
+        None,
+        None,
+    ),
+]
