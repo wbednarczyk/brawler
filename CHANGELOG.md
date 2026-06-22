@@ -1,5 +1,47 @@
 # Changelog
 
+## v0.47.0 - 2026-06-22
+
+Report comparison: see what changed between a company's two most recent financial
+statements of the same kind, section by section — fully local, deterministic, and
+offline (no AI, no API key). Decision support only: it shows what moved, never
+whether to buy or sell. Design and real-data validation:
+[ADR 0052](docs/adr/0052-report-over-report-diff.md).
+
+### Added
+
+- **Report comparison (report-over-report diff).** Open a company →
+  *Fundamentals* to find the **Report comparison** panel. Brawler lines up two
+  consecutive same-type financial statements — consolidated (*skonsolidowane* /
+  SSF) or standalone (*jednostkowe* / JSF), never mixing the two — and tags each
+  section as **changed**, **added**, **removed**, or **unchanged**, with a count
+  of how many sections aligned between the filings. It reads both regular report
+  **PDFs** and the newer **ESEF/iXBRL** filings (e.g. CD Projekt), and runs fully
+  offline. See the [Report comparison guide](wiki/report-comparison.md).
+- **Honest "can't compare" states.** A scanned/image report with no real text
+  layer is flagged plainly ("no extractable text") instead of producing a
+  misleading diff; a report that's only been detected (not yet downloaded) can be
+  fetched and extracted on demand from the panel.
+
+### Notes & scope
+
+- Scope was narrowed to the **structured financial statements** after a
+  market-wide real-data spike (770 GPW + NewConnect companies → 613 reports;
+  89.4% extracted cleanly, with no case of wrong text passed off as good). The
+  **narrative management-report (MD&A) diff** and an **AI "what changed" summary**
+  are deferred to a later release — across issuers their headings don't line up
+  reliably enough yet. Rationale and evidence in
+  [ADR 0052](docs/adr/0052-report-over-report-diff.md).
+
+### Under the hood (no user-facing change)
+
+- A panic-safe PDF/ESEF text-extraction layer with per-document extraction state
+  (migration 0053), a deterministic section diff with a self-diff-is-empty
+  invariant, statement classification guarded by a golden snapshot, and four new
+  typed commands. Correctness guardrails were harvested into the canonical docs:
+  a grid-overflow layout rule, an inner scroll-container overflow check, a
+  new-IPC-command test rule, and a third-party-parser panic-safety rule.
+
 ## v0.45.1 - 2026-06-20
 
 A foundations release: mostly internal architecture and test-harness work that
