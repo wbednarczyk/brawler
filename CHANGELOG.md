@@ -1,5 +1,52 @@
 # Changelog
 
+## v0.48.0 - 2026-06-24
+
+A new home and a calmer, mode-based workspace. Brawler now opens on **Today** —
+an at-a-glance "what needs my attention" briefing — and is organized around the
+jobs you actually do (triage, deep-dive on one company, focused reading/writing)
+rather than one freeform grid. Decision support only: nothing here tells you to
+buy or sell. Direction and the UX research behind it:
+[ADR 0054](docs/adr/0054-mode-based-thesis-centric-shell.md). See the
+[research workspace guide](wiki/research-workspace.md).
+
+### Added
+
+- **Today/Pulse — the new home.** An attention digest, not a wall of feed items:
+  *what changed* (the freshest report disclosures), *to verify* (management
+  claims due/overdue for your pinned companies), *upcoming reports*, a
+  watchlist-level conviction overview, and a compact recent-activity peek. Each
+  item has a **Review** action that jumps you to the right place.
+- **Left-sidebar navigation spine.** A persistent sidebar grouped into Modes,
+  your **pinned/favorite companies** (pin from a company's header for one-click
+  access), a Library (Inbox, Watchlists, Transcripts, Sources), and Utilities —
+  replacing the old top navigation bar.
+- **Company workspace — Advanced layout.** The tabbed company workspace stays the
+  default; an **Advanced layout** button opens the dockview research cockpit
+  scoped to that company — multiple resizable, dockable panels (feed, inspector,
+  claims, report comparison, fundamentals, …) with task presets, named saved
+  layouts, and pop-out-to-window.
+- **Focus modes.** A full-screen, distraction-free surface (Esc to exit) for
+  deep **reading** a long report-over-report comparison and long-form **writing**
+  of notebook notes.
+
+### Changed
+
+- **Brawler opens on Today** instead of the feed; the full feed lives in the
+  **Inbox** (in the sidebar Library).
+- The cockpit feed now matches the real Inbox (only unread items stand out), the
+  feed **inspector** was rebuilt to read cleanly, and the linked claims/report
+  panels name the company they're showing.
+
+### Notes & scope
+
+- Per-company **conviction status** and the **Compare** cross-company KPI table
+  are present as placeholders — they fill in with the valuation, quality, and
+  thesis work on the roadmap, and stay evidence-linked decision support (never a
+  rating). The remaining keyboard feed-triage actions are a follow-on.
+- Your data — watchlists, notes, claims, and settings — stays local on your
+  machine.
+
 ## v0.47.0 - 2026-06-22
 
 Report comparison: see what changed between a company's two most recent financial
