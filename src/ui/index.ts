@@ -30,6 +30,8 @@ export { InfoGrid } from "./InfoGrid";
 export type { InfoGridItem, InfoGridProps } from "./InfoGrid";
 export { Modal } from "./Modal";
 export type { ModalProps } from "./Modal";
+export { FocusOverlay } from "./FocusOverlay";
+export type { FocusOverlayProps } from "./FocusOverlay";
 export { Panel, PanelHeader } from "./Panel";
 export { SegmentedControl, SegmentedControlOption } from "./SegmentedControl";
 export type { SegmentedControlOptionProps, SegmentedControlProps } from "./SegmentedControl";

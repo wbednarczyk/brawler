@@ -185,7 +185,7 @@ export function useResearchController({
   }, [researchMode, selectedResearchCompanyId]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (activeSection !== "Research" && activeSection !== "Cockpit") {
       return;
     }
 
@@ -276,7 +276,7 @@ export function useResearchController({
   }, [researchMode, selectedResearchCompanyId, selectedResearchWatchlistId]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (activeSection !== "Research" && activeSection !== "Cockpit") {
       return;
     }
 
@@ -284,7 +284,7 @@ export function useResearchController({
   }, [activeSection, refreshResearchTimeline]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (activeSection !== "Research" && activeSection !== "Cockpit") {
       return;
     }
 
@@ -294,7 +294,7 @@ export function useResearchController({
   }, [activeSection, refreshResearchBriefs, refreshResearchDigests, refreshResearchReminders]);
 
   useEffect(() => {
-    if (activeSection !== "Research") {
+    if (activeSection !== "Research" && activeSection !== "Cockpit") {
       return;
     }
     if (

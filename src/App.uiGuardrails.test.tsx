@@ -1,5 +1,5 @@
 import { describe, it } from "vitest";
-import { expect, renderApp, screen, userEvent, waitFor } from "./test/appWorkflowHarness";
+import { expect, renderApp, screen, waitFor } from "./test/appWorkflowHarness";
 
 const forbiddenNormalUserTerms = [
   "SQLite",
@@ -30,9 +30,9 @@ function expectNoForbiddenNormalUserTerms(section: string) {
 
 describe("normal user UI guardrails", () => {
   it("does not expose implementation wording in normal app sections", async () => {
-    const user = userEvent.setup();
-    renderApp();
-
+    // Render each section in isolation via its initial section. The slimmed
+    // top-nav (ADR 0053 phase 6) no longer has buttons for Notebooks/Events
+    // (they are Cockpit panels), but the wording guard must still cover them.
     const sectionHeadings = [
       "Inbox",
       "Companies",
@@ -45,16 +45,17 @@ describe("normal user UI guardrails", () => {
     ] as const;
 
     for (const heading of sectionHeadings) {
-      if (heading !== "Inbox") {
-        await user.click(screen.getByRole("button", { name: heading }));
-      }
-
+      const { unmount } = renderApp({ section: heading });
       await waitFor(() => {
         expect(screen.getByRole("heading", { name: heading })).toBeInTheDocument();
       });
       expectNoForbiddenNormalUserTerms(heading);
+      unmount();
     }
 
+    // Diagnostics stays hidden from the slimmed nav unless developer mode is on.
+    const { unmount } = renderApp({ section: "Cockpit" });
     expect(screen.queryByRole("button", { name: "Diagnostics" })).not.toBeInTheDocument();
+    unmount();
   });
 });

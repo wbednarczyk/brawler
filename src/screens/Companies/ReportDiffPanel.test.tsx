@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ReportDiffPanel } from "./ReportDiffPanel";
@@ -98,6 +98,38 @@ describe("ReportDiffPanel", () => {
       expect(screen.queryByText("wybrane dane finansowe")).not.toBeInTheDocument();
     });
     expect(screen.getByText("+4 −2")).toBeInTheDocument();
+  });
+
+  it("opens the active diff in a full-screen Focus reader and exits on Esc (ADR 0054)", async () => {
+    listCandidatesMock.mockResolvedValue({
+      companyId: "company_gpw_cbf",
+      candidates: [candidate()],
+    });
+    getDiffMock.mockResolvedValue({
+      statementType: "ssf",
+      status: "ok",
+      diff: {
+        alignedCount: 1,
+        sections: [
+          { status: "changed", heading: "bilans", olderOrdinal: 1, newerOrdinal: 1, addedLines: 4, removedLines: 2 },
+        ],
+      },
+    });
+
+    const user = userEvent.setup();
+    render(<ReportDiffPanel companyId="company_gpw_cbf" />);
+    await waitFor(() => expect(screen.getByText("2025 Q3 → 2026 Q1")).toBeInTheDocument());
+    await user.click(screen.getByRole("button", { name: "Compare" }));
+    await waitFor(() => expect(screen.getByText("bilans")).toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Focus" }));
+    const overlay = await screen.findByRole("dialog", { name: "Report comparison" });
+    expect(within(overlay).getByText("bilans")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Report comparison" })).not.toBeInTheDocument(),
+    );
   });
 
   it("flags a scanned (not-diffable) report instead of an empty diff", async () => {

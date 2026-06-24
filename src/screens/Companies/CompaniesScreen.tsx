@@ -27,6 +27,8 @@ export type CompaniesScreenProps = {
   filteredCompanies: Company[];
   companies: Company[];
   selectedCompany: Company | null;
+  onTogglePinnedCompany: (companyId: string) => void;
+  onOpenAdvancedLayout: (companyId: string) => void;
   workspaceAutoFocusId: string | null;
   clearWorkspaceAutoFocus: () => void;
   membershipsByCompany: Record<string, WatchlistMembership[]>;
@@ -113,6 +115,8 @@ export function CompaniesScreen() {
   filteredCompanies,
   companies,
   selectedCompany,
+  onTogglePinnedCompany,
+  onOpenAdvancedLayout,
   workspaceAutoFocusId,
   clearWorkspaceAutoFocus,
   membershipsByCompany,
@@ -400,6 +404,8 @@ export function CompaniesScreen() {
                       {selectedCompany?.id === company.id ? (
                         <CompanyWorkspace
                           selectedCompany={selectedCompany}
+                          onTogglePin={() => onTogglePinnedCompany(selectedCompany.id)}
+                          onOpenAdvancedLayout={() => onOpenAdvancedLayout(selectedCompany.id)}
                           autoFocusOnOpen={workspaceAutoFocusId === selectedCompany.id}
                           onAutoFocusHandled={clearWorkspaceAutoFocus}
                           membershipsByCompany={membershipsByCompany}

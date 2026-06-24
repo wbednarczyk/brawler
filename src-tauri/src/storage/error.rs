@@ -56,6 +56,10 @@ pub enum StorageError {
     Classification(String),
     #[error("invalid embedding value: {message}")]
     InvalidEmbeddingValue { message: String },
+    #[error("cockpit layout not found: {id}")]
+    CockpitLayoutNotFound { id: String },
+    #[error("invalid cockpit layout name: {name}")]
+    InvalidCockpitLayoutName { name: String },
 }
 
 pub type StorageResult<T> = Result<T, StorageError>;

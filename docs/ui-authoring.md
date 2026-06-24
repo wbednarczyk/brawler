@@ -68,6 +68,7 @@ Rules:
 | Key/value metadata block | `InfoGrid` | ad-hoc definition grids |
 | Inline confirm (delete etc.) | `InlineConfirm` | bespoke confirm toggles |
 | A dialog | `Modal` | a hand-built overlay |
+| A full-screen distraction-free surface (reader/writer Focus mode) | `FocusOverlay` | a hand-built full-screen overlay |
 | Tabs / segmented views | `SegmentedControl` + `SegmentedControlOption` | bespoke tab bars |
 | Sub-navigation | `Subnav` | bespoke nav rows |
 | A filter bar | `FilterToolbar` | bespoke filter rows |
@@ -96,6 +97,7 @@ Rules:
 - **No inline `style={{…}}`** in screens/components (lint-enforced). Exactly one case is tolerated — the dynamic `--sidebar-width` custom property in `AppShell` (a live px value a static stylesheet cannot express), carrying an inline disable with its reason; do not add more. Containment, truncation, and spacing belong in CSS or are baked into a primitive (e.g. `ListRow` truncates; `DetailSection` contains).
 - New screen-specific selectors go under `src/styles/screens/`; cross-screen control/layout styling goes in the matching shared style module (`src/styles/ui.css`, `rows.css`, etc.). Use design tokens (`var(--border)`, `var(--muted)`, `var(--surface)`) — do not hardcode colors.
 - Do not invent a new `*-panel` / `*-header` / `*-toolbar` class when a primitive renders that shape.
+- **Never `stopPropagation` on a whole sub-region of a clickable row/card — scope it to the actual interactive control.** A row that selects on click often nests a "context" block (chips, metadata, a delete button) with `onClick={(e) => e.stopPropagation()}` on the *wrapper* to stop those clicks from also selecting the row. That wrapper becomes a **dead click-zone**: when responsive CSS stacks the row to `flex-direction: column` at narrow widths, the wrapper occupies the row's lower half, so clicking there does nothing (the `.company-row-context` dead-zone bug — selection only worked on `.company-row-main`). Put `stopPropagation` on the specific buttons/links that must not bubble, never on a layout region that can grow to cover the row's click target.
 - **Grid/flex containers that hold variable or unbreakable content must let their children shrink, or they force a horizontal scrollbar.** A CSS grid item defaults to `min-width: auto` (= min-content), and an *unbreakable* string — a long ESPI filename like `cyber_Folks_SA_30.06.2023_raport.pdf`, a `nowrap` heading — has a min-content as wide as the whole string. So a content-bearing grid container needs **both** `min-width: 0` **and** `grid-template-columns: minmax(0, 1fr)` (plain `1fr` keeps an implicit min-content floor); only then do `ListRow`/`.ui-list-row-title` truncate instead of blowing the track out. This must hold for **every** ancestor down the chain — one missing link re-introduces the scrollbar (the `v0.47.0` report-diff panel overflowed because `.company-list → .company-row-block → .company-workspace → .company-report-documents` each needed it). Guard a panel that renders such content with a narrow-window Playwright assertion (see [Testing](testing.md) → no-horizontal-scroll).
 
 ## i18n

@@ -41,9 +41,32 @@
 }
 
 .company-workspace-header h2 {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-top: 3px;
   color: var(--text);
   font-size: 22px;
+}
+
+.company-pin-toggle,
+.company-advanced-layout {
+  font-size: 12px;
+}
+
+/* Focus writer (ADR 0054): the body textarea fills the distraction-free surface. */
+.notebook-writer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.notebook-writer-body {
+  flex: 1;
+  min-height: 240px;
+  resize: none;
 }
 
 .company-workspace-header p {
@@ -104,6 +127,15 @@
 .report-diff-panel,
 .report-diff-panel .ui-list-rows {
   min-width: 0;
+}
+
+/* Space the SSF/JSF statement groups so the long candidate list reads as sections. */
+.report-diff-group {
+  min-width: 0;
+}
+
+.report-diff-group + .report-diff-group {
+  margin-top: 0.75rem;
 }
 
 /* Report documents (ADR 0036): a SectionHeader + ui-list-rows (ui/ListRow). Rows own their

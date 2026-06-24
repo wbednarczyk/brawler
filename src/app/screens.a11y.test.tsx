@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 import { axe } from "jest-axe";
-import { expect, renderApp, screen, userEvent } from "../test/appWorkflowHarness";
+import { expect, renderApp, screen } from "../test/appWorkflowHarness";
 
 // Screen-level accessibility regression guard (ADR 0048): render the app, walk
 // each primary screen, and assert axe finds no violations — extending the
@@ -13,7 +13,7 @@ import { expect, renderApp, screen, userEvent } from "../test/appWorkflowHarness
 // pre-existing violations on them (aria-allowed-role, nested-interactive). Those
 // are tracked separately to fix, then fold into this list — we do NOT disable
 // those rules (that would gut the guard) nor commit a red test.
-const SCREENS = ["Watchlists", "Notebooks", "Research", "Settings"] as const;
+const SCREENS = ["Watchlists", "Notebooks", "Research", "Settings", "Cockpit"] as const;
 
 const AXE_RULES = {
   region: { enabled: false },
@@ -30,10 +30,12 @@ const AXE_RULES = {
 describe("screen accessibility", () => {
   for (const name of SCREENS) {
     it(`${name} renders with no axe violations`, async () => {
-      const user = userEvent.setup();
-      const { container } = renderApp();
+      // Land directly on the screen via the initial section: the slimmed top-nav
+      // (ADR 0053 phase 6) no longer exposes some of these as buttons (they are
+      // Cockpit panels now), but they remain valid sections we still guard.
+      const { container } = renderApp({ section: name });
 
-      await user.click(await screen.findByRole("button", { name }));
+      await screen.findByRole("button", { name: "Cockpit" });
 
       const results = await axe(container, { rules: AXE_RULES });
       expect(results.violations.map((violation) => violation.id)).toEqual([]);

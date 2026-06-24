@@ -70,6 +70,49 @@
           "expectAbsent": { "ticker": "FDLTY" }
         }
       ]
+    },
+    {
+      "name": "cockpit layout save-list-rename-delete lifecycle",
+      "steps": [
+        {
+          "command": "save_cockpit_layout",
+          "input": {
+            "input": {
+              "name": "Fidelity Cockpit",
+              "panelsJson": "{\"panels\":[\"feed\"]}",
+              "layoutJson": null,
+              "dockviewVersion": "6.6.1"
+            }
+          },
+          "capture": "lid",
+          "expectField": { "name": "Fidelity Cockpit", "ordinal": 0 }
+        },
+        {
+          "command": "list_cockpit_layouts",
+          "input": {},
+          "expectContains": { "name": "Fidelity Cockpit" }
+        },
+        {
+          "command": "rename_cockpit_layout",
+          "input": { "input": { "id": "$lid", "name": "Fidelity Renamed" } },
+          "expectField": { "name": "Fidelity Renamed" }
+        },
+        {
+          "command": "list_cockpit_layouts",
+          "input": {},
+          "expectContains": { "name": "Fidelity Renamed" },
+          "expectAbsent": { "name": "Fidelity Cockpit" }
+        },
+        {
+          "command": "delete_cockpit_layout",
+          "input": { "layoutId": "$lid" }
+        },
+        {
+          "command": "list_cockpit_layouts",
+          "input": {},
+          "expectAbsent": { "name": "Fidelity Renamed" }
+        }
+      ]
     }
   ]
 }

@@ -971,6 +971,7 @@ export function makeUserSettings(): UserSettings {
     logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
     shortcutBindings: {},
     database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
+    pinnedCompanyIds: [],
   };
 }
 

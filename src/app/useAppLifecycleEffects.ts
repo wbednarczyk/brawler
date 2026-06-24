@@ -191,7 +191,11 @@ export function useAppLifecycleEffects({
   ]);
 
   useEffect(() => {
-    if (!licenseCanUseApp || activeSection !== "Events" || companyEventViewMode !== "week") {
+    if (
+      !licenseCanUseApp ||
+      (activeSection !== "Events" && activeSection !== "Cockpit") ||
+      companyEventViewMode !== "week"
+    ) {
       return;
     }
 
@@ -329,7 +333,11 @@ export function useAppLifecycleEffects({
   }, [licenseCanUseApp, selectedCompanyId]);
 
   useEffect(() => {
-    if (!licenseCanUseApp || activeSection !== "Notebooks" || companies.length === 0) {
+    if (
+      !licenseCanUseApp ||
+      (activeSection !== "Notebooks" && activeSection !== "Cockpit") ||
+      companies.length === 0
+    ) {
       return;
     }
 

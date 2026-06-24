@@ -613,6 +613,72 @@
   backdrop-filter: blur(2px);
 }
 
+/* Full-screen distraction-free Focus surface (ADR 0054): covers the viewport
+   with minimal chrome; the body owns its own scroll. */
+.ui-focus-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: var(--bg);
+  outline: none;
+}
+
+.ui-focus-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 22px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+}
+
+.ui-focus-overlay-heading {
+  min-width: 0;
+}
+
+.ui-focus-overlay-heading h2 {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 750;
+}
+
+.ui-focus-overlay-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.ui-focus-overlay-close {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.ui-focus-overlay-close:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+}
+
+.ui-focus-overlay-body {
+  min-height: 0;
+  min-width: 0;
+  padding: 18px 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
 .ui-modal {
   display: flex;
   flex-direction: column;

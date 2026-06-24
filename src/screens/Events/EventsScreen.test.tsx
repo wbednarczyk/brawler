@@ -14,13 +14,14 @@ describe("Events screen workflows", () => {
   it("shows upcoming company events from real source-backed event data", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Events" });
 
-    await user.click(await screen.findByRole("button", { name: "Events" }));
 
     expect(screen.getByRole("heading", { name: "Events" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Week" })).toHaveClass("segment-active");
-    expect(screen.getByText("Main Market - Corporate actions - Equity - CDR")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Main Market - Corporate actions - Equity - CDR"),
+    ).toBeInTheDocument();
     const cdrEventRow = screen.getByRole("button", {
       name: "Open event: Main Market - Corporate actions - Equity - CDR",
     });
@@ -39,9 +40,8 @@ describe("Events screen workflows", () => {
   it("filters company events by company and type", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Events" });
 
-    await user.click(await screen.findByRole("button", { name: "Events" }));
     await user.click(screen.getByRole("button", { name: "List" }));
     expect(screen.getByText("Main Market - Corporate actions - Equity - CDR")).toBeInTheDocument();
     expect(
@@ -80,9 +80,8 @@ describe("Events screen workflows", () => {
   it("creates a manual company event from the Events screen", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Events" });
 
-    await user.click(await screen.findByRole("button", { name: "Events" }));
     await user.click(screen.getByRole("button", { name: "Add event" }));
 
     await user.selectOptions(screen.getByLabelText("Manual event company"), "company_gpw_pzu");

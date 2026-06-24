@@ -40,3 +40,8 @@ export function useAiFallbackEnabled(): boolean {
 export function useAiAnalysisProviderConfigured(): boolean {
   return Boolean(useContext(SettingsContext)?.aiProviders.generalAnalysisProvider);
 }
+
+/** Company IDs pinned to the sidebar spine (ADR 0054); empty before settings load. */
+export function usePinnedCompanyIds(): string[] {
+  return useContext(SettingsContext)?.pinnedCompanyIds ?? [];
+}

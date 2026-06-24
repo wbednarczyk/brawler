@@ -27,3 +27,16 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 vi.mock("@tauri-apps/plugin-fs", () => ({
   writeTextFile: vi.fn(() => Promise.resolve()),
 }));
+
+// dockview (Companies workspace pilot, ADR 0053) constructs a ResizeObserver at
+// mount; jsdom does not implement it. This minimal stub lets the docked
+// workspace render in the jsdom harness. NOTE for the pilot evaluation: needing
+// to polyfill a browser layout API to test the view at all is a recorded cost of
+// adopting dockview (test-architecture-fit criterion).
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}

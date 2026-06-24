@@ -273,6 +273,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "report_document_sections",
         sql: include_str!("../../migrations/0053_report_document_sections.sql"),
     },
+    Migration {
+        version: 54,
+        name: "cockpit_layouts",
+        sql: include_str!("../../migrations/0054_cockpit_layouts.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

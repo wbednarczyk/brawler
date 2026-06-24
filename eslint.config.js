@@ -55,6 +55,24 @@ const PRIMITIVE_FIRST = [
   },
 ];
 
+// Barrel discipline: consumers import primitives from the "…/ui" barrel
+// (src/ui/index.ts, the public surface), never a deep "…/ui/Button" path.
+const BARREL_PATTERN = {
+  group: ["**/ui/*", "!**/ui/index"],
+  message:
+    'Import UI primitives from the barrel (e.g. `from "../../ui"`), not a deep path (`../../ui/Button`). The barrel src/ui/index.ts is the public surface.',
+};
+
+// dockview containment (ADR 0053): dockview backs the research-cockpit shell
+// spike. Its imports are banned everywhere EXCEPT src/screens/Cockpit/** (the
+// exemption block below). It must not leak into another screen until ADR 0053 is
+// Accepted and this boundary is widened deliberately.
+const DOCKVIEW_RESTRICTION = {
+  group: ["dockview", "dockview-core", "dockview-react", "dockview/*"],
+  message:
+    "dockview is confined to the research-cockpit spike (src/screens/Cockpit/) pending ADR 0053 acceptance. Do not import it elsewhere without flipping ADR 0053 to Accepted and widening this rule.",
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -96,26 +114,24 @@ export default tseslint.config(
     },
   },
   {
-    // Barrel discipline: consumers import primitives from the "…/ui" barrel
-    // (src/ui/index.ts, the public surface), never a deep "…/ui/Button" path.
-    // src/ui/** (siblings import each other relatively) and src/gallery.tsx (the
-    // dev-only gallery deep-imports the intentionally-unexported PrimitiveGallery)
-    // are exempt.
+    // Barrel discipline + dockview containment. src/ui/** (siblings import each
+    // other relatively) and src/gallery.tsx (the dev-only gallery deep-imports
+    // the intentionally-unexported PrimitiveGallery) are exempt from the barrel
+    // rule. dockview is banned here and allowed only in the Companies block below.
     files: ["src/**/*.{ts,tsx}"],
     ignores: ["src/ui/**", "src/gallery.tsx"],
     rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/ui/*", "!**/ui/index"],
-              message:
-                'Import UI primitives from the barrel (e.g. `from "../../ui"`), not a deep path (`../../ui/Button`). The barrel src/ui/index.ts is the public surface.',
-            },
-          ],
-        },
-      ],
+      "no-restricted-imports": ["error", { patterns: [BARREL_PATTERN, DOCKVIEW_RESTRICTION] }],
+    },
+  },
+  {
+    // dockview spike exemption (ADR 0053): the research cockpit is the only
+    // place allowed to import dockview. Barrel discipline still applies, so this
+    // block restates BARREL_PATTERN (flat config replaces — not merges — a rule
+    // across matching blocks) while dropping the dockview ban.
+    files: ["src/screens/Cockpit/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": ["error", { patterns: [BARREL_PATTERN] }],
     },
   },
 );

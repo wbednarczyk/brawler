@@ -10,20 +10,24 @@ V1 uses a desktop app shell with persistent navigation and work-focused density.
 
 Regions:
 
-- top toolbar: brand, search, manual refresh, source health indicator, theme/settings access
-- top navigation bar: the primary sections, directly beneath the toolbar; wraps to a second line on narrow windows rather than scrolling or hiding items (see [ADR 0047](adr/0047-top-navigation-bar.md))
-- main workspace: current screen content, full-width beneath the chrome
-- right detail pane: selected feed item, note, transcript segment, or job detail
+The shell is **mode-based and thesis-centric** ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md), Accepted) — it leads with the investor's job, not a freeform canvas:
 
-Primary sections:
+- top toolbar: brand, **global search / "ask anything"** (a first-class session entry point, semantic), manual refresh, source health indicator, theme/settings access. A **command palette (⌘K)** is a fast accelerator, complementing — not replacing — the visible spine.
+- **left sidebar — the IA spine (implemented):** grouped into **Modes** (Today/Pulse · Companies/Company-workspace · Compare; plus an interim **Cockpit** advanced-workspace entry until it folds into the Company workspace), a **pinned/favorite companies** group (each with a glanceable conviction status — a neutral placeholder until per-company conviction lands), a **Library** group (Inbox, Watchlists, Transcripts, Sources), and a **Utilities** group (Settings, Diagnostics — developer-gated). This is the load-bearing navigation; a blank/freeform workspace is never the entry point.
+- **main area — the active mode's content** (see the modes below).
+- **focus surfaces:** full-screen reader/writer modes invoked from anywhere (`Esc` back).
 
-- Inbox
-- Report Season
-- Companies
-- Notebooks
-- Transcripts
-- Sources
-- Settings
+Modes / destinations:
+
+- **🏠 Today / Pulse** (default / home) — a Triage-style attention queue ("what changed / to verify / stale") plus a watchlist-level conviction rollup; the feed is secondary input.
+- **🔬 Company workspace** — a single-company deep-dive in fixed, modular, progressively-disclosed sections (Overview, Fundamentals, Valuation, Quality, What-changed, Claims, Reports, Notebook, Thesis), entered by selecting a company; **dockview's free arrangement is the opt-in "advanced layout"** within it.
+- **⚖️ Compare** — cross-company KPI tables (v0.53).
+- **📋 Journal** — the decision journal (v0.56).
+- **📖 Focus** — distraction-free reading (a long report diff) / writing (a thesis or note).
+
+Developer-only: Diagnostics, visible only when Developer mode is active.
+
+Interim state (the shell is built incrementally, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)): the **left-sidebar IA spine + pinned companies** and the **Today/Pulse attention home** have landed, and **Today/Pulse is now the default landing** (replacing the cockpit default). Today/Pulse is a real attention digest — *what changed* (recently-reported companies), *to verify* (claims due/overdue for the **pinned** companies — a bounded set, not every watchlist company), *upcoming reports*, and a watchlist conviction **rollup placeholder** — composed from existing app-wide read models; each item offers a **Review** (navigate) action. The full **accept/snooze/dismiss triage state** and the autonomous-pipeline "one notification" are owned by the v0.48 feed-triage / v0.49 pipeline epics and plug into this home. The **Company workspace** is the sectioned (tabbed) deep-dive by default, and **dockview is now the opt-in "Advanced layout"**: an *Advanced layout* button in the workspace header opens the dockview cockpit **scoped to that company** (it carries forward all the cockpit/selection/preset/pop-out work as its engine). The cockpit also stays reachable as an interim **Cockpit** sidebar entry. **Focus reader/writer modes have landed**: a reusable full-screen, distraction-free `FocusOverlay` (Zen-mode, `Esc` to exit) — the report-over-report diff opens in a **Focus reader**, and a notebook note opens in a **Focus writer** — invoked from their surfaces. **Compare** still renders a minimal mode home (cross-company KPI table is v0.53); per-company conviction status shows a neutral placeholder until its step. Watchlists/Research/Notebooks/Events/Report-season remain valid sections (deep links) as they fold into modes.
 
 Developer-only section:
 
@@ -46,6 +50,19 @@ Shell behavior:
 - Distinct spaces inside a view must be visually distinguishable at a glance. Prefer reusable section headers with a semantic color accent, compact title, and short supporting label over same-looking boxes stacked together. Color should clarify structure, not decorate randomly.
 - Normal user-facing UI copy should use product terms and avoid implementation details such as SQLite, Tauri, database engine, internal adapter, module, collector, schema, or command boundary. Technical terms are reserved for Developer Diagnostics and owner/developer docs.
 - Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with explicit known-exchange colors plus deterministic fallback palette colors for future exchanges. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
+
+### Research workspace shell (mode-based, thesis-centric) — direction
+
+The shell is mode-based ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md), Accepted): a **left-sidebar IA spine + pinned companies**, a **Today/Pulse Triage home**, a **sectioned Company workspace**, **Compare**, and **Focus** modes, with a **glanceable per-company conviction status** (a composite rolled up from a fixed check set, decomposed into a few named factors, plus a watchlist rollup). The organizing unit is the **company + its thesis/conviction state**; the feed is *input* that moves that state. A cited UX research pass (terminals + retail-research apps + IDE/PKM) grounds this — see [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) Evidence.
+
+**dockview is the opt-in "advanced layout" engine** inside the Company-workspace and Compare modes (re-scoped from the app-wide grid; [ADR 0053](adr/0053-dockview-layout-pilot.md) amended by [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)). It is built behind the `src/screens/Cockpit/` adapter; framework comparison and the gradual-migration plan are in ADR 0053. Its behavior (carried forward into the advanced-layout mode):
+
+- **Linked panels.** Panels react to a shared selection: choosing a feed item drives the Inspector and the selected company's Claims and Report-diff panels (triage → read → verify, all visible). This selection propagation is the cockpit's reason to exist — a single-screen shell cannot do it. The selection flows through a **single `CockpitSelectionContext` store** (decision 6A in [ADR 0053](adr/0053-dockview-layout-pilot.md)), consistent with the Architecture-v2 per-domain view-model contexts — not per-panel controllers.
+- **Panel chrome stays accessible and primitive-first.** dockview owns only arrangement; pane content composes `src/ui` primitives (ADR 0037). Tabs are accessible (native buttons with `aria-pressed`; never `role="tab"` without a tablist parent, never an interactive control nested in another) and the panel set is fully keyboard-operable (focus, split, move, close) before the cockpit becomes the default shell.
+- **Floating now; OS-window pop-out after Tauri validation** (decision 2A). In-app floating works everywhere; pop-out to a separate OS window — the answer to the tall/narrow ultrawide-quarter constraint — is gated behind a Tauri `WebviewWindow` validation sub-spike.
+- **Named saved layouts** (decision 3A) let the user switch task-shaped workspaces; persisted in SQLite (`cockpit_layouts`), not `localStorage` ([data-model.md](data-model.md), [contracts.md](contracts.md)).
+- **Gradual migration** (decision 1A): the cockpit is now the **default shell**; the top-nav is **slimmed** (the screens hosted as panels are dropped from it) but not yet removed — Inbox/Companies/Watchlists/Sources/Transcripts/Settings remain nav items until they too become panels, at which point ADR 0047 is fully superseded. Screens whose data loaded only while their own section was active also load while the cockpit hosts them (the section gates fire on `Cockpit` too).
+- Theming is the `night-neon` token bridge; the cockpit must remain usable across the supported window-size range, including the tall/narrow ultrawide-quarter window.
 
 ## Reusable UI Foundation
 

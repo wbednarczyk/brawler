@@ -1,7 +1,7 @@
 import {
   test,
   expect,
-  openApp,
+  openInbox,
   expectNoHorizontalOverflow,
   expectNoPageOverflow,
 } from "./helpers/harness";
@@ -14,7 +14,7 @@ import {
 
 test.describe("user journeys", () => {
   test("extract → review → confirm a reported KPI", async ({ page }) => {
-    await openApp(page);
+    await openInbox(page);
 
     // Open a report feed item; its detail rail offers the KPI extractor.
     await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();
@@ -42,7 +42,7 @@ test.describe("user journeys", () => {
   test("open company from a feed item focuses the workspace without moving the app", async ({
     page,
   }) => {
-    await openApp(page);
+    await openInbox(page);
 
     await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();
     await page.getByRole("button", { name: "Open company", exact: true }).click();
@@ -66,7 +66,7 @@ test.describe("user journeys", () => {
   });
 
   test("confirmed KPI surfaces in the company fundamentals matrix", async ({ page }) => {
-    await openApp(page);
+    await openInbox(page);
 
     // Confirm a KPI from the report feed item first.
     await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();

@@ -1,0 +1,60 @@
+/* Today/Pulse attention home (ADR 0054). The screen owns the panel height; the
+   card grid scrolls internally and reflows from two columns to one as the window
+   narrows (tall/narrow ultrawide-quarter support). */
+.today-screen {
+  min-height: 0;
+}
+
+.today-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 14px;
+  align-content: start;
+  min-height: 0;
+  padding: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.today-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+/* The attention queue (what-changed / to-verify) reads top to bottom, so let it
+   span the full width when the grid has room for a second column. */
+.today-feed-peek {
+  grid-column: 1 / -1;
+}
+
+.today-conviction-rollup {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 6px 2px;
+  color: var(--muted);
+}
+
+.today-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.today-conviction-headline {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.today-conviction-note {
+  margin-top: 2px;
+  font-size: 12px;
+}

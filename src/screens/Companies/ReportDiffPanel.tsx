@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Maximize2 } from "lucide-react";
 import { useLocale } from "../../shared/locale";
-import { Button, EmptyState, ErrorText, ListRow, SectionHeader, StatusChip } from "../../ui";
+import { Button, EmptyState, ErrorText, FocusOverlay, ListRow, SectionHeader, StatusChip } from "../../ui";
 import {
   extractReportSections,
   fetchReportDocument,
@@ -37,6 +37,36 @@ function refLabel(ref: ReportDiffCandidate["older"]): string {
   return ref.periodLabel ?? ref.title ?? ref.reportDocumentId;
 }
 
+// SSF/JSF are opaque on their own; spell them out as a group heading so the list
+// is both grouped (consolidated vs standalone) and self-explanatory.
+function statementTypeLabel(statementType: string, text: (value: string) => string): string {
+  switch (statementType.toLowerCase()) {
+    case "ssf":
+      return text("Consolidated statement (SSF)");
+    case "jsf":
+      return text("Standalone statement (JSF)");
+    default:
+      return statementType.toUpperCase();
+  }
+}
+
+function groupCandidatesByStatement(
+  candidates: ReportDiffCandidate[],
+): { statementType: string; items: ReportDiffCandidate[] }[] {
+  const order: string[] = [];
+  const byType = new Map<string, ReportDiffCandidate[]>();
+  for (const candidate of candidates) {
+    const group = byType.get(candidate.statementType);
+    if (group) {
+      group.push(candidate);
+    } else {
+      byType.set(candidate.statementType, [candidate]);
+      order.push(candidate.statementType);
+    }
+  }
+  return order.map((statementType) => ({ statementType, items: byType.get(statementType) ?? [] }));
+}
+
 // The report-over-report diff (v0.47.0, ADR 0052): compare two consecutive
 // same-type financial statements section by section. Deterministic and local —
 // no AI. Reports without an extractable text layer (scanned) are flagged, not diffed.
@@ -48,6 +78,8 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
   const [diff, setDiff] = useState<ReportDiffResult | null>(null);
   const [diffError, setDiffError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Distraction-free full-screen reading of the active diff (Focus mode, ADR 0054).
+  const [focused, setFocused] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,6 +87,7 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
     setError(null);
     setActive(null);
     setDiff(null);
+    setFocused(false);
     listReportDiffCandidates(companyId)
       .then((result) => {
         if (!cancelled) setCandidates(result.candidates);
@@ -96,19 +129,39 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
   );
 
   if (active) {
-    return (
-      <section className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
-        <SectionHeader
-          title={`${refLabel(active.older)} → ${refLabel(active.newer)} · ${active.statementType.toUpperCase()}`}
-          actions={
-            <Button variant="secondary" icon={<ArrowLeft size={16} />} onClick={() => setActive(null)}>
-              {text("Back")}
-            </Button>
-          }
-        />
+    const diffHeading = `${refLabel(active.older)} → ${refLabel(active.newer)} · ${active.statementType.toUpperCase()}`;
+    const diffBody = (
+      <>
         {busy ? <p>{text("Comparing…")}</p> : null}
         {diffError ? <ErrorText>{text("Report comparison command failed")}: {diffError}</ErrorText> : null}
         {!busy && diff ? <DiffBody diff={diff} onExtract={() => openDiff(active, true)} /> : null}
+      </>
+    );
+    return (
+      <section className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
+        <SectionHeader
+          title={diffHeading}
+          actions={
+            <>
+              <Button variant="ghost" icon={<Maximize2 size={16} />} onClick={() => setFocused(true)}>
+                {text("Focus")}
+              </Button>
+              <Button variant="secondary" icon={<ArrowLeft size={16} />} onClick={() => { setActive(null); setFocused(false); }}>
+                {text("Back")}
+              </Button>
+            </>
+          }
+        />
+        {diffBody}
+        <FocusOverlay
+          open={focused}
+          onClose={() => setFocused(false)}
+          eyebrow={text("Report comparison")}
+          title={diffHeading}
+          ariaLabel={text("Report comparison")}
+        >
+          {diffBody}
+        </FocusOverlay>
       </section>
     );
   }
@@ -123,33 +176,41 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
       {candidates && candidates.length === 0 ? (
         <EmptyState>{text("No comparable financial statements yet.")}</EmptyState>
       ) : null}
-      {candidates && candidates.length > 0 ? (
-        <ul className="ui-list-rows">
-          {candidates.map((candidate) => {
-            const ready =
-              candidate.older.extractionStatus !== "no_text_layer" &&
-              candidate.older.extractionStatus !== "extraction_failed" &&
-              candidate.newer.extractionStatus !== "no_text_layer" &&
-              candidate.newer.extractionStatus !== "extraction_failed";
-            return (
-              <ListRow
-                key={`${candidate.older.reportDocumentId}:${candidate.newer.reportDocumentId}`}
-                title={`${refLabel(candidate.older)} → ${refLabel(candidate.newer)}`}
-                meta={candidate.statementType.toUpperCase()}
-                trailing={
-                  <Button
-                    variant="secondary"
-                    onClick={() => openDiff(candidate, true)}
-                    disabled={!ready}
-                  >
-                    {text("Compare")}
-                  </Button>
-                }
-              />
-            );
-          })}
-        </ul>
-      ) : null}
+      {candidates && candidates.length > 0
+        ? groupCandidatesByStatement(candidates).map(({ statementType, items }) => (
+            <section
+              key={statementType}
+              className="report-diff-group"
+              aria-label={statementTypeLabel(statementType, text)}
+            >
+              <SectionHeader level="h4" title={statementTypeLabel(statementType, text)} />
+              <ul className="ui-list-rows">
+                {items.map((candidate) => {
+                  const ready =
+                    candidate.older.extractionStatus !== "no_text_layer" &&
+                    candidate.older.extractionStatus !== "extraction_failed" &&
+                    candidate.newer.extractionStatus !== "no_text_layer" &&
+                    candidate.newer.extractionStatus !== "extraction_failed";
+                  return (
+                    <ListRow
+                      key={`${candidate.older.reportDocumentId}:${candidate.newer.reportDocumentId}`}
+                      title={`${refLabel(candidate.older)} → ${refLabel(candidate.newer)}`}
+                      trailing={
+                        <Button
+                          variant="secondary"
+                          onClick={() => openDiff(candidate, true)}
+                          disabled={!ready}
+                        >
+                          {text("Compare")}
+                        </Button>
+                      }
+                    />
+                  );
+                })}
+              </ul>
+            </section>
+          ))
+        : null}
     </section>
   );
 }

@@ -50,19 +50,21 @@ function mediaBlock(css: string, query: string) {
 describe("layout scroll contracts", () => {
   it("keeps app chrome fixed and routes overflow into workspace panels", () => {
     const appShellRule = ruleFor(shellCss, ".app-shell");
-    const navbarRule = ruleFor(shellCss, ".navbar");
+    const sidebarRule = ruleFor(shellCss, ".sidebar");
+    const appMainRule = ruleFor(shellCss, ".app-main");
     const workspaceRule = ruleFor(shellCss, ".workspace");
     const feedPanelRule = ruleFor(layoutCss, ".feed-panel");
 
     expect(appShellRule).toContain("height: 100dvh");
     expect(appShellRule).toContain("min-height: 0");
     expect(appShellRule).toContain("overflow: hidden");
-    // Navigation is a stacked top row (ADR 0047), not a left sidebar: the shell
-    // defines rows, never columns, and the navbar wraps rather than scrolling.
-    expect(appShellRule).toContain("grid-template-rows: auto auto minmax(0, 1fr)");
-    expect(appShellRule).not.toContain("grid-template-columns");
-    expect(navbarRule).toContain("display: flex");
-    expect(navbarRule).toContain("flex-wrap: wrap");
+    // Navigation is a persistent left-sidebar IA spine (ADR 0054): the shell is
+    // a two-column grid (sidebar | main). The sidebar scrolls vertically; the
+    // main column routes overflow into workspace panels.
+    expect(appShellRule).toContain("grid-template-columns: minmax(0, auto) minmax(0, 1fr)");
+    expect(sidebarRule).toContain("overflow-y: auto");
+    expect(appMainRule).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(appMainRule).toContain("overflow: hidden");
     expect(workspaceRule).toContain("grid-template-rows: minmax(0, 1fr)");
     expect(workspaceRule).toContain("overflow: hidden");
     expect(feedPanelRule).toContain("height: 100%");
@@ -143,20 +145,19 @@ describe("layout scroll contracts", () => {
     expect(narrowBand).not.toContain(".content-grid {");
   });
 
-  it("keeps the top navigation bar and 50/50 Inbox split (ADR 0047)", () => {
+  it("keeps the left-sidebar IA spine and 50/50 Inbox split (ADR 0054)", () => {
     const appShellRule = ruleFor(shellCss, ".app-shell");
-    const navbarRule = ruleFor(shellCss, ".navbar");
+    const sidebarRule = ruleFor(shellCss, ".sidebar");
     const navListRule = ruleFor(shellCss, ".nav-list");
     const contentGridRule = ruleFor(shellCss, ".content-grid");
 
-    // Primary nav is a stacked top row that wraps, not a resizable left rail.
-    expect(appShellRule).not.toContain("grid-template-columns");
-    expect(appShellRule).not.toContain("--sidebar-width");
-    expect(navbarRule).toContain("flex-wrap: wrap");
-    expect(navListRule).toContain("flex-wrap: wrap");
-    // No sidebar styles should survive the move to the top nav.
+    // Primary nav is a persistent left sidebar (ADR 0054), not a stacked top row:
+    // the shell defines a column track for it and the nav stacks vertically.
+    expect(appShellRule).toContain("grid-template-columns");
+    expect(sidebarRule).toContain("border-right: 1px solid var(--border)");
+    expect(navListRule).toContain("flex-direction: column");
+    // The spine is a fixed-width rail (no user-resizable --sidebar-width var yet).
     expect(shellCss).not.toContain(".sidebar-resizer");
-    expect(shellCss).not.toContain(".sidebar {");
     // Inbox splits feed/detail side by side, 50/50 by default (percentage track).
     expect(contentGridRule).toContain("var(--detail-pane-width, 50%)");
   });

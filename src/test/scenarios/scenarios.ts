@@ -15,6 +15,7 @@
 // its dataset can never leak into another test or worker.
 
 import type { Company } from "../../api/types";
+import type { CockpitLayout } from "../../api/generated/CockpitLayout";
 import {
   legacyCompanies,
   legacyCompanyEvents,
@@ -164,6 +165,7 @@ export interface ScenarioData {
   aiAnalysisJobs: AiAnalysisJob[];
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
+  cockpitLayouts: CockpitLayout[];
   // Research workspace
   researchEvidence: ResearchEvidenceItem[];
   researchQuestions: ResearchQuestion[];
@@ -282,6 +284,7 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     aiAnalysisJobs,
     watchlists,
     watchlistMemberships,
+    cockpitLayouts: [],
     // Research
     researchEvidence: deep.map(makeResearchEvidenceItem),
     researchQuestions: deep.map(makeResearchQuestion),
@@ -364,6 +367,7 @@ function buildEmpty(): ScenarioData {
     aiAnalysisJobs: [],
     watchlists: [],
     watchlistMemberships: [],
+    cockpitLayouts: [],
     researchEvidence: [],
     researchQuestions: [],
     evidenceLinks: [],
@@ -427,5 +431,17 @@ export function buildScenario(name: ScenarioName): ScenarioData {
       data.licenseStatus = makeLicenseStatus("valid");
       break;
   }
+
+  // Seed the pinned-company spine (ADR 0054) so the completeness guardrail
+  // covers the new preference and screen tests have pinned entries. The empty
+  // scenario stays unpinned to assert the no-pins resting state.
+  if (name !== "empty" && data.companies.length > 0) {
+    const pinnedCount = name === "rich" ? 3 : 1;
+    data.settings = {
+      ...data.settings,
+      pinnedCompanyIds: data.companies.slice(0, pinnedCount).map((company) => company.id),
+    };
+  }
+
   return structuredClone(data);
 }

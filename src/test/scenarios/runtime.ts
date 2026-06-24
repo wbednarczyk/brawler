@@ -251,6 +251,56 @@ function buildHandlers(): Record<string, Handler> {
       return undefined;
     },
 
+    // --- Cockpit layouts (ADR 0053) ---
+    list_cockpit_layouts: (d) => d.cockpitLayouts,
+    save_cockpit_layout: (d, a, ctx) => {
+      const input = unwrap(a);
+      const name = (str(input.name) ?? "").trim();
+      const existing = d.cockpitLayouts.find((l) => l.name === name);
+      if (existing) {
+        const { next, updated } = mapReplace(
+          d.cockpitLayouts,
+          (l) => l.id === existing.id,
+          (l) => ({
+            ...l,
+            panelsJson: str(input.panelsJson) ?? l.panelsJson,
+            layoutJson: str(input.layoutJson),
+            dockviewVersion: str(input.dockviewVersion),
+            updatedAt: SAMPLE_NOW,
+          }),
+        );
+        d.cockpitLayouts = next;
+        return updated;
+      }
+      const layout = {
+        id: ctx.nextId("layout"),
+        name,
+        ordinal: d.cockpitLayouts.length,
+        panelsJson: str(input.panelsJson) ?? "{}",
+        layoutJson: str(input.layoutJson),
+        dockviewVersion: str(input.dockviewVersion),
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+      d.cockpitLayouts = [...d.cockpitLayouts, layout];
+      return layout;
+    },
+    rename_cockpit_layout: (d, a) => {
+      const input = unwrap(a);
+      const { next, updated } = mapReplace(
+        d.cockpitLayouts,
+        (l) => l.id === str(input.id),
+        (l) => ({ ...l, name: str(input.name) ?? l.name, updatedAt: SAMPLE_NOW }),
+      );
+      d.cockpitLayouts = next;
+      return updated ?? d.cockpitLayouts[0];
+    },
+    delete_cockpit_layout: (d, a) => {
+      const layoutId = str(unwrap(a).layoutId);
+      d.cockpitLayouts = d.cockpitLayouts.filter((l) => l.id !== layoutId);
+      return undefined;
+    },
+
     // --- Watchlists ---
     list_watchlists: (d) => d.watchlists,
     list_watchlist_memberships: (d, a) => {
@@ -1583,6 +1633,7 @@ function buildHandlers(): Record<string, Handler> {
         aiAnalysisMode: pick("aiAnalysisMode", d.settings.aiAnalysisMode),
         espiAiFallbackEnabled: pick("espiAiFallbackEnabled", d.settings.espiAiFallbackEnabled),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
+        pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
         aiProviders: {
           ...ai,
           youtubeTranscriptionProvider: pick("youtubeTranscriptionProvider", ai.youtubeTranscriptionProvider),

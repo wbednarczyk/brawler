@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
+import { openCockpitPanel } from "./helpers/harness";
 
 test.describe("browser UI regression smoke", () => {
   test("keeps app chrome fixed and avoids a global application scrollbar", async ({ page }) => {
@@ -24,12 +25,25 @@ test.describe("browser UI regression smoke", () => {
     await expect(page.locator(".topbar")).toBeInViewport();
   });
 
-  test("navigates the main screens through the top navigation bar", async ({ page }) => {
+  test("navigates the sidebar spine destinations to their screens", async ({ page }) => {
     await openApp(page);
 
-    for (const screenName of ["Companies", "Watchlists", "Sources", "Notebooks", "Settings", "Inbox"]) {
+    // The sidebar destinations whose screen heading matches the nav label (ADR
+    // 0054). Cockpit ("Research cockpit") + the cockpit-hosted screens are walked
+    // by smoke-walk / screen-walk-extended; Notebooks/Research/Events/ReportSeason
+    // are no longer sidebar buttons.
+    for (const screenName of [
+      "Today",
+      "Companies",
+      "Compare",
+      "Inbox",
+      "Watchlists",
+      "Transcripts",
+      "Sources",
+      "Settings",
+    ]) {
       await navButton(page, screenName).click();
-      await expect(page.getByRole("heading", { name: screenName })).toBeVisible();
+      await expect(page.getByRole("heading", { name: screenName, exact: true })).toBeVisible();
     }
   });
 
@@ -99,30 +113,20 @@ test.describe("browser UI regression smoke", () => {
     expect(gridScroll.scrollWidth).toBeLessThanOrEqual(gridScroll.clientWidth + 1);
   });
 
-  test("keeps notebook panes independently usable", async ({ page }) => {
+  test("keeps the notebook panes independently usable as a cockpit panel", async ({ page }) => {
+    // Notebooks moved off the sidebar into the cockpit (ADR 0054); open it there.
     await openApp(page);
-    await navButton(page, "Notebooks").click();
+    await openCockpitPanel(page, "Notebook");
 
     const workspace = page.getByLabel("Notebooks workspace");
     const companyNav = page.getByLabel("Notebook companies");
-    const noteList = page.getByLabel("Notebook note list", { exact: true });
-    const detailPane = page.getByLabel("Notebook selected entry");
 
+    // The panel mounts cleanly and its company nav stays independently scrollable
+    // (the full-screen three-pane height budget no longer applies in a docked
+    // panel, which can be narrow enough to collapse to a single visible pane).
     await expect(workspace).toBeVisible();
     await expect(companyNav).toBeVisible();
-    await expect(noteList).toBeVisible();
-    await expect(detailPane).toBeVisible();
-
-    // The top navigation bar (ADR 0047) adds a second header row, so the
-    // shortest supported window (1366x768) has ~28px less workspace height than
-    // the old single-row shell. The three panes stay independently usable and
-    // scrollable; the per-pane minimums reflect that reduced vertical budget.
-    expect((await expectBox(companyNav)).height).toBeGreaterThan(260);
-    expect((await expectBox(noteList)).height).toBeGreaterThan(180);
-    expect((await expectBox(detailPane)).height).toBeGreaterThan(180);
-
     await expectScrollable(companyNav);
-    await expectScrollable(noteList);
   });
 
   test("keeps Sources rows compact and expanded rows readable", async ({ page }) => {
@@ -170,6 +174,10 @@ test.describe("browser UI regression smoke", () => {
 async function openApp(page: Page) {
   await page.goto("/");
   await expect(page.getByLabel("Primary navigation")).toBeVisible();
+  // Today is the default landing (ADR 0054); these layout checks start from the
+  // Inbox feed. Tests for other screens navigate there explicitly after this.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Inbox" }).click();
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 }
 
 function navButton(page: Page, name: string) {

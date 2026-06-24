@@ -13,11 +13,10 @@ describe("Research screen workflows", () => {
   it("opens a feed evidence item in Inbox without hiding the selected item", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     const researchRegion = await screen.findByLabelText("Evidence timeline");
-    const firstEvidenceRow = within(researchRegion).getAllByRole("article")[0];
+    const firstEvidenceRow = (await within(researchRegion).findAllByRole("article"))[0];
 
     await user.click(within(firstEvidenceRow).getByTitle("Open evidence"));
 
@@ -29,13 +28,14 @@ describe("Research screen workflows", () => {
   it("loads company evidence through backend-owned timeline filters", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
 
     const researchRegion = await screen.findByLabelText("Evidence timeline");
     expect(screen.getByRole("heading", { name: "Research" })).toBeInTheDocument();
-    expect(screen.getByText("Current report placeholder for watchlist company")).toBeInTheDocument();
+    expect(
+      await within(researchRegion).findByText("Current report placeholder for watchlist company"),
+    ).toBeInTheDocument();
     expect(screen.getByText("CDR follow-up note")).toBeInTheDocument();
     expect(screen.getByText("Shareholder Meeting")).toBeInTheDocument();
     expect(screen.getByText("Gemini")).toBeInTheDocument();
@@ -105,9 +105,8 @@ describe("Research screen workflows", () => {
   it("creates a research question and links selected evidence", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     await waitFor(() => {
       expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
     });
@@ -156,9 +155,8 @@ describe("Research screen workflows", () => {
   it("opens research question evidence inside Research instead of Notebooks", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     await user.click(screen.getByRole("button", { name: "Add question" }));
     await user.type(screen.getByLabelText("Question title"), "Should backlog normalize?");
     await user.click(screen.getByRole("button", { name: "Save question" }));
@@ -186,9 +184,8 @@ describe("Research screen workflows", () => {
     const user = userEvent.setup();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     await waitFor(() => {
       expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
     });
@@ -208,9 +205,8 @@ describe("Research screen workflows", () => {
   it("loads watchlist evidence and can explicitly cascade review to member companies", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     await user.click(screen.getByRole("button", { name: "Watchlist" }));
 
     const reviewSummary = screen.getByLabelText("Research review summary");
@@ -247,9 +243,8 @@ describe("Research screen workflows", () => {
   it("generates and displays a cited AI research brief", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     expect(screen.getByText("No research brief generated yet.")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "AI research" })).toBeInTheDocument();
     expect(screen.getAllByText("What needs attention").length).toBeGreaterThan(0);
@@ -276,9 +271,8 @@ describe("Research screen workflows", () => {
   it("shows open research reminders and completes one", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
 
     expect(await screen.findByText("Review open claim follow-up")).toBeInTheDocument();
     await user.click(screen.getByTitle("Snooze reminder"));
@@ -319,9 +313,8 @@ describe("Research screen workflows", () => {
   it("creates a manual research reminder", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     await user.click(screen.getByRole("button", { name: "Add reminder" }));
     await user.type(screen.getByLabelText("Reminder title"), "Check next report");
     await user.type(screen.getByLabelText("Reminder notes"), "Look for margin commentary.");
@@ -347,9 +340,8 @@ describe("Research screen workflows", () => {
   it("generates and displays an event-aware research digest", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     expect(screen.getByText("No research digest generated yet.")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Generate digest" }));
@@ -371,9 +363,8 @@ describe("Research screen workflows", () => {
   it("opens cited evidence from an AI research brief", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     await user.click(screen.getByRole("button", { name: "Generate brief" }));
 
     await user.click(await screen.findByText("Citations (1)"));
@@ -386,9 +377,8 @@ describe("Research screen workflows", () => {
   it("resizes research split panels with keyboard controls", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    renderApp({ section: "Research" });
 
-    await user.click(screen.getByRole("button", { name: "Research" }));
     const briefResizer = screen.getByRole("separator", { name: "Resize AI research brief panel" });
     expect(briefResizer).toHaveAttribute("aria-valuenow", "520");
 

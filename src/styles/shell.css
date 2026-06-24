@@ -1,19 +1,53 @@
 .app-shell {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   height: 100dvh;
   min-height: 0;
   overflow: hidden;
 }
 
-.navbar {
+.sidebar {
+  /* Left-sidebar IA spine (ADR 0054): persistent, scrollable, full height. */
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 8px;
-  padding: 4px 16px;
+  flex-direction: column;
+  gap: 8px;
+  width: 232px;
+  min-height: 0;
+  padding: 12px 10px;
+  overflow-y: auto;
   background: color-mix(in srgb, var(--surface) 88%, transparent);
-  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}
+
+.app-main {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-group-label {
+  padding: 2px 8px;
+  color: color-mix(in srgb, var(--muted) 78%, transparent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .brand {
@@ -21,8 +55,8 @@
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-  padding-right: 16px;
-  border-right: 1px solid var(--border);
+  padding: 2px 6px 8px;
+  border-bottom: 1px solid var(--border);
 }
 
 .brand-mark {
@@ -62,24 +96,62 @@
 
 .nav-list {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
 }
 
 .nav-item {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 30px;
-  padding: 0 9px;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 10px;
   border: 1px solid transparent;
   border-radius: 7px;
   color: var(--muted);
   background: transparent;
   white-space: nowrap;
   text-align: left;
+}
+
+/* Pinned-company rows: the company button stretches, the unpin affordance
+   reveals on hover/focus to keep the resting state clean. */
+.pinned-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.pinned-company {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pinned-unpin {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  opacity: 0;
+}
+
+.pinned-row:hover .pinned-unpin,
+.pinned-row:focus-within .pinned-unpin {
+  opacity: 1;
+}
+
+.conviction-dot {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.conviction-dot-unknown {
+  background: color-mix(in srgb, var(--muted) 30%, transparent);
+  border-color: color-mix(in srgb, var(--muted) 45%, var(--border));
 }
 
 .nav-item span:not(.nav-badge) {
@@ -394,4 +466,22 @@
 
 .content-grid-single {
   grid-template-columns: minmax(0, 1fr);
+}
+
+/* Recovery UI shown by the content ErrorBoundary instead of a blank app. */
+.app-error-recovery {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  min-height: 0;
+}
+
+.app-error-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
 }

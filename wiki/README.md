@@ -13,6 +13,9 @@ per feature.
 
 ## Pages
 
+- **[The research workspace](research-workspace.md)** — how the app is laid out:
+  the sidebar modes, the **Today** attention home, pinned companies, the company
+  workspace and its **Advanced layout**, and full-screen **Focus** reading/writing.
 - **[Quality frameworks](quality-frameworks.md)** — score a company against your
   own quantitative quality checklists, built from the company's reported
   fundamentals.

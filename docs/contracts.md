@@ -529,6 +529,39 @@ Rules:
 
 Error codes: `company_not_found`, `watchlist_not_found`, `invalid_preparation_status`.
 
+## Research Cockpit
+
+The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockview docking shell. The only persisted state is **named saved layouts** (`cockpit_layouts`); the panel arrangement itself is live UI state. Decision 3A: layouts live in SQLite (not `localStorage`), with versioned dockview geometry and a safe fallback.
+
+`list_cockpit_layouts()` → the saved layouts, ordered by `ordinal`:
+
+```json
+[
+  {
+    "id": "layout_earnings_season",
+    "name": "Earnings season",
+    "ordinal": 0,
+    "panelsJson": "{\"panels\":[\"feed\",\"inspector\",\"reportDiff:company_gpw_cdr\"],\"selectedFeedItemId\":\"feed_01\"}",
+    "layoutJson": "{ /* dockview api.toJSON() */ }",
+    "dockviewVersion": "6.6.1"
+  }
+]
+```
+
+Workflow actions:
+
+- `save_cockpit_layout(input)`: `{ name, panelsJson, layoutJson, dockviewVersion }` → upserts a layout by `name`, returns the saved row. `name` must be non-empty.
+- `rename_cockpit_layout(input)`: `{ id, name }` → renames; `name` must be unique and non-empty.
+- `delete_cockpit_layout(layoutId)` → removes the layout by id (idempotent — deleting an absent id is a no-op).
+
+Rules:
+
+- On load the client restores `layoutJson` via dockview `fromJSON`; if `dockviewVersion` is incompatible or restore throws, it rebuilds from `panelsJson` in the default arrangement (the layout never crashes the shell). A panel referencing a removed company/screen is dropped.
+- `panelsJson` (what is open) is the source of truth; `layoutJson` (geometry) is a convenience and may be absent.
+- Layouts are owner durable state, carried in import/export ([ADR 0018](adr/0018-import-export-boundaries.md), `v0.52.0`).
+
+Error codes: `cockpit_layout_not_found`, `invalid_cockpit_layout_name`.
+
 ## Report-Over-Report Diff
 
 The report-over-report diff ([ADR 0052](adr/0052-report-over-report-diff.md), `v0.47.0`): a pure-Rust, deterministic section-level diff between two consecutive same-type **financial statements** (consolidated SSF / standalone JSF) of one company. Extraction populates the derived `report_document_sections` index; the diff itself is an on-demand backend **read model**, never stored. No AI command this milestone — the narrative MD&A diff and AI delta summary are deferred ([ADR 0052](adr/0052-report-over-report-diff.md)).
@@ -1354,9 +1387,15 @@ Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
     "maxConnections": 4,
     "busyTimeoutMs": 5000,
     "acquireTimeoutMs": 10000
-  }
+  },
+  "pinnedCompanyIds": []
 }
 ```
+
+`pinnedCompanyIds` (ADR 0054) is the ordered list of company IDs pinned to the
+sidebar IA spine. `update_settings` accepts an optional `pinnedCompanyIds`
+(full-replacement array, de-duplicated, blanks dropped); omitting it leaves the
+current pins unchanged. Defaults to `[]`.
 
 Allowed theme values:
 

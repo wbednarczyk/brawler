@@ -801,6 +801,9 @@ summary.feed-body-heading::before {
 .kpi-extraction-documents,
 .kpi-extraction-candidates ul {
   display: grid;
+  /* Pin the track to the container so a long unbreakable ESPI filename inside a
+     source button truncates instead of forcing the modal wider (no-h-scroll). */
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   margin: 0;
   padding: 0;
@@ -813,7 +816,16 @@ summary.feed-body-heading::before {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
   font-size: 12px;
+}
+
+/* The document label (title + long unbreakable ESPI filename) must shrink and
+   wrap rather than force the row — the trailing Extract button stays put. */
+.kpi-extraction-documents li > span,
+.kpi-extraction-candidates li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .kpi-extraction-status {

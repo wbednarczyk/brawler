@@ -1,27 +1,19 @@
-import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
+import { test, expect, openApp, openCockpitPanel, expectNoPageOverflow } from "./helpers/harness";
 
-// Extends the layout smoke-walk to the primary screens the original walk did
-// not reach (ADR 0048 broad coverage). Each navigation asserts no horizontal
-// page overflow; the auto console-error gate (harness fixture) additionally
-// fails the test if a screen renders with an error or calls an unmocked command.
-// ReportSeason's heading is date-driven, so it asserts layout only.
-const SCREENS = [
-  { nav: "Report Season", heading: null },
-  { nav: "Research", heading: "Research" },
-  { nav: "Events", heading: "Events" },
-  { nav: "Transcripts", heading: "Transcripts" },
-] as const;
+// The screens that moved off the sidebar into the cockpit (ADR 0054) —
+// Research / Notebook / Events / Report Season — no longer have their own nav
+// button; they live as cockpit panels. Open each from the command palette and
+// assert it renders without horizontal page overflow. The auto console-error
+// gate (harness fixture) additionally fails on a render error / unmocked command,
+// so this is the coverage that those screens still mount cleanly in their new home.
+const PANELS = ["Research", "Notebook", "Events", "Report Season"] as const;
 
-test.describe("extended layout smoke-walk", () => {
-  test("secondary screens lay out without horizontal overflow", async ({ page }) => {
+test.describe("cockpit-hosted screens lay out without overflow", () => {
+  test("each former secondary screen renders as a cockpit panel without overflow", async ({ page }) => {
     await openApp(page);
-    const nav = page.getByLabel("Primary navigation");
 
-    for (const screen of SCREENS) {
-      await nav.getByRole("button", { name: screen.nav }).click();
-      if (screen.heading) {
-        await expect(page.getByRole("heading", { name: screen.heading, exact: true })).toBeVisible();
-      }
+    for (const panel of PANELS) {
+      await openCockpitPanel(page, panel);
       await expectNoPageOverflow(page);
     }
   });

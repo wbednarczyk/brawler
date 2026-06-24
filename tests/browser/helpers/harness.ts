@@ -43,6 +43,31 @@ export async function openApp(page: Page, path = "/") {
   await expect(page.getByLabel(/Primary navigation|Nawigacja główna/)).toBeVisible();
 }
 
+// Open the app and land on the Inbox feed. The default landing is now Today
+// (ADR 0054), so feed-focused tests must navigate to the Inbox explicitly rather
+// than assume it is the entry screen.
+export async function openInbox(page: Page) {
+  await openApp(page);
+  await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Inbox" }).click();
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
+}
+
+// Open a cockpit-hosted screen (ADR 0054): Research / Notebook / Events / Report
+// Season / Watchlists no longer have their own sidebar button — they live as
+// cockpit panels, opened from the command palette. `label` is the panel name as
+// it appears in the palette ("Notebook", "Research", "Events", "Report Season").
+export async function openCockpitPanel(page: Page, label: string) {
+  await page
+    .getByLabel(/Primary navigation|Nawigacja główna/)
+    .getByRole("button", { name: "Cockpit" })
+    .click();
+  await expect(page.getByLabel("Research cockpit")).toBeVisible();
+  await page.getByRole("button", { name: /Commands/ }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Search commands").fill(`Open panel: ${label}`);
+  await palette.getByRole("button", { name: `Open panel: ${label}`, exact: true }).first().click();
+}
+
 // Auto-accept native confirm/alert dialogs for the remainder of the test. Use in
 // flows with a confirm-before-destroy step (delete watchlist / notebook entry)
 // instead of hand-writing `page.once("dialog", …)` at each call site.

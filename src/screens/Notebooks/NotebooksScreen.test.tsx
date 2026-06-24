@@ -26,9 +26,8 @@ describe("Notebook and transcript workflows", () => {
       storage: "os_keychain",
     };
 
-    renderApp();
+    renderApp({ section: "Notebooks" });
 
-    await user.click(screen.getByRole("button", { name: "Notebooks" }));
 
     const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
 
@@ -51,7 +50,9 @@ describe("Notebook and transcript workflows", () => {
       name: "Resize notebook note list",
     })).toBeInTheDocument();
     expect(
-      within(notebooksWorkspace).getByRole("button", { name: "Show open claims for GPW:CDR" }),
+      await within(notebooksWorkspace).findByRole("button", {
+        name: "Show open claims for GPW:CDR",
+      }),
     ).toBeInTheDocument();
     expect(
       within(notebooksWorkspace).getByRole("button", { name: "Show follow-ups for GPW:CDR" }),
@@ -327,9 +328,8 @@ describe("Notebook and transcript workflows", () => {
 
     appTestState.notebookEntriesResponse = [initialNotebookEntry];
 
-    renderApp();
+    renderApp({ section: "Notebooks" });
 
-    await user.click(screen.getByRole("button", { name: "Notebooks" }));
 
     const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
     const notebookRow = await within(notebooksWorkspace).findByRole("button", {
@@ -372,9 +372,8 @@ describe("Notebook and transcript workflows", () => {
 
     appTestState.notebookEntriesResponse = [initialNotebookEntry];
 
-    renderApp();
+    renderApp({ section: "Notebooks" });
 
-    await user.click(screen.getByRole("button", { name: "Notebooks" }));
 
     const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
     const notebookRow = await within(notebooksWorkspace).findByRole("button", {
@@ -489,9 +488,8 @@ describe("Notebook and transcript workflows", () => {
       },
     ];
 
-    renderApp();
+    renderApp({ section: "Notebooks" });
 
-    await user.click(screen.getByRole("button", { name: "Notebooks" }));
 
     const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
 
@@ -618,9 +616,8 @@ describe("Notebook and transcript workflows", () => {
       },
     ];
 
-    renderApp();
+    renderApp({ section: "Notebooks" });
 
-    await user.click(screen.getByRole("button", { name: "Notebooks" }));
     const notebookRow = await screen.findByRole("button", {
       name: "Select notebook screen entry: Release schedule promise",
     });

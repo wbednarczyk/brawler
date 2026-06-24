@@ -8,12 +8,10 @@ import { appTestState, expect, renderApp, screen, userEvent, waitFor } from "../
 
 describe("Watchlists screen states", () => {
   it("shows the empty state when no watchlists exist", async () => {
-    const user = userEvent.setup();
     appTestState.watchlistsResponse = [];
     appTestState.watchlistMembershipsResponse = [];
 
-    renderApp();
-    await user.click(await screen.findByRole("button", { name: "Watchlists" }));
+    renderApp({ section: "Watchlists" });
 
     expect(await screen.findByText("No watchlists yet.")).toBeInTheDocument();
   });
@@ -21,8 +19,7 @@ describe("Watchlists screen states", () => {
   it("shows a no-match message when the search excludes every watchlist", async () => {
     const user = userEvent.setup();
 
-    renderApp();
-    await user.click(await screen.findByRole("button", { name: "Watchlists" }));
+    renderApp({ section: "Watchlists" });
     // The default state seeds one watchlist ("Main GPW"); a non-matching search
     // must surface the distinct "no match" message (vs the "no watchlists" empty
     // state), and hide the seeded watchlist row.

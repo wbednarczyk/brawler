@@ -93,6 +93,12 @@ export function useSettingsController({
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
 
+  // Replace the full pinned-company list (ADR 0054 sidebar spine). Callers pass
+  // the complete desired order; the backend overwrites and de-duplicates.
+  function updatePinnedCompanyIds(nextPinnedCompanyIds: string[]) {
+    updateSettings({ pinnedCompanyIds: nextPinnedCompanyIds });
+  }
+
   function updateLogLevel(nextLevel: string) {
     updateSettings({ logLevel: nextLevel });
   }
@@ -194,6 +200,7 @@ export function useSettingsController({
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
+    updatePinnedCompanyIds,
     updatePollInterval,
     updateShortcutBindings,
     updateTheme,

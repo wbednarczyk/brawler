@@ -11,6 +11,55 @@ import {
   within,
 } from "./test/appWorkflowHarness";
 
+describe("Sidebar IA spine (ADR 0054)", () => {
+  it("groups navigation into modes, library and utilities with mode destinations", async () => {
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    expect(within(nav).getByText("Modes")).toBeInTheDocument();
+    expect(within(nav).getByText("Library")).toBeInTheDocument();
+    expect(within(nav).getByText("Utilities")).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Today" })).toBeInTheDocument();
+    expect(within(nav).getByRole("button", { name: "Compare" })).toBeInTheDocument();
+  });
+
+  it("opens the Today and Compare mode homes", async () => {
+    renderApp();
+
+    await userEvent.click(await screen.findByRole("button", { name: "Today" }));
+    expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Compare" }));
+    expect(await screen.findByRole("heading", { name: "Compare" })).toBeInTheDocument();
+  });
+
+  it("lists pinned companies in the spine and opens the company workspace", async () => {
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    expect(within(nav).getByText("Pinned companies")).toBeInTheDocument();
+    const pinned = within(nav).getByRole("button", { name: "CDR" });
+    await userEvent.click(pinned);
+
+    expect(await screen.findByText("Company workspace")).toBeInTheDocument();
+  });
+
+  it("unpins a company from the spine and persists via update_settings", async () => {
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    const unpin = within(nav).getByRole("button", { name: /Unpin from sidebar/ });
+    await userEvent.click(unpin);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "update_settings",
+        expect.objectContaining({ input: expect.objectContaining({ pinnedCompanyIds: [] }) }),
+      );
+    });
+  });
+});
+
 describe("App shell", () => {
   it("renders the investor inbox shell", async () => {
     renderApp();
@@ -56,8 +105,8 @@ describe("App shell", () => {
     expect(await screen.findByRole("button", { name: "Diagnostics" })).toBeInTheDocument();
     const navContainers = screen.getAllByLabelText("Primary navigation");
     const currentNav = navContainers[navContainers.length - 1];
-    const navButtons = within(currentNav).getAllByRole("button");
-    expect(navButtons[navButtons.length - 1]).toHaveAccessibleName("Diagnostics");
+    // Diagnostics is the developer-gated utility in the sidebar spine (ADR 0054).
+    expect(within(currentNav).getByRole("button", { name: "Diagnostics" })).toBeInTheDocument();
   });
 
   it("shows Developer-mode local metrics in Diagnostics", async () => {

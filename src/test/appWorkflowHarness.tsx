@@ -6,6 +6,7 @@ import { writeTextFile } from "@tauri-apps/plugin-fs";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, vi } from "vitest";
 import { App } from "../App";
+import type { Section } from "../app/navigation";
 import {
   currentWeekTestDate,
   legacyInvalidLicenseStatus,
@@ -196,7 +197,23 @@ export const initialTranscriptJobs = SEED.transcriptJobs;
 export const invalidLicenseStatus = legacyInvalidLicenseStatus;
 export const missingLicenseStatus = legacyMissingLicenseStatus;
 
-export function renderApp() {
+// Most workflow tests were written against the historical landing screen (Inbox),
+// so the harness defaults there to keep them focused on their subject. The
+// PRODUCTION default is Today/Pulse (ADR 0054) — asserted directly in
+// App.test. Pass `section` to land on a specific screen (e.g. one the
+// sidebar spine reaches but a focused test wants to bypass).
+export function renderApp(options?: { section?: Section }) {
+  return render(
+    <App
+      initialLicenseStatus={appTestState.licenseStatusResponse as never}
+      initialSection={options?.section ?? "Inbox"}
+    />,
+  );
+}
+
+// Renders the app with NO section override, so the production default shell
+// (Today/Pulse) decides the landing screen. Use this to assert the default.
+export function renderAppDefaultShell() {
   return render(<App initialLicenseStatus={appTestState.licenseStatusResponse as never} />);
 }
 

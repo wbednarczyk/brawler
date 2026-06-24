@@ -24,6 +24,55 @@ fn get_settings_tolerates_missing_optional_setting_row() {
 }
 
 #[test]
+fn persists_and_dedupes_pinned_company_ids() {
+    // Sidebar-spine pinned companies (ADR 0054): a JSON list in the settings KV
+    // table with a tolerant empty default, overwrite-on-update, dedupe + blank
+    // filtering, preserving the user's pin order.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    assert!(
+        state
+            .get_settings()
+            .expect("settings")
+            .pinned_company_ids
+            .is_empty(),
+        "pinned companies default to an empty list without a seed row",
+    );
+
+    let settings = state
+        .update_settings(SettingsUpdate {
+            pinned_company_ids: Some(vec![
+                "company_a".to_owned(),
+                "company_b".to_owned(),
+                "company_a".to_owned(), // duplicate — dropped
+                "  ".to_owned(),        // blank — dropped
+            ]),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(
+        settings.pinned_company_ids,
+        vec!["company_a".to_owned(), "company_b".to_owned()],
+    );
+
+    // The list round-trips through a fresh read (durable in SQLite).
+    assert_eq!(
+        state.get_settings().expect("settings").pinned_company_ids,
+        vec!["company_a".to_owned(), "company_b".to_owned()],
+    );
+
+    // Replacing with an empty list clears the pins.
+    let cleared = state
+        .update_settings(SettingsUpdate {
+            pinned_company_ids: Some(vec![]),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(cleared.pinned_company_ids.is_empty());
+}
+
+#[test]
 fn reads_default_settings_from_sqlite() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -134,6 +183,7 @@ fn updates_settings_through_storage_api() {
             db_max_connections: None,
             db_busy_timeout_ms: None,
             db_acquire_timeout_ms: None,
+            pinned_company_ids: None,
         })
         .expect("settings should update");
 
@@ -232,6 +282,7 @@ fn updates_shortcut_bindings_through_storage_api() {
             db_max_connections: None,
             db_busy_timeout_ms: None,
             db_acquire_timeout_ms: None,
+            pinned_company_ids: None,
         })
         .expect("settings should update");
 
@@ -279,6 +330,7 @@ fn rejects_invalid_poll_interval_setting() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        pinned_company_ids: None,
     });
 
     assert!(result.is_err());
@@ -309,6 +361,7 @@ fn rejects_invalid_theme_setting() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        pinned_company_ids: None,
     });
 
     assert!(result.is_err());
@@ -352,6 +405,7 @@ fn rejects_invalid_locale_setting() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        pinned_company_ids: None,
     });
 
     assert!(result.is_err());
@@ -382,6 +436,7 @@ fn rejects_invalid_general_analysis_settings() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        pinned_company_ids: None,
     });
 
     assert!(invalid_provider.is_err());
@@ -406,6 +461,7 @@ fn rejects_invalid_general_analysis_settings() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        pinned_company_ids: None,
     });
 
     assert!(invalid_model.is_err());
@@ -430,6 +486,7 @@ fn rejects_invalid_general_analysis_settings() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        pinned_company_ids: None,
     });
 
     assert!(invalid_timeout.is_err());

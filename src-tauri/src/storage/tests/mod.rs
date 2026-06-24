@@ -9,6 +9,7 @@ use crate::source_adapters::newconnect_company_directory::ADAPTER_ID as NEWCONNE
 
 mod ai_analysis;
 mod backup_pool;
+mod cockpit_layouts;
 mod common;
 mod companies;
 mod diagnostics;

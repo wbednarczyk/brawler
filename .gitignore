@@ -7,6 +7,7 @@ release-artifacts/
 test-results/
 playwright-report/
 tests/browser/__screens__/
+tests/browser/__*-evidence__/
 
 # Rust build output
 target/

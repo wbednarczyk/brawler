@@ -13,7 +13,9 @@
 use serde_json::{json, Map, Value};
 
 use super::*;
-use crate::storage::{NewCompany, NewWatchlist, WatchlistUpdate};
+use crate::storage::{
+    NewCockpitLayout, NewCompany, NewWatchlist, RenameCockpitLayoutInput, WatchlistUpdate,
+};
 
 const CORPUS: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -75,6 +77,42 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
         "list_companies" => {
             serde_json::to_value(state.list_companies().expect("list_companies")).unwrap()
         }
+        "save_cockpit_layout" => {
+            let new: NewCockpitLayout = serde_json::from_value(inner).expect("NewCockpitLayout");
+            serde_json::to_value(
+                state
+                    .cockpit_layouts()
+                    .save_cockpit_layout(new)
+                    .expect("save_cockpit_layout"),
+            )
+            .unwrap()
+        }
+        "rename_cockpit_layout" => {
+            let rename: RenameCockpitLayoutInput =
+                serde_json::from_value(inner).expect("RenameCockpitLayoutInput");
+            serde_json::to_value(
+                state
+                    .cockpit_layouts()
+                    .rename_cockpit_layout(rename)
+                    .expect("rename_cockpit_layout"),
+            )
+            .unwrap()
+        }
+        "delete_cockpit_layout" => {
+            let id = input["layoutId"].as_str().expect("layoutId");
+            state
+                .cockpit_layouts()
+                .delete_cockpit_layout(id)
+                .expect("delete_cockpit_layout");
+            Value::Null
+        }
+        "list_cockpit_layouts" => serde_json::to_value(
+            state
+                .cockpit_layouts()
+                .list_cockpit_layouts()
+                .expect("list_cockpit_layouts"),
+        )
+        .unwrap(),
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")
         }

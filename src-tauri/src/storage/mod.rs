@@ -33,6 +33,7 @@ use self::database::{Database, DbGuard};
 mod ai_analysis;
 mod backup;
 mod claim_extraction;
+mod cockpit_layouts;
 mod companies;
 mod database;
 mod diagnostics;
@@ -85,6 +86,9 @@ pub use embeddings::{
 // `EmbeddingDownloadState` and `AppState` are defined in this module.
 pub use ai_analysis::AiAnalysisStore;
 pub use claim_extraction::ClaimExtractionStore;
+pub use cockpit_layouts::{
+    CockpitLayout, CockpitLayoutStore, NewCockpitLayout, RenameCockpitLayoutInput,
+};
 pub use diagnostics::DiagnosticsStore;
 pub use embeddings::EmbeddingStore;
 pub use error::{StorageError, StorageResult};
@@ -282,6 +286,12 @@ impl AppState {
     /// whole `AppState` facade.
     pub fn watchlists(&self) -> watchlists::WatchlistStore {
         watchlists::WatchlistStore::new(self.db.clone())
+    }
+
+    /// Research cockpit layout persistence as a focused domain store
+    /// (Architecture v2 / ADR 0050; cockpit decision 3A in ADR 0053).
+    pub fn cockpit_layouts(&self) -> cockpit_layouts::CockpitLayoutStore {
+        cockpit_layouts::CockpitLayoutStore::new(self.db.clone())
     }
 
     /// Feed operations as a focused domain store (Architecture v2 / ADR 0050).

@@ -724,6 +724,25 @@ Rules:
 - Frameworks + criteria (and any `user`-scope `kpi_definitions` a criterion references) are owner durable state, carried in the import/export bundle so an exported framework imports cleanly. Evaluations are reproducible snapshots; their export is optional.
 - The migration is append-only, idempotent, and self-healing; adding the `user` value to the `kpi_definitions.scope` CHECK is handled by a guarded table rebuild if the constraint is restrictive.
 
+### Research Cockpit Layouts
+
+Named, user-saved layouts for the research cockpit — the dockview docking shell ([ADR 0053](adr/0053-dockview-layout-pilot.md)). A *layout* is the user's saved panel arrangement (which panels are open + their split/tab geometry + the linked selection), so they can switch task-shaped workspaces ("Earnings season", "Daily triage", "Deep dive"). Owner durable state. Migration `0054_cockpit_layouts.sql` (append-only, idempotent, self-healing). Decision 3A in [ADR 0053](adr/0053-dockview-layout-pilot.md).
+
+`cockpit_layouts`:
+
+- `id`, `name` (user-facing label, unique), `ordinal` (display order).
+- `panels_json`: the cockpit's own descriptor of which panels are open (kind + target, e.g. `fundamentals:company_gpw_cdr`) and the linked selection — the app-owned, stable part that survives a dockview upgrade.
+- `layout_json`: the serialized **dockview geometry** (`api.toJSON()`) — splits, tab groups, sizes. Opaque to us; restored via `api.fromJSON()`.
+- `dockview_version`: the dockview version that produced `layout_json`, so a future format change can be migrated or safely discarded.
+- `created_at`, `updated_at`.
+
+Rules:
+
+- **Versioned restore with safe fallback.** On load, if `dockview_version` is incompatible or `fromJSON` throws, the geometry is discarded and the layout is rebuilt from `panels_json` in the default arrangement — a layout never crashes the shell. A panel in `panels_json` referencing a removed company/screen is dropped on restore (tolerate-missing, per the standing migration-resilience rule).
+- The geometry (`layout_json`) is a derived convenience; `panels_json` is the source of truth for *what* is open. A layout with only `panels_json` (no geometry) is valid.
+- Layouts are owner durable state and are carried in the import/export bundle ([ADR 0018](adr/0018-import-export-boundaries.md), `v0.52.0` per-feature coverage); `dockview_version` travels with the layout so an imported layout restores or falls back correctly.
+- Spike note: the proof-of-concept persisted to `localStorage`; the production cockpit uses this table (decision 3A). Do not ship `localStorage` layout persistence.
+
 ### Jobs
 
 Supports Sources screen, background ingestion, manual refresh, and transcript processing status.
@@ -853,6 +872,7 @@ Initial keys:
 - `ai_analysis_mode`
 - `settings_import_export_format`
 - `shortcut_bindings`
+- `pinned_company_ids`
 
 Rules:
 
@@ -865,6 +885,7 @@ Rules:
 - Default YouTube transcription model is `gemini-2.5-flash`.
 - Default YouTube transcription timeout is `300` seconds.
 - Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.
+- `pinned_company_ids` (ADR 0054) stores the companies the user has pinned to the sidebar IA spine as a JSON array of company IDs, in pin order. It is a simple local UI preference: default `[]` when the row is absent (tolerant read, no seed migration), de-duplicated and overwritten wholesale on update. Unknown IDs (deleted companies) are ignored at read time by the frontend.
 - General AI provider remains unset until the AI analysis framework milestone configures one. The first live implementation may use Gemini, but provider storage must remain extensible.
 - Default AI analysis mode is `source_grounded`.
 - Runtime settings live in SQLite.

@@ -4,4 +4,10 @@ import type { DatabaseSettings } from "./DatabaseSettings";
 import type { LogSettings } from "./LogSettings";
 import type { ShortcutBindingSetting } from "./ShortcutBindingSetting";
 
-export type UserSettings = { theme: "dark" | "light" | "system", locale: "en" | "pl", accentPalette: "night-neon" | "midnight-horizon", developerMode: boolean, pollIntervalSeconds: number, settingsSource: string, settingsImportExportFormat: string, yamlImportExportStatus: string, aiProviders: AiProviderSettings, aiAnalysisMode: string, espiAiFallbackEnabled: boolean, logs: LogSettings, shortcutBindings: { [key in string]: ShortcutBindingSetting }, database: DatabaseSettings, };
+export type UserSettings = { theme: "dark" | "light" | "system", locale: "en" | "pl", accentPalette: "night-neon" | "midnight-horizon", developerMode: boolean, pollIntervalSeconds: number, settingsSource: string, settingsImportExportFormat: string, yamlImportExportStatus: string, aiProviders: AiProviderSettings, aiAnalysisMode: string, espiAiFallbackEnabled: boolean, logs: LogSettings, shortcutBindings: { [key in string]: ShortcutBindingSetting }, database: DatabaseSettings, 
+/**
+ * Company IDs the user has pinned to the sidebar spine (ADR 0054). A simple
+ * local UI preference stored as a JSON array in the `settings` KV table;
+ * order is the user's pin order. Tolerant default `[]` when the row is absent.
+ */
+pinnedCompanyIds: Array<string>, };

@@ -1,6 +1,7 @@
 pub mod ai_analysis;
 pub mod backups;
 pub mod claim_extraction;
+pub mod cockpit_layouts;
 pub mod companies;
 pub mod credentials;
 pub mod diagnostics;

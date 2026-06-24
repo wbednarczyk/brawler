@@ -91,6 +91,10 @@ pub struct UserSettings {
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
     pub database: DatabaseSettings,
+    /// Company IDs the user has pinned to the sidebar spine (ADR 0054). A simple
+    /// local UI preference stored as a JSON array in the `settings` KV table;
+    /// order is the user's pin order. Tolerant default `[]` when the row is absent.
+    pub pinned_company_ids: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -134,6 +138,9 @@ pub struct SettingsUpdate {
     pub db_max_connections: Option<i64>,
     pub db_busy_timeout_ms: Option<i64>,
     pub db_acquire_timeout_ms: Option<i64>,
+    /// Replace the full pinned-company list (ADR 0054). The frontend sends the
+    /// complete desired order, so this overwrites rather than merges.
+    pub pinned_company_ids: Option<Vec<String>>,
 }
 
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -174,6 +181,7 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
             max_file_bytes: setting_i64(connection, "log_max_file_bytes")?,
         },
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
+        pinned_company_ids: setting_json_or_default(connection, "pinned_company_ids")?,
         database: {
             let config = super::pool::read_pool_config(connection);
             DatabaseSettings {
@@ -408,6 +416,12 @@ pub(crate) fn update_settings(
         update_setting(connection, "shortcut_bindings", &value)?;
     }
 
+    if let Some(pinned_company_ids) = input.pinned_company_ids {
+        let deduped = dedupe_preserving_order(pinned_company_ids);
+        let value = serde_json::to_string(&deduped).map_err(StorageError::from)?;
+        upsert_setting(connection, "pinned_company_ids", &value, "json")?;
+    }
+
     // Connection-pool tuning is clamped to safe ranges rather than rejected, so a
     // value out of bounds is corrected instead of failing the update (ADR 0032).
     // Pool sizing takes effect on the next launch.
@@ -496,6 +510,53 @@ where
     let value = setting_string(connection, key)?;
 
     serde_json::from_str::<T>(&value).map_err(StorageError::from)
+}
+
+/// Read a JSON setting, falling back to `T::default()` when the row is absent.
+/// Used for settings introduced without a seed-row migration (ADR 0054 pinned
+/// companies) so a database that predates the key never fails to load settings.
+fn setting_json_or_default<T>(connection: &Connection, key: &'static str) -> StorageResult<T>
+where
+    T: for<'de> Deserialize<'de> + Default,
+{
+    match connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get::<_, String>(0)
+    }) {
+        Ok(value) => serde_json::from_str::<T>(&value).map_err(StorageError::from),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(T::default()),
+        Err(error) => Err(StorageError::from(error)),
+    }
+}
+
+/// Upsert a setting for keys that may have no seed row (introduced after the
+/// initial migration). Unlike [`update_setting`] (UPDATE-only), this inserts the
+/// row when absent so the value is never silently dropped.
+fn upsert_setting(
+    connection: &Connection,
+    key: &'static str,
+    value: &str,
+    value_type: &'static str,
+) -> StorageResult<()> {
+    connection.execute(
+        "
+        INSERT INTO settings (key, value, value_type)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT (key) DO UPDATE SET
+            value = excluded.value,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![key, value, value_type],
+    )?;
+
+    Ok(())
+}
+
+/// Remove duplicate IDs while preserving first-seen order (the user's pin order).
+fn dedupe_preserving_order(ids: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    ids.into_iter()
+        .filter(|id| !id.trim().is_empty() && seen.insert(id.clone()))
+        .collect()
 }
 
 fn update_setting(connection: &Connection, key: &'static str, value: &str) -> StorageResult<()> {

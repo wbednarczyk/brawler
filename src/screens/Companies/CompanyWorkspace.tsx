@@ -6,8 +6,12 @@ import {
   FileText,
   Gauge,
   Inbox,
+  LayoutGrid,
   Mail,
   MailOpen,
+  Maximize2,
+  Pin,
+  PinOff,
   Plus,
   Save,
   TrendingUp,
@@ -24,7 +28,7 @@ import { QualityPanel } from "../../shared/components/QualityPanel";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { useAiAnalysisProviderConfigured } from "../../app/state/SettingsContext";
+import { useAiAnalysisProviderConfigured, usePinnedCompanyIds } from "../../app/state/SettingsContext";
 import {
   ActionRow,
   Button,
@@ -32,6 +36,7 @@ import {
   DenseRow,
   EmptyState,
   ErrorText,
+  FocusOverlay,
   InfoGrid,
   SectionHeader,
   SegmentedControl,
@@ -90,6 +95,8 @@ type CompanyWorkspaceProps = Pick<
   | "feedItemSummary"
 > & {
   selectedCompany: Company;
+  onTogglePin: () => void;
+  onOpenAdvancedLayout: () => void;
   autoFocusOnOpen: boolean;
   onAutoFocusHandled: () => void;
   financialPeriods: FinancialPeriod[];
@@ -113,6 +120,8 @@ type CompanyWorkspaceProps = Pick<
 
 export function CompanyWorkspace({
   selectedCompany,
+  onTogglePin,
+  onOpenAdvancedLayout,
   autoFocusOnOpen,
   onAutoFocusHandled,
   membershipsByCompany,
@@ -174,6 +183,9 @@ export function CompanyWorkspace({
 }: CompanyWorkspaceProps) {
   const { text } = useLocale();
   const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
+  const isPinned = usePinnedCompanyIds().includes(selectedCompany.id);
+  // Distraction-free full-screen note authoring (Focus writer, ADR 0054).
+  const [writerOpen, setWriterOpen] = useState(false);
   const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
   const workspaceRef = useRef<HTMLElement>(null);
   // Bumped when a backfill finishes so the report-documents panel reloads.
@@ -212,7 +224,30 @@ export function CompanyWorkspace({
       <div className="company-workspace-header">
         <div>
           <span className="eyebrow">{text("Company workspace")}</span>
-          <h2><TickerLabel value={selectedCompany.qualifiedTicker} /></h2>
+          <h2>
+            <TickerLabel value={selectedCompany.qualifiedTicker} />
+            <Button
+              className="company-pin-toggle"
+              onClick={onTogglePin}
+              type="button"
+              variant={isPinned ? "secondary" : "ghost"}
+              aria-pressed={isPinned}
+              title={isPinned ? text("Unpin from sidebar") : text("Pin to sidebar")}
+            >
+              {isPinned ? <PinOff size={14} /> : <Pin size={14} />}
+              {isPinned ? text("Pinned") : text("Pin")}
+            </Button>
+            <Button
+              className="company-advanced-layout"
+              onClick={onOpenAdvancedLayout}
+              type="button"
+              variant="ghost"
+              title={text("Open this company in the advanced dockview layout")}
+            >
+              <LayoutGrid size={14} />
+              {text("Advanced layout")}
+            </Button>
+          </h2>
           <p>{selectedCompany.displayName}</p>
         </div>
         <div className="company-workspace-header-side">
@@ -604,6 +639,15 @@ export function CompanyWorkspace({
                       <ActionRow className="notebook-detail-actions">
                         <Button
                           className="compact-button"
+                          type="button"
+                          onClick={() => setWriterOpen(true)}
+                          title={text("Write full-screen, distraction-free")}
+                        >
+                          <Maximize2 size={15} />
+                          {text("Focus")}
+                        </Button>
+                        <Button
+                          className="compact-button"
                           onClick={cancelNotebookEdit}
                         >
                           <X size={15} />
@@ -629,6 +673,49 @@ export function CompanyWorkspace({
                       value={notebookEditForm.body}
                       onChange={(event) => updateNotebookEditForm("body", event.target.value)}
                     />
+                    <FocusOverlay
+                      open={writerOpen}
+                      onClose={() => setWriterOpen(false)}
+                      eyebrow={<TickerLabel value={selectedCompany.qualifiedTicker} />}
+                      title={notebookEditForm.title.trim() ? notebookEditForm.title : text("Untitled note")}
+                      ariaLabel={text("Focus writer")}
+                      actions={
+                        <Button
+                          form="notebook-writer-form"
+                          type="submit"
+                          variant="primary"
+                          disabled={
+                            !isNotebookEditDirty ||
+                            !notebookEditForm.title.trim() ||
+                            !notebookEditForm.body.trim()
+                          }
+                        >
+                          <Save size={15} />
+                          {text("Save")}
+                        </Button>
+                      }
+                    >
+                      <form
+                        id="notebook-writer-form"
+                        className="notebook-writer"
+                        onSubmit={(event) => {
+                          saveNotebookEntry(event);
+                          setWriterOpen(false);
+                        }}
+                      >
+                        <TextField
+                          aria-label={text("Note title")}
+                          value={notebookEditForm.title}
+                          onChange={(event) => updateNotebookEditForm("title", event.target.value)}
+                        />
+                        <TextareaField
+                          textareaClassName="notebook-writer-body"
+                          aria-label={text("Note body")}
+                          value={notebookEditForm.body}
+                          onChange={(event) => updateNotebookEditForm("body", event.target.value)}
+                        />
+                      </form>
+                    </FocusOverlay>
                     <div className="notebook-detail-grid">
                       <SelectField
                         label={text("Kind")}

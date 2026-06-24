@@ -18,7 +18,9 @@ test("company workspace does not horizontally overflow at a narrow window", asyn
   // Report documents (long ESPI filenames) + the report-diff panel both render.
   await page.getByText("Report documents").first().waitFor();
   await page.getByText("Report comparison").first().waitFor();
-  await page.getByRole("button", { name: "Compare" }).first().click();
+  // Scope to the report-diff panel: the sidebar now has a "Compare" mode button
+  // too (ADR 0054), so an unscoped name match would hit the nav, not the panel.
+  await page.locator(".report-diff-panel").getByRole("button", { name: "Compare" }).first().click();
   await page.getByText(/changed section/).first().waitFor();
 
   const overflow = await page.evaluate(() => {

@@ -111,6 +111,8 @@ test.describe("fundamentals + AI KPI extraction visual harness", () => {
     const tag = testInfo.project.name;
     // Polish locale + a real-world results report with long PDF attachment names.
     await page.goto("/?locale=pl");
+    // Today is the default landing (ADR 0054); the feed lives in the Inbox.
+    await page.getByLabel(/Primary navigation|Nawigacja główna/).getByRole("button", { name: "Inbox" }).click();
 
     await page.getByText(/wyniki za I półrocze 2026/).first().click();
 
@@ -140,6 +142,9 @@ test.describe("fundamentals + AI KPI extraction visual harness", () => {
 async function openApp(page: Page) {
   await page.goto("/");
   await expect(page.getByLabel("Primary navigation")).toBeVisible();
+  // Today is the default landing (ADR 0054); these flows start from the Inbox feed.
+  await page.getByLabel("Primary navigation").getByRole("button", { name: "Inbox" }).click();
+  await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 }
 
 function navButton(page: Page, name: string) {

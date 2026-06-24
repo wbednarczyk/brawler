@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { AppShell } from "./AppShell";
+import { AppShell, type PinnedCompany } from "./AppShell";
 import type { DbRefreshState, SourceRefreshState } from "./appTypes";
 import { useAppDataController } from "./useAppDataController";
 import { useCompanyController } from "./useCompanyController";
@@ -44,14 +44,21 @@ import { useTranscriptController } from "./useTranscriptController";
 import { useWorkspaceNavigationController } from "./useWorkspaceNavigationController";
 import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
+import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
+import { TodayScreen } from "../screens/Today/TodayScreen";
+import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
+import { ErrorBoundary } from "./ErrorBoundary";
+import { AppContentErrorFallback } from "./AppErrorFallback";
 import { DiagnosticsScreen } from "../screens/Diagnostics/DiagnosticsScreen";
 import { EventsScreen } from "../screens/Events/EventsScreen";
+import type { EventsScreenProps } from "../screens/Events/eventTypes";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
-import { ResearchScreen } from "../screens/Research/ResearchScreen";
+import type { NotebooksScreenProps } from "../screens/Notebooks/notebookTypes";
+import { ResearchScreen, type ResearchScreenProps } from "../screens/Research/ResearchScreen";
 import { SettingsScreen } from "../screens/Settings/SettingsScreen";
 import { SourcesScreen } from "../screens/Sources/SourcesScreen";
 import { TranscriptsScreen } from "../screens/Transcripts/TranscriptsScreen";
@@ -127,9 +134,13 @@ import type { SearchMatch } from "../api/search";
 
 type AppStateRootProps = {
   initialLicenseStatus?: LicenseStatus | null;
+  initialSection?: Section;
 };
 
-export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps) {
+export function AppStateRoot({
+  initialLicenseStatus = null,
+  initialSection = "Today",
+}: AppStateRootProps) {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
   const sourceAdaptersRef = useRef<SourceAdapter[]>([]);
@@ -142,7 +153,12 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     displayName: null,
     isin: null,
   });
-  const [activeSection, setActiveSection] = useState<Section>("Inbox");
+  // Today/Pulse is the default shell home (ADR 0054); `initialSection` overrides
+  // it for deep links and screen-focused tests.
+  const [activeSection, setActiveSection] = useState<Section>(initialSection);
+  // The company a workspace "Advanced layout" toggle scopes the dockview cockpit
+  // to (ADR 0054); null = the cockpit opened directly, unscoped.
+  const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>("dark");
   const [accentPalette, setAccentPalette] = useState<UserSettings["accentPalette"]>("night-neon");
   const [locale, setLocale] = useState<UserSettings["locale"]>("en");
@@ -595,6 +611,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     updateDbBusyTimeoutMs,
     updateDbAcquireTimeoutMs,
     resetDatabaseSettings,
+    updatePinnedCompanyIds,
     updateShortcutBindings,
     updateTheme,
     updateYoutubeTranscriptionModel,
@@ -1411,6 +1428,259 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
     updateSelectedFeedItem,
   ]);
 
+  // Global-screen view-models, extracted so both the top-nav section blocks and
+  // the Research cockpit (which hosts these screens as panels, ADR 0053 phase 4c)
+  // share one source of truth. Lifting these providers to also wrap the cockpit
+  // is the decoupling the cockpit-as-host end state (phase 6) needs.
+  const watchlistsViewModel = {
+    companies,
+    watchlists,
+    watchlistMemberships,
+    watchlistsError,
+    selectedWatchlistId: selectedManagedWatchlistId,
+    setSelectedWatchlistId: setSelectedManagedWatchlistId,
+    createWatchlist,
+    renameWatchlist,
+    deleteWatchlist,
+    addCompanyToWatchlist,
+    removeCompanyFromWatchlist,
+  };
+  const reportSeasonViewModel = {
+    watchlists,
+    openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) => {
+      setSelectedCompanyId(companyId);
+      setCompanyWorkspaceTab(tab);
+      setActiveSection("Companies");
+    },
+  };
+  const researchViewModel: ResearchScreenProps = {
+    companies,
+    watchlists,
+    watchlistMemberships,
+    mode: researchMode,
+    selectedCompanyId: selectedResearchCompanyId,
+    selectedWatchlistId: selectedResearchWatchlistId,
+    selectedWatchlistCompanyId: selectedResearchWatchlistCompanyId,
+    cascadeToCompanies: researchCascadeToCompanies,
+    selectedEvidenceTypes: researchEvidenceTypes,
+    changedOnly: researchChangedOnly,
+    timeline: researchTimeline,
+    questions: researchQuestions,
+    selectedQuestionId: selectedResearchQuestionId,
+    questionTitle: researchQuestionTitle,
+    questionBody: researchQuestionBody,
+    questionLinks: researchQuestionLinks,
+    briefJobs: researchBriefJobs,
+    digestJobs: researchDigestJobs,
+    reminders: researchReminders,
+    error: researchError,
+    loading: researchLoading,
+    reviewInFlight: researchReviewInFlight,
+    questionInFlight: researchQuestionInFlight,
+    briefInFlight: researchBriefInFlight,
+    digestInFlight: researchDigestInFlight,
+    reminderInFlight: researchReminderInFlight,
+    setMode: setResearchMode,
+    setSelectedCompanyId: setSelectedResearchCompanyId,
+    setSelectedWatchlistId: setSelectedResearchWatchlistId,
+    setSelectedWatchlistCompanyId: setSelectedResearchWatchlistCompanyId,
+    setSelectedQuestionId: setSelectedResearchQuestionId,
+    setQuestionTitle: setResearchQuestionTitle,
+    setQuestionBody: setResearchQuestionBody,
+    setCascadeToCompanies: setResearchCascadeToCompanies,
+    setChangedOnly: setResearchChangedOnly,
+    toggleEvidenceType: toggleResearchEvidenceType,
+    clearEvidenceTypes: clearResearchEvidenceTypes,
+    refreshTimeline: () => {
+      void refreshResearchTimeline();
+    },
+    markReviewed: () => {
+      void markResearchReviewed();
+    },
+    createQuestion: () => {
+      void createResearchQuestion();
+    },
+    updateQuestionStatus: (questionId, status) => {
+      void updateResearchQuestionStatus(questionId, status);
+    },
+    deleteQuestion: (questionId) => {
+      void deleteResearchQuestion(questionId);
+    },
+    linkEvidence: (item) => {
+      void linkEvidenceToSelectedQuestion(item);
+    },
+    unlinkEvidence: (linkId) => {
+      void unlinkEvidenceFromSelectedQuestion(linkId);
+    },
+    startBrief: () => {
+      void startResearchBrief();
+    },
+    startDigest: () => {
+      void startResearchDigest();
+    },
+    createReminder: (title, body, dueAt) => {
+      void createResearchReminder(title, body, dueAt);
+    },
+    completeReminder: (reminderId) => {
+      void completeResearchReminder(reminderId);
+    },
+    snoozeReminder: (reminderId) => {
+      void snoozeResearchReminder(reminderId);
+    },
+    reopenReminder: (reminderId) => {
+      void reopenResearchReminder(reminderId);
+    },
+    deleteReminder: (reminderId) => {
+      void deleteResearchReminder(reminderId);
+    },
+    openEvidence: openResearchEvidence,
+    openEvidenceUrl: openExternalUrl,
+    formatTimestamp,
+  };
+  const notebooksViewModel: NotebooksScreenProps = {
+    companies: filteredNotebookScreenCompanies,
+    totalCompanyCount: companies.length,
+    watchlists,
+    notebookEntries,
+    selectedNotebookScreenCompany,
+    selectedNotebookScreenEntries,
+    selectedNotebookScreenEntry,
+    isNotebookScreenComposerOpen,
+    isNotebookScreenEditMode,
+    isNotebookScreenEditDirty,
+    notebookScreenKindFilter,
+    notebookScreenWatchlistFilter,
+    notebookScreenClaimStatusFilter,
+    notebookScreenFollowUpFilter,
+    notebookScreenTagFilter,
+    notebookScreenForm,
+    notebookScreenEditForm,
+    notebookError,
+    selectNotebookScreenCompany,
+    showNotebookCompanyOpenClaims,
+    showNotebookCompanyFollowUps,
+    focusCompanyWorkspace,
+    toggleNotebookScreenComposer,
+    discardNotebookScreenDraft,
+    createNotebookScreenEntry,
+    toggleNotebookScreenEntry,
+    saveNotebookScreenEntry,
+    deleteNotebookScreenEntry,
+    cancelNotebookScreenEdit,
+    setNotebookScreenEditMode,
+    setNotebookScreenKindFilter,
+    setNotebookScreenWatchlistFilter,
+    setNotebookScreenClaimStatusFilter,
+    setNotebookScreenFollowUpFilter,
+    setNotebookScreenTagFilter,
+    updateNotebookScreenForm,
+    updateNotebookScreenEditForm,
+    NotebookDateField,
+    NotebookQuarterField,
+    MarkdownNoteBody,
+    renderNotebookOrigins,
+  };
+  const eventsViewModel: EventsScreenProps = {
+    companies,
+    watchlists,
+    companyEvents,
+    companyEventsError,
+    selectedCompanyEventId,
+    sourceRefreshState,
+    selectedSourceAdapterId,
+    sourceAdapterRefreshInFlight,
+    companyEventViewMode,
+    companyEventMode,
+    companyEventWeekRange,
+    companyEventWorkingWeekDays,
+    companyEventWeekendDays,
+    companyEventWeekendEvents,
+    companyEventsByDate,
+    companyEventWatchlistFilter,
+    companyEventCompanyFilter,
+    companyEventTypeFilter,
+    companyEventStatusFilter,
+    companyEventDateFrom,
+    companyEventDateTo,
+    companyEventTypes,
+    companyEventStatuses,
+    isCompanyEventComposerOpen,
+    companyEventForm,
+    companyEventCreateError,
+    companyEventTypeOptions,
+    companyEventStatusOptions,
+    refreshEventSources,
+    confirmDerivedEvent,
+    openCompanyEventComposer,
+    setCompanyEventViewMode,
+    setCompanyEventMode,
+    setCompanyEventWeekAnchorDate,
+    setCompanyEventWatchlistFilter,
+    setCompanyEventCompanyFilter,
+    setCompanyEventTypeFilter,
+    setCompanyEventStatusFilter,
+    setCompanyEventDateFrom,
+    setCompanyEventDateTo,
+    setCompanyEventComposerOpen,
+    setCompanyEventCreateError,
+    setCompanyEventForm,
+    setSelectedCompanyEventId,
+    clearCompanyEventFilters,
+    createCompanyEvent,
+    NotebookDateField,
+    formatLocalDate,
+    parseLocalDate,
+    addLocalDays,
+    formatWeekRange,
+    formatTimestamp,
+    formatCompanyEventType,
+    formatCompanyEventStatus,
+    formatCompanyEventSourceType,
+    companyEventDueLabel,
+    companyEventDueClass,
+    openExternalUrl,
+  };
+
+  // Pinned-company spine (ADR 0054). Resolve persisted IDs against the live
+  // company list, dropping any that no longer exist, and preserve pin order.
+  const pinnedCompanyIds = settings?.pinnedCompanyIds ?? [];
+  const pinnedCompanies: PinnedCompany[] = pinnedCompanyIds
+    .map((id) => companies.find((company) => company.id === id))
+    .filter((company): company is Company => Boolean(company))
+    .map((company) => ({ id: company.id, name: company.displayName, ticker: company.ticker }));
+
+  function openPinnedCompany(companyId: string) {
+    const company = companies.find((candidate) => candidate.id === companyId);
+    if (company) {
+      openCompanyWorkspace(company);
+    }
+  }
+
+  function unpinCompany(companyId: string) {
+    updatePinnedCompanyIds(pinnedCompanyIds.filter((id) => id !== companyId));
+  }
+
+  function togglePinnedCompany(companyId: string) {
+    updatePinnedCompanyIds(
+      pinnedCompanyIds.includes(companyId)
+        ? pinnedCompanyIds.filter((id) => id !== companyId)
+        : [...pinnedCompanyIds, companyId],
+    );
+  }
+
+  function openCompanyWorkspaceById(companyId: string, tab: CompanyWorkspaceTab) {
+    setSelectedCompanyId(companyId);
+    setCompanyWorkspaceTab(tab);
+    setActiveSection("Companies");
+  }
+
+  // Opt-in dockview "Advanced layout" for a company (ADR 0054): open the cockpit
+  // scoped to it. All cockpit/dockview work carries forward as this engine.
+  function openAdvancedLayout(companyId: string) {
+    setCockpitInitialCompanyId(companyId);
+    setActiveSection("Cockpit");
+  }
+
   return (
     <LocaleContext.Provider value={{ locale, t: makeTranslator(locale), text }}>
       <SettingsProvider value={settings ?? null}>
@@ -1424,6 +1694,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
         refreshSources={refreshSources}
         setActiveSection={setActiveSection}
         onNavigateToSearchResult={navigateToSearchResult}
+        pinnedCompanies={pinnedCompanies}
+        selectedCompanyId={selectedCompanyId}
+        onOpenCompany={openPinnedCompany}
+        onUnpinCompany={unpinCompany}
         sourceRefreshError={sourceRefreshError}
         sourceRefreshResult={sourceRefreshResult}
         sourceRefreshState={sourceRefreshState}
@@ -1444,6 +1718,10 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               : undefined
           }
         >
+          <ErrorBoundary
+            resetKey={activeSection}
+            fallback={(error, reset) => <AppContentErrorFallback error={error} reset={reset} />}
+          >
           {activeSection === "Inbox" ? (
             <InboxProvider
               value={{
@@ -1516,6 +1794,36 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               <InboxScreen />
             </InboxProvider>
           ) : null}
+          {activeSection === "Cockpit" ? (
+            // The cockpit hosts the global app screens as panels (ADR 0053 phase
+            // 4c), so it shares their view-model providers with the top-nav.
+            <WatchlistsProvider value={watchlistsViewModel}>
+              <ResearchProvider value={researchViewModel}>
+                <NotebooksProvider value={notebooksViewModel}>
+                  <ReportSeasonProvider value={reportSeasonViewModel}>
+                    <EventsProvider value={eventsViewModel}>
+                      <CockpitScreen
+                        companies={companies}
+                        feedItems={feedState}
+                        initialCompanyId={cockpitInitialCompanyId}
+                      />
+                    </EventsProvider>
+                  </ReportSeasonProvider>
+                </NotebooksProvider>
+              </ResearchProvider>
+            </WatchlistsProvider>
+          ) : null}
+          {activeSection === "Today" ? (
+            <TodayScreen
+              companies={companies}
+              watchlists={watchlists}
+              pinnedCompanyIds={pinnedCompanyIds}
+              recentFeedItems={feedState}
+              openCompanyWorkspace={openCompanyWorkspaceById}
+              openInbox={() => setActiveSection("Inbox")}
+            />
+          ) : null}
+          {activeSection === "Compare" ? <CompareScreen /> : null}
           {activeSection === "Companies" ? (
             <CompaniesProvider
               value={{
@@ -1528,6 +1836,8 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
                 filteredCompanies,
                 companies,
                 selectedCompany,
+                onTogglePinnedCompany: togglePinnedCompany,
+                onOpenAdvancedLayout: openAdvancedLayout,
                 workspaceAutoFocusId,
                 clearWorkspaceAutoFocus: () => setWorkspaceAutoFocusId(null),
                 membershipsByCompany,
@@ -1607,240 +1917,27 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
             </CompaniesProvider>
           ) : null}
           {activeSection === "Watchlists" ? (
-            <WatchlistsProvider
-              value={{
-                companies,
-                watchlists,
-                watchlistMemberships,
-                watchlistsError,
-                selectedWatchlistId: selectedManagedWatchlistId,
-                setSelectedWatchlistId: setSelectedManagedWatchlistId,
-                createWatchlist,
-                renameWatchlist,
-                deleteWatchlist,
-                addCompanyToWatchlist,
-                removeCompanyFromWatchlist,
-              }}
-            >
+            <WatchlistsProvider value={watchlistsViewModel}>
               <WatchlistsScreen />
             </WatchlistsProvider>
           ) : null}
           {activeSection === "Research" ? (
-            <ResearchProvider
-              value={{
-                companies,
-                watchlists,
-                watchlistMemberships,
-                mode: researchMode,
-                selectedCompanyId: selectedResearchCompanyId,
-                selectedWatchlistId: selectedResearchWatchlistId,
-                selectedWatchlistCompanyId: selectedResearchWatchlistCompanyId,
-                cascadeToCompanies: researchCascadeToCompanies,
-                selectedEvidenceTypes: researchEvidenceTypes,
-                changedOnly: researchChangedOnly,
-                timeline: researchTimeline,
-                questions: researchQuestions,
-                selectedQuestionId: selectedResearchQuestionId,
-                questionTitle: researchQuestionTitle,
-                questionBody: researchQuestionBody,
-                questionLinks: researchQuestionLinks,
-                briefJobs: researchBriefJobs,
-                digestJobs: researchDigestJobs,
-                reminders: researchReminders,
-                error: researchError,
-                loading: researchLoading,
-                reviewInFlight: researchReviewInFlight,
-                questionInFlight: researchQuestionInFlight,
-                briefInFlight: researchBriefInFlight,
-                digestInFlight: researchDigestInFlight,
-                reminderInFlight: researchReminderInFlight,
-                setMode: setResearchMode,
-                setSelectedCompanyId: setSelectedResearchCompanyId,
-                setSelectedWatchlistId: setSelectedResearchWatchlistId,
-                setSelectedWatchlistCompanyId: setSelectedResearchWatchlistCompanyId,
-                setSelectedQuestionId: setSelectedResearchQuestionId,
-                setQuestionTitle: setResearchQuestionTitle,
-                setQuestionBody: setResearchQuestionBody,
-                setCascadeToCompanies: setResearchCascadeToCompanies,
-                setChangedOnly: setResearchChangedOnly,
-                toggleEvidenceType: toggleResearchEvidenceType,
-                clearEvidenceTypes: clearResearchEvidenceTypes,
-                refreshTimeline: () => {
-                  void refreshResearchTimeline();
-                },
-                markReviewed: () => {
-                  void markResearchReviewed();
-                },
-                createQuestion: () => {
-                  void createResearchQuestion();
-                },
-                updateQuestionStatus: (questionId, status) => {
-                  void updateResearchQuestionStatus(questionId, status);
-                },
-                deleteQuestion: (questionId) => {
-                  void deleteResearchQuestion(questionId);
-                },
-                linkEvidence: (item) => {
-                  void linkEvidenceToSelectedQuestion(item);
-                },
-                unlinkEvidence: (linkId) => {
-                  void unlinkEvidenceFromSelectedQuestion(linkId);
-                },
-                startBrief: () => {
-                  void startResearchBrief();
-                },
-                startDigest: () => {
-                  void startResearchDigest();
-                },
-                createReminder: (title, body, dueAt) => {
-                  void createResearchReminder(title, body, dueAt);
-                },
-                completeReminder: (reminderId) => {
-                  void completeResearchReminder(reminderId);
-                },
-                snoozeReminder: (reminderId) => {
-                  void snoozeResearchReminder(reminderId);
-                },
-                reopenReminder: (reminderId) => {
-                  void reopenResearchReminder(reminderId);
-                },
-                deleteReminder: (reminderId) => {
-                  void deleteResearchReminder(reminderId);
-                },
-                openEvidence: openResearchEvidence,
-                openEvidenceUrl: openExternalUrl,
-                formatTimestamp,
-              }}
-            >
+            <ResearchProvider value={researchViewModel}>
               <ResearchScreen />
             </ResearchProvider>
           ) : null}
           {activeSection === "Notebooks" ? (
-            <NotebooksProvider
-              value={{
-                companies: filteredNotebookScreenCompanies,
-                totalCompanyCount: companies.length,
-                watchlists,
-                notebookEntries,
-                selectedNotebookScreenCompany,
-                selectedNotebookScreenEntries,
-                selectedNotebookScreenEntry,
-                isNotebookScreenComposerOpen,
-                isNotebookScreenEditMode,
-                isNotebookScreenEditDirty,
-                notebookScreenKindFilter,
-                notebookScreenWatchlistFilter,
-                notebookScreenClaimStatusFilter,
-                notebookScreenFollowUpFilter,
-                notebookScreenTagFilter,
-                notebookScreenForm,
-                notebookScreenEditForm,
-                notebookError,
-                selectNotebookScreenCompany,
-                showNotebookCompanyOpenClaims,
-                showNotebookCompanyFollowUps,
-                focusCompanyWorkspace,
-                toggleNotebookScreenComposer,
-                discardNotebookScreenDraft,
-                createNotebookScreenEntry,
-                toggleNotebookScreenEntry,
-                saveNotebookScreenEntry,
-                deleteNotebookScreenEntry,
-                cancelNotebookScreenEdit,
-                setNotebookScreenEditMode,
-                setNotebookScreenKindFilter,
-                setNotebookScreenWatchlistFilter,
-                setNotebookScreenClaimStatusFilter,
-                setNotebookScreenFollowUpFilter,
-                setNotebookScreenTagFilter,
-                updateNotebookScreenForm,
-                updateNotebookScreenEditForm,
-                NotebookDateField,
-                NotebookQuarterField,
-                MarkdownNoteBody,
-                renderNotebookOrigins,
-              }}
-            >
+            <NotebooksProvider value={notebooksViewModel}>
               <NotebooksScreen />
             </NotebooksProvider>
           ) : null}
           {activeSection === "ReportSeason" ? (
-            <ReportSeasonProvider
-              value={{
-                watchlists,
-                openCompanyWorkspace: (companyId, tab) => {
-                  setSelectedCompanyId(companyId);
-                  setCompanyWorkspaceTab(tab);
-                  setActiveSection("Companies");
-                },
-              }}
-            >
+            <ReportSeasonProvider value={reportSeasonViewModel}>
               <ReportSeasonScreen />
             </ReportSeasonProvider>
           ) : null}
           {activeSection === "Events" ? (
-            <EventsProvider
-              value={{
-                companies,
-                watchlists,
-                companyEvents,
-                companyEventsError,
-                selectedCompanyEventId,
-                sourceRefreshState,
-                selectedSourceAdapterId,
-                sourceAdapterRefreshInFlight,
-                companyEventViewMode,
-                companyEventMode,
-                companyEventWeekRange,
-                companyEventWorkingWeekDays,
-                companyEventWeekendDays,
-                companyEventWeekendEvents,
-                companyEventsByDate,
-                companyEventWatchlistFilter,
-                companyEventCompanyFilter,
-                companyEventTypeFilter,
-                companyEventStatusFilter,
-                companyEventDateFrom,
-                companyEventDateTo,
-                companyEventTypes,
-                companyEventStatuses,
-                isCompanyEventComposerOpen,
-                companyEventForm,
-                companyEventCreateError,
-                companyEventTypeOptions,
-                companyEventStatusOptions,
-                refreshEventSources,
-                confirmDerivedEvent,
-                openCompanyEventComposer,
-                setCompanyEventViewMode,
-                setCompanyEventMode,
-                setCompanyEventWeekAnchorDate,
-                setCompanyEventWatchlistFilter,
-                setCompanyEventCompanyFilter,
-                setCompanyEventTypeFilter,
-                setCompanyEventStatusFilter,
-                setCompanyEventDateFrom,
-                setCompanyEventDateTo,
-                setCompanyEventComposerOpen,
-                setCompanyEventCreateError,
-                setCompanyEventForm,
-                setSelectedCompanyEventId,
-                clearCompanyEventFilters,
-                createCompanyEvent,
-                NotebookDateField,
-                formatLocalDate,
-                parseLocalDate,
-                addLocalDays,
-                formatWeekRange,
-                formatTimestamp,
-                formatCompanyEventType,
-                formatCompanyEventStatus,
-                formatCompanyEventSourceType,
-                companyEventDueLabel,
-                companyEventDueClass,
-                openExternalUrl,
-              }}
-            >
+            <EventsProvider value={eventsViewModel}>
               <EventsScreen />
             </EventsProvider>
           ) : null}
@@ -2005,6 +2102,7 @@ export function AppStateRoot({ initialLicenseStatus = null }: AppStateRootProps)
               <SettingsScreen />
             </SettingsScreenProvider>
           ) : null}
+          </ErrorBoundary>
 
         </section>
       </AppShell>

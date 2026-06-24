@@ -287,6 +287,68 @@ describe("Companies screen workflows", () => {
     expect(within(screen.getByLabelText("Company metadata")).getByText("PLOPTTC00011")).toBeInTheDocument();
   });
 
+  it("toggles the sidebar pin from the company workspace header (ADR 0054)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+
+    const workspace = await screen.findByLabelText("Company workspace");
+    // CD PROJEKT is pinned in the sample scenario, so the toggle reads "Pinned".
+    const pinToggle = within(workspace).getByRole("button", { name: "Pinned" });
+    expect(pinToggle).toHaveAttribute("aria-pressed", "true");
+
+    await user.click(pinToggle);
+
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith(
+        "update_settings",
+        expect.objectContaining({ input: expect.objectContaining({ pinnedCompanyIds: [] }) }),
+      );
+    });
+  });
+
+  it("writes a note full-screen in the Focus writer and exits on Esc (ADR 0054)", async () => {
+    const user = userEvent.setup();
+
+    appTestState.notebookEntriesResponse = [initialNotebookEntry];
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+    await user.click(screen.getByRole("button", { name: "Notebook" }));
+    await screen.findByLabelText("Company notebook");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    await user.click(screen.getByRole("button", { name: "Focus" }));
+    const writer = await screen.findByRole("dialog", { name: "Focus writer" });
+    expect(within(writer).getByLabelText("Note body")).toBeInTheDocument();
+
+    await user.keyboard("{Escape}");
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Focus writer" })).not.toBeInTheDocument(),
+    );
+  });
+
+  it("opens the company in the dockview advanced layout (ADR 0054)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR workspace" }));
+
+    const workspace = await screen.findByLabelText("Company workspace");
+    await user.click(within(workspace).getByRole("button", { name: "Advanced layout" }));
+
+    // The opt-in advanced layout is the dockview cockpit, carried forward as the
+    // workspace's advanced engine and scoped to the opened company.
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+  });
+
   it("runs company workspace navigation shortcuts", async () => {
     const user = userEvent.setup();
 

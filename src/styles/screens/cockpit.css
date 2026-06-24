@@ -1,0 +1,358 @@
+/*
+ * Research cockpit — dockview token bridge + full-screen canvas (ADR 0053).
+ *
+ * `.dockview-theme-brawler` maps dockview's --dv-* variables onto the night-neon
+ * semantic tokens (ADR 0006), so the docked canvas tracks every theme/palette
+ * combination with no hard-coded colors. Scoped to the theme class so it cannot
+ * affect anything else; dockview.css itself is fully .dv-/.dockview-scoped (no
+ * global leakage). Contained to the cockpit spike: if ADR 0053 is rejected,
+ * delete this file and its @import in src/styles.css.
+ */
+
+.dockview-theme-brawler {
+  /* group + tab surfaces */
+  --dv-group-view-background-color: var(--surface);
+  --dv-tabs-and-actions-container-background-color: var(--bg);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--surface);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--surface);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
+
+  /* borders + separators */
+  --dv-tab-divider-color: var(--border);
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-paneview-active-outline-color: var(--primary);
+  --dv-floating-border: 1px solid var(--border);
+  --dv-floating-group-border: 1px solid var(--border);
+
+  /* sashes (resize handles) + drag affordances */
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--primary);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--primary) 22%, transparent);
+  --dv-drag-over-border-color: var(--primary);
+  --dv-icon-hover-background-color: color-mix(in srgb, var(--text) 12%, transparent);
+
+  /* scrollbars + elevation */
+  --dv-scrollbar-background-color: var(--border);
+  --dv-tabs-container-scrollbar-color: var(--muted);
+  --dv-floating-box-shadow: var(--shadow);
+
+  /* metrics — match the app's rounded, dense feel */
+  --dv-tabs-and-actions-container-height: 38px;
+  --dv-tabs-and-actions-container-font-size: 13px;
+  --dv-tab-font-size: 13px;
+  --dv-border-radius: 8px;
+  --dv-tab-border-radius: 8px;
+  --dv-sash-border-radius: 8px;
+}
+
+/* Full-screen cockpit: a viewport-owning canvas — the correct host for docking
+ * (the rejected pilot's inline-list host forced fixed heights + nested scroll). */
+.cockpit-screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  gap: 0.5rem;
+}
+
+/* Compact toolbar so the docking canvas gets the vertical space (ADR 0053). */
+.cockpit-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cockpit-toolbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Command palette (⌘K) */
+.cockpit-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: min(32rem, 80vw);
+}
+
+.cockpit-palette-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 24rem;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cockpit-palette-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+}
+
+.cockpit-palette-item.is-active,
+.cockpit-palette-item:hover {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+}
+
+.cockpit-palette-empty {
+  color: var(--muted);
+  padding: 0.5rem 0.6rem;
+}
+
+.cockpit-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.cockpit-dock {
+  position: relative;
+  flex: 1;
+  min-height: 24rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.cockpit-pane {
+  height: 100%;
+  overflow: auto;
+  padding: 1rem;
+}
+
+/* Linked Feed panel (the triage queue) */
+.cockpit-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cockpit-feed-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+.cockpit-feed-item:hover {
+  border-color: color-mix(in srgb, var(--primary) 50%, var(--border));
+}
+
+.cockpit-feed-item[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+}
+
+.cockpit-feed-item:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.cockpit-feed-item.is-unread .cockpit-feed-title {
+  font-weight: 650;
+}
+
+/* Unread carries a leading accent dot, matching the real Inbox feed so a read
+   item is visually quiet (normal weight, no dot) and unread stands out. */
+.cockpit-feed-item.is-unread .cockpit-feed-title::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 999px;
+  background: var(--primary);
+  vertical-align: middle;
+}
+
+.cockpit-feed-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.cockpit-feed-title {
+  font-weight: 450;
+}
+
+.cockpit-feed-filter {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  padding-bottom: 0.25rem;
+}
+
+.cockpit-feed-time {
+  margin-left: auto;
+}
+
+/* Linked Inspector panel — read-rich, scannable: a strong ticker+title header,
+   a chip row of source/type/time, then summary and body as readable prose. */
+.cockpit-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  min-width: 0;
+}
+
+.cockpit-inspector-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.cockpit-inspector-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.cockpit-inspector-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cockpit-inspector-time {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.cockpit-inspector-attribution {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.cockpit-inspector-summary {
+  margin: 0;
+  color: var(--text);
+  font-weight: 550;
+  line-height: 1.55;
+}
+
+.cockpit-inspector-body {
+  margin: 0;
+  color: color-mix(in srgb, var(--text) 88%, transparent);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cockpit-inspector-attachments ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.cockpit-inspector-open {
+  align-self: flex-start;
+}
+
+/* Accessible tab — two sibling <button>s (activate + close) so screen readers
+ * and the keyboard understand the tab strip, replacing dockview's default div
+ * tab. aria-pressed carries the active state. */
+.cockpit-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 100%;
+  padding: 0 0.5rem;
+}
+
+.cockpit-tab-activate {
+  border: none;
+  background: transparent;
+  color: inherit;
+  white-space: nowrap;
+  padding: 0 0.25rem;
+  height: 100%;
+  border-radius: 4px;
+}
+
+.cockpit-tab-activate[aria-pressed="true"] {
+  box-shadow: inset 0 -2px 0 var(--primary);
+  color: var(--text);
+}
+
+.cockpit-tab-activate:focus-visible,
+.cockpit-tab-close:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.cockpit-tab-close {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0 0.2rem;
+  border-radius: 4px;
+}
+
+.cockpit-tab-close:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+/* Per-group header actions: maximize / float / pop-out-to-window. */
+.cockpit-group-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0 0.35rem;
+}
+
+.cockpit-group-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0.2rem;
+  border-radius: 4px;
+}
+
+.cockpit-group-actions button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.cockpit-group-actions button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
