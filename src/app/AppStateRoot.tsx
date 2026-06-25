@@ -270,22 +270,25 @@ export function AppStateRoot({
   const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
   const [createViewOpen, setCreateViewOpen] = useState(false);
+  const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<string | null>(null);
 
   // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
-  // layout. v1 persists an empty layout sized by the chosen grid (stored for the
-  // grid-render/palette step) and opens the Cockpit; parsePanels tolerates the
-  // empty descriptor, so loading is safe.
+  // layout. The view starts **empty** (every linked panel closed) and is sized by
+  // the chosen grid (stored for the grid-render step); on save it is **activated**
+  // — the Cockpit opens scrolled to it (initialLayoutId), ready to fill from the
+  // panel palette. parsePanels tolerates the descriptor, so loading is safe.
   function handleCreateView(spec: CreateViewSpec) {
     const panelsJson = JSON.stringify({
       pinned: [],
       openGlobals: [],
-      closedLinked: [],
+      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
       selectedFeedItemId: null,
       grid: { cols: spec.cols, rows: spec.rows },
     });
     void saveCockpitLayout({ name: spec.name, panelsJson, layoutJson: null, dockviewVersion: null })
-      .then(() => {
+      .then((layout) => {
         setCreateViewOpen(false);
+        setActiveCockpitLayoutId(layout.id);
         setActiveSection("Cockpit");
       })
       .catch(() => setCreateViewOpen(false));
@@ -1819,6 +1822,7 @@ export function AppStateRoot({
                         companies={companies}
                         feedItems={feedState}
                         initialCompanyId={cockpitInitialCompanyId}
+                        initialLayoutId={activeCockpitLayoutId}
                       />
                     </EventsProvider>
                   </ReportSeasonProvider>

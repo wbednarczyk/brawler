@@ -188,21 +188,36 @@ export type CockpitScreenProps = {
   feedItems: FeedItem[];
   /** When set, the cockpit (Advanced layout) opens scoped to this company. */
   initialCompanyId?: string | null;
+  /** When set, the cockpit opens with this saved layout activated (ADR 0057). */
+  initialLayoutId?: string | null;
 };
 
-export function CockpitScreen({ companies, feedItems, initialCompanyId = null }: CockpitScreenProps) {
+export function CockpitScreen({
+  companies,
+  feedItems,
+  initialCompanyId = null,
+  initialLayoutId = null,
+}: CockpitScreenProps) {
   return (
     <CockpitSelectionProvider
       companies={companies}
       feedItems={feedItems}
       initialCompanyId={initialCompanyId}
     >
-      <CockpitWorkspace companies={companies} feedItems={feedItems} />
+      <CockpitWorkspace
+        companies={companies}
+        feedItems={feedItems}
+        initialLayoutId={initialLayoutId}
+      />
     </CockpitSelectionProvider>
   );
 }
 
-function CockpitWorkspace({ companies, feedItems }: Omit<CockpitScreenProps, "initialCompanyId">) {
+function CockpitWorkspace({
+  companies,
+  feedItems,
+  initialLayoutId = null,
+}: Omit<CockpitScreenProps, "initialCompanyId">) {
   const { text } = useLocale();
   // Shared selection lives in the cockpit store (decision 6A), not local state.
   const { selection, selectedFeedItem, selectedCompany, selectFeedItem } = useCockpitSelection();
@@ -248,6 +263,19 @@ function CockpitWorkspace({ companies, feedItems }: Omit<CockpitScreenProps, "in
     dockRef.current?.restore(pendingGeometry as never);
     setPendingGeometry(null);
   }, [pendingGeometry]);
+
+  // Activate the requested saved layout once it has loaded (ADR 0057): a view
+  // created via the "+" opens with that layout. Applied once per id.
+  const appliedLayoutRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialLayoutId || appliedLayoutRef.current === initialLayoutId) return;
+    const layout = savedLayouts.find((item) => item.id === initialLayoutId);
+    if (layout) {
+      appliedLayoutRef.current = initialLayoutId;
+      applyLayout(layout);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply once per id when savedLayouts loads it; applyLayout is a non-memoized component fn intentionally excluded
+  }, [initialLayoutId, savedLayouts]);
 
   function renderLinked(kind: LinkedKind) {
     switch (kind) {
