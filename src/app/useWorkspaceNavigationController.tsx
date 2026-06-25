@@ -1,7 +1,6 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import { ExternalLink, Inbox } from "lucide-react";
 import type { Company, FeedItem, NotebookOrigin } from "../api/types";
-import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import type { Section } from "./navigation";
 
@@ -11,7 +10,6 @@ type WorkspaceNavigationControllerInput = {
   selectedCompanyFeedItemId: string | null;
   selectedCompanyId: string | null;
   setActiveSection: Dispatch<SetStateAction<Section>>;
-  setCompanyWorkspaceTab: Dispatch<SetStateAction<CompanyWorkspaceTab>>;
   setInboxCompanyFilter: Dispatch<SetStateAction<string>>;
   setInboxSourceFilter: Dispatch<SetStateAction<string>>;
   setInboxStatusFilter: Dispatch<SetStateAction<InboxStatusFilter>>;
@@ -21,6 +19,7 @@ type WorkspaceNavigationControllerInput = {
   setSelectedCompanyFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
+  setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
 };
 
 export function useWorkspaceNavigationController({
@@ -29,7 +28,6 @@ export function useWorkspaceNavigationController({
   selectedCompanyFeedItemId,
   selectedCompanyId,
   setActiveSection,
-  setCompanyWorkspaceTab,
   setInboxCompanyFilter,
   setInboxSourceFilter,
   setInboxStatusFilter,
@@ -39,17 +37,21 @@ export function useWorkspaceNavigationController({
   setSelectedCompanyFeedItemId,
   setSelectedCompanyId,
   setSelectedFeedItemId,
+  setCockpitInitialCompanyId,
 }: WorkspaceNavigationControllerInput) {
+  // Opening a company lands the curated dashboard scoped to it (ADR 0057): the
+  // cockpit is the single company deep-dive, replacing the retired tabbed
+  // workspace. The library selection is kept in sync so the row stays highlighted.
   function openCompanyWorkspace(company: Company) {
-    setSelectedCompanyId((current) => (current === company.id ? null : company.id));
-    setCompanyWorkspaceTab("Feed");
-    setActiveSection("Companies");
+    setSelectedCompanyId(company.id);
+    setCockpitInitialCompanyId(company.id);
+    setActiveSection("Cockpit");
   }
 
+  // Arrow-key navigation in the company library only moves the highlighted row;
+  // it must not yank the whole app into the cockpit on every keypress.
   function focusCompanyWorkspace(companyId: string) {
     setSelectedCompanyId(companyId);
-    setCompanyWorkspaceTab("Feed");
-    setActiveSection("Companies");
   }
 
   function openCompanyWorkspaceFromKeyboard(event: KeyboardEvent<HTMLElement>, company: Company) {

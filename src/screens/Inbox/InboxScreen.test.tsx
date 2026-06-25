@@ -212,7 +212,7 @@ describe("Inbox screen workflows", () => {
     }
   });
 
-  it("opens the matching company workspace from an inbox feed item", async () => {
+  it("opens the matching company dashboard from an inbox feed item (ADR 0057)", async () => {
     const user = userEvent.setup();
 
     renderApp();
@@ -220,12 +220,8 @@ describe("Inbox screen workflows", () => {
     await screen.findByLabelText("Feed item details");
     await user.click(screen.getByRole("button", { name: "Open company" }));
 
-    expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
-    expect(await screen.findByLabelText("Company workspace")).toBeInTheDocument();
-    expect(screen.getByLabelText("Company feed item details")).toBeInTheDocument();
-    expect(screen.getByRole("button", {
-      name: "Open company feed item: Current report placeholder for watchlist company",
-    })).toHaveClass("company-feed-row-selected");
+    // "Open company" lands the curated cockpit dashboard scoped to the company.
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
   });
 
   it("creates a notebook draft from an inbox feed item with feed origins", async () => {

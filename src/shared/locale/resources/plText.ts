@@ -479,6 +479,7 @@ export const plText: Record<string, string> = {
   "Companies list": "Lista spółek",
   "Open": "Otwórz",
   "workspace": "obszar roboczy",
+  "dashboard": "pulpit",
   "Watchlist memberships for": "Członkostwa na listach obserwowanych dla",
   "No watchlist": "Brak listy obserwowanej",
   "Open watchlist": "Otwórz listę obserwowaną",

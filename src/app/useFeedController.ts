@@ -1,7 +1,6 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import * as feedApi from "../api/feed";
 import type { Company, FeedItem } from "../api/types";
-import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import type { Section } from "./navigation";
 
@@ -10,7 +9,7 @@ type FeedControllerInput = {
   filteredFeedItems: FeedItem[];
   selectedFeedItem: FeedItem | null;
   setActiveSection: Dispatch<SetStateAction<Section>>;
-  setCompanyWorkspaceTab: Dispatch<SetStateAction<CompanyWorkspaceTab>>;
+  setCockpitInitialCompanyId: Dispatch<SetStateAction<string | null>>;
   setFeedError: Dispatch<SetStateAction<string | null>>;
   setFeedState: Dispatch<SetStateAction<FeedItem[]>>;
   setInboxCompanyFilter: Dispatch<SetStateAction<string>>;
@@ -23,7 +22,6 @@ type FeedControllerInput = {
   setSelectedCompanyFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
-  setWorkspaceAutoFocusId: Dispatch<SetStateAction<string | null>>;
 };
 
 export function useFeedController({
@@ -31,7 +29,7 @@ export function useFeedController({
   filteredFeedItems,
   selectedFeedItem,
   setActiveSection,
-  setCompanyWorkspaceTab,
+  setCockpitInitialCompanyId,
   setFeedError,
   setFeedState,
   setInboxCompanyFilter,
@@ -44,7 +42,6 @@ export function useFeedController({
   setSelectedCompanyFeedItemId,
   setSelectedCompanyId,
   setSelectedFeedItemId,
-  setWorkspaceAutoFocusId,
 }: FeedControllerInput) {
   function updateFeedItemState(item: FeedItem, update: (item: FeedItem) => FeedItem) {
     const nextItem = update(item);
@@ -150,14 +147,12 @@ export function useFeedController({
       return;
     }
 
+    // Opening a company from a feed item lands the curated cockpit dashboard
+    // scoped to it (ADR 0057), replacing the retired tabbed workspace.
     setSelectedCompanyId(company.id);
     setSelectedCompanyFeedItemId(item.id);
-    setCompanyWorkspaceTab("Feed");
-    setActiveSection("Companies");
-    // Signal the (cross-screen) workspace to scroll into view and take focus on
-    // open. Only this path requests it — in-list click/keyboard navigation must
-    // not steal focus from the company list.
-    setWorkspaceAutoFocusId(company.id);
+    setCockpitInitialCompanyId(company.id);
+    setActiveSection("Cockpit");
   }
 
   function inspectCompanyFeedItem(item: FeedItem) {
