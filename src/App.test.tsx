@@ -44,9 +44,20 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     await user.type(await screen.findByLabelText("View name"), "Earnings");
     await user.click(screen.getByRole("button", { name: /Create view/i }));
 
-    // The saved view appears in the Modes group and the empty view prompts to add panels.
+    // The saved view appears in the Modes group and opens pre-split into grid
+    // cells, each with a "Pick a panel" button (ADR 0057).
     expect(await within(nav).findByRole("button", { name: "Earnings" })).toBeInTheDocument();
-    expect(await screen.findByText("This view is empty.")).toBeInTheDocument();
+    const cells = await screen.findAllByRole("button", { name: "Pick a panel" });
+    expect(cells.length).toBeGreaterThan(0);
+
+    // Picking a panel for a cell fills it in place (one fewer empty cell, a new
+    // panel tab appears).
+    await user.click(cells[0]);
+    await user.type(await screen.findByLabelText("Search commands"), "Fundamentals");
+    await user.keyboard("{Enter}");
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "Pick a panel" }).length).toBe(cells.length - 1),
+    );
 
     // The view can be deleted from its sidebar entry.
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);

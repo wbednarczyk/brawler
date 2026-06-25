@@ -1152,6 +1152,8 @@ export const plText: Record<string, string> = {
   "Open panel": "Otwórz panel",
   "Panel": "Panel",
   "Add panel": "Dodaj panel",
+  "Pick a panel": "Wybierz panel",
+  "Empty cell": "Pusta komórka",
   "This view is empty.": "Ten widok jest pusty.",
   "Add panels to build your view — pick a pre-built panel from the palette.": "Dodaj panele, aby zbudować widok — wybierz gotowy panel z palety.",
   "Reset layout": "Resetuj układ",
