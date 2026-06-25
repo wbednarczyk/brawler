@@ -2,21 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import {
   BookOpenText,
   CheckCircle2,
-  ExternalLink,
   FileText,
   Gauge,
   Inbox,
   LayoutGrid,
-  Mail,
-  MailOpen,
-  Maximize2,
   Pin,
   PinOff,
-  Plus,
-  Save,
   TrendingUp,
   Video,
-  X,
 } from "lucide-react";
 import type { Company } from "../../api/types";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
@@ -25,30 +18,20 @@ import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
 import { ReportDiffPanel } from "./ReportDiffPanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
-import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { useAiAnalysisProviderConfigured, usePinnedCompanyIds } from "../../app/state/SettingsContext";
+import { usePinnedCompanyIds } from "../../app/state/SettingsContext";
 import {
-  ActionRow,
   Button,
-  ChipList,
-  DenseRow,
   EmptyState,
-  ErrorText,
-  FocusOverlay,
   InfoGrid,
-  SectionHeader,
   SegmentedControl,
   SegmentedControlOption,
-  SelectField,
-  StatusChip,
-  StatusPill,
-  TextareaField,
-  TextField,
 } from "../../ui";
 import type { CompaniesScreenProps } from "./CompaniesScreen";
 import { FundamentalsPanel } from "./FundamentalsPanel";
+import { CompanyFeedSection } from "./CompanyFeedSection";
+import { CompanyNotebookSection } from "./CompanyNotebookSection";
 import type { FinancialFactForm, FundamentalsForm } from "../../app/useFundamentalsController";
 
 type CompanyWorkspaceProps = Pick<
@@ -182,10 +165,7 @@ export function CompanyWorkspace({
   updateFinancialFactForm,
 }: CompanyWorkspaceProps) {
   const { text } = useLocale();
-  const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
   const isPinned = usePinnedCompanyIds().includes(selectedCompany.id);
-  // Distraction-free full-screen note authoring (Focus writer, ADR 0054).
-  const [writerOpen, setWriterOpen] = useState(false);
   const selectedCompanyMemberships = membershipsByCompany[selectedCompany.id] ?? [];
   const workspaceRef = useRef<HTMLElement>(null);
   // Bumped when a backfill finishes so the report-documents panel reloads.
@@ -297,538 +277,52 @@ export function CompanyWorkspace({
       </SegmentedControl>
     
       {companyWorkspaceTab === "Feed" ? (
-        <div
-          className="company-tab-panel"
-          aria-label={text("Company feed")}
-          data-company-feed-list="true"
-        >
-          {selectedCompanyFeedItems.map((item) => (
-            <div className="company-feed-row-block" key={item.id}>
-              <DenseRow
-                aria-label={`${text("Open company feed item")}: ${item.title}`}
-                className={[
-                  "company-feed-row",
-                  item.unread ? "unread" : "",
-                  selectedCompanyFeedItem?.id === item.id
-                    ? "company-feed-row-selected"
-                    : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                data-company-feed-item-id={item.id}
-                data-company-feed-row="true"
-                onClick={() => toggleCompanyFeedItem(item)}
-                onKeyDown={(event) => selectCompanyFeedItemFromKeyboard(event, item)}
-                role="button"
-                selected={selectedCompanyFeedItem?.id === item.id}
-                tabIndex={0}
-                title={text("Open company feed item details")}
-                unread={item.unread}
-              >
-                <div className="feed-row-main">
-                  <div className="feed-meta">
-                    <span>{item.type}</span>
-                    <span>{item.source}</span>
-                    <span>{formatTimestamp(item.time, text("Unknown"))}</span>
-                  </div>
-                  <h3>{item.title}</h3>
-                  <p>{feedItemSummary(item)}</p>
-                </div>
-                {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
-                {item.unread ? <span className="unread-dot" title={text("Unread")} /> : null}
-              </DenseRow>
-    
-              {selectedCompanyFeedItem?.id === item.id ? (
-                <aside className="company-feed-detail" aria-label={text("Company feed item details")}>
-                  <div>
-                    <span className="eyebrow">{text("Selected item")}</span>
-                    <h3>{selectedCompanyFeedItem.title}</h3>
-                    <section className="feed-body-section" aria-label={text("Feed summary")}>
-                      <div className="feed-body-heading">
-                        <span>{text("Summary")}</span>
-                      </div>
-                      <p className="feed-detail-body">{feedItemSummary(selectedCompanyFeedItem)}</p>
-                    </section>
-                    <details className="feed-body-section feed-body-disclosure" aria-label={text("Official report body")}>
-                      <summary className="feed-body-heading">
-                        <span>{text("Official report body")}</span>
-                        <strong>{selectedCompanyFeedItem.bodyText ? text("Stored") : text("Not stored")}</strong>
-                      </summary>
-                      {selectedCompanyFeedItem.bodyText ? (
-                        <p className="feed-detail-body">{selectedCompanyFeedItem.bodyText}</p>
-                      ) : (
-                        <p className="feed-detail-empty">
-                          {text("No official report body is stored for this item yet. Refresh sources and check Sources for detail warnings if this remains empty.")}
-                        </p>
-                      )}
-                    </details>
-                  </div>
-                  <ActionRow className="detail-actions" ariaLabel={text("Company feed item actions")}>
-                    <Button
-                      className="compact-button"
-                      onClick={() =>
-                        updateFeedItemState(selectedCompanyFeedItem, (feedItem) => ({
-                          ...feedItem,
-                          unread: !feedItem.unread,
-                        }))
-                      }
-                    >
-                      {selectedCompanyFeedItem.unread ? (
-                        <MailOpen size={15} />
-                      ) : (
-                        <Mail size={15} />
-                      )}
-                      {selectedCompanyFeedItem.unread ? text("Mark read") : text("Mark unread")}
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      onClick={() =>
-                        updateFeedItemState(selectedCompanyFeedItem, (feedItem) => ({
-                          ...feedItem,
-                          saved: !feedItem.saved,
-                        }))
-                      }
-                    >
-                      <Save size={15} />
-                      {selectedCompanyFeedItem.saved ? text("Unsave") : text("Save")}
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      onClick={() => inspectCompanyFeedItem(selectedCompanyFeedItem)}
-                    >
-                      <Inbox size={15} />
-                      {text("Open in Inbox")}
-                    </Button>
-                    <Button
-                      className="compact-button"
-                      onClick={() => openFeedItemNoteDraft(selectedCompanyFeedItem)}
-                    >
-                      <BookOpenText size={15} />
-                      {text("Note")}
-                    </Button>
-                    <a
-                      className="secondary-button compact-button"
-                      href={selectedCompanyFeedItem.sourceUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      <ExternalLink size={15} />
-                      {text("Open source")}
-                    </a>
-                  </ActionRow>
-                  <InfoGrid
-                    className="metadata-grid"
-                    items={[
-                      { label: text("Source"), value: selectedCompanyFeedItem.source },
-                      { label: text("Type"), value: selectedCompanyFeedItem.type },
-                      {
-                        label: text("Published"),
-                        value: formatTimestamp(selectedCompanyFeedItem.publishedAt, text("Unknown")),
-                      },
-                      {
-                        label: text("Fetched"),
-                        value: formatTimestamp(selectedCompanyFeedItem.fetchedAt, text("Unknown")),
-                      },
-                      { label: text("Attribution"), value: selectedCompanyFeedItem.attribution },
-                      { label: text("Language"), value: selectedCompanyFeedItem.language },
-                    ]}
-                  />
-                  {selectedCompanyFeedItem.attachments.length > 0 ? (
-                    <div className="feed-attachment-list" aria-label={text("Company feed attachments")}>
-                      {selectedCompanyFeedItem.attachments.map((attachment) => (
-                        <a
-                          className="feed-attachment-link"
-                          href={attachment.url}
-                          key={attachment.id}
-                          rel="noreferrer"
-                          target="_blank"
-                        >
-                          <ExternalLink size={14} />
-                          {attachment.label}
-                        </a>
-                      ))}
-                    </div>
-                  ) : null}
-                  <FeedAiAnalysisPanel
-                    feedItem={selectedCompanyFeedItem}
-                    jobs={aiAnalysisJobsByFeedItemId[selectedCompanyFeedItem.id] ?? []}
-                    error={aiAnalysisErrorByFeedItemId[selectedCompanyFeedItem.id] ?? null}
-                    providerConfigured={aiAnalysisProviderConfigured}
-                    requestInFlight={aiAnalysisRequestInFlightByFeedItemId[selectedCompanyFeedItem.id] ?? false}
-                    onStart={startFeedItemAiAnalysis}
-                    onRetry={retryFeedItemAiAnalysis}
-                  />
-                </aside>
-              ) : null}
-            </div>
-          ))}
-          {selectedCompanyFeedItems.length === 0 ? (
-            <EmptyState className="company-feed-empty" wrapText={false}>
-              <div>
-                <strong>{text("No stored feed items for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</strong>
-                <p>
-                  {text("This company is tracked, but no sample or ingested items are attached to it yet.")}
-                </p>
-              </div>
-              <Button
-                className="compact-button"
-                onClick={() => openCompanyInboxFilter(selectedCompany)}
-            >
-              <Inbox size={15} />
-              {text("Open filtered Inbox")}
-            </Button>
-            </EmptyState>
-          ) : null}
-        </div>
+        <CompanyFeedSection
+          company={selectedCompany}
+          feedItems={selectedCompanyFeedItems}
+          selectedFeedItem={selectedCompanyFeedItem}
+          aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}
+          aiAnalysisErrorByFeedItemId={aiAnalysisErrorByFeedItemId}
+          aiAnalysisRequestInFlightByFeedItemId={aiAnalysisRequestInFlightByFeedItemId}
+          toggleFeedItem={toggleCompanyFeedItem}
+          selectFeedItemFromKeyboard={selectCompanyFeedItemFromKeyboard}
+          updateFeedItemState={updateFeedItemState}
+          inspectFeedItem={inspectCompanyFeedItem}
+          openFeedItemNoteDraft={openFeedItemNoteDraft}
+          startFeedItemAiAnalysis={startFeedItemAiAnalysis}
+          retryFeedItemAiAnalysis={retryFeedItemAiAnalysis}
+          openInboxFilter={openCompanyInboxFilter}
+          formatTimestamp={formatTimestamp}
+          feedItemSummary={feedItemSummary}
+        />
       ) : null}
     
       {companyWorkspaceTab === "Notebook" ? (
-        <div className="company-tab-panel notebook-panel" aria-label={text("Company notebook")}>
-          <SectionHeader
-            level="h3"
-            title={text("Notebook")}
-            description={
-              <>
-                {selectedCompanyNotebookEntries.length} {text(selectedCompanyNotebookEntries.length === 1 ? "note" : "notes")} {text("for")}{" "}
-                <TickerLabel value={selectedCompany.qualifiedTicker} />
-              </>
-            }
-            actions={
-              <Button
-                className="compact-button"
-                onClick={() => setNotebookComposerOpen((current) => !current)}
-                variant="primary"
-              >
-                {isNotebookComposerOpen ? <X size={15} /> : <Plus size={15} />}
-                {isNotebookComposerOpen ? text("Hide form") : text("New note")}
-              </Button>
-            }
-          />
-    
-          {isNotebookComposerOpen ? (
-            <form className="notebook-form" onSubmit={createNotebookEntry}>
-              <div className="notebook-form-grid">
-                <TextField
-                  label={text("Title")}
-                  aria-label={text("Notebook note title")}
-                  value={notebookForm.title}
-                  onChange={(event) => updateNotebookForm("title", event.target.value)}
-                />
-                <SelectField
-                  label={text("Kind")}
-                  aria-label={text("Notebook note kind")}
-                  value={notebookForm.kind}
-                  onChange={(event) => updateNotebookForm("kind", event.target.value)}
-                >
-                  <option value="manual">{text("Manual")}</option>
-                  <option value="observation">{text("Observation")}</option>
-                  <option value="claim">{text("Claim")}</option>
-                  <option value="question">{text("Question")}</option>
-                  <option value="follow_up">{text("Follow-up")}</option>
-                </SelectField>
-                <TextField
-                  label={text("Tags")}
-                  aria-label={text("Notebook note tags")}
-                  placeholder={text("comma, separated")}
-                  value={notebookForm.tags}
-                  onChange={(event) => updateNotebookForm("tags", event.target.value)}
-                />
-                <SelectField
-                  label={text("Claim status")}
-                  aria-label={text("Notebook claim status")}
-                  value={notebookForm.claimStatus}
-                  onChange={(event) => updateNotebookForm("claimStatus", event.target.value)}
-                >
-                  <option value="">{text("None")}</option>
-                  <option value="open">{text("Status open")}</option>
-                  <option value="delivered">{text("Delivered")}</option>
-                  <option value="partially_delivered">{text("Partially delivered")}</option>
-                  <option value="missed">{text("Missed")}</option>
-                  <option value="unknown">{text("Unknown")}</option>
-                  <option value="not_applicable">{text("Not applicable")}</option>
-                </SelectField>
-                <NotebookDateField
-                  ariaLabel={text("Notebook event date")}
-                  label={text("Event date")}
-                  value={notebookForm.eventDate}
-                  onChange={(value) => updateNotebookForm("eventDate", value)}
-                />
-                <NotebookQuarterField
-                  ariaLabel={text("Notebook follow-up quarter")}
-                  label={text("Follow-up quarter")}
-                  value={notebookForm.followUpAfter}
-                  onChange={(value) => updateNotebookForm("followUpAfter", value)}
-                />
-                <NotebookDateField
-                  ariaLabel={text("Notebook follow-up date")}
-                  label={text("Follow-up date")}
-                  value={notebookForm.followUpDate}
-                  onChange={(value) => updateNotebookForm("followUpDate", value)}
-                />
-                <Button
-                  className="compact-button notebook-submit-button"
-                  disabled={!notebookForm.title.trim() || !notebookForm.body.trim()}
-                  type="submit"
-                  variant="primary"
-                >
-                  <Save size={15} />
-                  {text("Save")}
-                </Button>
-              </div>
-              <TextareaField
-                className="notebook-body-field"
-                label={text("Body")}
-                aria-label={text("Notebook note body")}
-                value={notebookForm.body}
-                onChange={(event) => updateNotebookForm("body", event.target.value)}
-              />
-            </form>
-          ) : null}
-    
-          <div className="notebook-workspace">
-            <div className="notebook-list" aria-label={text("Notebook entries")}>
-              {selectedCompanyNotebookEntries.map((entry) => (
-                <button
-                  aria-label={`${text("Select notebook entry")}: ${entry.title}`}
-                  className={[
-                    "notebook-row",
-                    selectedNotebookEntry?.id === entry.id ? "notebook-row-selected" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  key={entry.id}
-                  onClick={() => setSelectedNotebookEntryId(entry.id)}
-                  type="button"
-                >
-                  <div>
-                    <div className="notebook-row-top">
-                      <h3>{entry.title}</h3>
-                      <span>{entry.kind.replace("_", " ")}</span>
-                    </div>
-                  </div>
-                  <div className="notebook-row-meta">
-                    {entry.claimStatus ? <span>{entry.claimStatus.replace("_", " ")}</span> : null}
-                    {entry.followUpAfter ? <span>{entry.followUpAfter}</span> : null}
-                    {entry.tags.slice(0, 2).map((tag) => (
-                      <span key={tag}>{tag}</span>
-                    ))}
-                  </div>
-                </button>
-              ))}
-              {selectedCompanyNotebookEntries.length === 0 ? (
-                <EmptyState>{text("No notebook entries for")} <TickerLabel value={selectedCompany.qualifiedTicker} /> {text("yet.")}</EmptyState>
-              ) : null}
-            </div>
-            <form
-              className="notebook-detail"
-              aria-label={text("Notebook entry detail")}
-              onSubmit={saveNotebookEntry}
-            >
-              {selectedNotebookEntry ? (
-                notebookEditMode ? (
-                  <>
-                    <div className="notebook-entry-header">
-                      <TextField
-                        label={text("Title")}
-                        aria-label={text("Selected notebook title")}
-                        value={notebookEditForm.title}
-                        onChange={(event) =>
-                          updateNotebookEditForm("title", event.target.value)
-                        }
-                      />
-                      <ActionRow className="notebook-detail-actions">
-                        <Button
-                          className="compact-button"
-                          type="button"
-                          onClick={() => setWriterOpen(true)}
-                          title={text("Write full-screen, distraction-free")}
-                        >
-                          <Maximize2 size={15} />
-                          {text("Focus")}
-                        </Button>
-                        <Button
-                          className="compact-button"
-                          onClick={cancelNotebookEdit}
-                        >
-                          <X size={15} />
-                          {text("Cancel")}
-                        </Button>
-                        <Button
-                          className="compact-button"
-                          disabled={
-                            !isNotebookEditDirty ||
-                            !notebookEditForm.title.trim() ||
-                            !notebookEditForm.body.trim()
-                          }
-                          type="submit"
-                          variant="primary"
-                        >
-                          <Save size={15} />
-                          {text("Save")}
-                        </Button>
-                      </ActionRow>
-                    </div>
-                    <TextareaField
-                      aria-label={text("Selected notebook body")}
-                      value={notebookEditForm.body}
-                      onChange={(event) => updateNotebookEditForm("body", event.target.value)}
-                    />
-                    <FocusOverlay
-                      open={writerOpen}
-                      onClose={() => setWriterOpen(false)}
-                      eyebrow={<TickerLabel value={selectedCompany.qualifiedTicker} />}
-                      title={notebookEditForm.title.trim() ? notebookEditForm.title : text("Untitled note")}
-                      ariaLabel={text("Focus writer")}
-                      actions={
-                        <Button
-                          form="notebook-writer-form"
-                          type="submit"
-                          variant="primary"
-                          disabled={
-                            !isNotebookEditDirty ||
-                            !notebookEditForm.title.trim() ||
-                            !notebookEditForm.body.trim()
-                          }
-                        >
-                          <Save size={15} />
-                          {text("Save")}
-                        </Button>
-                      }
-                    >
-                      <form
-                        id="notebook-writer-form"
-                        className="notebook-writer"
-                        onSubmit={(event) => {
-                          saveNotebookEntry(event);
-                          setWriterOpen(false);
-                        }}
-                      >
-                        <TextField
-                          aria-label={text("Note title")}
-                          value={notebookEditForm.title}
-                          onChange={(event) => updateNotebookEditForm("title", event.target.value)}
-                        />
-                        <TextareaField
-                          textareaClassName="notebook-writer-body"
-                          aria-label={text("Note body")}
-                          value={notebookEditForm.body}
-                          onChange={(event) => updateNotebookEditForm("body", event.target.value)}
-                        />
-                      </form>
-                    </FocusOverlay>
-                    <div className="notebook-detail-grid">
-                      <SelectField
-                        label={text("Kind")}
-                        aria-label={text("Selected notebook kind")}
-                        value={notebookEditForm.kind}
-                        onChange={(event) => updateNotebookEditForm("kind", event.target.value)}
-                      >
-                        <option value="manual">{text("Manual")}</option>
-                        <option value="observation">{text("Observation")}</option>
-                        <option value="claim">{text("Claim")}</option>
-                        <option value="question">{text("Question")}</option>
-                        <option value="follow_up">{text("Follow-up")}</option>
-                      </SelectField>
-                      <SelectField
-                        label={text("Claim status")}
-                        aria-label={text("Selected notebook claim status")}
-                        value={notebookEditForm.claimStatus}
-                        onChange={(event) =>
-                          updateNotebookEditForm("claimStatus", event.target.value)
-                        }
-                      >
-                        <option value="">{text("None")}</option>
-                        <option value="open">{text("Status open")}</option>
-                        <option value="delivered">{text("Delivered")}</option>
-                        <option value="partially_delivered">{text("Partially delivered")}</option>
-                        <option value="missed">{text("Missed")}</option>
-                        <option value="unknown">{text("Unknown")}</option>
-                        <option value="not_applicable">{text("Not applicable")}</option>
-                      </SelectField>
-                      <TextField
-                        label={text("Tags")}
-                        aria-label={text("Selected notebook tags")}
-                        value={notebookEditForm.tags}
-                        onChange={(event) => updateNotebookEditForm("tags", event.target.value)}
-                      />
-                      <NotebookDateField
-                        ariaLabel={text("Selected notebook event date")}
-                        label={text("Event date")}
-                        value={notebookEditForm.eventDate}
-                        onChange={(value) => updateNotebookEditForm("eventDate", value)}
-                      />
-                      <NotebookQuarterField
-                        ariaLabel={text("Selected notebook follow-up quarter")}
-                        label={text("Follow-up quarter")}
-                        value={notebookEditForm.followUpAfter}
-                        onChange={(value) => updateNotebookEditForm("followUpAfter", value)}
-                      />
-                      <NotebookDateField
-                        ariaLabel={text("Selected notebook follow-up date")}
-                        label={text("Follow-up date")}
-                        value={notebookEditForm.followUpDate}
-                        onChange={(value) => updateNotebookEditForm("followUpDate", value)}
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="notebook-entry-header">
-                      <div>
-                        <span className="eyebrow">
-                          {selectedNotebookEntry.kind.replace("_", " ")}
-                        </span>
-                        <h3>{selectedNotebookEntry.title}</h3>
-                      </div>
-                      <Button
-                        className="compact-button"
-                        onClick={() => setNotebookEditMode(true)}
-                      >
-                        <BookOpenText size={15} />
-                        {text("Edit")}
-                      </Button>
-                    </div>
-                    <MarkdownNoteBody
-                      ariaLabel={text("Selected notebook body")}
-                      body={selectedNotebookEntry.body}
-                    />
-                  </>
-                )
-              ) : (
-                  <EmptyState>{text("Select a note to inspect it.")}</EmptyState>
-              )}
-              {selectedNotebookEntry ? (
-                <>
-                  <ChipList ariaLabel={`${text("Tags for")} ${selectedNotebookEntry.title}`}>
-                    {selectedNotebookEntry.tags.map((tag) => (
-                      <StatusPill key={tag}>{tag}</StatusPill>
-                    ))}
-                    {selectedNotebookEntry.tags.length === 0 ? (
-                      <span className="membership-empty">{text("No tags")}</span>
-                    ) : null}
-                  </ChipList>
-                  <InfoGrid
-                    className="metadata-grid notebook-entry-meta"
-                    items={[
-                      { label: text("Status"), value: selectedNotebookEntry.claimStatus ?? text("Not set") },
-                      { label: text("Event"), value: selectedNotebookEntry.eventDate ?? text("Not set") },
-                      { label: text("Follow-up quarter"), value: selectedNotebookEntry.followUpAfter ?? text("Not set") },
-                      { label: text("Follow-up date"), value: selectedNotebookEntry.followUpDate ?? text("Not set") },
-                      {
-                        label: text("Origin"),
-                        value: renderNotebookOrigins(selectedNotebookEntry.origins, selectedNotebookEntry.companyId),
-                      },
-                    ]}
-                  />
-                </>
-              ) : null}
-            </form>
-          </div>
-          {notebookError ? (
-            <ErrorText>{text("Notebook command failed")}: {notebookError}</ErrorText>
-          ) : null}
-        </div>
+        <CompanyNotebookSection
+          company={selectedCompany}
+          notebookEntries={selectedCompanyNotebookEntries}
+          isComposerOpen={isNotebookComposerOpen}
+          notebookForm={notebookForm}
+          selectedNotebookEntry={selectedNotebookEntry}
+          notebookEditMode={notebookEditMode}
+          notebookEditForm={notebookEditForm}
+          isNotebookEditDirty={isNotebookEditDirty}
+          notebookError={notebookError}
+          setComposerOpen={setNotebookComposerOpen}
+          updateNotebookForm={updateNotebookForm}
+          createNotebookEntry={createNotebookEntry}
+          setSelectedNotebookEntryId={setSelectedNotebookEntryId}
+          saveNotebookEntry={saveNotebookEntry}
+          cancelNotebookEdit={cancelNotebookEdit}
+          setNotebookEditMode={setNotebookEditMode}
+          updateNotebookEditForm={updateNotebookEditForm}
+          NotebookDateField={NotebookDateField}
+          NotebookQuarterField={NotebookQuarterField}
+          MarkdownNoteBody={MarkdownNoteBody}
+          renderNotebookOrigins={renderNotebookOrigins}
+        />
       ) : null}
+
     
       {companyWorkspaceTab === "Claims" ? (
         <div className="company-tab-panel claims-panel" aria-label={text("Company claims")}>
