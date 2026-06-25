@@ -41,6 +41,21 @@ describe("Research cockpit shell", () => {
     expect(qualityTabs.length).toBeGreaterThan(0);
   });
 
+  it("opens a company directly into its curated dashboard panels (ADR 0057)", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(await screen.findByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    // The dashboard renders the company-scoped panels (not the default linked
+    // triad) — so its tabs are present and the linked Inspector is not.
+    expect((await within(cockpit).findAllByRole("button", { name: /· Fundamentals/ })).length).toBeGreaterThan(0);
+    expect(within(cockpit).getAllByRole("button", { name: /· Notebook/ }).length).toBeGreaterThan(0);
+    expect(within(cockpit).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
+  });
+
   it("closes the active panel from the keyboard (Alt+W)", async () => {
     const user = userEvent.setup();
     renderApp();

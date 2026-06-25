@@ -132,6 +132,22 @@ const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = [
   "companyNotebook",
 ];
 
+// The curated dashboard uses the company-scoped panels only, so every
+// selection-driven linked panel (feed/inspector/claims-sel/diff-sel) is closed —
+// the company feed is covered by the `companyFeed` panel.
+const DASHBOARD_CLOSED_LINKED = ["feed", "inspector", "claims-sel", "diff-sel"];
+
+function dashboardPinned(companyId: string): Pinned[] {
+  return DASHBOARD_DEFAULT_KINDS.map((kind) => ({ id: pinnedId(companyId, kind), companyId, kind }));
+}
+
+function isDashboardPinnedFor(pinned: Pinned[], companyId: string): boolean {
+  return (
+    pinned.length === DASHBOARD_DEFAULT_KINDS.length &&
+    pinned.every((panel) => panel.companyId === companyId)
+  );
+}
+
 function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string {
   switch (kind) {
     case "fundamentals":
@@ -274,9 +290,16 @@ function CockpitWorkspace({
   const { text } = useLocale();
   // Shared selection lives in the cockpit store (decision 6A), not local state.
   const { selection, selectedFeedItem, selectedCompany, selectFeedItem } = useCockpitSelection();
-  const [pinned, setPinned] = useState<Pinned[]>([]);
+  // Seed the dashboard panels synchronously when opening scoped to a company so
+  // the very first paint is already the curated dashboard — not the default
+  // linked triad that then rebuilds into it (the "flash" on opening a company).
+  const [pinned, setPinned] = useState<Pinned[]>(() =>
+    dashboardCompanyId ? dashboardPinned(dashboardCompanyId) : [],
+  );
   const [openGlobals, setOpenGlobals] = useState<GlobalKind[]>([]);
-  const [closedLinked, setClosedLinked] = useState<Set<string>>(() => new Set());
+  const [closedLinked, setClosedLinked] = useState<Set<string>>(
+    () => new Set(dashboardCompanyId ? DASHBOARD_CLOSED_LINKED : []),
+  );
   const [resetNonce, setResetNonce] = useState(0);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [savedLayouts, setSavedLayouts] = useState<CockpitLayout[]>([]);
@@ -349,17 +372,23 @@ function CockpitWorkspace({
     const saved = savedLayouts.find(
       (layout) => layout.name === dashboardLayoutName(dashboardCompanyId),
     );
-    if (saved) applyLayout(saved);
-    else seedCompanyDashboard(dashboardCompanyId);
+    if (saved) {
+      // A saved per-company dashboard overrides the seeded default (restores the
+      // user's arrangement + geometry).
+      applyLayout(saved);
+    } else if (!isDashboardPinnedFor(pinned, dashboardCompanyId)) {
+      // No saved layout: the initializer already seeded this company on first
+      // mount (no rebuild → no flash); only re-seed when switching companies
+      // without a remount.
+      seedCompanyDashboard(dashboardCompanyId);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per company after layouts load; non-memoized fns intentionally excluded
   }, [dashboardCompanyId, layoutsLoaded, savedLayouts, initialLayoutId]);
 
   function seedCompanyDashboard(companyId: string) {
-    setPinned(
-      DASHBOARD_DEFAULT_KINDS.map((kind) => ({ id: pinnedId(companyId, kind), companyId, kind })),
-    );
+    setPinned(dashboardPinned(companyId));
     setOpenGlobals([]);
-    setClosedLinked(new Set(["inspector", "claims-sel", "diff-sel"]));
+    setClosedLinked(new Set(DASHBOARD_CLOSED_LINKED));
     setResetNonce((nonce) => nonce + 1);
   }
 
