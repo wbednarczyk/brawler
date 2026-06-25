@@ -92,6 +92,16 @@ Rules:
 - **Section containers:** `SectionHeader` for a titled section inside a screen/tab. `DetailSection` for cards in the fixed-width feed/detail rail (it bakes the containment contract so long content can't blow out the pane). `Panel`/`PanelHeader` for a top-level screen panel.
 - **Rows:** `ListRow` for non-interactive media rows (a document, an attachment). `DenseRow` for selectable list rows. `ExpandableRow` when the row expands detail in place.
 
+## Configuration is visual-first (maintainer UX preference)
+
+When the user configures a value, dimension, or layout, **prefer direct manipulation and visual presets over bare entry** — this is a standing project preference, apply it everywhere a value is set:
+
+1. **Quick visual presets first** — clickable graphical choices for the common cases (e.g. mini-grid icons `2×2 / 2×3 / 3×3` for a layout, swatches for a color, sized examples for spacing), so the frequent path is one click.
+2. **Direct-manipulation + exact input, bidirectionally linked** — a **slider** (or drag handle) for the feel of the range, **two-way bound** to a precise numeric/text field: dragging updates the field, typing updates the slider. Neither is read-only.
+3. **Live preview** — reflect the change as it happens (the grid redraws, the value updates), not only on commit.
+
+A bare numeric/text field alone is the **fallback**, for values with no meaningful range or visual. The grid-size picker in the composable-views creator ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)) is the reference implementation: presets + linked slider/input + live preview.
+
 ## Styling rules
 
 - **No inline `style={{…}}`** in screens/components (lint-enforced). Exactly one case is tolerated — the dynamic `--sidebar-width` custom property in `AppShell` (a live px value a static stylesheet cannot express), carrying an inline disable with its reason; do not add more. Containment, truncation, and spacing belong in CSS or are baked into a primitive (e.g. `ListRow` truncates; `DetailSection` contains).

@@ -42,13 +42,28 @@
   --dv-tabs-container-scrollbar-color: var(--muted);
   --dv-floating-box-shadow: var(--shadow);
 
-  /* metrics — match the app's rounded, dense feel */
-  --dv-tabs-and-actions-container-height: 38px;
-  --dv-tabs-and-actions-container-font-size: 13px;
-  --dv-tab-font-size: 13px;
+  /* metrics — minimal panel chrome (ADR 0057): a thin header (name + close), so
+   * panels read as lightweight building blocks, not heavy windows. The header was
+   * 38px and dominated small panels; 26px + tighter tabs reclaims that space. */
+  --dv-tabs-and-actions-container-height: 26px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tab-font-size: 12px;
   --dv-border-radius: 8px;
-  --dv-tab-border-radius: 8px;
+  --dv-tab-border-radius: 6px;
   --dv-sash-border-radius: 8px;
+}
+
+/* Minimal-chrome tabs (ADR 0057): tighten the per-tab padding/height so the thin
+ * header bar stays compact. Scoped to the theme class — no global leakage. */
+.dockview-theme-brawler .dv-tab {
+  padding: 0 8px;
+  min-height: 0;
+  height: 26px;
+  line-height: 26px;
+}
+
+.dockview-theme-brawler .dv-tab .dv-default-tab-action {
+  padding: 0 2px;
 }
 
 /* Full-screen cockpit: a viewport-owning canvas — the correct host for docking
