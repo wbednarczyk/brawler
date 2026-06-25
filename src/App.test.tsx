@@ -42,13 +42,15 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     await user.click(within(nav).getByRole("button", { name: "New view" }));
 
     await user.type(await screen.findByLabelText("View name"), "Earnings");
+    // Choose the 3×3 grid preset so the chosen dimensions flow end-to-end.
+    await user.click(screen.getByRole("button", { name: "3×3" }));
     await user.click(screen.getByRole("button", { name: /Create view/i }));
 
-    // The saved view appears in the Modes group and opens pre-split into grid
-    // cells, each with a "Pick a panel" button (ADR 0057).
+    // The saved view appears in the Modes group and opens pre-split into a real
+    // 3×3 grid — nine cells, each with a "Pick a panel" button (ADR 0057).
     expect(await within(nav).findByRole("button", { name: "Earnings" })).toBeInTheDocument();
     const cells = await screen.findAllByRole("button", { name: "Pick a panel" });
-    expect(cells.length).toBeGreaterThan(0);
+    expect(cells.length).toBe(9);
 
     // Picking a panel for a cell fills it in place (one fewer empty cell, a new
     // panel tab appears).
