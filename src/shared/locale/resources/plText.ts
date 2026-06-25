@@ -18,6 +18,7 @@ export const plText: Record<string, string> = {
   "Rows": "Wiersze",
   "Preview": "Podgląd",
   "Create view": "Utwórz widok",
+  "Save dashboard": "Zapisz dashboard",
   // Per-company settings surface (ADR 0056)
   "Manage settings": "Zarządzaj ustawieniami",
   "Done": "Gotowe",

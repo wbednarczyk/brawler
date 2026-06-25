@@ -91,6 +91,17 @@ function pinnedId(companyId: string, kind: PinnedKind): string {
   return `${kind}:${companyId}`;
 }
 
+// Per-company dashboard layouts (ADR 0057) are saved cockpit layouts under a
+// reserved name so each company remembers its own arrangement; these are filtered
+// out of the user's named-view lists.
+const DASHBOARD_PREFIX = "dashboard:";
+const dashboardLayoutName = (companyId: string) => `${DASHBOARD_PREFIX}${companyId}`;
+const isDashboardLayout = (layout: { name: string }) => layout.name.startsWith(DASHBOARD_PREFIX);
+
+// The curated default panels a company dashboard opens with when it has no saved
+// layout yet (ADR 0057): fundamentals + claims + quality + documents, plus the feed.
+const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = ["fundamentals", "claims", "quality", "documents"];
+
 function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string {
   switch (kind) {
     case "fundamentals":
@@ -208,6 +219,7 @@ export function CockpitScreen({
         companies={companies}
         feedItems={feedItems}
         initialLayoutId={initialLayoutId}
+        dashboardCompanyId={initialCompanyId}
       />
     </CockpitSelectionProvider>
   );
@@ -217,7 +229,8 @@ function CockpitWorkspace({
   companies,
   feedItems,
   initialLayoutId = null,
-}: Omit<CockpitScreenProps, "initialCompanyId">) {
+  dashboardCompanyId = null,
+}: Omit<CockpitScreenProps, "initialCompanyId"> & { dashboardCompanyId?: string | null }) {
   const { text } = useLocale();
   // Shared selection lives in the cockpit store (decision 6A), not local state.
   const { selection, selectedFeedItem, selectedCompany, selectFeedItem } = useCockpitSelection();
@@ -235,11 +248,18 @@ function CockpitWorkspace({
   const selectedItem = selectedFeedItem;
   const selectedCompanyId = selectedCompany?.id ?? null;
 
+  const [layoutsLoaded, setLayoutsLoaded] = useState(false);
   // Saved layouts are durable state in SQLite (decision 3A), not localStorage.
   const refreshLayouts = useCallback(() => {
     listCockpitLayouts()
-      .then(setSavedLayouts)
-      .catch(() => setSavedLayouts([]));
+      .then((layouts) => {
+        setSavedLayouts(layouts);
+        setLayoutsLoaded(true);
+      })
+      .catch(() => {
+        setSavedLayouts([]);
+        setLayoutsLoaded(true);
+      });
   }, []);
   useEffect(() => {
     refreshLayouts();
@@ -276,6 +296,48 @@ function CockpitWorkspace({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- apply once per id when savedLayouts loads it; applyLayout is a non-memoized component fn intentionally excluded
   }, [initialLayoutId, savedLayouts]);
+
+  // Company dashboard (ADR 0057): when opened scoped to a company (and not opening
+  // a specific named view), load that company's saved dashboard layout, else seed
+  // the curated default. Applied once per company after layouts have loaded.
+  const appliedDashboardRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!dashboardCompanyId || initialLayoutId || !layoutsLoaded) return;
+    if (appliedDashboardRef.current === dashboardCompanyId) return;
+    appliedDashboardRef.current = dashboardCompanyId;
+    const saved = savedLayouts.find(
+      (layout) => layout.name === dashboardLayoutName(dashboardCompanyId),
+    );
+    if (saved) applyLayout(saved);
+    else seedCompanyDashboard(dashboardCompanyId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per company after layouts load; non-memoized fns intentionally excluded
+  }, [dashboardCompanyId, layoutsLoaded, savedLayouts, initialLayoutId]);
+
+  function seedCompanyDashboard(companyId: string) {
+    setPinned(
+      DASHBOARD_DEFAULT_KINDS.map((kind) => ({ id: pinnedId(companyId, kind), companyId, kind })),
+    );
+    setOpenGlobals([]);
+    setClosedLinked(new Set(["inspector", "claims-sel", "diff-sel"]));
+    setResetNonce((nonce) => nonce + 1);
+  }
+
+  function saveDashboard() {
+    if (!dashboardCompanyId) return;
+    const panels: PanelsDescriptor = {
+      pinned,
+      openGlobals,
+      closedLinked: [...closedLinked],
+      selectedFeedItemId: selection.feedItemId,
+    };
+    const geometry = dockRef.current?.capture() ?? null;
+    void saveCockpitLayout({
+      name: dashboardLayoutName(dashboardCompanyId),
+      panelsJson: JSON.stringify(panels),
+      layoutJson: geometry ? JSON.stringify(geometry) : null,
+      dockviewVersion: DOCKVIEW_VERSION,
+    }).then(refreshLayouts);
+  }
 
   function renderLinked(kind: LinkedKind) {
     switch (kind) {
@@ -478,6 +540,10 @@ function CockpitWorkspace({
       });
   }
 
+  // Per-company dashboard layouts are reserved; keep them out of the user's named
+  // saved-view lists (ADR 0057).
+  const namedLayouts = savedLayouts.filter((layout) => !isDashboardLayout(layout));
+
   // Command palette entries — the launcher: re-show a closed linked panel, open
   // any company panel, load a saved layout, or reset. (Shared with the v0.48.0
   // command-palette epic, which will own the global palette.)
@@ -504,7 +570,7 @@ function CockpitWorkspace({
       label: `${text("Open panel")}: ${globalKindLabel(kind, text)}`,
       run: () => openGlobal(kind),
     })),
-    ...savedLayouts.map((layout) => ({
+    ...namedLayouts.map((layout) => ({
       id: `layout:${layout.id}`,
       label: `${text("Load layout")}: ${layout.name}`,
       run: () => applyLayout(layout),
@@ -512,7 +578,7 @@ function CockpitWorkspace({
     { id: "reset", label: text("Reset layout"), run: resetLayout },
   ];
 
-  const hasLayouts = savedLayouts.length > 0;
+  const hasLayouts = namedLayouts.length > 0;
 
   return (
     <section className="cockpit-screen" aria-label={text("Research cockpit")}>
@@ -528,6 +594,11 @@ function CockpitWorkspace({
               <Button onClick={resetLayout} variant="secondary">
                 {text("Reset layout")}
               </Button>
+              {dashboardCompanyId ? (
+                <Button onClick={saveDashboard} variant="primary">
+                  {text("Save dashboard")}
+                </Button>
+              ) : null}
             </div>
           }
         />
@@ -551,12 +622,12 @@ function CockpitWorkspace({
             label={text("Saved layout")}
             value=""
             onChange={(event) => {
-              const layout = savedLayouts.find((item) => item.id === event.target.value);
+              const layout = namedLayouts.find((item) => item.id === event.target.value);
               if (layout) applyLayout(layout);
             }}
           >
             <option value="">{hasLayouts ? text("Load a layout…") : text("No saved layouts")}</option>
-            {savedLayouts.map((layout) => (
+            {namedLayouts.map((layout) => (
               <option key={layout.id} value={layout.id}>
                 {layout.name}
               </option>
@@ -580,7 +651,7 @@ function CockpitWorkspace({
               }}
             >
               <option value="">{text("Delete a layout…")}</option>
-              {savedLayouts.map((layout) => (
+              {namedLayouts.map((layout) => (
                 <option key={layout.id} value={layout.id}>
                   {layout.name}
                 </option>
