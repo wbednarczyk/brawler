@@ -155,20 +155,22 @@ The cockpit composes existing domains and adds no per-company data of its own ex
 
 ## Companies Screen
 
-Purpose: manage tracked companies and open company workspaces.
+Purpose: the company **library + management** surface ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)). Browse/search/add tracked companies and manage per-company settings; opening a company lands the **curated cockpit dashboard** (the deep-dive lives there, not in a tabbed panel inside this screen).
 
 Main regions:
 
 - company search/add control
 - company list searchable and filtered by watchlist/exchange
-- company metadata summary
+- a `Manage settings` toggle that swaps the list for the per-company settings surface ([ADR 0056](adr/0056-per-company-settings-surface.md))
 
 Actions:
 
 - add company by exchange-qualified ticker
-- edit company metadata
-- open company workspace
-Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists menu panel. The company list and expanded company workspace should not show watchlist create, delete, add, or remove controls. The company workspace can show current memberships as context only.
+- open the company's cockpit dashboard (row click or keyboard)
+- delete a tracked company
+- manage per-company settings (autopilot, …) via the settings surface
+
+Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists menu panel. The company list should not show watchlist create, delete, add, or remove controls.
 
 The company list should own its vertical scrolling so the company add/search/filter controls remain visible while reviewing long tracked-company lists.
 
@@ -191,9 +193,11 @@ Actions:
 
 The Watchlists screen is a dedicated navigation section. It should use a watchlist-first dual-pane workflow: select a watchlist, then manage that watchlist's member companies. Renaming a watchlist should preserve the watchlist's stable internal id. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies. If a deleted watchlist is active in a view filter, that filter should reset to `All`.
 
-Milestone 3 implementation starts the company workspace from the Companies screen. Clicking a company row expands the ticker-focused workspace inline directly under that row, and clicking the same row again collapses it. Up and Down arrows move through company rows while preserving expansion state: collapsed lists stay collapsed, and an already-open workspace moves to the focused company. This keeps the expanded context anchored to the company the user selected and avoids adding another row-level button.
+Clicking a company row (or pressing Enter/Space on it) opens the **curated cockpit dashboard** scoped to that company ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)). Up and Down arrows move the highlighted row within the library without navigating away. The historical inline-expanding tabbed workspace (Milestone 3 / [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)) has been **retired** in favor of the dashboard.
 
-## Company Workspace
+## Company Workspace (retired — see the curated cockpit dashboard)
+
+> **Superseded by [ADR 0057](adr/0057-composable-views-and-curated-dashboard.md).** The click-through tabbed company workspace is retired. The single-company deep-dive is now the **curated cockpit dashboard**: a seeded `cockpit_layout` scoped to the company that opens with a calm default panel set (Fundamentals, Feed, Claims, Quality, Report documents, Notebook) and stays composable (add/remove/move panels, then `Save dashboard` to persist per company). Each tabbed section below is now a **company-scoped cockpit panel** (Feed → `companyFeed`, Notebook → `companyNotebook`, Fundamentals/Claims/Quality/Report documents/diff as their panels); Metadata folded into the Companies library; Transcripts remains a future-milestone placeholder. The descriptions below are retained as the behavioral spec for those panels.
 
 Purpose: one company page for all research around a ticker.
 

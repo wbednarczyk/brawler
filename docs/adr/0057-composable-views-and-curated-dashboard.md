@@ -54,3 +54,11 @@ The current standalone "Kokpit" mode is **replaced by this composable-views mode
 ## Status notes
 
 Accepted 2026-06-25 after a design discussion that (a) rejected an overshoot to "retire the cockpit" — dockview is kept — and (b) converged on lightweight composable views: minimal chrome, a "+" named-view creator with grid presets + custom A×B, a curated company dashboard replacing the tabs, and Companies demoted to a library + settings-management surface. Amends ADR 0053 (dockview is now the one view engine, re-styled) and ADR 0054 (sectioned tabbed workspace → curated dashboard).
+
+### Implementation status (2026-06-25)
+
+- **Decision 1 (minimal chrome)** — done.
+- **Decision 2 ("+" new-view creator)** — done: the `+` in the Modes group opens `CreateViewModal` (grid presets + slider↔input custom A×B + live preview), saves an empty named `cockpit_layout`, and activates it on open. *Saved named views are not yet listed as standalone nav destinations in Modes* (the remaining half of this decision) — tracked for follow-up.
+- **Decision 3 (curated company dashboard)** — done: opening a company (Companies library / pinned spine / feed item / global search / Today) lands the cockpit scoped to it, loading `dashboard:<companyId>` or seeding the curated default (Fundamentals, Feed, Claims, Quality, Report documents, Notebook). `Feed` and `Notebook` shipped as new self-contained company-scoped panels (`companyFeed`/`companyNotebook`, reusing the extracted `CompanyFeedSection`/`CompanyNotebookSection` with cockpit-owned controllers). `Save dashboard` persists per company.
+- **Decision 4 (Companies → library)** — done: the tabbed `CompanyWorkspace` is deleted; Companies is the library + the per-company settings surface. Company metadata folded into the library; Transcripts (a placeholder) dropped.
+- **Decision 5 (replace the standalone "Kokpit" nav entry)** — **deferred.** Removing the blank-canvas Cockpit entry depends on Decision 2's "named views as nav destinations" so users are not stranded without a way back to a saved view. The "Cockpit" nav entry is retained until that lands.

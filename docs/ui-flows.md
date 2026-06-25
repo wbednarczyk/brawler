@@ -107,9 +107,9 @@ Intent: answer "what do I know about this company and what should I check later?
 
 Flow:
 
-1. User opens a company.
-2. Company workspace is one company page with tabs or segmented views for Feed, Notebook, Claims, Transcripts, Fundamentals, and Metadata.
-3. Notebook view lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
+1. User opens a company (from the Companies library, a pinned sidebar entry, a feed item, or global search), landing the curated cockpit dashboard scoped to it ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)).
+2. The dashboard opens with a calm default panel set (Fundamentals, Feed, Claims, Quality, Report documents, Notebook) and stays composable; the company `Notebook` panel is one of them.
+3. Notebook panel lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
 4. User opens a note in the detail pane.
 5. User edits note content, changes claim status, or opens linked source material.
 
