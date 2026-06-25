@@ -45,6 +45,8 @@ import { useWorkspaceNavigationController } from "./useWorkspaceNavigationContro
 import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
+import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
+import { saveCockpitLayout } from "../api/cockpit";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -267,6 +269,27 @@ export function AppStateRoot({
   const [sourceRefreshResult, setSourceRefreshResult] = useState<SourceIngestionResult | null>(null);
   const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
+  const [createViewOpen, setCreateViewOpen] = useState(false);
+
+  // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
+  // layout. v1 persists an empty layout sized by the chosen grid (stored for the
+  // grid-render/palette step) and opens the Cockpit; parsePanels tolerates the
+  // empty descriptor, so loading is safe.
+  function handleCreateView(spec: CreateViewSpec) {
+    const panelsJson = JSON.stringify({
+      pinned: [],
+      openGlobals: [],
+      closedLinked: [],
+      selectedFeedItemId: null,
+      grid: { cols: spec.cols, rows: spec.rows },
+    });
+    void saveCockpitLayout({ name: spec.name, panelsJson, layoutJson: null, dockviewVersion: null })
+      .then(() => {
+        setCreateViewOpen(false);
+        setActiveSection("Cockpit");
+      })
+      .catch(() => setCreateViewOpen(false));
+  }
   const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] = useState<string | null>(null);
   const [registryRefreshState, setRegistryRefreshState] = useState<SourceRefreshState>("idle");
   const [registryRefreshResult, setRegistryRefreshResult] = useState<CompanyRegistryRefreshResult | null>(null);
@@ -1682,6 +1705,7 @@ export function AppStateRoot({
         refreshDatabaseBackedViews={refreshDatabaseBackedViews}
         refreshSources={refreshSources}
         setActiveSection={setActiveSection}
+        onCreateView={() => setCreateViewOpen(true)}
         onNavigateToSearchResult={navigateToSearchResult}
         pinnedCompanies={pinnedCompanies}
         selectedCompanyId={selectedCompanyId}
@@ -2095,6 +2119,11 @@ export function AppStateRoot({
 
         </section>
       </AppShell>
+      <CreateViewModal
+        open={createViewOpen}
+        onClose={() => setCreateViewOpen(false)}
+        onCreate={handleCreateView}
+      />
       </SettingsProvider>
     </LocaleContext.Provider>
   );

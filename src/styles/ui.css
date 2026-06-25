@@ -732,3 +732,18 @@
   padding: 12px 16px;
   border-top: 1px solid var(--border);
 }
+
+/* RangeField — app slider (ADR 0037; visual-first config, ui-authoring.md). */
+.ui-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.ui-range-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
+}

@@ -9,6 +9,15 @@ export const plText: Record<string, string> = {
   // Autopilot — autonomous report pipeline (ADR 0055)
   "Autopilot": "Autopilot",
   "Autopilot mode": "Tryb autopilota",
+  // Composable views — new-view creator (ADR 0057)
+  "New view": "Nowy widok",
+  "View name": "Nazwa widoku",
+  "e.g. Earnings day": "np. Dzień wyników",
+  "Grid presets": "Gotowe siatki",
+  "Columns": "Kolumny",
+  "Rows": "Wiersze",
+  "Preview": "Podgląd",
+  "Create view": "Utwórz widok",
   // Per-company settings surface (ADR 0056)
   "Manage settings": "Zarządzaj ustawieniami",
   "Done": "Gotowe",

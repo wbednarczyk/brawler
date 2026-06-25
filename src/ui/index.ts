@@ -45,6 +45,8 @@ export { SearchField } from "./SearchField";
 export type { SearchFieldProps } from "./SearchField";
 export { TextField } from "./TextField";
 export type { TextFieldProps } from "./TextField";
+export { RangeField } from "./RangeField";
+export type { RangeFieldProps } from "./RangeField";
 export { TextareaField } from "./TextareaField";
 export type { TextareaFieldProps } from "./TextareaField";
 export { StatusChip } from "./StatusChip";
