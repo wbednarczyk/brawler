@@ -11,6 +11,8 @@ export const plText: Record<string, string> = {
   "Autopilot mode": "Tryb autopilota",
   // Composable views — new-view creator (ADR 0057)
   "New view": "Nowy widok",
+  "Delete view": "Usuń widok",
+  "Delete this saved view?": "Usunąć ten zapisany widok?",
   "View name": "Nazwa widoku",
   "e.g. Earnings day": "np. Dzień wyników",
   "Grid presets": "Gotowe siatki",

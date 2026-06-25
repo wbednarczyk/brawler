@@ -44,7 +44,7 @@ import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./s
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
 import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
-import { listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
+import { deleteCockpitLayout, listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -289,6 +289,18 @@ export function AppStateRoot({
     setCockpitInitialCompanyId(null);
     setActiveCockpitLayoutId(layoutId);
     setActiveSection("Cockpit");
+  }
+
+  function deleteCockpitView(layoutId: string) {
+    if (!window.confirm(text("Delete this saved view?"))) return;
+    void deleteCockpitLayout(layoutId)
+      .then(() => {
+        if (activeCockpitLayoutId === layoutId) setActiveCockpitLayoutId(null);
+        refreshCockpitLayouts();
+      })
+      .catch(() => {
+        /* surfaced by the runtime; the list refreshes on the next change */
+      });
   }
 
   // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
@@ -1595,6 +1607,7 @@ export function AppStateRoot({
         cockpitViews={cockpitViews}
         activeCockpitViewId={cockpitInitialCompanyId ? null : activeCockpitLayoutId}
         onOpenCockpitView={openCockpitView}
+        onDeleteCockpitView={deleteCockpitView}
         onNavigateToSearchResult={navigateToSearchResult}
         pinnedCompanies={pinnedCompanies}
         selectedCompanyId={selectedCompanyId}

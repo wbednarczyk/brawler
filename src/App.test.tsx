@@ -7,6 +7,7 @@ import {
   renderApp,
   screen,
   userEvent,
+  vi,
   waitFor,
   within,
 } from "./test/appWorkflowHarness";
@@ -46,6 +47,14 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     // The saved view appears in the Modes group and the empty view prompts to add panels.
     expect(await within(nav).findByRole("button", { name: "Earnings" })).toBeInTheDocument();
     expect(await screen.findByText("This view is empty.")).toBeInTheDocument();
+
+    // The view can be deleted from its sidebar entry.
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await user.click(within(nav).getByRole("button", { name: "Delete view: Earnings" }));
+    await waitFor(() =>
+      expect(within(nav).queryByRole("button", { name: "Earnings" })).not.toBeInTheDocument(),
+    );
+    confirm.mockRestore();
   });
 
   it("lists pinned companies in the spine and opens the company workspace", async () => {
