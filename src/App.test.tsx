@@ -33,6 +33,21 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     expect(await screen.findByRole("heading", { name: "Compare" })).toBeInTheDocument();
   });
 
+  it("creates a named view and lists it as a Modes nav destination (ADR 0057)", async () => {
+    const user = userEvent.setup();
+    renderApp();
+
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "New view" }));
+
+    await user.type(await screen.findByLabelText("View name"), "Earnings");
+    await user.click(screen.getByRole("button", { name: /Create view/i }));
+
+    // The saved view appears in the Modes group and the empty view prompts to add panels.
+    expect(await within(nav).findByRole("button", { name: "Earnings" })).toBeInTheDocument();
+    expect(await screen.findByText("This view is empty.")).toBeInTheDocument();
+  });
+
   it("lists pinned companies in the spine and opens the company workspace", async () => {
     renderApp();
 

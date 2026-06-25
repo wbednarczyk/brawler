@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -43,7 +44,7 @@ import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./s
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
 import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
-import { saveCockpitLayout } from "../api/cockpit";
+import { listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -266,6 +267,29 @@ export function AppStateRoot({
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
   const [createViewOpen, setCreateViewOpen] = useState(false);
   const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<string | null>(null);
+  // Saved named views shown as nav destinations in the Modes group (ADR 0057
+  // decision 5). Dashboard layouts (reserved `dashboard:` names) are excluded —
+  // they are reached by opening a company, not from the views list.
+  const [cockpitLayouts, setCockpitLayouts] = useState<CockpitLayout[]>([]);
+  const refreshCockpitLayouts = useCallback(() => {
+    listCockpitLayouts()
+      .then(setCockpitLayouts)
+      .catch(() => setCockpitLayouts([]));
+  }, []);
+  useEffect(() => {
+    refreshCockpitLayouts();
+  }, [refreshCockpitLayouts]);
+  const cockpitViews = cockpitLayouts
+    .filter((layout) => !layout.name.startsWith("dashboard:"))
+    .map((layout) => ({ id: layout.id, name: layout.name }));
+
+  // Open a saved named view (not a company dashboard): activate its layout and
+  // clear any company scope so it renders as the pure view.
+  function openCockpitView(layoutId: string) {
+    setCockpitInitialCompanyId(null);
+    setActiveCockpitLayoutId(layoutId);
+    setActiveSection("Cockpit");
+  }
 
   // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
   // layout. The view starts **empty** (every linked panel closed) and is sized by
@@ -283,8 +307,10 @@ export function AppStateRoot({
     void saveCockpitLayout({ name: spec.name, panelsJson, layoutJson: null, dockviewVersion: null })
       .then((layout) => {
         setCreateViewOpen(false);
+        setCockpitInitialCompanyId(null);
         setActiveCockpitLayoutId(layout.id);
         setActiveSection("Cockpit");
+        refreshCockpitLayouts();
       })
       .catch(() => setCreateViewOpen(false));
   }
@@ -1548,6 +1574,7 @@ export function AppStateRoot({
   // for its existing callers; it is now the single company deep-dive entry point.
   function openAdvancedLayout(companyId: string) {
     setSelectedCompanyId(companyId);
+    setActiveCockpitLayoutId(null);
     setCockpitInitialCompanyId(companyId);
     setActiveSection("Cockpit");
   }
@@ -1565,6 +1592,9 @@ export function AppStateRoot({
         refreshSources={refreshSources}
         setActiveSection={setActiveSection}
         onCreateView={() => setCreateViewOpen(true)}
+        cockpitViews={cockpitViews}
+        activeCockpitViewId={cockpitInitialCompanyId ? null : activeCockpitLayoutId}
+        onOpenCockpitView={openCockpitView}
         onNavigateToSearchResult={navigateToSearchResult}
         pinnedCompanies={pinnedCompanies}
         selectedCompanyId={selectedCompanyId}
@@ -1679,6 +1709,7 @@ export function AppStateRoot({
                         feedItems={feedState}
                         initialCompanyId={cockpitInitialCompanyId}
                         initialLayoutId={activeCockpitLayoutId}
+                        onLayoutsChanged={refreshCockpitLayouts}
                       />
                     </EventsProvider>
                   </ReportSeasonProvider>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Command } from "lucide-react";
+import { Command, Plus } from "lucide-react";
 import type { Company, FeedItem } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 import {
@@ -235,6 +235,9 @@ export type CockpitScreenProps = {
   initialCompanyId?: string | null;
   /** When set, the cockpit opens with this saved layout activated (ADR 0057). */
   initialLayoutId?: string | null;
+  /** Notifies the host when saved layouts change (create/save/delete) so the
+   * sidebar named-views list (ADR 0057 decision 5) stays in sync. */
+  onLayoutsChanged?: () => void;
 };
 
 export function CockpitScreen({
@@ -242,6 +245,7 @@ export function CockpitScreen({
   feedItems,
   initialCompanyId = null,
   initialLayoutId = null,
+  onLayoutsChanged,
 }: CockpitScreenProps) {
   return (
     <CockpitSelectionProvider
@@ -254,6 +258,7 @@ export function CockpitScreen({
         feedItems={feedItems}
         initialLayoutId={initialLayoutId}
         dashboardCompanyId={initialCompanyId}
+        onLayoutsChanged={onLayoutsChanged}
       />
     </CockpitSelectionProvider>
   );
@@ -264,6 +269,7 @@ function CockpitWorkspace({
   feedItems,
   initialLayoutId = null,
   dashboardCompanyId = null,
+  onLayoutsChanged,
 }: Omit<CockpitScreenProps, "initialCompanyId"> & { dashboardCompanyId?: string | null }) {
   const { text } = useLocale();
   // Shared selection lives in the cockpit store (decision 6A), not local state.
@@ -289,12 +295,13 @@ function CockpitWorkspace({
       .then((layouts) => {
         setSavedLayouts(layouts);
         setLayoutsLoaded(true);
+        onLayoutsChanged?.();
       })
       .catch(() => {
         setSavedLayouts([]);
         setLayoutsLoaded(true);
       });
-  }, []);
+  }, [onLayoutsChanged]);
   useEffect(() => {
     refreshLayouts();
   }, [refreshLayouts]);
@@ -638,6 +645,9 @@ function CockpitWorkspace({
           title={text("Research cockpit")}
           actions={
             <div className="cockpit-toolbar-actions">
+              <Button onClick={() => setPaletteOpen(true)} variant="primary" icon={<Plus size={15} />}>
+                {text("Add panel")}
+              </Button>
               <Button onClick={() => setPaletteOpen(true)} variant="secondary" icon={<Command size={15} />}>
                 {text("Commands")} (⌘K)
               </Button>
@@ -713,6 +723,14 @@ function CockpitWorkspace({
 
       {companies.length === 0 ? (
         <EmptyState>{text("No companies tracked yet.")}</EmptyState>
+      ) : specs.length === 0 ? (
+        <EmptyState className="cockpit-empty-view">
+          <strong>{text("This view is empty.")}</strong>
+          <p>{text("Add panels to build your view — pick a pre-built panel from the palette.")}</p>
+          <Button onClick={() => setPaletteOpen(true)} variant="primary" icon={<Plus size={15} />}>
+            {text("Add panel")}
+          </Button>
+        </EmptyState>
       ) : (
         <DockLayout
           ref={dockRef}

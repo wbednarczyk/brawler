@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { Activity, CheckCircle2, Moon, PinOff, Plus, RefreshCw, Sun } from "lucide-react";
+import { Activity, CheckCircle2, Columns3, Moon, PinOff, Plus, RefreshCw, Sun } from "lucide-react";
 import type {
   HealthResponse,
   SourceIngestionResult,
@@ -42,6 +42,9 @@ type AppShellProps = {
   refreshSources: (trigger: SourceRefreshTrigger) => void;
   setActiveSection: (section: Section) => void;
   onCreateView: () => void;
+  cockpitViews: { id: string; name: string }[];
+  activeCockpitViewId: string | null;
+  onOpenCockpitView: (viewId: string) => void;
   onNavigateToSearchResult: (match: SearchMatch) => void;
   pinnedCompanies: PinnedCompany[];
   selectedCompanyId: string | null;
@@ -70,6 +73,9 @@ export function AppShell({
   refreshSources,
   setActiveSection,
   onCreateView,
+  cockpitViews,
+  activeCockpitViewId,
+  onOpenCockpitView,
   onNavigateToSearchResult,
   pinnedCompanies,
   selectedCompanyId,
@@ -217,15 +223,33 @@ export function AppShell({
                     );
                   })}
                   {group.id === "modes" ? (
-                    <button
-                      className="nav-item nav-item-add"
-                      onClick={onCreateView}
-                      type="button"
-                      title={text("New view")}
-                    >
-                      <Plus size={18} aria-hidden="true" />
-                      <span>{text("New view")}</span>
-                    </button>
+                    <>
+                      {cockpitViews.map((view) => (
+                        <button
+                          className={
+                            activeSection === "Cockpit" && activeCockpitViewId === view.id
+                              ? "nav-item nav-item-active"
+                              : "nav-item"
+                          }
+                          key={view.id}
+                          onClick={() => onOpenCockpitView(view.id)}
+                          type="button"
+                          title={view.name}
+                        >
+                          <Columns3 size={18} aria-hidden="true" />
+                          <span>{view.name}</span>
+                        </button>
+                      ))}
+                      <button
+                        className="nav-item nav-item-add"
+                        onClick={onCreateView}
+                        type="button"
+                        title={text("New view")}
+                      >
+                        <Plus size={18} aria-hidden="true" />
+                        <span>{text("New view")}</span>
+                      </button>
+                    </>
                   ) : null}
                 </div>
               </div>
