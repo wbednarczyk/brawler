@@ -28,13 +28,16 @@ export type CompanyFeedSectionProps = {
   toggleFeedItem: (item: FeedItem) => void;
   selectFeedItemFromKeyboard: (event: React.KeyboardEvent<HTMLElement>, item: FeedItem) => void;
   updateFeedItemState: (item: FeedItem, update: (item: FeedItem) => FeedItem) => void;
-  inspectFeedItem: (item: FeedItem) => void;
-  openFeedItemNoteDraft: (item: FeedItem) => void;
   startFeedItemAiAnalysis: (item: FeedItem, promptPresetId?: string, customQuestion?: string) => Promise<void>;
   retryFeedItemAiAnalysis: (jobId: string, itemId: string) => Promise<void>;
-  openInboxFilter: (company: Company) => void;
   formatTimestamp: (value: string | null | undefined, emptyLabel?: string) => string;
   feedItemSummary: (item: FeedItem) => string;
+  // Cross-screen actions are optional: the tabbed workspace wires them to the
+  // AppStateRoot navigation, but the self-contained cockpit dashboard panel
+  // (ADR 0057) omits them — the same actions stay reachable from the Inbox.
+  inspectFeedItem?: (item: FeedItem) => void;
+  openFeedItemNoteDraft?: (item: FeedItem) => void;
+  openInboxFilter?: (company: Company) => void;
 };
 
 export function CompanyFeedSection({
@@ -148,20 +151,24 @@ export function CompanyFeedSection({
                   <Save size={15} />
                   {selectedFeedItem.saved ? text("Unsave") : text("Save")}
                 </Button>
-                <Button
-                  className="compact-button"
-                  onClick={() => inspectFeedItem(selectedFeedItem)}
-                >
-                  <Inbox size={15} />
-                  {text("Open in Inbox")}
-                </Button>
-                <Button
-                  className="compact-button"
-                  onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
-                >
-                  <BookOpenText size={15} />
-                  {text("Note")}
-                </Button>
+                {inspectFeedItem ? (
+                  <Button
+                    className="compact-button"
+                    onClick={() => inspectFeedItem(selectedFeedItem)}
+                  >
+                    <Inbox size={15} />
+                    {text("Open in Inbox")}
+                  </Button>
+                ) : null}
+                {openFeedItemNoteDraft ? (
+                  <Button
+                    className="compact-button"
+                    onClick={() => openFeedItemNoteDraft(selectedFeedItem)}
+                  >
+                    <BookOpenText size={15} />
+                    {text("Note")}
+                  </Button>
+                ) : null}
                 <a
                   className="secondary-button compact-button"
                   href={selectedFeedItem.sourceUrl}
@@ -226,13 +233,15 @@ export function CompanyFeedSection({
               {text("This company is tracked, but no sample or ingested items are attached to it yet.")}
             </p>
           </div>
-          <Button
-            className="compact-button"
-            onClick={() => openInboxFilter(company)}
-          >
-            <Inbox size={15} />
-            {text("Open filtered Inbox")}
-          </Button>
+          {openInboxFilter ? (
+            <Button
+              className="compact-button"
+              onClick={() => openInboxFilter(company)}
+            >
+              <Inbox size={15} />
+              {text("Open filtered Inbox")}
+            </Button>
+          ) : null}
         </EmptyState>
       ) : null}
     </div>

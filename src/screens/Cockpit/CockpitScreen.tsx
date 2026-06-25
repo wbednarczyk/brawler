@@ -18,6 +18,12 @@ import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyRepo
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
 import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
+import { CompanyFeedSection } from "../Companies/CompanyFeedSection";
+import { CompanyNotebookSection } from "../Companies/CompanyNotebookSection";
+import { NotebookDateField } from "../../shared/components/NotebookDateField";
+import { NotebookQuarterField } from "../../shared/components/NotebookQuarterField";
+import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
+import { formatTimestamp } from "../../shared/formatting/date";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
 import { NotebooksScreen } from "../Notebooks/NotebooksScreen";
@@ -31,6 +37,8 @@ import {
   type DockPanelSpec,
 } from "./DockLayout";
 import { useCockpitFundamentals } from "./useCockpitFundamentals";
+import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
+import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
 import { CommandPalette, type PaletteCommand } from "./CommandPalette";
 import {
@@ -46,7 +54,14 @@ import {
 // panel, and named saved layouts to switch task-shaped workspaces.
 
 type LinkedKind = "feed" | "inspector" | "claims-sel" | "diff-sel";
-type PinnedKind = "fundamentals" | "reportDiff" | "claims" | "quality" | "documents";
+type PinnedKind =
+  | "fundamentals"
+  | "reportDiff"
+  | "claims"
+  | "quality"
+  | "documents"
+  | "companyFeed"
+  | "companyNotebook";
 
 const LINKED: { id: string; kind: LinkedKind }[] = [
   { id: "feed", kind: "feed" },
@@ -55,7 +70,15 @@ const LINKED: { id: string; kind: LinkedKind }[] = [
   { id: "diff-sel", kind: "diff-sel" },
 ];
 
-const PINNED_KINDS: PinnedKind[] = ["fundamentals", "reportDiff", "claims", "quality", "documents"];
+const PINNED_KINDS: PinnedKind[] = [
+  "fundamentals",
+  "reportDiff",
+  "claims",
+  "quality",
+  "documents",
+  "companyFeed",
+  "companyNotebook",
+];
 
 // Global singleton panels (ADR 0053 phase 4c): full app screens that own their
 // own scope/data via contexts (mounted prop-free in AppStateRoot), so the cockpit
@@ -100,7 +123,14 @@ const isDashboardLayout = (layout: { name: string }) => layout.name.startsWith(D
 
 // The curated default panels a company dashboard opens with when it has no saved
 // layout yet (ADR 0057): fundamentals + claims + quality + documents, plus the feed.
-const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = ["fundamentals", "claims", "quality", "documents"];
+const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = [
+  "fundamentals",
+  "companyFeed",
+  "claims",
+  "quality",
+  "documents",
+  "companyNotebook",
+];
 
 function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string {
   switch (kind) {
@@ -114,6 +144,10 @@ function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string 
       return text("Quality");
     case "documents":
       return text("Report documents");
+    case "companyFeed":
+      return text("Feed");
+    case "companyNotebook":
+      return text("Notebook");
   }
 }
 
@@ -379,6 +413,22 @@ function CockpitWorkspace({
         return <QualityPanel companyId={companyId} />;
       case "documents":
         return <CompanyReportDocumentsPanel companyId={companyId} reloadKey={0} />;
+      case "companyFeed": {
+        const company = companyById.get(companyId);
+        return company ? (
+          <CockpitCompanyFeedPanel company={company} feedItems={feedItems} />
+        ) : (
+          <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
+        );
+      }
+      case "companyNotebook": {
+        const company = companyById.get(companyId);
+        return company ? (
+          <CockpitCompanyNotebookPanel company={company} />
+        ) : (
+          <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
+        );
+      }
     }
   }
 
@@ -811,4 +861,90 @@ function InspectorPanel({
 function CockpitFundamentalsPanel({ companyId }: { companyId: string }) {
   const props = useCockpitFundamentals(companyId);
   return <FundamentalsPanel {...props} />;
+}
+
+// Company-scoped feed panel for the curated dashboard (ADR 0057). It reuses the
+// real `CompanyFeedSection` with cockpit-owned state (`useCockpitCompanyFeed`);
+// the cross-screen actions (Open in Inbox / Note) are intentionally omitted — the
+// dashboard panel is self-contained and those stay reachable from the Inbox.
+function CockpitCompanyFeedPanel({ company, feedItems }: { company: Company; feedItems: FeedItem[] }) {
+  const feed = useCockpitCompanyFeed(company, feedItems);
+  return (
+    <CompanyFeedSection
+      company={company}
+      feedItems={feed.items}
+      selectedFeedItem={feed.selectedFeedItem}
+      aiAnalysisJobsByFeedItemId={feed.aiAnalysisJobsByFeedItemId}
+      aiAnalysisErrorByFeedItemId={feed.aiAnalysisErrorByFeedItemId}
+      aiAnalysisRequestInFlightByFeedItemId={feed.aiAnalysisRequestInFlightByFeedItemId}
+      toggleFeedItem={feed.toggleFeedItem}
+      selectFeedItemFromKeyboard={(event, item) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          feed.toggleFeedItem(item);
+        }
+      }}
+      updateFeedItemState={feed.updateFeedItemState}
+      startFeedItemAiAnalysis={feed.startFeedItemAiAnalysis}
+      retryFeedItemAiAnalysis={feed.retryFeedItemAiAnalysis}
+      formatTimestamp={formatTimestamp}
+      feedItemSummary={(item) => item.summary.trim() || item.title}
+    />
+  );
+}
+
+// Company-scoped notebook panel for the curated dashboard (ADR 0057). Reuses the
+// real `CompanyNotebookSection` with cockpit-owned state (`useCockpitCompanyNotebook`).
+// Origins render read-only (label + external source link) — the cross-screen
+// "open origin feed item" nav belongs to the Inbox, not a self-contained panel.
+function CockpitCompanyNotebookPanel({ company }: { company: Company }) {
+  const { text } = useLocale();
+  const notebook = useCockpitCompanyNotebook(company);
+  return (
+    <CompanyNotebookSection
+      company={company}
+      notebookEntries={notebook.entries}
+      isComposerOpen={notebook.isComposerOpen}
+      notebookForm={notebook.notebookForm}
+      selectedNotebookEntry={notebook.selectedEntry}
+      notebookEditMode={notebook.editMode}
+      notebookEditForm={notebook.editForm}
+      isNotebookEditDirty={notebook.isEditDirty}
+      notebookError={notebook.error}
+      setComposerOpen={notebook.setComposerOpen}
+      updateNotebookForm={notebook.updateNotebookForm}
+      createNotebookEntry={notebook.createNotebookEntry}
+      setSelectedNotebookEntryId={notebook.setSelectedEntryId}
+      saveNotebookEntry={notebook.saveNotebookEntry}
+      cancelNotebookEdit={notebook.cancelNotebookEdit}
+      setNotebookEditMode={notebook.setEditMode}
+      updateNotebookEditForm={notebook.updateNotebookEditForm}
+      NotebookDateField={NotebookDateField}
+      NotebookQuarterField={NotebookQuarterField}
+      MarkdownNoteBody={MarkdownNoteBody}
+      renderNotebookOrigins={(origins) =>
+        origins.length === 0 ? (
+          <span className="membership-empty">None</span>
+        ) : (
+          <div className="origin-link-list">
+            {origins.map((origin) => (
+              <div className="origin-link" key={origin.id}>
+                <span>{origin.label ?? origin.sourceType.replace("_", " ")}</span>
+                {origin.sourceUrl ? (
+                  <a
+                    className="secondary-button compact-button"
+                    href={origin.sourceUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {text("Source")}
+                  </a>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        )
+      }
+    />
+  );
 }
