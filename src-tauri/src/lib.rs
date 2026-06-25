@@ -96,6 +96,12 @@ pub fn run() {
                 state.clone(),
             )));
 
+            // Start the Rust-side source scheduler (ADR 0055 / AV5): it owns the
+            // refresh cadence, re-arming source/registry refresh jobs on the durable
+            // queue. Replaces the frontend timer, which the webview throttles when
+            // hidden. Runs only while the app is open.
+            jobs::scheduler::spawn(state.clone());
+
             app.manage(state);
 
             Ok(())
@@ -244,6 +250,7 @@ pub fn run() {
             commands::sources::get_backfill_progress,
             commands::sources::refresh_gpw_company_registry,
             commands::sources::refresh_gpw_company_registry_if_stale,
+            commands::sources::get_scheduler_status,
             commands::diagnostics::list_diagnostic_events,
             commands::diagnostics::clear_diagnostic_events,
             commands::diagnostics::get_diagnostic_summary,
@@ -266,7 +273,16 @@ pub fn run() {
             commands::settings::unlock_developer_mode,
             commands::credentials::get_provider_credential_status,
             commands::credentials::set_provider_api_key,
-            commands::credentials::clear_provider_api_key
+            commands::credentials::clear_provider_api_key,
+            commands::autopilot::get_company_autopilot,
+            commands::autopilot::set_company_autopilot,
+            commands::autopilot::list_company_autopilot_modes,
+            commands::autopilot::set_companies_autopilot,
+            commands::autopilot::list_autopilot_runs,
+            commands::autopilot::get_autopilot_run,
+            commands::autopilot::set_autopilot_run_notification_state,
+            commands::autopilot::undo_autopilot_run,
+            commands::autopilot::trigger_autopilot_run
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Brawler application");

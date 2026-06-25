@@ -609,6 +609,31 @@ The report-over-report diff ([ADR 0052](adr/0052-report-over-report-diff.md), `v
 
 Error codes: `company_not_found`, `report_document_not_found`, `statement_type_mismatch`, `company_mismatch`, `not_a_financial_statement`, `extraction_pending`, `not_diffable`.
 
+## Autonomous Report Pipeline (Autopilot)
+
+The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)) closes the loop: a tracked, opted-in company's new periodic report is detected, fetched, extracted, diffed, cross-referenced, and surfaced as a single notification — no manual steps. Orchestration is **chained durable-queue jobs** (`fetch → extract → diff → cross_reference → notify`) stamped with one `autopilot_run` id; each stage reuses the existing service (`fetch_report_document`, AI KPI extraction, `get_report_diff`, claims/research cross-reference). Detection is **event-driven off source-refresh completion** and runs **only while the app is open**. The global confirm-before-commit default never changes; automation is a per-company opt-in. Decision-support only — the result reports *what changed / to verify*, never buy/sell/hold ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+
+**Trust ladder (per-company mode).**
+
+`get_company_autopilot(input)` returns a company's mode. `input` is `{ companyId: string }`; returns `{ companyId, mode }` where `mode` is `off` | `assist` | `autopilot` (a company with no setting reads `off`).
+
+`set_company_autopilot(input)` sets the mode. `input` is `{ companyId, mode }`. `off`: nothing automatic. `assist`: auto-fetch + auto-extract on detection, but facts land `pending` for user confirmation. `autopilot`: full loop; facts auto-committed as `auto_unreviewed` (cited, flagged, reversible). Changing the mode never alters already-produced facts or runs. Error codes: `company_not_found`, `invalid_autopilot_mode`.
+
+**Runs and review.**
+
+`list_autopilot_runs(input)` returns recent runs for the attention home / review queue. `input` is `{ companyId?: string, notificationState?: "unread" | "read" | "dismissed", limit?: number }`. Each run carries `{ id, companyId, reportDocumentId, trigger, mode, status, stage, summaryText, kpiDeltas, reportDiffRef, crossRefs, producedFactIds, notificationState, lastError, createdAt }`. `status` is `pending` | `running` | `succeeded` | `failed` | `partial`; `stage` is the current/last stage reached. A `failed`/`partial` run still appears with a summary of how far it got.
+
+`get_autopilot_run(input)` returns one run's full composed result. `input` is `{ runId: string }`.
+
+`set_autopilot_run_notification_state(input)` marks a run's notification `read` or `dismissed` (drives the Today/Pulse "what changed" surface, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)). `input` is `{ runId, notificationState }`.
+
+`undo_autopilot_run(input)` reverts exactly the facts a run produced (recorded in `producedFactIds`), reusing the existing fact supersede/reject mechanics. `input` is `{ runId: string }`; returns `{ runId, revertedFactIds }`. Idempotent — undoing an already-undone run is a no-op.
+
+`trigger_autopilot_run(input)` manually starts a run for an already-detected report (re-run / explicit kick), enqueuing the first stage. `input` is `{ companyId, reportDocumentId }`. Subject to the same `(companyId, reportDocumentId)` dedup as automatic detection. Error codes: `company_not_found`, `report_document_not_found`, `autopilot_run_in_progress`.
+
+- Detection is **idempotent**: at most one run per `(companyId, reportDocumentId)`.
+- With no AI credentials / extraction capability configured, `assist`/`autopilot` degrade to fetch + diff (deterministic) and flag extraction as unavailable rather than looping — AI cost stays bounded (at most one extraction per detected report, opted-in companies only).
+
 ## Company Event
 
 Company events represent dated items the user may want to track across watchlists. Upcoming events are the default attention focus, but historical events are retained for context. They are separate from feed items and notebook entries, but may link to source items or notes later.

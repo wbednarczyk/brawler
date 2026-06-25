@@ -5,6 +5,7 @@ import { useLocale } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { buildFactMatrix } from "./factMatrix";
+import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
 import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, SectionHeader, SelectField, Sparkline, TextField, TrendChart } from "../../ui";
@@ -150,6 +151,8 @@ export function FundamentalsPanel({
       {fundamentalsLoadError ? (
         <ErrorText>{text("Failed to load fundamentals data")}: {fundamentalsLoadError}</ErrorText>
       ) : null}
+
+      <CompanyAutopilotField companyId={companyId} />
 
       <CompanyIrReportsUrlField companyId={companyId} />
 

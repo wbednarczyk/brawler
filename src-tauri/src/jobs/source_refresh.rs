@@ -37,6 +37,7 @@ pub fn refresh_sources_for_trigger(
                 "Source refresh completed.",
                 source_result_metadata(trigger, &result),
             );
+            after_successful_refresh(state);
             Ok(result)
         }
         Err(error) => {
@@ -109,6 +110,7 @@ pub fn refresh_source_for_trigger(
                 "Source adapter refresh completed.",
                 source_result_metadata(trigger, &result),
             );
+            after_successful_refresh(state);
             Ok(result)
         }
         Err(error) => {
@@ -134,6 +136,19 @@ pub fn refresh_source_for_trigger(
             Err(error)
         }
     }
+}
+
+/// Cross-cutting work that must run after **every** successful source refresh,
+/// from any entry point. Centralized here (not inlined per call site) so a new
+/// refresh path cannot silently skip it — call this from the success arm.
+///
+/// Guardrail (ADR 0045): autopilot detection is event-driven off refresh
+/// completion (ADR 0055). The bug it prevents: a refresh path that ingests a new
+/// periodic report but never starts an autopilot run. Both `refresh_*_for_trigger`
+/// route through here; any future refresh entry point must too. Best-effort and
+/// idempotent — it never fails the refresh.
+fn after_successful_refresh(state: &app_state::AppState) {
+    crate::jobs::autopilot::run_detection_sweep(state);
 }
 
 pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {

@@ -403,6 +403,38 @@ pub(crate) fn confirm_kpi_proposal(
     connection: &Connection,
     input: ConfirmKpiProposalInput,
 ) -> StorageResult<FinancialFact> {
+    confirm_kpi_proposal_with_state(connection, input, "confirmed")
+}
+
+/// Auto-confirm a proposal on the autopilot path (North Star, v0.49.0 / ADR 0055):
+/// commit the model-detected value as a fact in the **`auto_unreviewed`**
+/// provenance state — cited, flagged, and reversible — using the job's detected
+/// period (no user overrides). The global confirm-before-commit default is
+/// unchanged; this only runs for a company explicitly opted into `autopilot`.
+pub(crate) fn auto_confirm_kpi_proposal(
+    connection: &Connection,
+    proposal_id: &str,
+) -> StorageResult<FinancialFact> {
+    confirm_kpi_proposal_with_state(
+        connection,
+        ConfirmKpiProposalInput {
+            proposal_id: proposal_id.to_owned(),
+            value_numeric: None,
+            currency: None,
+            fiscal_year: None,
+            period_type: None,
+            period_end_date: None,
+            accept_as_new_kpi: false,
+        },
+        "auto_unreviewed",
+    )
+}
+
+fn confirm_kpi_proposal_with_state(
+    connection: &Connection,
+    input: ConfirmKpiProposalInput,
+    confirmation_state: &str,
+) -> StorageResult<FinancialFact> {
     let proposal = get_proposal(connection, &input.proposal_id)?;
     if proposal.status == "confirmed" {
         return Err(invalid("status", "already confirmed"));
@@ -455,7 +487,7 @@ pub(crate) fn confirm_kpi_proposal(
             reporting_standard: None,
             extraction_method: Some("ai".to_owned()),
             confidence: proposal.confidence,
-            confirmation_state: Some("confirmed".to_owned()),
+            confirmation_state: Some(confirmation_state.to_owned()),
             supersedes_id: None,
             source_document_ref: Some(job.report_document_id.clone()),
         },
@@ -749,6 +781,13 @@ impl KpiExtractionStore {
         let connection = self.db.checkout()?;
 
         confirm_kpi_proposal(&connection, input)
+    }
+
+    /// Auto-confirm a proposal as an `auto_unreviewed` fact (autopilot path, ADR 0055).
+    pub fn auto_confirm_kpi_proposal(&self, proposal_id: &str) -> StorageResult<FinancialFact> {
+        let connection = self.db.checkout()?;
+
+        auto_confirm_kpi_proposal(&connection, proposal_id)
     }
 
     pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {

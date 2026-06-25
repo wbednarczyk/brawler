@@ -789,6 +789,41 @@ Rules:
 - **Crash resume.** On startup the worker requeues every `running` row back to `pending` (a `running` row with no live worker is crash residue).
 - Local-first: a single worker drains the queue only while the app is open. Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
 
+### Autopilot Settings and Runs
+
+Supports the autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)): per-company opt-in automation and a persisted record of each autonomous run. The confirm-before-commit guarantee is unchanged globally; these tables only scope automation to companies the user opts in.
+
+`company_autopilot_settings` (per-company trust-ladder mode):
+
+- `company_id` — primary key, → `companies(id)`.
+- `mode` — `off` (default) | `assist` | `autopilot`. `off`: nothing automatic. `assist`: on detection, auto-fetch + auto-extract, but facts land as `pending` for user confirmation. `autopilot`: full loop; facts auto-committed as `auto_unreviewed` (cited, flagged, reversible).
+- `updated_at`.
+
+Rules:
+
+- A company with no row is treated as `off` (reads tolerate a missing row — a safe default, per the migration-safety rule).
+- The mode is a single per-company control, not per-step toggles. Changing the mode never touches already-produced facts or runs.
+
+`autopilot_run` (one row per autonomous run; the durable record behind the single notification, the review queue, and run-level undo):
+
+- `id` — primary key and run id stamped on each stage job.
+- `company_id` → `companies(id)`; `report_document_id` → `report_documents(id)` (the detected report).
+- `trigger` — `detection` (refresh-completion hook) | `manual` (user-initiated re-run).
+- `mode` — the company autopilot mode captured at run time (`assist` | `autopilot`).
+- `status` — `pending` | `running` | `succeeded` | `failed` | `partial`.
+- `stage` — current/last stage reached: `fetch` | `extract` | `diff` | `cross_reference` | `notify`.
+- `summary_text`, `kpi_delta_json`, `report_diff_ref`, `cross_refs_json` — the composed result (what changed + cross-references to claims/questions/evidence).
+- `produced_fact_ids_json` — the `financial_facts` ids this run created, so a single "undo this run" reverts exactly those facts.
+- `notification_state` — `unread` | `read` | `dismissed` — drives the Today/Pulse "what changed" surface ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)).
+- `last_error`, `created_at`, `updated_at`.
+
+Rules:
+
+- **Detection is idempotent.** A run is created at most once per `(company_id, report_document_id)`; re-ingesting the same document does not re-fire.
+- **Stages are chained durable-queue jobs** ([Durable Job Queue](#durable-job-queue)) stamped with this `id`: `fetch → extract → diff → cross_reference → notify`. A crash mid-stage resumes that stage only; each stage reuses the existing service (fetch, KPI extraction, diff, cross-reference), never a reimplementation.
+- **Reversibility** reuses the existing fact supersede/reject mechanics; the run row only adds the grouping (`produced_fact_ids_json`) needed to undo a whole run at once. Auto-committed facts always carry `confirmation_state = auto_unreviewed` — never silently `confirmed`.
+- A `failed`/`partial` run still produces a notification describing how far it got (no silent dead-end).
+
 ### Content Embeddings
 
 Supports the interpretative AI layer's embedding-model strategy ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)): an on-device vector index over canonical text content, used by the model-backed `SimilarityProvider` (and later model capabilities). Added in `v0.45.0`.

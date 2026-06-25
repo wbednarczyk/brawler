@@ -16,6 +16,7 @@
 
 import type { Company } from "../../api/types";
 import type { CockpitLayout } from "../../api/generated/CockpitLayout";
+import type { AutopilotRun, CompanyAutopilot } from "../../api/autopilot";
 import {
   legacyCompanies,
   legacyCompanyEvents,
@@ -166,6 +167,9 @@ export interface ScenarioData {
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
   cockpitLayouts: CockpitLayout[];
+  // Autonomous report pipeline (ADR 0055)
+  autopilotModes: CompanyAutopilot[];
+  autopilotRuns: AutopilotRun[];
   // Research workspace
   researchEvidence: ResearchEvidenceItem[];
   researchQuestions: ResearchQuestion[];
@@ -285,6 +289,8 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     watchlists,
     watchlistMemberships,
     cockpitLayouts: [],
+    autopilotModes: [],
+    autopilotRuns: [],
     // Research
     researchEvidence: deep.map(makeResearchEvidenceItem),
     researchQuestions: deep.map(makeResearchQuestion),
@@ -368,6 +374,8 @@ function buildEmpty(): ScenarioData {
     watchlists: [],
     watchlistMemberships: [],
     cockpitLayouts: [],
+    autopilotModes: [],
+    autopilotRuns: [],
     researchEvidence: [],
     researchQuestions: [],
     evidenceLinks: [],

@@ -224,6 +224,16 @@ pub async fn refresh_gpw_company_registry_if_stale(
     .await
 }
 
+/// Next-due snapshot from the Rust-side scheduler (ADR 0055 / AV5), for the UI to
+/// render "next refresh at …". The scheduler — not the frontend — owns the cadence;
+/// the UI reads this instead of computing it from a webview timer.
+#[tauri::command]
+pub fn get_scheduler_status(
+    state: tauri::State<'_, app_state::AppState>,
+) -> storage::SchedulerStatus {
+    state.get_scheduler_status()
+}
+
 fn refresh_trigger(trigger: Option<String>) -> String {
     trigger
         .filter(|trigger| trigger == "manual" || trigger == "scheduler")

@@ -5,6 +5,35 @@ fn state() -> AppState {
 }
 
 #[test]
+fn reschedule_reruns_terminal_jobs_under_a_stable_id() {
+    // The scheduler primitive (ADR 0055 / AV5): one row per recurring job, re-armed
+    // each interval, so the queue does not grow a row per fire.
+    let jobs = state().jobs();
+
+    // First call inserts a runnable row.
+    assert!(jobs.reschedule("src:a", "kind", "{}", 2).expect("insert"));
+    let claimed = jobs.claim_next().expect("claim").expect("a job");
+    assert_eq!(claimed.id, "src:a");
+    jobs.mark_succeeded("src:a").expect("succeed");
+    assert_eq!(jobs.counts().expect("counts").succeeded, 1);
+
+    // Re-arming the same id resets the terminal row back to pending — still one row.
+    assert!(jobs.reschedule("src:a", "kind", "{}", 2).expect("rearm"));
+    let counts = jobs.counts().expect("counts");
+    assert_eq!(counts.pending, 1);
+    assert_eq!(counts.succeeded, 0);
+
+    // A row that is currently running is left untouched (never double-run).
+    let claimed = jobs.claim_next().expect("claim").expect("a job"); // -> running
+    assert_eq!(claimed.id, "src:a");
+    assert!(
+        !jobs.reschedule("src:a", "kind", "{}", 2).expect("rearm"),
+        "a running row is not disturbed"
+    );
+    assert_eq!(jobs.counts().expect("counts").running, 1);
+}
+
+#[test]
 fn enqueue_is_idempotent_by_id() {
     let jobs = state().jobs();
 

@@ -278,6 +278,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "cockpit_layouts",
         sql: include_str!("../../migrations/0054_cockpit_layouts.sql"),
     },
+    Migration {
+        version: 55,
+        name: "autopilot",
+        sql: include_str!("../../migrations/0055_autopilot.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

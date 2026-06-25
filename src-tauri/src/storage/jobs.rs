@@ -62,6 +62,39 @@ impl JobQueueStore {
         Ok(inserted > 0)
     }
 
+    /// Re-arm a recurring job under a **stable** id: insert it, or reset an
+    /// existing terminal (`succeeded`/`failed`) or `pending` row back to `pending`
+    /// for another run — while leaving a `running` row untouched (so an in-flight
+    /// job is never disturbed or double-run). This is the scheduler primitive for
+    /// periodic work (e.g. `source_refresh:<adapter>`): one row per recurring job,
+    /// re-runnable on each tick, so the queue does not accumulate a row per fire.
+    /// Returns `true` if the job is now runnable (newly inserted or reset).
+    pub fn reschedule(
+        &self,
+        id: &str,
+        kind: &str,
+        payload: &str,
+        max_attempts: i64,
+    ) -> StorageResult<bool> {
+        let connection = self.db.checkout()?;
+        let changed = connection.execute(
+            "
+            INSERT INTO job_queue (id, kind, payload, max_attempts)
+            VALUES (?1, ?2, ?3, ?4)
+            ON CONFLICT(id) DO UPDATE SET
+                status = 'pending',
+                attempts = 0,
+                available_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                last_error = NULL,
+                payload = excluded.payload,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE job_queue.status != 'running'
+            ",
+            params![id, kind, payload, max_attempts.max(1)],
+        )?;
+        Ok(changed > 0)
+    }
+
     /// Atomically claim the next runnable job: the oldest `pending` row whose
     /// `available_at` has passed. The claim and the `attempts` increment happen
     /// in one statement, so two workers can never claim the same row and a crash

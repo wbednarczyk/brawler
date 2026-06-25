@@ -25,6 +25,10 @@ pub const KPI_EXTRACTION_KIND: &str = "kpi_extraction";
 pub const RESEARCH_BRIEF_KIND: &str = "research_brief";
 /// Job kind: generate a research digest (status in `research_digest_jobs`).
 pub const RESEARCH_DIGEST_KIND: &str = "research_digest";
+/// Job kind: one stage of an autopilot run (North Star, v0.49.0 / ADR 0055). The
+/// payload carries `{run_id, stage}`; the handler runs that stage and chains the
+/// next, so a crash mid-stage resumes that stage only.
+pub use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
 
 struct ContentEmbeddingHandler;
 
@@ -97,6 +101,77 @@ per_job_handler!(
     "unknown"
 );
 
+/// One stage of an autopilot run. The handler runs the stage (reusing existing
+/// services) and chains the next on success; a fatal stage failure finalizes the
+/// run inside [`run_stage`] (still notified), so the handler returns Ok and the
+/// job is not retried-looped.
+struct AutopilotStageHandler;
+
+impl JobHandler for AutopilotStageHandler {
+    fn kind(&self) -> &'static str {
+        AUTOPILOT_STAGE_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::autopilot::run_stage(state, payload)
+    }
+}
+
+/// A scheduled source-adapter refresh (Rust-side scheduler, ADR 0055 / AV5). The
+/// scheduler re-arms this job per the poll interval; the worker executes the
+/// refresh (detection rides its completion). Returns `Err` on failure so the queue
+/// retries with backoff.
+struct ScheduledSourceRefreshHandler;
+
+impl JobHandler for ScheduledSourceRefreshHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::scheduler::SOURCE_REFRESH_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        let parsed: serde_json::Value =
+            serde_json::from_str(payload).map_err(|error| error.to_string())?;
+        let adapter_id = parsed
+            .get("adapterId")
+            .and_then(|value| value.as_str())
+            .ok_or("scheduled source refresh missing adapterId")?;
+        crate::jobs::source_refresh::refresh_source_for_trigger(
+            state,
+            adapter_id,
+            "scheduler",
+            None,
+        )
+        .map(|_| ())
+    }
+}
+
+/// A scheduled company-registry refresh-if-stale check (Rust-side scheduler).
+struct ScheduledRegistryRefreshHandler;
+
+impl JobHandler for ScheduledRegistryRefreshHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::scheduler::REGISTRY_REFRESH_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        let stale_after_seconds = serde_json::from_str::<serde_json::Value>(payload)
+            .ok()
+            .and_then(|value| value.get("staleAfterSeconds").and_then(|v| v.as_i64()))
+            .unwrap_or(86_400);
+        if state
+            .company_directories_are_stale(stale_after_seconds)
+            .map_err(|error| error.to_string())?
+        {
+            crate::jobs::source_refresh::refresh_company_directories_for_trigger(
+                state,
+                "scheduler",
+            )
+            .map(|_| ())?;
+        }
+        Ok(())
+    }
+}
+
 /// Build the durable-queue worker with every registered handler. Startup calls
 /// this, then [`crate::jobs::queue::spawn`] to reclaim residue and run the loop.
 pub fn build_worker(state: AppState) -> JobWorker {
@@ -107,6 +182,9 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(KpiExtractionHandler));
     worker.register(Arc::new(ResearchBriefHandler));
     worker.register(Arc::new(ResearchDigestHandler));
+    worker.register(Arc::new(AutopilotStageHandler));
+    worker.register(Arc::new(ScheduledSourceRefreshHandler));
+    worker.register(Arc::new(ScheduledRegistryRefreshHandler));
     worker
 }
 

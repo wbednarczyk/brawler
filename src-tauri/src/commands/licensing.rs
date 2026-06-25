@@ -63,6 +63,15 @@ pub fn clear_license_key(
     Ok(status)
 }
 
+/// Whether the current local license permits using the app. Used by the Rust-side
+/// scheduler (ADR 0055) to gate background refresh exactly as the UI gates it
+/// (`licenseStatus.canUseApp`), so moving the timer to Rust does not bypass the
+/// license check.
+pub(crate) fn current_license_can_use_app(state: &app_state::AppState) -> bool {
+    let store = OsKeychainLicenseTokenStore;
+    read_license_status(&store, state).can_use_app
+}
+
 fn read_license_status(
     store: &dyn LicenseTokenStore,
     state: &app_state::AppState,

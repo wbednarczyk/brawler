@@ -301,6 +301,73 @@ function buildHandlers(): Record<string, Handler> {
       return undefined;
     },
 
+    // --- Autopilot (autonomous report pipeline, ADR 0055) ---
+    get_company_autopilot: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const mode = d.autopilotModes.find((m) => m.companyId === companyId)?.mode ?? "off";
+      return { companyId, mode };
+    },
+    set_company_autopilot: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const mode = str(input.mode) ?? "off";
+      const entry = { companyId, mode };
+      const existing = d.autopilotModes.some((m) => m.companyId === companyId);
+      if (existing) {
+        const { next } = mapReplace(
+          d.autopilotModes,
+          (m) => m.companyId === companyId,
+          () => entry,
+        );
+        d.autopilotModes = next;
+      } else {
+        d.autopilotModes = [...d.autopilotModes, entry];
+      }
+      return entry;
+    },
+    list_company_autopilot_modes: (d) => d.autopilotModes,
+    set_companies_autopilot: (d, a) => {
+      const input = unwrap(a);
+      const companyIds = Array.isArray(input.companyIds) ? (input.companyIds as string[]) : [];
+      const mode = str(input.mode) ?? "off";
+      const ids = new Set(companyIds);
+      const kept = d.autopilotModes.filter((entry) => !ids.has(entry.companyId));
+      d.autopilotModes = [...kept, ...companyIds.map((companyId) => ({ companyId, mode }))];
+      return companyIds.length;
+    },
+    list_autopilot_runs: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const notificationState = str(input.notificationState);
+      return d.autopilotRuns.filter(
+        (run) =>
+          (!companyId || run.companyId === companyId) &&
+          (!notificationState || run.notificationState === notificationState),
+      );
+    },
+
+    // The Rust-side scheduler owns the refresh cadence (ADR 0055); the mock mirrors
+    // it by publishing per-adapter next-due epoch-ms. Feed adapters share the global
+    // poll interval with a small distinct per-adapter offset (the deterministic
+    // jitter that lives in Rust); the registry uses its own interval.
+    get_scheduler_status: (d) => {
+      const now = Date.now();
+      const pollMs = (d.settings.pollIntervalSeconds || 900) * 1000;
+      const sourceNextDueMs: Record<string, number> = {};
+      d.sourceAdapters
+        .filter((adapter) => adapter.enabled && adapter.sourceType !== "company_registry")
+        .forEach((adapter, index) => {
+          sourceNextDueMs[adapter.id] = now + pollMs + (5 + index * 10) * 1000;
+        });
+      const registry = d.sourceAdapters.find(
+        (adapter) => adapter.enabled && adapter.sourceType === "company_registry",
+      );
+      const registryNextDueMs = registry
+        ? now + registry.defaultPollIntervalSeconds * 1000
+        : null;
+      return { sourceNextDueMs, registryNextDueMs };
+    },
+
     // --- Watchlists ---
     list_watchlists: (d) => d.watchlists,
     list_watchlist_memberships: (d, a) => {

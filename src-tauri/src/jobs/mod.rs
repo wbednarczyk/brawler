@@ -1,4 +1,5 @@
 pub mod ai_analysis;
+pub mod autopilot;
 pub mod backfill;
 pub mod claim_extraction;
 pub mod content_embedding;

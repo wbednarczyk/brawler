@@ -1,4 +1,5 @@
 pub mod ai_analysis;
+pub mod autopilot;
 pub mod backups;
 pub mod claim_extraction;
 pub mod cockpit_layouts;

@@ -318,6 +318,34 @@ fn build_candidates(
     Ok(candidates)
 }
 
+/// Find the diff candidate whose **newer** document is `newer_doc_id` (a
+/// just-arrived report), if a consecutive same-type prior statement exists to diff
+/// against. Used by the autopilot diff stage (ADR 0055) to record the report-diff
+/// reference. Returns `(older_id, newer_id, statement_type)`; `None` when the
+/// report is the first of its type (nothing to diff yet) — a normal case.
+pub(crate) fn diff_pair_for_newer(
+    state: &app_state::AppState,
+    company_id: &str,
+    newer_doc_id: &str,
+) -> Result<Option<(String, String, String)>, String> {
+    let documents = state
+        .report_documents()
+        .list_report_documents_by_company(company_id)
+        .map_err(|error| error.to_string())?;
+    let candidates = build_candidates(state, documents)?;
+    Ok(candidates.into_iter().find_map(|candidate| {
+        if candidate.newer.report_document_id == newer_doc_id {
+            Some((
+                candidate.older.report_document_id,
+                candidate.newer.report_document_id,
+                candidate.statement_type,
+            ))
+        } else {
+            None
+        }
+    }))
+}
+
 fn load_sections(state: &app_state::AppState, document_id: &str) -> Result<Vec<Section>, String> {
     Ok(state
         .report_sections()

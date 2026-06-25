@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use self::database::{Database, DbGuard};
 
 mod ai_analysis;
+mod autopilot;
 mod backup;
 mod claim_extraction;
 mod cockpit_layouts;
@@ -73,6 +74,10 @@ mod watchlists;
 pub use ai_analysis::{
     AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
     NewAiAnalysisJob, NewAiAnalysisSourceReference,
+};
+pub use autopilot::{
+    is_valid_mode as is_valid_autopilot_mode, AutopilotRun, AutopilotStore, CompanyAutopilot,
+    ListAutopilotRunsInput, MODE_ASSIST, MODE_AUTOPILOT, MODE_OFF,
 };
 pub use backup::{BackupEntry, BackupStatus};
 pub use claim_extraction::{
@@ -211,6 +216,25 @@ pub struct EmbeddingDownloadState {
     pub error: Option<String>,
 }
 
+/// Next-due snapshot published by the Rust-side source scheduler (ADR 0055, AV5)
+/// for the UI to render "next refresh at …". Times are epoch milliseconds so they
+/// map directly onto the frontend's existing display. Not persisted: the schedule
+/// is in-memory and app-open-only; the scheduler owns the cadence (the frontend no
+/// longer decides *when* to refresh — a webview timer is throttled when hidden).
+#[derive(Clone, Debug, Default, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SchedulerStatus {
+    /// Per source adapter id → epoch-ms timestamp of its next scheduled refresh.
+    pub source_next_due_ms: HashMap<String, i64>,
+    /// Epoch-ms of the next company-registry refresh check, if scheduled.
+    pub registry_next_due_ms: Option<i64>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     db: Database,
@@ -218,6 +242,7 @@ pub struct AppState {
     data_dir: PathBuf,
     backfill_progress: Arc<Mutex<HashMap<String, BackfillProgress>>>,
     embedding_download: Arc<Mutex<EmbeddingDownloadState>>,
+    scheduler_status: Arc<Mutex<SchedulerStatus>>,
 }
 
 impl AppState {
@@ -232,6 +257,7 @@ impl AppState {
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
+            scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
         };
         state.seed_app_data();
         state
@@ -244,6 +270,7 @@ impl AppState {
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
+            scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
         };
         state.seed_app_data();
         state
@@ -274,6 +301,23 @@ impl AppState {
             .lock()
             .expect("backfill progress mutex poisoned");
         guard.get(company_id).cloned()
+    }
+
+    /// Publish the scheduler's next-due snapshot (Rust-side scheduler, ADR 0055).
+    pub fn set_scheduler_status(&self, status: SchedulerStatus) {
+        let mut guard = self
+            .scheduler_status
+            .lock()
+            .expect("scheduler status mutex poisoned");
+        *guard = status;
+    }
+
+    /// Read the latest scheduler next-due snapshot for the UI.
+    pub fn get_scheduler_status(&self) -> SchedulerStatus {
+        self.scheduler_status
+            .lock()
+            .expect("scheduler status mutex poisoned")
+            .clone()
     }
 
     /// Check out a connection for a single storage operation.
@@ -313,6 +357,12 @@ impl AppState {
     /// claim_extraction domain store (Architecture v2 / ADR 0050).
     pub fn claim_extraction(&self) -> claim_extraction::ClaimExtractionStore {
         claim_extraction::ClaimExtractionStore::new(self.db.clone())
+    }
+
+    /// Autonomous report pipeline domain store (North Star, v0.49.0 / ADR 0055):
+    /// per-company trust-ladder mode + autopilot run records.
+    pub fn autopilot(&self) -> autopilot::AutopilotStore {
+        autopilot::AutopilotStore::new(self.db.clone())
     }
 
     /// diagnostics domain store (Architecture v2 / ADR 0050).
@@ -1590,6 +1640,15 @@ impl AppState {
 
     pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {
         self.kpi_extraction().reject_kpi_proposal(proposal_id)
+    }
+
+    /// Auto-confirm a KPI proposal as an `auto_unreviewed` fact (autopilot path,
+    /// ADR 0055). Used by the extract stage of an autopilot run.
+    pub fn autopilot_auto_confirm_proposal(
+        &self,
+        proposal_id: &str,
+    ) -> StorageResult<FinancialFact> {
+        self.kpi_extraction().auto_confirm_kpi_proposal(proposal_id)
     }
 
     pub fn update_financial_fact(

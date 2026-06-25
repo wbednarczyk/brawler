@@ -49,6 +49,12 @@
   white-space: nowrap;
 }
 
+.today-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 .today-conviction-headline {
   color: var(--text);
   font-weight: 650;

@@ -1,5 +1,13 @@
 import { useMemo } from "react";
-import { CalendarClock, CheckCircle2, FileText, Inbox, ShieldQuestion } from "lucide-react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  FileText,
+  Inbox,
+  ShieldQuestion,
+  Sparkles,
+  X,
+} from "lucide-react";
 
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { Company, FeedItem, Watchlist } from "../../api/types";
@@ -43,10 +51,22 @@ export function TodayScreen({
   openInbox,
 }: TodayScreenProps) {
   const { t, text } = useLocale();
-  const { season, claims, claimsLoading, claimsError } = useTodayPulse(pinnedCompanyIds, companies);
+  const {
+    season,
+    claims,
+    claimsLoading,
+    claimsError,
+    autopilotRuns,
+    autopilotLoading,
+    dismissAutopilotRun,
+  } = useTodayPulse(pinnedCompanyIds, companies);
 
   const companyByTicker = useMemo(
     () => new Map(companies.map((company) => [company.qualifiedTicker, company])),
+    [companies],
+  );
+  const companyById = useMemo(
+    () => new Map(companies.map((company) => [company.id, company])),
     [companies],
   );
 
@@ -120,6 +140,51 @@ export function TodayScreen({
             ))
           )}
         </section>
+
+        {autopilotLoading || autopilotRuns.length > 0 ? (
+          <section className="today-card" aria-label={text("Autopilot")}>
+            <SectionHeader level="h3" variant="accent" title={text("Autopilot")} />
+            {autopilotLoading && autopilotRuns.length === 0 ? (
+              <EmptyState>{text("Checking autopilot runs…")}</EmptyState>
+            ) : (
+              autopilotRuns.map((run) => {
+                const company = companyById.get(run.companyId);
+                const failed = run.status === "failed" || run.status === "partial";
+                return (
+                  <ListRow
+                    key={run.id}
+                    icon={<Sparkles size={15} aria-hidden="true" />}
+                    title={run.summaryText ?? text("New report processed.")}
+                    titleAttr={run.summaryText ?? undefined}
+                    meta={
+                      <span className="today-row-meta">
+                        {company ? <TickerLabel value={company.qualifiedTicker} /> : null}
+                        {failed ? (
+                          <StatusPill tone="danger">
+                            {run.status === "partial" ? text("Partial") : text("Failed")}
+                          </StatusPill>
+                        ) : null}
+                      </span>
+                    }
+                    trailing={
+                      <span className="today-row-actions">
+                        {company ? reviewButton(company.id, "Fundamentals") : null}
+                        <Button
+                          onClick={() => dismissAutopilotRun(run.id)}
+                          type="button"
+                          variant="ghost"
+                          aria-label={text("Dismiss")}
+                        >
+                          <X size={14} aria-hidden="true" />
+                        </Button>
+                      </span>
+                    }
+                  />
+                );
+              })
+            )}
+          </section>
+        ) : null}
 
         <section className="today-card" aria-label={text("To verify")}>
           <SectionHeader level="h3" variant="accent" title={text("To verify")} />
