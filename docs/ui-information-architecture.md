@@ -20,7 +20,7 @@ The shell is **mode-based and thesis-centric** ([ADR 0054](adr/0054-mode-based-t
 Modes / destinations:
 
 - **🏠 Today / Pulse** (default / home) — a Triage-style attention queue ("what changed / to verify / stale") plus a watchlist-level conviction rollup; the feed is secondary input.
-- **🔬 Company workspace** — a single-company deep-dive in fixed, modular, progressively-disclosed sections (Overview, Fundamentals, Valuation, Quality, What-changed, Claims, Reports, Notebook, Thesis), entered by selecting a company; **dockview's free arrangement is the opt-in "advanced layout"** within it.
+- **🔬 Company workspace** — a single-company deep-dive in fixed, modular, progressively-disclosed sections (Overview, Fundamentals, Valuation, Quality, What-changed, Claims, Reports, Notebook, Thesis), entered by selecting a company; **dockview's free arrangement is the opt-in "advanced layout"** within it. Single-company settings (autopilot mode, IR reports URL) live inline in Fundamentals; **cross-company settings management** is a separate **master-detail surface** ("Manage settings" in the Companies screen — company multi-select + grouped settings applied to the selection, with watchlist-scope selection), the scalable home for *all* per-company settings ([ADR 0056](adr/0056-per-company-settings-surface.md); v1 ships autopilot, pinned/watchlists next).
 - **⚖️ Compare** — cross-company KPI tables (v0.53).
 - **📋 Journal** — the decision journal (v0.56).
 - **📖 Focus** — distraction-free reading (a long report diff) / writing (a thesis or note).

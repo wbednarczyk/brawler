@@ -1,5 +1,5 @@
-import type { Dispatch, MutableRefObject, SetStateAction } from "react";
-import { LocateFixed, Plus, Trash2 } from "lucide-react";
+import { useState, type Dispatch, type MutableRefObject, type SetStateAction } from "react";
+import { LocateFixed, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
 import type { AiAnalysisJob, Company, CompanyForm, CompanyRegistryEntry, FeedItem, NotebookEntry, Watchlist, WatchlistMembership } from "../../api/types";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -14,6 +14,7 @@ import type {
 } from "../../shared/types/notebook";
 import type { CompanyWorkspaceTab } from "./companyTypes";
 import { CompanyWorkspace } from "./CompanyWorkspace";
+import { CompanySettingsManager } from "./CompanySettingsManager";
 
 type CompanyFieldRefs = MutableRefObject<Record<keyof CompanyForm, HTMLInputElement | null>>;
 
@@ -192,6 +193,7 @@ export function CompaniesScreen() {
   updateFinancialFactForm,
   } = useCompaniesViewModel();
   const { t, text } = useLocale();
+  const [settingsMode, setSettingsMode] = useState(false);
 
   return (
     <section className="feed-panel" aria-labelledby="companies-title">
@@ -199,8 +201,25 @@ export function CompaniesScreen() {
                 title={t("companies.title")}
                 description={t("companies.description")}
                 titleId="companies-title"
+                actions={
+                  <Button
+                    onClick={() => setSettingsMode((value) => !value)}
+                    type="button"
+                    variant={settingsMode ? "primary" : "ghost"}
+                  >
+                    <SlidersHorizontal size={14} aria-hidden="true" />
+                    {settingsMode ? text("Done") : text("Manage settings")}
+                  </Button>
+                }
               />
 
+              {settingsMode ? (
+                <CompanySettingsManager
+                  companies={companies}
+                  watchlists={watchlists}
+                  membershipsByCompany={membershipsByCompany}
+                />
+              ) : (
               <div className="companies-layout">
                 <form className="company-form" onSubmit={createCompany}>
                   <label>
@@ -482,6 +501,7 @@ export function CompaniesScreen() {
                 ) : null}
                 {lookupStatus ? <p className="helper-text">{text(lookupStatus)}</p> : null}
               </div>
+              )}
             </section>
   );
 }

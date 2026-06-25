@@ -714,3 +714,96 @@
   gap: 10px;
 }
 
+/* Per-company settings surface (ADR 0056): master-detail, stacks in narrow windows. */
+.company-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 1100px) {
+  .company-settings {
+    grid-template-columns: 1fr;
+  }
+}
+
+.company-settings-master,
+.company-settings-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.company-settings-select-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* The header "select all" checkbox is intentionally larger than the per-row ones,
+   so it reads as the master toggle (no separate "Select all" button). */
+.company-settings-select-all {
+  font-weight: 600;
+}
+
+.company-settings-select-all input {
+  width: 18px;
+  height: 18px;
+}
+
+.company-settings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 60vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.company-settings-row {
+  padding: 4px 2px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+}
+
+.company-settings-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.company-settings-row-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.company-settings-row-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.company-settings-mode-badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+}
+
+.company-settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.company-settings-count {
+  font-size: 0.8rem;
+  color: var(--text-muted, rgba(255, 255, 255, 0.6));
+}
+
