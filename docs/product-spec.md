@@ -186,6 +186,8 @@ Events created from official or public sources must retain source URL, attributi
 
 This milestone depends on either test-sample-backed events or source adapters capable of producing calendar-like events. It should be implemented after the first GPW ingestion work is stable enough to prove the source model.
 
+The **investor week calendar** (`v0.59.0`, [ADR 0058](adr/0058-investor-week-calendar.md)) extends this week view into a "what matters this week" digest by adding composable, opt-in **layers**: company events gain IPO debut (`DEBIUT`) and ex-dividend (`ODCIĘCIE DYWIDENDY`) dates; an opt-in **whole-market** scope shows untracked GPW tickers alongside the watchlist; a **macro** lane shows economic releases (CPI/PMI/payrolls) with time and country (manual + sample first, a policy-clean live source deferred to a follow-up ADR); and **market holidays** mark closed sessions per exchange (`WOLNE`). Watchlist-first stays the default; foreign-company earnings are out of scope. It remains decision support, not advice, and is not a portfolio calendar.
+
 ## AI Analysis
 
 The first AI milestone is summarization and classification:

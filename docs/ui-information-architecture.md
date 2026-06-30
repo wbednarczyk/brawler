@@ -355,6 +355,14 @@ Event rows should follow the app-wide row interaction pattern: the row is the pr
 
 The first implementation may use test-sample-backed events. The UX should still assume future official-source events can coexist with manual events and user corrections without hiding where the date came from.
 
+### Investor week view (layers)
+
+The Events screen also offers a **weekly working-day view** (Mon–Fri columns; a weekend column only when populated) — the investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`), inspired by the Koomberg weekly digest. It composes opt-in **layers** over the same data, with our own UI:
+
+- **Scope toggle** — watchlist (default) ↔ **whole market** (untracked GPW tickers via the opt-in relaxed Bankier ingest).
+- **Layer toggles** — company events (reports, `DEBIUT`/IPO debut, `ODCIĘCIE DYWIDENDY`/ex-dividend), **macro** (CPI/PMI/payrolls with time + country flag; manual + sample now, live source later), and **market holidays** (per-market `WOLNE` badge on closed days).
+- Each layer renders as a lane within a day column; lanes and columns must stack/degrade in tall-narrow windows. Scope and enabled layers persist in settings.
+
 ## Sources Screen
 
 Purpose: show whether data ingestion is healthy.

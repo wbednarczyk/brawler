@@ -664,6 +664,8 @@ Initial event types:
 - `periodic_report`
 - `corporate_action`
 - `dividend`
+- `ex_dividend` — ex-dividend / cut-off date (`ODCIĘCIE DYWIDENDY`), distinct from `dividend` (record/payment); [ADR 0058](adr/0058-investor-week-calendar.md)
+- `ipo_debut` — primary-market debut (`DEBIUT`); [ADR 0058](adr/0058-investor-week-calendar.md)
 - `shareholder_meeting`
 - `conference_call`
 - `investor_conference`
@@ -693,6 +695,23 @@ Rules:
 - The Bankier adapter may fetch week-specific calendar pages using Bankier's `navigation_type=week&navigation_start=<unix timestamp>` query parameters when the Events week view needs a week that is not cached locally.
 - Bankier event identity is based on ticker, event category, and event description so a date changed by the source updates the existing event instead of creating a correction row.
 - Hidden/empty Bankier calendar RSS endpoints are not accepted as reliable until direct checks prove stable populated content.
+
+### Investor Week Calendar
+
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
+
+`list_investor_week(input)` returns the week read model. `input` is `{ weekAnchor: "YYYY-MM-DD", scope: "watchlist" | "market", watchlistId?: string, layers: { macro: boolean, holidays: boolean } }`. It returns working-day columns (Mon–Fri; a weekend column only when populated); each column groups items by layer (`company`, `macro`, `holiday`) with per-layer freshness so a stale layer is visible rather than silently empty. The `company` layer unions tracked `company_events` with, when `scope = "market"`, untracked `market_calendar_events`, deduped by ticker.
+
+Macro (`macro_events`) read/write — manual entry ships in `v0.59.0`; a live macro source is deferred to a follow-up ADR:
+
+- `list_macro_events(input)`: `{ from: "YYYY-MM-DD", to: "YYYY-MM-DD" }` → macro releases in range.
+- `create_macro_event` / `update_macro_event` / `delete_macro_event`: user-entered releases (`manual = 1`), with `indicatorKey`, `title`, `country`, `eventDate`, optional `eventTime`/`importance`/`actual`/`forecast`/`previous`.
+
+Holidays (`market_holidays`) read — a curated static dataset, no write contract beyond seed/refresh:
+
+- `list_market_holidays(input)`: `{ from, to, markets?: string[] }` → holidays in range, tolerant of an un-seeded year (empty result, never an error).
+
+The active scope and enabled layers persist via `update_settings` (the pinned-companies pattern).
 - Manual events use `sourceType: "manual"` and `manual: true`.
 - Manual events are for missing or user-known dates, not corrections to normal source updates.
 

@@ -15,6 +15,7 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 - Secrets live in the OS keychain, not in SQLite.
 - YAML config is import/export/bootstrap, not runtime truth.
 - Schema changes must be migration-managed from the first implementation milestone.
+- **Domain recency is the domain date, never `created_at`.** Selecting or ranking "newest / latest / most recent" of anything (report, feed item, event, signal, fact) must order by the **domain date** — publication / period-end / event / signal date — and never by `created_at`/`updated_at`/ingestion order. `created_at` is the local insert time; a history backfill or re-ingest gives an **old** record a **newer** `created_at`, so created-order silently diverges from chronological order. Any such selection ships a test against **real backfilled data where `created_at` order ≠ domain-date order** (real-data validation). Guardrail from `d60305c` (autopilot detection fired on a 3-year-old report by ranking on `created_at`); policy [ADR 0045](adr/0045-guardrail-harvest-loop.md).
 
 ## Core Entities
 
@@ -245,6 +246,29 @@ Rules:
 - `bankier-kalendarium-html` is the active broader public calendar adapter and matches only tracked companies by exact ticker.
 - Bankier calendar source keys are based on ticker, event category, and event description so source-side date changes update the existing sourced event row.
 - Source-keyed refresh updates sourced event rows when the accepted source changes the event.
+- For the investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md)), `event_type` gains `ipo_debut` (primary-market debut) and `ex_dividend` (ex-dividend / cut-off date, distinct from `dividend` = record/payment). No schema change — `event_type` is a string. The `bankier-kalendarium-html` mapping widens to emit `periodic_report`, `ipo_debut`, and `ex_dividend`; ESPI ex-date derivation extends `event_derivation`.
+
+### Investor Calendar Layers
+
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`) is a backend-owned **read model** (`list_investor_week`) that unions company events with market-wide layers that have no canonical company. It adds three small domains; `company_events` and its one-canonical-company invariant are unchanged.
+
+`market_calendar_events` — the opt-in **whole-market** layer: GPW calendar events for **untracked** tickers (no `company_id`). Populated by a relaxed whole-page Bankier kalendarium ingest fetched only when the user enables the market scope.
+
+- Fields: `id`, `ticker`, `issuer_name`, `event_type`, `title`, `event_date`, `event_time`, `status`, `source_type`, `source_adapter_id`, `source_event_key`, `source_url`, `attribution`, `fetched_at`, `created_at`, `updated_at`.
+- No `company_id`; `ticker` is the only company key. The week read model unions `company_events` (tracked) ∪ `market_calendar_events` (untracked) **deduped by ticker**, so a tracked company never appears twice; a market row whose ticker matches a tracked company links into its workspace.
+- `(source_adapter_id, source_event_key)` deduplicates rows; cache-first week navigation reuses the Bankier dated-week pattern.
+
+`macro_events` — the **macro** layer (no company). The model + manual add + a sample seed ship in `v0.59.0`; a policy-clean **live source is deferred to a follow-up ADR** (ADR 0058 §4).
+
+- Fields: `id`, `indicator_key`, `title`, `country`, `event_date`, `event_time`, `importance`, `actual`, `forecast`, `previous`, `source_type`, `source_url`, `attribution`, `fetched_at`, `manual`, `created_at`, `updated_at`.
+- `actual`/`forecast`/`previous` are optional text. `manual = 1` for user-entered releases. Reads tolerate an empty table (safe default = no macro lane).
+
+`market_holidays` — the **holidays** layer: a curated, refreshable static dataset (GPW; US NYSE/Nasdaq), **not** a live source.
+
+- Fields: `id`, `market`, `holiday_date`, `name`, `session` (`closed | half_day`), `created_at`, `updated_at`.
+- Renders a per-market `WOLNE` badge on closed days. Reads tolerate a missing/un-seeded year (safe default = no holidays) so the week view never crashes.
+
+Active scope (`watchlist | market`) and enabled layers (macro, holidays) persist in `user_settings` with tolerant defaults (the pinned-companies pattern, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)).
 
 ### Company Signals
 
