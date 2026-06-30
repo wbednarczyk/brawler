@@ -150,7 +150,9 @@ fn stage_fetch(state: &AppState, run: &storage::AutopilotRun) -> Result<(), Stri
 /// `autopilot` mode, auto-confirms each proposal as an `auto_unreviewed` fact
 /// (cited, flagged, reversible); in `assist` mode the proposals stay `pending`
 /// for the user to confirm. Degrades gracefully when no real AI provider is
-/// configured — records that extraction was unavailable and continues to diff
+/// configured — and, in `autopilot` mode, also when the configured provider is
+/// the **test-sample** provider (its placeholder KPIs must never be auto-committed
+/// as facts) — recording that extraction was unavailable and continuing to diff
 /// (AI cost stays bounded: at most one extraction per detected report).
 fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), String> {
     let settings = state.get_settings().map_err(|e| e.to_string())?;
@@ -174,6 +176,24 @@ fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), St
     };
 
     let provider_id = provider_id.to_owned();
+
+    // Autopilot must never auto-commit facts from a non-real provider. The
+    // test-sample analysis provider returns placeholder KPIs, so in `autopilot`
+    // mode it would auto-confirm sample data as `auto_unreviewed` facts — treat it
+    // as "no real provider" and degrade (ADR 0055; AGENTS.md: mocks are never
+    // completion evidence). `assist` mode still runs: its proposals stay `pending`
+    // and are user-gated, so no sample fact is ever committed without review.
+    if run.mode == MODE_AUTOPILOT && provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
+        let delta = serde_json::json!({
+            "extractionAvailable": false,
+            "reason": "test_sample_provider",
+        });
+        let _ = state
+            .autopilot()
+            .set_kpi_delta_json(&run.id, &delta.to_string());
+        return Ok(());
+    }
+
     let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
         TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
     } else {
@@ -424,7 +444,10 @@ pub fn run_detection_sweep(state: &AppState) {
 
 /// Keep the newest periodic-report (financial-statement) document per statement
 /// type. A document is a periodic report when it classifies as a financial
-/// statement and still carries a file (not `metadata_only`).
+/// statement and still carries a file (not `metadata_only`). "Newest" is the
+/// report's **disclosure date** ([`report_disclosure_key`]), never `created_at`:
+/// an on-track history backfill ingests old reports with a fresh `created_at`, so
+/// ranking on insert order fires autopilot on a years-old report (`d60305c`).
 fn newest_periodic_reports_per_type(
     documents: Vec<storage::ReportDocument>,
 ) -> Vec<storage::ReportDocument> {
@@ -440,11 +463,207 @@ fn newest_periodic_reports_per_type(
         };
         let key = statement.as_str().to_owned();
         match newest.get(&key) {
-            Some(current) if current.created_at >= document.created_at => {}
+            Some(current) if report_disclosure_key(current) >= report_disclosure_key(&document) => {
+            }
             _ => {
                 newest.insert(key, document);
             }
         }
     }
     newest.into_values().collect()
+}
+
+/// A sortable **disclosure-date** key (`YYYY-MM-DD`) for ranking report recency —
+/// the domain date, not `created_at`/ingestion order ([data-model.md] Model
+/// Principles; guardrail `d60305c`). The accepted ESPI/EBI attachment sources embed
+/// the disclosure month in the URL as `/emitent/YYYY-MM/`; use it (day `01`, which
+/// is enough for the quarterly cadence detection ranks). Falls back to `fetched_at`,
+/// then `created_at` only as a last resort (a non-`emitent`, never-fetched doc).
+fn report_disclosure_key(document: &storage::ReportDocument) -> String {
+    if let Some(month) = disclosure_month_from_url(&document.url) {
+        return format!("{month}-01");
+    }
+    if let Some(fetched) = document.fetched_at.as_deref() {
+        if fetched.len() >= 10 {
+            return fetched[..10].to_owned();
+        }
+    }
+    if document.created_at.len() >= 10 {
+        return document.created_at[..10].to_owned();
+    }
+    document.created_at.clone()
+}
+
+/// Extract the disclosure month `YYYY-MM` from an ESPI/EBI attachment URL's
+/// `/emitent/YYYY-MM/` segment (bonnier.pl and bankier.pl both use it). `None` for
+/// any URL without that segment (e.g. an IR landing page).
+fn disclosure_month_from_url(url: &str) -> Option<String> {
+    const MARKER: &str = "/emitent/";
+    let start = url.find(MARKER)? + MARKER.len();
+    let rest = url.get(start..)?;
+    let bytes = rest.as_bytes();
+    // Expect exactly "YYYY-MM/".
+    if bytes.len() < 8
+        || !bytes[..4].iter().all(u8::is_ascii_digit)
+        || bytes[4] != b'-'
+        || !bytes[5..7].iter().all(u8::is_ascii_digit)
+        || bytes[7] != b'/'
+    {
+        return None;
+    }
+    let month: u32 = rest[5..7].parse().ok()?;
+    if !(1..=12).contains(&month) {
+        return None;
+    }
+    Some(rest[..7].to_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{open_in_memory_database, NewCompany};
+
+    /// Guardrail (issue a3643d7): in `autopilot` mode the test-sample analysis
+    /// provider must be treated as "no real provider" — extraction degrades and
+    /// nothing is auto-confirmed, so sample/placeholder KPIs never land as
+    /// `auto_unreviewed` facts (ADR 0055; AGENTS.md: mocks are not completion
+    /// evidence).
+    #[test]
+    fn autopilot_does_not_auto_confirm_with_test_sample_provider() {
+        // The settings layer rejects the test-sample provider as user-selectable
+        // (its primary protection — `selectable_analysis_provider_ids` excludes it).
+        // Inject it straight into the settings row to simulate the state the guard
+        // defends against (a corrupt or imported settings value that bypassed
+        // validation), then assert autopilot still refuses to auto-confirm.
+        let connection = open_in_memory_database().expect("db");
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, value_type) \
+                 VALUES ('general_analysis_provider', ?1, 'string') \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [TEST_SAMPLE_ANALYSIS_PROVIDER_ID],
+            )
+            .expect("inject test-sample provider bypassing validation");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        let run_id = "run_test_sample";
+        state
+            .autopilot()
+            .create_run_if_absent(run_id, &company.id, "doc1", "manual", MODE_AUTOPILOT)
+            .expect("create run")
+            .expect("run created");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        stage_extract(&state, &run).expect("extract stage");
+
+        let after = state.autopilot().get_run(run_id).expect("get run");
+        let delta = after.kpi_delta_json.expect("kpi delta recorded");
+        assert!(
+            delta.contains("test_sample_provider"),
+            "degrade reason should be test_sample_provider, got: {delta}"
+        );
+        assert!(
+            delta.contains("\"extractionAvailable\":false"),
+            "extraction should be unavailable, got: {delta}"
+        );
+        assert!(
+            after.produced_fact_ids.is_empty(),
+            "no sample facts may be auto-confirmed, got: {:?}",
+            after.produced_fact_ids
+        );
+    }
+
+    fn report_doc(id: &str, url: &str, title: &str, created_at: &str) -> storage::ReportDocument {
+        storage::ReportDocument {
+            id: id.to_owned(),
+            company_id: "company_gpw_cbf".to_owned(),
+            period_id: None,
+            source_type: "user_url".to_owned(),
+            origin_ref: None,
+            url: url.to_owned(),
+            local_path: Some("report_documents/x.pdf".to_owned()),
+            content_type: Some("application/pdf".to_owned()),
+            content_hash: None,
+            byte_size: Some(1),
+            title: Some(title.to_owned()),
+            attribution: None,
+            fetch_status: "fetched".to_owned(),
+            fetch_error: None,
+            fetched_at: None,
+            created_at: created_at.to_owned(),
+            updated_at: created_at.to_owned(),
+        }
+    }
+
+    #[test]
+    fn disclosure_key_reads_the_emitent_month_from_espi_urls() {
+        // Both accepted ESPI attachment hosts embed /emitent/YYYY-MM/.
+        assert_eq!(
+            disclosure_month_from_url(
+                "https://bonnier.pl/static/att/emitent/2026-05/20260520_172023_x_ssf.pdf"
+            ),
+            Some("2026-05".to_owned())
+        );
+        assert_eq!(
+            disclosure_month_from_url(
+                "https://www.bankier.pl/static/att/emitent/2023-09/c-F-2023-Q2-SSF.pdf"
+            ),
+            Some("2023-09".to_owned())
+        );
+        // No /emitent/ segment (e.g. an IR landing page) → no month.
+        assert_eq!(
+            disclosure_month_from_url("https://modivo.pl/relacje-inwestorskie"),
+            None
+        );
+
+        // Key falls back to fetched_at, then created_at, when the URL has no month.
+        let mut doc = report_doc(
+            "d",
+            "https://example.com/ir",
+            "Q1 SSF",
+            "2026-06-15T10:00:00Z",
+        );
+        doc.fetched_at = Some("2023-08-01T09:00:00Z".to_owned());
+        assert_eq!(report_disclosure_key(&doc), "2023-08-01");
+        doc.fetched_at = None;
+        assert_eq!(report_disclosure_key(&doc), "2026-06-15");
+    }
+
+    /// Guardrail (`d60305c`): detection must rank by the report's disclosure date,
+    /// not `created_at`. Real-data-shaped: an on-track backfill gives the OLD 2023
+    /// report a NEWER `created_at` than the actual-latest 2026 report — ranking on
+    /// `created_at` (the bug) picks 2023; ranking on disclosure picks 2026.
+    #[test]
+    fn newest_per_type_ranks_by_disclosure_not_created_at() {
+        let stale_2023 = report_doc(
+            "doc_2023_q2_ssf",
+            "https://www.bankier.pl/static/att/emitent/2023-09/c-F-2023-Q2-SSF.pdf",
+            "Cyber Folks 2023 Q2 SSF",
+            "2026-06-15T16:49:36.268Z", // backfilled later → newer created_at
+        );
+        let latest_2026 = report_doc(
+            "doc_2026_q1_ssf",
+            "https://bonnier.pl/static/att/emitent/2026-05/20260520_x_ssf.pdf",
+            "Cyber Folks 2026 Q1 SSF",
+            "2026-06-15T16:49:36.167Z", // ingested earlier → older created_at
+        );
+
+        let picked = newest_periodic_reports_per_type(vec![stale_2023, latest_2026]);
+
+        assert_eq!(picked.len(), 1, "both are the same statement type (ssf)");
+        assert_eq!(
+            picked[0].id, "doc_2026_q1_ssf",
+            "the actual-latest report must win, not the recently-backfilled old one"
+        );
+    }
 }
