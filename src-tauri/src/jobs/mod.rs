@@ -14,6 +14,7 @@ pub mod research_digests;
 pub mod scheduler;
 pub mod signal_classification;
 pub mod source_refresh;
+pub mod structured_extraction;
 pub mod transcript_runner;
 
 use crate::app_state::AppState;

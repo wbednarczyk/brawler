@@ -1,0 +1,105 @@
+---
+source: src/fundamentals/extraction/pdf/tests.rs
+expression: parse.facts
+---
+[
+    ExtractedFact {
+        metric_key: "total_assets",
+        value: 45000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "aktywa razem",
+    },
+    ExtractedFact {
+        metric_key: "total_liabilities",
+        value: 20000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "zobowiązania razem",
+    },
+    ExtractedFact {
+        metric_key: "total_equity",
+        value: 25000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "kapitał własny",
+    },
+    ExtractedFact {
+        metric_key: "revenue",
+        value: 12000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "przychody netto ze sprzedaży",
+    },
+    ExtractedFact {
+        metric_key: "operating_profit",
+        value: 1500000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "zysk z działalności operacyjnej",
+    },
+    ExtractedFact {
+        metric_key: "net_profit",
+        value: 1100000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "zysk netto",
+    },
+    ExtractedFact {
+        metric_key: "cash",
+        value: 8000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "środki pieniężne i ich ekwiwalenty",
+    },
+    ExtractedFact {
+        metric_key: "operating_cash_flow",
+        value: 6000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "przepływy pieniężne netto z działalności operacyjnej",
+    },
+    ExtractedFact {
+        metric_key: "eps_basic",
+        value: 2.45,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "zysk na akcję",
+    },
+]

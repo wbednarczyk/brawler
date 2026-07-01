@@ -44,6 +44,7 @@ mod events;
 mod feed;
 mod feed_matching;
 mod financials;
+mod fundamentals_provenance;
 mod import_export;
 mod ingestion;
 mod jobs;
@@ -107,13 +108,14 @@ pub use financials::{
     NewKpiDefinition, NewKpiRelevance, UpdateFinancialFact, UpdateFinancialPeriod,
     UpdateKpiRelevance,
 };
+pub use fundamentals_provenance::{FactProvenance, FundamentalsProvenanceStore, NewFactProvenance};
 pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
 pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore};
 pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
     CompletedKpiExtraction, ConfirmKpiProposalInput, KpiExtractionJob, KpiExtractionProposal,
-    NewKpiExtractionJob, NewKpiProposal,
+    NewKpiExtractionJob, NewKpiProposal, StructuredFactInput,
 };
 pub use licensing::LicensingStore;
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
@@ -461,6 +463,11 @@ impl AppState {
     /// financials domain store (Architecture v2 / ADR 0050).
     pub fn financials(&self) -> financials::FinancialsStore {
         financials::FinancialsStore::new(self.db.clone())
+    }
+
+    /// Structured-first extraction provenance + per-company profiles (ADR 0061).
+    pub fn fundamentals_provenance(&self) -> fundamentals_provenance::FundamentalsProvenanceStore {
+        fundamentals_provenance::FundamentalsProvenanceStore::new(self.db.clone())
     }
 
     /// import_export domain store (Architecture v2 / ADR 0050).

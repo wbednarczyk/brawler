@@ -541,6 +541,115 @@ fn ensure_period(
     Ok(resolved)
 }
 
+/// Input for [`record_structured_fact`]: one metric produced by the
+/// deterministic pipeline (ADR 0061).
+pub struct StructuredFactInput<'a> {
+    pub company_id: &'a str,
+    pub fiscal_year: i64,
+    pub period_type: &'a str,
+    pub period_end: Option<&'a str>,
+    pub report_document_id: &'a str,
+    pub metric_key: &'a str,
+    pub value_numeric: &'a str,
+    pub currency: Option<&'a str>,
+    /// `pending` (assist) | `auto_unreviewed` (autopilot) | `confirmed`.
+    pub confirmation_state: &'a str,
+    /// `esef` | `pdf` | `html_aggregator` | …
+    pub source_tier: &'a str,
+    /// `passed` | `witness_confirmed` | `unreviewed` | `flagged`.
+    pub validation_status: &'a str,
+    pub citation: Option<&'a str>,
+}
+
+pub(crate) fn record_structured_fact(
+    connection: &Connection,
+    input: StructuredFactInput<'_>,
+) -> StorageResult<Option<String>> {
+    let period_id = ensure_period(
+        connection,
+        input.company_id,
+        input.fiscal_year,
+        input.period_type,
+        input.period_end,
+        input.report_document_id,
+    )?;
+    let Some(definition_id) =
+        resolve_definition_by_metric_key(connection, input.company_id, input.metric_key)?
+    else {
+        // Not a catalog metric — the structured pipeline only emits canonical
+        // keys, so this is a defensive skip, never a silent bad write.
+        return Ok(None);
+    };
+
+    let fact = create_financial_fact(
+        connection,
+        NewFinancialFact {
+            company_id: input.company_id.to_owned(),
+            period_id,
+            definition_id,
+            value_numeric: input.value_numeric.to_owned(),
+            currency: input.currency.map(str::to_owned),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            // Deterministic structured extraction, not an AI read.
+            extraction_method: Some("api".to_owned()),
+            confidence: None,
+            confirmation_state: Some(input.confirmation_state.to_owned()),
+            supersedes_id: None,
+            source_document_ref: Some(input.report_document_id.to_owned()),
+        },
+    )?;
+
+    connection.execute(
+        "
+        INSERT INTO financial_fact_provenance
+            (fact_id, source_tier, validation_status, drift_json, citation)
+        VALUES (?1, ?2, ?3, NULL, ?4)
+        ON CONFLICT(fact_id) DO UPDATE SET
+            source_tier = excluded.source_tier,
+            validation_status = excluded.validation_status,
+            citation = excluded.citation,
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        ",
+        params![
+            fact.id,
+            input.source_tier,
+            input.validation_status,
+            input.citation,
+        ],
+    )?;
+
+    Ok(Some(fact.id))
+}
+
+/// Resolves a canonical/company KPI definition by metric key, without creating
+/// one (the structured pipeline only emits seeded catalog metrics).
+fn resolve_definition_by_metric_key(
+    connection: &Connection,
+    company_id: &str,
+    metric_key: &str,
+) -> StorageResult<Option<String>> {
+    let existing: Option<String> = connection
+        .query_row(
+            "
+            SELECT id FROM kpi_definitions
+            WHERE metric_key = ?1 AND (company_id = ?2 OR company_id IS NULL)
+            ORDER BY (company_id IS NULL)
+            LIMIT 1
+            ",
+            params![metric_key.trim(), company_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(existing)
+}
+
 fn resolve_definition(
     connection: &Connection,
     company_id: &str,
@@ -788,6 +897,23 @@ impl KpiExtractionStore {
         let connection = self.db.checkout()?;
 
         auto_confirm_kpi_proposal(&connection, proposal_id)
+    }
+
+    /// Persists one deterministically-extracted fact (ADR 0061): ensures the
+    /// period, resolves the canonical KPI definition, writes the fact with the
+    /// given confirmation state, and records its structured provenance (source
+    /// tier + validation verdict + citation) — all in one transaction. Returns
+    /// the fact id, or `None` when the metric has no catalog definition (a
+    /// non-canonical key the structured pipeline should not emit).
+    pub fn record_structured_fact(
+        &self,
+        input: StructuredFactInput<'_>,
+    ) -> StorageResult<Option<String>> {
+        let mut connection = self.db.checkout()?;
+        let tx = connection.transaction()?;
+        let result = record_structured_fact(&tx, input)?;
+        tx.commit()?;
+        Ok(result)
     }
 
     pub fn reject_kpi_proposal(&self, proposal_id: &str) -> StorageResult<KpiExtractionProposal> {

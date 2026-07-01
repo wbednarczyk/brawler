@@ -1,0 +1,98 @@
+---
+source: src/fundamentals/extraction/esef/tests.rs
+expression: facts
+---
+[
+    ExtractedFact {
+        metric_key: "operating_profit",
+        value: -1500000,
+        period: Duration {
+            start: "2026-01-01",
+            end: "2026-03-31",
+        },
+        basis: Some(
+            Consolidated,
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        tier: Esef,
+        citation: "ProfitLossFromOperatingActivities",
+    },
+    ExtractedFact {
+        metric_key: "revenue",
+        value: 12000000,
+        period: Duration {
+            start: "2026-01-01",
+            end: "2026-03-31",
+        },
+        basis: Some(
+            Consolidated,
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        tier: Esef,
+        citation: "Revenue",
+    },
+    ExtractedFact {
+        metric_key: "total_assets",
+        value: 40000000,
+        period: Instant(
+            "2025-03-31",
+        ),
+        basis: Some(
+            Consolidated,
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        tier: Esef,
+        citation: "Assets",
+    },
+    ExtractedFact {
+        metric_key: "total_assets",
+        value: 45000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: Some(
+            Consolidated,
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        tier: Esef,
+        citation: "Assets",
+    },
+    ExtractedFact {
+        metric_key: "total_equity",
+        value: 25000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: Some(
+            Consolidated,
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        tier: Esef,
+        citation: "Equity",
+    },
+    ExtractedFact {
+        metric_key: "total_liabilities",
+        value: 20000000,
+        period: Instant(
+            "2026-03-31",
+        ),
+        basis: Some(
+            Consolidated,
+        ),
+        currency: Some(
+            "PLN",
+        ),
+        tier: Esef,
+        citation: "Liabilities",
+    },
+]

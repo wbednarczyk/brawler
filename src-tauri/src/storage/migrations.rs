@@ -288,6 +288,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "queue_worker_settings",
         sql: include_str!("../../migrations/0056_queue_worker_settings.sql"),
     },
+    Migration {
+        version: 57,
+        name: "fundamentals_provenance",
+        sql: include_str!("../../migrations/0057_fundamentals_provenance.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

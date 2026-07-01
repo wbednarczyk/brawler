@@ -1,0 +1,25 @@
+---
+source: src/fundamentals/validation/tests.rs
+expression: report
+---
+ValidationReport {
+    identities: [
+        IdentityCheck {
+            id: "balance_sheet_identity",
+            label: "Assets = Liabilities + Equity",
+            outcome: Pass,
+        },
+        IdentityCheck {
+            id: "free_cash_flow_definition",
+            label: "Free cash flow = Operating cash flow − Capex",
+            outcome: Pass,
+        },
+        IdentityCheck {
+            id: "cash_flow_tie",
+            label: "Operating + Investing + Financing cash flow = Δ cash",
+            outcome: Pass,
+        },
+    ],
+    cross_checks: [],
+    status: Passed,
+}

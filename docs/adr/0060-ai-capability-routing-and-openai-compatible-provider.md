@@ -1,6 +1,13 @@
 # ADR 0060: Per-Capability AI Provider Routing + Generic OpenAI-Compatible Provider
 
-Status: Proposed (2026-07-01)
+Status: Proposed (2026-07-01) — **document-KPI premise superseded by [ADR 0061](0061-deterministic-fundamentals-data-gathering.md)**
+
+> **Note (2026-07-01):** [ADR 0061](0061-deterministic-fundamentals-data-gathering.md) supersedes this
+> ADR's premise that KPI/claim extraction should route documents to Gemini-Pro. KPI extraction becomes
+> **structured-first + deterministic** (ESEF/iXBRL → PDF-parse → HTML witness), with AI only a last-resort
+> fallback **over extracted text**. This ADR's per-capability routing + generic OpenAI-compatible provider
+> **remain valid** for the text/qualitative capabilities and are the basis for ADR 0061's **AI provider
+> pool** (ordered failover). The "document" capability tier here is reframed as text-tier (no native PDF).
 
 Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider AI boundary: the
 `AiAnalysisProvider` port, registry/factory, one global provider + per-provider model registry) and
