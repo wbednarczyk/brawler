@@ -73,8 +73,13 @@ pub async fn run_ai_event_derivation(
     let model = settings.ai_providers.general_analysis_model.clone();
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
     let api_key = registry::read_analysis_provider_api_key(&provider_id);
-    let provider =
-        registry::build_analysis_provider(&provider_id, api_key, &model, timeout_seconds)?;
+    let provider = crate::jobs::build_gated_analysis_provider(
+        state,
+        &provider_id,
+        api_key,
+        &model,
+        timeout_seconds,
+    )?;
 
     let mut derived = 0;
     let mut skipped = 0;

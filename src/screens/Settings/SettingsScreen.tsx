@@ -16,6 +16,7 @@ import { EmbeddingSettings } from "./EmbeddingSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
+import { QueueSettings } from "./QueueSettings";
 import { ImportExportSettings } from "./ImportExportSettings";
 import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
@@ -85,6 +86,11 @@ export function SettingsScreen() {
   onDbBusyTimeoutMsChange,
   onDbAcquireTimeoutMsChange,
   onResetDatabaseSettings,
+  onSourcesWorkersChange,
+  onAutopilotWorkersChange,
+  onAiWorkersChange,
+  onAiProviderConcurrencyChange,
+  onResetQueueSettings,
   onClearLicenseKey,
   onLicenseKeyDraftChange,
   onSubmitLicenseKey,
@@ -195,13 +201,23 @@ export function SettingsScreen() {
             />
           ) : null}
           {activeSettingsTab === "database" ? (
-            <DatabaseSettings
-              settings={settings}
-              onDbMaxConnectionsChange={onDbMaxConnectionsChange}
-              onDbBusyTimeoutMsChange={onDbBusyTimeoutMsChange}
-              onDbAcquireTimeoutMsChange={onDbAcquireTimeoutMsChange}
-              onResetDatabaseSettings={onResetDatabaseSettings}
-            />
+            <>
+              <DatabaseSettings
+                settings={settings}
+                onDbMaxConnectionsChange={onDbMaxConnectionsChange}
+                onDbBusyTimeoutMsChange={onDbBusyTimeoutMsChange}
+                onDbAcquireTimeoutMsChange={onDbAcquireTimeoutMsChange}
+                onResetDatabaseSettings={onResetDatabaseSettings}
+              />
+              <QueueSettings
+                settings={settings}
+                onSourcesWorkersChange={onSourcesWorkersChange}
+                onAutopilotWorkersChange={onAutopilotWorkersChange}
+                onAiWorkersChange={onAiWorkersChange}
+                onAiProviderConcurrencyChange={onAiProviderConcurrencyChange}
+                onResetQueueSettings={onResetQueueSettings}
+              />
+            </>
           ) : null}
           {activeSettingsTab === "license" ? (
             <LicenseSettings

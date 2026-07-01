@@ -127,6 +127,31 @@ export function useSettingsController({
     updateSettings({ dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 });
   }
 
+  function updateSourcesWorkers(nextWorkers: number) {
+    updateSettings({ sourcesWorkers: nextWorkers });
+  }
+
+  function updateAutopilotWorkers(nextWorkers: number) {
+    updateSettings({ autopilotWorkers: nextWorkers });
+  }
+
+  function updateAiWorkers(nextWorkers: number) {
+    updateSettings({ aiWorkers: nextWorkers });
+  }
+
+  function updateAiProviderConcurrency(nextConcurrency: number) {
+    updateSettings({ aiProviderConcurrency: nextConcurrency });
+  }
+
+  function resetQueueSettings() {
+    updateSettings({
+      sourcesWorkers: 2,
+      autopilotWorkers: 3,
+      aiWorkers: 2,
+      aiProviderConcurrency: 2,
+    });
+  }
+
   function disableDeveloperMode() {
     settingsApi.disableDeveloperMode()
       .then(applySettingsResponse)
@@ -196,6 +221,11 @@ export function useSettingsController({
     updateDbBusyTimeoutMs,
     updateDbMaxConnections,
     resetDatabaseSettings,
+    updateSourcesWorkers,
+    updateAutopilotWorkers,
+    updateAiWorkers,
+    updateAiProviderConcurrency,
+    resetQueueSettings,
     updateLocale,
     updateLogLevel,
     updateLogMaxFileBytes,

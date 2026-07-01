@@ -90,11 +90,13 @@ pub fn run() {
                 }
             }
 
-            // Start the durable-queue worker: reclaim any jobs left `running` by a
-            // crash, then drain the queue off the UI thread (ADR 0050).
-            jobs::queue::spawn(std::sync::Arc::new(jobs::handlers::build_worker(
-                state.clone(),
-            )));
+            // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim
+            // crash residue, then drain each lane's kinds on its own threads off the
+            // UI thread, so a slow source refresh cannot starve autopilot (ADR 0050).
+            jobs::queue::spawn_pools(
+                std::sync::Arc::new(jobs::handlers::build_worker(state.clone())),
+                jobs::handlers::pool_layout(state.queue_config()),
+            );
 
             // Start the Rust-side source scheduler (ADR 0055 / AV5): it owns the
             // refresh cadence, re-arming source/registry refresh jobs on the durable

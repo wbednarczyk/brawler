@@ -274,8 +274,13 @@ fn provider_for_job(
         }),
     );
 
-    let provider =
-        registry::build_analysis_provider(&job.provider_id, api_key, &job.model, timeout_seconds)?;
+    let provider = crate::jobs::build_gated_analysis_provider(
+        state,
+        &job.provider_id,
+        api_key,
+        &job.model,
+        timeout_seconds,
+    )?;
     record_ai_analysis_diagnostic(
         state,
         job,

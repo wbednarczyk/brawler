@@ -135,6 +135,75 @@ impl JobQueueStore {
             .map_err(StorageError::from)
     }
 
+    /// Like [`claim_next`], but only claims rows whose `kind` is in `kinds`. This
+    /// is the split point for isolated worker pools (ADR 0059): each pool's threads
+    /// claim only their lane's kinds, so a slow refresh cannot starve autopilot.
+    /// Returns `None` when nothing in those kinds is runnable (or `kinds` is empty).
+    pub fn claim_next_for_kinds(&self, kinds: &[&str]) -> StorageResult<Option<ClaimedJob>> {
+        if kinds.is_empty() {
+            return Ok(None);
+        }
+        let connection = self.db.checkout()?;
+        let placeholders = vec!["?"; kinds.len()].join(", ");
+        let sql = format!(
+            "
+            UPDATE job_queue
+            SET status = 'running',
+                attempts = attempts + 1,
+                locked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = (
+                SELECT id
+                FROM job_queue
+                WHERE status = 'pending'
+                    AND available_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    AND kind IN ({placeholders})
+                ORDER BY available_at, created_at
+                LIMIT 1
+            )
+            RETURNING id, kind, payload, attempts, max_attempts
+            "
+        );
+        connection
+            .query_row(
+                &sql,
+                rusqlite::params_from_iter(kinds.iter().copied()),
+                |row| {
+                    Ok(ClaimedJob {
+                        id: row.get(0)?,
+                        kind: row.get(1)?,
+                        payload: row.get(2)?,
+                        attempts: row.get(3)?,
+                        max_attempts: row.get(4)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    /// Defer a claimed job back to `pending` after `backoff_seconds` **without
+    /// counting it as an attempt** (ADR 0059). Unlike [`mark_failed`], this is not a
+    /// failure: it is a "resource busy, try later" requeue used when a worker cannot
+    /// acquire the per-source serialization lock. It undoes the claim's attempt
+    /// increment so contention never exhausts a job's retry budget.
+    pub fn defer(&self, id: &str, backoff_seconds: i64) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        connection.execute(
+            "
+            UPDATE job_queue
+            SET status = 'pending',
+                attempts = MAX(attempts - 1, 0),
+                available_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?2),
+                locked_at = NULL,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1
+            ",
+            params![id, format!("+{} seconds", backoff_seconds.max(0))],
+        )?;
+        Ok(())
+    }
+
     /// Mark a claimed job succeeded (terminal).
     pub fn mark_succeeded(&self, id: &str) -> StorageResult<()> {
         let connection = self.db.checkout()?;
@@ -200,11 +269,27 @@ impl JobQueueStore {
         }
     }
 
-    /// Requeue every `running` row back to `pending`. Called on startup: a row
-    /// left `running` is the residue of a crash (no worker is alive yet), so it
-    /// must be resumed rather than stranded. Returns how many were reclaimed.
+    /// Requeue crash-residue `running` rows on startup (no worker is alive yet).
+    /// A row that already **exhausted its attempts** is dead-lettered instead of
+    /// resurrected: it is a job that keeps getting reclaimed and re-run without
+    /// ever reaching [`mark_failed`] (e.g. it hangs), so resuming it forever
+    /// starves the queue. This is the poison-job guard from ADR 0059 (the bankier
+    /// refresh with `attempts=15 > max_attempts=2` monopolized the worker across
+    /// every restart). Rows with attempts left are resumed as before. Returns how
+    /// many were resumed (dead-lettered rows are not counted).
     pub fn reclaim_stale_running(&self) -> StorageResult<usize> {
         let connection = self.db.checkout()?;
+        connection.execute(
+            "
+            UPDATE job_queue
+            SET status = 'failed',
+                last_error = COALESCE(last_error, 'dead-lettered on reclaim: attempts exhausted'),
+                locked_at = NULL,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE status = 'running' AND attempts >= max_attempts
+            ",
+            [],
+        )?;
         let reclaimed = connection.execute(
             "
             UPDATE job_queue

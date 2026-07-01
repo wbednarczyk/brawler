@@ -193,6 +193,13 @@ export const plText: Record<string, string> = {
   "Busy timeout (ms)": "Limit zajętości (ms)",
   "Acquire timeout (ms)": "Limit oczekiwania (ms)",
   "Reset to defaults": "Przywróć domyślne",
+  "Background work": "Praca w tle",
+  "Worker threads per lane and the per-AI-provider concurrency limit. Worker counts apply on the next app launch.":
+    "Wątki robocze na tor oraz limit równoległości na dostawcę AI. Liczby wątków działają po następnym uruchomieniu aplikacji.",
+  "Source workers": "Wątki źródeł",
+  "Autopilot workers": "Wątki autopilota",
+  "AI workers": "Wątki AI",
+  "Max concurrent calls per AI provider": "Maks. równoległych wywołań na dostawcę AI",
   "Backups": "Kopie zapasowe",
   "Local database backups. Restore is applied on the next app launch.":
     "Lokalne kopie zapasowe bazy danych. Przywracanie działa po następnym uruchomieniu aplikacji.",

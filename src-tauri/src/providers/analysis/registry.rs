@@ -129,6 +129,17 @@ pub fn build_analysis_provider(
     }
 }
 
+/// Wrap a built provider with a per-provider concurrency gate (ADR 0059): the
+/// returned provider holds a permit from `semaphore` for the duration of each model
+/// call, so at most `semaphore`'s permit count of calls to this provider run at
+/// once. See [`super::gate::GatedAnalysisProvider`].
+pub fn gate_analysis_provider(
+    provider: Box<dyn AiAnalysisProvider>,
+    semaphore: std::sync::Arc<tokio::sync::Semaphore>,
+) -> Box<dyn AiAnalysisProvider> {
+    Box::new(super::gate::GatedAnalysisProvider::new(provider, semaphore))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

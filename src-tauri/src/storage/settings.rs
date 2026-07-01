@@ -70,6 +70,24 @@ pub struct DatabaseSettings {
     ts(export, export_to = "../../src/api/generated/")
 )]
 #[serde(rename_all = "camelCase")]
+pub struct QueueSettings {
+    /// Worker threads per lane (ADR 0059). Applied at startup (the lanes are
+    /// spawned once); a change takes effect on restart, like the pool settings.
+    pub sources_workers: i64,
+    pub autopilot_workers: i64,
+    pub ai_workers: i64,
+    /// Max concurrent calls to any one AI provider, shared across the autopilot +
+    /// ai lanes — the real AI cost/rate ceiling.
+    pub ai_provider_concurrency: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
 pub struct UserSettings {
     #[cfg_attr(feature = "ts-export", ts(type = "\"dark\" | \"light\" | \"system\""))]
     pub theme: String,
@@ -91,6 +109,7 @@ pub struct UserSettings {
     pub logs: LogSettings,
     pub shortcut_bindings: HashMap<String, ShortcutBindingSetting>,
     pub database: DatabaseSettings,
+    pub queue: QueueSettings,
     /// Company IDs the user has pinned to the sidebar spine (ADR 0054). A simple
     /// local UI preference stored as a JSON array in the `settings` KV table;
     /// order is the user's pin order. Tolerant default `[]` when the row is absent.
@@ -138,6 +157,10 @@ pub struct SettingsUpdate {
     pub db_max_connections: Option<i64>,
     pub db_busy_timeout_ms: Option<i64>,
     pub db_acquire_timeout_ms: Option<i64>,
+    pub sources_workers: Option<i64>,
+    pub autopilot_workers: Option<i64>,
+    pub ai_workers: Option<i64>,
+    pub ai_provider_concurrency: Option<i64>,
     /// Replace the full pinned-company list (ADR 0054). The frontend sends the
     /// complete desired order, so this overwrites rather than merges.
     pub pinned_company_ids: Option<Vec<String>>,
@@ -188,6 +211,15 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
                 max_connections: config.max_connections,
                 busy_timeout_ms: config.busy_timeout_ms,
                 acquire_timeout_ms: config.acquire_timeout_ms,
+            }
+        },
+        queue: {
+            let config = super::queue_config::read_queue_config(connection);
+            QueueSettings {
+                sources_workers: config.sources_workers,
+                autopilot_workers: config.autopilot_workers,
+                ai_workers: config.ai_workers,
+                ai_provider_concurrency: config.ai_provider_concurrency,
             }
         },
     })
@@ -448,6 +480,41 @@ pub(crate) fn update_settings(
         update_setting(
             connection,
             super::pool::ACQUIRE_TIMEOUT_SETTING_KEY,
+            &clamped.to_string(),
+        )?;
+    }
+
+    // Worker-lane counts + per-provider AI concurrency are clamped to safe ranges
+    // (never rejected) and take effect on the next launch (ADR 0059).
+    if let Some(sources_workers) = input.sources_workers {
+        let clamped = super::queue_config::clamp_workers(sources_workers);
+        update_setting(
+            connection,
+            super::queue_config::SOURCES_WORKERS_KEY,
+            &clamped.to_string(),
+        )?;
+    }
+    if let Some(autopilot_workers) = input.autopilot_workers {
+        let clamped = super::queue_config::clamp_workers(autopilot_workers);
+        update_setting(
+            connection,
+            super::queue_config::AUTOPILOT_WORKERS_KEY,
+            &clamped.to_string(),
+        )?;
+    }
+    if let Some(ai_workers) = input.ai_workers {
+        let clamped = super::queue_config::clamp_workers(ai_workers);
+        update_setting(
+            connection,
+            super::queue_config::AI_WORKERS_KEY,
+            &clamped.to_string(),
+        )?;
+    }
+    if let Some(ai_provider_concurrency) = input.ai_provider_concurrency {
+        let clamped = super::queue_config::clamp_provider_concurrency(ai_provider_concurrency);
+        update_setting(
+            connection,
+            super::queue_config::AI_PROVIDER_CONCURRENCY_KEY,
             &clamped.to_string(),
         )?;
     }

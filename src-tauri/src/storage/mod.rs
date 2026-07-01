@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
 };
@@ -55,6 +55,7 @@ mod migrations;
 mod notebooks;
 mod pool;
 mod quality_frameworks;
+mod queue_config;
 mod registry;
 mod report_documents;
 mod report_season;
@@ -134,6 +135,7 @@ pub use quality_frameworks::{
     NewQualityFramework, QualityFramework, UpdateFrameworkCriterion, UpdateQualityFramework,
     ValidateCriterionResult,
 };
+pub use queue_config::QueueConfig;
 pub use registry::SourceRegistryStore;
 pub use report_documents::ReportDocumentStore;
 pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
@@ -235,6 +237,23 @@ pub struct SchedulerStatus {
     pub registry_next_due_ms: Option<i64>,
 }
 
+/// RAII guard proving the holder is the **sole** worker refreshing a given source
+/// adapter (ADR 0059, per-source serialization = exactly one). Acquired via
+/// [`AppState::try_acquire_source`]; the source id is released from the in-flight
+/// set on `Drop`, so a panic or early return can never leak the lock.
+pub struct SourceRefreshGuard {
+    adapter_id: String,
+    in_flight: Arc<Mutex<HashSet<String>>>,
+}
+
+impl Drop for SourceRefreshGuard {
+    fn drop(&mut self) {
+        if let Ok(mut set) = self.in_flight.lock() {
+            set.remove(&self.adapter_id);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct AppState {
     db: Database,
@@ -243,6 +262,15 @@ pub struct AppState {
     backfill_progress: Arc<Mutex<HashMap<String, BackfillProgress>>>,
     embedding_download: Arc<Mutex<EmbeddingDownloadState>>,
     scheduler_status: Arc<Mutex<SchedulerStatus>>,
+    /// Source adapter ids currently being refreshed by a worker (ADR 0059). The
+    /// per-source lock lets multiple source-lane workers run *different* sources
+    /// concurrently while guaranteeing at most one touches the *same* source —
+    /// politeness (no parallel hammering) with no duplicate work.
+    sources_in_flight: Arc<Mutex<HashSet<String>>>,
+    /// One concurrency semaphore per AI provider id (ADR 0059). Shared across the
+    /// `autopilot` and `ai` lanes so the limit bounds total concurrent calls to a
+    /// provider (its cost/rate ceiling), not per-lane. Created lazily on first use.
+    provider_semaphores: Arc<Mutex<HashMap<String, Arc<tokio::sync::Semaphore>>>>,
 }
 
 impl AppState {
@@ -258,6 +286,8 @@ impl AppState {
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
+            sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
+            provider_semaphores: Arc::new(Mutex::new(HashMap::new())),
         };
         state.seed_app_data();
         state
@@ -271,9 +301,57 @@ impl AppState {
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
             embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
+            sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
+            provider_semaphores: Arc::new(Mutex::new(HashMap::new())),
         };
         state.seed_app_data();
         state
+    }
+
+    /// Try to claim the per-source refresh lock for `adapter_id` (ADR 0059).
+    /// Returns `Some(guard)` when no other worker holds it — the caller is now the
+    /// sole refresher and the lock releases when the guard drops. Returns `None`
+    /// when the source is already being refreshed; the caller should requeue with
+    /// a short backoff and free its worker rather than run duplicate/parallel work.
+    pub fn try_acquire_source(&self, adapter_id: &str) -> Option<SourceRefreshGuard> {
+        let mut set = self.sources_in_flight.lock().ok()?;
+        if set.contains(adapter_id) {
+            return None;
+        }
+        set.insert(adapter_id.to_owned());
+        Some(SourceRefreshGuard {
+            adapter_id: adapter_id.to_owned(),
+            in_flight: Arc::clone(&self.sources_in_flight),
+        })
+    }
+
+    /// Resolved worker-pool + per-provider concurrency tuning (ADR 0059), read from
+    /// settings with tolerant defaults. Read once when the lanes are spawned.
+    pub fn queue_config(&self) -> QueueConfig {
+        match self.checkout() {
+            Ok(connection) => queue_config::read_queue_config(&connection),
+            Err(_) => QueueConfig::default(),
+        }
+    }
+
+    /// The shared concurrency semaphore for one AI provider (ADR 0059), created
+    /// lazily with `limit` permits the first time the provider is seen. Shared
+    /// across the autopilot + ai lanes, so `limit` bounds total concurrent calls to
+    /// that provider — the real AI cost/rate ceiling, independent of thread count.
+    /// The limit is fixed at creation (like `db_max_connections`, applied at start);
+    /// a later change takes effect on restart.
+    pub fn provider_semaphore(
+        &self,
+        provider_id: &str,
+        limit: usize,
+    ) -> Arc<tokio::sync::Semaphore> {
+        let mut map = self
+            .provider_semaphores
+            .lock()
+            .expect("provider semaphore map poisoned");
+        map.entry(provider_id.to_owned())
+            .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(limit.max(1))))
+            .clone()
     }
 
     /// Idempotent startup seeding that cannot be expressed as a pure SQL migration

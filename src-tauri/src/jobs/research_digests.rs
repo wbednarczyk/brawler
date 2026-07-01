@@ -61,7 +61,8 @@ fn provider_for_job(
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
     let settings = state.get_settings().map_err(|error| error.to_string())?;
     let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
-    registry::build_analysis_provider(
+    crate::jobs::build_gated_analysis_provider(
+        state,
         &job.provider_id,
         api_key,
         &job.model,

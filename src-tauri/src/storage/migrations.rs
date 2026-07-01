@@ -283,6 +283,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "autopilot",
         sql: include_str!("../../migrations/0055_autopilot.sql"),
     },
+    Migration {
+        version: 56,
+        name: "queue_worker_settings",
+        sql: include_str!("../../migrations/0056_queue_worker_settings.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

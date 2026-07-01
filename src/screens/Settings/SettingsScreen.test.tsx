@@ -382,9 +382,44 @@ describe("Settings screen workflows", () => {
       input: { dbBusyTimeoutMs: 30000 },
     });
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Reset to defaults" }));
+    const databaseSection = within(settingsRegion).getByRole("region", { name: "Database" });
+    await user.click(within(databaseSection).getByRole("button", { name: "Reset to defaults" }));
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },
+    });
+  });
+
+  it("edits and resets background-work worker settings (ADR 0059)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "Database" }));
+
+    const queueSection = within(settingsRegion).getByRole("region", { name: "Background work" });
+    expect(
+      within(queueSection).getByRole("heading", { name: "Background work" }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(within(queueSection).getByLabelText("Autopilot workers"), "6");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { autopilotWorkers: 6 },
+    });
+
+    await user.selectOptions(
+      within(queueSection).getByLabelText("Max concurrent calls per AI provider"),
+      "4",
+    );
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { aiProviderConcurrency: 4 },
+    });
+
+    await user.click(within(queueSection).getByRole("button", { name: "Reset to defaults" }));
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
     });
   });
 });

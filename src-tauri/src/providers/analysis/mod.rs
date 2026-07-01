@@ -1,4 +1,5 @@
 mod anthropic;
+mod gate;
 mod gemini;
 mod openai;
 mod prompts;

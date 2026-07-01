@@ -315,7 +315,13 @@ fn provider_for_job(
     let settings = state.get_settings().map_err(|error| error.to_string())?;
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
     let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
-    registry::build_analysis_provider(&job.provider_id, api_key, &job.model, timeout_seconds)
+    crate::jobs::build_gated_analysis_provider(
+        state,
+        &job.provider_id,
+        api_key,
+        &job.model,
+        timeout_seconds,
+    )
 }
 
 fn record(

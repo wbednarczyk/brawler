@@ -1432,6 +1432,12 @@ Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
     "busyTimeoutMs": 5000,
     "acquireTimeoutMs": 10000
   },
+  "queue": {
+    "sourcesWorkers": 2,
+    "autopilotWorkers": 3,
+    "aiWorkers": 2,
+    "aiProviderConcurrency": 2
+  },
   "pinnedCompanyIds": []
 }
 ```
@@ -1500,6 +1506,9 @@ Rules:
 - The default pool configuration is `maxConnections` 4, `busyTimeoutMs` 5000, `acquireTimeoutMs` 10000.
 - Pool values are validated and clamped to safe ranges (`maxConnections` 1–16, `busyTimeoutMs` 0–60000, `acquireTimeoutMs` 1000–60000); a missing or invalid value falls back to the default so the database can always open.
 - Pool sizing is applied when the pool is built at startup, so changes persist immediately but take effect on the next app launch; Settings must disclose this.
+- Settings expose durable-queue tuning under `queue` (see [ADR 0059](adr/0059-worker-pools-and-queue-fairness.md)): `sourcesWorkers`, `autopilotWorkers`, `aiWorkers` (worker threads per lane), and `aiProviderConcurrency` (max concurrent calls to any one AI provider, shared across the autopilot + ai lanes).
+- The default queue configuration is `sourcesWorkers` 2, `autopilotWorkers` 3, `aiWorkers` 2, `aiProviderConcurrency` 2 (indexing is a constant 1 worker, not user-tunable).
+- Queue values are validated and clamped to safe ranges (worker counts 1–16, `aiProviderConcurrency` 1–10); a missing or invalid value falls back to the default. Like pool sizing, worker counts take effect on the next app launch, so Settings must disclose this.
 - Settings must offer a reset-to-defaults action for database pool configuration.
 - SQLite is the runtime source of truth for settings.
 - YAML is allowed for settings import/export/bootstrap.

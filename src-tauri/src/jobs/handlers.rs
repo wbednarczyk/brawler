@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use crate::app_state::AppState;
-use crate::jobs::queue::{JobHandler, JobWorker};
+use crate::jobs::queue::{JobHandler, JobWorker, WorkerPool};
 
 /// Job kind: refresh the disposable embedding index (ADR 0035). Idempotent —
 /// skips unchanged content — so retry/resume is safe.
@@ -117,6 +117,18 @@ impl JobHandler for AutopilotStageHandler {
     }
 }
 
+/// Extract the `adapterId` from a source-refresh payload — the per-source
+/// serialization key (ADR 0059). Both the scheduled full refresh and the
+/// per-company refresh key on the same adapter id, so all work for one source
+/// serializes (politeness / no duplicate concurrent work).
+fn payload_adapter_id(payload: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(payload)
+        .ok()?
+        .get("adapterId")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
 /// A scheduled source-adapter refresh (Rust-side scheduler, ADR 0055 / AV5). The
 /// scheduler re-arms this job per the poll interval; the worker executes the
 /// refresh (detection rides its completion). Returns `Err` on failure so the queue
@@ -128,20 +140,40 @@ impl JobHandler for ScheduledSourceRefreshHandler {
         crate::jobs::scheduler::SOURCE_REFRESH_KIND
     }
 
+    fn serialization_key(&self, payload: &str) -> Option<String> {
+        payload_adapter_id(payload)
+    }
+
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
-        let parsed: serde_json::Value =
-            serde_json::from_str(payload).map_err(|error| error.to_string())?;
-        let adapter_id = parsed
-            .get("adapterId")
-            .and_then(|value| value.as_str())
-            .ok_or("scheduled source refresh missing adapterId")?;
+        let adapter_id =
+            payload_adapter_id(payload).ok_or("scheduled source refresh missing adapterId")?;
         crate::jobs::source_refresh::refresh_source_for_trigger(
             state,
-            adapter_id,
+            &adapter_id,
             "scheduler",
             None,
         )
         .map(|_| ())
+    }
+}
+
+/// A per-company refresh for a company-scoped source (ADR 0059). Planned by the
+/// scheduled refresh (one job per tracked company) so a slow all-companies loop can
+/// no longer monopolize the worker. Serializes on the adapter id, so at most one
+/// company of the source refreshes at a time. Returns `Err` on failure to retry.
+struct SourceCompanyRefreshHandler;
+
+impl JobHandler for SourceCompanyRefreshHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND
+    }
+
+    fn serialization_key(&self, payload: &str) -> Option<String> {
+        payload_adapter_id(payload)
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::source_refresh::run_source_company_refresh(state, payload)
     }
 }
 
@@ -184,8 +216,52 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(ResearchDigestHandler));
     worker.register(Arc::new(AutopilotStageHandler));
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
+    worker.register(Arc::new(SourceCompanyRefreshHandler));
     worker.register(Arc::new(ScheduledRegistryRefreshHandler));
     worker
+}
+
+/// The isolated worker-lane layout (ADR 0059): which job kinds each pool drains,
+/// and how many threads it runs. Lanes keep a slow source refresh from starving
+/// autopilot; the shared per-provider AI limit (not the thread count) is the real
+/// ceiling on AI cost, so generous defaults are safe. Worker counts come from
+/// `config` (settings-driven, tolerant defaults). Every registered kind must appear
+/// in exactly one lane.
+pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
+    use crate::jobs::scheduler::{REGISTRY_REFRESH_KIND, SOURCE_REFRESH_KIND};
+    use crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND;
+    vec![
+        WorkerPool {
+            name: "sources",
+            kinds: vec![
+                SOURCE_REFRESH_KIND,
+                SOURCE_COMPANY_REFRESH_KIND,
+                REGISTRY_REFRESH_KIND,
+            ],
+            workers: config.sources_workers.max(1) as usize,
+        },
+        WorkerPool {
+            name: "autopilot",
+            kinds: vec![AUTOPILOT_STAGE_KIND],
+            workers: config.autopilot_workers.max(1) as usize,
+        },
+        WorkerPool {
+            name: "ai",
+            kinds: vec![
+                AI_ANALYSIS_KIND,
+                KPI_EXTRACTION_KIND,
+                CLAIM_EXTRACTION_KIND,
+                RESEARCH_BRIEF_KIND,
+                RESEARCH_DIGEST_KIND,
+            ],
+            workers: config.ai_workers.max(1) as usize,
+        },
+        WorkerPool {
+            name: "indexing",
+            kinds: vec![CONTENT_EMBEDDING_KIND],
+            workers: config.indexing_workers.max(1) as usize,
+        },
+    ]
 }
 
 /// Enqueue a per-job-table job onto the durable queue (single attempt, dedup by

@@ -183,6 +183,10 @@ fn updates_settings_through_storage_api() {
             db_max_connections: None,
             db_busy_timeout_ms: None,
             db_acquire_timeout_ms: None,
+            sources_workers: None,
+            autopilot_workers: None,
+            ai_workers: None,
+            ai_provider_concurrency: None,
             pinned_company_ids: None,
         })
         .expect("settings should update");
@@ -282,6 +286,10 @@ fn updates_shortcut_bindings_through_storage_api() {
             db_max_connections: None,
             db_busy_timeout_ms: None,
             db_acquire_timeout_ms: None,
+            sources_workers: None,
+            autopilot_workers: None,
+            ai_workers: None,
+            ai_provider_concurrency: None,
             pinned_company_ids: None,
         })
         .expect("settings should update");
@@ -330,6 +338,10 @@ fn rejects_invalid_poll_interval_setting() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        sources_workers: None,
+        autopilot_workers: None,
+        ai_workers: None,
+        ai_provider_concurrency: None,
         pinned_company_ids: None,
     });
 
@@ -361,6 +373,10 @@ fn rejects_invalid_theme_setting() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        sources_workers: None,
+        autopilot_workers: None,
+        ai_workers: None,
+        ai_provider_concurrency: None,
         pinned_company_ids: None,
     });
 
@@ -405,6 +421,10 @@ fn rejects_invalid_locale_setting() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        sources_workers: None,
+        autopilot_workers: None,
+        ai_workers: None,
+        ai_provider_concurrency: None,
         pinned_company_ids: None,
     });
 
@@ -436,6 +456,10 @@ fn rejects_invalid_general_analysis_settings() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        sources_workers: None,
+        autopilot_workers: None,
+        ai_workers: None,
+        ai_provider_concurrency: None,
         pinned_company_ids: None,
     });
 
@@ -461,6 +485,10 @@ fn rejects_invalid_general_analysis_settings() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        sources_workers: None,
+        autopilot_workers: None,
+        ai_workers: None,
+        ai_provider_concurrency: None,
         pinned_company_ids: None,
     });
 
@@ -486,6 +514,10 @@ fn rejects_invalid_general_analysis_settings() {
         db_max_connections: None,
         db_busy_timeout_ms: None,
         db_acquire_timeout_ms: None,
+        sources_workers: None,
+        autopilot_workers: None,
+        ai_workers: None,
+        ai_provider_concurrency: None,
         pinned_company_ids: None,
     });
 
