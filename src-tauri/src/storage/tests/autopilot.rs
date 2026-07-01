@@ -122,6 +122,106 @@ fn create_run_is_idempotent_per_company_and_document() {
 }
 
 #[test]
+fn failed_run_without_facts_is_recreated_on_next_detection() {
+    // Self-heal (ADR 0059): a transient extraction failure finalizes the run as
+    // `failed` with no produced facts. The next detection sweep must be able to
+    // re-create and re-run it (same deterministic id), not dedup it away forever.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+
+    state
+        .autopilot()
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .expect("create");
+    state
+        .autopilot()
+        .finalize_run(
+            "run1",
+            "failed",
+            "extract",
+            None,
+            Some("Gemini unavailable"),
+        )
+        .expect("finalize failed");
+
+    let recreated = state
+        .autopilot()
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .expect("create");
+    assert!(
+        recreated.is_some(),
+        "a failed run with no facts is re-created for retry"
+    );
+    let run = state.autopilot().get_run("run1").expect("run");
+    assert_eq!(run.status, "pending", "the re-created run starts fresh");
+
+    let runs = state
+        .autopilot()
+        .list_runs(&ListAutopilotRunsInput::default())
+        .expect("list");
+    assert_eq!(runs.len(), 1, "still exactly one run per report");
+}
+
+#[test]
+fn failed_run_with_facts_is_preserved() {
+    // A failed run that already committed facts (partial success) must not be
+    // wiped and re-run — that would duplicate its facts. It still dedups.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+
+    state
+        .autopilot()
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .expect("create");
+    state
+        .autopilot()
+        .add_produced_facts("run1", &["f1".to_owned()])
+        .expect("add");
+    state
+        .autopilot()
+        .finalize_run(
+            "run1",
+            "failed",
+            "cross_reference",
+            None,
+            Some("later stage failed"),
+        )
+        .expect("finalize failed");
+
+    let again = state
+        .autopilot()
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .expect("create");
+    assert!(
+        again.is_none(),
+        "a failed run that produced facts is preserved, not re-run"
+    );
+}
+
+#[test]
+fn succeeded_run_without_facts_is_preserved() {
+    // A `succeeded` run (even with zero facts) is a completed decision and must
+    // dedup — self-heal only retries `failed` runs, not empty successes.
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+
+    state
+        .autopilot()
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .expect("create");
+    state
+        .autopilot()
+        .finalize_run("run1", "succeeded", "notify", None, None)
+        .expect("finalize succeeded");
+
+    let again = state
+        .autopilot()
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .expect("create");
+    assert!(again.is_none(), "a succeeded run is never re-created");
+}
+
+#[test]
 fn produced_facts_merge_and_clear() {
     let state = AppState::new(open_in_memory_database().expect("db"));
     let company = test_company(&state);
@@ -220,7 +320,19 @@ fn list_runs_filters_by_notification_state() {
 
 #[test]
 fn detection_and_pipeline_drain_offline_to_a_notification() {
-    let state = AppState::new(open_in_memory_database().expect("db"));
+    // Genuinely offline: clear the default AI provider (migration 0036 seeds
+    // `provider_gemini`) so the extract stage takes the "no_ai_provider" degrade
+    // path instead of trying — and failing — to reach a real provider. Since
+    // ADR 0059 a *failed* extraction correctly fails the run, so an offline drain
+    // must exercise the graceful-degrade path, not a swallowed provider error.
+    let connection = open_in_memory_database().expect("db");
+    connection
+        .execute(
+            "UPDATE settings SET value = '' WHERE key = 'general_analysis_provider'",
+            [],
+        )
+        .expect("clear default provider for offline drain");
+    let state = AppState::new(connection);
     let company = test_company(&state);
     // assist mode: no AI needed; the pipeline runs deterministically offline.
     state

@@ -217,6 +217,19 @@ fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), St
         .get_kpi_extraction_job(&job.id)
         .map_err(|e| e.to_string())?;
 
+    // A failed extraction must fail the stage — never record it as a silent
+    // success. `run_kpi_extraction_job` returns `Ok` even when it marks the job
+    // `failed` (e.g. a transient "Gemini service unavailable" 503), so counting
+    // `proposals` here would record `proposed: 0` on a `succeeded` run and block
+    // re-detection forever. Propagating the error lets the queue retry with
+    // backoff and — once attempts are spent — dead-letter the run (ADR 0059).
+    if completed.status == "failed" {
+        return Err(format!(
+            "KPI extraction failed: {}",
+            completed.error.as_deref().unwrap_or("unknown error")
+        ));
+    }
+
     let proposed = completed.proposals.len();
     let mut confirmed_ids: Vec<String> = Vec::new();
     if run.mode == MODE_AUTOPILOT {
@@ -580,6 +593,70 @@ mod tests {
             after.produced_fact_ids.is_empty(),
             "no sample facts may be auto-confirmed, got: {:?}",
             after.produced_fact_ids
+        );
+    }
+
+    /// Guardrail (ADR 0059): a failed KPI extraction must fail the extract stage,
+    /// never be recorded as a silent success. `run_kpi_extraction_job` returns `Ok`
+    /// even when it marks the job `failed` (e.g. a transient provider 503), so
+    /// without the status check `stage_extract` would record `proposed: 0` on a
+    /// `succeeded` run and block re-detection forever.
+    #[test]
+    fn extract_stage_fails_when_kpi_extraction_fails() {
+        // An unknown provider id makes the inline KPI extraction fail deterministically
+        // at provider resolution (no network, no document needed). Inject it straight
+        // into settings — the validation layer would reject it as user-selectable, but
+        // this simulates the runtime state the guard must handle.
+        let connection = open_in_memory_database().expect("db");
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, value_type) \
+                 VALUES ('general_analysis_provider', 'nonexistent_provider_xyz', 'string') \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [],
+            )
+            .expect("inject unknown provider");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CBF".to_owned(),
+                display_name: "Cyber_Folks S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+
+        // A real report document (FK-referenced by the KPI job).
+        let doc = state
+            .create_or_find_pending_report_document(storage::CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: "https://example.com/ssf.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Cyber_Folks 2026 Q1 SSF".to_owned()),
+                attribution: None,
+            })
+            .expect("report document");
+
+        let run_id = "run_failing_extract";
+        state
+            .autopilot()
+            .create_run_if_absent(run_id, &company.id, &doc.id, "manual", MODE_AUTOPILOT)
+            .expect("create run")
+            .expect("run created");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        let result = stage_extract(&state, &run);
+        assert!(
+            result.is_err(),
+            "a failed KPI extraction must fail the extract stage, got: {result:?}"
+        );
+        assert!(
+            result.unwrap_err().contains("KPI extraction failed"),
+            "the error should surface the extraction failure"
         );
     }
 

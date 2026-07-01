@@ -195,6 +195,13 @@ impl AutopilotStore {
     /// new row was inserted, `None` when one already exists for this
     /// `(company_id, report_document_id)` — the detection dedup that guarantees at
     /// most one run per report.
+    ///
+    /// Self-heal: a prior run that **failed without producing any fact** (e.g. a
+    /// transient "Gemini service unavailable" 503 during extraction) is deleted
+    /// first, so the same detection sweep re-creates and re-runs it. The `id` is
+    /// deterministic (`autopilot_run:{company}:{document}`), so this only ever
+    /// clears the exact stale run for this report; a `succeeded`/`partial` run, or
+    /// a `failed` run that already committed facts, is preserved and still dedups.
     pub fn create_run_if_absent(
         &self,
         id: &str,
@@ -204,6 +211,15 @@ impl AutopilotStore {
         mode: &str,
     ) -> StorageResult<Option<AutopilotRun>> {
         let connection = self.db.checkout()?;
+        connection.execute(
+            "
+            DELETE FROM autopilot_run
+            WHERE id = ?1
+                AND status = 'failed'
+                AND (produced_fact_ids_json IS NULL OR produced_fact_ids_json IN ('[]', ''))
+            ",
+            params![id],
+        )?;
         let inserted = connection.execute(
             "
             INSERT OR IGNORE INTO autopilot_run
