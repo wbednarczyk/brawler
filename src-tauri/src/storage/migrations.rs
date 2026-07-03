@@ -298,6 +298,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "structured_attachment_fetch_gate",
         sql: include_str!("../../migrations/0058_structured_attachment_fetch_gate.sql"),
     },
+    Migration {
+        version: 59,
+        name: "qualitative_criteria",
+        sql: include_str!("../../migrations/0059_qualitative_criteria.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

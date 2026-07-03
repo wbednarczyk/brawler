@@ -111,6 +111,8 @@ fn creates_framework_with_criteria_and_validates_expression() {
             weight: None,
             partial_band: Some("10%".to_owned()),
             ordinal: None,
+            kind: None,
+            assessment_guidance: None,
         })
         .expect("criterion creates");
 
@@ -129,6 +131,8 @@ fn creates_framework_with_criteria_and_validates_expression() {
         weight: None,
         partial_band: None,
         ordinal: None,
+        kind: None,
+        assessment_guidance: None,
     });
     assert!(
         invalid.is_err(),
@@ -243,6 +247,8 @@ fn evaluate_framework_produces_scorecard_with_measured_values() {
             weight: None,
             partial_band: None,
             ordinal: None,
+            kind: None,
+            assessment_guidance: None,
         })
         .expect("criterion");
     // A criterion whose inputs are missing → unavailable.
@@ -254,6 +260,8 @@ fn evaluate_framework_produces_scorecard_with_measured_values() {
             weight: None,
             partial_band: None,
             ordinal: None,
+            kind: None,
+            assessment_guidance: None,
         })
         .expect("criterion");
 
@@ -307,6 +315,8 @@ fn evaluation_snapshot_is_pinned_when_facts_change() {
             weight: None,
             partial_band: None,
             ordinal: None,
+            kind: None,
+            assessment_guidance: None,
         })
         .expect("criterion");
 
@@ -384,6 +394,8 @@ fn frameworks_round_trip_through_export_import_with_custom_metric() {
             weight: None,
             partial_band: None,
             ordinal: None,
+            kind: None,
+            assessment_guidance: None,
         })
         .expect("criterion");
 
@@ -483,6 +495,394 @@ fn evaluation_runs_can_be_pruned_from_history() {
 
     // Deleting a missing evaluation errors.
     assert!(state.delete_framework_evaluation(&first.id).is_err());
+}
+
+// ---- Qualitative, agent-assessed criteria (ADR 0075, v0.50.0) --------------
+
+#[test]
+fn creates_qualitative_criterion_persists_kind_and_guidance() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Qual".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+
+    // A qualitative criterion carries owner guidance and no DSL expression.
+    state
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Wide moat".to_owned(),
+            expression: String::new(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: Some("qualitative".to_owned()),
+            assessment_guidance: Some("Assess durable competitive advantage.".to_owned()),
+        })
+        .expect("qualitative criterion creates");
+
+    let reloaded = state
+        .get_quality_framework(&framework.id)
+        .expect("reload framework");
+    let criterion = reloaded
+        .criteria
+        .iter()
+        .find(|c| c.label == "Wide moat")
+        .expect("qualitative criterion present");
+    assert_eq!(criterion.kind, "qualitative");
+    assert_eq!(
+        criterion.assessment_guidance.as_deref(),
+        Some("Assess durable competitive advantage.")
+    );
+    assert_eq!(
+        criterion.expression, "",
+        "a qualitative criterion stores no DSL expression"
+    );
+}
+
+#[test]
+fn quantitative_criterion_defaults_kind_and_has_no_guidance() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Quant".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    // Absent kind ⇒ quantitative (safe default), predicate still validated.
+    state
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Strong ROE".to_owned(),
+            expression: "roe >= 15%".to_owned(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: None,
+            assessment_guidance: None,
+        })
+        .expect("quantitative criterion creates");
+
+    let reloaded = state.get_quality_framework(&framework.id).expect("reload");
+    let criterion = &reloaded.criteria[0];
+    assert_eq!(criterion.kind, "quantitative");
+    assert_eq!(criterion.assessment_guidance, None);
+}
+
+#[test]
+fn qualitative_criterion_requires_guidance() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let result = state.create_framework_criterion(NewFrameworkCriterion {
+        framework_id: framework.id.clone(),
+        label: "No guidance".to_owned(),
+        expression: String::new(),
+        weight: None,
+        partial_band: None,
+        ordinal: None,
+        kind: Some("qualitative".to_owned()),
+        assessment_guidance: None,
+    });
+    assert!(
+        result.is_err(),
+        "a qualitative criterion without guidance must be rejected"
+    );
+}
+
+#[test]
+fn updating_assessment_guidance_persists_and_preserves_kind() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let criterion = state
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Pricing power".to_owned(),
+            expression: String::new(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: Some("qualitative".to_owned()),
+            assessment_guidance: Some("v1 guidance".to_owned()),
+        })
+        .expect("criterion");
+
+    state
+        .update_framework_criterion(UpdateFrameworkCriterion {
+            id: criterion.id.clone(),
+            label: None,
+            expression: None,
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: None,
+            assessment_guidance: Some("v2 refined guidance".to_owned()),
+        })
+        .expect("update guidance");
+
+    let reloaded = state.get_quality_framework(&framework.id).expect("reload");
+    let updated = reloaded
+        .criteria
+        .iter()
+        .find(|c| c.id == criterion.id)
+        .expect("criterion present");
+    assert_eq!(
+        updated.assessment_guidance.as_deref(),
+        Some("v2 refined guidance")
+    );
+    assert_eq!(updated.kind, "qualitative", "kind preserved across update");
+}
+
+#[test]
+fn updating_quantitative_criterion_revalidates_and_preserves_kind() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Quant".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let criterion = state
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "ROE".to_owned(),
+            expression: "roe >= 15%".to_owned(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: None,
+            assessment_guidance: None,
+        })
+        .expect("criterion");
+
+    // A valid new expression is accepted and the kind stays quantitative.
+    state
+        .update_framework_criterion(UpdateFrameworkCriterion {
+            id: criterion.id.clone(),
+            label: None,
+            expression: Some("roe >= 20%".to_owned()),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: None,
+            assessment_guidance: None,
+        })
+        .expect("update expression");
+    let reloaded = state.get_quality_framework(&framework.id).expect("reload");
+    let updated = &reloaded.criteria[0];
+    assert_eq!(updated.expression, "roe >= 20%");
+    assert_eq!(updated.kind, "quantitative");
+
+    // A non-predicate expression is still rejected on update.
+    let invalid = state.update_framework_criterion(UpdateFrameworkCriterion {
+        id: criterion.id.clone(),
+        label: None,
+        expression: Some("roe + 1".to_owned()),
+        weight: None,
+        partial_band: None,
+        ordinal: None,
+        kind: None,
+        assessment_guidance: None,
+    });
+    assert!(invalid.is_err(), "a non-predicate update must be rejected");
+}
+
+#[test]
+fn switching_qualitative_to_quantitative_requires_valid_expression() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let criterion = state
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Moat".to_owned(),
+            expression: String::new(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: Some("qualitative".to_owned()),
+            assessment_guidance: Some("Assess the moat.".to_owned()),
+        })
+        .expect("qualitative criterion");
+
+    // Switching to quantitative without a valid expression must be rejected — never
+    // silently stored as an empty-expression quantitative criterion (which would
+    // evaluate to a bogus verdict).
+    let result = state.update_framework_criterion(UpdateFrameworkCriterion {
+        id: criterion.id.clone(),
+        label: None,
+        expression: None,
+        weight: None,
+        partial_band: None,
+        ordinal: None,
+        kind: Some("quantitative".to_owned()),
+        assessment_guidance: None,
+    });
+    assert!(
+        result.is_err(),
+        "a quantitative criterion must not persist an empty/invalid expression"
+    );
+}
+
+#[test]
+fn criterion_result_agent_fields_round_trip() {
+    // The read model surfaces the agent-assessed columns (ADR 0075). The typed
+    // write is T4's job; here we seed a persisted agent result directly and prove
+    // the storage read maps every field back.
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('co1','GPW','QF','GPW:QF','QF Co')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO quality_frameworks (id, name, origin, version) VALUES ('fw1','F','user',1)",
+            [],
+        )
+        .expect("seed framework");
+    connection
+        .execute(
+            "INSERT INTO framework_evaluations
+                (id, framework_id, framework_version, company_id, period_id,
+                 pass_count, partial_count, fail_count, unavailable_count, engine_version)
+             VALUES ('ev1','fw1',1,'co1',NULL,0,0,0,1,'test')",
+            [],
+        )
+        .expect("seed evaluation");
+    connection
+        .execute(
+            r#"INSERT INTO criterion_results
+                (id, evaluation_id, criterion_id, ordinal, label, expression, verdict,
+                 reasoning, citations, confidence, prompt_version, source)
+             VALUES ('cr1','ev1',NULL,0,'Wide moat','','insufficient_evidence',
+                     'Not enough disclosure to judge the moat.',
+                     '[{"evidenceType":"claim","evidenceId":"cl1","label":"mgmt claim","snippet":"..."}]',
+                     'medium','qual_assessment_v1','agent')"#,
+            [],
+        )
+        .expect("seed agent result");
+
+    let evaluation =
+        crate::storage::quality_frameworks::get_framework_evaluation(&connection, "ev1")
+            .expect("evaluation loads");
+    let result = &evaluation.results[0];
+    assert_eq!(result.verdict, "insufficient_evidence");
+    assert_eq!(result.source, "agent");
+    assert_eq!(
+        result.reasoning.as_deref(),
+        Some("Not enough disclosure to judge the moat.")
+    );
+    assert_eq!(result.confidence.as_deref(), Some("medium"));
+    assert_eq!(result.prompt_version.as_deref(), Some("qual_assessment_v1"));
+    assert!(
+        result
+            .citations
+            .as_deref()
+            .expect("citations present")
+            .contains("evidenceType"),
+        "citations JSON round-trips"
+    );
+}
+
+#[test]
+fn upgrade_backfills_quantitative_kind_and_engine_source() {
+    // A database at v58 (pre-qualitative) with a quantitative framework, criterion,
+    // evaluation, and result. Upgrading to the latest schema backfills the new
+    // discriminators with safe defaults (kind='quantitative', source='engine') and
+    // leaves the pre-existing verdict untouched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    crate::storage::migrations::apply_migrations_up_to(&mut connection, 58).expect("apply v58");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('co','GPW','X','GPW:X','X Co')",
+            [],
+        )
+        .expect("seed company at v58");
+    connection
+        .execute(
+            "INSERT INTO quality_frameworks (id, name, origin, version) VALUES ('fw','F','user',1)",
+            [],
+        )
+        .expect("seed framework at v58");
+    connection
+        .execute(
+            "INSERT INTO framework_criteria (id, framework_id, ordinal, label, expression)
+             VALUES ('cri','fw',0,'ROE','roe >= 15%')",
+            [],
+        )
+        .expect("seed criterion at v58");
+    connection
+        .execute(
+            "INSERT INTO framework_evaluations
+                (id, framework_id, framework_version, company_id, period_id,
+                 pass_count, partial_count, fail_count, unavailable_count, engine_version)
+             VALUES ('ev','fw',1,'co',NULL,1,0,0,0,'v0')",
+            [],
+        )
+        .expect("seed evaluation at v58");
+    connection
+        .execute(
+            "INSERT INTO criterion_results
+                (id, evaluation_id, criterion_id, ordinal, label, expression, verdict)
+             VALUES ('cr','ev','cri',0,'ROE','roe >= 15%','pass')",
+            [],
+        )
+        .expect("seed result at v58");
+
+    crate::storage::migrations::apply_migrations(&mut connection).expect("upgrade to latest");
+
+    let kind: String = connection
+        .query_row(
+            "SELECT kind FROM framework_criteria WHERE id='cri'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("read kind");
+    assert_eq!(
+        kind, "quantitative",
+        "existing criterion backfills to quantitative"
+    );
+    let source: String = connection
+        .query_row(
+            "SELECT source FROM criterion_results WHERE id='cr'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("read source");
+    assert_eq!(
+        source, "engine",
+        "existing result backfills to engine source"
+    );
+    let verdict: String = connection
+        .query_row(
+            "SELECT verdict FROM criterion_results WHERE id='cr'",
+            [],
+            |r| r.get(0),
+        )
+        .expect("read verdict");
+    assert_eq!(
+        verdict, "pass",
+        "pre-existing quantitative verdict untouched"
+    );
 }
 
 #[test]

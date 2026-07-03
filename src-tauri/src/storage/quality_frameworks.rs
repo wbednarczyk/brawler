@@ -61,6 +61,11 @@ pub struct FrameworkCriterion {
     pub expression: String,
     pub weight: Option<String>,
     pub partial_band: Option<String>,
+    /// `quantitative` (DSL expression) | `qualitative` (agent-assessed, ADR 0075).
+    #[cfg_attr(feature = "ts-export", ts(type = "\"quantitative\" | \"qualitative\""))]
+    pub kind: String,
+    /// Owner-authored prompt seed for a qualitative criterion; `None` for quantitative.
+    pub assessment_guidance: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -111,6 +116,18 @@ pub struct CriterionResult {
     pub threshold: Option<String>,
     pub inputs_json: Option<String>,
     pub note: Option<String>,
+    // Agent-assessed fields (ADR 0075) — populated only for `source = agent` rows.
+    /// Short agent rationale for a qualitative verdict.
+    pub reasoning: Option<String>,
+    /// JSON array of typed evidence refs (evidenceType/evidenceId/label/snippet).
+    pub citations: Option<String>,
+    /// Agent confidence: `low` | `medium` | `high`.
+    pub confidence: Option<String>,
+    /// Versioned prompt id that produced this assessment.
+    pub prompt_version: Option<String>,
+    /// `engine` (deterministic quantitative) | `agent` (qualitative assessment).
+    #[cfg_attr(feature = "ts-export", ts(type = "\"engine\" | \"agent\""))]
+    pub source: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -211,6 +228,7 @@ pub struct CloneFrameworkInput {
 pub struct NewFrameworkCriterion {
     pub framework_id: String,
     pub label: String,
+    #[serde(default)]
     pub expression: String,
     #[serde(default)]
     pub weight: Option<String>,
@@ -218,6 +236,12 @@ pub struct NewFrameworkCriterion {
     pub partial_band: Option<String>,
     #[serde(default)]
     pub ordinal: Option<i64>,
+    /// `quantitative` (default) | `qualitative` (ADR 0075). Absent ⇒ quantitative.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Required (non-empty) for a qualitative criterion; ignored for quantitative.
+    #[serde(default)]
+    pub assessment_guidance: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -243,6 +267,12 @@ pub struct UpdateFrameworkCriterion {
     pub partial_band: Option<String>,
     #[serde(default)]
     pub ordinal: Option<i64>,
+    /// Switch a criterion's kind (ADR 0075); absent ⇒ keep existing.
+    #[serde(default)]
+    pub kind: Option<String>,
+    /// Update the qualitative guidance seed; absent ⇒ keep existing.
+    #[serde(default)]
+    pub assessment_guidance: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -400,6 +430,8 @@ pub(super) fn clone_framework(
             &criterion.expression,
             criterion.weight.as_deref(),
             criterion.partial_band.as_deref(),
+            &criterion.kind,
+            criterion.assessment_guidance.as_deref(),
         )?;
     }
     get_quality_framework(connection, &id)
@@ -444,7 +476,7 @@ fn list_criteria(
     framework_id: &str,
 ) -> StorageResult<Vec<FrameworkCriterion>> {
     let mut statement = connection.prepare(
-        "SELECT id, framework_id, ordinal, label, expression, weight, partial_band, created_at, updated_at
+        "SELECT id, framework_id, ordinal, label, expression, weight, partial_band, created_at, updated_at, kind, assessment_guidance
          FROM framework_criteria WHERE framework_id = ?1 ORDER BY ordinal, created_at",
     )?;
     let rows = statement.query_map([framework_id], criterion_from_row)?;
@@ -465,8 +497,20 @@ pub(super) fn create_framework_criterion(
             value: label,
         });
     }
-    let expression = input.expression.trim().to_owned();
-    validate_predicate(&expression)?;
+    let kind = normalize_kind(input.kind.as_deref())?;
+    // A quantitative criterion validates its DSL predicate; a qualitative one
+    // (ADR 0075) carries owner guidance and no expression.
+    let (expression, guidance) = match kind {
+        "qualitative" => (
+            String::new(),
+            Some(require_guidance(input.assessment_guidance.clone())?),
+        ),
+        _ => {
+            let expression = input.expression.trim().to_owned();
+            validate_predicate(&expression)?;
+            (expression, None)
+        }
+    };
     validate_band(input.partial_band.as_deref())?;
 
     let ordinal = match input.ordinal {
@@ -481,6 +525,8 @@ pub(super) fn create_framework_criterion(
         &expression,
         input.weight.as_deref(),
         input.partial_band.as_deref(),
+        kind,
+        guidance.as_deref(),
     )?;
     bump_framework_version(connection, &input.framework_id)?;
     get_criterion(connection, &id)
@@ -502,15 +548,33 @@ pub(super) fn update_framework_criterion(
             }
             l
         }
-        None => existing.label,
+        None => existing.label.clone(),
     };
-    let expression = match input.expression {
-        Some(e) => {
-            let e = e.trim().to_owned();
-            validate_predicate(&e)?;
-            e
-        }
-        None => existing.expression,
+    // Resolve the effective kind (input override, else the existing kind), then
+    // apply kind-specific rules (ADR 0075).
+    let kind = match input.kind.as_deref() {
+        Some(_) => normalize_kind(input.kind.as_deref())?.to_owned(),
+        None => existing.kind.clone(),
+    };
+    let (expression, guidance) = if kind == "qualitative" {
+        // No DSL expression; guidance from the input, else the existing value —
+        // but the effective value must be non-empty.
+        let raw = match input.assessment_guidance.clone() {
+            Some(g) => Some(g),
+            None => existing.assessment_guidance.clone(),
+        };
+        (String::new(), Some(require_guidance(raw)?))
+    } else {
+        // Validate the *effective* expression, not just an explicitly-supplied one:
+        // a qualitative→quantitative switch (or a blank kind that normalizes to
+        // quantitative) must not persist the empty expression a qualitative row
+        // carries. Re-validating an unchanged, already-valid expression is idempotent.
+        let expression = match input.expression {
+            Some(e) => e.trim().to_owned(),
+            None => existing.expression.clone(),
+        };
+        validate_predicate(&expression)?;
+        (expression, None)
     };
     let partial_band = match input.partial_band {
         Some(b) => empty_to_none(Some(b)),
@@ -527,7 +591,8 @@ pub(super) fn update_framework_criterion(
     connection.execute(
         "UPDATE framework_criteria
          SET label = ?2, expression = ?3, expression_ast = ?4, weight = ?5, partial_band = ?6,
-             ordinal = ?7, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+             ordinal = ?7, kind = ?8, assessment_guidance = ?9,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
          WHERE id = ?1",
         params![
             input.id,
@@ -536,7 +601,9 @@ pub(super) fn update_framework_criterion(
             ast,
             weight,
             partial_band,
-            ordinal
+            ordinal,
+            kind,
+            guidance
         ],
     )?;
     bump_framework_version(connection, &existing.framework_id)?;
@@ -565,7 +632,7 @@ pub(super) fn delete_framework_criterion(connection: &Connection, id: &str) -> S
 fn get_criterion(connection: &Connection, id: &str) -> StorageResult<FrameworkCriterion> {
     connection
         .query_row(
-            "SELECT id, framework_id, ordinal, label, expression, weight, partial_band, created_at, updated_at
+            "SELECT id, framework_id, ordinal, label, expression, weight, partial_band, created_at, updated_at, kind, assessment_guidance
              FROM framework_criteria WHERE id = ?1",
             [id],
             criterion_from_row,
@@ -775,7 +842,8 @@ fn list_criterion_results(
 ) -> StorageResult<Vec<CriterionResult>> {
     let mut statement = connection.prepare(
         "SELECT id, evaluation_id, criterion_id, ordinal, label, expression, verdict,
-                measured_value, measured_unit, threshold, inputs_json, note
+                measured_value, measured_unit, threshold, inputs_json, note,
+                reasoning, citations, confidence, prompt_version, source
          FROM criterion_results WHERE evaluation_id = ?1 ORDER BY ordinal, id",
     )?;
     let rows = statement.query_map([evaluation_id], criterion_result_from_row)?;
@@ -963,6 +1031,8 @@ fn seed_template_criteria(
     template: &templates::FrameworkTemplate,
 ) -> StorageResult<()> {
     for (index, criterion) in template.criteria.iter().enumerate() {
+        // Shipped templates are quantitative; qualitative template criteria (T6)
+        // will carry their own kind + guidance.
         insert_criterion(
             connection,
             framework_id,
@@ -971,6 +1041,8 @@ fn seed_template_criteria(
             criterion.expression,
             None,
             criterion.partial_band,
+            "quantitative",
+            None,
         )?;
     }
     Ok(())
@@ -985,13 +1057,16 @@ fn insert_criterion(
     expression: &str,
     weight: Option<&str>,
     partial_band: Option<&str>,
+    kind: &str,
+    assessment_guidance: Option<&str>,
 ) -> StorageResult<String> {
     let id = criterion_id(framework_id, label);
     let ast = cached_ast(expression);
     connection.execute(
         "INSERT INTO framework_criteria
-            (id, framework_id, ordinal, label, expression, expression_ast, weight, partial_band)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            (id, framework_id, ordinal, label, expression, expression_ast, weight, partial_band,
+             kind, assessment_guidance)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             id,
             framework_id,
@@ -1000,10 +1075,33 @@ fn insert_criterion(
             expression,
             ast,
             weight,
-            partial_band
+            partial_band,
+            kind,
+            assessment_guidance
         ],
     )?;
     Ok(id)
+}
+
+/// Normalize a criterion `kind` input: absent/blank ⇒ `quantitative`; an
+/// unrecognized value is rejected (ADR 0075).
+fn normalize_kind(kind: Option<&str>) -> StorageResult<&'static str> {
+    match kind.map(str::trim).filter(|s| !s.is_empty()) {
+        None | Some("quantitative") => Ok("quantitative"),
+        Some("qualitative") => Ok("qualitative"),
+        Some(other) => Err(StorageError::InvalidFrameworkValue {
+            key: "kind",
+            value: other.to_owned(),
+        }),
+    }
+}
+
+/// A qualitative criterion must carry a non-empty guidance seed (ADR 0075).
+fn require_guidance(guidance: Option<String>) -> StorageResult<String> {
+    empty_to_none(guidance).ok_or(StorageError::InvalidFrameworkValue {
+        key: "assessment_guidance",
+        value: String::new(),
+    })
 }
 
 fn next_ordinal(connection: &Connection, framework_id: &str) -> StorageResult<i64> {
@@ -1087,6 +1185,12 @@ fn criterion_from_row(row: &Row<'_>) -> rusqlite::Result<FrameworkCriterion> {
         partial_band: row.get(6)?,
         created_at: row.get(7)?,
         updated_at: row.get(8)?,
+        // Appended columns (migration 0059). Safe-default read (ADR 0075): a
+        // missing/NULL kind is quantitative.
+        kind: row
+            .get::<_, Option<String>>(9)?
+            .unwrap_or_else(|| "quantitative".to_owned()),
+        assessment_guidance: row.get(10)?,
     })
 }
 
@@ -1121,6 +1225,15 @@ fn criterion_result_from_row(row: &Row<'_>) -> rusqlite::Result<CriterionResult>
         threshold: row.get(9)?,
         inputs_json: row.get(10)?,
         note: row.get(11)?,
+        // Appended columns (migration 0059, ADR 0075).
+        reasoning: row.get(12)?,
+        citations: row.get(13)?,
+        confidence: row.get(14)?,
+        prompt_version: row.get(15)?,
+        // Safe-default read: a missing/NULL source is the deterministic engine.
+        source: row
+            .get::<_, Option<String>>(16)?
+            .unwrap_or_else(|| "engine".to_owned()),
     })
 }
 

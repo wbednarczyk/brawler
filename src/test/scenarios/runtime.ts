@@ -1532,6 +1532,11 @@ function buildHandlers(): Record<string, Handler> {
         expression: str(input.expression) ?? "true",
         weight: str(input.weight),
         partialBand: str(input.partialBand),
+        kind:
+          str(input.kind) === "qualitative"
+            ? ("qualitative" as const)
+            : ("quantitative" as const),
+        assessmentGuidance: str(input.assessmentGuidance),
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
       };
