@@ -75,3 +75,4 @@
 - [0072](0072-ownership-structure.md) — Ownership Structure — Shareholder Stakes, History, and Classification — Accepted
 - [0073](0073-analyst-recommendations-tracking.md) — Analyst Recommendations Tracking — Accepted
 - [0074](0074-ux-journeys-and-anti-rot.md) — UX Journeys as Spec — Journey Tests, Step Budgets, and Anti-Rot Guardrails — Accepted
+- [0075](0075-qualitative-assessment-frameworks.md) — Qualitative Assessment Frameworks — Agent-Assessed Criteria with Citations — Accepted (v0.50.0)

@@ -718,7 +718,7 @@ Rules:
 
 ### Quality Frameworks
 
-User-owned quality checklists evaluated against the fundamentals facts by a deterministic rule engine, producing a versioned scorecard ([ADR 0046](adr/0046-quality-frameworks-quantitative.md), `v0.44.0`). A *framework* is a named set of criteria expressed in a free-text DSL over metric keys; the engine evaluates each criterion against confirmed `financial_facts` (latest period/TTM) and records the measured value. No AI; decision-support only (criteria cannot encode buy/sell output). Migration `0048_quality_frameworks.sql`.
+User-owned quality checklists evaluated against the fundamentals facts by a deterministic rule engine, producing a versioned scorecard ([ADR 0046](adr/0046-quality-frameworks-quantitative.md), `v0.44.0`). A *framework* is a named set of criteria expressed in a free-text DSL over metric keys; the engine evaluates each criterion against confirmed `financial_facts` (latest period/TTM) and records the measured value. The quantitative engine uses no AI; decision-support only (criteria cannot encode buy/sell output). Migration `0048_quality_frameworks.sql`. A framework may also hold **qualitative**, agent-assessed criteria (**planned v0.50.0**, [ADR 0075](adr/0075-qualitative-assessment-frameworks.md)) — see the `kind`/`assessment_guidance` and agent-assessed `criterion_results` fields below.
 
 `quality_frameworks` (the checklist):
 
@@ -733,6 +733,7 @@ User-owned quality checklists evaluated against the fundamentals facts by a dete
 - `id`, `framework_id` → `quality_frameworks(id)`, `ordinal` (display order).
 - `label`, `expression` (DSL text, e.g. `roic >= 15%`, `net_debt_to_ebitda < 2.5 AND fcf > 0`), `expression_ast` (cached parsed AST JSON).
 - `weight`/`rank` (optional, for scorecard emphasis), `partial_band` (optional near-threshold band that yields a `partial` verdict).
+- `kind` (`quantitative` | `qualitative`) + `assessment_guidance` — **planned v0.50.0** ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md)): a qualitative criterion is agent-assessed and carries an owner-authored `assessment_guidance` prompt seed instead of a DSL expression (empty `expression`, which stays `NOT NULL`); an append-only migration (`0059_qualitative_criteria.sql`) backfills existing rows to `kind = quantitative` and a missing/NULL `kind` reads as `quantitative`.
 - `created_at`, `updated_at`.
 
 `framework_evaluations` (one immutable run):
@@ -746,11 +747,12 @@ User-owned quality checklists evaluated against the fundamentals facts by a dete
 - `id`, `evaluation_id` → `framework_evaluations(id)`, `criterion_id` → `framework_criteria(id)`.
 - `expression` (snapshot of the criterion text at run time), `verdict` (`pass` | `partial` | `fail` | `unavailable`).
 - `measured_value` (decimal-exact text, the leading metric's measured value), `measured_unit`, `threshold` (snapshot), `inputs_json` (the facts/periods/metric keys used, for audit), `note`.
+- Agent-assessed fields — **planned v0.50.0** ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), append-only columns): `reasoning` (short), `citations` (JSON — typed evidence refs reusing the `ai_research_brief_citations` model: `evidence_type` from `ResearchEvidenceType`, `evidence_id`, `label`, `snippet`), `confidence` (`low` | `medium` | `high`), `prompt_version`, `source`. `source` follows the append-only safe-default pattern: added with `DEFAULT 'engine'` so the existing-table `ALTER … ADD COLUMN` succeeds and pre-migration quantitative rows read as engine-sourced; qualitative rows write `agent`. For qualitative rows `verdict` adds `insufficient_evidence` to the quantitative set. Agent results are opinion, never facts: visually distinct, regeneratable, and they never mutate quantitative data.
 - Immutable once written.
 
 Rules:
 
-- Evaluation is a manual user action (`evaluate_framework`) over the latest available period/TTM; the autonomous re-evaluation path is deferred (`v0.49.0`/`v0.50.0`).
+- Quantitative evaluation is a manual user action (`evaluate_framework`) over the latest available period/TTM. Qualitative assessment (planned v0.50.0, ADR 0075) is agent-run per criterion and re-enqueued by the assist/autopilot trust rungs on new-report arrival; agent results compose into the same immutable snapshot with a per-criterion `source`.
 - A run computes an in-memory metric table (never persisted) via the shared derived-metrics service, then persists only the `framework_evaluations` + `criterion_results` rows. The `measured_value` is pinned to the run and does **not** change when underlying facts later change (a final supersedes an estimate) — the scorecard is the latest run; history is queryable.
 - `verdict = unavailable` when a referenced metric cannot be computed (missing fact), distinct from `fail`.
 - An evaluation run may be **deleted** from the history (pruning); deletion cascades to its `criterion_results`. Deletion removes a whole run — it never mutates a retained run's snapshotted values, so the immutability guarantee holds for what remains.

@@ -2264,6 +2264,25 @@ Domain types follow the `quality_frameworks` / `framework_criteria` / `framework
 
 Frameworks, criteria, and any `user`-scope `kpi_definitions` a criterion references are owner-durable state carried in the import/export bundle so an exported framework imports cleanly; evaluations are reproducible snapshots whose export is optional.
 
+### Qualitative Assessment
+
+Status: planned (v0.50.0, ADR 0075)
+
+Qualitative assessment ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), `v0.50.0`) extends quality frameworks with **agent-assessed** criteria (moat, pricing power, recurring revenue, capital-allocation quality…) that cannot be reduced to a metric comparison. A qualitative criterion carries `kind: "qualitative"` and an owner-authored `assessmentGuidance` prompt seed instead of a DSL expression; the existing criterion writes (`create_framework_criterion` / `update_framework_criterion`) gain optional `kind` and `assessmentGuidance` fields for this (empty `expression` for qualitative rows). Assessment is one AI request **per criterion per company** (the `qualitative_assessment` capability, ADR 0060), grounded only in app-held evidence — report documents, research evidence links, claims + verdicts, recent signals, notebook notes; **no web access**. Each result is agent opinion (not a fact): `verdict` (`pass | partial | fail | insufficient_evidence`), short `reasoning`, `citations` (typed evidence refs reusing the research-evidence citation model — `evidenceType`, `evidenceId`, `label`, `snippet`), `confidence` (`low | medium | high`), `promptVersion`, and `source: "agent"`. Results are labeled, regeneratable, and never mutate quantitative data; stored `reasoning` must contain no buy/sell/hold or allocation language. Agent results merge into the same immutable evaluation snapshot as quantitative results (per-criterion `source`); verdict changes vs the previous snapshot surface in digests and on autopilot re-evaluation.
+
+Two read surfaces with a fixed boundary (a snapshot may be quant-only, qual-only, or combined, so "the latest snapshot" is **not** a reliable source of qualitative rows):
+
+- `get_framework_evaluation` / `list_framework_evaluations` return the qualitative fields **as snapshotted in that specific run** — the audit/history view of one evaluation, unchanged and immutable.
+- `get_qualitative_assessment` is the Quality panel's **current-state** read: per qualitative criterion, the most recent agent-assessed row (`source = "agent"`) for the company × framework **across all snapshots**, so a later quant-only run never blanks an existing assessment.
+
+Commands:
+
+- `run_qualitative_assessment(input)`: `{ companyId, frameworkId }` → enqueues the durable `qualitative_assessment` job over the framework's qualitative criteria for the company; asynchronous, surfaced via the jobs read model. Fails with a clear error when no text-capable provider is configured (matches feed-analysis behavior).
+- `rerun_qualitative_criterion(input)`: `{ companyId, frameworkId, criterionId }` → re-enqueues assessment for a single qualitative criterion (the panel's re-run action).
+- `get_qualitative_assessment(input)`: `{ companyId, frameworkId }` → returns, **per qualitative criterion, the most recent agent-assessed result** (`source = "agent"`, latest by run) across the framework's evaluation snapshots for the company, with resolved citations (opening the cited evidence), confidence, prompt version, and `source`, for the Quality panel. A criterion with no assessment yet is omitted (empty state), distinct from an `insufficient_evidence` verdict.
+
+Citations are rejected when they do not reference an evidence id supplied to the request (the research-brief `rejects_unknown_citation_keys` precedent): uncited reasoning is never stored.
+
 ### AI KPI Extraction
 
 AI KPI extraction ([ADR 0028](adr/0028-multi-provider-ai-boundary.md), [ADR 0029](adr/0029-ir-page-report-resolution.md)) reads a stored report document with the selected AI provider and produces **proposals**. A proposal never becomes a `financial_fact` until the user confirms it; confirming materialises the period, resolves (or, for accepted suggestions, creates) the KPI definition, and writes the fact with `extractionMethod = "ai"` and the source document reference. Confirmed proposals are retained as the provenance trail (provider, model, prompt version live on the job; the verbatim source snippet and confidence on the proposal). Rejected proposals never persist a value.
