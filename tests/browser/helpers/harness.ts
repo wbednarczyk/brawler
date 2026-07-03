@@ -52,17 +52,24 @@ export async function openInbox(page: Page) {
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
 }
 
-// Open a cockpit-hosted screen (ADR 0054): Research / Notebook / Events / Report
-// Season / Watchlists no longer have their own sidebar button — they live as
-// cockpit panels, opened from the command palette. `label` is the panel name as
-// it appears in the palette ("Notebook", "Research", "Events", "Report Season").
+// Open a cockpit-hosted global screen (ADR 0054): Research / Notebook / Events /
+// Report Season / Watchlists no longer have their own sidebar button — they live
+// as cockpit panels. There is also no standalone blank "Cockpit" nav entry
+// anymore (ADR 0057 decision 5): the entry point is the "+ New view" creator, so
+// this helper creates a throwaway named view, then fills its first grid cell
+// from the panel palette. `label` is the panel name as it appears in the palette
+// ("Notebook", "Research", "Events", "Report Season").
 export async function openCockpitPanel(page: Page, label: string) {
-  await page
-    .getByLabel(/Primary navigation|Nawigacja główna/)
-    .getByRole("button", { name: "Cockpit" })
-    .click();
+  const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
+  await nav.getByRole("button", { name: "New view" }).click();
+  const createModal = page.getByRole("dialog", { name: "New view" });
+  await createModal.getByLabel("View name").fill(`${label} test view`);
+  await createModal.getByRole("button", { name: "Create view" }).click();
   await expect(page.getByLabel("Research cockpit")).toBeVisible();
-  await page.getByRole("button", { name: /Commands/ }).click();
+  // Wait for the fresh grid to render (the layout-apply effect fires just after
+  // mount) before targeting a cell, so "Add panel" doesn't race an empty grid.
+  await expect(page.getByText("Pick a panel").first()).toBeVisible();
+  await page.getByRole("button", { name: "Add panel" }).click();
   const palette = page.getByRole("dialog", { name: "Command palette" });
   await palette.getByLabel("Search commands").fill(`Open panel: ${label}`);
   await palette.getByRole("button", { name: `Open panel: ${label}`, exact: true }).first().click();

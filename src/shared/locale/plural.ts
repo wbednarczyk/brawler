@@ -26,3 +26,7 @@ export function pluralNoun(locale: LocaleCode, n: number, forms: PluralForms): s
   if (locale === "pl") return forms.pl[polishCategory(n)];
   return n === 1 ? forms.en[0] : forms.en[1];
 }
+
+// Shared across screens (Today's autopilot run card, Companies' fundamentals
+// header) that report a raw `financial_facts`/produced-fact count.
+export const FACT_FORMS: PluralForms = { en: ["fact", "facts"], pl: ["fakt", "fakty", "faktów"] };

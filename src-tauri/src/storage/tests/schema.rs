@@ -210,5 +210,6 @@ fn reports_database_status() {
     assert_eq!(status.applied_migrations, super::expected_migration_count());
     assert_eq!(status.companies, 0);
     assert_eq!(status.source_adapters, 12);
-    assert_eq!(status.settings, 22);
+    // +4 queue worker/concurrency settings seeded by migration 0056 (ADR 0059).
+    assert_eq!(status.settings, 26);
 }

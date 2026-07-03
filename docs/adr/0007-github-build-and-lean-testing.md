@@ -1,8 +1,6 @@
 # ADR 0007: GitHub Build and Lean Testing
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

@@ -17,6 +17,10 @@ const OPENAI_TARGET: &str = "brawler/provider_openai/api_key";
 const OPENAI_ACCOUNT: &str = "provider_openai:api_key";
 const OPENAI_ENV_VAR: &str = "OPENAI_API_KEY";
 
+const OPENAI_COMPATIBLE_TARGET: &str = "brawler/provider_openai_compatible/api_key";
+const OPENAI_COMPATIBLE_ACCOUNT: &str = "provider_openai_compatible:api_key";
+const OPENAI_COMPATIBLE_ENV_VAR: &str = "OPENAI_COMPATIBLE_API_KEY";
+
 // Legacy purpose-scoped entries removed in ADR 0028. They are best-effort
 // cleared once so no orphaned secrets linger; we never read or fall back to them.
 const LEGACY_GEMINI_PURPOSE_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
@@ -63,7 +67,12 @@ pub struct CredentialStatus {
 
 /// The provider ids that authenticate with a single OS-keychain API key.
 pub fn credentialed_provider_ids() -> &'static [&'static str] {
-    &["provider_gemini", "provider_anthropic", "provider_openai"]
+    &[
+        "provider_gemini",
+        "provider_anthropic",
+        "provider_openai",
+        "provider_openai_compatible",
+    ]
 }
 
 /// Resolve the credential descriptor for a provider id, if it uses a credential.
@@ -92,6 +101,14 @@ pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDes
             target: OPENAI_TARGET,
             account: OPENAI_ACCOUNT,
             development_env_var: Some(OPENAI_ENV_VAR),
+        }),
+        "provider_openai_compatible" => Some(CredentialDescriptor {
+            provider_id: "provider_openai_compatible",
+            secret_kind: "api_key",
+            label: "OpenAI-compatible API key",
+            target: OPENAI_COMPATIBLE_TARGET,
+            account: OPENAI_COMPATIBLE_ACCOUNT,
+            development_env_var: Some(OPENAI_COMPATIBLE_ENV_VAR),
         }),
         _ => None,
     }

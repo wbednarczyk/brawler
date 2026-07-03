@@ -332,7 +332,16 @@ fn build_provider(
     };
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
     let api_key = analysis::registry::read_analysis_provider_api_key(&provider_id);
-    analysis::registry::build_analysis_provider(&provider_id, api_key, &model, timeout_seconds)
+    // Only consulted for the OpenAI-compatible provider (ADR 0060); ignored otherwise.
+    let openai_compatible_base_url = Some(settings.ai_providers.openai_compatible_base_url.trim())
+        .filter(|value| !value.is_empty());
+    analysis::registry::build_analysis_provider(
+        &provider_id,
+        api_key,
+        &model,
+        timeout_seconds,
+        openai_compatible_base_url,
+    )
 }
 
 #[cfg(test)]

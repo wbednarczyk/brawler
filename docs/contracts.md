@@ -2,7 +2,15 @@
 
 This file defines initial contracts for the first implementation. Field names are intentionally stable enough for code scaffolding, but exact serialization may be refined with tests before the first API release.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), and [Product Spec](product-spec.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Architecture](architecture.md), [Data Model](data-model.md), [Source Strategy](source-strategy.md), and [Product Spec](product-spec.md).
+
+## Command Conventions
+
+This file states the wire shapes, commands, and command-specific rules for every entity; **field-level storage rules (uniqueness, FKs, soft references, retention) are canonical in [Data Model](data-model.md)** — each section below points there instead of restating them. Conventions shared by every section, stated once:
+
+- **Structure.** A section shows the wire JSON shape(s) first, then allowed enum values, then `Rules:` (command-specific behavior), then the typed Tauri commands (`Commands:`/`Typed commands:`/"Initial local commands:").
+- **Errors.** Typed commands surface failures as a typed command error the frontend maps to a user-facing message; there is no bare-string/panic error path across the Tauri boundary. Async work (jobs, extraction, backfill) reports failure through job status fields (`status: "failed"`, `errorCode`, `error`) rather than a rejected command call.
+- **Scope.** Commands accept and return the **canonical id** (`companyId`, `watchlistId`, etc.), never a raw ticker or display string; canonical identity and uniqueness rules live in [Data Model](data-model.md). Company-scoped vs watchlist-scoped behavior is called out per section only where it differs from this default.
 
 ## Company Identity
 
@@ -25,13 +33,12 @@ Canonical company identity is exchange-qualified:
 }
 ```
 
-Rules:
+Rules (uniqueness of `qualifiedTicker`/`ticker` and optional identifier fields are canonical in [Data Model § Companies](data-model.md#companies)):
 
-- `qualifiedTicker` is unique in local storage.
-- `ticker` alone is not unique.
-- `isin`, `cik`, and `lei` are optional.
 - Source adapters may attach source-specific IDs without changing the canonical identity.
 - UI ticker labels may split `qualifiedTicker` into exchange and symbol for styling, including explicit known-exchange colors and deterministic fallback colors for future exchanges, but command payloads and storage continue to use the unchanged `qualifiedTicker` string.
+
+`delete_company(companyId)` deletes a company by its canonical id. Owned rows (watchlist memberships, feed item links, notebook entries, claims, events, and other company-scoped data) are removed through local referential integrity.
 
 ## Watchlist Membership
 
@@ -98,6 +105,11 @@ Each source adapter must expose metadata and a fetch operation.
   "lastDetailWarning": null
 }
 ```
+
+Commands:
+
+- `list_source_adapters(input?)`: returns adapter metadata/status rows above. `input` is `{ includeDeveloperOnly? }`; normal callers omit it and get only `required`/`optional` adapters, per the `visibility` rule below.
+- `set_source_adapter_enabled(input)`: `{ adapterId, enabled }` → toggles a `userConfigurable` adapter and returns its updated metadata row.
 
 Fetch input:
 
@@ -202,14 +214,9 @@ Rules:
 }
 ```
 
-Rules:
+Rules (storage rules — dedupe, required fields, retention — are canonical in [Data Model § Feed Items](data-model.md#feed-items)):
 
 - `signals` is the list of typed classifications attached to this filing (see [Company Signal](#company-signal)). It is read-only on the feed read model and empty for unclassified items; the full signal contract is served by the signal endpoints.
-- `publishedAt` may be null only when the source does not provide it.
-- `fetchedAt` is always required.
-- `dedupeKey` must be stable for the same source item.
-- `displayCompany` is allowed in UI-facing read models so the Inbox can show a ticker label even before a full canonical company relationship is available. Canonical storage still uses `companies`/`feed_item_companies`.
-- `read` and `saved` are user state and must persist locally.
 - Original source text should be retained when legally and technically allowed.
 - `summary` is a separate field from `title` and `bodyText`. If a source or AI-generated summary is not available, UI read models may display `title` as the summary fallback.
 - Feed details should show the summary/fallback first and keep the full official report body collapsed until the user expands it.
@@ -229,6 +236,8 @@ Rules:
 
 - `read` and `saved` are independently optional for partial state updates.
 - Updating read/saved state must not alter source attribution, timestamps, matched companies, or dedupe identity.
+
+`update_feed_item_state(input)` applies the mutation input above and returns the updated `FeedItem`.
 
 ## Notebook Entry
 
@@ -275,22 +284,20 @@ Allowed claim statuses:
 - `unknown`
 - `not_applicable`
 
-Rules:
+Rules (company ownership, body format, and origin-link requirements are canonical in [Data Model § Notebook Entries](data-model.md#notebook-entries)):
 
-- Notes belong to exactly one canonical company.
-- Note body format is Markdown in v1.
 - Notebook read views may render common Markdown, but stored `body` remains the canonical Markdown source.
 - Claim notes may include both `followUpAfter` for quarter/period follow-up and `followUpDate` for exact date follow-up.
-- Notes created from feed items or transcripts must retain origin links.
 - Notebook UI surfaces should render origin links in note details and make feed-item origins actionable inside the app when the referenced feed item is still available locally.
 - Origin links are immutable through normal note editing. Future workflows may add or detach origins through explicit source-link actions, but inline note editing must not rewrite origin records.
 - Feed-to-note drafts start from UI-facing feed items, which are scoped to tracked companies; `create_notebook_entry` requires the canonical tracked `companyId`.
-- As of `v0.42.0` ([ADR 0040](adr/0040-management-claims-tracker.md)) management claims are a first-class entity with their own commands (see [Management Claim](#management-claim)); `kind = 'claim'` and the `claimStatus`/`followUp*` fields are **legacy**. The `0045` migration moves existing claim notes into `management_claims`. New claims are created and tracked through the claim commands, not `create_notebook_entry`.
+- As of `v0.42.0` ([ADR 0040](adr/0040-management-claims-tracker.md)) management claims are a first-class entity with their own commands (see [Management Claim](#management-claim)); `kind = 'claim'` and the `claimStatus`/`followUp*` fields are **legacy**, migrated by `0045` (detail in Data Model). New claims are created and tracked through the claim commands, not `create_notebook_entry`.
 
 Initial local commands:
 
 - `list_notebook_entries(companyId)`: returns notebook entries for one company, newest updated first.
 - `create_notebook_entry(input)`: creates one Markdown notebook entry for a company.
+- `delete_notebook_entry(id)`: deletes one notebook entry by id.
 - `update_notebook_entry(input)`: updates editable note fields and tags while preserving company ownership and immutable origin links.
 
 Initial create input:
@@ -376,9 +383,8 @@ Allowed `sourceEvidenceType`: `report_document`, `transcript_segment`, `transcri
 
 Allowed `targetComparator` (quantitative claims): `gte`, `lte`, `gt`, `lt`, `approx`, `eq`.
 
-Rules:
+Rules (canonical company ownership is in [Data Model § Management Claims](data-model.md#management-claims)):
 
-- A claim belongs to exactly one canonical company.
 - The verdict (`status`) is user-set; there are no automated verdicts.
 - A claim with both `dueFiscalYear` and `duePeriodType` is eligible for due-period resurfacing; a claim missing either is user-managed only.
 - `verifyingFactId` is the direct link to the confirmed fact that verifies a quantitative claim; `verifyingRelation` (`supports`/`contradicts`) is reserved for a follow-up that registers the link in the evidence graph (deferred — `financial_fact` is not yet an evidence type; see [ADR 0040](adr/0040-management-claims-tracker.md) Decision 5).
@@ -521,9 +527,8 @@ Workflow actions write `report_preparations` and are explicit user actions (no a
 - `mark_report_prepared(input)`: `{ companyId, eventKey }` → sets `status = 'prepared'`, stamps `preparedAt`. Idempotent.
 - `mark_report_processed(input)`: `{ companyId, eventKey, linkedReportDocumentId? }` → sets `status = 'processed'`, stamps `processedAt`, links the arrived report when known. On processing the card links to the arrived filing and the existing KPI-extraction entry point and ties back to the claims-review queue; it never auto-extracts or auto-confirms. Idempotent.
 
-Rules:
+Rules (missing-row default is canonical in [Data Model § Report Preparations](data-model.md#report-preparations)):
 
-- Absence of a `report_preparations` row means `preparationStatus = 'upcoming'`; reads default a missing row to `upcoming`.
 - `list_report_season` with a `watchlistId` restricts to that watchlist's companies; unscoped returns all tracked companies.
 - Allowed `preparationStatus`: `upcoming`, `prepared`, `processed`, validated at the storage boundary.
 
@@ -554,11 +559,7 @@ Workflow actions:
 - `rename_cockpit_layout(input)`: `{ id, name }` → renames; `name` must be unique and non-empty.
 - `delete_cockpit_layout(layoutId)` → removes the layout by id (idempotent — deleting an absent id is a no-op).
 
-Rules:
-
-- On load the client restores `layoutJson` via dockview `fromJSON`; if `dockviewVersion` is incompatible or restore throws, it rebuilds from `panelsJson` in the default arrangement (the layout never crashes the shell). A panel referencing a removed company/screen is dropped.
-- `panelsJson` (what is open) is the source of truth; `layoutJson` (geometry) is a convenience and may be absent.
-- Layouts are owner durable state, carried in import/export ([ADR 0018](adr/0018-import-export-boundaries.md), `v0.52.0`).
+Restore/fallback behavior, source-of-truth split between `panelsJson`/`layoutJson`, and import/export durability are canonical in [Data Model § Research Cockpit Layouts](data-model.md#research-cockpit-layouts).
 
 Error codes: `cockpit_layout_not_found`, `invalid_cockpit_layout_name`.
 
@@ -609,6 +610,41 @@ The report-over-report diff ([ADR 0052](adr/0052-report-over-report-diff.md), `v
 
 Error codes: `company_not_found`, `report_document_not_found`, `statement_type_mismatch`, `company_mismatch`, `not_a_financial_statement`, `extraction_pending`, `not_diffable`.
 
+## Autonomous Report Pipeline (Autopilot)
+
+The autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)) closes the loop: a tracked, opted-in company's new periodic report is detected, fetched, extracted, diffed, cross-referenced, and surfaced as a single notification — no manual steps. Orchestration is **chained durable-queue jobs** (`fetch → extract → diff → cross_reference → notify`) stamped with one `autopilot_run` id; each stage reuses the existing service (`fetch_report_document`, AI KPI extraction, `get_report_diff`, claims/research cross-reference). Detection is **event-driven off source-refresh completion** and runs **only while the app is open**. The global confirm-before-commit default never changes; automation is a per-company opt-in. Decision-support only — the result reports *what changed / to verify*, never buy/sell/hold ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+
+**Trust ladder (per-company mode).**
+
+`get_company_autopilot(input)` returns a company's mode. `input` is `{ companyId: string }`; returns `{ companyId, mode }` where `mode` is `off` | `assist` | `autopilot` (a company with no setting reads `off`).
+
+`set_company_autopilot(input)` sets the mode. `input` is `{ companyId, mode }`. `off`: nothing automatic. `assist`: auto-fetch + auto-extract on detection, but facts land `pending` for user confirmation. `autopilot`: full loop; facts auto-committed as `auto_unreviewed` (cited, flagged, reversible). Changing the mode never alters already-produced facts or runs. Error codes: `company_not_found`, `invalid_autopilot_mode`.
+
+**Structured-first extract stage ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) dec. 3/8/9).** The extract stage runs the deterministic structured pipeline (ESEF/iXBRL or a PDF whose reporting period is derivable from its title/URL) **before AI, in both `assist` and `autopilot` modes** — not autopilot-only. Its outcome sets the per-fact `confirmationState` directly, superseding the flat mode-based default above for structured facts specifically: a validation-clean set (`accepted` / `accepted_via_witness`) auto-confirms outright (`confirmed`) in **both** modes; an uncontradicted-but-unproven set (`accepted_unreviewed`) still follows the mode ladder (`auto_unreviewed` in autopilot, `pending` in assist). A `flagged` outcome (a layout drift or contradiction) emits no structured facts and falls through to the AI proposal path — the AI facts keep the pre-existing mode-based confirmation rule — but the run's `kpiDeltaJson` still carries `structureChanged: true` and `driftJson` (the serialized layout diff) whichever branch's delta ends up composed, so a drifted profile is never silently dropped just because AI ultimately produced the facts.
+
+`list_company_autopilot_modes()` returns every company with an explicit (non-`off`) autopilot mode set — `CompanyAutopilot[]`, each `{ companyId, mode }`. Companies with no row default to `off` and are omitted.
+
+`set_companies_autopilot(input)` ([ADR 0056](adr/0056-per-company-settings-surface.md)) sets the same mode on many companies at once from the master-detail per-company settings surface. `input` is `{ companyIds: string[], mode }`; returns the number of companies updated.
+
+**Runs and review.**
+
+`list_autopilot_runs(input)` returns recent runs for the attention home / review queue. `input` is `{ companyId?: string, notificationState?: "unread" | "read" | "dismissed", limit?: number }`. Each run carries `{ id, companyId, reportDocumentId, trigger, mode, status, stage, summaryText, kpiDeltaJson, reportDiffRef, crossRefsJson, producedFactIds, notificationState, lastError, createdAt }`. `status` is `pending` | `running` | `succeeded` | `failed` | `partial`; `stage` is the current/last stage reached. A `failed`/`partial` run still appears with a summary of how far it got.
+
+`kpiDeltaJson` (extract stage) and `crossRefsJson` (cross-reference stage) are opaque JSON envelopes, not typed fields — each stage owns its own shape (e.g. `{ extractionAvailable, structured?, tier?, factsProposed, factsAutoConfirmed, structureChanged?, driftJson? }` and `{ claimsOverdue, claimsDue, openQuestions }` respectively). `factsProposed`/`factsAutoConfirmed` are honest counts of facts the run actually produced (both tiers write them, bug e77a1a2): `factsProposed` is every fact the run emitted this run (structured or AI), `factsAutoConfirmed` is the subset already `confirmed`/`auto_unreviewed` (no review needed) — never inferred from a raw `produced`/`proposed` count that only one tier happened to populate.
+
+`summaryText` is a Rust-composed, **English-only** notification line — **legacy/fallback only**, kept for backward compatibility and diagnostics. The Today/Pulse run card never renders it directly: it composes its own localized sentence from `kpiDeltaJson`/`reportDiffRef`/`crossRefsJson` via `text()`/`pluralNoun` (`src/screens/Today/autopilotRunSummary.ts`), per the i18n rule (every user-visible string routes through `text()`, [ui-authoring.md](ui-authoring.md)).
+
+`get_autopilot_run(input)` returns one run's full composed result. `input` is `{ runId: string }`.
+
+`set_autopilot_run_notification_state(input)` marks a run's notification `read` or `dismissed` (drives the Today/Pulse "what changed" surface, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)). `input` is `{ runId, notificationState }`.
+
+`undo_autopilot_run(input)` reverts exactly the facts a run produced (recorded in `producedFactIds`), reusing the existing fact supersede/reject mechanics. `input` is `{ runId: string }`; returns `{ runId, revertedFactIds }`. Idempotent — undoing an already-undone run is a no-op. Reachable from the Today/Pulse Autopilot run card's **Undo** action (two-step confirm), shown when `mode === "autopilot"` and `producedFactIds` is non-empty (an `assist`-mode run's `pending` facts go through the existing confirm/reject review instead).
+
+`trigger_autopilot_run(input)` manually starts a run for an already-detected report (re-run / explicit kick), enqueuing the first stage. `input` is `{ companyId, reportDocumentId }`. Subject to the same `(companyId, reportDocumentId)` dedup as automatic detection. Error codes: `company_not_found`, `report_document_not_found`, `autopilot_run_in_progress`.
+
+- Detection is **idempotent**: at most one run per `(companyId, reportDocumentId)`.
+- With no AI credentials / extraction capability configured, `assist`/`autopilot` degrade to fetch + diff (deterministic) and flag extraction as unavailable rather than looping — AI cost stays bounded (at most one extraction per detected report, opted-in companies only).
+
 ## Company Event
 
 Company events represent dated items the user may want to track across watchlists. Upcoming events are the default attention focus, but historical events are retained for context. They are separate from feed items and notebook entries, but may link to source items or notes later.
@@ -639,6 +675,8 @@ Initial event types:
 - `periodic_report`
 - `corporate_action`
 - `dividend`
+- `ex_dividend` — ex-dividend / cut-off date (`ODCIĘCIE DYWIDENDY`), distinct from `dividend` (record/payment); [ADR 0058](adr/0058-investor-week-calendar.md)
+- `ipo_debut` — primary-market debut (`DEBIUT`); [ADR 0058](adr/0058-investor-week-calendar.md)
 - `shareholder_meeting`
 - `conference_call`
 - `investor_conference`
@@ -656,20 +694,13 @@ Initial statuses:
 - `cancelled`
 - `completed`
 
-Rules:
+Rules (canonical company ownership, source-identity dedup, and refresh-update behavior are in [Data Model § Company Events](data-model.md#company-events)):
 
-- Events belong to exactly one canonical company.
 - Event views should be scoped to companies in watchlists by default.
-- Sourced events must preserve source URL, attribution, fetched timestamp, and source type when available.
-- Sourced event identity uses `(sourceAdapterId, sourceEventKey)` when both are present.
-- If an accepted source publishes a changed event under the same source identity, ingestion updates the existing sourced event instead of creating a second correction row.
 - `gpw-market-events-rss` consumes GPW's official market-events RSS feed at `https://www.gpw.pl/rss-calendar-of-market-events` and creates events only for tracked companies matched by exact ticker.
 - `bankier-kalendarium-html` consumes the public Bankier Kalendarium page at `https://www.bankier.pl/gielda/kalendarium` and creates `public_calendar` events for tracked companies matched by exact ticker.
 - The Bankier adapter may fetch week-specific calendar pages using Bankier's `navigation_type=week&navigation_start=<unix timestamp>` query parameters when the Events week view needs a week that is not cached locally.
-- Bankier event identity is based on ticker, event category, and event description so a date changed by the source updates the existing event instead of creating a correction row.
 - Hidden/empty Bankier calendar RSS endpoints are not accepted as reliable until direct checks prove stable populated content.
-- Manual events use `sourceType: "manual"` and `manual: true`.
-- Manual events are for missing or user-known dates, not corrections to normal source updates.
 
 Initial local commands:
 
@@ -716,6 +747,27 @@ List rules:
 - `mode: "all"` allows combined/historical timeline views.
 - Initial source ingestion may use this same create contract through storage internals, but UI manual creation must set `sourceType: "manual"`.
 
+### Investor Week Calendar
+
+Status: planned (v0.59.0, ADR 0058)
+
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
+
+`list_investor_week(input)` returns the week read model. `input` is `{ weekAnchor: "YYYY-MM-DD", scope: "watchlist" | "market", watchlistId?: string, layers: { macro: boolean, holidays: boolean } }`. It returns working-day columns (Mon–Fri; a weekend column only when populated); each column groups items by layer (`company`, `macro`, `holiday`) with per-layer freshness so a stale layer is visible rather than silently empty. The `company` layer unions tracked `company_events` with, when `scope = "market"`, untracked `market_calendar_events`, deduped by ticker.
+
+Macro (`macro_events`) read/write — manual entry ships in `v0.59.0`; a live macro source is deferred to a follow-up ADR:
+
+- `list_macro_events(input)`: `{ from: "YYYY-MM-DD", to: "YYYY-MM-DD" }` → macro releases in range.
+- `create_macro_event` / `update_macro_event` / `delete_macro_event`: user-entered releases (`manual = 1`), with `indicatorKey`, `title`, `country`, `eventDate`, optional `eventTime`/`importance`/`actual`/`forecast`/`previous`.
+
+Holidays (`market_holidays`) read — a curated static dataset, no write contract beyond seed/refresh:
+
+- `list_market_holidays(input)`: `{ from, to, markets?: string[] }` → holidays in range, tolerant of an un-seeded year (empty result, never an error).
+
+The active scope and enabled layers persist via `update_settings` (the pinned-companies pattern).
+- Manual events use `sourceType: "manual"` and `manual: true`.
+- Manual events are for missing or user-known dates, not corrections to normal source updates.
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).
@@ -754,13 +806,7 @@ Statuses:
 - `confirmed`
 - `proposed`
 
-Rules:
-
-- Signals belong to exactly one canonical company and reference the originating `feedItemId`.
-- `classifiedBy` is `rule` or `ai`. Rule-classified signals are `confirmed` on creation; AI-classified signals are `proposed` and require user confirmation.
-- `providerId`/`modelId` are populated only for `ai` classifications.
-- `derivedEventId` is set only when a forward-looking category with a future date materializes a `company_events` row (e.g. dividend or general-meeting dates). Past-disclosure categories do not derive events.
-- Classification and event derivation are idempotent; signal identity is `(feedItemId, category)`.
+Field/storage rules (company ownership, classification/confirmation states, provenance, derived-event identity) are canonical in [Data Model § Company Signals](data-model.md#company-signals).
 
 Initial local commands:
 
@@ -870,11 +916,9 @@ Rules:
 }
 ```
 
-Rules:
+Rules (`companyId` nullability and resolution-status transitions are canonical in [Data Model § Transcript Jobs](data-model.md#transcript-jobs)):
 
 - The UI input label for `sourceUrl` is `URL`.
-- `companyId` may be null at job creation time.
-- If the user provides a ticker/company before transcription, `companyId` is set immediately.
 - If the user does not provide a ticker/company, the transcript may remain unlinked and visible. The contract reserves `recognizedCompanyCandidates` for future provider-assisted recognition, but M10 does not require automatic company recognition before the transcript can be reviewed.
 - Allowed `companyResolutionStatus` values: `provided`, `recognized`, `unresolved`, `needs_user_selection`.
 - `recognizedCompanyCandidates` uses the same canonical company identity shape as company lookup results when recognition produces candidates.
@@ -1044,6 +1088,15 @@ Allowed statuses:
 - `failed`
 - `cancelled`
 
+`get_scheduler_status()` returns the Rust-side source scheduler's next-due snapshot ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)), for the UI's "next refresh at …" display; times are epoch milliseconds and the state is in-memory/app-open-only (never persisted):
+
+```json
+{
+  "sourceNextDueMs": { "gpw-espi-ebi": 1780000000000 },
+  "registryNextDueMs": 1780003600000
+}
+```
+
 ## Diagnostic Event
 
 Diagnostic events are local developer-mode records that explain what a module did at a meaningful stage. They are not user-facing errors, runtime logs, metrics, telemetry, traces, or analytics.
@@ -1068,49 +1121,19 @@ Diagnostic events are local developer-mode records that explain what a module di
 }
 ```
 
-Initial module IDs:
+Field reference:
 
-- `ai_analysis`
-- `external_ai`
-- `sources`
-- `scheduler`
-- `credentials`
-- `storage`
-- `transcripts`
-- `shortcuts`
-- `locale`
-- `licensing`
-- `packaging`
+| Field | Type | Meaning |
+|---|---|---|
+| `module` | enum | `ai_analysis`\|`external_ai`\|`sources`\|`scheduler`\|`credentials`\|`storage`\|`transcripts`\|`shortcuts`\|`locale`\|`licensing`\|`packaging` |
+| `scope.type` | string | entity category, e.g. `ai_analysis_job`, `feed_item`, `source_adapter`, `transcript_job`, `setting`, `shortcut_action` |
+| `scope.id` | string\|null | stable local id (never a title/URL/prompt/source text/provider snippet); null only when the event is truly global to the module |
+| `stage` | string | stable snake_case, never encoding dynamic values; past-tense for completed steps (`context_loaded`, `provider_resolved`, `credential_checked`, `request_sent`, `response_received`, `result_stored`, `failed`) or job-lifecycle for async work (`queued`, `running`, `succeeded`, `cancelled`, `failed`); reused across modules when the meaning matches |
+| `severity` | enum | `debug`\|`info`\|`warning`\|`error` |
+| `message` | string | human-readable summary |
+| `metadata` | JSON object | structured, small enough for a timeline row/detail panel; may hold stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeouts, retry counts, error classes, booleans; must never hold API keys, full prompts, full source bodies, full transcript text, raw provider responses, or license secrets — redacted before persistence, with a `[redacted]` marker where omission would confuse |
 
-Initial severity values:
-
-- `debug`
-- `info`
-- `warning`
-- `error`
-
-Stage naming rules:
-
-- Use stable snake-case stage IDs.
-- Use past-tense stage IDs for completed steps, for example `context_loaded`, `provider_resolved`, `credential_checked`, `request_sent`, `response_received`, `result_stored`, and `failed`.
-- Use job lifecycle stage IDs when describing async work, for example `queued`, `running`, `succeeded`, `cancelled`, and `failed`.
-- Reuse stage IDs across modules when the meaning is the same.
-- Do not encode dynamic values into stage IDs.
-
-Scope rules:
-
-- `scope.type` identifies the entity category, such as `ai_analysis_job`, `feed_item`, `source_adapter`, `transcript_job`, `setting`, or `shortcut_action`.
-- `scope.id` is nullable only when the event is truly global to the module.
-- Scope IDs should be stable local IDs, not titles, URLs, prompts, source text, or provider response snippets.
-
-Metadata rules:
-
-- Metadata must be structured JSON and must remain small enough for a timeline row/detail panel.
-- Metadata may include stable IDs, provider IDs, model names, adapter IDs, status values, durations, counts, timeout values, retry counts, error classes, and boolean flags.
-- Metadata must not include API keys, full prompts, full source bodies, full transcript text, raw provider responses, license private material, or full license secrets by default.
-- Redaction must happen before persistence.
-- Redacted values should be omitted when possible; when omission would make the event confusing, use a fixed marker such as `[redacted]`.
-- The event shape should stay cheap to map to future OpenTelemetry-style event/span fields, but M14 does not implement OpenTelemetry exporters or remote reporting.
+The event shape stays cheap to map to future OpenTelemetry-style event/span fields, but M14 does not implement OpenTelemetry exporters or remote reporting.
 
 AI analysis diagnostic stages:
 
@@ -1125,10 +1148,8 @@ AI analysis diagnostic stages:
 - `stored`
 - `failed`
 
-Rules:
+Rules (Developer-mode gating and storage are canonical in [Data Model § Diagnostic Events](data-model.md#diagnostic-events)):
 
-- Diagnostic events are recorded only while Developer mode is enabled.
-- Diagnostic events remain local-only in SQLite.
 - Normal user-facing UI must not depend on diagnostic events for core behavior.
 - Copying a diagnostic summary must produce redacted text.
 - Raw diagnostic JSON/file export is outside M14 scope.
@@ -1243,6 +1264,12 @@ Rules:
 - Diagnostics may expose a full in-app log viewer, copy-redacted-log action, log status, and open-logs-folder action only while Developer mode is active.
 - React may call typed commands for log status, redacted log reads, and opening the app-owned logs directory. It must not receive arbitrary filesystem browsing capability.
 
+Commands:
+
+- `get_log_status()`: returns `{ logsDir, currentFileBytes, rotatedFileCount, level, maxFiles, maxFileBytes }`.
+- `list_log_entries(input?)`: returns redacted JSON Lines log entries (`{ fileName, lineNumber, record }`), newest first; `input` is `{ limit? }`.
+- `open_logs_directory()`: opens the OS app data logs directory in the system file browser.
+
 ## Entitlements
 
 Brawler keeps a local entitlement module for optional or future gated capabilities. Public-opening work makes the open desktop core usable without a license token. The module does not add hosted activation, billing, telemetry, or cloud accounts.
@@ -1285,7 +1312,7 @@ Typed commands:
 - `submit_license_key({ licenseKey }) -> LicenseStatus`
 - `clear_license_key() -> LicenseStatus`
 
-Rules:
+Rules (keychain/`license_metadata` split and the never-overwrite/never-store-secrets storage rules are canonical in [Data Model § Entitlements](data-model.md#entitlements)):
 
 - Normal app navigation requires `canUseApp = true`; public-opening policy sets `canUseApp = true` for missing, invalid, expired, wrong-version, unsupported-version, and storage-error entitlement states so the open core remains usable.
 - Missing, malformed, tampered, expired, unsupported-version, unsupported-channel, and storage-error states must remain recoverable through Settings.
@@ -1293,9 +1320,7 @@ Rules:
 - Public-opening entitlement tokens are optional for normal open-core use.
 - `appVersionRange` remains compatibility metadata and may be `*` for channels that are not app-version bounded.
 - Future entitlement channels may opt into app-version limits through the existing `appVersionRange` policy path.
-- `submit_license_key` validates the token offline before saving it. Invalid replacement attempts must not overwrite an existing valid key.
-- The raw license token is treated as a bearer secret and stored through the OS keychain.
-- SQLite stores only derived redacted license metadata/status and never stores the full token, private signing material, or private key material.
+- `submit_license_key` validates the token offline before saving it.
 - React receives only `LicenseStatus`; it never receives private signing material.
 - Logs, diagnostics, metrics, settings export, tests, and UI state must not include full license tokens, private signing material, or raw private key material.
 - Future paid feature, subscription, or hosted activation policies must be added as entitlement-policy or verifier/storage adapters and require a later ADR when they introduce hosted services or billing.
@@ -1333,13 +1358,12 @@ Result shape:
 }
 ```
 
-Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
+Rules ([ADR 0032](adr/0032-search-and-backup-boundaries.md); FTS5 schema, sanitization, and `parentId` derivation are canonical in [Data Model § Search Index](data-model.md#search-index)):
 
 - One typed search command queries the unified `search_index` FTS5 table; DTOs live in `src/api/search.ts` and command modules contain no SQL.
-- `query` is sanitized before reaching `MATCH`; user input is never interpolated as FTS5 syntax. An empty/blank query returns no groups.
+- An empty/blank `query` returns no groups.
 - `contentTypes` and `companyId` are optional scoping filters. Omitting `contentTypes` searches all types.
-- Matches are ranked by `bm25()` and returned grouped by `contentType`, each carrying `sourceId`, `companyId`, `parentId`, `title`, `snippet`, and `score` — enough context to render and navigate to the specific item.
-- `parentId` is the navigational container when `sourceId` is not the navigation target (a transcript segment carries its transcript job id); it is `null` otherwise. Snippet highlight markers are control characters (STX/ETX), not HTML, so callers render snippets as plain text.
+- Matches are returned grouped by `contentType`, each carrying `sourceId`, `companyId`, `parentId`, `title`, `snippet`, and `score` — enough context to render and navigate to the specific item. Snippet highlight markers are control characters (STX/ETX), not HTML, so callers render snippets as plain text.
 - Coverage is companies, watchlists, feed items, notebook entries, transcript segments, company events, research briefs, and digests.
 
 ## Database Backups
@@ -1354,13 +1378,25 @@ Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
 }
 ```
 
-Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
+Rules ([ADR 0032](adr/0032-search-and-backup-boundaries.md); `VACUUM INTO` mechanics, pre-migration snapshots, rotation, and restage-on-relaunch are canonical in [Data Model § Database Safety](data-model.md#database-safety-wal-snapshots-and-backups)):
 
 - Typed commands expose backup status, list, create-now, and restore; UI never touches backup files directly.
-- Backups and pre-migration snapshots are produced with `VACUUM INTO` into `<app_data_dir>/backups/`; rotating backups keep the last N and prune the oldest.
 - `kind` distinguishes `rotating` backups from pre-migration `snapshot` files.
-- Restore requires explicit confirmation, is surfaced in Diagnostics, and is applied on app relaunch (staged, not a hot in-place swap).
-- Backups are local-only byte-faithful copies of the database; they are distinct from import/export documents and contain no keychain secrets. No cloud backup.
+- Restore requires explicit confirmation before it is staged.
+
+Commands:
+
+- `backup_status()`: returns the shape above (`lastBackupAt`, `backupCount`, `backups`).
+- `create_backup()`: creates a backup now and returns the refreshed status.
+- `restore_backup({ fileName })`: stages `fileName` for restore on next app relaunch.
+
+### Database Status
+
+`database_status()` returns a lightweight local health snapshot for Diagnostics — applied migration count and row counts for a few key tables:
+
+```json
+{ "appliedMigrations": 45, "companies": 12, "sourceAdapters": 3, "settings": 1 }
+```
 
 ## User Settings
 
@@ -1379,23 +1415,70 @@ Rules (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)):
     "youtubeTranscriptionTimeoutSeconds": 300,
     "generalAnalysisProvider": null,
     "generalAnalysisModel": "gemini-2.5-flash",
-    "generalAnalysisTimeoutSeconds": 90
+    "generalAnalysisTimeoutSeconds": 90,
+    "openaiCompatibleBaseUrl": ""
   },
   "aiAnalysisMode": "source_grounded",
   "shortcutBindings": {},
+  "capabilityProviders": {},
   "database": {
     "maxConnections": 4,
     "busyTimeoutMs": 5000,
     "acquireTimeoutMs": 10000
   },
+  "queue": {
+    "sourcesWorkers": 2,
+    "autopilotWorkers": 3,
+    "aiWorkers": 2,
+    "aiProviderConcurrency": 2
+  },
   "pinnedCompanyIds": []
 }
 ```
+
+`update_settings` is atomic: a validation failure on any field rolls back the whole request, leaving every setting (including fields earlier in the same request) untouched.
 
 `pinnedCompanyIds` (ADR 0054) is the ordered list of company IDs pinned to the
 sidebar IA spine. `update_settings` accepts an optional `pinnedCompanyIds`
 (full-replacement array, de-duplicated, blanks dropped); omitting it leaves the
 current pins unchanged. Defaults to `[]`.
+
+`capabilityProviders` (ADR 0060 as amended, ADR 0061 decision 5) is a map from
+capability key to an **ordered** list of `{ provider, model }` entries — the
+capability's failover pool, tried in list order. `update_settings` accepts an
+optional `capabilityProviders` (full-replacement map, same overwrite contract
+as `shortcutBindings`); omitting it leaves the current map unchanged. Defaults
+to `{}`. An absent key or an empty list for a key means "use
+`generalAnalysisProvider` / `generalAnalysisModel`" — every capability is
+backward-compatible with a single global provider.
+
+Capability keys (`AiCapability::key`, fixed set of 7):
+
+| Key | Kind | Provider call |
+|---|---|---|
+| `kpi_extraction` | document | `complete_document` |
+| `claim_extraction` | document | `complete_document` |
+| `feed_analysis` | text | `analyze` |
+| `research_brief` | text | `generate_research_brief` |
+| `research_digest` | text | `generate_research_digest` |
+| `event_date` | text | `complete_document` (extracted text) |
+| `signal_classification` | text | text |
+
+Validation rules for `capabilityProviders`:
+
+- Every map key must be one of the 7 capability keys above; an unknown key is rejected.
+- Every entry's `provider` must be a currently selectable analysis provider id (the AI Provider Catalog below); an entry's `model` must be non-empty.
+- `model` must belong to the provider's curated model list, except for `provider_openai_compatible`, which has no curated list and accepts any non-empty freeform model id (same exemption as `generalAnalysisModel`).
+- An empty entry list for a key is valid — it is the explicit "use the global fallback" state.
+- A `document`-kind capability (`kpi_extraction`, `claim_extraction`) rejects any entry whose provider is not **document-native** (`provider_gemini`, `provider_anthropic`): `provider_openai` and `provider_openai_compatible` are text-only and would hard-fail every document call and poison pool failover, so `update_settings` rejects the combination outright with `"<capability>: provider <id> cannot accept document input; route a document-capable provider (Gemini or Claude)"` rather than letting it surface only at job-run time.
+
+Pool (failover) semantics at run time (ADR 0061 decision 5):
+
+- The list order is the failover order: the first entry is tried first.
+- A member is skipped over to the next only on an **availability error** (429 / 5xx / timeout / connection error); a valid 200 response with unparsable/bad content is never a failover trigger — it surfaces immediately.
+- A member that just failed an availability error enters a 60-second cooldown: it is tried last (deprioritized), never excluded — the pool always tries every member, so it never dead-ends even when all members are cooling.
+- Cooldown state is runtime-only (in-memory), never persisted to settings or the database.
+- A pool member with no configured credential (or the compatible provider with no configured base URL) is skipped when the pool is built, with a warning logged.
 
 Allowed theme values:
 
@@ -1413,59 +1496,41 @@ Initial allowed locale values:
 - `en`
 - `pl`
 
-Rules:
+Field defaults and validation ranges:
 
-- The default theme is `dark`.
-- `theme` controls brightness mode only. `accentPalette` controls the semantic color palette.
-- The default accent palette is `night-neon`.
-- `midnight-horizon` maps the project owner's sampled reference-image colors onto semantic UI tokens: background `#00021E`, surface `#061135`, primary `#63C0E9`, secondary `#55388F`, accent `#C550B9`, highlight `#FB82C0`, and text `#EAF7FF`.
-- The default locale is `en`.
-- The default Developer mode setting is `false`.
-- The default runtime log level is `info`.
-- The default runtime log rotation limit is five files of five MiB each.
-- Settings must expose local runtime log level and rotation limits as normal visible settings.
-- Developer mode may be enabled only through intentional local developer mechanisms, not through a normal always-visible Settings toggle.
-- Startup activation uses `BRAWLER_DEVELOPER_MODE=1`, `true`, `yes`, or `on`.
-- Runtime author unlock may enable Developer mode after the app is already running only when `BRAWLER_DEVELOPER_UNLOCK_CODE` is present in the app process environment and the submitted passphrase matches it.
-- The runtime author unlock entry point is hidden from normal UI and must not be registered as a configurable shortcut.
-- Once Developer mode is active, the Diagnostics panel may show active status and a disable action.
-- Settings must let the user switch the app locale between English and Polish in M12.
-- Locale handling must be implemented as an extensible app-locale boundary so future supported locales can be added through locale resources/configuration instead of per-screen rewrites.
-- Locale changes affect app-owned UI copy and formatting labels only.
-- Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
-- `system` may be added to the UI as a convenience, but first-run behavior still defaults to `dark` until the user changes it.
-- Accent palettes must be added through the settings validation and theme-token registry, not as component-local color overrides.
-- General AI analysis is deferred until the AI analysis framework milestone. That milestone may enable `provider_gemini` first, but the contract must remain provider-neutral so future OpenAI, Anthropic, and other providers can be added without rewiring the UI.
-- General AI analysis runs through asynchronous local job state so provider calls do not block the UI.
-- Settings must let the user choose the general analysis provider and model from supported configured options once M13 is implemented.
-- Settings must let the user choose the general analysis timeout from supported configured options: `45`, `90`, `180`, `300`, and `600` seconds.
-- The default general analysis timeout is `90` seconds.
-- Settings must show that `provider_gemini` is selected only for YouTube transcription.
-- Settings must let the user choose the Gemini transcription model from supported configured options: `gemini-2.5-flash-lite`, `gemini-2.5-flash`, `gemini-3.1-flash-lite`, and `gemini-3.5-flash`.
-- The default YouTube transcription model is the cheapest configured model validated by M10 live smoke, currently `gemini-2.5-flash`.
-- Settings must let the user choose the Gemini transcription timeout from supported configured options: `45`, `90`, `180`, `300`, and `600` seconds.
-- The default YouTube transcription timeout is `300` seconds. Shorter values are useful for smoke testing provider availability; longer values are intended for real conference videos.
-- Settings must show whether YouTube transcription credentials are configured.
-- Settings must let the user save, replace, and clear the Gemini API key used only for YouTube transcription.
-- Settings must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
-- Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs.
+| Field | Default | Notes |
+|---|---|---|
+| `theme` | `dark` | brightness only (`dark`\|`light`\|`system`); `system` may be added as a convenience but first run still defaults `dark` |
+| `accentPalette` | `night-neon` | semantic palette (`night-neon`\|`midnight-horizon`); `midnight-horizon` maps the owner's sampled reference-image colors: background `#00021E`, surface `#061135`, primary `#63C0E9`, secondary `#55388F`, accent `#C550B9`, highlight `#FB82C0`, text `#EAF7FF` |
+| `locale` | `en` | `en`\|`pl`; affects app-owned UI copy/labels only, never source-provided text |
+| `developerMode` | `false` | enabled only via `BRAWLER_DEVELOPER_MODE` env or runtime unlock passphrase, never a plain toggle |
+| runtime log level | `info` | |
+| runtime log rotation | 5 files × 5 MiB | |
+| `aiAnalysisMode` | `source_grounded` | `opinionated` mode requires explicit opt-in and still excludes buy/sell/hold output |
+| `aiProviders.generalAnalysisTimeoutSeconds` | `90` | options: 45\|90\|180\|300\|600 |
+| `aiProviders.openaiCompatibleBaseUrl` | `""` (unconfigured) | ADR 0060; must start with `http://`/`https://` when set; consulted only when the resolved provider is `provider_openai_compatible` |
+| `aiProviders.youtubeTranscriptionModel` | `gemini-2.5-flash` | cheapest M10-validated model; options: gemini-2.5-flash-lite\|gemini-2.5-flash\|gemini-3.1-flash-lite\|gemini-3.5-flash |
+| `aiProviders.youtubeTranscriptionTimeoutSeconds` | `300` | options: 45\|90\|180\|300\|600 |
+| `database.maxConnections` | `4` | clamped 1–16 |
+| `database.busyTimeoutMs` | `5000` | clamped 0–60000 |
+| `database.acquireTimeoutMs` | `10000` | clamped 1000–60000; database pool ADR 0032; applied at pool build (next launch) |
+| `queue.sourcesWorkers` | `2` | clamped 1–16 |
+| `queue.autopilotWorkers` | `3` | clamped 1–16 |
+| `queue.aiWorkers` | `2` | clamped 1–16 |
+| `queue.aiProviderConcurrency` | `2` | clamped 1–10; queue tuning ADR 0059; indexing stays a constant 1 worker, not user-tunable; applied at next launch |
+
+A missing or invalid value for any clamped field falls back to its default so the app always opens. Settings must offer a reset-to-defaults action for the database pool block, and disclose that pool/queue changes take effect on next launch.
+
+Other rules:
+
+- `theme` controls brightness mode only; `accentPalette` controls the semantic color palette. Accent palettes must be added through the settings validation and theme-token registry, not as component-local color overrides.
+- Developer mode may be enabled only through intentional local developer mechanisms, not a normal always-visible Settings toggle. Startup activation uses `BRAWLER_DEVELOPER_MODE=1`, `true`, `yes`, or `on`. Runtime author unlock (`unlock_developer_mode({ passphrase })`) may enable Developer mode after the app is already running only when `BRAWLER_DEVELOPER_UNLOCK_CODE` is present in the app process environment and the submitted passphrase matches it; the entry point is hidden from normal UI and must not be registered as a configurable shortcut. Once active, Diagnostics may show status and a disable action (`disable_developer_mode()`).
+- Settings must let the user switch the app locale between English and Polish; locale handling is an extensible app-locale boundary so future locales are added through resources/configuration, not per-screen rewrites. Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies retain their original or user-entered language.
+- General AI analysis runs through asynchronous local job state so provider calls do not block the UI; the provider contract stays provider-neutral so OpenAI/Anthropic/others can be added without rewiring the UI. Settings must let the user choose the general analysis provider/model/timeout from supported configured options.
+- Settings must show that `provider_gemini` is selected only for YouTube transcription; must show whether transcription credentials are configured; must let the user save/replace/clear the Gemini API key used only for transcription; must disclose before use that starting a transcript job sends the YouTube URL and video content to Gemini.
+- Settings must let the user configure, disable, and reset every defined shortcut action through stable shortcut action IDs. Shortcut binding overrides are stored as a JSON object keyed by action ID (missing entries use the current default). Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
 - Settings/About must show local license status and allow valid users to inspect safe metadata, replace the token, and clear the token.
-- Shortcut binding overrides are stored as a JSON object keyed by action ID. Missing entries use the current default binding for that action.
-- Shortcut conflicts must be visible before an enabled binding can silently shadow another enabled action.
-- Settings expose database connection-pool tuning under `database`: `maxConnections`, `busyTimeoutMs`, and `acquireTimeoutMs` (see [ADR 0032](adr/0032-search-and-backup-boundaries.md)).
-- The default pool configuration is `maxConnections` 4, `busyTimeoutMs` 5000, `acquireTimeoutMs` 10000.
-- Pool values are validated and clamped to safe ranges (`maxConnections` 1–16, `busyTimeoutMs` 0–60000, `acquireTimeoutMs` 1000–60000); a missing or invalid value falls back to the default so the database can always open.
-- Pool sizing is applied when the pool is built at startup, so changes persist immediately but take effect on the next app launch; Settings must disclose this.
-- Settings must offer a reset-to-defaults action for database pool configuration.
-- SQLite is the runtime source of truth for settings.
-- YAML is allowed for settings import/export/bootstrap.
-- YAML settings import/export/bootstrap is contract-accepted but implementation-deferred until the later export/import/backup roadmap work.
-- M20 implements YAML settings import/export for allowlisted non-secret settings only.
-- YAML must not contain secrets.
-- API keys and provider secrets live in the OS keychain.
-- `.env` or environment-variable API key fallback is allowed for local development and tests only.
-- Default AI analysis mode is `source_grounded`.
-- Future `opinionated` mode requires explicit user opt-in and still cannot provide buy/sell/hold or personalized portfolio advice.
+- SQLite is the runtime source of truth for settings. YAML is allowed for settings import/export/bootstrap (allowlisted non-secret settings only) but must never contain secrets; API keys and provider secrets live in the OS keychain. `.env`/environment-variable API key fallback is allowed for local development and tests only.
 
 ## Provider Credential Status
 
@@ -1487,9 +1552,9 @@ Rules:
 - Secret values must never be returned to React.
 - Runtime secret storage uses the OS keychain.
 - One API key per provider (ADR 0028): the same provider key serves all of that provider's usages (analysis and, for Gemini, transcription). Purpose is not part of the credential identity.
-- Development/test fallback may use environment variables (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), but this must be reported as `storage = "development_environment"` and must not count as exported settings.
+- Development/test fallback may use environment variables (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`), but this must be reported as `storage = "development_environment"` and must not count as exported settings.
 - Supported `secretKind` values begin with `api_key`; future supported kinds may include `username_password`, `session_token`, or `oauth_token` after source-specific design.
-- Credential commands are generic and keyed by `providerId` (`provider_gemini`, `provider_anthropic`, `provider_openai`):
+- Credential commands are generic and keyed by `providerId` (`provider_gemini`, `provider_anthropic`, `provider_openai`, `provider_openai_compatible`):
   - `get_provider_credential_status({ providerId })` returns the non-secret status for one provider.
   - `set_provider_api_key({ providerId, apiKey })` stores or replaces only that provider's API key.
   - `clear_provider_api_key({ providerId })` removes only that provider's OS-keychain key and must not mutate `.env` or process environment values.
@@ -1507,18 +1572,26 @@ Rules:
     "models": ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5-20251001"],
     "defaultModel": "claude-sonnet-4-6",
     "requiresCredential": true
+  },
+  {
+    "providerId": "provider_openai_compatible",
+    "label": "OpenAI-compatible (custom)",
+    "models": [],
+    "defaultModel": "",
+    "requiresCredential": true
   }
 ]
 ```
 
 Rules:
 
-- The active analysis provider and model are the `generalAnalysisProvider` / `generalAnalysisModel` settings; the selected model must belong to the selected provider's catalog entry.
+- The active analysis provider and model are the `generalAnalysisProvider` / `generalAnalysisModel` settings (or, per capability, a `capabilityProviders` entry); the selected model must belong to the selected provider's catalog entry.
 - Exact model ids are curated server-side; the UI must not hardcode model lists.
+- `provider_openai_compatible` (ADR 0060) has an empty curated `models` list and `defaultModel`: its model is a freeform, user-supplied id (any non-empty string), since concrete hosts (Groq, OpenRouter, Ollama, Together, Cerebras, …) each publish their own model names. It speaks the OpenAI chat-completions wire format against a user-configured `openaiCompatibleBaseUrl` and requires a credential like every other selectable provider.
 
 ## Research Evidence Boundary
 
-The research workspace uses a dedicated research/evidence boundary governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md). It is a cross-domain read-model boundary, not a replacement for existing domain contracts.
+The research workspace uses a dedicated research/evidence boundary governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md). It is a cross-domain read-model boundary, not a replacement for existing domain contracts. Entity fields and storage rules are canonical in [Data Model § Research Evidence Boundary](data-model.md#research-evidence-boundary); this section keeps the wire shapes, commands, and command-specific rules.
 
 Initial research evidence item shape:
 
@@ -1542,29 +1615,11 @@ Initial research evidence item shape:
 }
 ```
 
-Initial company timeline result shape:
+Initial company/watchlist timeline result shape (same result shape for `list_company_timeline` and `list_watchlist_timeline`; watchlist-scoped calls populate `companySummaries`):
 
 ```json
 {
-  "items": [
-    {
-      "id": "evidence_feed_01",
-      "evidenceType": "feed_item",
-      "sourceDomain": "feed",
-      "sourceId": "feed_01",
-      "companyId": "company_gpw_cdr",
-      "occurredAt": "2026-05-28T12:04:52Z",
-      "title": "Current report title",
-      "summary": "Short source or AI-supported summary",
-      "sourceUrl": "https://www.gpw.pl/komunikaty",
-      "attribution": "GPW",
-      "trustCategory": "official_report",
-      "reviewState": {
-        "changedSinceCompanyReview": true,
-        "changedSinceWatchlistReview": true
-      }
-    }
-  ],
+  "items": [ /* evidence items — shape above */ ],
   "summary": {
     "total": 1,
     "changedSinceReview": 1,
@@ -1624,10 +1679,8 @@ Rules:
 - `lastReviewedAt` is `null` when the active scope has never been marked reviewed.
 - Watchlist-scoped timelines include backend-owned `companySummaries` so the UI can show a company-by-company review queue without recomputing changed-since-review rules.
 - Marking a watchlist reviewed updates the watchlist checkpoint only by default. Callers may explicitly send `cascadeToCompanies: true` to also mark the current member companies reviewed.
-- Stored timeline/evidence projections are deferred until performance or review semantics require them.
 - Review checkpoints are durable research-owned state.
 - Evidence links are durable research-owned relationships between existing domain entities.
-- Existing notebook origins remain provenance records and are not replaced by evidence links.
 - Normal UI labels must use product language for trust categories. Developer-only surfaces may show implementation identifiers.
 
 Initial evidence link shape:
@@ -1900,6 +1953,8 @@ Initial research command candidates:
 - `create_research_reminder(input)`
 - `update_research_reminder(input)`
 - `delete_research_reminder(id)`
+- `start_research_brief(input)`: `{ scopeType, scopeId }` → enqueues an AI research brief job (see the brief job shape above).
+- `list_research_briefs(input)`: `{ scopeType, scopeId }` → returns brief jobs for that scope, newest first.
 - `start_research_digest(input)`
 - `list_research_digests(input)`
 
@@ -1932,12 +1987,7 @@ Allowed `periodType` values:
 - `9M` (nine months)
 - `M01` through `M12` (individual months)
 
-Rules:
-
-- Financial periods belong to exactly one canonical company.
-- Periods are unique on `(companyId, fiscalYear, periodType)`.
-- `periodEndDate` is optional and records the reported end date for the period.
-- `reportEvidenceRef` is a soft reference to a source document or feed item for future audit linkage.
+Field/storage rules (uniqueness, FKs, soft references) are canonical in [Data Model § Company Fundamentals](data-model.md#company-fundamentals).
 
 ### KPI Definition
 
@@ -1983,10 +2033,9 @@ Allowed `computation` values:
 
 Rules:
 
-- Definitions are unique on `(metricKey, scope, IFNULL(companyId, ''), IFNULL(sector, ''))`.
-- Canonical packs are seeded and include universal, industrial, cash flow, capital efficiency (derived), and sector-specific packs (insurance, banking, specialty finance, REIT).
 - Sector values in company fundamentals match those used in company statement classification.
-- Derived metrics (margins, FCF, ROE/ROIC, net-debt/EBITDA) are computed at read time from confirmed financial facts.
+
+Uniqueness, seeded packs, and derived-metric computation rules are canonical in [Data Model § Company Fundamentals](data-model.md#company-fundamentals).
 
 ### KPI Relevance
 
@@ -2023,11 +2072,7 @@ Allowed `rank` values:
 - `primary`
 - `secondary`
 
-Rules:
-
-- Relevance records are unique on `(companyId, definitionId)`.
-- A financial fact may exist for a KPI not yet active in the relevance profile (awaiting curation).
-- Relevance tracks the first and last period in which a KPI was reported or relevant.
+Field/storage rules (uniqueness, curation-lag behavior) are canonical in [Data Model § Company Fundamentals](data-model.md#company-fundamentals).
 
 ### Financial Fact
 
@@ -2106,14 +2151,7 @@ Allowed `confirmationState` values:
 - `pending`
 - `auto_unreviewed`
 
-Rules:
-
-- Financial facts are unique on `(periodId, definitionId, statementBasis, attribution, variant, measureWindow, dataQuality)` so estimated and final values coexist for the same fact.
-- `valueNumeric` is stored as exact decimal text in base units (signed). Negative values are supported for liabilities and losses.
-- `asReportedValue` and `asReportedScale` preserve the source form for auditability (e.g., "245 253 tys. zł").
-- `supersedesId` marks a fact that was superseded (final replaces estimate), keeping history for audit trails.
-- `sourceDocumentRef` is a soft reference to the feed item or report document from which the value was extracted.
-- Derived metrics are computed at read time from confirmed facts and are unavailable when required inputs are missing.
+Field/storage rules (uniqueness, value encoding, supersession, derived-metric availability) are canonical in [Data Model § Company Fundamentals](data-model.md#company-fundamentals).
 
 ### Report Document Capture
 
@@ -2195,6 +2233,12 @@ Initial local commands:
 
 Input shapes follow the corresponding domain types above. Return shapes include all domain fields plus timestamps. Company fundamentals data must be treated as owner-durable state in import/export and backup workflows.
 
+Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md); generated DTOs `RunStructuredExtractionInput` / `StructuredExtractionSummary` / `FactProvenance`):
+
+- `run_structured_extraction(input)`: `{ companyId, reportDocumentId, fiscalYear, periodType, periodEnd, mode? }` → runs the deterministic tiered pipeline (ESEF → PDF+profile → HTML witness) over one stored report document and persists accepted facts with provenance; returns `{ acceptance, tier, emitted, producedFactIds, driftJson }`. Offloaded (`spawn_blocking`). `mode` is the trust-ladder mode (`autopilot` | `assist`, default `autopilot`; any other value is rejected); the per-fact `confirmationState` is derived from the validation outcome (`accepted`/`accepted_via_witness` → `confirmed` in both modes; `accepted_unreviewed` → `auto_unreviewed`/`pending` by mode) — never from a caller-chosen literal (ADR 0061 dec. 3/8/9).
+- `list_fact_provenance(factIds)`: returns the `FactProvenance` rows (`factId`, `sourceTier`, `validationStatus`, `driftJson`, `citation`) for the requested facts; facts predating the pipeline have no row (render as unvalidated).
+- `list_flagged_fact_provenance()`: returns every provenance row with `validationStatus = "flagged"` (the drift/notification read model).
+
 ### Quality Frameworks
 
 Quality frameworks ([ADR 0046](adr/0046-quality-frameworks-quantitative.md), `v0.44.0`) are user-owned checklists of criteria expressed in a free-text DSL over KPI metric keys, evaluated deterministically against confirmed `financial_facts` into a versioned scorecard. The same expression engine that evaluates `kpi_definitions.formula` evaluates criteria; the criterion grammar adds comparators (`>= <= > < == ~=`), boolean `AND`/`OR`/`NOT`, and percent literals. The user-facing grammar reference is `wiki/dsl-reference.md`. Criteria are decision-support only and must not encode buy/sell/hold output.
@@ -2256,7 +2300,7 @@ Initial Tauri command groups:
 - `add_company_to_watchlist`
 - `remove_company_from_watchlist`
 - `list_feed_items`
-- `update_feed_item`
+- `update_feed_item_state`
 - `prune_old_feed_items`
 - `delete_unsaved_feed_items`
 - `list_research_evidence`
@@ -2286,7 +2330,7 @@ Initial Tauri command groups:
 - `refresh_gpw_company_registry_if_stale`
 - `list_company_registry_entries`
 - `list_unmatched_source_items`
-- `list_jobs`
+- `get_scheduler_status`
 - `list_notebook_entries`
 - `create_notebook_entry`
 - `update_notebook_entry`
@@ -2537,6 +2581,10 @@ Rules:
 - `strategy` is `static` or `embedding`. Selecting `embedding` while weights are not `ready` is rejected with a recoverable error; it does not silently fall back.
 - The selection is persisted as a local setting (see [Settings](data-model.md#settings)); the default is `static`.
 - Switching to `embedding` enqueues the embed job to populate any missing vectors; switching to `static` leaves the index in place (it is disposable and may be reused later).
+
+### Rebuild Embedding Index
+
+`rebuild_embedding_index` — manually re-runs the embed/re-embed job (the same job `set_similarity_strategy` enqueues on switch to `embedding`) over any content missing a vector or embedded with a stale `modelId`, then returns the refreshed `get_embedding_model_status` shape. Offloaded (`spawn_blocking`); surfaces a job error (e.g. a model load/forward failure) rather than swallowing it.
 
 ### Find Similar Content (diagnostics)
 

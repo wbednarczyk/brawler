@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -26,12 +27,9 @@ import {
 } from "./notebookForms";
 import { feedPruneRetentionDays } from "./sourceScheduler";
 import * as sourcesApi from "../api/sources";
-import * as financialsApi from "../api/financials";
-import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../api/financialsTypes";
 import * as eventsApi from "../api/events";
 import * as signalsApi from "../api/signals";
 import { emptyTranscriptJobForm } from "./transcriptForms";
-import { useFundamentalsController } from "./useFundamentalsController";
 import { useAppLifecycleEffects } from "./useAppLifecycleEffects";
 import { useAppViewModel } from "./useAppViewModel";
 import { useNotebookController } from "./useNotebookController";
@@ -45,6 +43,8 @@ import { useWorkspaceNavigationController } from "./useWorkspaceNavigationContro
 import { resolveAppShortcutReferenceItems, type AppShortcutActionMap } from "./shortcuts";
 import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
+import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
+import { deleteCockpitLayout, listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -238,7 +238,6 @@ export function AppStateRoot({
   const [geminiCredentialInFlight, setGeminiCredentialInFlight] = useState(false);
   const [selectedFeedItemId, setSelectedFeedItemId] = useState<string | null>(null);
   const [selectedCompanyId, setSelectedCompanyId] = useState<string | null>(null);
-  const [workspaceAutoFocusId, setWorkspaceAutoFocusId] = useState<string | null>(null);
   const [searchFocusSelector, setSearchFocusSelector] = useState<string | null>(null);
   const [selectedCompanyFeedItemId, setSelectedCompanyFeedItemId] = useState<string | null>(null);
   const [selectedNotebookEntryId, setSelectedNotebookEntryId] = useState<string | null>(null);
@@ -257,7 +256,6 @@ export function AppStateRoot({
   const [notebookScreenDraftOrigins, setNotebookScreenDraftOrigins] =
     useState<NotebookDraftOrigin[]>(manualNotebookOrigins);
   const [notebookScreenEditForm, setNotebookScreenEditForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [companyWorkspaceTab, setCompanyWorkspaceTab] = useState<CompanyWorkspaceTab>("Feed");
   const [detailPaneFraction, setDetailPaneFraction] = useState(detailPaneDefaultFraction);
   const [dbRefreshState, setDbRefreshState] = useState<DbRefreshState>("idle");
   const [deleteUnsavedFeedState, setDeleteUnsavedFeedState] = useState<DbRefreshState>("idle");
@@ -267,6 +265,67 @@ export function AppStateRoot({
   const [sourceRefreshResult, setSourceRefreshResult] = useState<SourceIngestionResult | null>(null);
   const [sourceRefreshError, setSourceRefreshError] = useState<string | null>(null);
   const [sourceRefreshFailureCount, setSourceRefreshFailureCount] = useState(0);
+  const [createViewOpen, setCreateViewOpen] = useState(false);
+  const [activeCockpitLayoutId, setActiveCockpitLayoutId] = useState<string | null>(null);
+  // Saved named views shown as nav destinations in the Modes group (ADR 0057
+  // decision 5). Dashboard layouts (reserved `dashboard:` names) are excluded —
+  // they are reached by opening a company, not from the views list.
+  const [cockpitLayouts, setCockpitLayouts] = useState<CockpitLayout[]>([]);
+  const refreshCockpitLayouts = useCallback(() => {
+    listCockpitLayouts()
+      .then(setCockpitLayouts)
+      .catch(() => setCockpitLayouts([]));
+  }, []);
+  useEffect(() => {
+    refreshCockpitLayouts();
+  }, [refreshCockpitLayouts]);
+  const cockpitViews = cockpitLayouts
+    .filter((layout) => !layout.name.startsWith("dashboard:"))
+    .map((layout) => ({ id: layout.id, name: layout.name }));
+
+  // Open a saved named view (not a company dashboard): activate its layout and
+  // clear any company scope so it renders as the pure view.
+  function openCockpitView(layoutId: string) {
+    setCockpitInitialCompanyId(null);
+    setActiveCockpitLayoutId(layoutId);
+    setActiveSection("Cockpit");
+  }
+
+  function deleteCockpitView(layoutId: string) {
+    if (!window.confirm(text("Delete this saved view?"))) return;
+    void deleteCockpitLayout(layoutId)
+      .then(() => {
+        if (activeCockpitLayoutId === layoutId) setActiveCockpitLayoutId(null);
+        refreshCockpitLayouts();
+      })
+      .catch(() => {
+        /* surfaced by the runtime; the list refreshes on the next change */
+      });
+  }
+
+  // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
+  // layout. The view starts **empty** (every linked panel closed) and is sized by
+  // the chosen grid (stored for the grid-render step); on save it is **activated**
+  // — the Cockpit opens scrolled to it (initialLayoutId), ready to fill from the
+  // panel palette. parsePanels tolerates the descriptor, so loading is safe.
+  function handleCreateView(spec: CreateViewSpec) {
+    const panelsJson = JSON.stringify({
+      pinned: [],
+      openGlobals: [],
+      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+      selectedFeedItemId: null,
+      grid: { cols: spec.cols, rows: spec.rows },
+    });
+    void saveCockpitLayout({ name: spec.name, panelsJson, layoutJson: null, dockviewVersion: null })
+      .then((layout) => {
+        setCreateViewOpen(false);
+        setCockpitInitialCompanyId(null);
+        setActiveCockpitLayoutId(layout.id);
+        setActiveSection("Cockpit");
+        refreshCockpitLayouts();
+      })
+      .catch(() => setCreateViewOpen(false));
+  }
   const [sourceAdapterRefreshInFlight, setSourceAdapterRefreshInFlight] = useState<string | null>(null);
   const [registryRefreshState, setRegistryRefreshState] = useState<SourceRefreshState>("idle");
   const [registryRefreshResult, setRegistryRefreshResult] = useState<CompanyRegistryRefreshResult | null>(null);
@@ -295,19 +354,6 @@ export function AppStateRoot({
   });
   const [notebookForm, setNotebookForm] = useState<NotebookForm>(emptyNotebookForm);
   const [notebookEditForm, setNotebookEditForm] = useState<NotebookForm>(emptyNotebookForm);
-  const [financialPeriods, setFinancialPeriods] = useState<FinancialPeriod[]>([]);
-  const [financialFacts, setFinancialFacts] = useState<FinancialFact[]>([]);
-  const [kpiDefinitions, setKpiDefinitions] = useState<KpiDefinition[]>([]);
-  const [financialPeriodsError, setFinancialPeriodsError] = useState<string | null>(null);
-  const [financialFactsError, setFinancialFactsError] = useState<string | null>(null);
-  const [kpiDefinitionsError, setKpiDefinitionsError] = useState<string | null>(null);
-  // Surfaced together as a single fundamentals data load-error line in FundamentalsPanel.
-  const fundamentalsLoadError = financialPeriodsError ?? financialFactsError ?? kpiDefinitionsError;
-  const [fundamentalsForm, setFundamentalsForm] = useState({ periodFiscalYear: "", periodType: "annual" });
-  const [financialFactForm, setFinancialFactForm] = useState({ definitionId: "", valueNumeric: "", currency: "", periodId: "" });
-  const [selectedFinancialFactId, setSelectedFinancialFactId] = useState<string | null>(null);
-  const [isFinancialFactEditMode, setIsFinancialFactEditMode] = useState(false);
-  const [fundamentalsError, setFundamentalsError] = useState<string | null>(null);
 
   const {
     companiesById,
@@ -331,17 +377,11 @@ export function AppStateRoot({
     hasActiveInboxFilters,
     inboxEmptyState,
     inboxReviewStats,
-    isNotebookEditDirty,
     isNotebookScreenEditDirty,
     membershipsByCompany,
-    registryAdapter,
-    scheduledSourceAdapterKey,
     scheduledSourceAdapters,
     selectedCompany,
     selectedCompanyFeedItem,
-    selectedCompanyFeedItems,
-    selectedCompanyFeedStats,
-    selectedCompanyNotebookEntries,
     selectedFeedCompany,
     selectedFeedItem,
     selectedNotebookEntry,
@@ -564,9 +604,7 @@ export function AppStateRoot({
   const {
     refreshBankierCalendarWeek,
     refreshCompanyRegistry,
-    refreshCompanyRegistryIfStale,
     refreshEventSources,
-    refreshScheduledSource,
     refreshSources,
   } = useSourceRefreshController({
     refreshCompanyEvents,
@@ -603,6 +641,8 @@ export function AppStateRoot({
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
     updateEspiAiFallbackEnabled,
+    updateOpenAiCompatibleBaseUrl,
+    updateCapabilityProviders,
     updatePollInterval,
     updateLogLevel,
     updateLogMaxFileBytes,
@@ -611,6 +651,11 @@ export function AppStateRoot({
     updateDbBusyTimeoutMs,
     updateDbAcquireTimeoutMs,
     resetDatabaseSettings,
+    updateSourcesWorkers,
+    updateAutopilotWorkers,
+    updateAiWorkers,
+    updateAiProviderConcurrency,
+    resetQueueSettings,
     updatePinnedCompanyIds,
     updateShortcutBindings,
     updateTheme,
@@ -712,9 +757,7 @@ export function AppStateRoot({
   });
 
   const {
-    cancelNotebookEdit,
     cancelNotebookScreenEdit,
-    createNotebookEntry,
     createNotebookScreenEntry,
     deleteNotebookScreenEntry,
     discardNotebookScreenDraft,
@@ -728,8 +771,6 @@ export function AppStateRoot({
     showNotebookCompanyOpenClaims,
     toggleNotebookScreenComposer,
     toggleNotebookScreenEntry,
-    updateNotebookEditForm,
-    updateNotebookForm,
     updateNotebookScreenEditForm,
     updateNotebookScreenForm,
   } = useNotebookController({
@@ -820,19 +861,17 @@ export function AppStateRoot({
 
   const {
     clearInboxFilters,
-    inspectCompanyFeedItem,
     markVisibleInboxAsRead,
     openCompanyWorkspaceFromFeedItem,
     selectFeedItemFromKeyboard,
     toggleFeedItemReadState,
-    updateFeedItemState,
     updateSelectedFeedItem,
   } = useFeedController({
     companies,
     filteredFeedItems,
     selectedFeedItem,
     setActiveSection,
-    setCompanyWorkspaceTab,
+    setCockpitInitialCompanyId,
     setFeedError,
     setFeedState,
     setInboxCompanyFilter,
@@ -845,72 +884,6 @@ export function AppStateRoot({
     setSelectedCompanyFeedItemId,
     setSelectedCompanyId,
     setSelectedFeedItemId,
-    setWorkspaceAutoFocusId,
-  });
-
-  async function refreshFinancialPeriods() {
-    if (!selectedCompanyId) return;
-    try {
-      const periods = await financialsApi.listFinancialPeriods({ companyId: selectedCompanyId });
-      setFinancialPeriods(periods);
-      setFinancialPeriodsError(null);
-    } catch (error) {
-      setFinancialPeriodsError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function refreshFinancialFacts() {
-    if (!selectedCompanyId) return;
-    try {
-      const facts = await financialsApi.listFinancialFacts({ companyId: selectedCompanyId });
-      setFinancialFacts(facts);
-      setFinancialFactsError(null);
-    } catch (error) {
-      setFinancialFactsError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function refreshKpiDefinitions() {
-    try {
-      // Load all definitions (canonical + sector + any global), not just one
-      // scope: confirmed facts reference canonical/sector definitions, and the
-      // fundamentals matrix needs them to resolve labels and render rows.
-      const definitions = await financialsApi.listKpiDefinitions({});
-      setKpiDefinitions(definitions);
-      setKpiDefinitionsError(null);
-    } catch (error) {
-      setKpiDefinitionsError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  const {
-    createFinancialPeriod,
-    saveFinancialFact,
-    deleteFinancialFact,
-    selectFinancialFact,
-    startEditingFinancialFact,
-    cancelEditingFinancialFact,
-    updateFundamentalsForm,
-    updateFinancialFactForm,
-  } = useFundamentalsController({
-    companyId: selectedCompanyId || "",
-    financialPeriods,
-    financialFacts,
-    kpiDefinitions,
-    fundamentalsForm,
-    setFundamentalsForm,
-    financialFactForm,
-    setFinancialFactForm,
-    selectedFinancialFactId,
-    setSelectedFinancialFactId,
-    isFinancialFactEditMode,
-    setIsFinancialFactEditMode,
-    fundamentalsError,
-    setFundamentalsError,
-    refreshFinancialPeriods,
-    refreshFinancialFacts,
-    refreshKpiDefinitions,
-    text,
   });
 
   async function confirmCompanySignal(signalId: string) {
@@ -990,19 +963,15 @@ export function AppStateRoot({
 
   const {
     focusCompanyWorkspace,
-    openCompanyInboxFilter,
     openCompanyWorkspace,
     openCompanyWorkspaceFromKeyboard,
     renderNotebookOrigins,
-    selectCompanyFeedItemFromKeyboard,
-    toggleCompanyFeedItem,
   } = useWorkspaceNavigationController({
     companiesById,
     feedState,
     selectedCompanyFeedItemId,
     selectedCompanyId,
     setActiveSection,
-    setCompanyWorkspaceTab,
     setInboxCompanyFilter,
     setInboxSourceFilter,
     setInboxStatusFilter,
@@ -1012,6 +981,7 @@ export function AppStateRoot({
     setSelectedCompanyFeedItemId,
     setSelectedCompanyId,
     setSelectedFeedItemId,
+    setCockpitInitialCompanyId,
   });
 
   const {
@@ -1087,7 +1057,6 @@ export function AppStateRoot({
     refreshCompanies,
     refreshCompanyEvents,
     refreshCompanyRegistryEntries,
-    refreshCompanyRegistryIfStale,
     refreshDatabaseStatus,
     refreshFeedItems,
     refreshSignals,
@@ -1095,21 +1064,16 @@ export function AppStateRoot({
     refreshHealth,
     refreshLicenseStatus,
     refreshNotebookEntries,
-    refreshScheduledSource,
     refreshSettings,
     refreshSourceAdapters,
     refreshTranscriptJobs,
     refreshWatchlistMemberships,
     refreshWatchlists,
-    registryAdapter,
-    scheduledSourceAdapterKey,
-    scheduledSourceAdapters,
     selectedCompanyId,
     selectedFeedItemId,
     selectedNotebookCompanyId,
     selectedNotebookEntry,
     selectedNotebookScreenEntry,
-    settings,
     licenseCanUseApp,
     setNextRegistryRefreshAt,
     setNextSourceRefreshAtByAdapterId,
@@ -1122,17 +1086,7 @@ export function AppStateRoot({
     setSelectedNotebookEntryId,
     sourceAdapters,
     sourceAdaptersRef,
-    sourceRefreshFailureCount,
   });
-
-  useEffect(() => {
-    if (selectedCompanyId && activeSection === "Companies" && companyWorkspaceTab === "Fundamentals") {
-      void refreshFinancialPeriods();
-      void refreshFinancialFacts();
-      void refreshKpiDefinitions();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh fundamentals when the Companies/Fundamentals tab is opened; the non-memoized refresh callbacks are intentionally excluded to avoid re-fetching every render
-  }, [selectedCompanyId, activeSection, companyWorkspaceTab]);
 
   function openExternalUrl(url: string) {
     void openUrl(url).catch((error) => {
@@ -1189,9 +1143,8 @@ export function AppStateRoot({
   function navigateToSearchResult(match: SearchMatch) {
     switch (match.contentType) {
       case "company":
-        focusCompanyWorkspace(match.sourceId);
-        // Reuse the workspace's tuned scroll/focus-on-open behavior.
-        setWorkspaceAutoFocusId(match.sourceId);
+        // A company result opens the curated cockpit dashboard (ADR 0057).
+        openCompanyWorkspaceById(match.sourceId);
         break;
       case "watchlist":
         setSelectedManagedWatchlistId(match.sourceId);
@@ -1302,18 +1255,6 @@ export function AppStateRoot({
     return true;
   }
 
-  function switchCompanyWorkspaceTab(direction: 1 | -1) {
-    if (activeSection !== "Companies" || !selectedCompany) {
-      return false;
-    }
-
-    const tabs: CompanyWorkspaceTab[] = ["Feed", "Notebook", "Claims", "Transcripts", "Fundamentals", "Metadata"];
-    const currentIndex = tabs.indexOf(companyWorkspaceTab);
-    const nextIndex = Math.min(Math.max(currentIndex + direction, 0), tabs.length - 1);
-
-    setCompanyWorkspaceTab(tabs[nextIndex]);
-    return true;
-  }
 
   const shortcutActions = useMemo<AppShortcutActionMap>(() => ({
     "app.openInbox": () => undefined,
@@ -1363,14 +1304,12 @@ export function AppStateRoot({
     },
     "company.nextCompany": () => selectAdjacentCompany(1),
     "company.previousCompany": () => selectAdjacentCompany(-1),
-    "company.nextTab": () => switchCompanyWorkspaceTab(1),
-    "company.previousTab": () => switchCompanyWorkspaceTab(-1),
+    // The company deep-dive is the cockpit dashboard now (ADR 0057); there is no
+    // tabbed workspace to cycle. The shortcuts are kept as no-ops so existing
+    // bindings/config stay valid.
+    "company.nextTab": () => false,
+    "company.previousTab": () => false,
     "notebook.editSelected": () => {
-      if (activeSection === "Companies" && companyWorkspaceTab === "Notebook" && selectedNotebookEntry) {
-        setNotebookEditMode(true);
-        return true;
-      }
-
       if (activeSection === "Notebooks" && selectedNotebookScreenEntry) {
         setNotebookScreenEditMode(true);
         return true;
@@ -1379,18 +1318,6 @@ export function AppStateRoot({
       return false;
     },
     "notebook.saveCurrent": () => {
-      if (activeSection === "Companies" && companyWorkspaceTab === "Notebook") {
-        if (isNotebookComposerOpen && selectedCompany) {
-          createNotebookEntry();
-          return true;
-        }
-
-        if (isNotebookEditMode && selectedNotebookEntry) {
-          saveNotebookEntry();
-          return true;
-        }
-      }
-
       if (activeSection === "Notebooks") {
         if (isNotebookScreenComposerOpen && selectedNotebookScreenCompany) {
           createNotebookScreenEntry();
@@ -1408,8 +1335,6 @@ export function AppStateRoot({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- view-model memo keyed on the listed UI state; the plain keyboard-navigation helpers (selectAdjacentCompany/selectAdjacentInboxItem/switchCompanyWorkspaceTab) are excluded to keep it from recomputing every render — they read the same state already in the dep list
   }), [
     activeSection,
-    companyWorkspaceTab,
-    createNotebookEntry,
     createNotebookScreenEntry,
     filteredCompanies,
     filteredFeedItems,
@@ -1447,11 +1372,8 @@ export function AppStateRoot({
   };
   const reportSeasonViewModel = {
     watchlists,
-    openCompanyWorkspace: (companyId: string, tab: CompanyWorkspaceTab) => {
-      setSelectedCompanyId(companyId);
-      setCompanyWorkspaceTab(tab);
-      setActiveSection("Companies");
-    },
+    openCompanyWorkspace: (companyId: string, _tab: CompanyWorkspaceTab) =>
+      openCompanyWorkspaceById(companyId),
   };
   const researchViewModel: ResearchScreenProps = {
     companies,
@@ -1660,23 +1582,18 @@ export function AppStateRoot({
     updatePinnedCompanyIds(pinnedCompanyIds.filter((id) => id !== companyId));
   }
 
-  function togglePinnedCompany(companyId: string) {
-    updatePinnedCompanyIds(
-      pinnedCompanyIds.includes(companyId)
-        ? pinnedCompanyIds.filter((id) => id !== companyId)
-        : [...pinnedCompanyIds, companyId],
-    );
+  // Opening a company (from Today, Report Season, a feed item, …) lands the
+  // curated cockpit dashboard scoped to it (ADR 0057). The legacy `tab` argument
+  // is ignored — the dashboard shows every surface at once, not one tab.
+  function openCompanyWorkspaceById(companyId: string, _tab?: CompanyWorkspaceTab) {
+    openAdvancedLayout(companyId);
   }
 
-  function openCompanyWorkspaceById(companyId: string, tab: CompanyWorkspaceTab) {
-    setSelectedCompanyId(companyId);
-    setCompanyWorkspaceTab(tab);
-    setActiveSection("Companies");
-  }
-
-  // Opt-in dockview "Advanced layout" for a company (ADR 0054): open the cockpit
-  // scoped to it. All cockpit/dockview work carries forward as this engine.
+  // Open the cockpit dashboard scoped to a company. Kept named `openAdvancedLayout`
+  // for its existing callers; it is now the single company deep-dive entry point.
   function openAdvancedLayout(companyId: string) {
+    setSelectedCompanyId(companyId);
+    setActiveCockpitLayoutId(null);
     setCockpitInitialCompanyId(companyId);
     setActiveSection("Cockpit");
   }
@@ -1693,6 +1610,11 @@ export function AppStateRoot({
         refreshDatabaseBackedViews={refreshDatabaseBackedViews}
         refreshSources={refreshSources}
         setActiveSection={setActiveSection}
+        onCreateView={() => setCreateViewOpen(true)}
+        cockpitViews={cockpitViews}
+        activeCockpitViewId={cockpitInitialCompanyId ? null : activeCockpitLayoutId}
+        onOpenCockpitView={openCockpitView}
+        onDeleteCockpitView={deleteCockpitView}
         onNavigateToSearchResult={navigateToSearchResult}
         pinnedCompanies={pinnedCompanies}
         selectedCompanyId={selectedCompanyId}
@@ -1806,6 +1728,8 @@ export function AppStateRoot({
                         companies={companies}
                         feedItems={feedState}
                         initialCompanyId={cockpitInitialCompanyId}
+                        initialLayoutId={activeCockpitLayoutId}
+                        onLayoutsChanged={refreshCockpitLayouts}
                       />
                     </EventsProvider>
                   </ReportSeasonProvider>
@@ -1836,27 +1760,7 @@ export function AppStateRoot({
                 filteredCompanies,
                 companies,
                 selectedCompany,
-                onTogglePinnedCompany: togglePinnedCompany,
-                onOpenAdvancedLayout: openAdvancedLayout,
-                workspaceAutoFocusId,
-                clearWorkspaceAutoFocus: () => setWorkspaceAutoFocusId(null),
                 membershipsByCompany,
-                selectedCompanyFeedStats,
-                companyWorkspaceTab,
-                selectedCompanyFeedItems,
-                selectedCompanyFeedItem,
-                aiAnalysisJobsByFeedItemId,
-                aiAnalysisErrorByFeedItemId,
-                aiAnalysisRequestInFlightByFeedItemId,
-                selectedCompanyNotebookEntries,
-                isNotebookComposerOpen,
-                notebookForm,
-                selectedNotebookEntryId,
-                selectedNotebookEntry,
-                notebookEditMode: isNotebookEditMode,
-                notebookEditForm,
-                isNotebookEditDirty,
-                notebookError,
                 companiesError,
                 lookupStatus,
                 createCompany,
@@ -1871,46 +1775,6 @@ export function AppStateRoot({
                 openCompanyWorkspace,
                 openCompanyWorkspaceFromKeyboard,
                 deleteCompany,
-                setCompanyWorkspaceTab,
-                toggleCompanyFeedItem,
-                selectCompanyFeedItemFromKeyboard,
-                updateFeedItemState,
-                inspectCompanyFeedItem,
-                openFeedItemNoteDraft,
-                startFeedItemAiAnalysis,
-                retryFeedItemAiAnalysis,
-                openCompanyInboxFilter,
-                setNotebookComposerOpen,
-                updateNotebookForm,
-                createNotebookEntry,
-                setSelectedNotebookEntryId,
-                saveNotebookEntry,
-                cancelNotebookEdit,
-                setNotebookEditMode,
-                updateNotebookEditForm,
-                NotebookDateField,
-                NotebookQuarterField,
-                MarkdownNoteBody,
-                renderNotebookOrigins,
-                formatTimestamp,
-                feedItemSummary,
-                financialPeriods,
-                financialFacts,
-                kpiDefinitions,
-                fundamentalsForm,
-                financialFactForm,
-                selectedFinancialFactId,
-                isFinancialFactEditMode,
-                fundamentalsError,
-                fundamentalsLoadError,
-                createFinancialPeriod,
-                saveFinancialFact,
-                deleteFinancialFact,
-                selectFinancialFact,
-                startEditingFinancialFact,
-                cancelEditingFinancialFact,
-                updateFundamentalsForm,
-                updateFinancialFactForm,
               }}
             >
               <CompaniesScreen />
@@ -2074,6 +1938,8 @@ export function AppStateRoot({
                 onGeneralAnalysisModelChange: updateGeneralAnalysisModel,
                 onGeneralAnalysisTimeoutChange: updateGeneralAnalysisTimeout,
                 onEspiAiFallbackChange: updateEspiAiFallbackEnabled,
+                onOpenAiCompatibleBaseUrlChange: updateOpenAiCompatibleBaseUrl,
+                onCapabilityProvidersChange: updateCapabilityProviders,
                 onLogLevelChange: updateLogLevel,
                 onLogMaxFilesChange: updateLogMaxFiles,
                 onLogMaxFileBytesChange: updateLogMaxFileBytes,
@@ -2081,6 +1947,11 @@ export function AppStateRoot({
                 onDbBusyTimeoutMsChange: updateDbBusyTimeoutMs,
                 onDbAcquireTimeoutMsChange: updateDbAcquireTimeoutMs,
                 onResetDatabaseSettings: resetDatabaseSettings,
+                onSourcesWorkersChange: updateSourcesWorkers,
+                onAutopilotWorkersChange: updateAutopilotWorkers,
+                onAiWorkersChange: updateAiWorkers,
+                onAiProviderConcurrencyChange: updateAiProviderConcurrency,
+                onResetQueueSettings: resetQueueSettings,
                 onClearLicenseKey: clearLicenseKey,
                 onLicenseKeyDraftChange: setLicenseKeyDraft,
                 onSubmitLicenseKey: submitLicenseKey,
@@ -2106,6 +1977,11 @@ export function AppStateRoot({
 
         </section>
       </AppShell>
+      <CreateViewModal
+        open={createViewOpen}
+        onClose={() => setCreateViewOpen(false)}
+        onCreate={handleCreateView}
+      />
       </SettingsProvider>
     </LocaleContext.Provider>
   );

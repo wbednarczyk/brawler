@@ -1,8 +1,6 @@
 # ADR 0024: Cross-Platform Release Artifacts
 
-## Status
-
-Accepted for Milestone 28 implementation.
+Status: Accepted for Milestone 28 implementation.
 
 ## Context
 

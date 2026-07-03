@@ -8,7 +8,9 @@ use serde::Deserialize;
 use crate::{
     app_state, jobs,
     providers::analysis::{
-        KPI_EXTRACTION_PROMPT_VERSION, TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
+        KPI_EXTRACTION_PROMPT_VERSION, TEST_SAMPLE_ANALYSIS_MODEL,
+        TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
     },
     storage,
 };
@@ -42,18 +44,40 @@ pub async fn start_kpi_extraction(
         .map_err(|error| error.to_string())?;
 
     let settings = state.get_settings().map_err(|error| error.to_string())?;
-    let provider_id = input
+    let explicit_provider_id = input
         .provider_mode
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .or(settings.ai_providers.general_analysis_provider.as_deref())
-        .unwrap_or(TEST_SAMPLE_ANALYSIS_PROVIDER_ID)
-        .to_owned();
-    let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
-        TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
-    } else {
-        settings.ai_providers.general_analysis_model
+        .filter(|value| !value.is_empty());
+    let (provider_id, model) = match explicit_provider_id {
+        Some(provider_id) => {
+            let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
+                TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
+            } else {
+                settings.ai_providers.general_analysis_model
+            };
+            (provider_id.to_owned(), model)
+        }
+        None => {
+            // No explicit override: defer to capability routing at run time when
+            // anything is actually configured for this capability; otherwise
+            // keep the legacy test-sample default so extraction still runs out
+            // of the box (ADR 0060 as amended — this enqueue path pins that
+            // pre-pool default).
+            let members = jobs::resolve_capability_members(&state, AiCapability::KpiExtraction)
+                .map_err(|error| error.to_string())?;
+            if members.is_empty() {
+                (
+                    TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                    TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
+                )
+            } else {
+                (
+                    CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                    CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                )
+            }
+        }
     };
 
     let job = state

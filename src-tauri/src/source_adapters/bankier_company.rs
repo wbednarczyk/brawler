@@ -625,6 +625,26 @@ fn is_report_attachment_url(value: &str) -> bool {
         || lower.contains(".xades?")
 }
 
+/// Whether an attachment URL is an ESEF/iXBRL digital-signature file (`.xades`).
+/// A signature carries no financial data, so it is always registered
+/// `metadata_only` (kept for audit/attribution) and never fetched (ADR 0061
+/// decision 1b).
+pub fn is_signature_attachment_url(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.ends_with(".xades") || lower.contains(".xades?")
+}
+
+/// Whether an attachment URL is a structured ESEF/iXBRL statement (`.xhtml`) —
+/// the deterministic structured-extraction pipeline's preferred input (ADR
+/// 0061 decision 1b). Structured attachments are always registered as fetch
+/// candidates, independent of [`is_periodic_report_item`]: that classifier is
+/// a Polish-language text heuristic over the filing title/body and can miss a
+/// filing that is xhtml-only under the EU ESEF mandate.
+pub fn is_structured_attachment_url(value: &str) -> bool {
+    let lower = value.to_lowercase();
+    lower.ends_with(".xhtml") || lower.contains(".xhtml?")
+}
+
 fn normalized_lines<'a>(text: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     text.into_iter()
         .flat_map(str::lines)
@@ -986,5 +1006,37 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Recent report");
+    }
+
+    #[test]
+    fn signature_attachment_url_matches_only_xades() {
+        assert!(is_signature_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.xades"
+        ));
+        assert!(is_signature_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.XAdES?v=1"
+        ));
+        assert!(!is_signature_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.xhtml"
+        ));
+        assert!(!is_signature_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.pdf"
+        ));
+    }
+
+    #[test]
+    fn structured_attachment_url_matches_only_xhtml() {
+        assert!(is_structured_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.xhtml"
+        ));
+        assert!(is_structured_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.XHTML?v=1"
+        ));
+        assert!(!is_structured_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.xades"
+        ));
+        assert!(!is_structured_attachment_url(
+            "https://bonnier.pl/static/att/emitent/2026-05/report.pdf"
+        ));
     }
 }

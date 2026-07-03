@@ -1,6 +1,9 @@
 use crate::{
     app_state,
-    providers::analysis::{registry, AiAnalysisProvider, AnalysisRequest},
+    providers::analysis::{
+        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
+        registry, AiAnalysisProvider, AnalysisRequest,
+    },
     storage,
 };
 use serde_json::json;
@@ -254,6 +257,27 @@ fn provider_for_job(
     let settings = state.get_settings().map_err(|error| error.to_string())?;
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
 
+    if job.provider_id == CAPABILITY_ROUTED_PROVIDER_ID {
+        let provider = crate::jobs::build_capability_provider(
+            state,
+            AiCapability::FeedAnalysis,
+            timeout_seconds,
+        )?;
+        record_ai_analysis_diagnostic(
+            state,
+            job,
+            "provider_resolved",
+            "info",
+            "AI analysis provider resolved.",
+            json!({
+                "providerId": provider.provider_id(),
+                "model": provider.model(),
+                "timeoutSeconds": timeout_seconds
+            }),
+        );
+        return Ok(provider);
+    }
+
     let requires_credential = registry::analysis_provider_requires_credential(&job.provider_id);
     let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
     let credential_configured = !requires_credential || api_key.is_some();
@@ -274,8 +298,13 @@ fn provider_for_job(
         }),
     );
 
-    let provider =
-        registry::build_analysis_provider(&job.provider_id, api_key, &job.model, timeout_seconds)?;
+    let provider = crate::jobs::build_gated_analysis_provider(
+        state,
+        &job.provider_id,
+        api_key,
+        &job.model,
+        timeout_seconds,
+    )?;
     record_ai_analysis_diagnostic(
         state,
         job,
@@ -317,7 +346,10 @@ fn record_ai_analysis_diagnostic(
 mod tests {
     use super::run_ai_analysis_job;
     use crate::{
-        providers::analysis::{TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID},
+        providers::analysis::{
+            capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
+            TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+        },
         source_adapters::bankier_company::BankierCompanyItem,
         storage::{open_in_memory_database, AppState, NewAiAnalysisJob, NewCompany},
     };
@@ -407,8 +439,139 @@ mod tests {
             .all(|event| !event.metadata.to_string().contains("What changed?")));
     }
 
-    fn state_with_feed_item() -> AppState {
+    /// ADR 0061 decision 5: a sentinel-routed job resolves its provider through
+    /// the capability pool at run time, not from `job.provider_id`/`job.model`.
+    ///
+    /// `validate_capability_providers` only ever allows currently-selectable
+    /// (non-test-sample) providers into the map — and every selectable provider
+    /// needs a credential this test environment does not have — so a pool that
+    /// actually builds here has to route through the credential-less test-sample
+    /// provider, seeded by writing the settings row directly (bypassing
+    /// validation, same technique used elsewhere in this codebase for states
+    /// validation would otherwise block).
+    #[test]
+    fn provider_for_job_routes_sentinel_through_capability_pool() {
         let connection = open_in_memory_database().expect("database should initialize");
+        let capability_providers_json = serde_json::json!({
+            AiCapability::FeedAnalysis.key(): [
+                { "provider": TEST_SAMPLE_ANALYSIS_PROVIDER_ID, "model": TEST_SAMPLE_ANALYSIS_MODEL },
+            ]
+        })
+        .to_string();
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, value_type) VALUES ('capability_providers', ?1, 'json') \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [capability_providers_json],
+            )
+            .expect("seed capability_providers bypassing validation");
+        let state = state_with_feed_item_from(connection);
+        let feed_item = state
+            .list_feed_items()
+            .expect("feed items should list")
+            .pop()
+            .expect("feed item should exist");
+        let job = state
+            .create_ai_analysis_job(NewAiAnalysisJob {
+                feed_item_id: feed_item.id,
+                prompt_preset_id: Some("default_summary".to_owned()),
+                custom_question: None,
+                provider_id: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                model: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                prompt_version: Some("m13.source_grounded.v1".to_owned()),
+            })
+            .expect("analysis job should be created");
+
+        let provider = super::provider_for_job(&state, &job)
+            .expect("a sentinel-routed job should build the pooled provider");
+
+        assert_eq!(provider.provider_id(), TEST_SAMPLE_ANALYSIS_PROVIDER_ID);
+    }
+
+    /// Regression pin: an explicit provider override must keep going through
+    /// `build_gated_analysis_provider` unchanged, never through the capability
+    /// pool.
+    #[test]
+    fn provider_for_job_explicit_override_is_unchanged() {
+        let state = state_with_feed_item();
+        let feed_item = state
+            .list_feed_items()
+            .expect("feed items should list")
+            .pop()
+            .expect("feed item should exist");
+        let job = state
+            .create_ai_analysis_job(NewAiAnalysisJob {
+                feed_item_id: feed_item.id,
+                prompt_preset_id: Some("default_summary".to_owned()),
+                custom_question: None,
+                provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
+                prompt_version: Some("m13.source_grounded.v1".to_owned()),
+            })
+            .expect("analysis job should be created");
+
+        let provider = super::provider_for_job(&state, &job)
+            .expect("an explicit override must still build directly");
+
+        assert_eq!(provider.provider_id(), TEST_SAMPLE_ANALYSIS_PROVIDER_ID);
+        assert_eq!(provider.model(), TEST_SAMPLE_ANALYSIS_MODEL);
+    }
+
+    /// S6 hard-fail pin: with no `capability_providers` entry for
+    /// `feed_analysis` and no `general_analysis_provider` configured, a
+    /// sentinel-routed job's provider build must hard-fail with an
+    /// actionable error rather than silently doing nothing — the
+    /// owner-approved behavior change this epic pins (Radicle 6ea2a8a).
+    /// Clears the default general provider (migration 0036 seeds
+    /// `provider_gemini`) to simulate a genuinely unconfigured app — the
+    /// same technique `resolver_returns_empty_when_nothing_configured`
+    /// (jobs/mod.rs) uses.
+    #[test]
+    fn provider_for_job_sentinel_routed_hard_fails_when_nothing_configured() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        connection
+            .execute(
+                "UPDATE settings SET value = '' WHERE key = 'general_analysis_provider'",
+                [],
+            )
+            .expect("clear the default general provider");
+        let state = state_with_feed_item_from(connection);
+        let feed_item = state
+            .list_feed_items()
+            .expect("feed items should list")
+            .pop()
+            .expect("feed item should exist");
+        let job = state
+            .create_ai_analysis_job(NewAiAnalysisJob {
+                feed_item_id: feed_item.id,
+                prompt_preset_id: Some("default_summary".to_owned()),
+                custom_question: None,
+                provider_id: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                model: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                prompt_version: Some("m13.source_grounded.v1".to_owned()),
+            })
+            .expect("analysis job should be created");
+
+        let error = match super::provider_for_job(&state, &job) {
+            Ok(_) => panic!("a sentinel-routed job with nothing configured must hard-fail"),
+            Err(error) => error,
+        };
+
+        assert!(
+            error.contains(AiCapability::FeedAnalysis.key()),
+            "error must name the capability: {error}"
+        );
+        assert!(
+            error.contains("Settings"),
+            "error should point the user at Settings \u{2192} AI: {error}"
+        );
+    }
+
+    fn state_with_feed_item() -> AppState {
+        state_with_feed_item_from(open_in_memory_database().expect("database should initialize"))
+    }
+
+    fn state_with_feed_item_from(connection: rusqlite::Connection) -> AppState {
         let state = AppState::new(connection);
         let company = state
             .create_company(NewCompany {

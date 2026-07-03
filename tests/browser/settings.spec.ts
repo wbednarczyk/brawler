@@ -24,4 +24,39 @@ test.describe("settings", { tag: "@clickable" }, () => {
     await page.getByLabel("Settings theme").selectOption("dark");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
+
+  test("routes an AI capability to an ordered provider pool and persists across tab navigation", async ({
+    page,
+  }) => {
+    await openApp(page);
+    await navTo(page, "Settings").click();
+
+    const settingsRegion = page.getByLabel("Application settings");
+    await settingsRegion.getByRole("button", { name: "AI", exact: true }).click();
+
+    const kpiRow = settingsRegion
+      .locator(".capability-routing-row")
+      .filter({ has: page.getByRole("heading", { name: "KPI extraction", level: 3 }) });
+
+    // Two-member failover pool: the catalog default (Gemini), then a
+    // OpenAI-compatible provider with a typed custom model.
+    await kpiRow.getByRole("button", { name: "Add provider" }).click();
+    await expect(page.getByLabel("Provider KPI extraction 1")).toHaveValue("provider_gemini");
+
+    await kpiRow.getByRole("button", { name: "Add provider" }).click();
+    await page.getByLabel("Provider KPI extraction 2").selectOption("provider_openai_compatible");
+    await page.getByLabel("Model KPI extraction 2").fill("custom-model-x");
+
+    await page.getByLabel("OpenAI-compatible base URL").fill("https://compat.example.com/v1");
+
+    // Navigate away and back — the stateful mock runtime (ADR 0048) persists
+    // the saved settings, so the routing pool and base URL re-render as saved.
+    await settingsRegion.getByRole("button", { name: "Credentials" }).click();
+    await settingsRegion.getByRole("button", { name: "AI", exact: true }).click();
+
+    await expect(page.getByLabel("Provider KPI extraction 1")).toHaveValue("provider_gemini");
+    await expect(page.getByLabel("Provider KPI extraction 2")).toHaveValue("provider_openai_compatible");
+    await expect(page.getByLabel("Model KPI extraction 2")).toHaveValue("custom-model-x");
+    await expect(page.getByLabel("OpenAI-compatible base URL")).toHaveValue("https://compat.example.com/v1");
+  });
 });

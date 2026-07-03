@@ -5,6 +5,7 @@
 @import "./styles/controls.css";
 @import "./styles/ui.css";
 @import "./styles/ticker.css";
+@import "./styles/driftDiff.css";
 @import "./styles/screens/events.css";
 @import "./styles/screens/notebooks.css";
 @import "./styles/screens/companies.css";

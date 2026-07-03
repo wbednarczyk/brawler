@@ -2,7 +2,7 @@
 
 This document maps the UX and contracts to the first local SQLite data model. It is not a final migration file, but it should be concrete enough to guide the first schema implementation.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Contracts](contracts.md), [Architecture](architecture.md), and [UI Information Architecture](ui-information-architecture.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Contracts](contracts.md), [Architecture](architecture.md), and [UI Information Architecture](ui-information-architecture.md).
 
 ## Model Principles
 
@@ -15,6 +15,7 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 - Secrets live in the OS keychain, not in SQLite.
 - YAML config is import/export/bootstrap, not runtime truth.
 - Schema changes must be migration-managed from the first implementation milestone.
+- **Domain recency is the domain date, never `created_at`.** Selecting or ranking "newest / latest / most recent" of anything (report, feed item, event, signal, fact) must order by the **domain date** — publication / period-end / event / signal date — and never by `created_at`/`updated_at`/ingestion order. `created_at` is the local insert time; a history backfill or re-ingest gives an **old** record a **newer** `created_at`, so created-order silently diverges from chronological order. Any such selection ships a test against **real backfilled data where `created_at` order ≠ domain-date order** (real-data validation). Guardrail from `d60305c` (autopilot detection fired on a 3-year-old report by ranking on `created_at`); policy [ADR 0045](adr/0045-guardrail-harvest-loop.md).
 
 ## Core Entities
 
@@ -245,6 +246,29 @@ Rules:
 - `bankier-kalendarium-html` is the active broader public calendar adapter and matches only tracked companies by exact ticker.
 - Bankier calendar source keys are based on ticker, event category, and event description so source-side date changes update the existing sourced event row.
 - Source-keyed refresh updates sourced event rows when the accepted source changes the event.
+- For the investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md)), `event_type` gains `ipo_debut` (primary-market debut) and `ex_dividend` (ex-dividend / cut-off date, distinct from `dividend` = record/payment). No schema change — `event_type` is a string. The `bankier-kalendarium-html` mapping widens to emit `periodic_report`, `ipo_debut`, and `ex_dividend`; ESPI ex-date derivation extends `event_derivation`.
+
+### Investor Calendar Layers
+
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`) is a backend-owned **read model** (`list_investor_week`) that unions company events with market-wide layers that have no canonical company. It adds three small domains; `company_events` and its one-canonical-company invariant are unchanged.
+
+`market_calendar_events` — the opt-in **whole-market** layer: GPW calendar events for **untracked** tickers (no `company_id`). Populated by a relaxed whole-page Bankier kalendarium ingest fetched only when the user enables the market scope.
+
+- Fields: `id`, `ticker`, `issuer_name`, `event_type`, `title`, `event_date`, `event_time`, `status`, `source_type`, `source_adapter_id`, `source_event_key`, `source_url`, `attribution`, `fetched_at`, `created_at`, `updated_at`.
+- No `company_id`; `ticker` is the only company key. The week read model unions `company_events` (tracked) ∪ `market_calendar_events` (untracked) **deduped by ticker**, so a tracked company never appears twice; a market row whose ticker matches a tracked company links into its workspace.
+- `(source_adapter_id, source_event_key)` deduplicates rows; cache-first week navigation reuses the Bankier dated-week pattern.
+
+`macro_events` — the **macro** layer (no company). The model + manual add + a sample seed ship in `v0.59.0`; a policy-clean **live source is deferred to a follow-up ADR** (ADR 0058 §4).
+
+- Fields: `id`, `indicator_key`, `title`, `country`, `event_date`, `event_time`, `importance`, `actual`, `forecast`, `previous`, `source_type`, `source_url`, `attribution`, `fetched_at`, `manual`, `created_at`, `updated_at`.
+- `actual`/`forecast`/`previous` are optional text. `manual = 1` for user-entered releases. Reads tolerate an empty table (safe default = no macro lane).
+
+`market_holidays` — the **holidays** layer: a curated, refreshable static dataset (GPW; US NYSE/Nasdaq), **not** a live source.
+
+- Fields: `id`, `market`, `holiday_date`, `name`, `session` (`closed | half_day`), `created_at`, `updated_at`.
+- Renders a per-market `WOLNE` badge on closed days. Reads tolerate a missing/un-seeded year (safe default = no holidays) so the week view never crashes.
+
+Active scope (`watchlist | market`) and enabled layers (macro, holidays) persist in `user_settings` with tolerant defaults (the pinned-companies pattern, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)).
 
 ### Company Signals
 
@@ -328,7 +352,6 @@ Rules:
 
 - Gemini is preferred only for YouTube transcription jobs.
 - Source URL is required.
-- The transcript workflow labels the source URL field as `URL`.
 - `company_id` is nullable at job creation time.
 - When a company/ticker is supplied before transcription, `company_id` is set and `company_resolution_status = provided`.
 - When no company/ticker is supplied, the app may transcribe first, then attempt company recognition from transcript/provider output.
@@ -398,7 +421,7 @@ Rules:
 
 Supports future company timelines, watchlist review, changed-since-review views, evidence links, research questions, reminders, AI briefs, and digests.
 
-M24 uses a hybrid model governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md):
+This is a hybrid model governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md):
 
 - existing domain tables remain canonical
 - research evidence and timeline views are read models assembled from canonical domains first
@@ -429,9 +452,8 @@ Rules:
 
 - Initial `scope_type` values are `company` and `watchlist`.
 - `scope_id` references the owning company or watchlist ID according to `scope_type`.
-- Review checkpoints support "last reviewed" and "changed since review" read models.
-- M25 uses one company-level review checkpoint per company for the first visible Research screen.
-- Timeline summary counts and changed-only filtering are derived read-model behavior; no stored timeline projection is added for M25.
+- Review checkpoints support "last reviewed" and "changed since review" read models, one checkpoint per scope (`company` or `watchlist`).
+- Timeline summary counts and changed-only filtering are derived read-model behavior (no stored timeline projection — see above).
 - Feed read/unread and saved state remain in the feed domain.
 - Future evidence-level review state should be added only when a concrete workflow needs it.
 
@@ -611,6 +633,18 @@ Rules:
 - Industry-specific classified stocks (reserves with proven/probable, 1P/2P/3P categories) are modeled as company-scoped custom KPIs, not core enums.
 - Import/export, retention, and backup must treat fundamentals as owner durable state.
 
+Structured-first extraction provenance ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md), migration `0057_fundamentals_provenance.sql`; provenance is a separate concern joined by fact id — `financial_facts` is not altered):
+
+`financial_fact_provenance` (one row per fact the structured pipeline produced):
+
+- `fact_id` (PK → `financial_facts.id`), `source_tier` (`esef` | `structured_xhtml` | `pdf` | `html_aggregator` | `ai_text` | `ai`), `validation_status` (`passed` | `witness_confirmed` | `unreviewed` | `flagged` | `none`), `drift_json` (serialized `DriftReport` label diff when a drift accompanied the fact), `citation` (source concept/label the value was read from).
+- `ai`: the AI KPI-proposal confirm path (`confirm_kpi_proposal`/`auto_confirm_kpi_proposal`, both manual-confirm and autopilot auto-confirm) — sends the native report document to the model today, distinct from a future `ai_text`-tier (extracted-text) path. Every AI-confirmed fact now always carries a provenance row: `validation_status = "none"` (no validation attempted), `citation` = the proposal's label, `drift_json` = `NULL`.
+- Reads tolerate a missing row: facts predating the pipeline are treated as unknown tier / unvalidated.
+
+`company_extraction_profile` (the confirmed, versioned PDF extraction layout per company, ADR 0061 decision 3):
+
+- `company_id` (PK), `template_hash`, `unit_scale` (`Ones` | `Thousands` | `Millions`), `profile_json` (serialized `ExtractionProfile` label map), `version`. A company with no row has never been bootstrapped — the parser uses the default dictionary and cannot yet detect drift (safe default).
+
 ### Management Claims
 
 First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`): a tracked management promise from a report or transcript, with a normalized due period and a user-set verdict. Replaces the legacy `notebook_entries(kind='claim')` model. Migration `0045_management_claims.sql`.
@@ -784,10 +818,49 @@ Fields:
 
 Rules:
 
-- **Claim is atomic.** The next runnable row (oldest `pending` with `available_at` passed) is moved to `running` and its `attempts` incremented in a single `UPDATE … RETURNING`, so two workers can never claim the same row.
+- **Claim is atomic.** The next runnable row (oldest `pending` with `available_at` passed) is moved to `running` and its `attempts` incremented in a single `UPDATE … RETURNING`, so two workers can never claim the same row. `claim_next_for_kinds(kinds)` scopes the claim to a lane's kinds ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md)).
 - **Retry with backoff.** A failed run with attempts left returns to `pending` with `available_at` pushed out (capped exponential); once `attempts == max_attempts` it becomes terminally `failed`.
-- **Crash resume.** On startup the worker requeues every `running` row back to `pending` (a `running` row with no live worker is crash residue).
-- Local-first: a single worker drains the queue only while the app is open. Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
+- **Crash resume + poison guard.** On startup the worker requeues every `running` row back to `pending` — **except** a row whose `attempts >= max_attempts`, which is **dead-lettered** (`failed`) rather than resurrected. A job that hangs (never reaching the retry path) would otherwise be reclaimed and re-run every restart, permanently starving the queue ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md); the bankier refresh with `attempts=15 > max=2`).
+- **Isolated worker lanes.** The worker runs as named pools by category (`sources` / `autopilot` / `ai` / `indexing`), each with its own threads claiming only its kinds, so a slow source refresh cannot starve latency-sensitive autopilot. Per-source serialization (exactly one refresh per source at a time) and a per-AI-provider concurrency limit are enforced as locks/semaphores shared across lanes; worker counts + provider limit are settings. See [ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).
+- **Per-source serialization + defer.** A worker holds an exclusive in-memory lock for the job's source (its `adapterId`, exactly one at a time) across the run; a worker that cannot acquire it **defers** the job — requeued to `pending` after a short backoff **without** consuming an attempt (distinct from a retry-on-failure, so contention never exhausts `max_attempts`). ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).)
+- **Chunked company-scoped refresh.** A company-scoped scheduled refresh (bankier-company) is a **planner**: it enqueues one idempotent `source_company_refresh` job (stable id `source_company_refresh:{adapter}:{company}`, re-armed via `reschedule`) **per tracked company** instead of looping all companies in one job. The per-source lock serializes them (politeness preserved), other lanes run alongside, unfinished per-company jobs resume across restarts, and each job rides autopilot detection on its own ingest completion. This retires the monolith that monopolized the single worker for minutes. ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).)
+- **`enqueue` vs `reschedule` for a reused id (guardrail, bug `dce9ce8`).** `enqueue` is `INSERT OR IGNORE` — safe only when `id` is genuinely fresh. Any producer that may enqueue again under the **same** `id` after that row already reached a terminal state (a recreated run, a `retry_*` command, a re-triggered one-shot job) must use `reschedule`, not `enqueue`: otherwise the later call is a silent no-op against the existing terminal row and the work never runs again. This broke the autopilot pipeline (a recreated `autopilot_run` stuck at `pending`/`fetch` forever behind an already-`succeeded` stage job — `create_run_if_absent` → `enqueue_stage`) and, mechanically identically, `jobs::handlers::enqueue_per_job` (backs `retry_kpi_extraction` / `retry_claim_extraction` / `retry_ai_analysis`, whose per-job handlers always terminal-succeed the queue row regardless of domain outcome) and the startup/strategy-change content-embedding kick (stable ids `content_embedding` / `strategy-selected`, re-triggered across app restarts or a re-selected strategy).
+- Local-first: workers drain the queue only while the app is open. Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
+
+### Autopilot Settings and Runs
+
+Supports the autonomous report pipeline (North Star, `v0.49.0`, [ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)): per-company opt-in automation and a persisted record of each autonomous run. The confirm-before-commit guarantee is unchanged globally; these tables only scope automation to companies the user opts in.
+
+`company_autopilot_settings` (per-company trust-ladder mode):
+
+- `company_id` — primary key, → `companies(id)`.
+- `mode` — `off` (default) | `assist` | `autopilot`. Mode semantics (what each level automates) are canonical in [Contracts § Autonomous Report Pipeline](contracts.md#autonomous-report-pipeline-autopilot).
+- `updated_at`.
+
+Rules:
+
+- A company with no row is treated as `off` (reads tolerate a missing row — a safe default, per the migration-safety rule).
+- The mode is a single per-company control, not per-step toggles. Changing the mode never touches already-produced facts or runs.
+
+`autopilot_run` (one row per autonomous run; the durable record behind the single notification, the review queue, and run-level undo):
+
+- `id` — primary key and run id stamped on each stage job.
+- `company_id` → `companies(id)`; `report_document_id` → `report_documents(id)` (the detected report).
+- `trigger` — `detection` (refresh-completion hook) | `manual` (user-initiated re-run).
+- `mode` — the company autopilot mode captured at run time (`assist` | `autopilot`).
+- `status` — `pending` | `running` | `succeeded` | `failed` | `partial`.
+- `stage` — current/last stage reached: `fetch` | `extract` | `diff` | `cross_reference` | `notify`.
+- `summary_text`, `kpi_delta_json`, `report_diff_ref`, `cross_refs_json` — the composed result (what changed + cross-references to claims/questions/evidence).
+- `produced_fact_ids_json` — the `financial_facts` ids this run created, so a single "undo this run" reverts exactly those facts.
+- `notification_state` — `unread` | `read` | `dismissed` — drives the Today/Pulse "what changed" surface ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)).
+- `last_error`, `created_at`, `updated_at`.
+
+Rules:
+
+- **Detection is idempotent.** A run is created at most once per `(company_id, report_document_id)`; re-ingesting the same document does not re-fire.
+- **Stages are chained durable-queue jobs** ([Durable Job Queue](#durable-job-queue)) stamped with this `id`: `fetch → extract → diff → cross_reference → notify`. A crash mid-stage resumes that stage only; each stage reuses the existing service (fetch, KPI extraction, diff, cross-reference), never a reimplementation.
+- **Reversibility** reuses the existing fact supersede/reject mechanics; the run row only adds the grouping (`produced_fact_ids_json`) needed to undo a whole run at once. Auto-committed facts always carry `confirmation_state = auto_unreviewed` — never silently `confirmed`.
+- A `failed`/`partial` run still produces a notification describing how far it got (no silent dead-end).
 
 ### Content Embeddings
 
@@ -862,6 +935,7 @@ Recommended storage:
 Initial keys:
 
 - `theme`
+- `locale`
 - `accent_palette`
 - `developer_mode`
 - `poll_interval_seconds`
@@ -869,27 +943,31 @@ Initial keys:
 - `youtube_transcription_model`
 - `youtube_transcription_timeout_seconds`
 - `general_analysis_provider`
+- `general_analysis_model`
+- `general_analysis_timeout_seconds`
 - `ai_analysis_mode`
+- `espi_ai_fallback_enabled`
 - `settings_import_export_format`
 - `shortcut_bindings`
 - `pinned_company_ids`
+- `capability_providers`
+- `openai_compatible_base_url`
+- `log_level`
+- `log_max_files`
+- `log_max_file_bytes`
+
+Field defaults and allowed enum values (theme, accent palette, AI analysis mode, transcription model/timeout) are canonical in [Contracts § User Settings](contracts.md#user-settings).
 
 Rules:
 
-- Default theme is `dark`.
-- Default accent palette is `night-neon`.
-- `theme` stores brightness mode only: `dark`, `light`, or `system`.
-- `accent_palette` stores the named semantic color palette. Initial allowed values are `night-neon` and `midnight-horizon`.
 - Default poll interval is `900`.
 - Default YouTube transcription provider is `provider_gemini`.
-- Default YouTube transcription model is `gemini-2.5-flash`.
-- Default YouTube transcription timeout is `300` seconds.
 - Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.
 - `pinned_company_ids` (ADR 0054) stores the companies the user has pinned to the sidebar IA spine as a JSON array of company IDs, in pin order. It is a simple local UI preference: default `[]` when the row is absent (tolerant read, no seed migration), de-duplicated and overwritten wholesale on update. Unknown IDs (deleted companies) are ignored at read time by the frontend.
+- `capability_providers` (ADR 0060 as amended, ADR 0061 decision 5) stores a JSON object mapping a capability key (`kpi_extraction`, `claim_extraction`, `feed_analysis`, `research_brief`, `research_digest`, `event_date`, `signal_classification`) to an **ordered** JSON array of `{ "provider": "...", "model": "..." }` entries — the capability's failover pool, tried in array order. No seed row (introduced after the initial migration): tolerant read defaults to `{}`, overwritten wholesale on update like `shortcut_bindings`. An absent key or an empty array for a key means "fall back to `general_analysis_provider` / `general_analysis_model`".
+- `openai_compatible_base_url` (ADR 0060) stores the base URL for the generic OpenAI-compatible provider as a plain string. No seed row: tolerant read defaults to `""` (unconfigured). Non-empty values must start with `http://` or `https://`.
 - General AI provider remains unset until the AI analysis framework milestone configures one. The first live implementation may use Gemini, but provider storage must remain extensible.
-- Default AI analysis mode is `source_grounded`.
-- Runtime settings live in SQLite.
-- YAML import/export excludes secrets and is contract-accepted but implementation-deferred until later export/import/backup work.
+- YAML import/export excludes secrets; implemented via the settings export/preview/apply commands (see [Contracts § User Settings](contracts.md)).
 - Provider secrets are referenced indirectly and stored in the OS keychain.
 
 ### Entitlements
@@ -1018,7 +1096,7 @@ Fields (migration 0035): `id`, `company_id` → `companies(id)`, `period_id` →
 Storage, dedup, and retention rules:
 
 - `local_path` always stores a **relative** path under a dedicated `report_documents/` subtree (keyed by company) so the store stays portable across machines and survives import/export. It is never an absolute path.
-- **Full files are stored only for periodic / financial reports** (the extraction/diff targets), determined from the filing's classified `company_signals` category and ESPI/EBI report metadata. Other ESPI/EBI attachments persist as **metadata + URL only**: `local_path` null, `fetch_status = 'metadata_only'`, preserving `url`/`title`/`attribution`/`origin_ref` for citation and the source ladder. The user-URL and IR-page rungs always store the full file.
+- **Full files are stored for periodic / financial reports** (the extraction/diff targets), determined from the filing's classified `company_signals` category and ESPI/EBI report metadata, **and, independently, for any structured ESEF/iXBRL attachment** ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) decision 1b): an attachment whose URL ends `.xhtml` is always a fetch candidate, even on a filing the periodic-report text classifier does not recognize (a filing can be xhtml-only under the EU ESEF mandate and miss the Polish-language heuristic). A digital-signature attachment (`.xades`) is always `metadata_only` — it carries no financial data, only kept for the audit trail. Every other ESPI/EBI attachment (e.g. a PDF on a non-periodic filing) persists as **metadata + URL only**: `local_path` null, `fetch_status = 'metadata_only'`, preserving `url`/`title`/`attribution`/`origin_ref` for citation and the source ladder. The user-URL and IR-page rungs always store the full file.
 - `fetch_status` is `pending | fetched | failed | metadata_only` (the `metadata_only` value is additive over migration 0035 — no new migration). It is the single source of truth for whether bytes exist locally; a failed fetch records `fetch_error`, stays retryable, and never blocks feed-item ingestion.
 - Identity is `UNIQUE(company_id, url)`; capture, refresh, and backfill **upsert** on this key. `content_hash` is a secondary same-company dedup signal so a re-fetch of identical bytes is not duplicated.
 - Retention reuses the feed-retention protection model ([ADR 0033](adr/0033-feed-retention-policy.md)): a document referenced by a confirmed `financial_fact`, linked as research evidence, or backing a confirmed signal derivation is **protected** and never pruned. Unprotected full files past the retention window have their **bytes** pruned (file deleted, row downgraded to `metadata_only`); the metadata row itself is never deleted. On-disk report-document size and the retention window are surfaced in Settings → Data retention alongside the feed controls.
@@ -1134,26 +1212,16 @@ The first migration should create:
 
 ## Explicitly Deferred
 
-Do not model these in v1:
+Product-level feature deferrals are tracked once in [Roadmap § Not In V1](roadmap.md#not-in-v1) (portfolio position tracking, trade journal, billing/payment infrastructure, hosted license activation, multi-user/team accounts, cloud sync and hosted data services) — none of those get tables here either.
 
-- portfolio positions
-- trades
-- account balances
-- billing records
-- users or organizations
-- cloud sync metadata
-- team permissions
-- hosted data-service metadata
+Data-model-specific: no `users`/`organizations` tables (single local user, no team permissions); no account-balance or trade-ledger tables backing portfolio tracking.
 
 ## Import And Export Documents
 
-M20 import/export documents are portable files, not runtime tables.
+M20 import/export documents are portable files, not runtime tables. Document contents (research JSON / settings YAML fields) and exclusions are canonical in [Contracts § Import And Export](contracts.md#import-and-export).
 
 Rules:
 
-- Research data is exported as JSON with schema version, export timestamp, app version, companies, watchlists, memberships, notebook entries, research questions, evidence links, AI research briefs, and brief citations.
-- Settings are exported as YAML with schema version, export timestamp, app version, and allowlisted non-secret settings.
 - Import validates documents before any storage change.
 - Research import applies through existing SQLite tables inside one transaction.
 - Settings import writes through the same settings validation path used by normal Settings updates.
-- Provider secrets, license tokens, private signing material, logs, diagnostics, metrics, feed items, transcripts, and full backup data are not represented in M20 documents.

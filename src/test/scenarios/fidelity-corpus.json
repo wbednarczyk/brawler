@@ -113,6 +113,59 @@
           "expectAbsent": { "name": "Fidelity Renamed" }
         }
       ]
+    },
+    {
+      "name": "autopilot trust-ladder set-get round-trip (ADR 0055)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "AUTOP",
+              "displayName": "Autopilot Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "set_company_autopilot",
+          "input": { "input": { "companyId": "$cid", "mode": "assist" } },
+          "expectField": { "mode": "assist" }
+        },
+        {
+          "command": "get_company_autopilot",
+          "input": { "input": { "companyId": "$cid" } },
+          "expectField": { "mode": "assist" }
+        },
+        {
+          "command": "set_company_autopilot",
+          "input": { "input": { "companyId": "$cid", "mode": "autopilot" } },
+          "expectField": { "mode": "autopilot" }
+        },
+        {
+          "command": "get_company_autopilot",
+          "input": { "input": { "companyId": "$cid" } },
+          "expectField": { "mode": "autopilot" }
+        },
+        {
+          "command": "list_autopilot_runs",
+          "input": { "input": { "companyId": "$cid" } },
+          "expectAbsent": { "status": "succeeded" }
+        },
+        {
+          "command": "set_companies_autopilot",
+          "input": { "input": { "companyIds": ["$cid"], "mode": "off" } }
+        },
+        {
+          "command": "list_company_autopilot_modes",
+          "input": {},
+          "expectContains": { "mode": "off" }
+        }
+      ]
     }
   ]
 }

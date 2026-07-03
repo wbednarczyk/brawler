@@ -10,8 +10,8 @@
 use crate::{
     app_state,
     providers::analysis::{
-        espi_classification_prompt, parse_espi_classification_output, registry, AnalysisDocument,
-        EspiClassificationCategory,
+        capabilities::AiCapability, espi_classification_prompt, parse_espi_classification_output,
+        AnalysisDocument, EspiClassificationCategory,
     },
     storage::ProposedSignalInput,
 };
@@ -55,21 +55,6 @@ pub async fn run_ai_signal_classification(
         });
     }
 
-    let provider_id = settings
-        .ai_providers
-        .general_analysis_provider
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            "no general AI analysis provider is configured for the classification fallback"
-                .to_owned()
-        })?;
-    let model = settings.ai_providers.general_analysis_model.clone();
-    let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
-    let api_key = registry::read_analysis_provider_api_key(&provider_id);
-    let provider =
-        registry::build_analysis_provider(&provider_id, api_key, &model, timeout_seconds)?;
-
     let categories = state
         .list_signal_categories_for_ai()
         .map_err(|error| error.to_string())?;
@@ -89,6 +74,33 @@ pub async fn run_ai_signal_classification(
         .list_unclassified_official_filings(BANKIER_COMPANY_ADAPTER_ID, DEFAULT_BATCH_LIMIT)
         .map_err(|error| error.to_string())?;
     let examined = filings.len();
+    // Nothing to classify: skip provider resolution entirely, so an unconfigured
+    // (or credential-less) provider never turns an otherwise-clean no-op run into
+    // a failure.
+    if examined == 0 {
+        return Ok(AiSignalClassificationSummary {
+            enabled: true,
+            examined: 0,
+            proposed: 0,
+            skipped: 0,
+        });
+    }
+
+    let members =
+        crate::jobs::resolve_capability_members(state, AiCapability::SignalClassification)?;
+    if members.is_empty() {
+        return Err(
+            "no general AI analysis provider is configured for the classification fallback"
+                .to_owned(),
+        );
+    }
+    let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
+    let provider = crate::jobs::build_capability_provider(
+        state,
+        AiCapability::SignalClassification,
+        timeout_seconds,
+    )?;
+
     let mut proposed = 0;
     let mut skipped = 0;
 
@@ -138,7 +150,7 @@ pub async fn run_ai_signal_classification(
                         confidence: output.confidence as f64,
                         signal_date: filing.signal_date.clone(),
                         provider_id: provider.provider_id().to_owned(),
-                        model_id: model.clone(),
+                        model_id: provider.model().to_owned(),
                     })
                     .map_err(|error| error.to_string())?;
                 if created {
@@ -153,7 +165,7 @@ pub async fn run_ai_signal_classification(
 
     log::info!(
         "module=signal_classification stage=done providerId={} examined={} proposed={} skipped={}",
-        provider_id,
+        provider.provider_id(),
         examined,
         proposed,
         skipped

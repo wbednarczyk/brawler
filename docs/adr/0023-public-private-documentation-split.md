@@ -1,8 +1,6 @@
 # ADR 0023: Public And Private Documentation Split
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

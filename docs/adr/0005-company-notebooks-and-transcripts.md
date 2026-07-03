@@ -1,8 +1,6 @@
 # ADR 0005: Company Notebooks and Transcripts
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

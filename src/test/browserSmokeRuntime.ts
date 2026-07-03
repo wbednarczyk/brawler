@@ -21,8 +21,10 @@ import type {
   KpiRelevance,
 } from "../api/financialsTypes";
 import type { KpiExtractionJob, KpiExtractionProposal } from "../api/kpiExtraction";
+import type { FactProvenance } from "../api/generated/FactProvenance";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
 import type { EmbeddingModelStatus } from "../api/interpretation";
+import type { AutopilotRun } from "../api/autopilot";
 import { createMockRuntime } from "./scenarios/runtime";
 import type { ScenarioData, ScenarioName } from "./scenarios/scenarios";
 
@@ -224,12 +226,15 @@ const settings: UserSettings = {
     generalAnalysisProvider: "provider_gemini",
     generalAnalysisModel: "gemini-2.5-flash",
     generalAnalysisTimeoutSeconds: 90,
+    openaiCompatibleBaseUrl: "",
   },
   aiAnalysisMode: "source_grounded",
   espiAiFallbackEnabled: false,
   logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
   shortcutBindings: {},
+  capabilityProviders: {},
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
+  queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
   pinnedCompanyIds: [],
 };
 
@@ -310,10 +315,78 @@ const financialFacts: FinancialFact[] = [
   financialFact("fact_eps_q3", "period_cdr_2025_q3", "def_eps", "112", "1,12", "", "PLN"),
 ];
 
+// Structured-first extraction provenance (ADR 0061): Revenue Q3 is a clean,
+// validated ESEF fact (tier + validation badges, no drift); Net profit Q3 is a
+// flagged PDF parse whose layout drifted from the profile (renders the "structure
+// changed" diff card). Facts without a row (EPS, older periods) show no badges —
+// the legacy/unvalidated default.
+const factProvenance: FactProvenance[] = [
+  {
+    factId: "fact_rev_q3",
+    sourceTier: "esef",
+    validationStatus: "passed",
+    driftJson: null,
+    citation: "Przychody ze sprzedaży",
+  },
+  {
+    factId: "fact_np_q3",
+    sourceTier: "pdf",
+    validationStatus: "flagged",
+    driftJson: JSON.stringify({
+      added_labels: ["Zysk netto z działalności kontynuowanej"],
+      removed_labels: ["Zysk netto"],
+      unit_changed: null,
+    }),
+    citation: null,
+  },
+];
+
 const kpiRelevance: KpiRelevance[] = [
   kpiRelevanceEntry("rel_revenue", "def_revenue", "primary"),
   kpiRelevanceEntry("rel_net_profit", "def_net_profit", "primary"),
   kpiRelevanceEntry("rel_eps", "def_eps", "secondary"),
+];
+
+// One autopilot run (ADR 0055), so the Today/Pulse "Autopilot" card — and its
+// Undo action — render in the visual browser-smoke preview, not just Vitest's
+// jsdom tests. Autopilot mode + a non-empty producedFactIds makes it Undo-eligible
+// (undo_autopilot_run reverts exactly the facts it produced); reuses fact_np_q3
+// (already flagged/drifted in factProvenance above) so the run also renders a
+// "Structure changed" section.
+const autopilotRuns: AutopilotRun[] = [
+  {
+    id: "run_cdr_q3_2025",
+    companyId: FUNDAMENTALS_COMPANY_ID,
+    reportDocumentId: "doc_cdr_q3_2025",
+    trigger: "detected",
+    mode: "autopilot",
+    status: "succeeded",
+    stage: "notify",
+    // Legacy/fallback only (contracts.md § Autonomous Report Pipeline) — the Today
+    // card composes its own localized sentence from kpiDeltaJson/reportDiffRef/
+    // crossRefsJson (bug e77a1a2 part 2), never this raw English string.
+    summaryText: "CD PROJEKT Q3 2025: net profit auto-confirmed from the new report.",
+    kpiDeltaJson: JSON.stringify({
+      extractionAvailable: true,
+      structured: true,
+      structureChanged: true,
+      // Honest counts (bug e77a1a2 part 1): match producedFactIds below (1 fact).
+      factsProposed: 1,
+      factsAutoConfirmed: 1,
+      driftJson: JSON.stringify({
+        added_labels: ["Zysk netto z działalności kontynuowanej"],
+        removed_labels: ["Zysk netto"],
+        unit_changed: null,
+      }),
+    }),
+    reportDiffRef: null,
+    crossRefsJson: null,
+    producedFactIds: ["fact_np_q3"],
+    notificationState: "unread",
+    lastError: null,
+    createdAt: "2026-06-20T09:00:00Z",
+    updatedAt: "2026-06-20T09:00:00Z",
+  },
 ];
 
 const reportDocuments: ReportDocument[] = [
@@ -641,8 +714,10 @@ function seedBrowserStore(data: ScenarioData) {
   data.kpiDefinitions = structuredClone(kpiDefinitions);
   data.financialPeriods = structuredClone(financialPeriods);
   data.financialFacts = structuredClone(financialFacts);
+  data.factProvenance = structuredClone(factProvenance);
   data.kpiRelevance = structuredClone(kpiRelevance);
   data.reportDocuments = structuredClone(reportDocuments);
+  data.autopilotRuns = structuredClone(autopilotRuns);
   data.kpiExtractionJobs = [structuredClone(seedExtractionJob("doc_cdr_q3_2025"))];
   data.irResolutions = [
     {

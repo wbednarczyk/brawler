@@ -47,10 +47,20 @@ test.describe("mode-based shell (ADR 0054)", () => {
     page,
   }, testInfo) => {
     await openApp(page);
-    await page.getByLabel("Primary navigation").getByRole("button", { name: "Cockpit" }).click();
+    // There is no standalone blank "Cockpit" nav entry (ADR 0057 decision 5): the
+    // entry point is the "+ New view" creator. Apply the "Daily triage" preset
+    // (feed + inspector + claims) to reach the same feed/inspector panels this
+    // test exercises.
+    const nav = page.getByLabel("Primary navigation");
+    await nav.getByRole("button", { name: "New view" }).click();
+    const createModal = page.getByRole("dialog", { name: "New view" });
+    await createModal.getByLabel("View name").fill("Daily triage test view");
+    await createModal.getByRole("button", { name: "Create view" }).click();
 
     const cockpit = page.getByLabel("Research cockpit");
     await expect(cockpit).toBeVisible();
+    await cockpit.getByLabel("Preset").selectOption({ label: "Daily triage" });
+    await expect(page.locator(".cockpit-feed-item").first()).toBeVisible();
 
     // Read vs unread weight must differ (real-feed behavior): not every row is bold.
     const weights = await page.locator(".cockpit-feed-title").evaluateAll((nodes) =>
@@ -70,7 +80,7 @@ test.describe("mode-based shell (ADR 0054)", () => {
     await page.screenshot({ path: `${EVIDENCE}/cockpit-${testInfo.project.name}.png`, fullPage: true });
   });
 
-  test("the company workspace exposes Pin and Advanced layout, and opens the cockpit scoped", async ({
+  test("opening a company lands the cockpit dashboard scoped to it", async ({
     page,
   }, testInfo) => {
     await openApp(page);
@@ -78,21 +88,17 @@ test.describe("mode-based shell (ADR 0054)", () => {
     // Click the ticker/title area of the row — at narrow widths the row stacks and
     // its lower context block stops click propagation (tracked bug), so target the
     // primary area to reliably select the company across the viewport matrix.
-    await page
-      .getByRole("button", { name: "Open GPW:CDR workspace" })
-      .locator(".company-row-main")
-      .click();
+    await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
 
-    const workspace = page.getByRole("region", { name: "Company workspace" });
-    await expect(workspace).toBeVisible();
-    await expect(workspace.getByRole("button", { name: /Pin|Pinned/ })).toBeVisible();
-    const advanced = workspace.getByRole("button", { name: "Advanced layout" });
-    await expect(advanced).toBeVisible();
+    // Opening a company IS the deep-dive now (ADR 0057): no intermediate classic
+    // workspace / Advanced-layout button — it lands the curated cockpit dashboard
+    // scoped to the company, showing every surface (Fundamentals, report diff, …)
+    // at once.
+    const cockpit = page.getByRole("region", { name: "Research cockpit" });
+    await expect(cockpit).toBeVisible();
+    await expect(page.getByLabel("Company fundamentals")).toBeVisible();
 
     await page.screenshot({ path: `${EVIDENCE}/workspace-${testInfo.project.name}.png`, fullPage: true });
-
-    await advanced.click();
-    await expect(page.getByLabel("Research cockpit")).toBeVisible();
     await expectNoPageOverflow(page);
   });
 });

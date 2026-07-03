@@ -350,7 +350,7 @@ fn map_gemini_analysis_http_error(status: u16, body: &str) -> AnalysisProviderEr
         400 => AnalysisProviderError::ProviderError(format!(
             "Gemini rejected the analysis request: {cause}"
         )),
-        500..=599 => AnalysisProviderError::ProviderError(format!(
+        500..=599 => AnalysisProviderError::ProviderUnavailable(format!(
             "Gemini service error ({status}): {cause}"
         )),
         _ => AnalysisProviderError::ProviderError(format!("Gemini error ({status}): {cause}")),
@@ -490,6 +490,32 @@ mod tests {
         assert!(error
             .to_string()
             .contains("INVALID_ARGUMENT: Request is invalid"));
+    }
+
+    #[test]
+    fn gemini_http_error_maps_status_taxonomy() {
+        let body = r#"{"error":{"status":"INTERNAL","message":"boom"}}"#;
+
+        assert_eq!(
+            map_gemini_analysis_http_error(500, body).code(),
+            "provider_unavailable"
+        );
+        assert_eq!(
+            map_gemini_analysis_http_error(503, body).code(),
+            "provider_unavailable"
+        );
+        assert_eq!(
+            map_gemini_analysis_http_error(400, body).code(),
+            "provider_error"
+        );
+        assert_eq!(
+            map_gemini_analysis_http_error(401, body).code(),
+            "provider_not_configured"
+        );
+        assert_eq!(
+            map_gemini_analysis_http_error(429, body).code(),
+            "provider_limit"
+        );
     }
 
     #[test]

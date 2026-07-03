@@ -1,5 +1,12 @@
-import { type Dispatch, type MutableRefObject, type SetStateAction, useEffect } from "react";
-import type { Company, FeedItem, NotebookEntry, SourceAdapter, UserSettings } from "../api/types";
+import {
+  type Dispatch,
+  type MutableRefObject,
+  type SetStateAction,
+  useEffect,
+  useRef,
+} from "react";
+import type { Company, FeedItem, NotebookEntry, SourceAdapter } from "../api/types";
+import { getSchedulerStatus } from "../api/sources";
 import type { CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { Section } from "./navigation";
 import { emptyNotebookForm, notebookFormFromEntry } from "./notebookForms";
@@ -8,6 +15,11 @@ import {
   feedPruneIntervalMs,
   schedulerStartJitterMs,
 } from "./sourceScheduler";
+
+// How often the UI mirrors the Rust scheduler's next-due snapshot and reloads
+// views when a background refresh has fired. The Rust scheduler owns the actual
+// refresh cadence (ADR 0055); this is a lightweight view-sync, not a scheduler.
+const SCHEDULER_SYNC_INTERVAL_MS = 15_000;
 
 type AppLifecycleEffectsInput = {
   activeSection: Section;
@@ -31,7 +43,6 @@ type AppLifecycleEffectsInput = {
   refreshCompanies: () => void;
   refreshCompanyEvents: (mode?: CompanyEventMode) => void;
   refreshCompanyRegistryEntries: () => void;
-  refreshCompanyRegistryIfStale: (staleAfterSeconds: number) => void;
   refreshDatabaseStatus: () => void;
   refreshFeedItems: () => void;
   refreshSignals: () => void;
@@ -39,21 +50,16 @@ type AppLifecycleEffectsInput = {
   refreshHealth: () => void;
   refreshLicenseStatus: () => void;
   refreshNotebookEntries: (companyId: string) => void;
-  refreshScheduledSource: (adapterId: string, intervalMs: number) => void;
   refreshSettings: () => void;
   refreshSourceAdapters: () => void;
   refreshTranscriptJobs: () => void;
   refreshWatchlistMemberships: () => void;
   refreshWatchlists: () => void;
-  registryAdapter: SourceAdapter | null;
-  scheduledSourceAdapterKey: string;
-  scheduledSourceAdapters: SourceAdapter[];
   selectedCompanyId: string | null;
   selectedFeedItemId: string | null;
   selectedNotebookCompanyId: string | null;
   selectedNotebookEntry: NotebookEntry | null;
   selectedNotebookScreenEntry: NotebookEntry | null;
-  settings: UserSettings | null;
   setNextRegistryRefreshAt: Dispatch<SetStateAction<number | null>>;
   setNextSourceRefreshAtByAdapterId: Dispatch<SetStateAction<Record<string, number>>>;
   setNotebookEditForm: Dispatch<SetStateAction<ReturnType<typeof emptyNotebookForm>>>;
@@ -65,7 +71,6 @@ type AppLifecycleEffectsInput = {
   setSelectedNotebookEntryId: Dispatch<SetStateAction<string | null>>;
   sourceAdapters: SourceAdapter[];
   sourceAdaptersRef: MutableRefObject<SourceAdapter[]>;
-  sourceRefreshFailureCount: number;
 };
 
 export function useAppLifecycleEffects({
@@ -90,7 +95,6 @@ export function useAppLifecycleEffects({
   refreshCompanies,
   refreshCompanyEvents,
   refreshCompanyRegistryEntries,
-  refreshCompanyRegistryIfStale,
   refreshDatabaseStatus,
   refreshFeedItems,
   refreshSignals,
@@ -98,21 +102,16 @@ export function useAppLifecycleEffects({
   refreshHealth,
   refreshLicenseStatus,
   refreshNotebookEntries,
-  refreshScheduledSource,
   refreshSettings,
   refreshSourceAdapters,
   refreshTranscriptJobs,
   refreshWatchlistMemberships,
   refreshWatchlists,
-  registryAdapter,
-  scheduledSourceAdapterKey,
-  scheduledSourceAdapters,
   selectedCompanyId,
   selectedFeedItemId,
   selectedNotebookCompanyId,
   selectedNotebookEntry,
   selectedNotebookScreenEntry,
-  settings,
   setNextRegistryRefreshAt,
   setNextSourceRefreshAtByAdapterId,
   setNotebookEditForm,
@@ -124,8 +123,8 @@ export function useAppLifecycleEffects({
   setSelectedNotebookEntryId,
   sourceAdapters,
   sourceAdaptersRef,
-  sourceRefreshFailureCount,
 }: AppLifecycleEffectsInput) {
+  const previousSourceDueRef = useRef<Record<string, number>>({});
   useEffect(() => {
     document.documentElement.dataset.theme = effectiveTheme;
     document.documentElement.dataset.palette = accentPalette;
@@ -232,90 +231,58 @@ export function useAppLifecycleEffects({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- schedule the feed-prune timer once per license gate; the non-memoized pruneOldFeedItems identity is intentionally excluded
   }, [licenseCanUseApp]);
 
+  // Source/registry refresh cadence is owned by the Rust-side scheduler (ADR 0055
+  // / AV5) — a webview timer is throttled when the window is hidden/suspended, so
+  // the frontend must not decide *when* to refresh. This effect only **mirrors**
+  // the scheduler's next-due snapshot for the "next refresh at …" display and
+  // reloads views when a background refresh has fired (detected by an adapter's
+  // next-due jumping forward), preserving the post-refresh view update without a
+  // frontend-owned schedule.
   useEffect(() => {
-    if (
-      !licenseCanUseApp ||
-      !settings ||
-      settings.pollIntervalSeconds <= 0 ||
-      scheduledSourceAdapters.length === 0
-    ) {
+    if (!licenseCanUseApp) {
       setNextSourceRefreshAtByAdapterId({});
+      setNextRegistryRefreshAt(null);
+      previousSourceDueRef.current = {};
       return undefined;
     }
 
-    const intervalSeconds =
-      sourceRefreshFailureCount >= 2
-        ? Math.min(settings.pollIntervalSeconds * 2, 3600)
-        : settings.pollIntervalSeconds;
-    const intervalMs = intervalSeconds * 1000;
-    const timers = scheduledSourceAdapters.map((adapter) => {
-      const firstRunDelayMs = intervalMs + schedulerStartJitterMs(intervalMs);
-      setNextSourceRefreshAtByAdapterId((current) => ({
-        ...current,
-        [adapter.id]: Date.now() + firstRunDelayMs,
-      }));
-
-      let intervalId: number | null = null;
-      const timeoutId = window.setTimeout(() => {
-        setNextSourceRefreshAtByAdapterId((current) => ({
-          ...current,
-          [adapter.id]: Date.now() + intervalMs,
-        }));
-        void refreshScheduledSource(adapter.id, intervalMs);
-        intervalId = window.setInterval(() => {
-          setNextSourceRefreshAtByAdapterId((current) => ({
-            ...current,
-            [adapter.id]: Date.now() + intervalMs,
-          }));
-          void refreshScheduledSource(adapter.id, intervalMs);
-        }, intervalMs);
-      }, firstRunDelayMs);
-
-      return { intervalId: () => intervalId, timeoutId };
-    });
-
-    return () => {
-      for (const timer of timers) {
-        window.clearTimeout(timer.timeoutId);
-        const intervalId = timer.intervalId();
-        if (intervalId !== null) {
-          window.clearInterval(intervalId);
-        }
-      }
-      setNextSourceRefreshAtByAdapterId({});
+    let cancelled = false;
+    const syncScheduler = () => {
+      void getSchedulerStatus()
+        .then((status) => {
+          if (cancelled) {
+            return;
+          }
+          const nextDue = status.sourceNextDueMs ?? {};
+          // A refresh fired when an adapter's next-due moved forward since last poll.
+          const previous = previousSourceDueRef.current;
+          const fired = Object.entries(nextDue).some(
+            ([adapterId, due]) => (previous[adapterId] ?? 0) > 0 && due > (previous[adapterId] ?? 0),
+          );
+          previousSourceDueRef.current = nextDue;
+          setNextSourceRefreshAtByAdapterId(nextDue);
+          setNextRegistryRefreshAt(status.registryNextDueMs ?? null);
+          if (fired) {
+            refreshFeedItems();
+            refreshSignals();
+            refreshSourceAdapters();
+            refreshDatabaseStatus();
+            refreshCompanyRegistryEntries();
+          }
+        })
+        .catch(() => {
+          // A transient status read failure just leaves the last display in place.
+        });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- source-refresh scheduler keyed on scheduledSourceAdapterKey + poll interval; the adapters array and refresh callback are represented by that key rather than listed directly
-  }, [licenseCanUseApp, settings?.pollIntervalSeconds, sourceRefreshFailureCount, scheduledSourceAdapterKey]);
 
-  useEffect(() => {
-    if (!licenseCanUseApp || !registryAdapter?.enabled || registryAdapter.defaultPollIntervalSeconds <= 0) {
-      setNextRegistryRefreshAt(null);
-      return undefined;
-    }
-
-    const intervalMs = registryAdapter.defaultPollIntervalSeconds * 1000;
-    const firstRunDelayMs = intervalMs + schedulerStartJitterMs(intervalMs);
-    setNextRegistryRefreshAt(Date.now() + firstRunDelayMs);
-
-    let intervalId: number | null = null;
-    const timeoutId = window.setTimeout(() => {
-      setNextRegistryRefreshAt(Date.now() + intervalMs);
-      void refreshCompanyRegistryIfStale(registryAdapter.defaultPollIntervalSeconds);
-      intervalId = window.setInterval(() => {
-        setNextRegistryRefreshAt(Date.now() + intervalMs);
-        void refreshCompanyRegistryIfStale(registryAdapter.defaultPollIntervalSeconds);
-      }, intervalMs);
-    }, firstRunDelayMs);
-
+    syncScheduler();
+    const intervalId = window.setInterval(syncScheduler, SCHEDULER_SYNC_INTERVAL_MS);
     return () => {
-      window.clearTimeout(timeoutId);
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-      setNextRegistryRefreshAt(null);
+      cancelled = true;
+      window.clearInterval(intervalId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- registry-refresh scheduler keyed on the adapter's enabled/interval; the non-memoized refreshCompanyRegistryIfStale identity is intentionally excluded
-  }, [licenseCanUseApp, registryAdapter?.enabled, registryAdapter?.defaultPollIntervalSeconds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- view-sync poll keyed on the license gate; the Rust scheduler owns refresh cadence (ADR 0055), this only mirrors its next-due snapshot; the non-memoized refresh callbacks are intentionally excluded
+  }, [licenseCanUseApp]);
 
   useEffect(() => {
     if (!licenseCanUseApp) {

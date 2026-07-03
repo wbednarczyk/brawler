@@ -1,8 +1,6 @@
 # ADR 0009: Local Config, Secrets, Data, and Observability
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

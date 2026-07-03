@@ -965,12 +965,15 @@ export function makeUserSettings(): UserSettings {
       generalAnalysisProvider: "provider_gemini",
       generalAnalysisModel: "gemini-2.5-flash",
       generalAnalysisTimeoutSeconds: 90,
+      openaiCompatibleBaseUrl: "",
     },
     aiAnalysisMode: "source_grounded",
     espiAiFallbackEnabled: false,
     logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
     shortcutBindings: {},
+    capabilityProviders: {},
     database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
+    queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
     pinnedCompanyIds: [],
   };
 }
@@ -1018,6 +1021,13 @@ export const AI_PROVIDER_CATALOG: readonly AiProviderCatalogEntry[] = [
     label: "OpenAI (ChatGPT)",
     models: ["gpt-5.5", "gpt-5.1"],
     defaultModel: "gpt-5.5",
+    requiresCredential: true,
+  },
+  {
+    providerId: "provider_openai_compatible",
+    label: "OpenAI-compatible (custom)",
+    models: [],
+    defaultModel: "",
     requiresCredential: true,
   },
 ] as const;

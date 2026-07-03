@@ -377,9 +377,13 @@ pub(super) fn list_bankier_company_detail_cached_urls(
 }
 
 /// Register a filing's ESPI/EBI attachment links as `report_documents`, linked to the
-/// originating feed item. Periodic-report attachments are registered `pending` (a follow-up
-/// fetch stores the file); other attachments are registered `metadata_only` (URL + attribution
-/// only, no bytes). Idempotent via the report-document `(company_id, url)` UNIQUE key. ADR 0036.
+/// originating feed item. Status is decided per attachment (ADR 0036, ADR 0061 decision 1b):
+/// a digital-signature file (`.xades`) always registers `metadata_only` (no data to fetch); a
+/// structured ESEF/iXBRL statement (`.xhtml`) always registers `pending`, since the
+/// periodic-report text classifier can miss an xhtml-only filing; everything else registers
+/// `pending` only when the filing itself classifies as a periodic report, else `metadata_only`
+/// (URL + attribution only, no bytes). Idempotent via the report-document `(company_id, url)`
+/// UNIQUE key.
 fn register_bankier_company_attachments(
     connection: &Connection,
     item: &BankierCompanyItem,
@@ -389,11 +393,7 @@ fn register_bankier_company_attachments(
         return Ok(());
     }
 
-    let initial_status = if crate::source_adapters::bankier_company::is_periodic_report_item(item) {
-        "pending"
-    } else {
-        "metadata_only"
-    };
+    let is_periodic = crate::source_adapters::bankier_company::is_periodic_report_item(item);
 
     for attachment in &item.attachments {
         let title = if attachment.label.trim().is_empty() {
@@ -410,10 +410,27 @@ fn register_bankier_company_attachments(
             title: Some(title),
             attribution: Some(crate::source_adapters::bankier_company::ATTRIBUTION.to_owned()),
         };
-        super::report_documents::create_or_find_with_status(connection, input, initial_status)?;
+        let status = attachment_fetch_status(is_periodic, &attachment.url);
+        super::report_documents::create_or_find_with_status(connection, input, status)?;
     }
 
     Ok(())
+}
+
+/// Per-attachment fetch-status gate (ADR 0061 decision 1b). See
+/// [`register_bankier_company_attachments`] for the full rationale.
+fn attachment_fetch_status(is_periodic_report_item: bool, url: &str) -> &'static str {
+    use crate::source_adapters::bankier_company::{
+        is_signature_attachment_url, is_structured_attachment_url,
+    };
+
+    if is_signature_attachment_url(url) {
+        "metadata_only"
+    } else if is_periodic_report_item || is_structured_attachment_url(url) {
+        "pending"
+    } else {
+        "metadata_only"
+    }
 }
 
 pub(super) fn ingest_bankier_company_items(

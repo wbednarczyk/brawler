@@ -32,10 +32,13 @@ describe("screen accessibility", () => {
     it(`${name} renders with no axe violations`, async () => {
       // Land directly on the screen via the initial section: the slimmed top-nav
       // (ADR 0053 phase 6) no longer exposes some of these as buttons (they are
-      // Cockpit panels now), but they remain valid sections we still guard.
+      // Cockpit panels now, and Cockpit itself has no standalone nav button per
+      // ADR 0057 decision 5), but they remain valid sections we still guard.
+      // "Today" is always present in the spine and stands in as the render-ready
+      // signal regardless of which section is active.
       const { container } = renderApp({ section: name });
 
-      await screen.findByRole("button", { name: "Cockpit" });
+      await screen.findByRole("button", { name: "Today" });
 
       const results = await axe(container, { rules: AXE_RULES });
       expect(results.violations.map((violation) => violation.id)).toEqual([]);

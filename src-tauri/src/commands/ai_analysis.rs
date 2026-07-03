@@ -3,7 +3,10 @@ use serde_json::json;
 
 use crate::{
     app_state, jobs,
-    providers::analysis::{TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID},
+    providers::analysis::{
+        capabilities::CAPABILITY_ROUTED_PROVIDER_ID, TEST_SAMPLE_ANALYSIS_MODEL,
+        TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+    },
     storage,
 };
 
@@ -38,18 +41,26 @@ pub async fn start_ai_analysis(
     state: tauri::State<'_, app_state::AppState>,
 ) -> Result<storage::AiAnalysisJob, String> {
     let settings = state.get_settings().map_err(|error| error.to_string())?;
-    let provider_id = input
+    let explicit_provider_id = input
         .provider_mode
         .as_deref()
         .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .or(settings.ai_providers.general_analysis_provider.as_deref())
-        .unwrap_or(TEST_SAMPLE_ANALYSIS_PROVIDER_ID)
-        .to_owned();
-    let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
-        TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
-    } else {
-        settings.ai_providers.general_analysis_model
+        .filter(|value| !value.is_empty());
+    let (provider_id, model) = match explicit_provider_id {
+        Some(provider_id) => {
+            let model = if provider_id == TEST_SAMPLE_ANALYSIS_PROVIDER_ID {
+                TEST_SAMPLE_ANALYSIS_MODEL.to_owned()
+            } else {
+                settings.ai_providers.general_analysis_model
+            };
+            (provider_id.to_owned(), model)
+        }
+        // No explicit override: defer provider selection to capability routing
+        // at run time (ADR 0060 as amended) instead of guessing a default here.
+        None => (
+            CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+            CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+        ),
     };
     let job = state
         .create_ai_analysis_job(storage::NewAiAnalysisJob {

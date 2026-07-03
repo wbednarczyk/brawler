@@ -1,4 +1,7 @@
 use super::*;
+use crate::fundamentals::validation::FactSet;
+use rust_decimal::Decimal;
+use std::str::FromStr;
 
 // ============================================================================
 // Public Structs (DTO/serializable types)
@@ -699,6 +702,84 @@ pub(super) fn list_financial_facts(
         .map_err(StorageError::from)
 }
 
+/// Reads the previously-stored fact set for one `(company, fiscal_year,
+/// period_type)`, bridging each fact's `definition_id` to its `metric_key` via
+/// the KPI definition catalog (`kpi_definitions.id` is derived solely from
+/// `metric_key`, so it is a stable 1:1 map regardless of scope). This is the
+/// structured-extraction pipeline's comparative cross-check input (ADR 0061
+/// dec. 4b) — the "already known" prior period the freshly-extracted
+/// comparative column is checked against.
+///
+/// Returns `Ok(None)` when no period matches, or the period has no facts (a
+/// fresh company/period — not an error). Facts whose `value_numeric` doesn't
+/// parse as a decimal are skipped rather than failing the whole read.
+pub(super) fn stored_fact_set(
+    connection: &Connection,
+    company_id: &str,
+    fiscal_year: i64,
+    period_type: &str,
+) -> StorageResult<Option<FactSet>> {
+    let periods = list_financial_periods(
+        connection,
+        ListFinancialPeriodsInput {
+            company_id: company_id.to_owned(),
+            fiscal_year: Some(fiscal_year),
+        },
+    )?;
+    let Some(period) = periods
+        .into_iter()
+        .find(|p| p.period_type.eq_ignore_ascii_case(period_type))
+    else {
+        return Ok(None);
+    };
+
+    let facts = list_financial_facts(
+        connection,
+        ListFinancialFactsInput {
+            company_id: None,
+            period_id: Some(period.id),
+            definition_id: None,
+        },
+    )?;
+    if facts.is_empty() {
+        return Ok(None);
+    }
+
+    // `kpi_definitions.id` is derived solely from `metric_key`
+    // (`kpi_definition_id`), so listing the full catalog (no scope filter)
+    // gives a stable id → metric_key map regardless of which scope produced
+    // the definition a fact references.
+    let definitions = list_kpi_definitions(
+        connection,
+        ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        },
+    )?;
+    let metric_key_by_definition: HashMap<String, String> = definitions
+        .into_iter()
+        .map(|d| (d.id, d.metric_key))
+        .collect();
+
+    let mut set = FactSet::new();
+    for fact in facts {
+        let Some(metric_key) = metric_key_by_definition.get(&fact.definition_id) else {
+            continue;
+        };
+        let Ok(value) = Decimal::from_str(fact.value_numeric.trim()) else {
+            continue;
+        };
+        set.insert(metric_key.clone(), value);
+    }
+
+    if set.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(set))
+    }
+}
+
 pub(super) fn create_financial_fact(
     connection: &Connection,
     input: NewFinancialFact,
@@ -1291,6 +1372,20 @@ impl FinancialsStore {
         let connection = self.db.checkout()?;
 
         list_financial_facts(&connection, input)
+    }
+
+    /// The previously-stored fact set for one `(company, fiscal_year,
+    /// period_type)`, bridged to `metric_key`s (ADR 0061 dec. 4b). See
+    /// [`stored_fact_set`] for the read semantics.
+    pub fn stored_fact_set(
+        &self,
+        company_id: &str,
+        fiscal_year: i64,
+        period_type: &str,
+    ) -> StorageResult<Option<FactSet>> {
+        let connection = self.db.checkout()?;
+
+        stored_fact_set(&connection, company_id, fiscal_year, period_type)
     }
 
     pub fn create_financial_fact(&self, input: NewFinancialFact) -> StorageResult<FinancialFact> {

@@ -10,6 +10,7 @@ use serde_json::json;
 use crate::{
     app_state,
     providers::analysis::{
+        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
         kpi_extraction_prompt, parse_kpi_extraction_output, registry, AiAnalysisProvider,
         AnalysisDocument, DocumentSupport, KpiCatalogEntry, KpiExtractionRequest,
     },
@@ -314,8 +315,21 @@ fn provider_for_job(
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
     let settings = state.get_settings().map_err(|error| error.to_string())?;
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
+    if job.provider_id == CAPABILITY_ROUTED_PROVIDER_ID {
+        return crate::jobs::build_capability_provider(
+            state,
+            AiCapability::KpiExtraction,
+            timeout_seconds,
+        );
+    }
     let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
-    registry::build_analysis_provider(&job.provider_id, api_key, &job.model, timeout_seconds)
+    crate::jobs::build_gated_analysis_provider(
+        state,
+        &job.provider_id,
+        api_key,
+        &job.model,
+        timeout_seconds,
+    )
 }
 
 fn record(
@@ -393,7 +407,10 @@ mod tests {
         assert!(super::non_report_mime_rejection("application/pdf").is_none());
     }
     use crate::{
-        providers::analysis::{TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID},
+        providers::analysis::{
+            capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
+            TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+        },
         storage::{
             open_in_memory_database, AppState, CaptureReportDocumentInput, ConfirmKpiProposalInput,
             ListFinancialFactsInput, NewCompany, NewKpiExtractionJob,
@@ -442,6 +459,101 @@ mod tests {
             .expect("mark fetched");
 
         (state, company.id, document.id)
+    }
+
+    /// ADR 0061 decision 5: a sentinel-routed job resolves its provider through
+    /// the capability pool at run time, not from `job.provider_id`/`job.model`.
+    ///
+    /// `validate_capability_providers` only ever allows currently-selectable
+    /// (non-test-sample) providers into the map — and every selectable provider
+    /// needs a credential this test environment does not have — so a pool that
+    /// actually builds here has to route through the credential-less test-sample
+    /// provider, seeded by writing the settings row directly (bypassing
+    /// validation, same technique used elsewhere in this codebase for states
+    /// validation would otherwise block).
+    #[test]
+    fn provider_for_job_routes_sentinel_through_capability_pool() {
+        let dir = std::env::temp_dir().join(format!(
+            "brawler-kpi-extraction-sentinel-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("temp data dir");
+        let connection = open_in_memory_database().expect("database should initialize");
+        let capability_providers_json = serde_json::json!({
+            AiCapability::KpiExtraction.key(): [
+                { "provider": TEST_SAMPLE_ANALYSIS_PROVIDER_ID, "model": TEST_SAMPLE_ANALYSIS_MODEL },
+            ]
+        })
+        .to_string();
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, value_type) VALUES ('capability_providers', ?1, 'json') \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [capability_providers_json],
+            )
+            .expect("seed capability_providers bypassing validation");
+        let state = AppState::with_data_dir(connection, dir);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company should be created");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: "https://example.com/report-sentinel.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Sentinel report".to_owned()),
+                attribution: None,
+            })
+            .expect("report document should be captured");
+
+        let job = state
+            .create_kpi_extraction_job(NewKpiExtractionJob {
+                company_id: company.id,
+                report_document_id: document.id,
+                provider_id: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                model: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                prompt_version: "kpi-extraction.v1".to_owned(),
+                period_hint: None,
+            })
+            .expect("extraction job created");
+
+        let provider = super::provider_for_job(&state, &job)
+            .expect("a sentinel-routed job should build the pooled provider");
+
+        assert_eq!(provider.provider_id(), TEST_SAMPLE_ANALYSIS_PROVIDER_ID);
+    }
+
+    /// Regression pin: an explicit provider override must keep going through
+    /// `build_gated_analysis_provider` unchanged, never through the capability
+    /// pool.
+    #[test]
+    fn provider_for_job_explicit_override_is_unchanged() {
+        let (state, company_id, document_id) = state_with_report_document();
+        let job = state
+            .create_kpi_extraction_job(NewKpiExtractionJob {
+                company_id,
+                report_document_id: document_id,
+                provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
+                prompt_version: "kpi-extraction.v1".to_owned(),
+                period_hint: None,
+            })
+            .expect("extraction job created");
+
+        let provider = super::provider_for_job(&state, &job)
+            .expect("an explicit override must still build directly");
+
+        assert_eq!(provider.provider_id(), TEST_SAMPLE_ANALYSIS_PROVIDER_ID);
+        assert_eq!(provider.model(), TEST_SAMPLE_ANALYSIS_MODEL);
     }
 
     #[test]

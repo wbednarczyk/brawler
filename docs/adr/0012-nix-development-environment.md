@@ -1,8 +1,6 @@
 # ADR 0012: Nix Development Environment
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

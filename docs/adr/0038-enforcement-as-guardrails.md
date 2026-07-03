@@ -1,8 +1,6 @@
 # ADR 0038: Enforcement as guardrails — gates are a hard stop
 
-## Status
-
-Accepted.
+Status: Accepted.
 
 ## Context
 

@@ -44,6 +44,12 @@ export function formatCompanyEventSourceType(value: string) {
 export function formatAiProvider(value: string | null | undefined) {
   const labels: Record<string, string> = {
     provider_gemini: "Gemini",
+    provider_anthropic: "Claude (Anthropic)",
+    provider_openai: "OpenAI (ChatGPT)",
+    provider_openai_compatible: "OpenAI-compatible (custom)",
+    // Sentinel for jobs routed through the capability map at run time
+    // (ADR 0060): the concrete provider is resolved when the job executes.
+    capability_routed: "Routed by capability",
   };
 
   if (!value) {

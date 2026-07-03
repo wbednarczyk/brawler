@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fast layout-overflow gate on every push (ADR 0045 guardrail). The Playwright
-# browser suite is otherwise only run — non-gating — at epic closure
-# (`make check-epic`'s `-`-prefixed `test:browser`), which let it rot silently
-# red across two sessions. This runs the cheap, data-driven `smoke-walk` spec
-# (it walks the actual rendered sidebar destinations across the viewport matrix,
-# incl. the tall/narrow quarter-ultrawide windows) so a nav/landing/layout change
-# that reintroduces horizontal overflow FAILS the push instead of a later triage.
+# Cheap redundant layout-overflow re-check on every push (ADR 0045 guardrail).
+# The full Playwright browser suite is now a hard-fail step of the per-commit
+# `make check` (ADR 0062), so commits are already gated; this is belt-and-
+# suspenders. It runs the fast, data-driven `smoke-walk` spec (it walks the actual
+# rendered sidebar destinations across the viewport matrix, incl. the tall/narrow
+# quarter-ultrawide windows) so a nav/landing/layout change that reintroduces
+# horizontal overflow FAILS the push even behind a `--no-verify` commit.
 #
-# Scope is deliberately the smoke-walk only — it is fast (~10-20s) so the gate is
-# never tempting to `--no-verify` past. The full browser suite stays at
-# `make ui-smoke` / `make check-epic`. Installed via `make install-git-hooks`
-# (sets core.hooksPath to .githooks).
+# Scope is deliberately the smoke-walk only — it is fast (~10-20s). The full
+# browser suite runs in `make check` / `make ui-smoke`. Installed via
+# `make install-git-hooks` (sets core.hooksPath to .githooks).
 
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"

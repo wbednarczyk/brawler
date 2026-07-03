@@ -1,0 +1,8 @@
+# Nextest profiles. The `mutants` profile caps test parallelism so a
+# cargo-mutants sweep stays polite on a shared/WSL machine (see the Makefile
+# `mutants` target and docs/testing.md § Mutation testing scope). Selected via
+# NEXTEST_PROFILE=mutants — config-based, because NEXTEST_TEST_THREADS as an
+# env var leaks into cargo-mutants' internal `nextest run --no-run` build call,
+# which rejects --test-threads (found 2026-07-03).
+[profile.mutants]
+test-threads = 2

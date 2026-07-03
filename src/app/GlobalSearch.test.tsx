@@ -60,11 +60,11 @@ describe("Global search", () => {
     // The highlighted term renders as a <mark> (plain text, not HTML).
     expect(within(results).getByText("profit", { selector: "mark" })).toBeInTheDocument();
 
-    // Selecting a company result navigates to the Companies screen.
+    // Selecting a company result opens the curated cockpit dashboard (ADR 0057).
     await user.click(within(results).getByRole("option", { name: /CD PROJEKT S\.A\./ }));
 
     await waitFor(() => {
-      expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Research cockpit")).toBeInTheDocument();
     });
   });
 

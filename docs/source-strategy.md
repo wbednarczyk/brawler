@@ -2,7 +2,7 @@
 
 This document defines the first source strategy for Brawler. It focuses on GPW because v1 prioritizes Polish market coverage.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Product Spec](product-spec.md), [Data Model](data-model.md), [Contracts](contracts.md), and source-specific ADRs.
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Product Spec](product-spec.md), [Data Model](data-model.md), [Contracts](contracts.md), and source-specific ADRs.
 
 ## Strategy Principles
 
@@ -230,14 +230,7 @@ Observed source clues:
 
 ## M6 Source Investigation Results
 
-The current source ranking for GPW report bodies is:
-
-1. GPW detail page body extraction remains the primary path. The listing page links to `komunikat?geru_id=...` detail pages, and sampled detail pages include the official PAP-rendered report content under `.report-data`. The markup is noisy, but the report body and sections are present without login.
-2. PAP Biznes is the strongest official-adjacent fallback candidate because GPW detail pages embed PAP report markup and rewrite some report links to `https://espiebi.pap.pl/espi/pl/reports/view/...`. PAP also exposes public ESPI/EBI pages on `biznes.pap.pl`. PAP terms and direct URL patterns still need a separate review before implementation.
-3. Bankier and Parkiet RSS are technically useful as secondary cross-check, diagnostics, and emergency fallback signals. They are not original GPW/PAP source paths, so they should not become the canonical official-report source without a later ADR.
-4. Stooq is useful for general company and market news, but current investigation did not find a dedicated ESPI/EBI report-body path comparable to GPW or Bankier. Treat it as a later media/news candidate, not a primary report-body source.
-
-Do not weaken the v1 requirement because a source is inconvenient. If GPW parsing becomes unreliable, the next step is to harden the parser or evaluate PAP/Bankier/issuer alternatives, then explicitly discuss the trade-off before changing the roadmap.
+Investigation chronicle moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02); superseded by the M8 decision below. Current, live rule: **Bankier Company Komunikaty is the active v1 official-report source** (see "GPW ESPI/EBI Adapter" and "Media/RSS Sources").
 
 ## Rate Limits And Scheduling
 
@@ -360,7 +353,7 @@ Typed ESPI/EBI event classification (`v0.40.0`, [ADR 0034](adr/0034-espi-event-c
 
 Report-file persistence and history backfill ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)) target the active Bankier company-komunikaty article/attachment path:
 
-- **Attachment ingestion.** Attachment links surfaced on the Bankier komunikaty article page are upserted into `report_documents` (identity `(company_id, url)`). The **full file is downloaded only for periodic/financial reports**; other ESPI/EBI attachments persist as metadata + URL only (`fetch_status = metadata_only`). Attribution stays `Bankier.pl`.
+- **Attachment ingestion.** Attachment links surfaced on the Bankier komunikaty article page are upserted into `report_documents` (identity `(company_id, url)`). The full file is downloaded for periodic/financial reports **and, independently, for any structured ESEF/iXBRL attachment (`.xhtml`)** regardless of the filing's classification ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) decision 1b — the periodic-report text classifier can miss an xhtml-only ESEF filing). A digital-signature attachment (`.xades`) always persists as metadata + URL only (no financial data). Every other ESPI/EBI attachment persists as metadata + URL only (`fetch_status = metadata_only`). Attribution stays `Bankier.pl`.
 - **On-track backfill.** An explicit, user-triggered action paginates the Bankier komunikaty JSON listing (`/articles/listing/{page}/{limit}`) **backward ~3 years** for one tracked company, ingesting periodic reports + ESPI/EBI filings through the normal ingestion path with original publication dates preserved. It obeys the existing Bankier rate policy (serialized, waits between pages, `LocalInvestorNewsfeed/{version}` agent), runs as a cancellable async job with progress/diagnostics, and is idempotent via the existing dedup keys. **Historical calendar entries are not backfilled** — the forward-looking `official_calendar`/`public_calendar` adapters own upcoming events. Backfill never runs automatically and never fetches while the app is closed (that is the `v0.49.0` autopilot frontier).
 - **Source-neutral.** Both paths read whichever official-report adapter is active, so a future `gpw-espi-ebi` re-enable reuses them without changes.
 
@@ -410,6 +403,7 @@ Accepted event sources:
 - Rate policy: manual refresh plus normal in-app source scheduler; fetch the current public calendar page at low frequency and fetch dated week pages on demand from the Events week view.
 - Dedupe policy: stable source event key built from ticker, category, and event description so a changed source date updates the existing event row instead of creating a correction row.
 - Week navigation policy: Events view is cache-first. Changing weeks updates the local date filter immediately, then fetches the Bankier dated calendar URL for that week in the background and reloads local events when ingestion finishes.
+- Investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`): the mapping widens to emit `periodic_report`, `ipo_debut` (`DEBIUT`), and `ex_dividend` (`ODCIĘCIE DYWIDENDY`) in addition to today's `dividend`/`shareholder_meeting`. An **opt-in whole-market scope** relaxes the tracked-ticker filter for the current week page only, persisting untracked-ticker rows into `market_calendar_events` (ticker + issuer name, no canonical company); the week read model dedups them against tracked `company_events` by ticker. The relaxed fetch runs only when the user enables the market scope. **Macro releases (CPI/PMI/payrolls) ship model + manual entry + sample seed only this milestone; a policy-clean live macro source is deferred to a follow-up ADR** (aggregated economic calendars are paid or fragile/restricted scraping — rejected; the later candidate is official primary calendars GUS/NBP/US BLS/Fed or a curated dataset). Market holidays are a curated static dataset, not a live source.
 
 Fallback candidate order:
 
@@ -456,82 +450,12 @@ These are not v1 implementation requirements unless explicitly moved into Ready.
 
 ## Source Candidate Study
 
-M22 includes a study task for all currently registered or documented source candidates. A candidate must not become visible in normal UI or user-enableable until its study records an accepted source path, usage posture, attribution, matching strategy, rate limit, tests, and implementation scope.
-
-Current candidates to study:
-
-- GPW ESPI/EBI official reports reliability path.
-- Portal Analiz authenticated private research.
-- Bankier Firma RSS.
-- Bankier Wiadomości RSS.
-- Strefa Inwestorów report calendar.
-- Money calendar/report-date pages.
-- Bankier ESPI RSS and Parkiet ESPI/EBI RSS as secondary official-report cross-checks.
-- PAP Biznes ESPI/EBI fallback path.
-- Investing.com Poland RSS categories.
-- Stooq ticker news and price/context endpoints.
-- XTB market news and analysis pages.
-- BiznesRadar and StockWatch public or authenticated research candidates.
-- Future official/public company and filing sources such as SEC EDGAR, Nasdaq RSS, and major European exchange feeds.
-
-Study output should classify each candidate as one of:
-
-- accepted for implementation,
-- keep as documented future candidate,
-- developer-only diagnostic/cross-check candidate,
-- rejected for policy, reliability, matching quality, licensing, cost, or UX reasons.
-
-Normal Sources must not show candidates that are not implemented. Developer mode and owner/developer docs may expose candidate status and study notes.
-
-Initial M22 candidate disposition:
-
-- GPW ESPI/EBI official reports: keep as developer-only reliability candidate; next action is tracked-company-scoped fetch reliability research before runtime promotion.
-- Portal Analiz authenticated private research: keep as developer-only authenticated-source candidate governed by ADR 0014; next action is account-scoped usage-path research before any implementation.
-- Bankier Firma RSS: keep as documented future candidate; next action is matching-quality review against tracked GPW companies.
-- Bankier Wiadomości RSS: keep as documented future candidate; next action is noise/backfill and matching-quality review before considering ingestion.
-- Strefa Inwestorów report calendar: keep as documented future candidate; next action is source-specific parsing and attribution review.
-- Money calendar/report-date pages: keep as documented future candidate; next action is source-specific parsing and matching review.
-- Bankier ESPI RSS and Parkiet ESPI/EBI RSS: keep as developer-only diagnostic/cross-check candidates; next action is reconciliation research against canonical official-report items.
-- PAP Biznes ESPI/EBI fallback path: keep as documented future official-adjacent fallback candidate; next action is policy/terms and URL-pattern review.
-- Investing.com Poland RSS categories: keep as documented future public-media candidate; next action is exact feed discovery and ticker/company matching review.
-- Stooq ticker news and price/context endpoints: keep as documented future media/price-context candidate; next action is separate source-type decision for news versus price context.
-- XTB market news and analysis pages: keep as documented future media/analysis candidate; next action is source policy and attribution review.
-- BiznesRadar and StockWatch: keep as documented future research/context candidates; next action is public/authenticated access and scraping-policy review.
-- SEC EDGAR, Nasdaq RSS, and major European exchange feeds: keep as future official/public market expansion candidates after GPW/NewConnect directory support is stable.
+M22 candidate-by-candidate study and disposition moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02). Current candidate status lives in the live sections above/below (e.g. "Media/RSS Sources", "Authenticated Private Sources"); a candidate must not be user-enableable until its own source-specific review/ADR is complete.
 
 ## Source Research Notes
 
-Current checked references:
-
-- GPW ESPI/EBI report listing: `https://www.gpw.pl/komunikaty`
-- GPW public page shows report listings under "Raporty Spółek ESPI/EBI" with timestamps, report type, ESPI/EBI label, company name/ISIN, report title, and detail links.
-- GPW also describes processed information products available in CSV or XLS under its information services area; these are future options, not v1 assumptions.
-- No documented public GPW ESPI/EBI API has been accepted for v1 yet. M6 found an internal GPW AJAX listing endpoint used by the public page; this is cleaner than full-page listing parsing, but still must be treated as a public-page implementation detail rather than a contracted API.
-- PAP Biznes exposes ESPI/EBI-related public pages, including `https://biznes.pap.pl/espi` and `https://biznes.pap.pl/ebi/company`, and describes ESPI/EBI communications in its business service offer. Treat PAP as a source candidate only after policy and terms review; do not implement PAP scraping by default.
-- Bankier exposes ESPI/EBI listings and article pages, including a JSON listing endpoint used by its UI. Treat Bankier as a secondary cross-check/fallback candidate, not the primary v1 official source.
-- Bankier per-company komunikaty pages canonicalize short GPW tickers to Bankier instrument slugs such as `CDR -> CDPROJEKT` and `PKN -> PKNORLEN`, expose `data-tag-id` values, and feed the public article listing JSON endpoint with `tags_ids`, `pub_id=3,379`, `sort=time_utc desc`, and article fields.
-- Bankier exposes `https://www.bankier.pl/rss/espi.xml`, which is a convenient secondary ESPI feed. It should not replace GPW canonical ingestion.
-- Bankier's RSS directory also lists general market/news channels, including Giełda and Wiadomości dnia categories. Treat these as media/news candidates, not official-report sources.
-- Parkiet exposes `https://www.parkiet.com/rss/7111-komunikaty`, which is a convenient secondary ESPI/EBI feed. It should not replace GPW canonical ingestion.
-- Stooq exposes ticker news pages and PAP-sourced market news, but current investigation did not reveal a dedicated ESPI/EBI report-body source path suitable for v1 report ingestion.
-- Stooq also exposes CSV quote/history endpoints used by community tooling. Treat this as a later price-context candidate, not as a news or report-body source.
-- Investing.com Poland exposes an RSS directory with news and analysis categories, including company-news-style categories. Exact feed URLs and GPW ticker matching quality need source review.
-- `wegar-2/pyespiebipapapi` is a community scraping wrapper for PAP ESPI/EBI pages and can inform PAP fallback research, but it is not an official PAP API and should not be depended on directly in the Rust/Tauri app.
-- XTB market news and analysis pages are candidate media/analysis sources, not official-report sources, and need source review before ingestion.
-- Portal Analiz is desired for v1 as an authenticated private research source using the user's own paid account and is governed by ADR 0014 before implementation.
+Checked-reference notes from the M6–M8 research pass moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02). Current accepted source URLs/endpoints are documented in the live adapter sections above.
 
 ## Open Source Questions
 
-- Should the GPW listing fetcher switch from full-page GET to the observed `ajaxindex.php` listing fragment POST?
-- Do GPW detail pages expose stable report body structure and attachments across enough report types?
-- Are there explicit GPW terms that constrain automated polling of this page?
-- Is PAP Biznes usable under acceptable terms for local personal polling, or is it a commercial/protected source unsuitable for v1 ingestion?
-- Can PAP detail URLs be mapped directly from GPW/PAP identifiers without relying on search?
-- Can Bankier/Parkiet RSS items be reliably reconciled with GPW report IDs or PAP report IDs?
-- Which Bankier RSS channels have enough company-specific signal to justify a v1 media adapter?
-- Which Investing.com RSS categories are relevant to GPW companies, and do they provide stable source URLs and enough ticker/company identifiers?
-- Should Stooq price data become a context-enrichment adapter in v1, or stay post-v1 until news ingestion is stable?
-- Are StockWatch/BiznesRadar technically and legally acceptable as scraping targets, or should they stay manual/open-in-browser references?
-- Which Polish media/RSS sources should be considered after GPW official reports?
-- Which public Polish article/news source should be implemented first after GPW details: Stooq, XTB, Bankier, or another source?
-- What exact Portal Analiz scope is acceptable for v1: followed companies only, watchlist-only search results, selected pages saved manually, or automated polling?
+Resolved/superseded items moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02). Genuinely open items are tracked in [Roadmap § Open Source-Strategy Questions](roadmap.md#open-source-strategy-questions).

@@ -1,8 +1,6 @@
 # ADR 0029: Report-Document Source Ladder and AI-Assisted IR-Page Resolution
 
-## Status
-
-Accepted.
+Status: Accepted.
 
 ## Context
 

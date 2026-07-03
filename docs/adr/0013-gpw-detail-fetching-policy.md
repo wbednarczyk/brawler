@@ -1,8 +1,6 @@
 # ADR 0013: GPW Detail Fetching Policy
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

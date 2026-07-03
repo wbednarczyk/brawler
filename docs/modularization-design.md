@@ -1,8 +1,10 @@
 # Modularization Design
 
-This document defines the code organization rules for Brawler after the M13 modularization pass. The broad modularization effort is complete; this document is now an operating guide for keeping future development modular by default.
+This document defines Brawler's code organization rules — the operating guide for keeping development modular by default.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Architecture](architecture.md), [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Contracts](contracts.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) Required Reading. Related references: [Architecture](architecture.md), [Engineering Workflow](engineering-workflow.md), and [Contracts](contracts.md).
+
+**Do not mirror the code tree in this document.** For the live structure use `repoctx overview`, `repoctx outline <file>`, and `repoctx modules` — a prose copy of the tree rots (the one this section used to hold had already drifted from the code). This doc carries only the durable part: ownership rules, principles, and checklists.
 
 ## Goals
 
@@ -15,39 +17,17 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related re
 
 ## Historical Pain Points
 
-The M13 modularization pass was started because these files had become mixed-responsibility architecture debt:
-
-- `src/App.tsx`: app shell, routing, data loading, screen rendering, workflow logic, formatting helpers, and mutations are mixed in one file.
-- `src/App.test.tsx`: many unrelated workflows share one mock setup and one large test file.
-- `src/styles.css`: app-wide styling and screen-specific styling are mixed.
-- `src-tauri/src/storage.rs`: migrations, data types, settings, source state, companies, watchlists, feed, notebooks, events, transcripts, and tests are mixed in one module.
-- `src-tauri/src/lib.rs`: Tauri command registration, command handlers, refresh orchestration, transcript runner orchestration, and source adapter dispatch are mixed.
+Moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02) (the mixed-responsibility files that motivated the original modularization pass, all since resolved).
 
 ## Current Status
 
-The M13 modularization pass has addressed the original large-file debt by extracting frontend API modules, screens, screen section/row components, company workspace, inbox detail pane, events week/list views, notebook entry editor, transcript job row/detail rendering, transcript segment review, transcript note draft, shared components/hooks/formatting aliases, app-level workflow controllers, app lifecycle effects, app view-model derivations, screen tests, test helper facades, CSS modules, Rust commands, app-state boundary, providers including credential handling, scheduled job helpers, domain storage modules including registry/catalog storage, and domain-split storage tests.
+Frontend and Rust code are organized by domain; the remaining larger files are intentional state roots, facades, composition points, or cohesive domain views rather than mixed command/API/storage/screen implementations. They should be split only when future feature work reveals a real new responsibility boundary. New behavior lands in the matching API, screen, shared, command, storage, provider, source adapter, or job module instead of rebuilding the original monolithic files.
 
-The remaining larger files are intentional state roots, facades, composition points, or cohesive domain views rather than mixed command/API/storage/screen implementations. They should be split only when future feature work reveals a real new responsibility boundary.
-
-Current notable composition points:
-
-- `src/app/App.tsx`: small wrapper for the state root.
-- `src/app/AppStateRoot.tsx`: React state and workflow composition root.
-- `src-tauri/src/lib.rs`: Tauri app setup and command registration facade.
-- `src-tauri/src/storage/mod.rs`: storage facade and shared SQLite state.
-- Large domain modules such as `CompanyWorkspace.tsx`, `SourceAdapterRow.tsx`, `storage/sources.rs`, and `storage/transcripts.rs`: acceptable while they remain cohesive domain implementations.
-
-New behavior should land in the matching API, screen, shared, command, storage, provider, source adapter, or job module instead of rebuilding the original monolithic files.
+Notable composition points: `src/app/App.tsx` (entry wrapper), `src/app/AppStateRoot.tsx` (React state/workflow composition root), `src-tauri/src/lib.rs` (Tauri setup + command registration facade), `src-tauri/src/storage/mod.rs` (storage facade and shared SQLite state).
 
 ## Findings
 
-- Broad extraction is useful when a file mixes multiple architectural layers; it is less useful when a file is a cohesive domain view or facade.
-- `src/app/AppStateRoot.tsx` is intentionally large because it coordinates app state. Splitting it should wait for a feature-driven state-domain boundary, not a line-count target. The AI-analysis domain (per-feed-item jobs/error/in-flight maps, poll timers, start/retry commands, and the load+poll effects) was extracted to `src/app/useAiAnalysisController.ts` on exactly that basis — a cohesive, self-contained boundary. The signals and fundamentals domains were intentionally left in place for now because their state feeds `useAppViewModel` derivations (`signalsByFeedItemId`, `feedSignalCategories`, filtered company lists); extracting them cleanly needs a coordinated controller/view-model boundary, not an in-place lift, so it should be a dedicated incremental step.
-- Shared frontend primitives are useful only when they preserve existing class semantics and accessibility. `Button`, `EmptyState`, and `StatusPill` are now adopted for generic controls; segmented controls, row selectors, field clear buttons, collapsible headers, suggestion rows, and anchor links remain native/domain-specific on purpose.
-- Screen tests became easier to reason about after screen extraction, but the shared app workflow harness remains useful for integration-style UI flows.
-- Rust command modules should stay thin. Most complexity belongs in storage, provider, source adapter, or job modules.
-- Storage facades are acceptable when they keep the public boundary clear and delegate domain behavior to focused modules.
-- CSS extraction worked best after screen/component extraction stabilized.
+Moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02). The durable rules distilled from these findings are retained live below and in § Frontend/Rust Ownership Rules (e.g. `AppStateRoot.tsx` splits on a feature-driven state-domain boundary, not a line-count target; shared primitives adopt only where they preserve class semantics/accessibility; command modules stay thin).
 
 ## Design Principles
 
@@ -65,123 +45,9 @@ New behavior should land in the matching API, screen, shared, command, storage, 
 - Prefer adopting existing module boundaries during nearby feature work over doing unrelated cleanup churn.
 - Do not split a cohesive file only because it is long; split when it has separate reasons to change, separate owners, or mixed layers.
 
-## Current Frontend Structure
+## Frontend Ownership Rules
 
-```text
-src/
-  app/
-    App.tsx
-    AppStateRoot.tsx
-    AppShell.tsx
-    appTypes.ts
-    navigation.ts
-    workflow/data/view-model controllers
-  api/
-    tauri.ts
-    companies.ts
-    watchlists.ts
-    feed.ts
-    notebooks.ts
-    events.ts
-    sources.ts
-    transcripts.ts
-    settings.ts
-    credentials.ts
-    system.ts
-    types.ts
-  screens/
-    Inbox/
-      InboxScreen.tsx
-      InboxDetailPane.tsx
-      InboxScreen.test.tsx
-      inboxTypes.ts
-    Companies/
-      CompaniesScreen.tsx
-      CompanyWorkspace.tsx
-      CompaniesScreen.test.tsx
-      companyTypes.ts
-    Notebooks/
-      NotebooksScreen.tsx
-      NotebookEntryEditor.tsx
-      NotebooksScreen.test.tsx
-      notebookTypes.ts
-    Events/
-      EventsScreen.tsx
-      WeekEventsView.tsx
-      EventListView.tsx
-      EventsScreen.test.tsx
-      eventTypes.ts
-    Transcripts/
-      TranscriptsScreen.tsx
-      TranscriptJobRow.tsx
-      TranscriptSegmentReview.tsx
-      TranscriptNoteDraft.tsx
-      TranscriptJobComposer.tsx
-      TranscriptRuntimeStrip.tsx
-      TranscriptsScreen.test.tsx
-      transcriptTypes.ts
-    Sources/
-      SourcesScreen.tsx
-      SourceAdapterRow.tsx
-      SourcesScreen.test.tsx
-      sourceTypes.ts
-    Settings/
-      SettingsScreen.tsx
-      AppearanceSettings.tsx
-      SourceSettings.tsx
-      AiSettings.tsx
-      CredentialSettings.tsx
-      SettingsScreen.test.tsx
-      settingsTypes.ts
-  shared/
-    components/
-      Button.tsx
-      EmptyState.tsx
-      ExpandableRow.tsx
-      InlineConfirm.tsx
-      StatusPill.tsx
-    hooks/
-      useAsyncAction.ts
-      useKeyboardListNavigation.ts
-    formatting/
-      dates.ts
-      enums.ts
-      timestamps.ts
-      date.ts
-      labels.ts
-    locale/
-      index.ts
-      locale.test.ts
-    types/
-      events.ts
-      notebook.ts
-    styles/
-      shared.css
-      forms.css
-      tables.css
-  styles/
-    tokens.css
-    layout.css
-    controls.css
-    rows.css
-    screens/
-      inbox.css
-      companies.css
-      company-workspace.css
-      notebooks.css
-      events.css
-      transcripts.css
-      sources.css
-      settings.css
-  test/
-    appWorkflowHarness.tsx
-    mockTauri.ts
-    renderApp.tsx
-    setup.ts
-    testData.ts
-```
-
-### Frontend Ownership Rules
+Live layout: `repoctx outline src/app/AppStateRoot.tsx`, `repoctx modules` (domains: `src/api`, `src/app`, `src/screens/<Domain>`, `src/shared`, `src/ui`, `src/styles`, `src/test`).
 
 - `src/app/App.tsx` is the app entry wrapper.
 - `src/app/AppStateRoot.tsx` owns app-level state wiring and composes controllers/view models. Keep feature-specific logic in the matching app controller, screen, API module, or shared helper. It is being **decomposed into feature-scoped React contexts** (Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md)) so a screen subscribes only to the state it uses instead of receiving a mega view-model by prop-drilling. **Realized so far:** `src/app/state/SettingsContext.tsx` — the settings-domain context (`SettingsProvider` + selector hooks `useDeveloperMode`, `useAiFallbackEnabled`, `useAiAnalysisProviderConfigured`). It is now the single source for **every settings-derived UI flag** that was previously prop-drilled from `AppStateRoot`: developer mode (`AppShell`/`SourcesScreen`/`DiagnosticsScreen`), the ESPI AI fallback (`InboxScreen`), and whether an analysis provider is configured (`InboxDetailPane`/`CompanyWorkspace`) — `AppStateRoot` no longer computes or threads any of them. Shared leaf components (`FeedAiAnalysisPanel`, `FeedKpiExtractionPanel`) stay prop-driven (context-agnostic); the screen/pane that composes them reads the context. **Done:** every top-level screen now reads its view-model from a context instead of receiving a prop bundle from `AppStateRoot` — `SourcesContext` plus a `createScreenContext` factory backing `screenViewModels.tsx` (Inbox, Companies, Watchlists, Research, Notebooks, ReportSeason, Events, Transcripts, Settings). `AppStateRoot` assembles each view-model once and wraps the screen in its `Provider`; the screens take zero props. The screen `*ScreenProps` types are retained as the context value shapes. Add new settings selectors to `SettingsContext` rather than re-drilling a flag, and a new screen gets a `createScreenContext` entry rather than a prop bundle.
@@ -196,79 +62,22 @@ src/
 - Segmented controls, row selectors, field-clear buttons, collapsible headers, suggestion rows, and anchor links may remain native/domain-specific when a shared component would obscure semantics.
 - New screen behavior should get a screen-level test or a targeted app workflow test near the owning screen.
 
-### M12 Locale And Shortcut Ownership
+### Locale And Shortcut Ownership
 
-Locale work should follow the existing settings and shared-helper boundaries:
+Locale work follows the existing settings and shared-helper boundaries:
 
 - Backend persistence belongs in `src-tauri/src/storage/settings.rs`, exposed through `src-tauri/src/commands/settings.rs`.
 - Frontend command calls and DTO changes belong in `src/api/settings.ts` and `src/api/types.ts`.
-- App-level locale state wiring belongs in `src/app/AppStateRoot.tsx`, `src/app/useAppDataController.ts`, `src/app/useSettingsController.ts`, and related app controllers only where they already own settings state.
+- App-level locale state wiring belongs in the app controllers that already own settings state.
 - Locale resources and typed lookup helpers belong under `src/shared/locale/` or an equivalently focused shared module.
 - Screen components should receive localized strings or a narrow locale helper; they should not import Tauri settings APIs directly.
 - Source-provided text, company names, ticker symbols, URLs, attribution, transcript text, notebook titles/bodies, and fetched article/report bodies must remain source/user-provided and should not pass through app-locale translation.
 
-Shortcut work should be separate from existing row-navigation helpers:
+Shortcut work stays separate from row-navigation helpers: `src/shared/hooks/useKeyboardListNavigation.ts` remains for local arrow-key list movement; app-wide shortcut registration and the discoverability shell belong in `src/app/` and Settings/Help UI; screen-specific shortcut actions belong in the owning screen/controller, with tests near the owner.
 
-- `src/shared/hooks/useKeyboardListNavigation.ts` remains for local arrow-key list movement.
-- A new shortcut manager/hook should live under `src/shared/hooks/` or `src/app/` depending on whether it is generic registration logic or app-level command wiring.
-- App-wide shortcut registration and the discoverability shell belong in `src/app/` and Settings/Help UI.
-- Screen-specific shortcut actions belong in the owning screen or screen controller.
-- Shortcut tests should live near the screen for screen-owned actions, with shared hook tests for suppression/registration behavior.
+## Rust Ownership Rules
 
-## Current Rust Structure
-
-```text
-src-tauri/src/
-  lib.rs
-  app_state.rs
-  commands/
-    mod.rs
-    health.rs
-    companies.rs
-    watchlists.rs
-    feed.rs
-    notebooks.rs
-    events.rs
-    sources.rs
-    transcripts.rs
-    settings.rs
-    credentials.rs
-  storage/
-    mod.rs
-    error.rs
-    migrations.rs
-    settings.rs
-    companies.rs
-    watchlists.rs
-    feed.rs
-    notebooks.rs
-    events.rs
-    sources.rs
-    transcripts.rs
-    registry.rs
-    types.rs
-    tests/
-      mod.rs
-      common.rs
-      domain test modules
-  providers/
-    mod.rs
-    credentials.rs
-    transcripts/
-      mod.rs
-      gemini.rs
-      test_sample.rs
-      types.rs
-  source_adapters/
-    existing adapter modules
-  jobs/
-    feed_cleanup.rs
-    scheduler.rs
-    source_refresh.rs
-    transcript_runner.rs
-```
-
-### Rust Ownership Rules
+Live layout: `repoctx modules` (domains: `src-tauri/src/{commands,storage,providers,source_adapters,jobs}`).
 
 - `lib.rs` should mostly build the Tauri app, register plugins, manage state, and register command modules.
 - `commands/*` should be thin wrappers around storage/domain/provider functions.
@@ -286,51 +95,13 @@ src-tauri/src/
 
 ## Styling Structure
 
-Current structure:
-
-```text
-src/styles/
-  tokens.css
-  layout.css
-  controls.css
-  rows.css
-  shell.css
-  membership.css
-  notebook-shared.css
-  responsive.css
-  utilities.css
-  screens/
-    inbox.css
-    companies.css
-    company-workspace.css
-    notebooks.css
-    events.css
-    transcripts.css
-    sources.css
-    settings.css
-```
-
-CSS extraction should follow component/screen extraction. New screen-specific selectors should go under `src/styles/screens/`. New cross-screen control/layout tokens should go under the matching shared style module.
+CSS extraction follows component/screen extraction: new screen-specific selectors go under `src/styles/screens/`, new cross-screen control/layout tokens go in the matching shared style module (`tokens.css`, `layout.css`, `controls.css`, `rows.css`, …). Live inventory: `rtk ls src/styles`.
 
 ## Test Structure
 
-Frontend structure:
-
-```text
-src/test/
-  appWorkflowHarness.tsx
-  testData.ts
-  mockTauri.ts
-  renderApp.tsx
-  setup.ts
-src/screens/*/*.test.tsx
-```
-
-Rust target:
-
-- Keep unit tests inside the module when small.
-- Move large shared test builders into `src-tauri/src/storage/tests/common.rs`, `src-tauri/src/test_support.rs`, or domain-specific `test_support` modules.
-- External provider/source tests use injected clients/fetchers and test samples, while milestone closure uses real smoke checks where required.
+- Screen tests live near the screen they verify (`src/screens/*/*.test.tsx`); the shared workflow harness and mock runtime live under `src/test/`.
+- Rust: keep unit tests inside the module when small; move large shared test builders into `src-tauri/src/storage/tests/common.rs`, `src-tauri/src/test_support.rs`, or domain-specific `test_support` modules.
+- External provider/source tests use injected clients/fetchers and test samples; milestone closure uses real smoke checks where required.
 
 ## Continuous Development Checklist
 
@@ -378,11 +149,9 @@ Every non-trivial code change should consider modularity before implementation:
 - Leave domain-specific controls native when shared abstraction would hide important semantics.
 - Do not split cohesive files simply to reduce line count; line count is a signal to inspect, not a standalone requirement.
 
-## Completion Note
+## Future Extraction Triggers
 
-The broad M13 modularization effort is complete. Future work should treat this document as a standing architecture checklist, not as a backlog of remaining extraction tasks.
-
-Further extraction is still expected during normal feature work when a module gains a new reason to change. Good future extraction triggers include:
+This document is a standing architecture checklist, not a backlog of remaining extraction tasks (completion narrative: [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02)). Further extraction is expected during normal feature work when a module gains a new reason to change. Good future extraction triggers:
 
 - A cross-domain research workspace needs to aggregate feed items, notes, claims, transcripts, events, AI outputs, sources, review state, and evidence links without coupling screens directly to storage tables or unrelated app controllers.
 - A new app workflow adds state that can be isolated into a controller or view-model helper.
@@ -390,8 +159,9 @@ Further extraction is still expected during normal feature work when a module ga
 - A storage domain adds enough independent behavior to justify a focused helper/test module.
 - A provider/source adapter needs separate runtime, parsing, mapping, and test-sample boundaries.
 - A shared UI behavior is needed by at least two domains.
+- A future feature needs stored timeline/evidence projections: add the projection behind the existing research/evidence API rather than moving aggregation into screens or broadening the storage facade.
 
-Known acceptable large files after M13:
+Known acceptable large files:
 
 - `src/app/AppStateRoot.tsx`, because it is the state/composition root.
 - Cohesive screen/domain components such as `CompanyWorkspace.tsx` and `SourceAdapterRow.tsx`.
@@ -399,60 +169,11 @@ Known acceptable large files after M13:
 
 If any of these start mixing layers or unrelated domains, split the new responsibility during the feature slice that introduces the pressure.
 
-## M24 Large-File Responsibility Audit
+M24's large-file audit and pre-implementation research-workspace readiness check (methodology + area-by-area disposition) are chronicle: [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02). The accepted boundary they produced is live below.
 
-M24 reviewed the large/coordinating files in light of the research-workspace roadmap. The rule remains responsibility-first: line count is a signal to inspect, not a reason to split by itself.
+## Research/Evidence Boundary Ownership
 
-Required M24 extractions completed:
-
-- `src/api/types.ts`: research/evidence DTOs moved to `src/api/researchTypes.ts` instead of expanding the generic API type bucket.
-- `src/api/`: research command calls added as `src/api/research.ts`.
-- `src-tauri/src/storage/mod.rs`: kept as the storage facade, with research behavior extracted to `src-tauri/src/storage/research.rs`.
-- `src-tauri/src/commands/`: research commands added as `src-tauri/src/commands/research.rs`.
-- `src-tauri/src/storage/tests/`: research boundary tests added as `src-tauri/src/storage/tests/research.rs`.
-
-Deferred until feature pressure:
-
-- `src/app/AppStateRoot.tsx`: still an app state/composition root. Do not split for M24 because no visible research UI/state was added. M25 should add a focused research controller/view-model instead of placing company timeline/review state directly in `AppStateRoot`.
-- `src/test/appWorkflowHarness.tsx`: keep as the current app workflow harness. Split only when new research UI workflow tests make setup or test-data ownership harder to reason about.
-- `src-tauri/src/storage/import_export.rs`: defer. M24 research-owned durable state is not exported by M20 files until a visible research workflow makes it normal user-owned data.
-- `CompanyWorkspace.tsx` and `NotebooksScreen.tsx`: defer. M25/M27 can extract research-facing timeline, review, or evidence-link UI components when those visible workflows are implemented.
-
-No action in M24:
-
-- `src-tauri/src/lib.rs` and `src-tauri/src/commands/mod.rs`: remain registration facades. Adding the research command module did not introduce mixed runtime behavior.
-- `src-tauri/src/storage/sources.rs`, `src-tauri/src/storage/transcripts.rs`, source adapter modules, and source tests: still domain-owned and outside M24 research/evidence foundation scope.
-- `src-tauri/src/storage/metrics.rs`: cohesive observability domain, unrelated to research-workspace readiness.
-
-Future trigger:
-
-- If a future feature needs stored timeline/evidence projections, add the projection implementation behind the existing research/evidence API rather than moving aggregation into screens or broadening the storage facade.
-
-## Research Workspace Readiness Check
-
-Before implementing the future research-workspace direction, run a focused modularization readiness check. The check should decide whether the existing boundaries can support a shared research evidence model, timeline/read model, review workflow, research questions, claim expansion, source-grounded AI briefs, digests, reminders, and evidence links.
-
-Areas to inspect:
-
-- frontend app state and view-model ownership, especially whether `AppStateRoot` should compose a new research controller instead of owning research workflow state directly
-- frontend API DTO ownership, especially whether research evidence/timeline/review types should live outside the generic `src/api/types.ts` file
-- screen ownership between Companies, Notebooks, Events, Inbox, Sources, and a future Research/Review surface
-- Rust command ownership for research evidence, review state, links, questions, reminders, and generated briefs
-- storage ownership for cross-domain evidence/read models versus existing feed, notebook, event, transcript, and AI-analysis tables
-- import/export, backup, retention, and migration impact for new research-workspace entities
-- AI brief boundaries for evidence collection, prompt/building, provider execution, citation mapping, rendering, and persistence
-- test ownership for evidence aggregation, review state, linking integrity, citation grounding, and real-browser workflow/layout coverage
-
-The output should be a refactor-before-feature decision list:
-
-- required before research workspace implementation
-- can be folded into the first feature slice
-- defer until concrete pressure appears
-- no action needed because the current boundary is already sufficient
-
-### Accepted M24 Research Boundary
-
-ADR 0022 accepts a dedicated research/evidence boundary before user-facing research-workspace features are implemented.
+[ADR 0022](adr/0022-research-evidence-read-model-boundary.md) accepts a dedicated research/evidence boundary for research-workspace features.
 
 Frontend ownership:
 

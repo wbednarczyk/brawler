@@ -76,11 +76,17 @@ pub fn run() {
             // embed/re-embed job at startup (ADR 0035). Now enqueued onto the
             // durable job queue (ADR 0050) instead of fire-and-forget, so a crash
             // mid-embed resumes; the work is idempotent (skips unchanged content).
+            // Uses the stable id `CONTENT_EMBEDDING_KIND` every startup, so
+            // `reschedule` (not plain `enqueue`) is required: after the first
+            // successful run this row is terminal (`succeeded`), and plain
+            // `INSERT OR IGNORE` would silently no-op on every later startup — the
+            // "keep it fresh" refresh would fire exactly once, ever (bug class
+            // dce9ce8). `reschedule` re-arms it and leaves an in-flight run alone.
             if matches!(
                 state.get_similarity_strategy().as_deref(),
                 Ok(interpretation::EMBEDDING_STRATEGY)
             ) {
-                if let Err(error) = state.jobs().enqueue(
+                if let Err(error) = state.jobs().reschedule(
                     jobs::handlers::CONTENT_EMBEDDING_KIND,
                     jobs::handlers::CONTENT_EMBEDDING_KIND,
                     "{}",
@@ -90,11 +96,19 @@ pub fn run() {
                 }
             }
 
-            // Start the durable-queue worker: reclaim any jobs left `running` by a
-            // crash, then drain the queue off the UI thread (ADR 0050).
-            jobs::queue::spawn(std::sync::Arc::new(jobs::handlers::build_worker(
-                state.clone(),
-            )));
+            // Start the durable-queue worker as isolated lanes (ADR 0059): reclaim
+            // crash residue, then drain each lane's kinds on its own threads off the
+            // UI thread, so a slow source refresh cannot starve autopilot (ADR 0050).
+            jobs::queue::spawn_pools(
+                std::sync::Arc::new(jobs::handlers::build_worker(state.clone())),
+                jobs::handlers::pool_layout(state.queue_config()),
+            );
+
+            // Start the Rust-side source scheduler (ADR 0055 / AV5): it owns the
+            // refresh cadence, re-arming source/registry refresh jobs on the durable
+            // queue. Replaces the frontend timer, which the webview throttles when
+            // hidden. Runs only while the app is open.
+            jobs::scheduler::spawn(state.clone());
 
             app.manage(state);
 
@@ -228,6 +242,9 @@ pub fn run() {
             commands::kpi_extraction::list_kpi_extraction,
             commands::kpi_extraction::confirm_kpi_proposal,
             commands::kpi_extraction::reject_kpi_proposal,
+            commands::fundamentals_extraction::run_structured_extraction,
+            commands::fundamentals_extraction::list_fact_provenance,
+            commands::fundamentals_extraction::list_flagged_fact_provenance,
             commands::transcripts::list_video_transcript_jobs,
             commands::transcripts::delete_video_transcript_job,
             commands::transcripts::create_video_transcript_job,
@@ -244,6 +261,7 @@ pub fn run() {
             commands::sources::get_backfill_progress,
             commands::sources::refresh_gpw_company_registry,
             commands::sources::refresh_gpw_company_registry_if_stale,
+            commands::sources::get_scheduler_status,
             commands::diagnostics::list_diagnostic_events,
             commands::diagnostics::clear_diagnostic_events,
             commands::diagnostics::get_diagnostic_summary,
@@ -266,7 +284,16 @@ pub fn run() {
             commands::settings::unlock_developer_mode,
             commands::credentials::get_provider_credential_status,
             commands::credentials::set_provider_api_key,
-            commands::credentials::clear_provider_api_key
+            commands::credentials::clear_provider_api_key,
+            commands::autopilot::get_company_autopilot,
+            commands::autopilot::set_company_autopilot,
+            commands::autopilot::list_company_autopilot_modes,
+            commands::autopilot::set_companies_autopilot,
+            commands::autopilot::list_autopilot_runs,
+            commands::autopilot::get_autopilot_run,
+            commands::autopilot::set_autopilot_run_notification_state,
+            commands::autopilot::undo_autopilot_run,
+            commands::autopilot::trigger_autopilot_run
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Brawler application");

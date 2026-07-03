@@ -177,6 +177,7 @@ fn determine_extension(content_type: &Option<String>, url: &str) -> String {
         match ct.as_str() {
             "application/pdf" => return "pdf".to_owned(),
             "text/html" => return "html".to_owned(),
+            "application/xhtml+xml" => return "xhtml".to_owned(),
             "text/plain" => return "txt".to_owned(),
             "application/msword" => return "doc".to_owned(),
             "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
@@ -224,6 +225,14 @@ mod tests {
         assert_eq!(
             determine_extension(&Some("text/html".to_owned()), "http://example.com"),
             "html"
+        );
+        // Structured ESEF/iXBRL statements (ADR 0061 decision 1b).
+        assert_eq!(
+            determine_extension(
+                &Some("application/xhtml+xml".to_owned()),
+                "http://example.com"
+            ),
+            "xhtml"
         );
     }
 

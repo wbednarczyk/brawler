@@ -1,6 +1,9 @@
 mod anthropic;
+pub mod capabilities;
+mod gate;
 mod gemini;
 mod openai;
+pub mod pool;
 mod prompts;
 pub mod registry;
 mod test_sample;

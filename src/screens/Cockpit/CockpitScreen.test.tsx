@@ -10,19 +10,34 @@ import {
 } from "../../test/appWorkflowHarness";
 
 describe("Research cockpit shell", () => {
-  it("is reachable from the spine but no longer the default shell (ADR 0054)", async () => {
-    // Today/Pulse is now the landing home; the cockpit is the interim advanced
-    // workspace reached from the sidebar, not the entry point.
+  it("is not the default shell and has no standalone blank nav entry (ADR 0057 decision 5)", async () => {
+    // Today/Pulse is the landing home; the cockpit is reached only via a saved
+    // named view, the "+ New view" creator, or a company's curated dashboard —
+    // there is no standalone blank-canvas "Cockpit" sidebar button anymore.
     renderAppDefaultShell();
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Research cockpit")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cockpit" })).not.toBeInTheDocument();
+  });
+
+  it("keeps only the Preset select from the legacy layout toolbar (issue 432de51)", async () => {
+    // The pre-ADR-0057 toolbar's saved-layout load select, free-text layout name
+    // field, save button, and delete select duplicated the sidebar saved-views
+    // flow (same cockpit_layouts storage, conflicting "układ"/"widok" vocabulary).
+    // Option B keeps only the Preset select; the rest must never come back.
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+
+    expect(within(cockpit).getByLabelText("Preset")).toBeInTheDocument();
+    expect(within(cockpit).queryByLabelText("Saved layout")).not.toBeInTheDocument();
+    expect(within(cockpit).queryByLabelText("Layout name")).not.toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: "Save layout" })).not.toBeInTheDocument();
+    expect(within(cockpit).queryByLabelText("Delete layout")).not.toBeInTheDocument();
   });
 
   it("opens the cockpit with accessible tabs and opens a panel via the command palette", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
 
     const cockpit = await screen.findByLabelText("Research cockpit");
     expect(cockpit).toBeInTheDocument();
@@ -41,11 +56,24 @@ describe("Research cockpit shell", () => {
     expect(qualityTabs.length).toBeGreaterThan(0);
   });
 
-  it("closes the active panel from the keyboard (Alt+W)", async () => {
+  it("opens a company directly into its curated dashboard panels (ADR 0057)", async () => {
     const user = userEvent.setup();
     renderApp();
 
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    await user.click(await screen.findByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+
+    const cockpit = await screen.findByLabelText("Research cockpit");
+    // The dashboard renders the company-scoped panels (not the default linked
+    // triad) — so its tabs are present and the linked Inspector is not.
+    expect((await within(cockpit).findAllByRole("button", { name: /· Fundamentals/ })).length).toBeGreaterThan(0);
+    expect(within(cockpit).getAllByRole("button", { name: /· Notebook/ }).length).toBeGreaterThan(0);
+    expect(within(cockpit).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
+  });
+
+  it("closes the active panel from the keyboard (Alt+W)", async () => {
+    const user = userEvent.setup();
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // Activate the Inspector panel via its accessible tab, then close it with
@@ -61,9 +89,7 @@ describe("Research cockpit shell", () => {
 
   it("rebuilds a working layout after closing a panel then resetting (no blank app)", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // Close the Inspector panel (the × on its accessible tab), then Reset layout.
@@ -78,28 +104,9 @@ describe("Research cockpit shell", () => {
     expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
   });
 
-  it("saves a named layout to the store and lists it (SQLite, not localStorage)", async () => {
-    const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
-    const cockpit = await screen.findByLabelText("Research cockpit");
-
-    await user.type(within(cockpit).getByLabelText("Layout name"), "Earnings season");
-    await user.click(within(cockpit).getByRole("button", { name: "Save layout" }));
-
-    // The saved layout comes back from the store and appears in the dropdowns.
-    await waitFor(async () => {
-      const options = await within(cockpit).findAllByRole("option", { name: "Earnings season" });
-      expect(options.length).toBeGreaterThan(0);
-    });
-  });
-
   it("applies a built-in preset that composes the right panels (phase 4d)", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // The Earnings season preset opens the Report Season global panel plus
@@ -117,9 +124,7 @@ describe("Research cockpit shell", () => {
 
   it("opens a global app screen as a cockpit panel (phase 4c)", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // Global panels render the real, context-driven screens (Watchlists here).
@@ -132,9 +137,7 @@ describe("Research cockpit shell", () => {
 
   it("loads a section-gated screen's data when hosted as a cockpit panel (phase 4c/6)", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // Research evidence loads only while its section is active; as a cockpit
@@ -152,9 +155,7 @@ describe("Research cockpit shell", () => {
 
   it("opens the full editable Fundamentals panel for a company (phase 4b)", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // Launch a Fundamentals panel via the command palette; it must render the
@@ -175,9 +176,7 @@ describe("Research cockpit shell", () => {
 
   it("filters the feed panel by ticker or title (cockpit-native, phase 4a)", async () => {
     const user = userEvent.setup();
-    renderApp();
-
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
+    renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     // The Feed panel is open in the default linked layout; both sample items are
@@ -206,14 +205,21 @@ describe("Research cockpit shell", () => {
 
   it("offers a saved layout as a command-palette launcher entry", async () => {
     const user = userEvent.setup();
+    // Plain renderApp(): the cockpit must not be mounted yet when "Deep dive" is
+    // created, or its own savedLayouts snapshot (fetched once on mount) would miss
+    // the newly created layout — it only refetches on its own mount, not when a
+    // sibling (the sidebar) saves a new one.
     renderApp();
 
-    await user.click(await screen.findByRole("button", { name: "Cockpit" }));
-    const cockpit = await screen.findByLabelText("Research cockpit");
+    // Named layouts are created via the sidebar "+ New view" creator (ADR 0057
+    // decision 5) — the legacy toolbar's free-text save/load/delete controls were
+    // removed as a duplicate of this flow (issue 432de51).
+    const nav = await screen.findByRole("navigation", { name: "Primary navigation" });
+    await user.click(within(nav).getByRole("button", { name: "New view" }));
+    await user.type(await screen.findByLabelText("View name"), "Deep dive");
+    await user.click(screen.getByRole("button", { name: /Create view/i }));
 
-    await user.type(within(cockpit).getByLabelText("Layout name"), "Deep dive");
-    await user.click(within(cockpit).getByRole("button", { name: "Save layout" }));
-    await within(cockpit).findAllByRole("option", { name: "Deep dive" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
 
     // The saved layout is now launchable from the command palette.
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));

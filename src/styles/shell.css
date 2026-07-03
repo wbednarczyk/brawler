@@ -184,6 +184,13 @@
   background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
 }
 
+/* The "+" new-view creator (ADR 0057): a dashed accent so it reads as "add",
+ * distinct from the destination nav items above it. */
+.nav-item-add {
+  border-style: dashed;
+  color: var(--primary);
+}
+
 .status-dot,
 .unread-dot {
   width: 8px;

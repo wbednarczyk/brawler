@@ -1,8 +1,6 @@
 # ADR 0006: Theme and Visual Direction
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

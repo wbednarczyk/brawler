@@ -16,7 +16,10 @@ import {
 } from "../../test/appWorkflowHarness";
 
 describe("Notebook and transcript workflows", () => {
-  it("shows the notebooks workspace and transcript job shell", async () => {
+  // Heavy multi-screen workflow: near the default 5s ceiling under coverage
+  // instrumentation with parallel workers (check-epic timed out here 2026-07-03;
+  // passes in 3.9s isolated). Explicit headroom, not a loosened assertion.
+  it("shows the notebooks workspace and transcript job shell", { timeout: 15_000 }, async () => {
     const user = userEvent.setup();
 
     appTestState.notebookEntriesResponse = [initialNotebookEntry];

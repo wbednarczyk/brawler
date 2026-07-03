@@ -297,7 +297,7 @@ fn map_anthropic_http_error(status: u16, body: &str) -> AnalysisProviderError {
         400 => AnalysisProviderError::ProviderError(format!(
             "Anthropic rejected the analysis request: {cause}"
         )),
-        500..=599 => AnalysisProviderError::ProviderError(format!(
+        500..=599 => AnalysisProviderError::ProviderUnavailable(format!(
             "Anthropic service error ({status}): {cause}"
         )),
         _ => AnalysisProviderError::ProviderError(format!("Anthropic error ({status}): {cause}")),
@@ -507,5 +507,25 @@ mod tests {
 
         assert_eq!(error.code(), "provider_unavailable");
         assert!(error.to_string().contains("Overloaded"));
+    }
+
+    #[test]
+    fn anthropic_http_error_maps_status_taxonomy() {
+        let body = r#"{"type":"error","error":{"type":"api_error","message":"boom"}}"#;
+
+        assert_eq!(
+            map_anthropic_http_error(500, body).code(),
+            "provider_unavailable"
+        );
+        assert_eq!(
+            map_anthropic_http_error(503, body).code(),
+            "provider_unavailable"
+        );
+        assert_eq!(map_anthropic_http_error(400, body).code(), "provider_error");
+        assert_eq!(
+            map_anthropic_http_error(401, body).code(),
+            "provider_not_configured"
+        );
+        assert_eq!(map_anthropic_http_error(429, body).code(), "provider_limit");
     }
 }

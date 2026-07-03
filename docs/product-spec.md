@@ -1,6 +1,6 @@
 # Product Spec
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [UI Flows](ui-flows.md), [UI Information Architecture](ui-information-architecture.md), [Source Strategy](source-strategy.md), and [Contracts](contracts.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [UI Flows](ui-flows.md), [UI Information Architecture](ui-information-architecture.md), [Source Strategy](source-strategy.md), and [Contracts](contracts.md).
 
 ## V1 Experience
 
@@ -186,6 +186,8 @@ Events created from official or public sources must retain source URL, attributi
 
 This milestone depends on either test-sample-backed events or source adapters capable of producing calendar-like events. It should be implemented after the first GPW ingestion work is stable enough to prove the source model.
 
+The **investor week calendar** (`v0.59.0`, [ADR 0058](adr/0058-investor-week-calendar.md)) extends this week view into a "what matters this week" digest by adding composable, opt-in **layers**: company events gain IPO debut (`DEBIUT`) and ex-dividend (`ODCIĘCIE DYWIDENDY`) dates; an opt-in **whole-market** scope shows untracked GPW tickers alongside the watchlist; a **macro** lane shows economic releases (CPI/PMI/payrolls) with time and country (manual + sample first, a policy-clean live source deferred to a follow-up ADR); and **market holidays** mark closed sessions per exchange (`WOLNE`). Watchlist-first stays the default; foreign-company earnings are out of scope. It remains decision support, not advice, and is not a portfolio calendar.
+
 ## AI Analysis
 
 The first AI milestone is summarization and classification:
@@ -217,6 +219,13 @@ Default AI analysis mode is source-grounded. A future opinionated mode may be ad
 
 Visible AI analysis panels should refresh status automatically while the latest selected job is queued or running. The user should not need a dedicated refresh button to see an in-progress analysis complete.
 
+**Per-capability AI provider routing** (ADR 0060 as amended, ADR 0061 decision 5) lets the user route each distinct AI call site (KPI extraction, claim extraction, feed analysis, research brief, research digest, ESPI event-date, ESPI signal classification) to its own **ordered fallback pool** of providers/models, instead of one global provider for everything — e.g. a document-capable provider for KPI extraction and a free open-model host for text analysis. A capability with no configured pool keeps using the single general AI provider, so the feature is fully backward-compatible.
+
+- **When failover happens:** only when a pool member is genuinely unavailable (rate-limited, erroring, timing out, or unreachable) does the app try the next provider in the list. A response that comes back successfully but with content the app cannot use is never treated as a reason to try another provider — that would hide a real problem (a bad prompt, a parsing bug) behind an unrelated provider's answer.
+- **Never silently wrong:** pool failover only improves *availability*. Every fact the pool helps produce still passes the same validation it would from a single provider — routing to a fallback never lowers the bar for what counts as trustworthy output.
+- **The generic OpenAI-compatible provider** unlocks free/self-hosted open-model hosts (Groq, OpenRouter, Together, Cerebras, local Ollama, and others) that speak the OpenAI chat-completions format, via one user-configured base URL — see `wiki/ai-provider-presets.md` for ready-to-use host presets.
+- **No-provider behavior:** when a feed-item AI analysis is started with nothing configured (no general provider, no capability pool), the job now fails with a clear error at run time rather than silently substituting a test-sample result — a deliberate behavior change from the prior silent fallback. KPI extraction, claim extraction, research brief, and research digest jobs are unaffected: they keep pinning the deterministic test-sample provider at enqueue time when nothing is configured, so those workflows still run out of the box.
+
 ## Settings, Export, And Local Data
 
 The Settings panel edits runtime settings stored locally. English is the default app language, and Settings should let the user switch the app UI to Polish. Locale handling should be an extensible app-locale boundary so future supported languages can be added without rewriting screens. Locale changes affect app-owned UI copy and formatting labels; source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
@@ -235,120 +244,11 @@ Automatic local backups (delivered in `v0.38.0`) keep recent copies of the local
 
 The Settings Database section exposes advanced performance tuning (how many simultaneous connections the local data store uses and how long operations wait under contention) with safe defaults, range limits, and a reset control; changes apply on the next launch. Like the Logs section, this is an intentionally technical area; ordinary screens keep plain language.
 
-## Future Experience Directions
+## Post-v1 Directions
 
-These ideas are intentionally out of v1 scope, but should influence architectural choices where the cost is low.
+Delivered behavior once narrated here (research workspace, company fundamentals, report documents/history backfill, report-over-report diff) is now canonical in [UI Flows](ui-flows.md), [Contracts](contracts.md), [Data Model](data-model.md), and [ADR 0022](adr/0022-research-evidence-read-model-boundary.md) / [0027](adr/0027-company-fundamentals-scope.md) / [0036](adr/0036-report-document-storage-and-backfill.md) / [0040](adr/0040-management-claims-tracker.md) / [0052](adr/0052-report-over-report-diff.md) / [0061](adr/0061-deterministic-fundamentals-data-gathering.md); its execution chronicle moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02).
 
-### Research Workspace
-
-A future product-differentiation direction is to make the app a personal research memory system for public companies, not only a feed reader. The goal is to help the user answer what changed, why it matters, what management said before, and what should be checked next.
-
-Candidate capabilities:
-
-- company change timeline combining feed items, official reports, media items, notes, transcripts, claims, calendar events, and future AI outputs
-- "what changed since last review" views for a company, watchlist, or time window
-- expanded management claim tracking with source, expected period, follow-up date, related future events, and status history
-- source-grounded company or watchlist research brief with cited evidence and no buy/sell/hold recommendations
-- open research questions or threads per company, linked to notes, claims, events, and source items
-- watchlist review mode that guides the user company-by-company through unread items, upcoming events, unresolved claims, and open questions
-- event-aware reminders such as unresolved claims tied to an upcoming reporting period
-- source quality and trust signals that distinguish official reports, company publications, media articles, opinion, paid research, and other source types
-- daily or weekly personal research digest generated from the user's local watchlists and source items
-- evidence linking between related source items, notes, claims, transcripts, questions, AI briefs, and events
-
-This direction should not be implemented as ten separate isolated screens. Before implementation, a dedicated planning milestone should define a shared research evidence model, timeline/read-model boundary, review-session model, evidence-linking model, AI brief-building boundary, storage implications, and import/export impact. Existing notebooks, claims, feed items, transcripts, and future events should plug into this model through stable contracts instead of direct cross-screen coupling.
-
-M24 accepts that research-workspace features should be built on a dedicated research/evidence boundary. Existing feed items, notebook entries, claims, transcript segments, events, AI analysis results, watchlists, and sources remain canonical in their owning domains. Research views consume backend-owned evidence and timeline read models rather than independently combining unrelated screen APIs. Durable research-owned state starts with review checkpoints and typed evidence links; full stored timeline projections wait until performance or review semantics require them.
-
-M31 adds event-aware research reminders and on-demand personal research digests. Reminders are research-owned review pressure derived from open claims, upcoming events, and open research questions, plus explicit manual reminders. Digests are immutable, cited AI snapshots generated from backend-collected changed evidence and open reminders for the selected company or watchlist.
-
-M25 adds the first visible Research screen as a top-level navigation item. The first slice is company-scoped: the user selects a tracked company and sees a newest-first evidence timeline combining feed items, notebook entries, claims, events, transcript segments, and AI analysis through the backend research read model. The screen header shows the selected company, last reviewed state, total visible evidence, and changed-since-review count. Evidence type filters and a changed-only filter are sent to the backend; the UI renders the returned timeline result instead of recomputing review counts.
-
-The M25 review action is a single company-level `Mark reviewed` action. It stores a research review checkpoint for the selected company and refreshes the timeline so changed-since-review state is updated. Evidence rows should use product-language labels such as report, note, claim, event, transcript, or AI analysis instead of raw implementation identifiers. Where practical, an evidence row should offer an owning-domain action such as opening the source URL, opening the Inbox item, or moving to the relevant app area.
-
-M26 adds watchlist review mode inside the same Research screen. The user can switch between company and watchlist review, select a watchlist, and work through member companies using a compact company queue with backend-owned changed evidence counts. Marking a watchlist reviewed updates only the watchlist checkpoint by default. The UI exposes an explicit option to also mark current member companies reviewed, but the cascade behavior is owned by the backend command.
-
-M29 adds company-scoped research questions inside the Research screen. A question is a durable research-owned item with title, optional context, and `open`, `answered`, or `closed` status. The user can select a company, create questions for that company, select a question, delete a question, and link visible evidence rows to it through typed evidence links. Questions are shown in the company evidence timeline and imported/exported with research data. Watchlist-scoped questions remain a backend-compatible extension point, but normal UI creates company questions only until a dedicated watchlist-question workflow is designed.
-
-AI research briefs are separate research entities with citations and provider/model/prompt provenance. They are not ordinary notebook entries, though a future workflow may let the user create a note from a brief or selected excerpt.
-
-M30 adds on-demand AI research briefs for company and watchlist research scopes. Brief generation uses backend-owned evidence collection, prompt/context building, provider execution, citation mapping, rendering, and persistence boundaries. Generated briefs are immutable snapshots with visible citations and provenance. They are imported/exported with research data. Briefs must not contain buy/sell/hold recommendations, and creating a notebook note from a brief is not automatic.
-
-The management claims tracker (`v0.42.0`, [ADR 0040](adr/0040-management-claims-tracker.md)) delivers the "expanded management claim tracking" and "unresolved claims tied to an upcoming reporting period" capabilities above. Claims become a first-class entity with a due period, quantitative target, source evidence, and a user-set verdict. AI extraction proposes claims from report documents and transcripts for mandatory confirmation. A due-period derivation job resurfaces an open claim into a "claims to verify" review queue when the due period's report arrives, attaching the matching confirmed financial fact for quantitative claims; the user resolves the verdict against evidence. Claims plug into the existing research evidence boundary (timeline, evidence links, reminders, digests) and remain owner-durable in import/export. There are no automated verdicts.
-
-### Company Fundamentals
-
-Milestones v0.34.0–v0.37.0 add a fundamentals view for tracked companies: key financial figures pulled from quarterly and annual reports, tracked per reporting period, and charted over time. The intent is to cut the time an investor spends re-reading reports to find the same handful of numbers each quarter.
-
-User-facing behavior:
-
-- a fundamentals panel in the company workspace presenting figures as a KPI-row × reporting-period-column matrix, where every value links back to the report it came from; a fact's detail shows its period, value, source, and status
-- figures are shown the way the report printed them (e.g. `319,7 mln PLN`, `8,63 PLN`) using the as-reported figure captured at extraction, falling back to a locale-aware formatted base value for manually entered numbers; KPI names are localized
-- a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog; the add-fact KPI picker supports inline search
-- AI assistance that reads a stored report and proposes figures, reviewed in a centered modal where the user confirms, edits, or rejects each value, with bulk "confirm all known" and "accept all suggestions" actions; the modal auto-closes when nothing is left to review and no AI-proposed number is stored as a confirmed figure without review
-- the user can also enter and correct figures manually against a report
-- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.53.0) side-by-side comparison of the same figure across companies
-- the panel and the review modal remain usable in tall, narrow windows (e.g. a quarter of an ultrawide monitor), stacking or shrinking rather than clipping
-
-Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.
-
-### Report Documents And History Backfill
-
-Milestone v0.41.0 persists the actual report files and removes the cold-start problem when tracking a company ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
-
-User-facing behavior:
-
-- official ESPI/EBI report attachments are stored locally as report documents with durable attribution and linked from the company's evidence/timeline; periodic/financial reports keep the full file (so AI extraction and diff have a real document to cite), while routine filings keep only the link and title
-- the existing escape hatch — pasting a report PDF URL, or resolving one from the company's IR page — still stores the full file and flows through the same downstream path
-- an explicit **"Backfill history"** action on a tracked company (on track, or from the company workspace) fetches roughly the last 3 years of periodic reports and ESPI/EBI filings, so the company's research timeline is populated with prior years instead of starting at "now"; items appear with their original publication dates
-- backfill shows progress and diagnostics while it runs, can be cancelled, and is safe to re-run (no duplicates); it never runs automatically and only runs while the app is open
-- dividend and general-meeting filings that state a future date produce a **proposed** calendar event the user confirms before it appears on the calendar; a date is never guessed onto the calendar
-
-Scope boundary: backfill covers official report sources only (not media), does not backfill historical calendar entries (the calendar focuses on upcoming events), and does no per-company PDF parsing or ESEF/iXBRL parsing.
-
-### Report-Over-Report Diff
-
-Milestone v0.47.0 lets the investor see what actually changed between two consecutive periodic **financial statements** instead of rereading the whole filing ([ADR 0052](adr/0052-report-over-report-diff.md)).
-
-User-facing behavior:
-
-- from a company's report documents (and on new periodic-report arrival), the investor can open a **section-by-section diff** of a financial statement against the previous same-type filing (consolidated SSF vs the prior SSF, standalone JSF vs the prior JSF)
-- each section is shown as unchanged, changed, or only-in-one-report; changed sections show the textual differences, with both reports cited so the investor can jump to the source
-- the diff is **deterministic and fully local** — pure-Rust text extraction, no AI and no network; the same two reports always produce the same diff, and a report compared against itself shows no changes
-- a report whose PDF has no extractable text layer (scanned) shows an explicit "can't diff — no extractable text" state rather than a misleading empty diff
-
-Scope boundary: v0.47.0 diffs the **structured financial statements only**. The narrative management report (MD&A) diff and an AI-written "what changed / new risks / tone shift" delta summary are deferred to a later milestone — a real-data spike showed narrative section headings drift too much for trustworthy deterministic alignment ([ADR 0052](adr/0052-report-over-report-diff.md)). Financial-table *value* reconciliation stays with KPI extraction, not the diff. No cross-company diffing.
-
-### Terminal Interface
-
-A future terminal/TUI version may provide a keyboard-first investor research experience. It should reuse the core local domain and storage model instead of becoming a separate product.
-
-The intended feeling is:
-
-- loosely similar to `k9s` in navigation density, speed, and operational ergonomics
-- retro terminal style adapted to the Brawler night-neon palette
-- dark, high-contrast blue, pink, purple, and cyan accents
-- fast watchlist/feed/company switching
-- keyboard-first commands for reading, filtering, saving, and opening notes
-- optional synthwave-style background music as an explicit opt-in ambience feature
-
-The TUI should remain useful without sound, animation, or decorative effects. Music must never start automatically.
-
-### Mobile And Sync
-
-A much later product direction may include mobile clients with data sync across desktop and mobile devices.
-
-This is not part of v1 and requires separate design work for:
-
-- sync ownership and hosting model
-- encryption and key management
-- conflict resolution
-- offline-first behavior
-- product, distribution, or support implications
-- mobile UX scope versus desktop parity
-- privacy policy and data deletion guarantees
-
-Until that design exists, v1 remains local-first and single-device.
+Remaining post-v1 exploration (terminal interface, mobile and sync) is tracked in [Roadmap](roadmap.md#future-exploration-terminal-interface) and [Roadmap](roadmap.md#future-exploration-mobile-and-sync) — see there, not here.
 
 ## Open-Core Posture
 
@@ -356,6 +256,4 @@ Brawler uses an open-core posture. The desktop core is open source under the Moz
 
 Detailed owner-only monetization strategy belongs in the private sibling repository when available locally. Public product docs should describe the posture at a high level without exposing speculative business plans.
 
-The local entitlement module validates signed license tokens with embedded public verification material, stores the raw accepted token in the OS keychain, stores only derived metadata in SQLite, and does not require cloud accounts, telemetry, hosted activation, billing, or remote entitlement checks. The open desktop core remains usable without a license token. Missing, invalid, expired, tampered, unsupported-version, and unsupported-channel states must be clear and recoverable in Settings for gated entitlements.
-
-AI features, including fundamentals extraction, are part of the open core and free to use with a user-supplied provider API key. The named future paid areas are managed AI (provider access without the user supplying a key), cloud sync and backup, and official signed installers. These are direction only; pricing and packaging detail stay in the private sibling repository. See [ADR 0027](adr/0027-company-fundamentals-scope.md).
+Entitlement mechanics (license status model, gated-state handling) are specified in [Contracts § Entitlements](contracts.md#entitlements); the AI/open-core boundary and named future paid areas are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md).

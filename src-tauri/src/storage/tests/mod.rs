@@ -8,6 +8,7 @@ use crate::source_adapters::gpw_company_registry::ADAPTER_ID as GPW_REGISTRY_ADA
 use crate::source_adapters::newconnect_company_directory::ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID;
 
 mod ai_analysis;
+mod autopilot;
 mod backup_pool;
 mod cockpit_layouts;
 mod common;
@@ -24,6 +25,7 @@ mod migration_safety;
 mod mock_fidelity;
 mod notebooks;
 mod quality_frameworks;
+mod real_data_extraction;
 mod report_documents;
 mod report_season;
 mod research;

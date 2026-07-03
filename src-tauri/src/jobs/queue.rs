@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::app_state::AppState;
+use crate::storage::ClaimedJob;
 
 /// A handler for one job `kind`. `run` does the actual (blocking) work; the
 /// worker calls it off the UI thread.
@@ -26,10 +27,24 @@ pub trait JobHandler: Send + Sync {
     /// Execute one job. The opaque JSON `payload` is the handler's to
     /// deserialize. Returning `Err` schedules a retry (until `max_attempts`).
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String>;
+
+    /// The per-source serialization key for this job, if any (ADR 0059). When
+    /// `Some(id)`, the worker acquires the exclusive source lock for `id` before
+    /// `run` and holds it for the whole run, so at most one worker refreshes that
+    /// source at a time; a worker that cannot acquire it defers the job (no attempt
+    /// consumed) and moves on. Default `None` — the job runs with no source lock.
+    fn serialization_key(&self, _payload: &str) -> Option<String> {
+        None
+    }
 }
 
 /// Poll interval when the queue is idle.
 const IDLE_POLL: Duration = Duration::from_secs(5);
+
+/// Backoff (seconds) applied when a job is deferred because its source is already
+/// being refreshed by another worker (ADR 0059). Short enough to keep throughput,
+/// long enough to avoid a tight claim/defer busy-loop over many same-source jobs.
+const SOURCE_BUSY_BACKOFF_SECONDS: i64 = 3;
 
 /// Capped exponential backoff (seconds) for a retry, by attempt count: 2, 4, 8,
 /// … 64s. Bounds retry pressure without unbounded growth.
@@ -62,16 +77,33 @@ impl JobWorker {
         );
     }
 
-    /// Claim and process at most one job. Returns `true` if a job was processed,
-    /// `false` if nothing was runnable. This is the deterministic unit the loop
-    /// repeats — driven directly by tests.
-    pub fn process_one(&self) -> Result<bool, String> {
+    /// Dispatch one already-claimed job to its handler and record the outcome
+    /// (success or retry-with-backoff). Shared by the all-kinds and kind-scoped
+    /// claim paths.
+    fn dispatch(&self, job: ClaimedJob) -> Result<(), String> {
         let store = self.state.jobs();
-        let Some(job) = store.claim_next().map_err(|error| error.to_string())? else {
-            return Ok(false);
+        let handler = self.handlers.get(job.kind.as_str()).cloned();
+
+        // Per-source serialization (ADR 0059): if the handler names a source for
+        // this job, hold that source's exclusive lock across the run. On contention
+        // the job is deferred (not failed) and a later tick retries it.
+        let _source_guard = match handler
+            .as_ref()
+            .and_then(|handler| handler.serialization_key(&job.payload))
+        {
+            Some(key) => match self.state.try_acquire_source(&key) {
+                Some(guard) => Some(guard),
+                None => {
+                    store
+                        .defer(&job.id, SOURCE_BUSY_BACKOFF_SECONDS)
+                        .map_err(|error| error.to_string())?;
+                    return Ok(());
+                }
+            },
+            None => None,
         };
 
-        let outcome = match self.handlers.get(job.kind.as_str()) {
+        let outcome = match handler {
             Some(handler) => handler.run(&job.payload, &self.state),
             None => Err(format!("no handler registered for job kind {}", job.kind)),
         };
@@ -87,7 +119,37 @@ impl JobWorker {
                     .map_err(|error| error.to_string())?;
             }
         }
+        Ok(())
+    }
 
+    /// Claim and process at most one job (any kind). Returns `true` if a job was
+    /// processed, `false` if nothing was runnable. The deterministic unit tests
+    /// drive; also used by [`run_until_idle`].
+    pub fn process_one(&self) -> Result<bool, String> {
+        let Some(job) = self
+            .state
+            .jobs()
+            .claim_next()
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(false);
+        };
+        self.dispatch(job)?;
+        Ok(true)
+    }
+
+    /// Claim and process at most one job whose `kind` is in `kinds` (a worker
+    /// pool's lane). Isolation so one lane cannot starve another (ADR 0059).
+    pub fn process_one_for_kinds(&self, kinds: &[&str]) -> Result<bool, String> {
+        let Some(job) = self
+            .state
+            .jobs()
+            .claim_next_for_kinds(kinds)
+            .map_err(|error| error.to_string())?
+        else {
+            return Ok(false);
+        };
+        self.dispatch(job)?;
         Ok(true)
     }
 
@@ -112,27 +174,44 @@ impl JobWorker {
     }
 }
 
-/// Spawn the worker on a dedicated blocking thread: reclaim crash residue, then
-/// loop forever — drain runnable jobs, sleep [`IDLE_POLL`] when idle. Off the UI
-/// thread (the handlers do blocking storage/IO work). Production entry point;
-/// tests drive [`JobWorker::process_one`] / [`JobWorker::run_until_idle`]
+/// One isolated worker lane: a set of job `kinds` drained by `workers` dedicated
+/// threads, independent of other lanes (ADR 0059). Isolation is what stops a slow
+/// source refresh from starving latency-sensitive autopilot work — the failure the
+/// single shared worker had. Threads (not async) are deliberate for a local app at
+/// this scale; the lanes/locks port to async unchanged if that ever changes.
+pub struct WorkerPool {
+    pub name: &'static str,
+    pub kinds: Vec<&'static str>,
+    pub workers: usize,
+}
+
+/// Spawn the durable-queue worker as **isolated lanes**. One startup reclaim runs
+/// before any lane begins (crash residue → pending, or dead-lettered if it has
+/// exhausted its attempts); then each lane gets `workers` blocking threads that
+/// drain only that lane's kinds. Off the UI thread (handlers do blocking storage/IO
+/// work). Production entry point; tests drive `process_one` / `run_until_idle`
 /// directly for determinism.
-pub fn spawn(worker: Arc<JobWorker>) {
-    tauri::async_runtime::spawn_blocking(move || {
-        if let Err(error) = worker.reclaim_on_startup() {
-            log::warn!("job queue: startup reclaim failed: {error}");
-        }
-        loop {
-            match worker.process_one() {
-                Ok(true) => {}
-                Ok(false) => std::thread::sleep(IDLE_POLL),
-                Err(error) => {
-                    log::warn!("job queue: worker tick failed: {error}");
-                    std::thread::sleep(IDLE_POLL);
+pub fn spawn_pools(worker: Arc<JobWorker>, pools: Vec<WorkerPool>) {
+    if let Err(error) = worker.reclaim_on_startup() {
+        log::warn!("job queue: startup reclaim failed: {error}");
+    }
+    for pool in pools {
+        for slot in 0..pool.workers.max(1) {
+            let worker = Arc::clone(&worker);
+            let kinds = pool.kinds.clone();
+            let name = pool.name;
+            tauri::async_runtime::spawn_blocking(move || loop {
+                match worker.process_one_for_kinds(&kinds) {
+                    Ok(true) => {}
+                    Ok(false) => std::thread::sleep(IDLE_POLL),
+                    Err(error) => {
+                        log::warn!("job queue [{name}#{slot}]: worker tick failed: {error}");
+                        std::thread::sleep(IDLE_POLL);
+                    }
                 }
-            }
+            });
         }
-    });
+    }
 }
 
 #[cfg(test)]
@@ -168,6 +247,115 @@ mod tests {
         let mut worker = JobWorker::new(state);
         worker.register(handler);
         worker
+    }
+
+    /// A handler that serializes on a fixed source key and counts its runs.
+    struct SerializingHandler {
+        key: &'static str,
+        runs: AtomicUsize,
+    }
+
+    impl JobHandler for SerializingHandler {
+        fn kind(&self) -> &'static str {
+            "serialized-kind"
+        }
+        fn serialization_key(&self, _payload: &str) -> Option<String> {
+            Some(self.key.to_owned())
+        }
+        fn run(&self, _payload: &str, _state: &AppState) -> Result<(), String> {
+            self.runs.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn defers_a_job_whose_source_is_already_locked() {
+        // Per-source serialization (ADR 0059): if another worker holds the source
+        // lock, the claimed job is deferred (not run, not failed) and retried later.
+        let handler = Arc::new(SerializingHandler {
+            key: "bankier",
+            runs: AtomicUsize::new(0),
+        });
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let mut worker = JobWorker::new(state);
+        worker.register(handler.clone());
+        worker
+            .state
+            .jobs()
+            .enqueue("job", "serialized-kind", "{}", 5)
+            .expect("enqueue");
+
+        // Simulate another worker already refreshing this source.
+        let held = worker.state.try_acquire_source("bankier").expect("hold");
+
+        assert!(worker.process_one().expect("process"), "a job was claimed");
+        assert_eq!(
+            handler.runs.load(Ordering::SeqCst),
+            0,
+            "the handler did not run while the source was locked"
+        );
+        let counts = worker.state.jobs().counts().expect("counts");
+        assert_eq!(counts.pending, 1, "deferred back to pending");
+        assert_eq!(counts.failed, 0, "a defer is not a failure");
+
+        // Once the other worker releases the lock, the job runs to success.
+        drop(held);
+        worker
+            .state
+            .jobs()
+            .defer("job", 0)
+            .expect("bring available_at back to now for the test");
+        assert!(worker.process_one().expect("process"));
+        assert_eq!(handler.runs.load(Ordering::SeqCst), 1);
+        assert_eq!(worker.state.jobs().counts().expect("counts").succeeded, 1);
+    }
+
+    #[test]
+    fn process_one_for_kinds_runs_only_its_lane() {
+        // Worker-pool isolation (ADR 0059): the autopilot lane processes its job
+        // even with an older source job waiting — a slow source refresh cannot
+        // starve autopilot the way the single shared worker did.
+        let source = Arc::new(CountingHandler {
+            kind: "scheduled_source_refresh",
+            runs: AtomicUsize::new(0),
+            fail_first: 0,
+        });
+        let autopilot = Arc::new(CountingHandler {
+            kind: "autopilot_stage",
+            runs: AtomicUsize::new(0),
+            fail_first: 0,
+        });
+        let mut worker = JobWorker::new(AppState::new(open_in_memory_database().expect("db")));
+        worker.register(source.clone());
+        worker.register(autopilot.clone());
+
+        // Source enqueued first (older) — the FIFO head — then autopilot.
+        worker
+            .state
+            .jobs()
+            .enqueue("src", "scheduled_source_refresh", "{}", 3)
+            .expect("enqueue src");
+        worker
+            .state
+            .jobs()
+            .enqueue("auto", "autopilot_stage", "{}", 3)
+            .expect("enqueue auto");
+
+        assert!(worker
+            .process_one_for_kinds(&["autopilot_stage"])
+            .expect("process"));
+        assert_eq!(autopilot.runs.load(Ordering::SeqCst), 1);
+        assert_eq!(
+            source.runs.load(Ordering::SeqCst),
+            0,
+            "source lane untouched by the autopilot lane"
+        );
+        let counts = worker.state.jobs().counts().expect("counts");
+        assert_eq!(counts.succeeded, 1);
+        assert_eq!(
+            counts.pending, 1,
+            "the source job stays queued for its lane"
+        );
     }
 
     #[test]

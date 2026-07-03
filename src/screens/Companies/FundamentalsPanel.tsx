@@ -1,13 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
-import { useLocale } from "../../shared/locale";
+import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
+import { FACT_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/plural";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { buildFactMatrix } from "./factMatrix";
+import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
 import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
-import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, SectionHeader, SelectField, Sparkline, TextField, TrendChart } from "../../ui";
+import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
+import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, SectionHeader, SelectField, Sparkline, StatusChip, TextField, TrendChart } from "../../ui";
+import { listFactProvenance, type FactProvenance } from "../../api/fundamentalsExtraction";
 import type { FactMatrixRow } from "./factMatrix";
 import type {
   FinancialFactForm,
@@ -34,6 +38,49 @@ type FundamentalsPanelProps = {
   updateFundamentalsForm: (field: keyof FundamentalsForm, value: string) => void;
   updateFinancialFactForm: (field: keyof FinancialFactForm, value: string) => void;
 };
+
+/**
+ * Human-readable source tier (ADR 0061). ESEF is the tagged source of truth;
+ * `ai` (Radicle 4fde931) is the AI-confirmed-fact tier the deterministic pool
+ * falls through to. A pure module-level function (takes `text` rather than
+ * closing over `useLocale`) so it is unit-testable without rendering.
+ */
+// "Recorded" agrees in gender/number with the fact count in Polish (bug
+// e77a1a2 part 3: "40 fakty zapisanych" was wrong — the header used a
+// `n === 1 ? … : …` two-way ternary, which cannot express Polish's three
+// plural categories). Declined separately from `FACT_FORMS` (the noun) since
+// it is this header's own adjective, not reused elsewhere.
+const RECORDED_FORMS: PluralForms = {
+  en: ["recorded", "recorded"],
+  pl: ["zapisany", "zapisane", "zapisanych"],
+};
+
+/**
+ * The Fundamentals header's "N fact(s) recorded" line, correctly declined in
+ * both languages. A pure module-level function (mirrors `tierLabel`) so it is
+ * unit-testable without rendering.
+ */
+export function factsRecordedLabel(count: number, locale: LocaleCode): string {
+  return `${count} ${pluralNoun(locale, count, FACT_FORMS)} ${pluralNoun(locale, count, RECORDED_FORMS)}`;
+}
+
+export function tierLabel(tier: string, text: (value: string) => string): string {
+  switch (tier) {
+    case "esef":
+      return text("ESEF (tagged)");
+    case "structured_xhtml":
+      return text("Structured HTML");
+    case "pdf":
+      return text("PDF");
+    case "html_aggregator":
+      return text("Aggregator");
+    case "ai_text":
+    case "ai":
+      return text("AI");
+    default:
+      return tier;
+  }
+}
 
 export function FundamentalsPanel({
   companyId,
@@ -62,6 +109,33 @@ export function FundamentalsPanel({
   const [companyDefinitions, setCompanyDefinitions] = useState<KpiDefinition[]>([]);
   const [kpiQuery, setKpiQuery] = useState("");
   const [confirmDeleteFact, setConfirmDeleteFact] = useState(false);
+
+  // Structured-first provenance (ADR 0061): the source tier + validation verdict
+  // the pipeline recorded per fact, badged on the fact detail. Legacy/manual
+  // facts have no provenance row (safe: the badges simply don't render).
+  const [provenanceById, setProvenanceById] = useState<Record<string, FactProvenance>>({});
+  const factIdsKey = financialFacts.map((fact) => fact.id).join(",");
+  useEffect(() => {
+    const ids = factIdsKey ? factIdsKey.split(",") : [];
+    if (ids.length === 0) {
+      setProvenanceById({});
+      return;
+    }
+    let cancelled = false;
+    listFactProvenance(ids)
+      .then((rows) => {
+        if (cancelled) return;
+        const map: Record<string, FactProvenance> = {};
+        for (const row of rows) map[row.factId] = row;
+        setProvenanceById(map);
+      })
+      .catch(() => {
+        if (!cancelled) setProvenanceById({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [factIdsKey]);
 
   // Reset the delete confirmation whenever the selected fact changes.
   useEffect(() => setConfirmDeleteFact(false), [selectedFinancialFactId]);
@@ -132,16 +206,43 @@ export function FundamentalsPanel({
     ? factMatrix.rows.find((row) => row.definition.id === selectedFactDefinition.id)
     : undefined;
 
+  const selectedProvenance = selectedFact ? provenanceById[selectedFact.id] : undefined;
+  const selectedDrift = parseDrift(selectedProvenance?.driftJson ?? null);
+
+  const validationLabel = (status: string): string => {
+    switch (status) {
+      case "passed":
+        return text("Validated");
+      case "witness_confirmed":
+        return text("Witness-confirmed");
+      case "unreviewed":
+        return text("Unreviewed");
+      case "flagged":
+        return text("Structure changed");
+      default:
+        return text("Not validated");
+    }
+  };
+  const validationTone = (status: string): "ok" | "warn" | "danger" | "neutral" => {
+    switch (status) {
+      case "passed":
+      case "witness_confirmed":
+        return "ok";
+      case "flagged":
+        return "danger";
+      case "unreviewed":
+        return "warn";
+      default:
+        return "neutral";
+    }
+  };
+
   return (
     <div className="company-tab-panel fundamentals-panel" aria-label={text("Company fundamentals")}>
       <SectionHeader
         level="h3"
         title={text("Fundamentals")}
-        description={
-          <>
-            {financialFacts.length} {text(financialFacts.length === 1 ? "fact" : "facts")} {text("recorded")}
-          </>
-        }
+        description={factsRecordedLabel(financialFacts.length, locale)}
       />
 
       {fundamentalsError ? (
@@ -150,6 +251,8 @@ export function FundamentalsPanel({
       {fundamentalsLoadError ? (
         <ErrorText>{text("Failed to load fundamentals data")}: {fundamentalsLoadError}</ErrorText>
       ) : null}
+
+      <CompanyAutopilotField companyId={companyId} />
 
       <CompanyIrReportsUrlField companyId={companyId} />
 
@@ -439,6 +542,28 @@ export function FundamentalsPanel({
                         label: text("Confirmation state"),
                         value: selectedFact.confirmationState,
                       },
+                      ...(selectedProvenance
+                        ? [
+                            {
+                              label: text("Source"),
+                              value: (
+                                <StatusChip tone="accent">
+                                  {tierLabel(selectedProvenance.sourceTier, text)}
+                                </StatusChip>
+                              ),
+                              valueAriaLabel: `${text("Source")}: ${tierLabel(selectedProvenance.sourceTier, text)}`,
+                            },
+                            {
+                              label: text("Validation"),
+                              value: (
+                                <StatusChip tone={validationTone(selectedProvenance.validationStatus)}>
+                                  {validationLabel(selectedProvenance.validationStatus)}
+                                </StatusChip>
+                              ),
+                              valueAriaLabel: `${text("Validation")}: ${validationLabel(selectedProvenance.validationStatus)}`,
+                            },
+                          ]
+                        : []),
                     ]}
                   />
                   {selectedFactRow && chartPointsFor(selectedFactRow).length > 1 ? (
@@ -462,6 +587,21 @@ export function FundamentalsPanel({
                         }
                       />
                     </div>
+                  ) : null}
+                  {selectedDrift ? (
+                    <section
+                      className="fact-detail-drift"
+                      aria-label={text("Structure changed")}
+                    >
+                      <SectionHeader
+                        level="h4"
+                        title={text("Structure changed")}
+                        description={text(
+                          "The report layout differs from the confirmed profile — verify before trusting this value.",
+                        )}
+                      />
+                      <DriftDiff drift={selectedDrift} />
+                    </section>
                   ) : null}
                 </>
               )}

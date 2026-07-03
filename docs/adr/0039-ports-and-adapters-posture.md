@@ -1,8 +1,6 @@
 # ADR 0039: Ports and Adapters posture — hexagonal at the seams, package-by-feature inside
 
-## Status
-
-Accepted.
+Status: Accepted.
 
 ## Context
 

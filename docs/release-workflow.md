@@ -1,6 +1,6 @@
 # Release Workflow
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Kanban Archive](kanban-archive.md). The repository-owned step-by-step closure runbook is the [brawler-release skill](../.agents/skills/brawler-release.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Engineering Workflow](engineering-workflow.md), [Kanban](kanban.md), and [Kanban Archive](kanban-archive.md). The repository-owned step-by-step closure runbook is the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md); this doc is the policy this repo enforces (SemVer, commit conventions, version-file list, retroactive tags) that the skill executes against.
 
 ## Intent
 
@@ -126,31 +126,11 @@ After milestone docs and Radicle/Radboard state have been handled, the mechanica
 make release VERSION=X.Y.Z
 ```
 
-This target:
-
-- rejects unexpected dirty files outside the release file allowlist
-- bumps synchronized version files
-- generates `CHANGELOG.md` through `make changelog`
-- runs `make release-check`
-- runs `make check`
-- commits release files with `chore(release): bump version to X.Y.Z`
-- creates annotated tag `vX.Y.Z`
-- pushes `master` and the tag to both `origin` and `rad`
-
-The target does not infer milestone scope, update roadmap text, archive kanban entries, or close Radicle issues. Those remain explicit closure tasks before running the target.
+The target does not infer milestone scope, update roadmap text, archive kanban entries, or close Radicle issues — those remain explicit closure tasks before running it. Mechanical steps the target performs (dirty-file check, version bump, changelog, `release-check`, `check`, commit, tag, push): the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md).
 
 To land curated, human-readable changelog notes in the single tagged release commit, use the **split**: `make release-prepare VERSION=X.Y.Z` (bump + scaffold the changelog, then stop) → curate the notes → `make release VERSION=X.Y.Z` (finalize). The one-shot `make release` is for trivial releases only. Packaged builds compile the shipped cargo features named by `RELEASE_FEATURES` (e.g. `embedding-model`); see [Engineering Workflow](engineering-workflow.md).
 
-Release remote sync updates both project remotes:
-
-```bash
-git push origin master
-git push origin vX.Y.Z
-git push rad master
-git push rad vX.Y.Z
-```
-
-`origin` is the GitHub source mirror/backup and public binary mirror. `rad` is the Radicle forge remote. Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
+Release remote sync updates both project remotes (`origin`, the GitHub mirror; `rad`, the Radicle forge remote) — commands in the [brawler-release skill](../.claude/skills/brawler-release/SKILL.md). Release sync does not authorize `rad publish`, `rad seed`, public seeding policy changes, repository visibility changes, or other publication operations; those still require separate explicit owner approval.
 
 The project owner grants standing permission for agents to run release-scoped `gh release ...` commands and release-scoped `git add`, `git commit`, `git tag`, and `git push` commands without asking for a separate approval prompt every time. This standing permission applies only inside the documented Brawler release workflow after the owner has asked to close, wrap up, or release a milestone, epic, or patch. It does not apply to normal feature work, unrelated commits, branch operations, merges, rebases, history rewrites, repository settings, Radicle publication/seeding policy, or new remotes.
 

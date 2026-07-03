@@ -301,6 +301,93 @@ function buildHandlers(): Record<string, Handler> {
       return undefined;
     },
 
+    // --- Autopilot (autonomous report pipeline, ADR 0055) ---
+    get_company_autopilot: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const mode = d.autopilotModes.find((m) => m.companyId === companyId)?.mode ?? "off";
+      return { companyId, mode };
+    },
+    set_company_autopilot: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const mode = str(input.mode) ?? "off";
+      const entry = { companyId, mode };
+      const existing = d.autopilotModes.some((m) => m.companyId === companyId);
+      if (existing) {
+        const { next } = mapReplace(
+          d.autopilotModes,
+          (m) => m.companyId === companyId,
+          () => entry,
+        );
+        d.autopilotModes = next;
+      } else {
+        d.autopilotModes = [...d.autopilotModes, entry];
+      }
+      return entry;
+    },
+    list_company_autopilot_modes: (d) => d.autopilotModes,
+    set_companies_autopilot: (d, a) => {
+      const input = unwrap(a);
+      const companyIds = Array.isArray(input.companyIds) ? (input.companyIds as string[]) : [];
+      const mode = str(input.mode) ?? "off";
+      const ids = new Set(companyIds);
+      const kept = d.autopilotModes.filter((entry) => !ids.has(entry.companyId));
+      d.autopilotModes = [...kept, ...companyIds.map((companyId) => ({ companyId, mode }))];
+      return companyIds.length;
+    },
+    list_autopilot_runs: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const notificationState = str(input.notificationState);
+      return d.autopilotRuns.filter(
+        (run) =>
+          (!companyId || run.companyId === companyId) &&
+          (!notificationState || run.notificationState === notificationState),
+      );
+    },
+    // Missing from the fidelity corpus (knip-flagged orphan) until the Today/Pulse
+    // undo surface wired it up (issue 7062f7e) — mirrors the Rust command: revert
+    // exactly the facts recorded on the run, then clear the run's produced list.
+    // Idempotent, like the real command — an already-cleared run reverts nothing.
+    undo_autopilot_run: (d, a) => {
+      const runId = str(unwrap(a).runId) ?? "";
+      const run = d.autopilotRuns.find((r) => r.id === runId);
+      const producedFactIds = run?.producedFactIds ?? [];
+      const revertedFactIds = d.financialFacts
+        .filter((f) => producedFactIds.includes(f.id))
+        .map((f) => f.id);
+      d.financialFacts = d.financialFacts.filter((f) => !producedFactIds.includes(f.id));
+      const { next } = mapReplace(
+        d.autopilotRuns,
+        (r) => r.id === runId,
+        (r) => ({ ...r, producedFactIds: [] }),
+      );
+      d.autopilotRuns = next;
+      return { runId, revertedFactIds };
+    },
+
+    // The Rust-side scheduler owns the refresh cadence (ADR 0055); the mock mirrors
+    // it by publishing per-adapter next-due epoch-ms. Feed adapters share the global
+    // poll interval with a small distinct per-adapter offset (the deterministic
+    // jitter that lives in Rust); the registry uses its own interval.
+    get_scheduler_status: (d) => {
+      const now = Date.now();
+      const pollMs = (d.settings.pollIntervalSeconds || 900) * 1000;
+      const sourceNextDueMs: Record<string, number> = {};
+      d.sourceAdapters
+        .filter((adapter) => adapter.enabled && adapter.sourceType !== "company_registry")
+        .forEach((adapter, index) => {
+          sourceNextDueMs[adapter.id] = now + pollMs + (5 + index * 10) * 1000;
+        });
+      const registry = d.sourceAdapters.find(
+        (adapter) => adapter.enabled && adapter.sourceType === "company_registry",
+      );
+      const registryNextDueMs = registry
+        ? now + registry.defaultPollIntervalSeconds * 1000
+        : null;
+      return { sourceNextDueMs, registryNextDueMs };
+    },
+
     // --- Watchlists ---
     list_watchlists: (d) => d.watchlists,
     list_watchlist_memberships: (d, a) => {
@@ -1150,6 +1237,25 @@ function buildHandlers(): Record<string, Handler> {
       if (companyId) return d.kpiExtractionJobs.filter((j) => j.companyId === companyId);
       return d.kpiExtractionJobs;
     },
+    // Structured-first fundamentals provenance (ADR 0061). Provenance is an
+    // optional seed on the store (default none), so legacy scenarios render no
+    // badges and a provenance-seeded scenario exercises the tier/validation UI.
+    list_fact_provenance: (d, a) => {
+      const store = (d as { factProvenance?: Array<{ factId: string }> }).factProvenance ?? [];
+      const ids = new Set(((unwrap(a).factIds as string[] | undefined) ?? []).map(String));
+      return store.filter((p) => ids.has(p.factId));
+    },
+    list_flagged_fact_provenance: (d) =>
+      ((d as { factProvenance?: Array<{ validationStatus: string }> }).factProvenance ?? []).filter(
+        (p) => p.validationStatus === "flagged",
+      ),
+    run_structured_extraction: () => ({
+      acceptance: "accepted",
+      tier: "esef",
+      emitted: false,
+      producedFactIds: [],
+      driftJson: null,
+    }),
     start_kpi_extraction: (d, a, ctx) => {
       // Build a fresh extraction job for the requested report, carrying the
       // seeded proposals so the review UI has something to confirm/reject.
@@ -1633,6 +1739,7 @@ function buildHandlers(): Record<string, Handler> {
         aiAnalysisMode: pick("aiAnalysisMode", d.settings.aiAnalysisMode),
         espiAiFallbackEnabled: pick("espiAiFallbackEnabled", d.settings.espiAiFallbackEnabled),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
+        capabilityProviders: pick("capabilityProviders", d.settings.capabilityProviders),
         pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
         aiProviders: {
           ...ai,
@@ -1642,6 +1749,7 @@ function buildHandlers(): Record<string, Handler> {
           generalAnalysisProvider: pick("generalAnalysisProvider", ai.generalAnalysisProvider),
           generalAnalysisModel: pick("generalAnalysisModel", ai.generalAnalysisModel),
           generalAnalysisTimeoutSeconds: pick("generalAnalysisTimeoutSeconds", ai.generalAnalysisTimeoutSeconds),
+          openaiCompatibleBaseUrl: pick("openaiCompatibleBaseUrl", ai.openaiCompatibleBaseUrl),
         },
       };
       return d.settings;

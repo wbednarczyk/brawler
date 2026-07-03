@@ -10,7 +10,8 @@
 use crate::{
     app_state,
     providers::analysis::{
-        espi_event_date_prompt, parse_espi_event_date_output, registry, AnalysisDocument,
+        capabilities::AiCapability, espi_event_date_prompt, parse_espi_event_date_output,
+        AnalysisDocument,
     },
 };
 
@@ -62,19 +63,15 @@ pub async fn run_ai_event_derivation(
         });
     }
 
-    let provider_id = settings
-        .ai_providers
-        .general_analysis_provider
-        .clone()
-        .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| {
-            "no general AI analysis provider is configured for the event-date fallback".to_owned()
-        })?;
-    let model = settings.ai_providers.general_analysis_model.clone();
+    let members = crate::jobs::resolve_capability_members(state, AiCapability::EventDate)?;
+    if members.is_empty() {
+        return Err(
+            "no general AI analysis provider is configured for the event-date fallback".to_owned(),
+        );
+    }
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
-    let api_key = registry::read_analysis_provider_api_key(&provider_id);
     let provider =
-        registry::build_analysis_provider(&provider_id, api_key, &model, timeout_seconds)?;
+        crate::jobs::build_capability_provider(state, AiCapability::EventDate, timeout_seconds)?;
 
     let mut derived = 0;
     let mut skipped = 0;
@@ -138,7 +135,8 @@ pub async fn run_ai_event_derivation(
     }
 
     log::info!(
-        "module=event_derivation stage=done providerId={provider_id} examined={examined} derived={derived} skipped={skipped}"
+        "module=event_derivation stage=done providerId={} examined={examined} derived={derived} skipped={skipped}",
+        provider.provider_id()
     );
 
     Ok(AiEventDerivationSummary {

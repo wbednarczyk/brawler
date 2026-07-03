@@ -17,10 +17,10 @@ use crate::storage::{
     NewCockpitLayout, NewCompany, NewWatchlist, RenameCockpitLayoutInput, WatchlistUpdate,
 };
 
-const CORPUS: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../src/test/scenarios/fidelity-corpus.json"
-));
+// Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS: the normal relative
+// location by default, or an absolute override so `cargo-mutants`' scratch-tree
+// copy (which excludes anything above the workspace root) still finds the file.
+const CORPUS: &str = include_str!(env!("BRAWLER_FIDELITY_CORPUS"));
 
 /// Replace any `"$name"` leaf with the captured value of `name`.
 fn substitute(value: &Value, caps: &Map<String, Value>) -> Value {
@@ -113,6 +113,60 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
                 .expect("list_cockpit_layouts"),
         )
         .unwrap(),
+        "set_company_autopilot" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let mode = inner["mode"].as_str().expect("mode");
+            serde_json::to_value(
+                state
+                    .autopilot()
+                    .set_mode(company_id, mode)
+                    .expect("set_company_autopilot"),
+            )
+            .unwrap()
+        }
+        "get_company_autopilot" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let mode = state
+                .autopilot()
+                .get_mode(company_id)
+                .expect("get_company_autopilot");
+            json!({ "companyId": company_id, "mode": mode })
+        }
+        "list_company_autopilot_modes" => serde_json::to_value(
+            state
+                .autopilot()
+                .list_modes()
+                .expect("list_company_autopilot_modes"),
+        )
+        .unwrap(),
+        "set_companies_autopilot" => {
+            let company_ids: Vec<String> = inner["companyIds"]
+                .as_array()
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(|value| value.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mode = inner["mode"].as_str().expect("mode");
+            let count = state
+                .autopilot()
+                .set_modes(&company_ids, mode)
+                .expect("set_companies_autopilot");
+            serde_json::to_value(count).unwrap()
+        }
+        "list_autopilot_runs" => {
+            let list_input: crate::storage::ListAutopilotRunsInput =
+                serde_json::from_value(inner).unwrap_or_default();
+            serde_json::to_value(
+                state
+                    .autopilot()
+                    .list_runs(&list_input)
+                    .expect("list_autopilot_runs"),
+            )
+            .unwrap()
+        }
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")
         }

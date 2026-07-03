@@ -1,4 +1,169 @@
 use super::*;
+use rust_decimal::Decimal;
+
+// ---------------------------------------------------------------------------
+// stored_fact_set (ADR 0061 dec. 4b): the comparative cross-check's
+// "already known" prior period, read out of storage and bridged from
+// definition_id to metric_key.
+// ---------------------------------------------------------------------------
+
+fn seed_fact(state: &AppState, company_id: &str, period_id: &str, metric_key: &str, value: &str) {
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: Some("canonical".to_owned()),
+            sector: None,
+            company_id: None,
+        })
+        .expect("canonical definitions should list");
+    let definition = definitions
+        .iter()
+        .find(|d| d.metric_key == metric_key)
+        .unwrap_or_else(|| panic!("{metric_key} should exist in the canonical catalog"));
+    state
+        .create_financial_fact(NewFinancialFact {
+            company_id: company_id.to_owned(),
+            period_id: period_id.to_owned(),
+            definition_id: definition.id.clone(),
+            value_numeric: value.to_owned(),
+            currency: Some("PLN".to_owned()),
+            statement_basis: None,
+            attribution: None,
+            variant: None,
+            measure_window: None,
+            data_quality: None,
+            as_reported_value: None,
+            as_reported_scale: None,
+            reporting_standard: None,
+            extraction_method: None,
+            confidence: None,
+            confirmation_state: Some("confirmed".to_owned()),
+            supersedes_id: None,
+            source_document_ref: None,
+        })
+        .expect("financial fact should create");
+}
+
+#[test]
+fn stored_fact_set_bridges_definition_id_to_metric_key() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: Some("2025-12-31".to_owned()),
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+    seed_fact(&state, &company.id, &period.id, "total_assets", "40000000");
+    seed_fact(&state, &company.id, &period.id, "net_profit", "1100000");
+
+    let set = state
+        .financials()
+        .stored_fact_set(&company.id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("a period with facts should yield Some");
+
+    assert_eq!(set.get("total_assets"), Some(&Decimal::new(40_000_000, 0)));
+    assert_eq!(set.get("net_profit"), Some(&Decimal::new(1_100_000, 0)));
+    assert_eq!(set.len(), 2);
+}
+
+#[test]
+fn stored_fact_set_period_type_matches_case_insensitively() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+    seed_fact(&state, &company.id, &period.id, "total_assets", "1");
+
+    let set = state
+        .financials()
+        .stored_fact_set(&company.id, 2025, "fy")
+        .expect("stored_fact_set should query");
+    assert!(set.is_some(), "period_type match must be case-insensitive");
+}
+
+#[test]
+fn stored_fact_set_none_when_no_matching_period() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let set = state
+        .financials()
+        .stored_fact_set(&company.id, 2025, "FY")
+        .expect("stored_fact_set should query");
+    assert!(set.is_none());
+}
+
+#[test]
+fn stored_fact_set_none_when_period_has_no_facts() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    let set = state
+        .financials()
+        .stored_fact_set(&company.id, 2025, "FY")
+        .expect("stored_fact_set should query");
+    assert!(set.is_none(), "a period with zero facts is not Some(empty)");
+}
+
+#[test]
+fn stored_fact_set_skips_unparsable_values_but_keeps_the_rest() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "FY".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+    seed_fact(&state, &company.id, &period.id, "total_assets", "40000000");
+    seed_fact(
+        &state,
+        &company.id,
+        &period.id,
+        "net_profit",
+        "not-a-number",
+    );
+
+    let set = state
+        .financials()
+        .stored_fact_set(&company.id, 2025, "FY")
+        .expect("stored_fact_set should query")
+        .expect("total_assets alone still yields Some");
+    assert_eq!(set.get("total_assets"), Some(&Decimal::new(40_000_000, 0)));
+    assert!(!set.contains_key("net_profit"));
+}
 
 #[test]
 fn lists_canonical_kpi_definitions() {

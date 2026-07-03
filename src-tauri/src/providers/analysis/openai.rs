@@ -18,6 +18,17 @@ pub const DEFAULT_OPENAI_ANALYSIS_MODEL: &str = "gpt-5.5";
 const OPENAI_ANALYSIS_TIMEOUT_SECONDS: u64 = 90;
 const OPENAI_ANALYSIS_TIMEOUT_ENV: &str = "BRAWLER_OPENAI_ANALYSIS_TIMEOUT_SECONDS";
 
+/// Default OpenAI API base URL. The generic OpenAI-compatible provider (ADR 0060)
+/// points a [`ReqwestOpenAiChatCompletionsClient`] at a different host while
+/// reusing the same request/response shapes.
+pub(crate) const OPENAI_API_BASE_URL: &str = "https://api.openai.com/v1";
+
+/// Build the chat-completions endpoint URL from a base URL, tolerating a
+/// trailing slash on the configured base.
+fn chat_completions_url(base_url: &str) -> String {
+    format!("{}/chat/completions", base_url.trim_end_matches('/'))
+}
+
 #[async_trait]
 pub trait OpenAiChatCompletionsClient: Send + Sync {
     async fn create_completion(
@@ -30,10 +41,14 @@ pub trait OpenAiChatCompletionsClient: Send + Sync {
 
 pub struct ReqwestOpenAiChatCompletionsClient {
     client: Client,
+    base_url: String,
 }
 
 impl ReqwestOpenAiChatCompletionsClient {
-    pub fn new(configured_timeout_seconds: u64) -> Result<Self, AnalysisProviderError> {
+    pub fn new(
+        configured_timeout_seconds: u64,
+        base_url: impl Into<String>,
+    ) -> Result<Self, AnalysisProviderError> {
         let timeout_seconds =
             effective_timeout_seconds(OPENAI_ANALYSIS_TIMEOUT_ENV, configured_timeout_seconds);
         let client = Client::builder()
@@ -41,7 +56,10 @@ impl ReqwestOpenAiChatCompletionsClient {
             .build()
             .map_err(|error| AnalysisProviderError::NetworkError(describe_reqwest_error(&error)))?;
 
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            base_url: base_url.into(),
+        })
     }
 }
 
@@ -55,7 +73,7 @@ impl OpenAiChatCompletionsClient for ReqwestOpenAiChatCompletionsClient {
     ) -> Result<OpenAiChatCompletionsResponse, AnalysisProviderError> {
         let response = self
             .client
-            .post("https://api.openai.com/v1/chat/completions")
+            .post(chat_completions_url(&self.base_url))
             .bearer_auth(api_key)
             .json(request)
             .send()
@@ -80,6 +98,7 @@ impl OpenAiChatCompletionsClient for ReqwestOpenAiChatCompletionsClient {
 pub struct OpenAiAnalysisProvider<C = ReqwestOpenAiChatCompletionsClient> {
     api_key: Option<String>,
     model: String,
+    provider_id: &'static str,
     client: C,
 }
 
@@ -96,7 +115,30 @@ impl OpenAiAnalysisProvider<ReqwestOpenAiChatCompletionsClient> {
         Ok(Self {
             api_key,
             model: model.into(),
-            client: ReqwestOpenAiChatCompletionsClient::new(timeout_seconds)?,
+            provider_id: "provider_openai",
+            client: ReqwestOpenAiChatCompletionsClient::new(timeout_seconds, OPENAI_API_BASE_URL)?,
+        })
+    }
+
+    /// Build the generic OpenAI-compatible provider (ADR 0060): same request/
+    /// response shapes as `live`, but pointed at a user-configured `base_url`
+    /// (e.g. a local or third-party OpenAI-compatible endpoint) instead of the
+    /// hosted OpenAI API.
+    pub fn live_compatible(
+        api_key: Option<String>,
+        model: impl Into<String>,
+        timeout_seconds: i64,
+        base_url: &str,
+    ) -> Result<Self, AnalysisProviderError> {
+        let timeout_seconds = u64::try_from(timeout_seconds)
+            .ok()
+            .filter(|value| *value > 0)
+            .unwrap_or(OPENAI_ANALYSIS_TIMEOUT_SECONDS);
+        Ok(Self {
+            api_key,
+            model: model.into(),
+            provider_id: "provider_openai_compatible",
+            client: ReqwestOpenAiChatCompletionsClient::new(timeout_seconds, base_url.to_owned())?,
         })
     }
 }
@@ -109,6 +151,24 @@ where
         Self {
             api_key,
             model: model.into(),
+            provider_id: "provider_openai",
+            client,
+        }
+    }
+
+    /// Test-only constructor that lets a mock-backed provider report an
+    /// arbitrary `provider_id` (used to exercise the OpenAI-compatible id
+    /// without a live client).
+    pub fn with_client_for(
+        provider_id: &'static str,
+        api_key: Option<String>,
+        model: impl Into<String>,
+        client: C,
+    ) -> Self {
+        Self {
+            api_key,
+            model: model.into(),
+            provider_id,
             client,
         }
     }
@@ -146,7 +206,7 @@ where
     C: OpenAiChatCompletionsClient,
 {
     fn provider_id(&self) -> &'static str {
-        "provider_openai"
+        self.provider_id
     }
 
     fn model(&self) -> &str {
@@ -263,7 +323,7 @@ fn map_openai_http_error(status: u16, body: &str) -> AnalysisProviderError {
         400 => AnalysisProviderError::ProviderError(format!(
             "OpenAI rejected the analysis request: {cause}"
         )),
-        500..=599 => AnalysisProviderError::ProviderError(format!(
+        500..=599 => AnalysisProviderError::ProviderUnavailable(format!(
             "OpenAI service error ({status}): {cause}"
         )),
         _ => AnalysisProviderError::ProviderError(format!("OpenAI error ({status}): {cause}")),
@@ -337,6 +397,37 @@ mod tests {
     }
 
     #[test]
+    fn chat_completions_url_appends_path_and_trims_trailing_slash() {
+        assert_eq!(
+            chat_completions_url(OPENAI_API_BASE_URL),
+            "https://api.openai.com/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_url("https://example.test/v1/"),
+            "https://example.test/v1/chat/completions"
+        );
+        assert_eq!(
+            chat_completions_url("https://example.test/v1"),
+            "https://example.test/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn compatible_provider_reports_its_own_id_and_text_only_support() {
+        let provider = OpenAiAnalysisProvider::with_client_for(
+            "provider_openai_compatible",
+            Some("test-api-key".to_owned()),
+            DEFAULT_OPENAI_ANALYSIS_MODEL,
+            MockOpenAiClient {
+                response_text: "{}".to_owned(),
+            },
+        );
+
+        assert_eq!(provider.provider_id(), "provider_openai_compatible");
+        assert_eq!(provider.document_support(), DocumentSupport::TextOnly);
+    }
+
+    #[test]
     fn openai_provider_requires_configuration() {
         let provider = OpenAiAnalysisProvider::with_client(
             None,
@@ -378,5 +469,25 @@ mod tests {
         );
 
         assert_eq!(error.code(), "provider_limit");
+    }
+
+    #[test]
+    fn openai_http_error_maps_status_taxonomy() {
+        let body = r#"{"error":{"message":"boom","type":"server_error"}}"#;
+
+        assert_eq!(
+            map_openai_http_error(500, body).code(),
+            "provider_unavailable"
+        );
+        assert_eq!(
+            map_openai_http_error(503, body).code(),
+            "provider_unavailable"
+        );
+        assert_eq!(map_openai_http_error(400, body).code(), "provider_error");
+        assert_eq!(
+            map_openai_http_error(401, body).code(),
+            "provider_not_configured"
+        );
+        assert_eq!(map_openai_http_error(429, body).code(), "provider_limit");
     }
 }

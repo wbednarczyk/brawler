@@ -2,7 +2,7 @@
 
 This is the canonical, **agent-facing** guide for building or editing any Brawler frontend UI. It exists because the recurring cause of incoherent views is hand-rolling markup that a shared primitive already provides. Read it before writing or editing components, screens, or styles.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related: [Modularization Design](modularization-design.md) (where things live), [UI Flows](ui-flows.md) and [UI Information Architecture](ui-information-architecture.md) (UX/IA, not component authoring), and [ADR 0037](adr/0037-ui-component-framework-and-authoring-contract.md) (the policy decision).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Modularization Design](modularization-design.md) (where things live), [UI Flows](ui-flows.md) and [UI Information Architecture](ui-information-architecture.md) (UX/IA, not component authoring), and [ADR 0037](adr/0037-ui-component-framework-and-authoring-contract.md) (the policy decision).
 
 ## The one rule
 
@@ -91,6 +91,18 @@ Rules:
 - **Chip vs pill (emphasis, not status-vs-tag):** the two badges differ by **visual weight**, and both carry a tone. `StatusChip` is the **quiet, low-emphasis** one (muted text, subtle surface; tones `neutral | accent | ok | warn | danger`) — use it for inline status/metadata that should not dominate the row: signal categories, "Saved", a fetch state. `StatusPill` is the **bold, high-emphasis** one (solid, primary-tinted, weight 700; tones `neutral | ok | warn | danger`) — use it for (a) a prominent process/job **state** that should stand out (transcript/analysis/KPI job status) and (b) solid keyword **tags**, normally inside `ChipList` (note tags, market codes, watchlist names). Pick by how much the badge should draw the eye; they are intentionally kept as two emphasis variants rather than merged.
 - **Section containers:** `SectionHeader` for a titled section inside a screen/tab. `DetailSection` for cards in the fixed-width feed/detail rail (it bakes the containment contract so long content can't blow out the pane). `Panel`/`PanelHeader` for a top-level screen panel.
 - **Rows:** `ListRow` for non-interactive media rows (a document, an attachment). `DenseRow` for selectable list rows. `ExpandableRow` when the row expands detail in place.
+
+## Configuration is visual-first (maintainer UX preference)
+
+When the user configures a value, dimension, or layout, **prefer direct manipulation and visual presets over bare entry** — this is a standing project preference, apply it everywhere a value is set:
+
+1. **Quick visual presets first** — clickable graphical choices for the common cases (e.g. mini-grid icons `2×2 / 2×3 / 3×3` for a layout, swatches for a color, sized examples for spacing), so the frequent path is one click.
+2. **Direct-manipulation + exact input, bidirectionally linked** — a **slider** (or drag handle) for the feel of the range, **two-way bound** to a precise numeric/text field: dragging updates the field, typing updates the slider. Neither is read-only.
+3. **Live preview** — reflect the change as it happens (the grid redraws, the value updates), not only on commit.
+
+A bare numeric/text field alone is the **fallback**, for values with no meaningful range or visual. The grid-size picker in the composable-views creator ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)) is the reference implementation: presets + linked slider/input + live preview.
+
+**A free-text settings field must edit a local draft and commit on blur/submit — never call `update_settings` per keystroke.** A controlled `TextField` bound directly to the round-tripped settings object cannot be typed into: the async save means React reverts each keystroke to the last-persisted value, and backend validation rejects every partial value on the way (e.g. a base URL fails the `http(s)://` check at `"h"`, `"ht"`, … — an error per keystroke). Keep a `useState` draft seeded from settings, commit on blur or an explicit save, and only then surface a validation error (the credential-key forms' draft pattern is the reference). Harvested 2026-07-02 from the S6 base-URL/freeform-model fields, which shipped unusable-by-typing.
 
 ## Styling rules
 

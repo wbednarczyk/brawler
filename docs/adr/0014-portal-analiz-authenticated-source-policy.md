@@ -1,8 +1,6 @@
 # ADR 0014: Portal Analiz Authenticated Source Policy
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

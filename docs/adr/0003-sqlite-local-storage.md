@@ -1,8 +1,6 @@
 # ADR 0003: SQLite Local Storage
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

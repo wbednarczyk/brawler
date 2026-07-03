@@ -22,7 +22,9 @@ const MONTHS_PL: [&str; 12] = [
     "grudnia",
 ];
 
-/// How many characters after a label to scan for a date.
+/// How many bytes after a label to scan for a date (despite the name, this is a byte window,
+/// not a character count — the scan-end offset is clamped back to the nearest UTF-8 char
+/// boundary before slicing, see `find_date_for_labels`).
 const SCAN_WINDOW: usize = 80;
 
 /// Extract a dividend date from a filing body. Prefers the payment date
@@ -63,7 +65,7 @@ pub fn parse_general_meeting_date(body: &str) -> Option<String> {
     find_date_for_labels(body, LABELS)
 }
 
-/// Scan for the first date that appears within `SCAN_WINDOW` characters after any of `labels`.
+/// Scan for the first date that appears within `SCAN_WINDOW` bytes after any of `labels`.
 fn find_date_for_labels(body: &str, labels: &[&str]) -> Option<String> {
     let lower = body.to_lowercase();
     let mut best: Option<(usize, String)> = None;
@@ -73,7 +75,13 @@ fn find_date_for_labels(body: &str, labels: &[&str]) -> Option<String> {
         while let Some(found) = lower[search_from..].find(label) {
             let label_start = search_from + found;
             let scan_start = label_start + label.len();
-            let scan_end = (scan_start + SCAN_WINDOW).min(lower.len());
+            let mut scan_end = (scan_start + SCAN_WINDOW).min(lower.len());
+            // SCAN_WINDOW is a byte count, so the naive end offset can fall inside a
+            // multi-byte UTF-8 char (e.g. a Polish diacritic); walk back to the nearest
+            // char boundary before slicing.
+            while !lower.is_char_boundary(scan_end) {
+                scan_end -= 1;
+            }
             if let Some(date) = parse_first_date(&lower[scan_start..scan_end]) {
                 // Keep the earliest-positioned match for determinism.
                 if best
@@ -296,5 +304,81 @@ mod tests {
     fn rejects_invalid_calendar_dates() {
         let body = "Dzień dywidendy: 31.02.2026 r.";
         assert_eq!(parse_dividend_date(body), None);
+    }
+
+    #[test]
+    fn scan_window_boundary_inside_multibyte_char_does_not_panic() {
+        // The date sits early in the scan window (found before the clamped boundary), but a
+        // multi-byte 'ł' is placed so that `scan_start + SCAN_WINDOW` lands on its second byte —
+        // reproducing the "not a char boundary" panic that a raw byte-index slice would hit.
+        let label = "label:";
+        let mut body = String::from(label);
+        body.push_str(" 24.07.2026 r. ");
+        while body.len() < label.len() + 79 {
+            body.push('x');
+        }
+        body.push('ł'); // starts at relative byte 79, so scan_start + 80 lands inside it
+        body.push_str(" trailing text");
+
+        assert_eq!(
+            find_date_for_labels(&body, &[label]),
+            Some("2026-07-24".to_owned())
+        );
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    //! Invariant (property-based) coverage of the deterministic date extractors
+    //! (ADR 0049). `find_date_for_labels` slices a filing body on a byte-offset
+    //! window (`SCAN_WINDOW`), which panicked when the window boundary landed
+    //! inside a multi-byte UTF-8 char (e.g. a Polish diacritic) — this killed the
+    //! autopilot job worker on real filings. These tests assert totality (never
+    //! panics) on arbitrary input, including unicode/emoji, so that class of bug
+    //! cannot regress.
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn parse_dividend_date_never_panics(body in ".*") {
+            let _ = parse_dividend_date(&body);
+        }
+
+        #[test]
+        fn parse_general_meeting_date_never_panics(body in ".*") {
+            let _ = parse_general_meeting_date(&body);
+        }
+
+        #[test]
+        fn validate_iso_date_never_panics(value in ".*") {
+            let _ = validate_iso_date(&value);
+        }
+
+        /// Bias the corpus toward the labels the extractors actually look for, so the
+        /// scan-window slicing path (the site of the original panic) is exercised far
+        /// more often than pure random text would achieve, while still padding with
+        /// arbitrary (potentially multi-byte) filler on both sides.
+        #[test]
+        fn labelled_bodies_with_unicode_filler_never_panic(
+            prefix in ".{0,120}",
+            label_ix in 0usize..8,
+            filler in ".{0,120}",
+        ) {
+            const ALL_LABELS: &[&str] = &[
+                "dzień wypłaty dywidendy",
+                "termin wypłaty dywidendy",
+                "dzień dywidendy",
+                "dniem dywidendy",
+                "na dzień",
+                "w dniu",
+                "zwołuje",
+                "zwołania",
+            ];
+            let label = ALL_LABELS[label_ix % ALL_LABELS.len()];
+            let body = format!("{prefix}{label}{filler}");
+            let _ = parse_dividend_date(&body);
+            let _ = parse_general_meeting_date(&body);
+        }
     }
 }

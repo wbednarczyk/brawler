@@ -41,7 +41,7 @@ export default defineConfig({
     },
     {
       // A quarter of a 49" 5120x1440 ultrawide (vertical 4-way split) at 100% OS
-      // scaling: a tall, narrow window the app is commonly run in. Per AGENTS.md.
+      // scaling: a tall, narrow window the app is commonly run in. Per CLAUDE.md.
       name: "chromium-quarter-uw",
       use: {
         ...devices["Desktop Chrome"],

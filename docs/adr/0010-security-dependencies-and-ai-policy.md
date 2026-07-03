@@ -1,8 +1,6 @@
 # ADR 0010: Security, Dependencies, and AI Policy
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

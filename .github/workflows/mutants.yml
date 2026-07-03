@@ -1,0 +1,76 @@
+name: Mutation testing sweep
+
+# Manual-only (CI Posture, docs/engineering-workflow.md): no push/paths trigger,
+# no schedule. cargo-mutants sweeps take 30 min-2 h and rebuild+retest per
+# mutant, so they run off the owner's WSL box (which OOM-froze twice running
+# this locally) on a standard ubuntu-latest runner instead, on demand:
+#   gh workflow run mutants.yml [-f shard=1/8] [-f build_jobs=4]
+on:
+  workflow_dispatch:
+    inputs:
+      shard:
+        description: 'cargo-mutants shard, e.g. "1/8" (empty = full sweep)'
+        required: false
+        default: ""
+      build_jobs:
+        description: "CARGO_BUILD_JOBS for the mutant/baseline builds"
+        required: false
+        default: "4"
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  mutants:
+    name: cargo-mutants sweep
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-mutants-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-mutants-
+            ${{ runner.os }}-cargo-
+
+      # Nix (not a bare rust-toolchain action) because `make mutants` shells
+      # out via `$(NIX) = nix develop -c`: the default devShell (flake.nix)
+      # already pins the Rust toolchain, cargo-mutants, cargo-nextest, and the
+      # Linux Tauri system libraries (gtk3, webkitgtk_4_1, ...) needed to
+      # compile src-tauri, so no separate rustup/apt-get step is needed here —
+      # this mirrors how release-artifacts.yml builds the same Rust workspace.
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      # No jail: MUTANTS_JAIL=off skips the systemd-run --user memory jail
+      # (Makefile), which needs a user systemd manager that a GitHub-hosted
+      # runner does not have. cargo-mutants exits non-zero when mutants are
+      # MISSED (or on a build/test error) — that non-zero is the intended
+      # signal for this job to go red, so the run is NOT forced green; the
+      # artifact upload below is unconditional (`if: always()`) so the report
+      # is still available when the job fails on missed mutants.
+      - name: Run mutation sweep
+        run: >
+          make mutants MUTANTS_JAIL=off
+          MUTANTS_BUILD_JOBS=${{ inputs.build_jobs }}
+          MUTANTS_SHARD=${{ inputs.shard }}
+
+      - name: Upload mutants.out
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mutants-out
+          path: src-tauri/mutants.out
+          retention-days: 7
+          if-no-files-found: warn

@@ -1,8 +1,6 @@
 # ADR 0016: Provider-Neutral AI Analysis Framework
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

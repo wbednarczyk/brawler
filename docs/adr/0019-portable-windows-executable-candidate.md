@@ -1,8 +1,6 @@
 # ADR 0019: Portable Windows Executable Candidate
 
-## Status
-
-Accepted for M21 implementation.
+Status: Accepted for M21 implementation.
 
 ## Context
 

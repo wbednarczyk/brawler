@@ -49,6 +49,45 @@
   white-space: nowrap;
 }
 
+.today-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.today-autopilot-run {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The run row carries more fixed-width freight than any other ListRow use
+   (ticker + status/"Reverted N facts" pills + Review/Undo/Dismiss actions), and
+   ListRow's single-line contract (meta/trailing flex:none, title-only shrink)
+   overflows the narrow quarter-ultrawide card column once the title hits zero
+   width. Scoped here — not in the shared ListRow, whose other uses rely on the
+   one-line layout — let the meta and actions wrap onto following lines instead
+   of forcing intrinsic width. */
+.today-autopilot-run .ui-list-row {
+  flex-wrap: wrap;
+}
+
+.today-autopilot-run .today-row-meta {
+  flex-wrap: wrap;
+  white-space: normal;
+}
+
+/* A run's carried-over "structure changed" drift (ADR 0061 wave 2 / 4fde931):
+   the shared `DriftDiff` body under its own eyebrow, separated from the run's
+   row like the fact-detail drift card it mirrors. */
+.today-run-drift {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+}
+
 .today-conviction-headline {
   color: var(--text);
   font-weight: 650;

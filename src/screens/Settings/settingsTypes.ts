@@ -1,5 +1,6 @@
 import type { FormEvent } from "react";
 import type { AccentPalette, AppLocale, CredentialStatus, FeedPruneResult, LicenseStatus, ShortcutBindingSetting, Theme, UserSettings } from "../../api/types";
+import type { CapabilityProviderEntry } from "../../api/generated/CapabilityProviderEntry";
 import type { AppShortcutReferenceItem } from "../../app/shortcuts";
 
 export type SettingsScreenProps = {
@@ -31,6 +32,8 @@ export type SettingsScreenProps = {
   onGeneralAnalysisModelChange: (model: string) => void;
   onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
   onEspiAiFallbackChange: (enabled: boolean) => void;
+  onOpenAiCompatibleBaseUrlChange: (baseUrl: string) => void;
+  onCapabilityProvidersChange: (capabilityProviders: Record<string, CapabilityProviderEntry[]>) => void;
   onLogLevelChange: (level: string) => void;
   onLogMaxFilesChange: (maxFiles: number) => void;
   onLogMaxFileBytesChange: (maxFileBytes: number) => void;
@@ -38,6 +41,11 @@ export type SettingsScreenProps = {
   onDbBusyTimeoutMsChange: (busyTimeoutMs: number) => void;
   onDbAcquireTimeoutMsChange: (acquireTimeoutMs: number) => void;
   onResetDatabaseSettings: () => void;
+  onSourcesWorkersChange: (workers: number) => void;
+  onAutopilotWorkersChange: (workers: number) => void;
+  onAiWorkersChange: (workers: number) => void;
+  onAiProviderConcurrencyChange: (concurrency: number) => void;
+  onResetQueueSettings: () => void;
   onClearLicenseKey: () => void;
   onLicenseKeyDraftChange: (licenseKey: string) => void;
   onSubmitLicenseKey: (event: FormEvent<HTMLFormElement>) => void;

@@ -2,7 +2,7 @@
 
 This document turns the UX flows into concrete v1 screens, regions, and actions. It should guide the first React/Tauri scaffold before detailed visual design or component implementation.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [UI Flows](ui-flows.md), [Product Spec](product-spec.md), [Contracts](contracts.md), and [ADR 0006: Theme and Visual Direction](adr/0006-theme-and-visual-direction.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [UI Flows](ui-flows.md), [Product Spec](product-spec.md), [Contracts](contracts.md), and [ADR 0006: Theme and Visual Direction](adr/0006-theme-and-visual-direction.md).
 
 ## App Shell
 
@@ -13,21 +13,21 @@ Regions:
 The shell is **mode-based and thesis-centric** ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md), Accepted) — it leads with the investor's job, not a freeform canvas:
 
 - top toolbar: brand, **global search / "ask anything"** (a first-class session entry point, semantic), manual refresh, source health indicator, theme/settings access. A **command palette (⌘K)** is a fast accelerator, complementing — not replacing — the visible spine.
-- **left sidebar — the IA spine (implemented):** grouped into **Modes** (Today/Pulse · Companies/Company-workspace · Compare; plus an interim **Cockpit** advanced-workspace entry until it folds into the Company workspace), a **pinned/favorite companies** group (each with a glanceable conviction status — a neutral placeholder until per-company conviction lands), a **Library** group (Inbox, Watchlists, Transcripts, Sources), and a **Utilities** group (Settings, Diagnostics — developer-gated). This is the load-bearing navigation; a blank/freeform workspace is never the entry point.
+- **left sidebar — the IA spine (implemented):** grouped into **Modes** (Today/Pulse · Companies/Company-workspace · Compare), followed by the user's **saved named views** (composable dockview layouts, ADR 0057) as their own nav entries and a **"+ New view"** creator, a **pinned/favorite companies** group (each with a glanceable conviction status — a neutral placeholder until per-company conviction lands), a **Library** group (Inbox, Watchlists, Transcripts, Sources), and a **Utilities** group (Settings, Diagnostics — developer-gated). This is the load-bearing navigation; a blank/freeform workspace is never the entry point — there is no standalone "Cockpit" destination (ADR 0057 decision 5).
 - **main area — the active mode's content** (see the modes below).
 - **focus surfaces:** full-screen reader/writer modes invoked from anywhere (`Esc` back).
 
 Modes / destinations:
 
 - **🏠 Today / Pulse** (default / home) — a Triage-style attention queue ("what changed / to verify / stale") plus a watchlist-level conviction rollup; the feed is secondary input.
-- **🔬 Company workspace** — a single-company deep-dive in fixed, modular, progressively-disclosed sections (Overview, Fundamentals, Valuation, Quality, What-changed, Claims, Reports, Notebook, Thesis), entered by selecting a company; **dockview's free arrangement is the opt-in "advanced layout"** within it.
+- **🔬 Company workspace** — a single-company deep-dive in fixed, modular, progressively-disclosed sections (Overview, Fundamentals, Valuation, Quality, What-changed, Claims, Reports, Notebook, Thesis), entered by selecting a company; **dockview's free arrangement is the opt-in "advanced layout"** within it. Single-company settings (autopilot mode, IR reports URL) live inline in Fundamentals; **cross-company settings management** is a separate **master-detail surface** ("Manage settings" in the Companies screen — company multi-select + grouped settings applied to the selection, with watchlist-scope selection), the scalable home for *all* per-company settings ([ADR 0056](adr/0056-per-company-settings-surface.md); v1 ships autopilot, pinned/watchlists next).
 - **⚖️ Compare** — cross-company KPI tables (v0.53).
 - **📋 Journal** — the decision journal (v0.56).
 - **📖 Focus** — distraction-free reading (a long report diff) / writing (a thesis or note).
 
 Developer-only: Diagnostics, visible only when Developer mode is active.
 
-Interim state (the shell is built incrementally, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)): the **left-sidebar IA spine + pinned companies** and the **Today/Pulse attention home** have landed, and **Today/Pulse is now the default landing** (replacing the cockpit default). Today/Pulse is a real attention digest — *what changed* (recently-reported companies), *to verify* (claims due/overdue for the **pinned** companies — a bounded set, not every watchlist company), *upcoming reports*, and a watchlist conviction **rollup placeholder** — composed from existing app-wide read models; each item offers a **Review** (navigate) action. The full **accept/snooze/dismiss triage state** and the autonomous-pipeline "one notification" are owned by the v0.48 feed-triage / v0.49 pipeline epics and plug into this home. The **Company workspace** is the sectioned (tabbed) deep-dive by default, and **dockview is now the opt-in "Advanced layout"**: an *Advanced layout* button in the workspace header opens the dockview cockpit **scoped to that company** (it carries forward all the cockpit/selection/preset/pop-out work as its engine). The cockpit also stays reachable as an interim **Cockpit** sidebar entry. **Focus reader/writer modes have landed**: a reusable full-screen, distraction-free `FocusOverlay` (Zen-mode, `Esc` to exit) — the report-over-report diff opens in a **Focus reader**, and a notebook note opens in a **Focus writer** — invoked from their surfaces. **Compare** still renders a minimal mode home (cross-company KPI table is v0.53); per-company conviction status shows a neutral placeholder until its step. Watchlists/Research/Notebooks/Events/Report-season remain valid sections (deep links) as they fold into modes.
+Interim state (the shell is built incrementally, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)): the **left-sidebar IA spine + pinned companies** and the **Today/Pulse attention home** have landed, and **Today/Pulse is now the default landing** (replacing the cockpit default). Today/Pulse is a real attention digest — *what changed* (recently-reported companies), *to verify* (claims due/overdue for the **pinned** companies — a bounded set, not every watchlist company), *upcoming reports*, and a watchlist conviction **rollup placeholder** — composed from existing app-wide read models; each item offers a **Review** (navigate) action. The autonomous-pipeline "one notification" has landed as an **Autopilot** card per run: summary, a **Structure changed** drift block when structured extraction drifted, **Review** (open the company), **Dismiss**, and — for an `autopilot`-mode run that produced facts — **Undo** (two-step confirm) to revert exactly the facts that run auto-committed, replacing the action with a "Reverted N facts" badge ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md) §4; `assist`-mode facts land `pending` and go through the existing confirm/reject review instead, so they get no Undo). The full **accept/snooze** triage state (beyond dismiss) is owned by the v0.48 feed-triage epic and plugs into this home. Opening a company lands on its **curated cockpit dashboard** ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md) — the tabbed Company workspace is retired); the ADR 0054 sectioned deep-dive with dockview as an opt-in "Advanced layout" remains future shell work (tracked on the cockpit epic). The cockpit is reached via a saved named view (its own sidebar entry), the **"+ New view"** creator, or a company's curated dashboard — there is no separate blank-canvas **Cockpit** sidebar entry ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md) decision 5). **Focus reader/writer modes have landed**: a reusable full-screen, distraction-free `FocusOverlay` (Zen-mode, `Esc` to exit) — the report-over-report diff opens in a **Focus reader**, and a notebook note opens in a **Focus writer** — invoked from their surfaces. **Compare** still renders a minimal mode home (cross-company KPI table is v0.53); per-company conviction status shows a neutral placeholder until its step. Watchlists/Research/Notebooks/Events/Report-season remain valid sections (deep links) as they fold into modes.
 
 Developer-only section:
 
@@ -51,9 +51,9 @@ Shell behavior:
 - Normal user-facing UI copy should use product terms and avoid implementation details such as SQLite, Tauri, database engine, internal adapter, module, collector, schema, or command boundary. Technical terms are reserved for Developer Diagnostics and owner/developer docs.
 - Exchange-qualified ticker labels use a shared visual renderer that distinguishes exchange and symbol segments with explicit known-exchange colors plus deterministic fallback palette colors for future exchanges. The renderer must keep the underlying `qualifiedTicker` string contract unchanged.
 
-### Research workspace shell (mode-based, thesis-centric) — direction
+### Research cockpit shell (mode-based, thesis-centric)
 
-The shell is mode-based ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md), Accepted): a **left-sidebar IA spine + pinned companies**, a **Today/Pulse Triage home**, a **sectioned Company workspace**, **Compare**, and **Focus** modes, with a **glanceable per-company conviction status** (a composite rolled up from a fixed check set, decomposed into a few named factors, plus a watchlist rollup). The organizing unit is the **company + its thesis/conviction state**; the feed is *input* that moves that state. A cited UX research pass (terminals + retail-research apps + IDE/PKM) grounds this — see [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) Evidence.
+The shell is mode-based ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md), Accepted): a **left-sidebar IA spine + pinned companies**, a **Today/Pulse Triage home**, a **sectioned Company workspace**, **Compare**, and **Focus** modes, with a **glanceable per-company conviction status** (a composite rolled up from a fixed check set, decomposed into a few named factors, plus a watchlist rollup). The organizing unit is the **company + its thesis/conviction state**; the feed is *input* that moves that state. A cited UX research pass (terminals + retail-research apps + IDE/PKM) grounds this — see [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) Evidence. Per-panel content/behavior for the company deep-dive is specified in [Company Cockpit Dashboard Panels](#company-cockpit-dashboard-panels); this subsection is the cockpit **engine** mechanics only.
 
 **dockview is the opt-in "advanced layout" engine** inside the Company-workspace and Compare modes (re-scoped from the app-wide grid; [ADR 0053](adr/0053-dockview-layout-pilot.md) amended by [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)). It is built behind the `src/screens/Cockpit/` adapter; framework comparison and the gradual-migration plan are in ADR 0053. Its behavior (carried forward into the advanced-layout mode):
 
@@ -155,22 +155,26 @@ The cockpit composes existing domains and adds no per-company data of its own ex
 
 ## Companies Screen
 
-Purpose: manage tracked companies and open company workspaces.
+Purpose: the company **library + management** surface ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)). Browse/search/add tracked companies and manage per-company settings; opening a company lands the **curated cockpit dashboard** (the deep-dive lives there, not in a tabbed panel inside this screen).
 
 Main regions:
 
 - company search/add control
 - company list searchable and filtered by watchlist/exchange
-- company metadata summary
+- a `Manage settings` toggle that swaps the list for the per-company settings surface ([ADR 0056](adr/0056-per-company-settings-surface.md))
 
 Actions:
 
 - add company by exchange-qualified ticker
-- edit company metadata
-- open company workspace
-Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists menu panel. The company list and expanded company workspace should not show watchlist create, delete, add, or remove controls. The company workspace can show current memberships as context only.
+- open the company's cockpit dashboard (row click or keyboard)
+- delete a tracked company
+- manage per-company settings (autopilot, …) via the settings surface
+
+Company rows should show current watchlist memberships for scanning, but membership editing belongs in the dedicated Watchlists menu panel. The company list should not show watchlist create, delete, add, or remove controls.
 
 The company list should own its vertical scrolling so the company add/search/filter controls remain visible while reviewing long tracked-company lists.
+
+Company metadata detail (display name, exchange, ticker, ISIN, CIK, LEI, aliases, source-specific IDs) is shown from the company row/settings surface here, not as a cockpit dashboard panel.
 
 ## Watchlists Screen
 
@@ -191,98 +195,25 @@ Actions:
 
 The Watchlists screen is a dedicated navigation section. It should use a watchlist-first dual-pane workflow: select a watchlist, then manage that watchlist's member companies. Renaming a watchlist should preserve the watchlist's stable internal id. Removing a company from a watchlist should happen in this panel without deleting the company itself. Deleting a watchlist should require confirmation and should not delete member companies. If a deleted watchlist is active in a view filter, that filter should reset to `All`.
 
-Milestone 3 implementation starts the company workspace from the Companies screen. Clicking a company row expands the ticker-focused workspace inline directly under that row, and clicking the same row again collapses it. Up and Down arrows move through company rows while preserving expansion state: collapsed lists stay collapsed, and an already-open workspace moves to the focused company. This keeps the expanded context anchored to the company the user selected and avoids adding another row-level button.
+Clicking a company row (or pressing Enter/Space on it) opens the **curated cockpit dashboard** scoped to that company ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)). Up and Down arrows move the highlighted row within the library without navigating away. The historical inline-expanding tabbed workspace (Milestone 3 / [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)) has been **retired** in favor of the dashboard.
 
-## Company Workspace
+## Company Cockpit Dashboard Panels
 
-Purpose: one company page for all research around a ticker.
+Opening a company from the Companies library lands the **curated cockpit dashboard** ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)): a seeded `cockpit_layout` scoped to the company, opening with a calm default panel set (Fundamentals, Feed, Claims, Quality, Report documents, Notebook) that stays composable (add/remove/move panels, then `Save dashboard` to persist per company). Panel keys: Feed → `companyFeed`, Notebook → `companyNotebook`, Fundamentals/Claims/Quality/Report documents/diff as their own panels. Transcripts remains a future-milestone placeholder; company metadata lives in the Companies library (see there), not a panel.
 
-Header should show:
+Header shows: qualified ticker, display name, exchange, watchlist memberships as read-only context, last feed update, feed/unread/saved counts, and quick actions (refresh company, add note, add transcript).
 
-- qualified ticker
-- display name
-- exchange
-- watchlist memberships as read-only context
-- last feed update
-- feed, unread, and saved counts
-- quick actions: refresh company, add note, add transcript
+**Feed panel:** company-filtered feed list with the same feed item detail behavior as Inbox and create-note-from-item. Clicking (or Enter/Space on) a feed row opens its detail inline under that row, collapsing on repeat; Up/Down move through rows while preserving expansion state. Company feed rows share Inbox's unread dot and read/unread typography. The inline detail shows source, type, timestamps, attribution, language, summary, source URL, read/save actions, an action to open the item in the Inbox with the company filter applied, and an action to create an editable note draft with feed-item origin. An empty feed shows an inline empty state with an `Open filtered Inbox` action rather than a blank panel.
 
-Tabs or segmented views:
+**Notebook panel:** notes list newest first, filterable by tag, kind, claim status, follow-up quarter, follow-up date, with a note detail/editor pane and a compact manual Markdown note form (title, body, tags, note kind, optional claim status, event date, follow-up quarter, follow-up date); feed-item note drafts share the same form. The list stays dense enough for dozens of notes per company: title/kind/tags/status/follow-up cues only, no raw body preview. Read mode renders common Markdown structure locally; edit mode exposes the raw Markdown body. Date fields use the native date picker; follow-up-quarter fields use a small quarter picker with a `Today` shortcut.
 
-- Feed
-- Notebook
-- Claims
-- Transcripts
-- Fundamentals
-- Metadata
+**Claims panel** ([ADR 0040](adr/0040-management-claims-tracker.md)): first-class claims for the company (statement, due period, optional quantitative target, source evidence, verdict) with a **review queue** ("claims to verify") at the top, bucketed due/overdue/upcoming, surfaced when the due-period report arrives. Verdicts (pending, delivered, partially delivered, missed, revised) are always user-set — the queue surfaces evidence, never assigns a verdict automatically. For a quantitative claim, the matching confirmed financial fact shows beside the claim for in-place resolution. An AI claim-extraction launcher (modal) proposes claims from a report document or transcript for mandatory confirmation; claims can also be added/edited manually, with rows expanding in place under the clicked row (the app-wide row interaction pattern). Heavy extraction interaction happens in the modal, not the fixed-width detail rail.
 
-Feed tab:
+**Transcripts panel** (future milestone): transcript jobs for the company, submit YouTube `URL`, review transcript segments, create note from selected segments. Global/notebook-level transcript entry starts from a required `URL` field and optional company/ticker field; if the company is omitted the app tries to recognize it after transcription, but the transcript can stay unlinked for general market videos. Company selection is required only when saving selected segments into a company notebook.
 
-- company-filtered feed list
-- same feed item detail behavior as Inbox
-- create note from item
+**Fundamentals panel:** reporting periods list and a KPI-per-period matrix (KPI rows × period columns), newest period first; as-reported values in their original scale (e.g. "1 093,6 mln PLN") with localized KPI names, never internal metric ids; a per-KPI trend sparkline plus a larger trend chart for a selected KPI (app-owned SVG primitives, no chart dependency); fact detail as a readable label/value list with edit and remove (inline-confirm) actions; manual fact entry (inline KPI search/datalist, reporting-period selector, value, currency, gated on KPI + period + value); custom per-company KPI management alongside the seeded `canonical`/`sector` taxonomy; confirmed AI-extracted facts surface through the same read model as manual facts. Ingestion/extraction is launched from report feed item detail (see [UI Flows](ui-flows.md)); the matrix/charts stay readable across the supported narrow window range.
 
-Milestone 3 starts with inline source/origin detail inside the Company Feed tab. The feed row itself is the click target instead of a separate inspect button. Clicking a feed row, or pressing Enter/Space on a focused feed row, expands the detail directly under that row; repeating the action collapses it. Up and Down arrows move through company feed rows while preserving expansion state: collapsed feed details stay collapsed, and already-open detail moves to the focused feed row. Company feed rows use the same unread dot and read/unread typography as Inbox feed rows. The inline detail should show source, type, timestamps, attribution, language, summary, source URL, read/save actions, an explicit action to open the item in the Inbox with the company filter applied, and an action to create an editable note draft with feed-item origin.
-
-If the selected company has no stored feed items, the Feed tab shows an inline empty state instead of a blank panel. The empty state keeps the workspace anchored to the selected company and provides an `Open filtered Inbox` action so the user can verify the same company filter in the main review surface.
-
-Notebook tab:
-
-- notes list newest first
-- filters by tag, kind, claim status, follow-up quarter, follow-up date
-- note detail/editor pane
-- create manual note
-
-Milestone 4 begins with a company-scoped Notebook tab that lists durable notes and provides a compact manual Markdown note form. The form captures title, body, tags, note kind, optional claim status, event date, follow-up quarter, and follow-up date. Feed-item note drafts are added after the base manual-note path is stable.
-
-The Notebook tab should be dense enough for dozens of notes per company. Use a compact selectable note list with title, kind, tags, status, and follow-up cues, plus a selected-note detail/editor area for reading and editing the full Markdown body. Note rows should not show raw body previews because uninterpreted Markdown is noisy in dense lists. The creation form should be available on demand instead of permanently consuming vertical space.
-
-Read mode renders common Markdown structure locally. Edit mode exposes the raw Markdown body so the user can make precise changes without a rich-text editor layer.
-
-Notebook date and follow-up-quarter fields should support direct typing plus compact picker controls. Date fields use the native date picker so the operating system/browser can provide localized calendar behavior. Follow-up-quarter fields use a small quarter picker, with `Today` setting the current quarter.
-
-Claims tab (management claims tracker, [ADR 0040](adr/0040-management-claims-tracker.md)):
-
-- first-class claims for this company (statement, due period, optional quantitative target, source evidence, verdict)
-- a **review queue** ("claims to verify") at the top, bucketed due / overdue / upcoming, surfaced when the due-period report arrives
-- the verdicts: pending, delivered, partially delivered, missed, revised — user-set
-- for a quantitative claim, the matching confirmed financial fact shown beside the claim for in-place verdict resolution
-- AI claim extraction launcher (modal) over a report document or transcript, proposing claims for mandatory confirmation
-- add/edit a claim manually; claim rows expand in place under the clicked row, following the app-wide row interaction pattern
-
-Milestone v0.42.0 makes claims a first-class entity (existing claim notes are migrated). The review queue is the primary verification surface; reminders and digests remain the cross-cutting paths. No verdict is ever assigned automatically — the queue surfaces the evidence and the user decides. Heavy extraction interaction happens in a modal, not in the fixed-width detail rail (mirroring KPI extraction).
-
-Transcripts tab:
-
-- transcript jobs for this company
-- submit YouTube `URL`
-- review transcript segments
-- create note from selected segments
-
-Global or notebook-level transcript entry starts from a required `URL` field and optional company/ticker field. If the company is omitted, the app should try to recognize it after transcription, but the transcript can remain unlinked for general market videos or any non-company-specific recording. Company selection is required only when saving selected segments into a company notebook.
-
-Fundamentals tab:
-
-- reporting periods list and a KPI-per-period matrix (KPI rows × period columns), newest period first
-- as-reported values shown in their original scale (e.g. "1 093,6 mln PLN") with localized KPI names, not internal metric ids
-- a per-KPI trend column (sparkline) plus a larger trend chart for a selected KPI, drawn with the app-owned SVG primitives (no chart dependency)
-- fact detail as a readable label/value list, with edit and remove (inline-confirm) actions
-- manual fact entry: inline KPI search (datalist), a reporting-period selector, value, and currency; the submit is gated on KPI + period + value
-- custom per-company KPI management (create/edit `company`-scope KPI definitions) alongside the seeded `canonical`/`sector` taxonomy
-- confirmed AI-extracted facts surface here through the same read model as manual facts
-
-The Fundamentals tab is the panel half of the company-fundamentals feature; the ingestion/extraction half is launched from report feed item detail (see the AI KPI extraction flow in [UI Flows](ui-flows.md)). The matrix and charts must remain readable across the supported narrow window range; values never render as raw integers or internal ids.
-
-The Fundamentals tab also hosts the **report-over-report diff** entry ([ADR 0052](adr/0052-report-over-report-diff.md), `v0.47.0`): a stored financial statement offers a **Compare with previous** action that opens a section-aligned diff against the prior same-type statement (SSF↔SSF, JSF↔JSF). The diff view lists aligned sections (unchanged / changed / only-in-one) with the changed-section text delta and a citation into each report; it must remain readable across the narrow window range (sections stack rather than clip). Extraction-pending and no-text-layer states are shown explicitly rather than as an empty diff. The narrative management report (MD&A) is not diffable in v0.47.0.
-
-Metadata tab:
-
-- display name
-- exchange
-- ticker
-- ISIN, CIK, LEI
-- aliases
-- source-specific IDs
+The Fundamentals panel also hosts the **report-over-report diff** entry ([ADR 0052](adr/0052-report-over-report-diff.md)): a stored financial statement offers **Compare with previous**, opening a section-aligned diff against the prior same-type statement (SSF↔SSF, JSF↔JSF) — aligned sections (unchanged/changed/only-in-one) with the changed-section text delta and a citation into each report, readable across the narrow window range (sections stack rather than clip). Extraction-pending and no-text-layer states are shown explicitly rather than as an empty diff; the narrative management report (MD&A) is not diffable.
 
 ## Notebooks Screen
 
@@ -350,6 +281,14 @@ Main regions:
 Event rows should follow the app-wide row interaction pattern: the row is the primary click target, and details expand inline under the selected event row. The collapsed row should be compact enough to scan many dates and should show date, company ticker, event type, source/manual marker, and status. Upcoming events should be visually prioritized by default, while historical rows should remain readable but less attention-grabbing. The expanded detail should show source URL, attribution, fetched timestamp, event timestamp/date, related company, and notes about manual corrections if present.
 
 The first implementation may use test-sample-backed events. The UX should still assume future official-source events can coexist with manual events and user corrections without hiding where the date came from.
+
+### Investor week view (layers)
+
+The Events screen also offers a **weekly working-day view** (Mon–Fri columns; a weekend column only when populated) — the investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`), inspired by the Koomberg weekly digest. It composes opt-in **layers** over the same data, with our own UI:
+
+- **Scope toggle** — watchlist (default) ↔ **whole market** (untracked GPW tickers via the opt-in relaxed Bankier ingest).
+- **Layer toggles** — company events (reports, `DEBIUT`/IPO debut, `ODCIĘCIE DYWIDENDY`/ex-dividend), **macro** (CPI/PMI/payrolls with time + country flag; manual + sample now, live source later), and **market holidays** (per-market `WOLNE` badge on closed days).
+- Each layer renders as a lane within a day column; lanes and columns must stack/degrade in tall-narrow windows. Scope and enabled layers persist in settings.
 
 ## Sources Screen
 
@@ -460,38 +399,9 @@ A global, keyboard-reachable search box lives in the top toolbar and queries the
 
 The earlier constraint that kept search workspace-scoped is lifted now that a cross-workspace result model exists. The existing per-workspace search/filter inputs remain: Inbox owns feed-item filtering in its toolbar, Companies owns company-list search, and Notebooks owns note filtering. Global search complements, rather than replaces, those local lists.
 
-## Future Research Workspace
+## Research Workspace
 
-Purpose: provide source-grounded company and watchlist review surfaces once the research/evidence boundary exists.
-
-Candidate regions:
-
-- company or watchlist selector
-- evidence timeline
-- changed-since-review summary
-- open claims and research questions
-- upcoming events and reminder pressure
-- AI research brief panel with citations
-- related evidence links
-
-Rules:
-
-- Do not add visible Research Workspace placeholders before the feature is implemented.
-- M25 implements Research as a real top-level screen, scoped to a selected tracked company.
-- M25 Research shows a screen header with selected company context, last-reviewed state, total evidence count, changed-since-review count, evidence type filters, changed-only filter, and a `Mark reviewed` action.
-- M25 Research evidence rows are compact timeline rows with product-language type/trust labels, occurred timestamp, title, summary when available, changed-since-review state, and owning-domain/source actions where practical.
-- M31 Research shows open reminders and generated digest snapshots as real company/watchlist review tools. The screen receives reminder and digest read models from backend commands; it must not assemble digest inputs in React.
-- M26 Research adds a Company/Watchlist mode switch in the same screen, not a separate screen.
-- Watchlist mode uses a left-side member-company review queue and a right-side evidence timeline for the selected member company.
-- Watchlist review defaults to updating the watchlist checkpoint only. The optional cascade to member-company checkpoints must be an explicit user action and backend command input.
-- M29 Research adds a company-scoped Questions panel in the same Research screen. The user creates, selects, answers, closes, reopens, and links questions to evidence without leaving the research context.
-- The selected research question controls link actions on evidence rows. Evidence rows may show a compact link action only when a selected question can link to that evidence item.
-- Future research views consume backend-owned evidence and timeline read models.
-- Research views should not independently call Inbox, Notebooks, Events, Transcripts, Sources, and AI APIs to assemble timelines.
-- Research summary counts, changed-since-review state, and timeline filtering semantics belong to backend read models. The UI displays the result and captures user intent.
-- Review actions update research-owned review checkpoints.
-- Evidence-link interactions use typed research links while preserving existing notebook origin links.
-- AI brief UI must show citations and provenance enough for source-grounded review, without presenting buy/sell/hold recommendations.
+The Research screen (company/watchlist evidence timeline, review checkpoints, questions, reminders, briefs/digests) shipped through `v0.31.0`; its live behavior is governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md) and specified in [Contracts § Research Evidence Boundary](contracts.md#research-evidence-boundary) and [Data Model § Research Evidence Boundary](data-model.md#research-evidence-boundary). Delivery chronicle (M25/M26/M29/M31) moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02). No further post-v1 direction is tracked for this screen beyond the roadmap items already covering research-adjacent epics (see [Roadmap](roadmap.md)).
 
 ## Responsive Behavior
 
@@ -504,10 +414,4 @@ The primary target is desktop. The first implementation should still avoid layou
 
 ## Deferred UI
 
-Do not build these in v1:
-
-- portfolio position tracking
-- trade journal
-- hosted billing/licensing UI
-- cloud sync UI
-- team or sharing workflows
+No UI is built for anything in [Roadmap § Not In V1](roadmap.md#not-in-v1) (portfolio position tracking, trade journal, billing/hosted-licensing infrastructure, cloud sync, multi-user/team/sharing workflows).

@@ -274,12 +274,15 @@ export const legacySettings: UserSettings = {
     generalAnalysisProvider: null,
     generalAnalysisModel: "gemini-2.5-flash",
     generalAnalysisTimeoutSeconds: 90,
+    openaiCompatibleBaseUrl: "",
   },
   aiAnalysisMode: "source_grounded",
   espiAiFallbackEnabled: false,
   logs: { level: "info", maxFiles: 5, maxFileBytes: 5_242_880 },
   shortcutBindings: {},
+  capabilityProviders: {},
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
+  queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
   pinnedCompanyIds: [],
 };
 

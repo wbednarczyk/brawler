@@ -1,8 +1,6 @@
 # ADR 0025: Research Reminders And Digest Boundaries
 
-## Status
-
-Accepted.
+Status: Accepted.
 
 ## Context
 

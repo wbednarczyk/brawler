@@ -1,8 +1,6 @@
 # ADR 0015: Developer Mode And Local Observability
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

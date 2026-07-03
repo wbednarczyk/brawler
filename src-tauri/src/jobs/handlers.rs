@@ -10,7 +10,7 @@
 use std::sync::Arc;
 
 use crate::app_state::AppState;
-use crate::jobs::queue::{JobHandler, JobWorker};
+use crate::jobs::queue::{JobHandler, JobWorker, WorkerPool};
 
 /// Job kind: refresh the disposable embedding index (ADR 0035). Idempotent —
 /// skips unchanged content — so retry/resume is safe.
@@ -25,6 +25,10 @@ pub const KPI_EXTRACTION_KIND: &str = "kpi_extraction";
 pub const RESEARCH_BRIEF_KIND: &str = "research_brief";
 /// Job kind: generate a research digest (status in `research_digest_jobs`).
 pub const RESEARCH_DIGEST_KIND: &str = "research_digest";
+/// Job kind: one stage of an autopilot run (North Star, v0.49.0 / ADR 0055). The
+/// payload carries `{run_id, stage}`; the handler runs that stage and chains the
+/// next, so a crash mid-stage resumes that stage only.
+pub use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
 
 struct ContentEmbeddingHandler;
 
@@ -97,6 +101,109 @@ per_job_handler!(
     "unknown"
 );
 
+/// One stage of an autopilot run. The handler runs the stage (reusing existing
+/// services) and chains the next on success; a fatal stage failure finalizes the
+/// run inside [`run_stage`] (still notified), so the handler returns Ok and the
+/// job is not retried-looped.
+struct AutopilotStageHandler;
+
+impl JobHandler for AutopilotStageHandler {
+    fn kind(&self) -> &'static str {
+        AUTOPILOT_STAGE_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::autopilot::run_stage(state, payload)
+    }
+}
+
+/// Extract the `adapterId` from a source-refresh payload — the per-source
+/// serialization key (ADR 0059). Both the scheduled full refresh and the
+/// per-company refresh key on the same adapter id, so all work for one source
+/// serializes (politeness / no duplicate concurrent work).
+fn payload_adapter_id(payload: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(payload)
+        .ok()?
+        .get("adapterId")
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
+/// A scheduled source-adapter refresh (Rust-side scheduler, ADR 0055 / AV5). The
+/// scheduler re-arms this job per the poll interval; the worker executes the
+/// refresh (detection rides its completion). Returns `Err` on failure so the queue
+/// retries with backoff.
+struct ScheduledSourceRefreshHandler;
+
+impl JobHandler for ScheduledSourceRefreshHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::scheduler::SOURCE_REFRESH_KIND
+    }
+
+    fn serialization_key(&self, payload: &str) -> Option<String> {
+        payload_adapter_id(payload)
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        let adapter_id =
+            payload_adapter_id(payload).ok_or("scheduled source refresh missing adapterId")?;
+        crate::jobs::source_refresh::refresh_source_for_trigger(
+            state,
+            &adapter_id,
+            "scheduler",
+            None,
+        )
+        .map(|_| ())
+    }
+}
+
+/// A per-company refresh for a company-scoped source (ADR 0059). Planned by the
+/// scheduled refresh (one job per tracked company) so a slow all-companies loop can
+/// no longer monopolize the worker. Serializes on the adapter id, so at most one
+/// company of the source refreshes at a time. Returns `Err` on failure to retry.
+struct SourceCompanyRefreshHandler;
+
+impl JobHandler for SourceCompanyRefreshHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND
+    }
+
+    fn serialization_key(&self, payload: &str) -> Option<String> {
+        payload_adapter_id(payload)
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::source_refresh::run_source_company_refresh(state, payload)
+    }
+}
+
+/// A scheduled company-registry refresh-if-stale check (Rust-side scheduler).
+struct ScheduledRegistryRefreshHandler;
+
+impl JobHandler for ScheduledRegistryRefreshHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::scheduler::REGISTRY_REFRESH_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        let stale_after_seconds = serde_json::from_str::<serde_json::Value>(payload)
+            .ok()
+            .and_then(|value| value.get("staleAfterSeconds").and_then(|v| v.as_i64()))
+            .unwrap_or(86_400);
+        if state
+            .company_directories_are_stale(stale_after_seconds)
+            .map_err(|error| error.to_string())?
+        {
+            crate::jobs::source_refresh::refresh_company_directories_for_trigger(
+                state,
+                "scheduler",
+            )
+            .map(|_| ())?;
+        }
+        Ok(())
+    }
+}
+
 /// Build the durable-queue worker with every registered handler. Startup calls
 /// this, then [`crate::jobs::queue::spawn`] to reclaim residue and run the loop.
 pub fn build_worker(state: AppState) -> JobWorker {
@@ -107,15 +214,74 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(KpiExtractionHandler));
     worker.register(Arc::new(ResearchBriefHandler));
     worker.register(Arc::new(ResearchDigestHandler));
+    worker.register(Arc::new(AutopilotStageHandler));
+    worker.register(Arc::new(ScheduledSourceRefreshHandler));
+    worker.register(Arc::new(SourceCompanyRefreshHandler));
+    worker.register(Arc::new(ScheduledRegistryRefreshHandler));
     worker
 }
 
-/// Enqueue a per-job-table job onto the durable queue (single attempt, dedup by
+/// The isolated worker-lane layout (ADR 0059): which job kinds each pool drains,
+/// and how many threads it runs. Lanes keep a slow source refresh from starving
+/// autopilot; the shared per-provider AI limit (not the thread count) is the real
+/// ceiling on AI cost, so generous defaults are safe. Worker counts come from
+/// `config` (settings-driven, tolerant defaults). Every registered kind must appear
+/// in exactly one lane.
+pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
+    use crate::jobs::scheduler::{REGISTRY_REFRESH_KIND, SOURCE_REFRESH_KIND};
+    use crate::jobs::source_refresh::SOURCE_COMPANY_REFRESH_KIND;
+    vec![
+        WorkerPool {
+            name: "sources",
+            kinds: vec![
+                SOURCE_REFRESH_KIND,
+                SOURCE_COMPANY_REFRESH_KIND,
+                REGISTRY_REFRESH_KIND,
+            ],
+            workers: config.sources_workers.max(1) as usize,
+        },
+        WorkerPool {
+            name: "autopilot",
+            kinds: vec![AUTOPILOT_STAGE_KIND],
+            workers: config.autopilot_workers.max(1) as usize,
+        },
+        WorkerPool {
+            name: "ai",
+            kinds: vec![
+                AI_ANALYSIS_KIND,
+                KPI_EXTRACTION_KIND,
+                CLAIM_EXTRACTION_KIND,
+                RESEARCH_BRIEF_KIND,
+                RESEARCH_DIGEST_KIND,
+            ],
+            workers: config.ai_workers.max(1) as usize,
+        },
+        WorkerPool {
+            name: "indexing",
+            kinds: vec![CONTENT_EMBEDDING_KIND],
+            workers: config.indexing_workers.max(1) as usize,
+        },
+    ]
+}
+
+/// Enqueue a per-job-table job onto the durable queue (single attempt, keyed by
 /// the job's own id). Replaces the prior fire-and-forget `spawn_blocking`; the
 /// worker runs the handler, so a crash mid-run resumes. Logs and drops on
 /// enqueue error (best-effort, matching the prior detached spawn).
+///
+/// Uses `reschedule`, not plain `enqueue`: every `per_job_handler` (ai_analysis,
+/// claim_extraction, kpi_extraction, research_brief, research_digest) always
+/// returns `Ok` and so always ends its `job_queue` row `succeeded`, regardless of
+/// the *domain* outcome recorded in the job's own table — that is precisely what
+/// lets a domain job land `failed` while its `job_queue` row is already terminal.
+/// The `retry_*` commands (`retry_kpi_extraction`, `retry_claim_extraction`,
+/// `retry_ai_analysis`) then re-enqueue under the **same** `job_id`; plain
+/// `enqueue` (`INSERT OR IGNORE`) would silently no-op against that already-
+/// `succeeded` row and the retry would never actually run (bug class dce9ce8).
+/// `reschedule` re-arms a terminal row to `pending` and leaves a `running` row
+/// untouched (never double-run); a fresh `job_id` is inserted exactly as before.
 pub fn enqueue_per_job(state: &AppState, kind: &'static str, job_id: &str) {
-    if let Err(error) = state.jobs().enqueue(job_id, kind, job_id, 1) {
+    if let Err(error) = state.jobs().reschedule(job_id, kind, job_id, 1) {
         log::warn!("failed to enqueue {kind} job {job_id}: {error}");
     }
 }
@@ -139,6 +305,35 @@ mod tests {
         let worker = build_worker(state.clone());
         assert!(worker.process_one().expect("process one"));
         assert_eq!(state.jobs().counts().expect("counts").succeeded, 1);
+    }
+
+    #[test]
+    fn enqueue_per_job_rearms_a_stale_terminal_row_under_the_same_id() {
+        // Bug class dce9ce8: every `per_job_handler` always returns `Ok` (the
+        // domain outcome lives in its own job table), so its `job_queue` row
+        // always ends `succeeded` — even when the domain job itself failed. The
+        // `retry_*` commands then re-enqueue under the SAME job id; if that used
+        // plain `enqueue` (`INSERT OR IGNORE`), the already-`succeeded` row would
+        // silently swallow the retry forever.
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        enqueue_per_job(&state, KPI_EXTRACTION_KIND, "job-1");
+        let worker = build_worker(state.clone());
+        assert!(worker.process_one().expect("process one"));
+        assert_eq!(state.jobs().counts().expect("counts").succeeded, 1);
+
+        // Retry: same job id, same kind.
+        enqueue_per_job(&state, KPI_EXTRACTION_KIND, "job-1");
+        let counts = state.jobs().counts().expect("counts");
+        assert_eq!(
+            counts.pending, 1,
+            "the retry re-arms the terminal row instead of silently no-opping"
+        );
+        assert_eq!(counts.succeeded, 0);
+
+        assert!(
+            worker.process_one().expect("process one"),
+            "the re-armed job is actually dispatched again"
+        );
     }
 
     #[test]

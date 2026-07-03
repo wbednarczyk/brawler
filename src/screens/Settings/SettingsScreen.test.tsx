@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import {
   expect,
+  handleAppCommand,
   invoke,
   join,
   openUrl,
@@ -14,6 +15,10 @@ import {
   writeTextFile,
   within,
 } from "../../test/appWorkflowHarness";
+
+function updateSettingsCallCount(): number {
+  return vi.mocked(invoke).mock.calls.filter(([command]) => command === "update_settings").length;
+}
 
 describe("Settings screen workflows", () => {
   it("shows local settings and persists theme changes", async () => {
@@ -254,6 +259,233 @@ describe("Settings screen workflows", () => {
     expect(screen.getByRole("button", { name: "Odśwież zadania" })).toBeInTheDocument();
   });
 
+  it("routes an AI capability to an ordered provider pool and configures the OpenAI-compatible provider (ADR 0060 amended)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
+
+    expect(within(settingsRegion).getByRole("heading", { name: "AI capability routing" })).toBeInTheDocument();
+
+    const kpiRow = screen
+      .getByRole("heading", { name: "KPI extraction", level: 3 })
+      .closest(".capability-routing-row") as HTMLElement;
+
+    expect(within(kpiRow).getByText("Uses the general AI provider.")).toBeInTheDocument();
+
+    // (a) adding a member defaults to the catalog's first provider + its default model.
+    await user.click(within(kpiRow).getByRole("button", { name: "Add provider" }));
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        capabilityProviders: expect.objectContaining({
+          kpi_extraction: [expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" })],
+        }),
+      },
+    });
+    expect(within(kpiRow).queryByText("Uses the general AI provider.")).not.toBeInTheDocument();
+
+    // (b) a second member appended preserves order.
+    await user.click(within(kpiRow).getByRole("button", { name: "Add provider" }));
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        capabilityProviders: expect.objectContaining({
+          kpi_extraction: [
+            expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" }),
+            expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" }),
+          ],
+        }),
+      },
+    });
+
+    // (c) switching a member to the OpenAI-compatible provider swaps its model
+    // select for a free-text field. Free-text settings fields use a local
+    // draft, committed on blur (docs/ui-authoring.md) — a field bound directly
+    // to the settings value cannot be typed into, because the async
+    // round-trip reverts each keystroke before the next one lands.
+    await user.selectOptions(screen.getByLabelText("Provider KPI extraction 2"), "provider_openai_compatible");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        capabilityProviders: expect.objectContaining({
+          kpi_extraction: [
+            expect.objectContaining({ provider: "provider_gemini" }),
+            expect.objectContaining({ provider: "provider_openai_compatible", model: "" }),
+          ],
+        }),
+      },
+    });
+
+    const modelField = screen.getByLabelText("Model KPI extraction 2");
+    expect(modelField.tagName).toBe("INPUT");
+
+    const callsBeforeModelTyping = updateSettingsCallCount();
+
+    fireEvent.change(modelField, { target: { value: "c" } });
+    fireEvent.change(modelField, { target: { value: "cu" } });
+    fireEvent.change(modelField, { target: { value: "custom-model-x" } });
+
+    // Typing keeps the typed value in the input locally and fires no commit.
+    expect(modelField).toHaveValue("custom-model-x");
+    expect(updateSettingsCallCount()).toBe(callsBeforeModelTyping);
+
+    fireEvent.blur(modelField);
+
+    // Blur commits exactly once, with the full typed value.
+    await waitFor(() => {
+      expect(updateSettingsCallCount()).toBe(callsBeforeModelTyping + 1);
+    });
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        capabilityProviders: expect.objectContaining({
+          kpi_extraction: [
+            expect.objectContaining({ provider: "provider_gemini" }),
+            expect.objectContaining({ provider: "provider_openai_compatible", model: "custom-model-x" }),
+          ],
+        }),
+      },
+    });
+    expect(modelField).toHaveValue("custom-model-x");
+
+    // (d) the OpenAI-compatible base URL follows the same draft-then-blur
+    // contract.
+    const baseUrlField = screen.getByLabelText("OpenAI-compatible base URL");
+    const callsBeforeUrlTyping = updateSettingsCallCount();
+
+    fireEvent.change(baseUrlField, { target: { value: "h" } });
+    fireEvent.change(baseUrlField, { target: { value: "ht" } });
+    fireEvent.change(baseUrlField, { target: { value: "https://compat.example.com/v1" } });
+
+    // Typing keeps the typed value in the input locally and fires no commit,
+    // even though a partial URL like "h"/"ht" fails backend validation.
+    expect(baseUrlField).toHaveValue("https://compat.example.com/v1");
+    expect(updateSettingsCallCount()).toBe(callsBeforeUrlTyping);
+
+    fireEvent.blur(baseUrlField);
+
+    // Blur commits exactly once, with the full typed value.
+    await waitFor(() => {
+      expect(updateSettingsCallCount()).toBe(callsBeforeUrlTyping + 1);
+    });
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { openaiCompatibleBaseUrl: "https://compat.example.com/v1" },
+    });
+    expect(screen.getByLabelText("OpenAI-compatible base URL")).toHaveValue("https://compat.example.com/v1");
+
+    // (e) the OpenAI-compatible provider gets its own credential form, same as
+    // the other additional providers (ADR 0028's per-provider credential form).
+    await user.click(within(settingsRegion).getByRole("button", { name: "Credentials" }));
+
+    expect(
+      within(settingsRegion).getByRole("heading", { name: "OpenAI-compatible (custom)" }),
+    ).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("OpenAI-compatible (custom) API key"), "test-compat-key");
+    await user.click(screen.getByRole("button", { name: "Save OpenAI-compatible (custom) API key" }));
+
+    expect(invoke).toHaveBeenCalledWith("set_provider_api_key", {
+      input: {
+        providerId: "provider_openai_compatible",
+        apiKey: "test-compat-key",
+      },
+    });
+  });
+
+  it("switches the general AI model to a free-text draft field for the OpenAI-compatible provider and commits it on blur", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
+
+    await user.selectOptions(screen.getByLabelText("General AI provider"), "provider_openai_compatible");
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { generalAnalysisProvider: "provider_openai_compatible" },
+    });
+
+    // The catalog has no models for the compatible provider, so the general
+    // model field must become a free-text draft input rather than a disabled,
+    // empty select.
+    const generalModelField = screen.getByLabelText("General AI model");
+    expect(generalModelField.tagName).toBe("INPUT");
+    expect(generalModelField).not.toBeDisabled();
+
+    const callsBeforeTyping = updateSettingsCallCount();
+
+    fireEvent.change(generalModelField, { target: { value: "c" } });
+    fireEvent.change(generalModelField, { target: { value: "custom-general-model" } });
+
+    // Typing keeps the typed value locally and fires no commit yet.
+    expect(generalModelField).toHaveValue("custom-general-model");
+    expect(updateSettingsCallCount()).toBe(callsBeforeTyping);
+
+    fireEvent.blur(generalModelField);
+
+    // Blur commits exactly once, with the full typed value.
+    await waitFor(() => {
+      expect(updateSettingsCallCount()).toBe(callsBeforeTyping + 1);
+    });
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { generalAnalysisModel: "custom-general-model" },
+    });
+    expect(generalModelField).toHaveValue("custom-general-model");
+  });
+
+  it("seeds an empty model when addMember's first catalog provider is the OpenAI-compatible provider", async () => {
+    const user = userEvent.setup();
+    // The default sample catalog always lists Gemini first, so exercise the
+    // compatible-provider-is-first case directly by overriding just this one
+    // command's response, falling back to the shared mock runtime otherwise.
+    vi.mocked(invoke).mockImplementation((command, args) => {
+      if (command === "list_ai_provider_catalog") {
+        return Promise.resolve([
+          {
+            providerId: "provider_openai_compatible",
+            label: "OpenAI-compatible (custom)",
+            models: [],
+            defaultModel: "",
+            requiresCredential: true,
+          },
+          {
+            providerId: "provider_gemini",
+            label: "Gemini",
+            models: ["gemini-3.5-flash"],
+            defaultModel: "gemini-3.5-flash",
+            requiresCredential: true,
+          },
+        ]);
+      }
+      return handleAppCommand(command, args as Record<string, unknown> | undefined);
+    });
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
+
+    const kpiRow = screen
+      .getByRole("heading", { name: "KPI extraction", level: 3 })
+      .closest(".capability-routing-row") as HTMLElement;
+
+    await user.click(within(kpiRow).getByRole("button", { name: "Add provider" }));
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: {
+        capabilityProviders: expect.objectContaining({
+          kpi_extraction: [expect.objectContaining({ provider: "provider_openai_compatible", model: "" })],
+        }),
+      },
+    });
+  });
+
   it("previews and applies import/export workflows", async () => {
     const user = userEvent.setup();
     vi.mocked(save)
@@ -382,9 +614,44 @@ describe("Settings screen workflows", () => {
       input: { dbBusyTimeoutMs: 30000 },
     });
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Reset to defaults" }));
+    const databaseSection = within(settingsRegion).getByRole("region", { name: "Database" });
+    await user.click(within(databaseSection).getByRole("button", { name: "Reset to defaults" }));
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },
+    });
+  });
+
+  it("edits and resets background-work worker settings (ADR 0059)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "Database" }));
+
+    const queueSection = within(settingsRegion).getByRole("region", { name: "Background work" });
+    expect(
+      within(queueSection).getByRole("heading", { name: "Background work" }),
+    ).toBeInTheDocument();
+
+    await user.selectOptions(within(queueSection).getByLabelText("Autopilot workers"), "6");
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { autopilotWorkers: 6 },
+    });
+
+    await user.selectOptions(
+      within(queueSection).getByLabelText("Max concurrent calls per AI provider"),
+      "4",
+    );
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { aiProviderConcurrency: 4 },
+    });
+
+    await user.click(within(queueSection).getByRole("button", { name: "Reset to defaults" }));
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
     });
   });
 });

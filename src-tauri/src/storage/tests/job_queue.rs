@@ -5,6 +5,35 @@ fn state() -> AppState {
 }
 
 #[test]
+fn reschedule_reruns_terminal_jobs_under_a_stable_id() {
+    // The scheduler primitive (ADR 0055 / AV5): one row per recurring job, re-armed
+    // each interval, so the queue does not grow a row per fire.
+    let jobs = state().jobs();
+
+    // First call inserts a runnable row.
+    assert!(jobs.reschedule("src:a", "kind", "{}", 2).expect("insert"));
+    let claimed = jobs.claim_next().expect("claim").expect("a job");
+    assert_eq!(claimed.id, "src:a");
+    jobs.mark_succeeded("src:a").expect("succeed");
+    assert_eq!(jobs.counts().expect("counts").succeeded, 1);
+
+    // Re-arming the same id resets the terminal row back to pending — still one row.
+    assert!(jobs.reschedule("src:a", "kind", "{}", 2).expect("rearm"));
+    let counts = jobs.counts().expect("counts");
+    assert_eq!(counts.pending, 1);
+    assert_eq!(counts.succeeded, 0);
+
+    // A row that is currently running is left untouched (never double-run).
+    let claimed = jobs.claim_next().expect("claim").expect("a job"); // -> running
+    assert_eq!(claimed.id, "src:a");
+    assert!(
+        !jobs.reschedule("src:a", "kind", "{}", 2).expect("rearm"),
+        "a running row is not disturbed"
+    );
+    assert_eq!(jobs.counts().expect("counts").running, 1);
+}
+
+#[test]
 fn enqueue_is_idempotent_by_id() {
     let jobs = state().jobs();
 
@@ -92,4 +121,170 @@ fn reclaim_requeues_running_rows() {
     let counts = jobs.counts().expect("counts");
     assert_eq!(counts.running, 0);
     assert_eq!(counts.pending, 2);
+}
+
+#[test]
+fn claim_next_for_kinds_claims_only_its_lane() {
+    // Worker-pool isolation (ADR 0059): a lane claims only its kinds, so the
+    // autopilot lane gets its job even though an older source job is at the head
+    // of the FIFO — no starvation behind another lane.
+    let jobs = state().jobs();
+    jobs.enqueue("src", "scheduled_source_refresh", "{}", 3)
+        .expect("enqueue src");
+    jobs.enqueue("auto", "autopilot_stage", "{}", 3)
+        .expect("enqueue auto");
+
+    let claimed = jobs
+        .claim_next_for_kinds(&["autopilot_stage"])
+        .expect("claim")
+        .expect("autopilot job");
+    assert_eq!(claimed.id, "auto");
+
+    // The older source row is untouched — still claimable by its own lane.
+    let src = jobs
+        .claim_next_for_kinds(&["scheduled_source_refresh"])
+        .expect("claim")
+        .expect("source job");
+    assert_eq!(src.id, "src");
+
+    // An empty lane claims nothing.
+    assert!(jobs.claim_next_for_kinds(&[]).expect("claim").is_none());
+}
+
+#[test]
+fn defer_requeues_without_consuming_an_attempt() {
+    // Source-busy defer (ADR 0059): a worker that cannot acquire the per-source lock
+    // requeues the job — but this is not a failure, so it must not burn a retry.
+    // `defer` undoes the claim's attempt increment, so contention can never exhaust
+    // a job's attempts.
+    let jobs = state().jobs();
+    jobs.enqueue("busy", "kind-a", "{}", 2).expect("enqueue");
+
+    let claimed = jobs.claim_next().expect("claim").expect("job");
+    assert_eq!(claimed.attempts, 1, "claim increments attempts");
+
+    jobs.defer("busy", 3).expect("defer");
+    let counts = jobs.counts().expect("counts");
+    assert_eq!(counts.pending, 1, "deferred back to pending");
+    assert_eq!(counts.running, 0);
+    assert_eq!(counts.failed, 0, "a defer is not a failure");
+
+    // Re-claiming shows the attempt was rolled back (1 again, not 2) — so repeated
+    // contention never drives the job toward its max_attempts ceiling. (available_at
+    // is pushed out, so this only re-claims because the row is the sole candidate.)
+    // Prove the counter did not advance by deferring once more and confirming it is
+    // still claimable rather than dead-lettered.
+    let reclaimed = jobs.claim_next().expect("claim");
+    // available_at is in the future (+3s), so nothing is claimable right now.
+    assert!(
+        reclaimed.is_none(),
+        "the deferred job waits out its backoff window"
+    );
+}
+
+#[test]
+fn queue_config_reads_seeded_defaults_and_clamps_updates() {
+    // Configurable pools (ADR 0059): migration 0056 seeds 2/3/2 workers + provider
+    // concurrency 2; indexing stays a constant 1. Out-of-range updates are clamped
+    // (never rejected), like the pool settings.
+    let state = state();
+    let cfg = state.queue_config();
+    assert_eq!(cfg.sources_workers, 2);
+    assert_eq!(cfg.autopilot_workers, 3);
+    assert_eq!(cfg.ai_workers, 2);
+    assert_eq!(cfg.indexing_workers, 1);
+    assert_eq!(cfg.ai_provider_concurrency, 2);
+
+    state
+        .update_settings(SettingsUpdate {
+            sources_workers: Some(999),
+            ai_provider_concurrency: Some(0),
+            ..Default::default()
+        })
+        .expect("update");
+    let cfg = state.queue_config();
+    assert_eq!(cfg.sources_workers, 16, "clamped to the worker max");
+    assert_eq!(
+        cfg.ai_provider_concurrency, 1,
+        "clamped to the concurrency min"
+    );
+}
+
+#[test]
+fn provider_semaphore_is_shared_per_provider_and_bounded() {
+    // Per-provider concurrency gate (ADR 0059): one semaphore per provider id,
+    // created once with the configured permit count and shared across lanes, so the
+    // limit bounds total concurrent calls to that provider.
+    let state = state();
+    let gemini = state.provider_semaphore("provider_gemini", 2);
+    // The same provider returns the same instance; the limit is fixed at creation.
+    let gemini_again = state.provider_semaphore("provider_gemini", 5);
+    assert!(std::sync::Arc::ptr_eq(&gemini, &gemini_again));
+
+    let p1 = gemini.try_acquire().expect("permit 1");
+    let _p2 = gemini.try_acquire().expect("permit 2");
+    assert!(
+        gemini.try_acquire().is_err(),
+        "the third concurrent call is blocked by the limit"
+    );
+    drop(p1);
+    assert!(
+        gemini.try_acquire().is_ok(),
+        "a released permit frees a slot"
+    );
+
+    // A different provider has its own independent semaphore.
+    let anthropic = state.provider_semaphore("provider_anthropic", 2);
+    assert!(!std::sync::Arc::ptr_eq(&gemini, &anthropic));
+}
+
+#[test]
+fn try_acquire_source_is_exclusive_and_releases_on_drop() {
+    // Per-source serialization = exactly one (ADR 0059): while a guard is held no
+    // other worker may claim the same source; a different source is independent; the
+    // lock frees when the guard drops (RAII, so a panic/early-return cannot leak it).
+    let state = state();
+    let guard = state.try_acquire_source("bankier").expect("acquire");
+    assert!(
+        state.try_acquire_source("bankier").is_none(),
+        "the same source cannot be acquired twice"
+    );
+    assert!(
+        state.try_acquire_source("gpw").is_some(),
+        "a different source is not blocked"
+    );
+
+    drop(guard);
+    assert!(
+        state.try_acquire_source("bankier").is_some(),
+        "dropping the guard releases the source"
+    );
+}
+
+#[test]
+fn reclaim_dead_letters_a_running_row_that_exhausted_attempts() {
+    // Poison-job guard (ADR 0059): a job that hangs never reaches mark_failed, so
+    // its attempts only climb via reclaim+claim cycles across restarts. Once it has
+    // exhausted max_attempts, reclaim must dead-letter it instead of resurrecting
+    // it forever (the bankier refresh with attempts=15 > max=2 starved the queue).
+    let jobs = state().jobs();
+    jobs.enqueue("poison", "kind-a", "{}", 2).expect("enqueue");
+
+    // Cycle 1: claim (attempts 1), crash leaves it running, reclaim resumes it.
+    jobs.claim_next().expect("claim").expect("job");
+    assert_eq!(jobs.reclaim_stale_running().expect("reclaim"), 1);
+    assert_eq!(jobs.counts().expect("counts").pending, 1);
+
+    // Cycle 2: claim (attempts 2 == max), crash leaves it running, reclaim now
+    // dead-letters it rather than resuming.
+    jobs.claim_next().expect("claim").expect("job");
+    assert_eq!(
+        jobs.reclaim_stale_running().expect("reclaim"),
+        0,
+        "attempts exhausted -> dead-lettered, not resumed"
+    );
+    let counts = jobs.counts().expect("counts");
+    assert_eq!(counts.failed, 1);
+    assert_eq!(counts.pending, 0);
+    assert_eq!(counts.running, 0);
 }

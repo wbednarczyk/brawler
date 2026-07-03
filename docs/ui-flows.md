@@ -2,7 +2,7 @@
 
 This document plans Brawler from the user experience inward. It defines the first workflows the app must make feel natural before detailed database schema or implementation scaffolding hardens.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), and [Contracts](contracts.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Product Spec](product-spec.md), [UI Information Architecture](ui-information-architecture.md), and [Contracts](contracts.md).
 
 ## UX North Star
 
@@ -55,6 +55,9 @@ Acceptance criteria:
 - Theme defaults to dark.
 - User can add at least one company without understanding internal IDs.
 - Empty states are useful but not marketing-like.
+- Tracking a company offers a **Backfill history** action that captures
+  ~3 years of official-source report documents without duplicating data on
+  repeated runs ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
 
 ## Journey: Daily Inbox Review
 
@@ -107,9 +110,9 @@ Intent: answer "what do I know about this company and what should I check later?
 
 Flow:
 
-1. User opens a company.
-2. Company workspace is one company page with tabs or segmented views for Feed, Notebook, Claims, Transcripts, Fundamentals, and Metadata.
-3. Notebook view lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
+1. User opens a company (from the Companies library, a pinned sidebar entry, a feed item, or global search), landing the curated cockpit dashboard scoped to it ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)).
+2. The dashboard opens with a calm default panel set (Fundamentals, Feed, Claims, Quality, Report documents, Notebook) and stays composable; the company `Notebook` panel is one of them.
+3. Notebook panel lists notes newest first, with filters by tag, kind, claim status, and follow-up period.
 4. User opens a note in the detail pane.
 5. User edits note content, changes claim status, or opens linked source material.
 
@@ -139,6 +142,9 @@ Acceptance criteria:
 - Confirmed facts appear in the Fundamentals matrix through the same read model as manually entered facts.
 - Values display in their original as-reported scale with localized KPI names, never raw integers or internal ids.
 - A document that is a web page rather than a report PDF is rejected with an actionable message, not a misleading partial extraction.
+- A fact's detail shows its source-tier and validation badges (ADR 0061); a fact whose layout drifted from the confirmed company profile additionally shows a "Structure changed" label diff (new/missing report lines, reporting-unit change). When the autonomous pipeline (autopilot/assist) carries the same drift signal on a run, the run's notification card on Today shows the identical "Structure changed" block, so drift is visible without opening the company.
+- For a company in `autopilot` mode, step 5's confirm/edit/reject modal is bypassed: extraction runs automatically and produced facts land already committed as `auto_unreviewed`. The review point moves to Today/Pulse's Autopilot run card, which offers **Undo** (two-step confirm) instead of confirm/reject — it reverts exactly the facts that run produced, reusing the same supersede/reject mechanics, and the card then shows a "Reverted N facts" state ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md) §4). A company in `assist` mode still lands its proposals `pending` and goes through this journey's step 5 as normal.
+- A stored periodic financial statement can be diffed section-by-section against the previous same-type filing, from the company workspace and on new-report arrival ([ADR 0052](adr/0052-report-over-report-diff.md)).
 
 ## Journey: Track A Management Claim To Verdict
 
@@ -159,6 +165,7 @@ Acceptance criteria:
 - Verdicts are always user-set; the app never assigns a verdict automatically.
 - Claims appear in the company research timeline and feed reminders/digests; they are exported with research data.
 - Heavy extraction interaction happens in a modal, not crammed into the fixed-width detail rail.
+- A claim's follow-up period supports both a quarter (e.g. `2026-Q3`) and an exact date, with quarter selection the most visible control ([ADR 0064](adr/0064-resolved-v1-ux-decisions.md)).
 
 ## Journey: Prepare For Report Season
 
@@ -207,6 +214,7 @@ Acceptance criteria:
 - User confirms note content before saving.
 - Saved notes link to transcript segment IDs, original YouTube URL, provider/job context, and timestamp ranges when available.
 - Provider limits and privacy implications are visible before sending video data to the provider.
+- Transcript segments are immutable source output and are not edited directly; only note drafts created from them are editable ([ADR 0064](adr/0064-resolved-v1-ux-decisions.md)).
 
 ## Journey: Appearance And Locale Settings
 
@@ -230,6 +238,28 @@ Acceptance criteria:
 - Polish locale is available from Settings.
 - Locale handling is extensible so future supported languages can be added through locale resources/configuration instead of per-screen rewrites.
 - Source-provided text, company names, ticker symbols, URLs, source attribution, transcript text, and notebook bodies keep their original or user-entered language.
+
+## Journey: AI Capability Routing
+
+Intent: let the user mix AI providers per capability — e.g. a document-capable provider for KPI extraction and a free open-model host for text analysis — instead of one global provider for everything.
+
+Flow:
+
+1. User opens Settings → AI.
+2. User sets the general AI provider/model (the fallback every capability uses unless overridden) and, if using a free/self-hosted open-model host, the OpenAI-compatible base URL.
+3. User opens Settings → Credentials and saves the API key for each provider they intend to use (including the OpenAI-compatible provider — see `wiki/ai-provider-presets.md` for host presets and what value to use when a host itself needs no key).
+4. In the AI capability routing section, user picks a capability (e.g. KPI extraction) and adds one or more provider/model rows — an ordered list, first row tried first.
+5. For an OpenAI-compatible row, user types the model id (freeform, host-specific) instead of picking from a curated list.
+6. User reorders rows (move up/down) to set failover priority, or removes a row.
+7. App saves the capability's pool immediately with the rest of settings; an empty list falls back to the general AI provider.
+
+Acceptance criteria:
+
+- A capability with no configured rows behaves exactly as before (single global provider) — the feature is opt-in per capability.
+- Reordering changes the failover order in the saved pool.
+- The model field is a picklist for curated providers and a free-text field for the OpenAI-compatible provider.
+- Saving an OpenAI-compatible base URL that is non-empty and not `http://`/`https://` is rejected with a clear error.
+- The Credentials tab lists the OpenAI-compatible provider alongside Gemini/Claude/OpenAI, using the same generic save/replace/clear form.
 
 ## Journey: Global Search
 
@@ -271,116 +301,6 @@ Acceptance criteria:
 
 ## Screen Inventory
 
-V1 screens:
+See [UI Information Architecture](ui-information-architecture.md) for the canonical V1 screen list and deferred-UI pointer.
 
-- Inbox
-- Company workspace
-- Notebook list/detail
-- Transcript jobs and transcript review
-- Source status
-- Settings
-
-Deferred screens:
-
-- portfolio positions
-- trading activity
-- cloud sync
-- billing/licensing
-- team collaboration
-
-## Open UX Questions
-
-### Company Workspace Structure
-
-Decision: when you open a company such as `GPW:CDR`, it uses one company page with tabs or segmented views.
-
-Why it matters: this decides how quickly you can move between a company's latest feed items, notebook, claims, transcripts, and metadata.
-
-Considered options:
-
-- Tabs or segmented views: one company page with sections like Feed, Notebook, Claims, Transcripts, and Metadata. This keeps company research in one place and is the recommended default.
-- Split panes: company page shows multiple areas at once, for example feed on the left and notes on the right. This is powerful but can become cramped.
-- Route-per-section: Feed, Notebook, Claims, and Transcripts are separate pages with URLs/routes. This is simple technically but can make research feel scattered.
-
-V1 decision: tabs or segmented views inside one company workspace.
-
-### Report Backfill And Document Capture (v0.41.0)
-
-Decision: tracking a company offers an explicit **"Backfill history"** action, and report files are captured into the company's evidence rather than left as external links only. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
-
-Why it matters: a freshly tracked company otherwise starts with an empty timeline, and AI extraction/diff have no local document to work from.
-
-Flow:
-
-1. The user tracks a company (or opens its workspace) and triggers **Backfill history**. A progress indicator shows pages fetched, items ingested, and documents stored, with a cancel control; diagnostics surface any per-item fetch errors.
-2. As backfill and normal refresh ingest official filings, periodic-report attachments are stored as full report documents and appear linked from the company's Fundamentals/timeline; routine filings show as linked metadata only.
-3. Re-running backfill or refreshing again does not create duplicate items, documents, or events; backfilled items keep their original publication dates.
-4. A dividend or general-meeting filing with a stated future date surfaces a **proposed** calendar event; the user confirms or rejects it before it appears on the calendar. A date is never placed on the calendar without confirmation.
-
-V1 decision: backfill is user-triggered, app-open-only, ~3-year depth, official sources only; historical calendar entries are not backfilled.
-
-### Report-Over-Report Diff (v0.47.0)
-
-Decision: a stored periodic **financial statement** can be diffed section-by-section against the previous same-type filing, from the company workspace and on new-report arrival. See [ADR 0052](adr/0052-report-over-report-diff.md).
-
-Why it matters: an investor should see what changed since last quarter without rereading an 80-page filing.
-
-Flow:
-
-1. From the company's report documents (Fundamentals/timeline) the user picks a financial statement and chooses **Compare with previous**; the app pairs it with the prior same-type statement (SSF↔SSF, JSF↔JSF). When a new periodic report arrives, the diff is offered as an entry point.
-2. The diff view shows aligned sections: unchanged, changed, only-in-older, only-in-newer. Changed sections show the textual delta with both reports cited (the user can open either source).
-3. The diff is deterministic and local (no AI, no network); reopening the same pair shows the same result. While a report's text is still being extracted, the view shows an extraction-pending state; a scanned report with no text layer shows an explicit "can't diff" state.
-
-V1 decision: structured financial statements only; the narrative management report (MD&A) and an AI delta summary are deferred ([ADR 0052](adr/0052-report-over-report-diff.md)); no cross-company diff.
-
-### Claim Follow-up Periods
-
-Decision: when you write a note like "management said X should happen soon", the app supports both a follow-up quarter and an exact follow-up date.
-
-Why it matters: company promises are often tied to quarters, but sometimes you may want an exact date reminder.
-
-Considered options:
-
-- Quarters only: examples `2026-Q3`, `2026-Q4`. This matches earnings/reporting cadence and is simple for investor workflows.
-- Exact dates only: examples `2026-09-30`, `2026-12-15`. This is precise but less natural for statements like "in the next two quarters".
-- Both quarters and exact dates: store an optional quarter and optional exact date. This is more flexible and is the recommended default.
-
-V1 decision: support both, but make quarter selection the most visible control for claim notes.
-
-### Transcript Editability
-
-Decision: after Gemini produces transcript segments from a YouTube conference, transcript segments are treated as source output and are not edited directly in v1. Notes created from transcripts are editable.
-
-Why it matters: AI transcripts can contain mistakes. But if we edit the transcript directly, we lose a clean record of what the provider originally returned.
-
-Considered options:
-
-- Immutable transcript, editable note drafts: transcript segments are stored as source output and cannot be changed; you edit the note before saving. This preserves origin and is the recommended default.
-- Editable transcript plus editable notes: user can correct transcript text and then create notes from the corrected text. This is convenient but needs audit history.
-- Store original and corrected transcript: preserve provider output and allow a corrected user version. This is best long-term but more complex for v1.
-
-V1 decision: immutable transcript segments with editable note drafts.
-
-Selection behavior does not need to be fully designed before implementation scaffolding, but the v1 UX must support at least one way to choose source material before creating a note. Acceptable interaction patterns include selecting whole transcript segments, selecting text ranges inside a segment, or accepting an AI-suggested note draft. The saved note must keep origin to the original segment and YouTube URL even if the note text is edited.
-
-### Source Status Placement
-
-Decision: source and adapter health is shown in a dedicated Source Status screen.
-
-Why it matters: you need confidence that the app is actually pulling GPW reports and other sources, but source diagnostics should not clutter daily reading.
-
-Considered options:
-
-- Full Source Status screen: a dedicated section showing adapters, last successful fetch, errors, rate limits, and manual refresh. This is transparent and useful for troubleshooting.
-- Settings subsection: source status lives under Settings. This keeps navigation smaller but hides important operational information.
-- Compact toolbar status plus detailed settings: toolbar shows a small health indicator; detailed status lives elsewhere. This is useful later, but still needs a detailed home.
-
-V1 decision: full Source Status screen, with a compact indicator in the top toolbar later.
-
-## Resolved UX Decisions
-
-- Notes support Markdown in v1.
-- Company workspace uses one company page with tabs or segmented views.
-- Claim follow-up supports both follow-up quarter and exact follow-up date.
-- Transcript segments are immutable source output; notes created from them are editable.
-- Source status has a dedicated screen.
+Resolved V1 UX decisions (company workspace structure, report backfill, report-over-report diff, claim follow-up periods, transcript editability, source status placement) are recorded in [ADR 0064](adr/0064-resolved-v1-ux-decisions.md); current behavior for each is stated in the journeys above.

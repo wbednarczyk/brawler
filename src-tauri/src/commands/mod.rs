@@ -1,4 +1,5 @@
 pub mod ai_analysis;
+pub mod autopilot;
 pub mod backups;
 pub mod claim_extraction;
 pub mod cockpit_layouts;
@@ -8,6 +9,7 @@ pub mod diagnostics;
 pub mod events;
 pub mod feed;
 pub mod financials;
+pub mod fundamentals_extraction;
 pub mod health;
 pub mod import_export;
 pub mod interpretation;

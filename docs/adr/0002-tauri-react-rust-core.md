@@ -1,8 +1,6 @@
 # ADR 0002: Tauri, React, and Rust Core
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

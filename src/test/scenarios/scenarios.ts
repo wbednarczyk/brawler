@@ -16,6 +16,8 @@
 
 import type { Company } from "../../api/types";
 import type { CockpitLayout } from "../../api/generated/CockpitLayout";
+import type { FactProvenance } from "../../api/generated/FactProvenance";
+import type { AutopilotRun, CompanyAutopilot } from "../../api/autopilot";
 import {
   legacyCompanies,
   legacyCompanyEvents,
@@ -166,6 +168,9 @@ export interface ScenarioData {
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
   cockpitLayouts: CockpitLayout[];
+  // Autonomous report pipeline (ADR 0055)
+  autopilotModes: CompanyAutopilot[];
+  autopilotRuns: AutopilotRun[];
   // Research workspace
   researchEvidence: ResearchEvidenceItem[];
   researchQuestions: ResearchQuestion[];
@@ -185,6 +190,11 @@ export interface ScenarioData {
   kpiRelevance: KpiRelevance[];
   kpiExtractionJobs: KpiExtractionJob[];
   reportDocuments: ReportDocument[];
+  // Structured-first extraction provenance (ADR 0061) — optional seed: legacy
+  // facts have no row, so the tier/validation badge + drift card simply don't
+  // render. A provenance-seeded scenario exercises that UI (badges + the
+  // "structure changed" diff).
+  factProvenance?: FactProvenance[];
   reportPreparations: ReportPreparation[];
   reportSeasonUpcoming: ReportSeasonEntry[];
   reportSeasonPast: ReportSeasonEntry[];
@@ -285,6 +295,8 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     watchlists,
     watchlistMemberships,
     cockpitLayouts: [],
+    autopilotModes: [],
+    autopilotRuns: [],
     // Research
     researchEvidence: deep.map(makeResearchEvidenceItem),
     researchQuestions: deep.map(makeResearchQuestion),
@@ -368,6 +380,8 @@ function buildEmpty(): ScenarioData {
     watchlists: [],
     watchlistMemberships: [],
     cockpitLayouts: [],
+    autopilotModes: [],
+    autopilotRuns: [],
     researchEvidence: [],
     researchQuestions: [],
     evidenceLinks: [],

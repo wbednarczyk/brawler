@@ -42,13 +42,28 @@
   --dv-tabs-container-scrollbar-color: var(--muted);
   --dv-floating-box-shadow: var(--shadow);
 
-  /* metrics — match the app's rounded, dense feel */
-  --dv-tabs-and-actions-container-height: 38px;
-  --dv-tabs-and-actions-container-font-size: 13px;
-  --dv-tab-font-size: 13px;
+  /* metrics — minimal panel chrome (ADR 0057): a thin header (name + close), so
+   * panels read as lightweight building blocks, not heavy windows. The header was
+   * 38px and dominated small panels; 26px + tighter tabs reclaims that space. */
+  --dv-tabs-and-actions-container-height: 26px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tab-font-size: 12px;
   --dv-border-radius: 8px;
-  --dv-tab-border-radius: 8px;
+  --dv-tab-border-radius: 6px;
   --dv-sash-border-radius: 8px;
+}
+
+/* Minimal-chrome tabs (ADR 0057): tighten the per-tab padding/height so the thin
+ * header bar stays compact. Scoped to the theme class — no global leakage. */
+.dockview-theme-brawler .dv-tab {
+  padding: 0 8px;
+  min-height: 0;
+  height: 26px;
+  line-height: 26px;
+}
+
+.dockview-theme-brawler .dv-tab .dv-default-tab-action {
+  padding: 0 2px;
 }
 
 /* Full-screen cockpit: a viewport-owning canvas — the correct host for docking
@@ -71,6 +86,25 @@
 .cockpit-toolbar-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* Empty named view (ADR 0057): a prompt to add the first panel. */
+.cockpit-empty-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+}
+
+/* An empty grid-view cell: a centered "pick a panel" button (ADR 0057). */
+.cockpit-cell-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 6rem;
 }
 
 /* Command palette (⌘K) */
@@ -355,4 +389,96 @@
 .cockpit-group-actions button:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
+}
+
+/* New-view creator (ADR 0057): visual-first grid picker — presets, sliders + exact
+ * inputs, live preview. Flex previews keep cols×rows dynamic without inline styles. */
+.create-view-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: min(26rem, 80vw);
+}
+
+.create-view-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.create-view-preset {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.create-view-preset.is-active {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.create-view-preset:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.create-view-custom {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.create-view-dim {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex: 1 1 12rem;
+}
+
+.create-view-dim .ui-range-field {
+  flex: 1;
+}
+
+.create-view-dim-input {
+  width: 56px;
+}
+
+.create-view-live {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+}
+
+.view-grid-preview {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.view-grid-preview-row {
+  display: flex;
+  gap: 3px;
+}
+
+.view-grid-preview-cell {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.view-grid-preview.is-mini .view-grid-preview-cell {
+  width: 10px;
+  height: 10px;
+}
+
+.view-grid-preview.is-live .view-grid-preview-cell {
+  width: 26px;
+  height: 18px;
 }

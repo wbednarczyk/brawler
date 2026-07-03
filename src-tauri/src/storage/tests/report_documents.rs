@@ -296,6 +296,73 @@ fn non_periodic_attachments_register_metadata_only() {
     assert!(pending.is_empty());
 }
 
+/// ADR 0061 decision 1b: a structured ESEF/iXBRL (`.xhtml`) attachment is
+/// always a fetch candidate, even on a non-periodic-classified filing — the
+/// periodic-report text classifier can miss an xhtml-only ESEF filing. Its
+/// `.xades` digital-signature sibling stays `metadata_only` (no data to
+/// fetch); a plain PDF sibling on the same non-periodic item also stays
+/// `metadata_only` as before.
+#[test]
+fn structured_xhtml_attachment_registers_pending_even_on_non_periodic_item() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let mut items = vec![espi_item_with_attachments(
+        &company,
+        "9100004",
+        "Powiadomienie o transakcjach na akcjach - art. 19 ust. 1 MAR",
+        vec![
+            BankierCompanyAttachment {
+                label: "Raport XHTML".to_owned(),
+                url: "https://bonnier.pl/static/att/emitent/2026-05/report.xhtml".to_owned(),
+            },
+            BankierCompanyAttachment {
+                label: "Raport PDF".to_owned(),
+                url: "https://bonnier.pl/static/att/emitent/2026-05/report.pdf".to_owned(),
+            },
+            BankierCompanyAttachment {
+                label: "Podpis".to_owned(),
+                url: "https://bonnier.pl/static/att/emitent/2026-05/report.xades".to_owned(),
+            },
+        ],
+    )];
+    items[0].body_text =
+        Some("Powiadomienie o transakcji osoby pełniącej obowiązki zarządcze.".to_owned());
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should register attachments");
+
+    let docs = state
+        .list_report_documents_by_company(&company.id)
+        .expect("documents should list");
+    assert_eq!(docs.len(), 3);
+
+    let xhtml = docs
+        .iter()
+        .find(|d| d.url.ends_with(".xhtml"))
+        .expect("xhtml doc");
+    assert_eq!(xhtml.fetch_status, "pending");
+
+    let pdf = docs
+        .iter()
+        .find(|d| d.url.ends_with(".pdf"))
+        .expect("pdf doc");
+    assert_eq!(pdf.fetch_status, "metadata_only");
+
+    let xades = docs
+        .iter()
+        .find(|d| d.url.ends_with(".xades"))
+        .expect("xades doc");
+    assert_eq!(xades.fetch_status, "metadata_only");
+
+    let pending = state
+        .list_pending_attachment_documents()
+        .expect("pending attachments should list");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, xhtml.id);
+}
+
 #[test]
 fn attachment_registration_is_idempotent_across_reruns() {
     let connection = open_in_memory_database().expect("database should initialize");
@@ -355,4 +422,73 @@ fn get_returns_document_by_id() {
     assert_eq!(retrieved.source_type, "article");
     assert_eq!(retrieved.origin_ref, Some("feed_item_123".to_owned()));
     assert_eq!(retrieved.title, Some("Article Title".to_owned()));
+}
+
+/// Migration 0058 (ADR 0061 decision 1b): a structured `.xhtml` attachment
+/// stuck `metadata_only` from before the per-attachment gate existed is
+/// flipped back to `pending`. An already-fetched xhtml doc and any non-xhtml
+/// `metadata_only` doc (a PDF) are left untouched. Idempotent: re-applying
+/// must not re-touch a document a second time.
+#[test]
+fn migration_0058_flips_legacy_metadata_only_structured_attachments_to_pending() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    {
+        let raw = state.checkout().expect("connection should check out");
+        raw.execute_batch(&format!(
+            "
+            INSERT INTO report_documents (id, company_id, source_type, url, fetch_status, local_path)
+            VALUES
+                ('doc_legacy_xhtml', '{company_id}', 'espi_attachment',
+                 'https://bonnier.pl/static/att/emitent/2025-11/legacy.xhtml', 'metadata_only', NULL),
+                ('doc_legacy_pdf', '{company_id}', 'espi_attachment',
+                 'https://bonnier.pl/static/att/emitent/2025-11/legacy.pdf', 'metadata_only', NULL),
+                ('doc_fetched_xhtml', '{company_id}', 'espi_attachment',
+                 'https://bonnier.pl/static/att/emitent/2025-11/fetched.xhtml', 'fetched',
+                 'report_documents/doc_fetched_xhtml.xhtml');
+            ",
+            company_id = company.id
+        ))
+        .expect("legacy rows should seed");
+    }
+
+    // Re-run the forward migration twice: it must converge legacy structured
+    // attachments and be idempotent.
+    {
+        let raw = state.checkout().expect("connection should check out");
+        let sql = include_str!("../../../migrations/0058_structured_attachment_fetch_gate.sql");
+        raw.execute_batch(sql).expect("migration should apply");
+        raw.execute_batch(sql)
+            .expect("migration should be idempotent");
+    }
+
+    let legacy_xhtml = state
+        .get_report_document("doc_legacy_xhtml")
+        .expect("legacy xhtml doc should retrieve");
+    assert_eq!(legacy_xhtml.fetch_status, "pending");
+    assert!(legacy_xhtml.local_path.is_none());
+
+    let legacy_pdf = state
+        .get_report_document("doc_legacy_pdf")
+        .expect("legacy pdf doc should retrieve");
+    assert_eq!(
+        legacy_pdf.fetch_status, "metadata_only",
+        "a non-xhtml metadata_only sibling must not be touched"
+    );
+
+    let fetched_xhtml = state
+        .get_report_document("doc_fetched_xhtml")
+        .expect("already-fetched xhtml doc should retrieve");
+    assert_eq!(
+        fetched_xhtml.fetch_status, "fetched",
+        "an already-fetched document must not be reset to pending"
+    );
+
+    let pending = state
+        .list_pending_attachment_documents()
+        .expect("pending attachments should list");
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].id, "doc_legacy_xhtml");
 }

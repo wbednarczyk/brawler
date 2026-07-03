@@ -64,6 +64,33 @@ describe("mock runtime — command coverage", () => {
     const runtime = createMockRuntime("minimal");
     await expect(runtime.invoke("not_a_real_command", {})).rejects.toThrow(/Unhandled mock command/);
   });
+
+  it("routes structured-first fundamentals provenance (ADR 0061)", async () => {
+    const runtime = createMockRuntime("minimal");
+    // Seed provenance for two facts (the optional store the badges read).
+    runtime.data = {
+      ...runtime.data,
+      factProvenance: [
+        { factId: "f1", sourceTier: "esef", validationStatus: "passed", driftJson: null, citation: "Assets" },
+        { factId: "f2", sourceTier: "pdf", validationStatus: "flagged", driftJson: "{}", citation: null },
+      ],
+    } as typeof runtime.data;
+
+    const forF1 = (await runtime.invoke("list_fact_provenance", { input: { factIds: ["f1"] } })) as Array<{
+      factId: string;
+      sourceTier: string;
+    }>;
+    expect(forF1).toHaveLength(1);
+    expect(forF1[0]).toMatchObject({ factId: "f1", sourceTier: "esef" });
+
+    const flagged = (await runtime.invoke("list_flagged_fact_provenance", {})) as Array<{ factId: string }>;
+    expect(flagged.map((p) => p.factId)).toEqual(["f2"]);
+
+    const summary = (await runtime.invoke("run_structured_extraction", {
+      input: { companyId: "c1", reportDocumentId: "d1", fiscalYear: 2026, periodType: "FY", periodEnd: "2026-03-31" },
+    })) as { acceptance: string };
+    expect(summary.acceptance).toBe("accepted");
+  });
 });
 
 describe("mock runtime — re-render safety (new collection reference per mutation)", () => {

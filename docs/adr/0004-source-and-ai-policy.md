@@ -1,8 +1,6 @@
 # ADR 0004: Source and AI Policy
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

@@ -1,8 +1,6 @@
 # ADR 0018: Import And Export Boundaries
 
-## Status
-
-Accepted for M20 implementation.
+Status: Accepted for M20 implementation.
 
 ## Context
 

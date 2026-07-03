@@ -9,6 +9,7 @@
 use crate::{
     app_state,
     providers::analysis::{
+        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
         claim_extraction_prompt, parse_claim_extraction_output, registry, AiAnalysisProvider,
         AnalysisDocument, ClaimExtractionRequest, DocumentSupport,
     },
@@ -192,8 +193,21 @@ fn provider_for_job(
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
     let settings = state.get_settings().map_err(|error| error.to_string())?;
     let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
+    if job.provider_id == CAPABILITY_ROUTED_PROVIDER_ID {
+        return crate::jobs::build_capability_provider(
+            state,
+            AiCapability::ClaimExtraction,
+            timeout_seconds,
+        );
+    }
     let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
-    registry::build_analysis_provider(&job.provider_id, api_key, &job.model, timeout_seconds)
+    crate::jobs::build_gated_analysis_provider(
+        state,
+        &job.provider_id,
+        api_key,
+        &job.model,
+        timeout_seconds,
+    )
 }
 
 #[cfg(test)]

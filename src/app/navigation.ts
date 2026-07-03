@@ -2,7 +2,6 @@ import {
   Activity,
   Bug,
   Building2,
-  Columns3,
   Home,
   Inbox,
   ListChecks,
@@ -16,7 +15,11 @@ import type { LocaleKey } from "../shared/locale";
 // Notebooks, Events) are no longer top-level nav destinations — they are hosted
 // as panels inside the Cockpit / Company workspace (ADR 0053/0054) — but remain
 // valid `activeSection` values because deep links / programmatic navigation
-// still use them and AppStateRoot still renders them.
+// still use them and AppStateRoot still renders them. "Cockpit" is the same
+// kind of deep-link-only value now (ADR 0057 decision 5): there is no
+// standalone blank-canvas nav destination — the cockpit is reached only via a
+// saved named view (rendered as its own nav item, see AppShell), the "+ New
+// view" creator, or opening a company's curated dashboard.
 export type Section =
   | "Today"
   | "Inbox"
@@ -47,8 +50,10 @@ export type NavGroup = {
 
 // Mode-based, thesis-centric IA spine (ADR 0054). The left sidebar is grouped:
 //   • Modes — the investor's jobs as top-level destinations (Today/Pulse home,
-//     Company workspace, Compare). Cockpit rides along as the interim advanced
-//     workspace until it folds into the Company workspace mode (ADR 0054 task 3).
+//     Company workspace, Compare), followed by the saved named views (a
+//     data-driven list, rendered by AppShell from `cockpit_layouts`) and the
+//     "+ New view" creator — the composable-views entry point (ADR 0057
+//     decision 5) that replaces the old standalone blank "Cockpit" item.
 //   • Library — the named reference surfaces the modes draw on (Inbox bulk
 //     triage, Watchlists, Transcripts, Sources).
 //   • Utilities — Settings + Diagnostics (developer-gated).
@@ -60,7 +65,6 @@ export const navGroups: NavGroup[] = [
     localeKey: "nav.group.modes",
     items: [
       { label: "Today", icon: Home, localeKey: "nav.today" },
-      { label: "Cockpit", icon: Columns3, localeKey: "nav.cockpit" },
       { label: "Companies", icon: Building2, localeKey: "nav.companies" },
       { label: "Compare", icon: Scale, localeKey: "nav.compare" },
     ],

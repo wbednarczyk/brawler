@@ -186,6 +186,9 @@ type DockLayoutProps = {
   storageKey: string;
   /** Bumped by the caller to force a default-layout rebuild (Reset action). */
   resetNonce: number;
+  /** When set, the default build lays the panels out as a fixed cols×rows grid
+   *  (composable grid views, ADR 0057) instead of the dense 2×2 research grid. */
+  grid?: { cols: number; rows: number } | null;
   /** Fired when the user closes a panel, so the owner drops it from state
    *  (otherwise reconciliation would immediately re-add it). */
   onClosePanel?: (id: string) => void;
@@ -199,13 +202,15 @@ export type DockLayoutHandle = {
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
-  { panels, storageKey, resetNonce, onClosePanel },
+  { panels, storageKey, resetNonce, grid, onClosePanel },
   ref,
 ) {
   const contents = new Map(panels.map((panel) => [panel.id, panel.render]));
   const apiRef = useRef<DockviewApi | null>(null);
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
+  const gridRef = useRef(grid);
+  gridRef.current = grid;
   const onCloseRef = useRef(onClosePanel);
   onCloseRef.current = onClosePanel;
   // True while WE rebuild (reset / restore) so programmatic removals are not
@@ -300,6 +305,11 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   function buildDefault(api: DockviewApi) {
     api.clear();
     const specs = panelsRef.current;
+    const gridSpec = gridRef.current;
+    if (gridSpec && specs.length === gridSpec.cols * gridSpec.rows) {
+      buildGrid(api, specs, gridSpec.cols, gridSpec.rows);
+      return;
+    }
     // Dense 2×2 research-cockpit grid: top-left, top-right, bottom-left,
     // bottom-right — several views (incl. cross-company) visible at once.
     specs.forEach((spec, index) => {
@@ -311,12 +321,32 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
     });
   }
 
+  // Lay panels out as an exact cols×rows grid (composable grid views): the first
+  // row splits left→right; every later cell sits directly below the cell above
+  // it. Produces a real 2×2 / 2×3 / 3×3 split, not the dense research grid.
+  function buildGrid(api: DockviewApi, specs: DockPanelSpec[], cols: number, rows: number) {
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        const i = r * cols + c;
+        const spec = specs[i];
+        if (!spec) return;
+        if (i === 0) addPanelDefault(api, spec);
+        else if (r === 0) addAt(api, spec, specs[i - 1].id, "right");
+        else addAt(api, spec, specs[(r - 1) * cols + c].id, "below");
+      }
+    }
+  }
+
   const onReady = (event: DockviewReadyEvent) => {
     apiRef.current = event.api;
     rebuildingRef.current = true;
     const saved = readLayout(storageKey);
     const specIds = new Set(panelsRef.current.map((p) => p.id));
     const savedUsable =
+      // Grid views always build fresh from their cols×rows spec — the shared
+      // live-geometry cache uses generic `cell:N` ids that would otherwise bleed
+      // one grid view's split into another.
+      !gridRef.current &&
       saved &&
       Array.isArray(saved.panelIds) &&
       saved.panelIds.length > 0 &&

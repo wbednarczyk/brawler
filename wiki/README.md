@@ -14,8 +14,17 @@ per feature.
 ## Pages
 
 - **[The research workspace](research-workspace.md)** — how the app is laid out:
-  the sidebar modes, the **Today** attention home, pinned companies, the company
-  workspace and its **Advanced layout**, and full-screen **Focus** reading/writing.
+  the sidebar modes, the **Today** attention home, pinned companies, opening a
+  company's dashboard, and full-screen **Focus** reading/writing.
+- **[Autopilot](autopilot.md)** — let Brawler detect, fetch, and extract a
+  company's new report automatically, per company, with everything cited,
+  flagged, and reversible.
+- **[Composable cockpit views](cockpit-views.md)** — build your own
+  multi-panel dashboards from a grid and a panel picker, save them by name,
+  and switch between them from the sidebar.
+- **[Per-company settings](company-settings.md)** — quick single-company
+  controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
+  surface for changing several companies, or a whole watchlist, at once.
 - **[Quality frameworks](quality-frameworks.md)** — score a company against your
   own quantitative quality checklists, built from the company's reported
   fundamentals.
@@ -28,6 +37,10 @@ per feature.
 - **[Report comparison](report-comparison.md)** — see what changed between a
   company's two most recent financial statements of the same kind, section by
   section — fully local, deterministic, no AI.
+- **[AI provider pools and the OpenAI-compatible provider](ai-provider-presets.md)**
+  — route each AI capability to its own provider with a failover pool, and add
+  free/self-hosted open-model hosts (Groq, OpenRouter, local Ollama, and more)
+  alongside Gemini, Claude, and OpenAI.
 
 ## A note on what Brawler is — and isn't
 

@@ -23,13 +23,14 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: help install dev frontend-preview build check check-fast coverage bench mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast coverage bench mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
 	@printf "  make install             Install npm dependencies inside nix develop\n"
-	@printf "  make check               Run the full local automated check suite inside nix develop\n"
-	@printf "  make check-epic          Epic-closure suite: gate + knip + Playwright smoke (run-and-triage)\n"
+	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
+	@printf "  make check-fast          Fast inner-loop check (parallel core, no browser) — iteration only, NOT proof of done\n"
+	@printf "  make check-epic          Closure suite: the full gate + heavy periodic suites (coverage ratchet)\n"
 	@printf "  make test                Run frontend tests inside nix develop\n"
 	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
 	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
@@ -56,6 +57,9 @@ help:
 	@printf "  make smoke-gemini-analysis\n"
 	@printf "                            Opt-in live Gemini feed-item analysis smoke test\n"
 	@printf "  make smoke-keyring        Opt-in live OS keyring persistence smoke test\n"
+	@printf "  make live-up             Rebuild the portable exe, launch it on Windows with CDP open, wait until ready (ADR 0066)\n"
+	@printf "  make live-drive          Drive the real running Windows app via WebView2 CDP (ADR 0066), needs a live app\n"
+	@printf "  make live-cycle          live-up + live-drive: one command from WSL to rebuild, launch, and test live\n"
 	@printf "  make tauri-build         Build the Linux Tauri app from WSL, not a Windows app\n"
 	@printf "  make package-linux-amd64\n"
 	@printf "                            Build Linux .deb, .rpm, and AppImage release artifacts\n"
@@ -82,13 +86,37 @@ frontend-preview:
 build:
 	$(NIX) npm run build
 
+# The SINGLE mandatory gate (ADR 0062). Every deterministic/hermetic suite runs
+# here as a hard-fail step — nothing exit-ignored — and `.githooks/pre-commit`
+# runs this whole target before every commit, so a green commit is proof the gate
+# passed. This is a deliberate promotion (ADR 0048 Decision 6) of the browser
+# suite + knip + ts-rs drift guard from the old closure-only cadence into the
+# per-commit gate, because a suite that is not a hard-fail step of the one gate
+# ROTS (the browser suite went 28-red for two sessions in `check-epic`, masked by
+# `-`-prefixed steps). Suites deliberately EXCLUDED stay periodic, each for a
+# reason that disqualifies it from a per-commit hard gate: `coverage` (slow
+# instrumented build), `mutants` (30m–2h), `bench` (machine-dependent wall-clock),
+# the live Gemini/keyring smokes (credentials/network/OS), `live-drive` (ADR 0066
+# — needs a real running Windows app with remote debugging enabled, unavailable
+# in default/CI environments), and packaging (OS/toolchain). gate-integrity fails
+# the gate if any mandatory suite is
+# dropped or any step is `-`-prefixed (silent red); docs-drift (ADR 0065, last
+# step) fails it if contracts.md/ui-information-architecture.md/data-model.md
+# drift from the code, or ADR hygiene (Status: lines, INDEX.md) rots.
 check:
 	$(NIX) npm run check
+	$(NIX) npm run knip
+	$(MAKE) types-check
+	$(NIX) npm run test:browser:install
+	$(NIX) npm run test:browser
+	$(NIX) node scripts/check/gate-integrity.mjs
+	$(NIX) node scripts/check/docs-drift.mjs
 
 # Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
 # suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
-# Rust compile with the JS suites. Opt-in until a measured win promotes it to
-# the default; `make check` stays the sequential release-gate parity path.
+# Rust compile with the JS suites. Inner-loop iteration ONLY — it omits knip, the
+# ts-rs drift guard, the browser suite, and gate-integrity, so it is NEVER proof
+# of done; `make check` is the gate.
 check-fast:
 	$(NIX) npm run check:parallel
 
@@ -119,8 +147,46 @@ bench:
 # Uses nextest for a fast per-mutant test pass. Periodic/manual — slow (rebuilds
 # + runs the suite per mutant), never in `make check`; run at epic/milestone
 # closure cadence and triage every survivor by adding an assertion.
+# BRAWLER_FIDELITY_CORPUS: cargo-mutants copies only src-tauri/ into a scratch
+# tree, so the mock-fidelity test's corpus path (one level above the workspace)
+# doesn't exist there. Export an absolute path to the real file so build.rs's
+# fallback (see src-tauri/build.rs) picks it up in every mutant/baseline build.
+# Resource caps (harvested 2026-07-03: an uncapped sweep saturated WSL — every
+# mutant rebuild used all cores and multi-GB rustc peaks, freezing the desktop).
+# Low-priority + bounded build/test parallelism keeps the machine usable; the
+# sweep takes longer but never needs killing. Build jobs: MUTANTS_BUILD_JOBS
+# (below). Test threads: the `mutants` profile in src-tauri/.config/nextest.toml
+# (an env NEXTEST_TEST_THREADS would leak into cargo-mutants' internal
+# `nextest --no-run` build call, which rejects it). Override for a dedicated
+# box: make mutants MUTANTS_BUILD_JOBS=8 (+ edit the nextest profile).
+# MUTANTS_SHARD (e.g. 1/8) runs one shard — split a sweep across quiet moments.
+# MUTANTS_MEMORY_MAX: hard memory jail via a systemd user scope — when the
+# sweep's builds spike past it, the OOM killer takes the SCOPE, not the whole
+# WSL VM (two full-WSL freezes on 2026-07-03 were memory, which nice/job caps
+# cannot bound). Requires systemd (WSL: systemctl is-system-running → running).
+# MUTANTS_JAIL controls whether the systemd-run jail is used: `auto` (default)
+# cheaply probes `systemd-run --user --scope true` and jails only if that
+# succeeds — WSL has a user systemd manager, so this is a no-op behavior
+# change there; `off` skips the jail unconditionally (a GitHub-hosted
+# ubuntu-latest runner has no user systemd manager, so the manual mutants.yml
+# workflow passes MUTANTS_JAIL=off instead of relying on the probe to fail).
+MUTANTS_BUILD_JOBS ?= 2
+MUTANTS_MEMORY_MAX ?= 11G
+MUTANTS_SHARD ?=
+MUTANTS_JAIL ?= auto
 mutants:
-	$(NIX) bash -c "cd src-tauri && cargo mutants --test-tool nextest \
+	@jail_cmd=""; \
+	case "$(MUTANTS_JAIL)" in \
+	  off) jail_cmd="" ;; \
+	  auto) if systemd-run --user --scope true >/dev/null 2>&1; then \
+	          jail_cmd="systemd-run --user --scope -p MemoryMax=$(MUTANTS_MEMORY_MAX) -p MemorySwapMax=1G --same-dir"; \
+	        fi ;; \
+	  *) echo "MUTANTS_JAIL must be 'auto' or 'off' (got: $(MUTANTS_JAIL))" >&2; exit 1 ;; \
+	esac; \
+	$$jail_cmd $(NIX) bash -c "export BRAWLER_FIDELITY_CORPUS='$(CURDIR)/src/test/scenarios/fidelity-corpus.json'; \
+	  export CARGO_BUILD_JOBS=$(MUTANTS_BUILD_JOBS) NEXTEST_PROFILE=mutants; \
+	  cd src-tauri && nice -n 19 cargo mutants --test-tool nextest --jobs 1 \
+	  $(if $(MUTANTS_SHARD),--shard $(MUTANTS_SHARD)) \
 	  -f 'src/fundamentals/expr/**' \
 	  -f 'src/storage/migrations.rs' \
 	  -f 'src/storage/feed_matching.rs' \
@@ -136,25 +202,33 @@ mutants:
 types:
 	$(NIX) bash -c 'cd src-tauri && TS_RS_LARGE_INT=number cargo test --features ts-export export_bindings'
 
-# Drift guard: regenerate, then fail if the committed bindings differ from the
-# Rust source (i.e. a struct changed but `make types` was not rerun).
-types-check: types
-	git diff --exit-code -- src/api/generated || \
-	  (echo "✖ src/api/generated is stale — run 'make types' and commit the result." && exit 1)
+# Drift guard: regenerate, then fail if regeneration CHANGED the working-tree
+# bindings (self-consistency). Deliberately independent of git staging state:
+# the previous `git diff --exit-code` compared the worktree to the index, so it
+# false-positived on legitimately regenerated-but-not-yet-staged bindings and
+# blocked `make check` mid-work; hashing before/after regeneration detects true
+# staleness (a Rust struct changed without rerunning `make types`) in every
+# flow, including the pre-commit gate.
+types-check:
+	@before=$$(find src/api/generated -type f -name '*.ts' -print0 | sort -z | xargs -0 sha256sum); \
+	$(MAKE) types; \
+	after=$$(find src/api/generated -type f -name '*.ts' -print0 | sort -z | xargs -0 sha256sum); \
+	if [ "$$before" != "$$after" ]; then \
+	  printf "✖ src/api/generated was stale — 'make types' changed it. Review and include the regenerated files.\n"; \
+	  exit 1; \
+	fi
 
-# Full epic/milestone-closure suite: the hard gate first, then the opt-in/periodic
-# suites (knip dead-code audit, Playwright browser UI smoke) that are NOT in
-# `make check` and otherwise rot unrun (see docs/engineering-workflow.md and
-# ADR 0045). The gate is hard (aborts on failure); knip and the browser smoke are
-# run-and-report (leading `-`) so you always see every result — triage each
-# failure (fix it, or file a tracked Radicle issue) before signing off on closure.
-# Scoped to the epic boundary, not per-change: ~1–2 min beyond `make check`.
+# Epic/milestone-closure suite (ADR 0062): the full mandatory gate, then the
+# heavy periodic deterministic suite too slow for per-commit — the coverage
+# ratchet (slow instrumented build). Every step HARD-FAILS (no `-` prefix): a
+# closure gate that ignores exit codes is exactly how the browser suite rotted
+# silently red. `make mutants` (30m–2h) and `make bench` (machine-dependent) stay
+# separate closure-cadence targets (see docs/engineering-workflow.md §I); the
+# live/keyring/packaging smokes stay opt-in.
 check-epic:
-	$(NIX) npm run check
-	-$(NIX) npm run knip
-	-$(NIX) npm run test:browser:install
-	-$(NIX) npm run test:browser
-	@printf "\ncheck-epic complete. Triage any knip/browser-smoke findings above (fix or file an issue) before closing the epic.\n"
+	$(MAKE) check
+	$(MAKE) coverage
+	@printf "\ncheck-epic complete: full gate + coverage ratchet green. Run \`make mutants\` and (if a hot kernel changed) \`make bench\` for the remaining closure-cadence suites.\n"
 
 test:
 	$(NIX) npm run test
@@ -174,6 +248,11 @@ frontend-check:
 rust-check:
 	$(NIX) npm run check:rust
 
+# Convenience direct invocation of the docs-drift step (ADR 0065) — also runs
+# as part of `make check`. `--write-adr-index` regenerates docs/adr/INDEX.md.
+docs-drift:
+	$(NIX) node scripts/check/docs-drift.mjs
+
 install-git-hooks:
 	git config core.hooksPath .githooks
 	@printf "Installed repo-local git hooks from .githooks\n"
@@ -189,6 +268,15 @@ changelog:
 
 changelog-check:
 	$(NIX) npm run release:changelog-check
+
+# Validate the commit message BEFORE the expensive pre-commit gate runs (the
+# commit-msg hook fires after make check by git design, so a rejected subject
+# wastes a full gate run). Stages nothing: git add what you want first.
+# Optional BODY adds a second -m paragraph.
+commit:
+	@test -n "$(MSG)" || { printf 'Usage: make commit MSG="type(scope): subject (<=72 chars after colon)" [BODY="..."]\n' >&2; exit 64; }
+	@scripts/release/validate-commit-message.sh --message "$(MSG)"
+	@if [ -n "$(BODY)" ]; then git commit -m "$(MSG)" -m "$(BODY)"; else git commit -m "$(MSG)"; fi
 
 release-notes:
 	@test -n "$(TAG)" || { printf "Usage: make release-notes TAG=vX.Y.Z\n" >&2; exit 64; }
@@ -297,6 +385,74 @@ smoke-gemini-analysis:
 
 smoke-keyring:
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture
+
+# Live-drive (ADR 0066, docs/testing.md § Live drive): drives the REAL packaged
+# Windows app — real backend, real local SQLite DB — via WebView2's Chrome
+# DevTools Protocol, replacing most manual click-through testing. Requires a live
+# app already running with remote debugging enabled (`make live-up`, or
+# `scripts/windows/dev-live.ps1` directly on Windows). Deliberately excluded from
+# `make check`/`check-epic`: it needs a live GUI app reachable over CDP, which no
+# default/CI environment has, and it is not hermetic (it can observe/act on
+# whatever real data the app currently holds).
+LIVE_CDP_PORT ?= 9222
+# URL handoff between live-up and live-drive: live-up writes the CDP URL it
+# actually verified reachable (localhost, or the WSL2-NAT Windows-host IP) to
+# this file; live-drive exports it as BRAWLER_CDP_URL when the env var isn't
+# already set. /tmp, not the repo tree, so it never pollutes git status.
+LIVE_CDP_URL_FILE := /tmp/brawler-live-cdp-url
+
+live-drive:
+	@url="$${BRAWLER_CDP_URL:-$$(cat $(LIVE_CDP_URL_FILE) 2>/dev/null || true)}"; \
+	if [ -n "$$url" ]; then \
+		printf "live-drive: connecting to %s\n" "$$url"; \
+		BRAWLER_CDP_URL="$$url" $(NIX) npx playwright test --config playwright.live.config.ts; \
+	else \
+		$(NIX) npx playwright test --config playwright.live.config.ts; \
+	fi
+
+# One command from WSL: rebuild the portable exe, launch it on Windows with the
+# CDP port open, and wait until the endpoint answers. package-windows-from-linux
+# already force-stops any running brawler* process (via powershell.exe) before
+# replacing the artifact, so re-running live-up always tests the fresh build.
+# The wait loop probes localhost first, then the Windows-host IP from
+# /etc/resolv.conf's nameserver line — the same resolution order as
+# tests/live/helpers/liveConnect.ts.
+live-up:
+	$(MAKE) package-windows-from-linux
+	@if ! command -v powershell.exe >/dev/null 2>&1; then \
+		printf "powershell.exe not found. live-up is intended for WSL on Windows.\n"; \
+		exit 1; \
+	fi
+	@SCRIPT="$$(wslpath -w scripts/windows/dev-live.ps1)"; \
+	OUT_WIN="$$(wslpath -w "$(WINDOWS_OUT_DIR)")"; \
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$$SCRIPT" -Port $(LIVE_CDP_PORT) -OutputDir "$$OUT_WIN"
+	@rm -f "$(LIVE_CDP_URL_FILE)"; \
+	gw_ip="$$(ip route show default 2>/dev/null | sed -n 's/^default via \([^[:space:]]*\).*/\1/p' | head -1)"; \
+	ns_ip="$$(sed -n 's/^nameserver[[:space:]]*\([^[:space:]]*\).*/\1/p' /etc/resolv.conf 2>/dev/null | head -1)"; \
+	deadline=$$((SECONDS + 90)); url=""; \
+	while [ $$SECONDS -lt $$deadline ]; do \
+		for cand in "http://localhost:$(LIVE_CDP_PORT)" $${gw_ip:+"http://$$gw_ip:$(LIVE_CDP_PORT)"} $${ns_ip:+"http://$$ns_ip:$(LIVE_CDP_PORT)"}; do \
+			if curl -sf --max-time 2 "$$cand/json/version" >/dev/null 2>&1; then url="$$cand"; break 2; fi; \
+		done; \
+		sleep 2; \
+	done; \
+	if [ -z "$$url" ]; then \
+		printf "✖ live-up: no CDP endpoint reachable on port $(LIVE_CDP_PORT) after 90s.\n"; \
+		printf "  Checked http://localhost:$(LIVE_CDP_PORT)/json/version"; \
+		if [ -n "$$gw_ip" ]; then printf ", http://%s:$(LIVE_CDP_PORT) (default gw)" "$$gw_ip"; fi; \
+		if [ -n "$$ns_ip" ]; then printf ", http://%s:$(LIVE_CDP_PORT) (resolv.conf)" "$$ns_ip"; fi; \
+		printf ".\n  Did the app window open on Windows? If yes, Windows Defender Firewall may be\n"; \
+		printf "  blocking WSL->Windows traffic (allow it, or enable WSL mirrored networking),\n"; \
+		printf "  or set BRAWLER_CDP_URL to a reachable endpoint manually.\n"; \
+		exit 1; \
+	fi; \
+	printf "%s" "$$url" > "$(LIVE_CDP_URL_FILE)"; \
+	printf "live app ready — run \`make live-drive\` (CDP: %s, saved to %s)\n" "$$url" "$(LIVE_CDP_URL_FILE)"
+
+# Full cycle: rebuild + launch + wait (live-up), then run the live suite.
+live-cycle:
+	$(MAKE) live-up
+	$(MAKE) live-drive
 
 flake-check:
 	nix flake check --no-build

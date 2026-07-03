@@ -47,12 +47,12 @@ test.describe("user journeys", () => {
     await page.getByLabel(/Select feed item: CD PROJEKT/).first().click();
     await page.getByRole("button", { name: "Open company", exact: true }).click();
 
-    // The workspace must be visible, in view, and focused — not requiring a
-    // manual scroll to find (the reported defect).
-    const workspace = page.getByRole("region", { name: "Company workspace", exact: true });
+    // Opening a company lands the cockpit dashboard scoped to it (ADR 0057). It
+    // must be visible and in view — not requiring a manual scroll to find (the
+    // reported defect).
+    const workspace = page.getByRole("region", { name: "Research cockpit", exact: true });
     await expect(workspace).toBeVisible();
     await expect(workspace).toBeInViewport();
-    await expect(workspace).toBeFocused();
 
     // ...and the app shell itself must not have scrolled (the "moves the whole
     // app" defect): the page stays pinned, only the internal list scrolls.
@@ -78,11 +78,11 @@ test.describe("user journeys", () => {
     await expect(dialog.getByText("confirmed").first()).toBeVisible();
     await dialog.getByRole("button", { name: "Close dialog" }).click();
 
-    // Then open the company's Fundamentals tab and assert the matrix renders
-    // (the confirmed fact is wired through to the fundamentals read model).
+    // Then open the company — it lands the cockpit dashboard scoped to it
+    // (ADR 0057), which shows the Fundamentals panel directly (no tab). Assert
+    // the matrix renders (the confirmed fact is wired through the read model).
     await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-    await page.getByRole("button", { name: "Fundamentals", exact: true }).click();
 
     const panel = page.getByLabel("Company fundamentals");
     await expect(panel).toBeVisible();

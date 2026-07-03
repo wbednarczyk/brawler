@@ -2,6 +2,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import * as credentialsApi from "../api/credentials";
 import * as settingsApi from "../api/settings";
 import type { AccentPalette, AppLocale, CredentialStatus, ShortcutBindingSetting, Theme, UserSettings } from "../api/types";
+import type { CapabilityProviderEntry } from "../api/generated/CapabilityProviderEntry";
 
 type SettingsControllerInput = {
   geminiApiKeyDraft: string;
@@ -89,6 +90,17 @@ export function useSettingsController({
     updateSettings({ espiAiFallbackEnabled: nextEnabled });
   }
 
+  function updateOpenAiCompatibleBaseUrl(nextBaseUrl: string) {
+    updateSettings({ openaiCompatibleBaseUrl: nextBaseUrl });
+  }
+
+  // Replace the full per-capability provider routing map (ADR 0060 as amended).
+  // Callers pass the complete desired map; the backend overwrites rather than
+  // merges — same contract as `updateShortcutBindings`.
+  function updateCapabilityProviders(nextCapabilityProviders: Record<string, CapabilityProviderEntry[]>) {
+    updateSettings({ capabilityProviders: nextCapabilityProviders });
+  }
+
   function updateShortcutBindings(nextShortcutBindings: Record<string, ShortcutBindingSetting>) {
     updateSettings({ shortcutBindings: nextShortcutBindings });
   }
@@ -125,6 +137,31 @@ export function useSettingsController({
 
   function resetDatabaseSettings() {
     updateSettings({ dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 });
+  }
+
+  function updateSourcesWorkers(nextWorkers: number) {
+    updateSettings({ sourcesWorkers: nextWorkers });
+  }
+
+  function updateAutopilotWorkers(nextWorkers: number) {
+    updateSettings({ autopilotWorkers: nextWorkers });
+  }
+
+  function updateAiWorkers(nextWorkers: number) {
+    updateSettings({ aiWorkers: nextWorkers });
+  }
+
+  function updateAiProviderConcurrency(nextConcurrency: number) {
+    updateSettings({ aiProviderConcurrency: nextConcurrency });
+  }
+
+  function resetQueueSettings() {
+    updateSettings({
+      sourcesWorkers: 2,
+      autopilotWorkers: 3,
+      aiWorkers: 2,
+      aiProviderConcurrency: 2,
+    });
   }
 
   function disableDeveloperMode() {
@@ -192,10 +229,17 @@ export function useSettingsController({
     updateGeneralAnalysisProvider,
     updateGeneralAnalysisTimeout,
     updateEspiAiFallbackEnabled,
+    updateOpenAiCompatibleBaseUrl,
+    updateCapabilityProviders,
     updateDbAcquireTimeoutMs,
     updateDbBusyTimeoutMs,
     updateDbMaxConnections,
     resetDatabaseSettings,
+    updateSourcesWorkers,
+    updateAutopilotWorkers,
+    updateAiWorkers,
+    updateAiProviderConcurrency,
+    resetQueueSettings,
     updateLocale,
     updateLogLevel,
     updateLogMaxFileBytes,

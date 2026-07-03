@@ -1,6 +1,13 @@
 use crate::{app_state, source_adapters, storage};
 use serde_json::json;
 
+/// Job kind: refresh **one** company for a company-scoped source adapter (ADR 0059).
+/// The company-scoped scheduled refresh (bankier-company) is a planner that enqueues
+/// one of these per tracked company instead of looping all companies in a single job,
+/// so the per-source lock serializes them politely, other lanes run alongside, and
+/// unfinished per-company work resumes across restarts. Payload `{adapterId, companyId}`.
+pub const SOURCE_COMPANY_REFRESH_KIND: &str = "source_company_refresh";
+
 pub fn refresh_sources_for_trigger(
     state: &app_state::AppState,
     trigger: &str,
@@ -37,6 +44,7 @@ pub fn refresh_sources_for_trigger(
                 "Source refresh completed.",
                 source_result_metadata(trigger, &result),
             );
+            after_successful_refresh(state);
             Ok(result)
         }
         Err(error) => {
@@ -109,6 +117,7 @@ pub fn refresh_source_for_trigger(
                 "Source adapter refresh completed.",
                 source_result_metadata(trigger, &result),
             );
+            after_successful_refresh(state);
             Ok(result)
         }
         Err(error) => {
@@ -134,6 +143,19 @@ pub fn refresh_source_for_trigger(
             Err(error)
         }
     }
+}
+
+/// Cross-cutting work that must run after **every** successful source refresh,
+/// from any entry point. Centralized here (not inlined per call site) so a new
+/// refresh path cannot silently skip it — call this from the success arm.
+///
+/// Guardrail (ADR 0045): autopilot detection is event-driven off refresh
+/// completion (ADR 0055). The bug it prevents: a refresh path that ingests a new
+/// periodic report but never starts an autopilot run. Both `refresh_*_for_trigger`
+/// route through here; any future refresh entry point must too. Best-effort and
+/// idempotent — it never fails the refresh.
+fn after_successful_refresh(state: &app_state::AppState) {
+    crate::jobs::autopilot::run_detection_sweep(state);
 }
 
 pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {
@@ -529,54 +551,87 @@ fn refresh_bankier_rss_for_trigger(
         .map_err(|error| error.to_string())
 }
 
+/// Plan a bankier-company refresh: enqueue one idempotent `source_company_refresh`
+/// job per tracked company instead of looping every company in a single monolith
+/// job (ADR 0059). The former monolith (a ~100-company loop with a 1 s sleep each)
+/// monopolized the worker for minutes and starved autopilot; the per-company jobs
+/// are serialized by the per-source lock (politeness preserved), run alongside other
+/// lanes, and resume across restarts. Returns quickly with a summary — the per-company
+/// jobs do the actual fetch/ingest and each rides detection on its own completion.
 fn refresh_bankier_company_for_trigger(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::SourceIngestionResult, String> {
-    let _ =
-        state.record_source_adapter_attempt(source_adapters::bankier_company::ADAPTER_ID, trigger);
-    let bankier_company_fetcher = source_adapters::bankier_company::HttpBankierCompanyFetcher;
-    let bankier_company_targets = state
+    let adapter_id = source_adapters::bankier_company::ADAPTER_ID;
+    let _ = state.record_source_adapter_attempt(adapter_id, trigger);
+    let targets = state
         .list_bankier_company_targets()
         .map_err(|error| error.to_string())?;
+
+    let mut planned = 0usize;
+    for target in &targets {
+        let job_id = format!(
+            "{SOURCE_COMPANY_REFRESH_KIND}:{adapter_id}:{}",
+            target.company_id
+        );
+        let payload =
+            json!({ "adapterId": adapter_id, "companyId": target.company_id }).to_string();
+        // `reschedule` re-arms a stable per-company id: pending/terminal rows reset,
+        // an in-flight row is left alone — so a re-plan never disturbs a running job
+        // and never accumulates duplicate rows.
+        match state
+            .jobs()
+            .reschedule(&job_id, SOURCE_COMPANY_REFRESH_KIND, &payload, 3)
+        {
+            Ok(_) => planned += 1,
+            Err(error) => log::warn!(
+                "module=sources stage=plan_failed adapterId={adapter_id} companyId={} error={error}",
+                target.company_id
+            ),
+        }
+    }
+    log::info!(
+        "module=sources stage=planned adapterId={adapter_id} trigger={trigger} companiesPlanned={planned}"
+    );
+    Ok(empty_source_result(adapter_id))
+}
+
+/// Refresh **one** company for the bankier-company source (ADR 0059) — the extracted
+/// body of the former monolith loop. Fetches that company's komunikaty (with the
+/// detail-URL cache filter), upserts its identifiers, ingests its items, and fetches
+/// any newly-registered periodic-report attachments (best-effort, ADR 0036).
+pub fn refresh_one_bankier_company(
+    state: &app_state::AppState,
+    target: &source_adapters::bankier_company::BankierCompanyTarget,
+) -> Result<storage::SourceIngestionResult, String> {
+    let adapter_id = source_adapters::bankier_company::ADAPTER_ID;
+    let fetcher = source_adapters::bankier_company::HttpBankierCompanyFetcher;
     let cached_detail_urls = state
         .list_bankier_company_detail_cached_urls()
         .map_err(|error| error.to_string())?
         .into_iter()
         .collect::<std::collections::HashSet<_>>();
-    let mut bankier_company_items = Vec::new();
-    let mut bankier_company_last_error: Option<String> = None;
 
-    for (index, target) in bankier_company_targets.iter().enumerate() {
-        if index > 0 {
-            std::thread::sleep(std::time::Duration::from_secs(1));
-        }
-
-        match source_adapters::bankier_company::fetch_company_items_with_detail_filter(
-            &bankier_company_fetcher,
-            target,
-            |item| !cached_detail_urls.contains(&item.link),
-        ) {
-            Ok((identifiers, mut items)) => {
-                if let Some(identifiers) = identifiers {
-                    let _ =
-                        state.upsert_bankier_company_identifiers(&target.company_id, &identifiers);
-                }
-                bankier_company_items.append(&mut items);
+    let items = match source_adapters::bankier_company::fetch_company_items_with_detail_filter(
+        &fetcher,
+        target,
+        |item| !cached_detail_urls.contains(&item.link),
+    ) {
+        Ok((identifiers, items)) => {
+            if let Some(identifiers) = identifiers {
+                let _ = state.upsert_bankier_company_identifiers(&target.company_id, &identifiers);
             }
-            Err(error) => {
-                let message = format!("{}: {}", target.qualified_ticker, error);
-                bankier_company_last_error = Some(message.clone());
-                let _ = state.record_source_adapter_error(
-                    source_adapters::bankier_company::ADAPTER_ID,
-                    &message,
-                );
-            }
+            items
         }
-    }
+        Err(error) => {
+            let message = format!("{}: {}", target.qualified_ticker, error);
+            let _ = state.record_source_adapter_error(adapter_id, &message);
+            return Err(message);
+        }
+    };
 
     let result = state
-        .ingest_bankier_company_items(&bankier_company_items)
+        .ingest_bankier_company_items(&items)
         .map_err(|error| error.to_string())?;
 
     // Fetch files for periodic-report attachments registered during ingestion (ADR 0036).
@@ -585,18 +640,49 @@ fn refresh_bankier_company_for_trigger(
     if let Err(error) =
         crate::report_documents_capture::fetch_pending_attachments(state, &document_fetcher)
     {
-        let _ = state.record_source_adapter_error(
-            source_adapters::bankier_company::ADAPTER_ID,
-            &format!("attachment fetch failed: {error}"),
-        );
-    }
-
-    if let Some(message) = bankier_company_last_error {
         let _ = state
-            .record_source_adapter_error(source_adapters::bankier_company::ADAPTER_ID, &message);
+            .record_source_adapter_error(adapter_id, &format!("attachment fetch failed: {error}"));
     }
 
     Ok(result)
+}
+
+/// Queue entry point for a `source_company_refresh` job (ADR 0059): resolve the
+/// company target from the payload, refresh that one company, and — on success —
+/// run detection so autopilot rides the actual ingest (the guardrail in
+/// [`after_successful_refresh`]). The per-source lock (held by the worker across this
+/// call) guarantees at most one company of this source refreshes at a time.
+pub fn run_source_company_refresh(
+    state: &app_state::AppState,
+    payload: &str,
+) -> Result<(), String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(payload).map_err(|error| error.to_string())?;
+    let adapter_id = parsed
+        .get("adapterId")
+        .and_then(|value| value.as_str())
+        .ok_or("source company refresh missing adapterId")?;
+    let company_id = parsed
+        .get("companyId")
+        .and_then(|value| value.as_str())
+        .ok_or("source company refresh missing companyId")?;
+
+    if adapter_id != source_adapters::bankier_company::ADAPTER_ID {
+        return Err(format!(
+            "unsupported company-scoped source adapter: {adapter_id}"
+        ));
+    }
+
+    let target = state
+        .list_bankier_company_targets()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|target| target.company_id == company_id)
+        .ok_or_else(|| format!("no bankier company target for {company_id}"))?;
+
+    refresh_one_bankier_company(state, &target)?;
+    after_successful_refresh(state);
+    Ok(())
 }
 
 fn refresh_gpw_market_events_for_trigger(
@@ -754,8 +840,63 @@ pub fn refresh_company_directories_for_trigger(
 
 #[cfg(test)]
 mod tests {
-    use super::{refresh_source_for_trigger, should_bootstrap_company_directories};
-    use crate::storage::{open_in_memory_database, AppState, CompanyLookupInput};
+    use super::{
+        refresh_bankier_company_for_trigger, refresh_source_for_trigger,
+        should_bootstrap_company_directories, SOURCE_COMPANY_REFRESH_KIND,
+    };
+    use crate::storage::{open_in_memory_database, AppState, CompanyLookupInput, NewCompany};
+
+    #[test]
+    fn bankier_company_refresh_plans_one_job_per_tracked_company() {
+        // Chunked refresh (ADR 0059): the company-scoped refresh is a planner that
+        // enqueues one idempotent `source_company_refresh` job per tracked company,
+        // not a single monolith loop. The former monolith monopolized the worker for
+        // minutes and starved autopilot.
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        for ticker in ["CDR", "CBF", "PKN"] {
+            state
+                .create_company(NewCompany {
+                    exchange: "GPW".to_owned(),
+                    ticker: ticker.to_owned(),
+                    display_name: format!("{ticker} S.A."),
+                    isin: None,
+                    cik: None,
+                    lei: None,
+                })
+                .expect("company");
+        }
+
+        let result =
+            refresh_bankier_company_for_trigger(&state, "manual").expect("planner should succeed");
+        assert_eq!(
+            result.items_fetched, 0,
+            "the planner enqueues work; it does not ingest itself"
+        );
+        assert_eq!(
+            state.jobs().counts().expect("counts").pending,
+            3,
+            "one per-company job enqueued per tracked GPW company"
+        );
+
+        // Each enqueued job is a per-company refresh carrying its company id.
+        let claimed = state.jobs().claim_next().expect("claim").expect("a job");
+        assert_eq!(claimed.kind, SOURCE_COMPANY_REFRESH_KIND);
+        assert!(
+            claimed.payload.contains("companyId"),
+            "payload targets one company, got: {}",
+            claimed.payload
+        );
+
+        // Re-planning is idempotent (stable per-company ids via reschedule): the two
+        // still-pending rows reset, the running one is left alone — no duplicates.
+        refresh_bankier_company_for_trigger(&state, "manual").expect("re-plan");
+        let counts = state.jobs().counts().expect("counts");
+        assert_eq!(
+            counts.pending + counts.running,
+            3,
+            "still one row per company"
+        );
+    }
 
     #[test]
     fn failed_source_refresh_records_lightweight_diagnostics_when_enabled() {

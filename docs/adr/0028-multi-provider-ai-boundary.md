@@ -1,8 +1,6 @@
 # ADR 0028: Multi-Provider AI Boundary (Async, Ports-and-Adapters)
 
-## Status
-
-Accepted.
+Status: Accepted.
 
 ## Context
 

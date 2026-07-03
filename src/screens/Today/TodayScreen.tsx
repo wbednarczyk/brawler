@@ -1,15 +1,27 @@
-import { useMemo } from "react";
-import { CalendarClock, CheckCircle2, FileText, Inbox, ShieldQuestion } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  CalendarClock,
+  CheckCircle2,
+  FileText,
+  Inbox,
+  ShieldQuestion,
+  Sparkles,
+  X,
+} from "lucide-react";
 
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { Company, FeedItem, Watchlist } from "../../api/types";
 import { useLocale } from "../../shared/locale";
+import { FACT_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { formatFeedTimestamp } from "../../shared/format/timestamp";
 import { TickerLabel } from "../../shared/components/TickerLabel";
+import { DriftDiff, parseDrift, type ParsedDrift } from "../../shared/components/DriftDiff";
+import { composeAutopilotRunSummary } from "./autopilotRunSummary";
 import {
   Button,
   EmptyState,
   ErrorText,
+  InlineConfirm,
   ListRow,
   PanelHeader,
   SectionHeader,
@@ -28,6 +40,24 @@ export type TodayScreenProps = {
 
 const MAX_ROWS = 6;
 
+/**
+ * Parses an autopilot run's opaque `kpiDeltaJson` envelope defensively for the
+ * "structure changed" drift a structured-extraction attempt may have carried
+ * (ADR 0061 wave 2 — `{ structureChanged: true, driftJson: "<DriftReport>" }`
+ * merged into the composed delta). A legacy run (no such fields), a run whose
+ * delta never drifted, or malformed JSON all yield `null` — no crash, no card.
+ */
+function autopilotRunDrift(kpiDeltaJson: string | null): ParsedDrift | null {
+  if (!kpiDeltaJson) return null;
+  try {
+    const parsed = JSON.parse(kpiDeltaJson) as { structureChanged?: unknown; driftJson?: unknown };
+    if (parsed.structureChanged !== true) return null;
+    return parseDrift(typeof parsed.driftJson === "string" ? parsed.driftJson : null);
+  } catch {
+    return null;
+  }
+}
+
 // Today/Pulse — the mode-based shell home (ADR 0054): a Triage-style attention
 // digest that leads with the app's superpowers — what changed, what to verify,
 // what's coming — over a watchlist conviction rollup, with the feed as secondary
@@ -42,11 +72,28 @@ export function TodayScreen({
   openCompanyWorkspace,
   openInbox,
 }: TodayScreenProps) {
-  const { t, text } = useLocale();
-  const { season, claims, claimsLoading, claimsError } = useTodayPulse(pinnedCompanyIds, companies);
+  const { t, text, locale } = useLocale();
+  const {
+    season,
+    claims,
+    claimsLoading,
+    claimsError,
+    autopilotRuns,
+    autopilotLoading,
+    dismissAutopilotRun,
+    undoAutopilotRun,
+    undoneAutopilotRuns,
+  } = useTodayPulse(pinnedCompanyIds, companies);
+  // The Undo two-step (ADR 0055 §4): which run, if any, is mid-confirm. Only one
+  // at a time — confirming a different run's Undo drops the prior prompt.
+  const [confirmingUndoRunId, setConfirmingUndoRunId] = useState<string | null>(null);
 
   const companyByTicker = useMemo(
     () => new Map(companies.map((company) => [company.qualifiedTicker, company])),
+    [companies],
+  );
+  const companyById = useMemo(
+    () => new Map(companies.map((company) => [company.id, company])),
     [companies],
   );
 
@@ -120,6 +167,102 @@ export function TodayScreen({
             ))
           )}
         </section>
+
+        {autopilotLoading || autopilotRuns.length > 0 ? (
+          <section className="today-card" aria-label={text("Autopilot")}>
+            <SectionHeader level="h3" variant="accent" title={text("Autopilot")} />
+            {autopilotLoading && autopilotRuns.length === 0 ? (
+              <EmptyState>{text("Checking autopilot runs…")}</EmptyState>
+            ) : (
+              autopilotRuns.map((run) => {
+                const company = companyById.get(run.companyId);
+                const failed = run.status === "failed" || run.status === "partial";
+                const drift = autopilotRunDrift(run.kpiDeltaJson);
+                // Undo reverts exactly `producedFactIds` (contracts.md § Autonomous Report
+                // Pipeline, `undo_autopilot_run`) — reserved for `autopilot` mode, where
+                // facts land auto-committed (`auto_unreviewed`); `assist` mode's proposals
+                // land `pending` for the existing confirm/reject review flow instead.
+                const undoEligible = run.mode === "autopilot" && run.producedFactIds.length > 0;
+                const revertedCount = undoneAutopilotRuns[run.id];
+                const confirmingUndo = confirmingUndoRunId === run.id;
+                // The backend's `summaryText` is composed in Rust (legacy/fallback,
+                // contracts.md § Autonomous Report Pipeline) and is English-only — it
+                // must never be rendered verbatim in the Polish UI. The Today card
+                // always composes its own localized sentence from the run's DATA
+                // fields (`kpiDeltaJson`/`reportDiffRef`/`crossRefsJson`) instead.
+                const summary = composeAutopilotRunSummary(run, text, locale);
+                return (
+                  <div key={run.id} className="today-autopilot-run">
+                    <ListRow
+                      icon={<Sparkles size={15} aria-hidden="true" />}
+                      title={summary}
+                      titleAttr={summary}
+                      meta={
+                        <span className="today-row-meta">
+                          {company ? <TickerLabel value={company.qualifiedTicker} /> : null}
+                          {failed ? (
+                            <StatusPill tone="danger">
+                              {run.status === "partial" ? text("Partial") : text("Failed")}
+                            </StatusPill>
+                          ) : null}
+                          {revertedCount !== undefined ? (
+                            <StatusPill tone="ok">
+                              {text("Reverted")} {revertedCount} {pluralNoun(locale, revertedCount, FACT_FORMS)}
+                            </StatusPill>
+                          ) : null}
+                        </span>
+                      }
+                      trailing={
+                        <span className="today-row-actions">
+                          {company ? reviewButton(company.id, "Fundamentals") : null}
+                          {undoEligible && !confirmingUndo ? (
+                            <Button
+                              onClick={() => setConfirmingUndoRunId(run.id)}
+                              type="button"
+                              variant="ghost"
+                            >
+                              {text("Undo")}
+                            </Button>
+                          ) : null}
+                          <Button
+                            onClick={() => dismissAutopilotRun(run.id)}
+                            type="button"
+                            variant="ghost"
+                            aria-label={text("Dismiss")}
+                          >
+                            <X size={14} aria-hidden="true" />
+                          </Button>
+                        </span>
+                      }
+                    />
+                    {confirmingUndo ? (
+                      // A full-width row below (not the row's narrow trailing slot, which
+                      // already competes with the title/meta for space and wraps the
+                      // confirm text/buttons onto separate lines in this card's column).
+                      <InlineConfirm
+                        cancelLabel={text("Cancel")}
+                        confirmLabel={text("Undo")}
+                        onCancel={() => setConfirmingUndoRunId(null)}
+                        onConfirm={() => {
+                          setConfirmingUndoRunId(null);
+                          void undoAutopilotRun(run.id);
+                        }}
+                      >
+                        {text("Undo this run and revert its facts?")}
+                      </InlineConfirm>
+                    ) : null}
+                    {drift ? (
+                      <section className="today-run-drift" aria-label={text("Structure changed")}>
+                        <span className="eyebrow">{text("Structure changed")}</span>
+                        <DriftDiff drift={drift} />
+                      </section>
+                    ) : null}
+                  </div>
+                );
+              })
+            )}
+          </section>
+        ) : null}
 
         <section className="today-card" aria-label={text("To verify")}>
           <SectionHeader level="h3" variant="accent" title={text("To verify")} />

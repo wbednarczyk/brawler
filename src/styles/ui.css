@@ -412,6 +412,18 @@
   padding: 0 10px;
 }
 
+/* InlineConfirm had no layout rules (the FundamentalsPanel header it originated
+   in is always wide enough for one line); a narrower host — the Today/Pulse
+   autopilot run card — let the prompt text and the two buttons wrap onto
+   separate lines with no gap. Wrap as a group instead: the prompt gets its own
+   line if needed, the buttons stay paired. */
+.inline-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
 .empty-state {
   display: flex;
   align-items: center;
@@ -731,4 +743,19 @@
   gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+}
+
+/* RangeField — app slider (ADR 0037; visual-first config, ui-authoring.md). */
+.ui-range-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  min-width: 0;
+}
+
+.ui-range-field input[type="range"] {
+  width: 100%;
+  accent-color: var(--primary);
 }

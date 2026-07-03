@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from "react";
-import { Activity, CheckCircle2, Moon, PinOff, RefreshCw, Sun } from "lucide-react";
+import { Activity, CheckCircle2, Columns3, Moon, PinOff, Plus, RefreshCw, Sun, X } from "lucide-react";
 import type {
   HealthResponse,
   SourceIngestionResult,
@@ -41,6 +41,11 @@ type AppShellProps = {
   refreshDatabaseBackedViews: () => void;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
   setActiveSection: (section: Section) => void;
+  onCreateView: () => void;
+  cockpitViews: { id: string; name: string }[];
+  activeCockpitViewId: string | null;
+  onOpenCockpitView: (viewId: string) => void;
+  onDeleteCockpitView: (viewId: string) => void;
   onNavigateToSearchResult: (match: SearchMatch) => void;
   pinnedCompanies: PinnedCompany[];
   selectedCompanyId: string | null;
@@ -68,6 +73,11 @@ export function AppShell({
   refreshDatabaseBackedViews,
   refreshSources,
   setActiveSection,
+  onCreateView,
+  cockpitViews,
+  activeCockpitViewId,
+  onOpenCockpitView,
+  onDeleteCockpitView,
   onNavigateToSearchResult,
   pinnedCompanies,
   selectedCompanyId,
@@ -214,6 +224,44 @@ export function AppShell({
                       </button>
                     );
                   })}
+                  {group.id === "modes" ? (
+                    <>
+                      {cockpitViews.map((view) => {
+                        const isActive = activeSection === "Cockpit" && activeCockpitViewId === view.id;
+                        return (
+                          <div className={isActive ? "pinned-row pinned-row-active" : "pinned-row"} key={view.id}>
+                            <button
+                              className="nav-item"
+                              onClick={() => onOpenCockpitView(view.id)}
+                              type="button"
+                              title={view.name}
+                            >
+                              <Columns3 size={18} aria-hidden="true" />
+                              <span>{view.name}</span>
+                            </button>
+                            <button
+                              className="pinned-unpin icon-button"
+                              onClick={() => onDeleteCockpitView(view.id)}
+                              type="button"
+                              aria-label={`${text("Delete view")}: ${view.name}`}
+                              title={text("Delete view")}
+                            >
+                              <X size={14} aria-hidden="true" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                      <button
+                        className="nav-item nav-item-add"
+                        onClick={onCreateView}
+                        type="button"
+                        title={text("New view")}
+                      >
+                        <Plus size={18} aria-hidden="true" />
+                        <span>{text("New view")}</span>
+                      </button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             );

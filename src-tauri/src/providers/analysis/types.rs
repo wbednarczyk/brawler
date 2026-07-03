@@ -216,6 +216,52 @@ impl AnalysisProviderError {
             Self::Unknown(_) => "unknown",
         }
     }
+
+    /// Pool failover eligibility (ADR 0061 decision 5): availability failures only —
+    /// rate limits, server-side unavailability, and network errors. Client errors
+    /// (bad request, missing credential) and valid-200-bad-content parse errors must
+    /// surface, never fail over.
+    pub fn is_availability_error(&self) -> bool {
+        matches!(
+            self,
+            Self::ProviderLimit | Self::ProviderUnavailable(_) | Self::NetworkError(_)
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_availability_error_matches_only_availability_failures() {
+        let availability_errors = [
+            AnalysisProviderError::ProviderLimit,
+            AnalysisProviderError::ProviderUnavailable("temporarily down".to_owned()),
+            AnalysisProviderError::NetworkError("connection reset".to_owned()),
+        ];
+        for error in &availability_errors {
+            assert!(
+                error.is_availability_error(),
+                "{} should be an availability error",
+                error.code()
+            );
+        }
+
+        let non_availability_errors = [
+            AnalysisProviderError::ProviderNotConfigured,
+            AnalysisProviderError::ProviderError("bad request".to_owned()),
+            AnalysisProviderError::ParseError("missing text".to_owned()),
+            AnalysisProviderError::Unknown("unexpected".to_owned()),
+        ];
+        for error in &non_availability_errors {
+            assert!(
+                !error.is_availability_error(),
+                "{} should not be an availability error",
+                error.code()
+            );
+        }
+    }
 }
 
 /// A report document delivered to a provider for grounded analysis/extraction

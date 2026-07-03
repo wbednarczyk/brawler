@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { pluralNoun } from "./plural";
+import { FACT_FORMS, pluralNoun } from "./plural";
 
 const COMPANY = { en: ["company", "companies"], pl: ["spółka", "spółki", "spółek"] } as const;
 
@@ -21,5 +21,13 @@ describe("pluralNoun", () => {
     expect(pluralNoun("en", 1, COMPANY)).toBe("company");
     expect(pluralNoun("en", 0, COMPANY)).toBe("companies");
     expect(pluralNoun("en", 18, COMPANY)).toBe("companies");
+  });
+
+  // Shared across Today's autopilot run card and the Fundamentals header
+  // (bug e77a1a2 part 3: "40 fakty zapisanych" was wrong declension).
+  it("declines the shared FACT_FORMS correctly in Polish", () => {
+    expect(pluralNoun("pl", 1, FACT_FORMS)).toBe("fakt");
+    expect(pluralNoun("pl", 3, FACT_FORMS)).toBe("fakty");
+    expect(pluralNoun("pl", 40, FACT_FORMS)).toBe("faktów");
   });
 });

@@ -296,6 +296,86 @@ mod tests {
         );
     }
 
+    /// Deterministic Bankier fetcher: one page with a single non-periodic (ESPI
+    /// insider-transaction notice) item whose attachment is a structured `.xhtml`
+    /// statement, no PDF sibling.
+    struct FakeBankierNonPeriodicXhtml;
+
+    impl BankierCompanyFetcher for FakeBankierNonPeriodicXhtml {
+        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
+            if url.contains("/articles/listing/") {
+                if url.contains("/listing/1/") {
+                    return Ok(r#"{
+                      "articles": [
+                        {"title": "CD PROJEKT SA: Powiadomienie o transakcjach na akcjach - art. 19 ust. 1 MAR",
+                         "url": "/wiadomosc/insider-1.html", "time": "2025-05-20 10:00:00",
+                         "pub_id": 3, "article_id": 1, "messages_filters": ["ESPI"]}
+                      ]
+                    }"#
+                    .to_owned());
+                }
+                return Ok(r#"{ "articles": [] }"#.to_owned());
+            }
+
+            Ok(r#"
+                <html><head>
+                  <script type="application/ld+json">
+                    {"@type":"NewsArticle","articleBody":"Powiadomienie o transakcji osoby pełniącej obowiązki zarządcze."}
+                  </script>
+                </head><body>
+                  <a href="https://bonnier.pl/static/att/emitent/2025-05/insider.xhtml">Raport XHTML</a>
+                </body></html>
+            "#
+            .to_owned())
+        }
+    }
+
+    struct FakeDocsXhtml;
+    impl DocumentFetcher for FakeDocsXhtml {
+        fn fetch(&self, _url: &str) -> Result<FetchedDocument, DocumentFetcherError> {
+            Ok(FetchedDocument {
+                bytes: b"<html>fake xhtml statement</html>".to_vec(),
+                content_type: Some("application/xhtml+xml".to_owned()),
+            })
+        }
+    }
+
+    /// ADR 0061 decision 1b: a structured `.xhtml` attachment on a non-periodic
+    /// (ESPI insider-notice) item is still fetched — it is not gated behind the
+    /// periodic-report text classifier the way a PDF sibling would be.
+    #[test]
+    fn non_periodic_xhtml_attachment_is_fetched_during_backfill() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = tracked_company(&state);
+
+        let progress = run_backfill(
+            &state,
+            &company_id,
+            &FakeBankierNonPeriodicXhtml,
+            &FakeDocsXhtml,
+            Duration::ZERO,
+        );
+
+        assert_eq!(progress.status, "completed", "error: {:?}", progress.error);
+        assert_eq!(progress.documents_stored, 1);
+
+        let docs = state
+            .list_report_documents_by_company(&company_id)
+            .expect("documents should list");
+        assert_eq!(docs.len(), 1);
+        let doc = &docs[0];
+        assert!(doc.url.ends_with(".xhtml"));
+        assert_eq!(doc.fetch_status, "fetched");
+        assert!(
+            doc.local_path
+                .as_deref()
+                .is_some_and(|path| path.ends_with(".xhtml")),
+            "local_path: {:?}",
+            doc.local_path
+        );
+    }
+
     #[test]
     fn untracked_company_fails_cleanly() {
         let connection = open_in_memory_database().expect("database should initialize");

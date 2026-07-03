@@ -296,3 +296,27 @@
 .shortcut-conflict-note {
   color: var(--danger);
 }
+
+.capability-routing-list {
+  display: grid;
+  gap: 12px;
+}
+
+.capability-routing-row {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.capability-routing-row h3 {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.capability-routing-member {
+  align-items: end;
+}

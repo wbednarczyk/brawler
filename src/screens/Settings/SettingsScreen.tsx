@@ -12,10 +12,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AiSettings } from "./AiSettings";
+import { CapabilityRoutingSettings } from "./CapabilityRoutingSettings";
 import { EmbeddingSettings } from "./EmbeddingSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
+import { QueueSettings } from "./QueueSettings";
 import { ImportExportSettings } from "./ImportExportSettings";
 import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
@@ -78,6 +80,8 @@ export function SettingsScreen() {
   onGeneralAnalysisModelChange,
   onGeneralAnalysisTimeoutChange,
   onEspiAiFallbackChange,
+  onOpenAiCompatibleBaseUrlChange,
+  onCapabilityProvidersChange,
   onLogLevelChange,
   onLogMaxFilesChange,
   onLogMaxFileBytesChange,
@@ -85,6 +89,11 @@ export function SettingsScreen() {
   onDbBusyTimeoutMsChange,
   onDbAcquireTimeoutMsChange,
   onResetDatabaseSettings,
+  onSourcesWorkersChange,
+  onAutopilotWorkersChange,
+  onAiWorkersChange,
+  onAiProviderConcurrencyChange,
+  onResetQueueSettings,
   onClearLicenseKey,
   onLicenseKeyDraftChange,
   onSubmitLicenseKey,
@@ -157,6 +166,11 @@ export function SettingsScreen() {
                 onGeneralAnalysisModelChange={onGeneralAnalysisModelChange}
                 onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
                 onEspiAiFallbackChange={onEspiAiFallbackChange}
+                onOpenAiCompatibleBaseUrlChange={onOpenAiCompatibleBaseUrlChange}
+              />
+              <CapabilityRoutingSettings
+                capabilityProviders={settings?.capabilityProviders ?? {}}
+                onCapabilityProvidersChange={onCapabilityProvidersChange}
               />
               <EmbeddingSettings />
             </>
@@ -195,13 +209,23 @@ export function SettingsScreen() {
             />
           ) : null}
           {activeSettingsTab === "database" ? (
-            <DatabaseSettings
-              settings={settings}
-              onDbMaxConnectionsChange={onDbMaxConnectionsChange}
-              onDbBusyTimeoutMsChange={onDbBusyTimeoutMsChange}
-              onDbAcquireTimeoutMsChange={onDbAcquireTimeoutMsChange}
-              onResetDatabaseSettings={onResetDatabaseSettings}
-            />
+            <>
+              <DatabaseSettings
+                settings={settings}
+                onDbMaxConnectionsChange={onDbMaxConnectionsChange}
+                onDbBusyTimeoutMsChange={onDbBusyTimeoutMsChange}
+                onDbAcquireTimeoutMsChange={onDbAcquireTimeoutMsChange}
+                onResetDatabaseSettings={onResetDatabaseSettings}
+              />
+              <QueueSettings
+                settings={settings}
+                onSourcesWorkersChange={onSourcesWorkersChange}
+                onAutopilotWorkersChange={onAutopilotWorkersChange}
+                onAiWorkersChange={onAiWorkersChange}
+                onAiProviderConcurrencyChange={onAiProviderConcurrencyChange}
+                onResetQueueSettings={onResetQueueSettings}
+              />
+            </>
           ) : null}
           {activeSettingsTab === "license" ? (
             <LicenseSettings

@@ -2,7 +2,7 @@
 
 This roadmap turns the current product and architecture plan into implementation milestones. It is intentionally milestone-based instead of date-based. It is **forward-looking**: it covers the active and upcoming milestones plus unscheduled future work. Delivered milestone history lives in [CHANGELOG.md](../CHANGELOG.md) (authoritative per-version release notes) and [Kanban Archive](kanban-archive.md) (completed-card detail); live epic/task status lives in Radicle/Radboard (see [Radicle/Radboard Tracking](kanban.md)).
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related references: [Engineering Workflow](engineering-workflow.md), [Radicle/Radboard Tracking](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Engineering Workflow](engineering-workflow.md), [Radicle/Radboard Tracking](kanban.md), [Product Spec](product-spec.md), and [Source Strategy](source-strategy.md).
 
 ## Roadmap Principles
 
@@ -51,7 +51,7 @@ The next product milestone is `v0.49.0`. This is the forward plan (milestone int
 - `v0.47.0` — **Report-over-report diff (structured financial statements)**: a pure-Rust, deterministic section-level diff between two consecutive same-type financial statements (consolidated SSF, standalone JSF), reachable from the company workspace and on new-report arrival. **Scope narrowed after a real-data spike** ([ADR 0052](adr/0052-report-over-report-diff.md)): pure-Rust `pdf-extract` text extraction is reliable across issuer formats (alpha-ratio 0.80–0.89, Polish diacritics intact), and structured statements align 85–92% by heading with a deterministic self-diff = empty invariant — but the narrative management report (MD&A) aligns only 4% by heading. The **narrative MD&A diff and the cited AI delta summary are deferred** to a later milestone (needs stronger section detection + embedding-backed alignment). No AI-provider dependency this milestone; ships fully local/offline. Section alignment uses a heading + lexical baseline with the `v0.45.0` embedding model as an optional enhancer (never a hard dependency). **Status: completed in `v0.47.0`.** Market-wide extraction validation (770 companies → 613 reports, 89.4% GOOD, 0 silent-garbage) and the descope rationale are in [ADR 0052](adr/0052-report-over-report-diff.md); the richer presentation layer (inline value-aware table) and the AI delta summary are tracked deferred follow-ons (Radicle `289aac4`, `bd9ab19`).
 - `v0.48.0` — **Research workspace shell (mode-based, thesis-centric, [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md))**: the cross-cutting shell (below) shipped here as the headline minor — left-sidebar IA spine + pinned companies, the **Today/Pulse Triage attention home** (the new default landing), the sectioned **Company workspace** with dockview as an opt-in **Advanced layout**, and full-screen **Focus** reader/writer modes. This **absorbs the planned feed-triage milestone's delivered parts** — the Triage-style attention home and the command palette (the cockpit's `⌘K` palette). That milestone is reframed: its **remaining keyboard feed-triage state (accept/snooze/dismiss) and `SemanticSearch`** (find-by-meaning ranking over the embedding model) become a **deferred follow-on** that plugs into the Today home, re-slotted to a later version **without renumbering `v0.49.0`+**. Per-company conviction status and the Compare KPI table are shell placeholders pending their dependency milestones (quality `v0.50.0` / valuation `v0.54.0` / thesis `v0.56.0` / cross-company `v0.53.0`). **Status: completed in `v0.48.0`.**
 - **Cross-cutting — Research workspace shell (mode-based, thesis-centric)** **shipped as `v0.48.0`** (above) and continues to restructure the app incrementally through the milestones below; the epic itself spans versions (like the foundational epics above) — `v0.48.0` delivered the spine, Triage home, sectioned workspace + dockview opt-in, and Focus modes; conviction status and Compare fill in with their dependency milestones. **Re-scoped 2026-06-23 ([ADR 0054](adr/0054-mode-based-thesis-centric-shell.md)):** after real owner use, the dockview *app-wide grid* ([ADR 0053](adr/0053-dockview-layout-pilot.md)) felt overwhelming and directionless for a non-professional investor; a cited UX research pass confirmed the fix. The shell becomes **mode-based** (Today/Pulse · Company workspace · Compare · Focus) with a **left-sidebar IA spine + pinned companies**, a **Triage-style attention home**, a **sectioned company deep-dive**, and a **glanceable per-company conviction status**; **dockview is kept as the opt-in "advanced layout"** inside the workspace/compare modes, not the entry point. Full plan in the dedicated section below and [ADR 0054](adr/0054-mode-based-thesis-centric-shell.md) / [ADR 0053](adr/0053-dockview-layout-pilot.md).
-- `v0.49.0` — **Autonomous report pipeline** (North Star, detailed below): detect publication, auto-fetch, auto-extract, and notify with cross-references, behind a per-company trust ladder.
+- `v0.49.0` — **Autonomous report pipeline** (North Star, detailed below): detect publication, auto-fetch, auto-extract, diff, cross-reference, and notify, behind a per-company trust ladder. **Planned ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md)):** a per-company two-rung ladder (`off` → `assist` = auto-work but facts stay `pending` → `autopilot` = auto-commit as `auto_unreviewed`); orchestration as **chained durable-queue jobs** stamped with one `autopilot_run` id; **event-driven detection** off source-refresh completion (closes the AV5 Rust-side scheduler, retiring the frontend refresh timer); a persisted `autopilot_run` record backing the single Today/Pulse notification, the review queue, and run-level undo. Global confirm-before-commit default unchanged; decision-support only.
 - `v0.50.0` — **Quality frameworks (qualitative assessment)**: agent-assessed criteria (moat, pricing power, recurring revenue, capital allocation) with citations, composed into the scorecard and re-evaluated by autopilot.
 - `v0.51.0` — **Re-invent the notebook panel**.
 - `v0.52.0` — **Import/export v2**: unified data bundle and per-feature coverage, including the financial facts + KPI definitions export/import deferred from `v0.37.0`.
@@ -74,10 +74,15 @@ These milestones turn the fundamentals substrate into computed valuation and a d
 - `v0.56.0` — **Investment thesis workbench + decision journal**: persisted, provenance-stamped theses (verdict as decision support, scenario forecasts, variant/inversion/disclosed-gaps, valuation↔thesis link with orphan check) and a decision journal (recorded buy/pass + rationale + outcome). Reschedules the previously "Not in V1" trade journal. Design in [ADR 0043](adr/0043-investment-thesis-and-decision-journal.md).
 - `v0.57.0` — **Living thesis (newsfeed-as-input)**: link feed items, report documents, signals, and events to theses for staleness state, what-changed diffs, catalyst-aware refresh, and re-score triggers — the differentiator that keeps a thesis fresh from the live feed.
 - `v0.58.0` — **Watchlist screener / leaderboard**: batch-run the valuation engine and scorecard across the watchlist into a ranked board with deltas since the last run; extends the report-season cockpit (`v0.43.0`) and cross-company comparison (`v0.53.0`).
+- `v0.59.0` — **Investor week calendar**: a weekly working-day digest (Mon–Fri) extending the Company Events Calendar with composable, opt-in **layers** — company events (reports, IPO debut, ex-dividend), an opt-in **whole-market** scope toggle (untracked GPW tickers via a relaxed Bankier ingest), a **macro** lane (CPI/PMI/payrolls — model + manual + sample now, **live source deferred to a follow-up ADR**), and **market holidays** (curated GPW/US static dataset, `WOLNE` badge). Watchlist-first by default; foreign earnings out of scope. Inspired by the Koomberg weekly investor calendar. Design in [ADR 0058](adr/0058-investor-week-calendar.md).
 
 Deferred follow-ons (separate ADRs when scheduled): a **SEC EDGAR XBRL fundamentals adapter** for US coverage (new `financial_data` source type; open-core, emits no advice), and an **analyst-consensus adapter** (mostly paid/restricted; behind a flag + ADR) to feed "vs consensus" context.
 
-Sequencing notes: the interpretative AI layer is split into a static foundation (`v0.39.0`, no model) and an embedding-model milestone (`v0.45.0`, lands before story clustering, its first model consumer); the model-backed path is adopted per capability only where a per-capability eval beats the static baseline, and the vector index is disposable so the model is reversible to static — see [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md). The quality-frameworks milestones (`v0.44.0` quantitative, `v0.50.0` qualitative) depend only on the fundamentals facts and are resequenceable. The fundamentals schema was validated against ~37 GPW companies across sectors; findings (statement-type packs, generalized unit model, fact variants, period model) are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). The valuation & decision arc (`v0.54.0`+) also depends only on facts and is GPW-first/DCF-lean for thin-market reliability; the deterministic valuation engine is pulled forward to land near the quality-scorecard block. The arc stays open-core and decision-support only: any prescriptive (buy/sell/hold) advisory output is supplied by an out-of-band adapter behind the `AdvisoryVerdictProvider` port and is absent from the open-core build, preserving the `AGENTS.md` decision-support rule and the planned recommendation-guardrail enforcement — see [ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md).
+**Cross-cutting — AI quality (per-capability provider routing + OpenAI-compatible provider)** ([ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md), epic `e1c3fac`, **no `milestone:` label**). Extends [ADR 0028](adr/0028-multi-provider-ai-boundary.md). The single global analysis provider becomes a **capability → (provider, model) map** (fallback to `general_analysis_provider`), so the owner can run **Gemini-Pro for document extraction** (KPI/claim — keeps native PDF input) and a **free OpenAI-compatible open-model provider** (one generic adapter: base URL + model + keychain key; unlocks Groq/OpenRouter/Cerebras/local Ollama) for **text** tasks (analysis, briefs, digests, ESPI event/classification). A document capability must resolve to a document-capable provider (no silent PDF→text degrade). Any document-tier default model change is gated on **real-data extraction precision/recall** measurement (`private/realdata/`). Slices S2–S6 in the ADR; addresses the live autopilot-extraction-quality pain. **Update (2026-07-01): the document-KPI premise is superseded by ADR 0061 (below); this ADR's per-capability routing + OpenAI-compatible provider survive for text/qualitative tasks and become the basis for ADR 0061's AI provider pool.**
+
+**Cross-cutting — 100% deterministic fundamentals data gathering** ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md), epic `971aff6`, **no `milestone:` label**). Supersedes ADR 0060's Gemini-Pro-for-documents premise; amends ADR 0055/0036; relates to ADR 0052/0028/0027/0049. Owner requirement: **100% deterministic, 100% automatic** KPI gathering, no human-in-the-loop as steady state. Provable determinism comes only from **structured/tagged data**, so KPI extraction becomes a **layered pipeline** (a KPI taken from the highest available tier; every fact validated or flagged, never silently wrong): **ESEF/iXBRL** (annual, tagged IFRS concepts) → structured **xHTML "wybrane dane"** → **deterministic PDF parser** (Polish label dictionary + per-company versioned **extraction profile** with a **drift→learning loop**) → **HTML aggregator** (BiznesRadar/Bankier/StockWatch — not Stooq) as routine second witness/fallback → **AI over extracted text** (provider pool, ADR 0059 gate + ADR 0060 routing) only for the residual. The **"good" gate** = accounting identities + comparative-period cross-check + structure match + completeness. Honest 100% scope: automatic on the covered/bootstrapped set (bootstrap once per company/template, then zero-touch), and never silently wrong via validation. S0 spike (owner DB): 264 structured docs referenced-but-unfetched, ~30 companies PDF-only, PDF recall ~90% — multi-tier confirmed. Slices S0–S6 in the ADR.
+
+Sequencing notes: the interpretative AI layer is split into a static foundation (`v0.39.0`, no model) and an embedding-model milestone (`v0.45.0`, lands before story clustering, its first model consumer); the model-backed path is adopted per capability only where a per-capability eval beats the static baseline, and the vector index is disposable so the model is reversible to static — see [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md). The quality-frameworks milestones (`v0.44.0` quantitative, `v0.50.0` qualitative) depend only on the fundamentals facts and are resequenceable. The fundamentals schema was validated against ~37 GPW companies across sectors; findings (statement-type packs, generalized unit model, fact variants, period model) are recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). The valuation & decision arc (`v0.54.0`+) also depends only on facts and is GPW-first/DCF-lean for thin-market reliability; the deterministic valuation engine is pulled forward to land near the quality-scorecard block. The arc stays open-core and decision-support only: any prescriptive (buy/sell/hold) advisory output is supplied by an out-of-band adapter behind the `AdvisoryVerdictProvider` port and is absent from the open-core build, preserving the `CLAUDE.md` decision-support rule and the planned recommendation-guardrail enforcement — see [ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md).
 
 ## North Star: Autonomous Report Pipeline (v0.49.0)
 
@@ -89,30 +94,17 @@ Boundary: fetching and analyzing while the app is closed crosses into a hosted/s
 
 ## Future: Release Packaging And Distribution Hardening
 
-Goal: harden distribution after the first public Linux and Windows release artifacts are proven.
+Goal: harden distribution after the first public Linux/Windows release artifacts are proven.
 
-Candidate scope:
-
-- Windows installer packaging
-- app version/about screen
-- optional tag-driven release candidate workflow
-- native Pacman packaging if AppImage is not enough for Arch users
-- code signing
-- package repositories
+Candidate scope: Windows installer packaging; app version/about screen; optional tag-driven release-candidate workflow; native Pacman packaging if AppImage isn't enough for Arch; code signing; package repositories.
 
 Not scheduled.
 
 ## Future: Full Backup And Restore
 
-Goal: design and implement full local backup and restore beyond the scoped M20 import/export feature.
+Goal: full local backup/restore beyond the scoped M20 import/export feature.
 
-Candidate scope:
-
-- full app data backup format
-- restore safety while the app is running
-- clear exclusions for secrets, license tokens, logs, diagnostics, metrics, and private signing material
-- compatibility strategy across app versions
-- manual recovery documentation
+Candidate scope: full app-data backup format; restore safety while the app is running; exclusions for secrets, license tokens, logs, diagnostics, metrics, private signing material; cross-version compatibility strategy; manual recovery docs.
 
 Not scheduled.
 
@@ -120,26 +112,11 @@ Not scheduled.
 
 Goal: make unread Inbox activity visible from the Windows taskbar without opening the app.
 
-Candidate scope:
+Candidate scope: dot-style taskbar indicator when unread feed items exist, cleared at zero; unread state routed through a small desktop taskbar indicator boundary; Windows adapter for the real integration; no-op adapter elsewhere; native Windows packaged-app smoke test for appearance/clearing.
 
-- small dot-style taskbar indicator when unread feed items exist
-- clear the indicator when unread count returns to zero
-- route unread state through a small desktop taskbar indicator boundary
-- Windows adapter for the real taskbar integration
-- no-op adapter for non-Windows and unsupported runtimes
-- native Windows packaged-app smoke test covering indicator appearance and clearing
+Deferred: numeric unread badges; source-failure/license/background-job indicators; non-Windows taskbar behavior.
 
-Deferred:
-
-- numeric unread badges
-- source-failure, license, or background-job taskbar indicators
-- taskbar behavior on non-Windows platforms
-
-Architecture notes:
-
-- The Inbox should publish unread activity state; it should not own Windows taskbar API calls directly.
-- The desktop boundary should allow later platform adapters or richer attention states without changing Inbox behavior.
-- If Tauri does not expose a suitable Windows taskbar overlay/badge API, a Windows-specific native adapter should be isolated behind the same boundary.
+Architecture: Inbox publishes unread activity state, not Windows taskbar API calls directly. The desktop boundary must allow later platform adapters/richer attention states without changing Inbox behavior. If Tauri lacks a suitable Windows taskbar overlay/badge API, isolate a Windows-specific native adapter behind the same boundary.
 
 Not scheduled.
 
@@ -171,46 +148,75 @@ Not in scope for v1. Cloud backup/sync remains a separate design discussion.
 
 ## Future Study: Google Finance Source Value
 
-Goal: determine whether Google Finance can legally and reliably improve the investor workflow before adding it to source implementation scope.
+Goal: is Google Finance legally/reliably worth adding to source scope?
 
 Questions:
 
-- What user value would Google Finance add beyond existing official reports, public/RSS media sources, company registry data, and future AI analysis?
-- Is there an official, documented, and permitted access path suitable for a desktop app, or would use depend on fragile/restricted scraping?
-- Which data would be useful if permitted: price snapshots, market news, related companies, financial summaries, watchlist enrichment, or company identity matching?
-- Does Google Finance coverage improve GPW support enough to justify adapter complexity, or is it more useful for later US/EU market expansion?
-- How would attribution, refresh cadence, rate limits, data freshness, and source diagnostics appear in the existing source adapter model?
-- Are there better official/public alternatives for the same data with clearer usage terms?
+- Value beyond existing official/RSS/registry sources + future AI analysis?
+- Official permitted access path, or only fragile scraping?
+- Useful data if permitted: price snapshots, news, related companies, financials, watchlist enrichment, identity matching?
+- Worth the adapter complexity for GPW, or more useful for later US/EU expansion?
+- How do attribution, cadence, rate limits, freshness, diagnostics fit the adapter model?
+- Better alternatives with clearer terms?
 
 Decision criteria:
 
-- Do not implement unless usage terms and access path are acceptable for local-first desktop use.
-- Prefer source-adapter integration only if the data can be fetched through a stable, allowed mechanism and represented with durable attribution.
-- If useful only for manual links or user-opened research, treat it as an external-link affordance rather than ingestion.
-- If the study recommends implementation, record the source policy and adapter design in Source Strategy or a source-specific ADR before coding.
+- Only with acceptable usage terms/access path.
+- Adapter integration only via a stable, allowed fetch + durable attribution.
+- Manual-link-only value → external-link affordance, not ingestion.
+- If recommended: record policy/design in Source Strategy or a source ADR first.
 
-Not in scope for v1 unless the study identifies a low-risk, permitted, high-value path.
+Not in scope for v1 unless the study finds a low-risk, permitted, high-value path.
+
+## Future Study: Analyst Recommendations Usage (epic study)
+
+Owner study (2026-07-02): whether sell-side analyst recommendations (ratings, target prices, consensus changes) for tracked GPW/NewConnect companies add investor value within Brawler's decision-support posture.
+
+Questions:
+
+- Signal beyond fundamentals/reports/feed — consensus shifts as events, target-price context, revision history?
+- Legally/reliably accessible local-first (broker/agency RSS, Bankier/BiznesRadar, ESPI-adjacent) vs. needing a scraping ADR?
+- New entity with history (analyst, firm, rating, target, date) vs. typed feed items/signals — how it joins the timeline/events/Today-Pulse?
+- Present strictly as tracking, never advice — provenance-carrying third-party claims, maybe per-firm accuracy tracking?
+- Feeds the research workspace (evidence/claims-to-verify) or the quality/valuation arc?
+
+Decision criteria:
+
+- Permitted, stable access path only.
+- Durable attribution and history.
+- Third-party origin stays explicit in presentation.
+- Output: an ADR + data-model/source-strategy proposal before code.
+
+## Open Source-Strategy Questions
+
+Genuinely unresolved questions carried over from [Source Strategy](source-strategy.md) (resolved/superseded ones moved to [Kanban Archive](kanban-archive.md#archived-investigation-and-study-notes-moved-2026-07-02)):
+
+- Are there explicit GPW terms that constrain automated polling of `https://www.gpw.pl/komunikaty`? Never formally reviewed.
+- Can Bankier/Parkiet ESPI RSS items be reliably reconciled with canonical GPW report IDs, so they can graduate from developer-only cross-check to a trusted secondary signal?
+- Which Investing.com Poland RSS categories are relevant to GPW companies, with stable source URLs and enough ticker/company identifiers to justify a media adapter?
+- Should Stooq price/quote data become a context-enrichment adapter (distinct from the fundamentals-aggregator role ADR 0061 already declined for it)?
+- What exact Portal Analiz scope is acceptable for v1 — followed companies only, watchlist-only search results, selected pages saved manually, or automated polling? (`portal-analiz` remains a disabled placeholder pending [ADR 0014](adr/0014-portal-analiz-authenticated-source-policy.md) scope decision.)
 
 ## Future: AI Recommendation Guardrail Enforcement
 
-Goal: add automated post-generation validation that detects and rejects AI output containing buy/sell/hold, portfolio allocation, or similarly actionable recommendation language.
+Goal: automated post-generation validation that detects and rejects AI output containing buy/sell/hold, portfolio allocation, or similarly actionable recommendation language.
 
-M13 keeps the source-grounded prompt policy and UI positioning as decision support, but hard output enforcement is explicitly deferred until after v1.
+M13 keeps the source-grounded prompt policy and decision-support UI positioning; hard output enforcement is explicitly deferred until after v1.
 
 Not in scope for v1.
 
 ## Future Exploration: Agent / MCP Surface
 
-Goal: expose Brawler's local domain (fundamentals facts, KPIs, valuation runs, scorecards, theses, signals) to an agent through a **local MCP server**, so deep, conversational analysis can be driven over the same data the GUI uses — without making Brawler agent-native or leaving local-first.
+Goal: expose Brawler's local domain (fundamentals facts, KPIs, valuation runs, scorecards, theses, signals) to an agent via a **local MCP server**, so conversational analysis can run over the same data the GUI uses — without making Brawler agent-native or leaving local-first.
 
 Intent:
 
-- Treat the MCP server as a second **inbound adapter** over the existing domain core (alongside the UI ↔ Rust typed-command seam), reusing the same typed contracts — not a new business logic path. See [ADR 0039](adr/0039-ports-and-adapters-posture.md).
-- Keep it **local-only** (stdio/loopback); no cloud, no data leaving the machine; strict typed tools mirroring the existing command surface (no arbitrary shell or broad filesystem access).
-- Keep the **engine deterministic**: the agent orchestrates and synthesizes; valuation/scoring remain deterministic Rust ([ADR 0041](adr/0041-deterministic-valuation-engine.md)). Agent-as-core-engine is a deliberate non-goal (it would break determinism, testability, cost, and offline operation).
-- Inherit the open-core/gating boundary: decision-support tools are open-core; any prescriptive advisory tool is gated by the same `AdvisoryVerdictProvider` seam ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+- A second **inbound adapter** over the existing domain core (alongside the UI ↔ Rust typed-command seam), reusing the same typed contracts, per the ports-and-adapters posture ([ADR 0039](adr/0039-ports-and-adapters-posture.md)).
+- **Local-only** (stdio/loopback), no cloud/data egress; strict typed tools mirroring the existing command surface (no arbitrary shell or broad filesystem access).
+- **Engine stays deterministic** ([ADR 0041](adr/0041-deterministic-valuation-engine.md)): the agent orchestrates/synthesizes, valuation/scoring stay deterministic Rust — agent-as-core-engine is a deliberate non-goal.
+- Inherits the open-core advisory-gating boundary ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)) unchanged.
 
-Sequencing: this only has value once the valuation & decision arc domain exists, so it is a follow-on to that arc, not part of it. Record the surface design and tool contracts in an ADR before implementation.
+Sequencing: value only once the valuation & decision arc domain exists — a follow-on, not part of it. Record surface design and tool contracts in an ADR before implementation.
 
 Not scheduled.
 
@@ -221,6 +227,8 @@ Cloud backup/sync is not part of core v1 implementation. It is a future roadmap 
 ## Not In V1
 
 - portfolio position tracking
-- trade journal
+- trade journal (note: a decision journal, distinct in scope, is planned at `v0.56.0` — see [ADR 0043](adr/0043-investment-thesis-and-decision-journal.md))
 - billing/payment infrastructure
 - hosted license activation
+- multi-user / team accounts (single local user only)
+- cloud sync and hosted data-service metadata — see [Future: Cloud Backup And Sync](#future-cloud-backup-and-sync)

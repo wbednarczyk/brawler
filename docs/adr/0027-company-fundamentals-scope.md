@@ -1,8 +1,6 @@
 # ADR 0027: Company Fundamentals Scope And KPI Taxonomy
 
-## Status
-
-Accepted.
+Status: Accepted.
 
 ## Context
 

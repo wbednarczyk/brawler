@@ -2,7 +2,7 @@
 
 The single home for Brawler's testing strategy, layers, and the manual/live/packaging smoke procedures. The day-to-day build/validation discipline and the Definition of Done live in [Engineering Workflow](engineering-workflow.md); this doc is the detailed testing reference it points at.
 
-Use [Project Brief](project-brief.md) for the full documentation map. Related: [Engineering Workflow](engineering-workflow.md), [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md), [ADR 0021: Browser UI Regression Testing](adr/0021-browser-ui-regression-testing.md), [ADR 0048: Test architecture foundation](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md), [ADR 0049: Test architecture v2 — data-transform correctness](adr/0049-test-architecture-v2-data-transform-correctness.md).
+Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Engineering Workflow](engineering-workflow.md), [ADR 0007: GitHub Build and Lean Testing](adr/0007-github-build-and-lean-testing.md), [ADR 0021: Browser UI Regression Testing](adr/0021-browser-ui-regression-testing.md), [ADR 0048: Test architecture foundation](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md), [ADR 0049: Test architecture v2 — data-transform correctness](adr/0049-test-architecture-v2-data-transform-correctness.md).
 
 ## Strategy
 
@@ -11,14 +11,14 @@ Use [Project Brief](project-brief.md) for the full documentation map. Related: [
 The constraint is that the suite stays **lean and fast** — coverage of everything must never mean a bloated suite or a gate that takes hours. Two rules hold both at once:
 
 1. **Test behavior and contracts, not implementation details.** One clear test per behavior; assert the observable result (the command's output, the rendered state, the stored row), not internal mechanics. **Delete tests that no longer protect behavior, and never add a redundant or brittle test "to be safe"** (especially screenshot-diff tests) — that bloat is exactly what makes a suite slow, flaky, and ignored. More tests is not the goal; covering every behavior *once, well* is.
-2. **Keep the bulk in the fast layers, and keep the slow ones out of the per-change gate.** `make check` must stay in the seconds-to-low-minutes range. The slow, flaky, or credentialed layers (Playwright browser smoke, live provider smoke, packaging smoke) are **opt-in/periodic** (`make check-epic`), never in `make check` — so "test everything" never means "every push takes hours." Default CI/local checks stay deterministic and secret-free; anything needing credentials/network/external services is manual or opt-in.
+2. **Keep the bulk in the fast layers; every *deterministic* suite is on the one mandatory gate, and only the genuinely-slow/flaky/credentialed ones stay out.** `make check` is the single hard-fail gate ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — frontend + Rust + `knip` + the ts-rs drift guard + the **full Playwright browser suite** + `gate-integrity` + `docs-drift` (spec↔code enforcement — contracts/IA/data-model vs. the real commands/screens/settings, [ADR 0065](adr/0065-spec-code-drift-gates.md)) — and `.githooks/pre-commit` runs it before every commit. It must stay in the seconds-to-low-minutes range (the browser suite parallelizes to ~tens of seconds). Only suites disqualified from a per-commit hard gate stay periodic/manual, each for a stated reason: `coverage` (slow instrumented build), `mutants` (30 min–2 h), `bench` (machine-dependent), live provider / OS-keyring smokes (credentials/network/OS), packaging (OS/toolchain). This is the anti-rot contract: a deterministic suite that is *not* on the gate rots (the browser suite went 28-red for two sessions when it lived only in `check-epic` behind `-`-prefixed steps). Default CI/local checks stay deterministic and secret-free.
 
 **The layers (push coverage down to the cheapest layer that proves the behavior):**
 
 - many **Rust unit/contract tests** — domain logic, command contracts, parsing, dedupe, migrations, provider mapping, jobs; the bulk of coverage, milliseconds each;
 - **frontend component/workflow tests** (Vitest) for every UI state and workflow, not just critical ones;
 - **test-sample-backed integration tests** for source adapters and migrations (parsing, dedupe keys, company matching, error handling, migration safety, data persistence);
-- **browser UI smoke** (Playwright) for layout/scroll/overflow regressions Vitest/jsdom cannot catch — periodic;
+- **browser UI smoke** (Playwright) for layout/scroll/overflow regressions Vitest/jsdom cannot catch — a hard-fail step of `make check`, not periodic;
 - a few **desktop / packaging / live-provider smoke** checks for what only the real runtime, package, or provider can prove — periodic/manual.
 
 ## Sample-data factory and per-test isolation
@@ -59,6 +59,67 @@ yet real-data validation showed no local method reached trustworthy precision at
 useful recall, and the feature was dropped ([ADR 0051](adr/0051-story-clustering-across-sources.md)).
 The cost of the up-front measurement is an afternoon; the cost of skipping it is a
 fully-built feature that has to be reverted.
+
+### Fundamentals structured-extraction recall/precision harness
+
+The structured-first extraction pipeline (`fundamentals::extraction::pipeline::run_pipeline`,
+[ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)) has an `#[ignore]` real-data
+harness — `storage::tests::real_data_extraction::real_data_extraction_recall_precision` — that
+measures recall/precision against a hand-labeled ground-truth set, per ADR 0061's guardrail
+("a `#[ignore]` real-data harness measures recall/precision on the owner's filings before any
+default flip"). It also gates the [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)
+decision-3 document-tier default-model change. It complements
+`storage::tests::autopilot::autopilot_real_data_validation`, which smoke-tests the pipeline
+end-to-end (queue drain, terminal state) but does not measure accuracy.
+
+**Setup:** refresh the DB copy per `private/realdata/README.md`, then work on a throwaway copy
+so tests never mutate the master snapshot.
+
+**Env:**
+
+- `BRAWLER_REAL_DB` — path to the (throwaway) real DB copy. Required; absent → the test skips
+  with an `eprintln` (never fails CI).
+- `BRAWLER_REAL_DATA_DIR` — the Tauri data dir holding the actual fetched report files (same
+  convention as `autopilot_real_data_validation`). Without it, report bytes cannot be read and
+  every document fails to resolve.
+- `BRAWLER_GROUND_TRUTH` — path to the ground-truth JSON. Defaults to
+  `private/realdata/ground_truth.json` (gitignored, hand-authored, never committed).
+
+**Ground-truth format** — a JSON file with one entry per labeled report document:
+
+```json
+{
+  "documents": [
+    {
+      "ticker": "CBF",
+      "match": { "urlContains": "raport-q1-2026" },
+      "periodEnd": "2026-03-31",
+      "periodType": "Q1",
+      "fiscalYear": 2026,
+      "facts": { "revenue": "245253000", "net_profit": "-1200000" }
+    }
+  ]
+}
+```
+
+`match` takes `urlContains` and/or `contentHash` (at least one, matched against the resolved
+company's `report_documents` rows). `facts` maps `metric_key` → expected value as a decimal
+string in signed base units. A match uses the pipeline's own `Tolerance` (0.5% relative / 1
+base-unit absolute).
+
+**Run:**
+
+```bash
+rtk cargo test --manifest-path src-tauri/Cargo.toml real_data_extraction -- --ignored --nocapture
+```
+
+Prints a per-document line (tier, acceptance, recall, precision, unlabeled-emitted count), a
+per-tier (esef/pdf/html_aggregator) rollup, and an overall summary.
+
+**Policy:** the harness currently asserts sanity only (ground truth resolves; overall recall >
+0) — no precision/recall floor yet. A quality threshold is a deliberate follow-up gate before
+relying on this pipeline by default or before the ADR 0060 decision-3 default-model flip, per
+the real-data-validation-precedes-implementation guardrail above.
 
 The **report-over-report diff** (`v0.47.0`, [ADR 0052](adr/0052-report-over-report-diff.md))
 followed this rule and is the worked example of it paying off: a pure-Rust
@@ -139,7 +200,7 @@ never flakes CI:
 
 - **Behavioral scale gates (in `make check`).** Deterministic assertions that a
   hot path is **offloaded** (a meaningful-work `#[tauri::command]` is `async` +
-  `spawn_blocking`, per the AGENTS.md UI-thread rule) and **algorithmically
+  `spawn_blocking`, per the CLAUDE.md UI-thread rule) and **algorithmically
   bounded** — it scans the persisted derived index, not the whole corpus, and is
   `O(rows)` not `O(rows²)`. Asserted via structure and via instrumented
   counters / row-count invariants over a volume dataset, **not** wall-clock. This
@@ -197,7 +258,10 @@ Files: the corpus is `src/test/scenarios/fidelity-corpus.json` (language-neutral
 `expectContains` / `expectAbsent` assertions); the TS replayer is
 `src/test/scenarios/fidelity.test.ts` (over `createMockRuntime`); the Rust
 replayer is `src-tauri/src/storage/tests/mock_fidelity.rs` (over `AppState` on a
-fresh `open_in_memory_database`). Journeys use seed-free root entities and
+fresh `open_in_memory_database`); it loads the corpus via `BRAWLER_FIDELITY_CORPUS`
+(set by `src-tauri/build.rs`, overridable — `make mutants` exports an absolute
+path since `cargo-mutants`' scratch copy excludes anything above the workspace).
+Journeys use seed-free root entities and
 seed-independent assertions, and reuse each created entity's returned id, so they
 hold regardless of either side's id-derivation scheme. **Add a journey to the
 corpus when you add or change a command's observable behavior.**
@@ -231,9 +295,23 @@ dedup/matching/normalization modules** as they land, rather than rotting at the
 original globs. It stays **periodic** (closure-cadence, in the `make check-epic`
 neighborhood — not the per-change gate). Policy: [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md).
 
+The target is **resource-capped by default** (`nice -19`, `CARGO_BUILD_JOBS=2`,
+`test-threads=2` via the nextest `mutants` profile, one mutant at a time,
+and a hard `systemd-run` memory jail `MUTANTS_MEMORY_MAX=11G`) — uncapped sweeps
+OOM-froze the whole WSL VM twice (2026-07-03; memory, not CPU, is the killer —
+the jail OOMs only the sweep scope). Raise via `MUTANTS_BUILD_JOBS`/`MUTANTS_MEMORY_MAX`
+on a dedicated box, or split a sweep across quiet moments with
+`make mutants MUTANTS_SHARD=k/n`.
+
+Sweeps also run off-box via the manual `mutants.yml` GitHub Actions workflow
+(`gh workflow run mutants.yml [-f shard=1/8]`) on standard `ubuntu-latest`,
+`MUTANTS_JAIL=off` since a hosted runner has no user systemd manager to jail —
+`make mutants` (jailed by default) stays the documented local equivalent for a
+dedicated box.
+
 ## Generated API types (Rust → TypeScript)
 
-The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if the committed bindings drift from the Rust source. `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded (regenerate, don't hand-edit).
+The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the Rust source** with `ts-rs`, so a Rust struct and its TS shape cannot silently drift (ADR 0048). The Rust DTO carries `#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]` + `#[ts(export, export_to = "../../src/api/generated/")]` (ts-rs honors the existing `#[serde(rename_all = "camelCase")]` via serde-compat); `make types` emits `src/api/generated/`, and the hand-written `src/api/*Types.ts` module re-exports the generated types so consumers keep a stable import path. `make types-check` regenerates and fails if regeneration changes the working-tree bindings (a before/after hash self-consistency check — independent of git staging state, so it works both mid-work and in the pre-commit gate). `ts-rs` is behind the off-by-default `ts-export` feature, so it never ships in the binary; `src/api/generated/` is lint-excluded and **knip-ignored** (`ignore` in `knip.json`), because it is a generated contract mirror governed by `types-check`, not authored source — knip's unused-file check would flag generated leaf DTOs that nothing imports, and deleting them is invalid (regenerate, don't hand-edit). Authored dead-code detection stays strict everywhere else.
 
 **Generation conventions** (so the generated shape matches the hand-written contract exactly):
 
@@ -260,7 +338,7 @@ The TypeScript DTOs that cross the Tauri IPC boundary are **generated from the R
 
 ## Browser UI regression smoke (Playwright)
 
-A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Opt-in/periodic (not in `make check`). Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) this layer is being extended to **broad clickable coverage of all 12 primary screens** on a stateful, per-test-isolated mock runtime, and — once fast, stable, and parallel — **promoted toward a default/pre-merge gate** (only while it keeps `make check` within the seconds-to-low-minutes range).
+A small Playwright browser-smoke layer catches UI/layout regressions Vitest/jsdom cannot (overflow, scroll-ownership, clipping, fixed chrome). It targets the Vite preview app in Chromium with deterministic mock data — it does **not** read live sources or the user's local database. Policy: [ADR 0021](adr/0021-browser-ui-regression-testing.md). Under [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md) it was extended to **broad clickable coverage of all primary screens** on a stateful, per-test-isolated mock runtime; the ADR 0048 Decision 6 promotion is now **complete** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): the **full suite is a hard-fail step of `make check`** and runs before every commit (it parallelizes to ~tens of seconds, keeping the gate in the seconds-to-low-minutes range). It is **no longer opt-in** — a browser-suite failure blocks the commit.
 
 Setup and run:
 
@@ -268,7 +346,7 @@ Setup and run:
 - `make ui-smoke` — run the suite. (`npm run test:browser:install` / `npm run test:browser` are the direct equivalents.)
 - Run a subset: `npx playwright test journeys smoke-walk`.
 
-Use it for repeated layout risks: fixed app chrome + no global scrollbar; independently scrollable panels (Companies, Watchlists, Notebooks, Inbox, Events, Sources); dense row/category sizing; and **viewport regressions across the matrix in `playwright.config.ts`** — compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [AGENTS.md](../AGENTS.md).
+Use it for repeated layout risks: fixed app chrome + no global scrollbar; independently scrollable panels (Companies, Watchlists, Notebooks, Inbox, Events, Sources); dense row/category sizing; and **viewport regressions across the matrix in `playwright.config.ts`** — compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [CLAUDE.md](../CLAUDE.md).
 
 How it's wired (assertion-driven, not screenshot-only):
 
@@ -340,6 +418,26 @@ make smoke-gemini-analysis
 ```
 
 Expect provider ID, model, `job_status=succeeded`, a non-empty summary, and ≥1 source reference. Failure interpretation mirrors the transcription smoke (set sample input explicitly — it does not read SQLite). **M13 cannot close until this passes once on the branch, or a documented provider outage/cost decision explicitly defers it.**
+
+## Live drive (real app via CDP)
+
+Drives the **real running Windows app** (real Tauri backend, real local SQLite DB) via WebView2's Chrome DevTools Protocol, so an agent on WSL (no GUI) can verify a change against the real app directly instead of relying on the manual desktop smoke checklist above. Policy: [ADR 0066](adr/0066-live-drive-remote-debugging.md).
+
+Use it when a change needs proof against the real runtime/DB — not the mocked Playwright suite above — and a human isn't available to click through it manually.
+
+**One command from WSL** (rebuild → launch on Windows → wait for CDP → run the live suite):
+
+```bash
+make live-cycle
+```
+
+Or the pieces separately:
+
+- `make live-up` — `package-windows-from-linux` (stops any running brawler, rebuilds and copies the portable exe), launches it on Windows via `powershell.exe` + `scripts/windows/dev-live.ps1` with the CDP port open (`LIVE_CDP_PORT`, default 9222), then polls `…/json/version` every 2s (90s timeout, firewall hint on failure) — localhost first, then the `/etc/resolv.conf` nameserver IP (the WSL2-NAT route to the Windows host). The reachable URL is written to `/tmp/brawler-live-cdp-url`.
+- `make live-drive` — runs `tests/live/` via `playwright.live.config.ts`, exporting `BRAWLER_CDP_URL` from `/tmp/brawler-live-cdp-url` when the env var isn't already set.
+- Manual launch (a human at the Windows machine, e.g. against an already-built exe): `powershell -ExecutionPolicy Bypass -File scripts/windows/dev-live.ps1`, then `make live-drive` from WSL.
+
+`BRAWLER_CDP_URL` overrides the connection target (default `http://localhost:9222`); the helper (`tests/live/helpers/liveConnect.ts`) applies the same localhost → nameserver-IP fallback order when it is unset. Dev-only; **never** part of `make check`/`make check-epic` — no default/CI environment has a live GUI app with an open debug port.
 
 ## Packaging smoke tests
 

@@ -1,8 +1,6 @@
 # ADR 0001: Local-First Desktop Application
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

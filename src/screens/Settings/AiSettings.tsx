@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 
 import { listAiProviderCatalog } from "../../api/aiProviders";
+import { OPENAI_COMPATIBLE_PROVIDER_ID } from "../../api/credentials";
 import type { AiProviderCatalogEntry, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { FieldRow, SelectField } from "../../ui";
+import { FieldRow, Hint, SelectField, TextField } from "../../ui";
 
 type AiSettingsProps = {
   settings: UserSettings | null;
@@ -13,6 +14,7 @@ type AiSettingsProps = {
   onGeneralAnalysisModelChange: (model: string) => void;
   onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
   onEspiAiFallbackChange: (enabled: boolean) => void;
+  onOpenAiCompatibleBaseUrlChange: (baseUrl: string) => void;
 };
 
 export function AiSettings({
@@ -23,6 +25,7 @@ export function AiSettings({
   onGeneralAnalysisModelChange,
   onGeneralAnalysisTimeoutChange,
   onEspiAiFallbackChange,
+  onOpenAiCompatibleBaseUrlChange,
 }: AiSettingsProps) {
   const { t, text } = useLocale();
   const [catalog, setCatalog] = useState<AiProviderCatalogEntry[]>([]);
@@ -48,6 +51,24 @@ export function AiSettings({
   const selectedProvider = settings?.aiProviders.generalAnalysisProvider ?? "";
   const selectedProviderEntry = catalog.find((entry) => entry.providerId === selectedProvider);
   const analysisModels = selectedProviderEntry?.models ?? [];
+  const isGeneralProviderCompatible = selectedProvider === OPENAI_COMPATIBLE_PROVIDER_ID;
+
+  // Free-text settings fields edit a local draft and commit on blur, rather
+  // than calling `update_settings` per keystroke: a controlled field bound
+  // directly to the round-tripped settings value can't be typed into, because
+  // the async save reverts each keystroke and backend validation rejects
+  // every partial value on the way (docs/ui-authoring.md).
+  const savedGeneralModel = settings?.aiProviders.generalAnalysisModel ?? "";
+  const [generalModelDraft, setGeneralModelDraft] = useState(savedGeneralModel);
+  useEffect(() => {
+    setGeneralModelDraft(savedGeneralModel);
+  }, [savedGeneralModel]);
+
+  const savedBaseUrl = settings?.aiProviders.openaiCompatibleBaseUrl ?? "";
+  const [baseUrlDraft, setBaseUrlDraft] = useState(savedBaseUrl);
+  useEffect(() => {
+    setBaseUrlDraft(savedBaseUrl);
+  }, [savedBaseUrl]);
 
   return (
     <section className="settings-group" aria-labelledby="settings-ai-title">
@@ -89,22 +110,36 @@ export function AiSettings({
             </option>
           ))}
         </SelectField>
-        <SelectField
-          aria-label={text("General AI model")}
-          label={text("General AI model")}
-          value={settings?.aiProviders.generalAnalysisModel ?? ""}
-          disabled={analysisModels.length === 0}
-          onChange={(event) => onGeneralAnalysisModelChange(event.target.value)}
-        >
-          {analysisModels.length === 0 ? (
-            <option value="">{text("Select a provider first")}</option>
-          ) : null}
-          {analysisModels.map((model) => (
-            <option key={model} value={model}>
-              {model}
-            </option>
-          ))}
-        </SelectField>
+        {isGeneralProviderCompatible ? (
+          <TextField
+            aria-label={text("General AI model")}
+            label={text("General AI model")}
+            value={generalModelDraft}
+            onChange={(event) => setGeneralModelDraft(event.target.value)}
+            onBlur={() => {
+              if (generalModelDraft !== savedGeneralModel) {
+                onGeneralAnalysisModelChange(generalModelDraft);
+              }
+            }}
+          />
+        ) : (
+          <SelectField
+            aria-label={text("General AI model")}
+            label={text("General AI model")}
+            value={settings?.aiProviders.generalAnalysisModel ?? ""}
+            disabled={analysisModels.length === 0}
+            onChange={(event) => onGeneralAnalysisModelChange(event.target.value)}
+          >
+            {analysisModels.length === 0 ? (
+              <option value="">{text("Select a provider first")}</option>
+            ) : null}
+            {analysisModels.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </SelectField>
+        )}
         <SelectField
           aria-label={text("General AI timeout")}
           label={text("General AI timeout")}
@@ -127,6 +162,25 @@ export function AiSettings({
           <option value="enabled">{text("Enabled")}</option>
         </SelectField>
       </FieldRow>
+      <FieldRow>
+        <TextField
+          aria-label={text("OpenAI-compatible base URL")}
+          label={text("OpenAI-compatible base URL")}
+          placeholder="https://api.example.com/v1"
+          value={baseUrlDraft}
+          onChange={(event) => setBaseUrlDraft(event.target.value)}
+          onBlur={() => {
+            if (baseUrlDraft !== savedBaseUrl) {
+              onOpenAiCompatibleBaseUrlChange(baseUrlDraft);
+            }
+          }}
+        />
+      </FieldRow>
+      <Hint>
+        {text(
+          "Presets for common OpenAI-compatible endpoints live in the wiki. Set the API key in Credentials below.",
+        )}
+      </Hint>
     </section>
   );
 }

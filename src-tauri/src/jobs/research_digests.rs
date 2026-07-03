@@ -1,6 +1,9 @@
 use crate::{
     app_state,
-    providers::analysis::{registry, AiAnalysisProvider, ResearchDigestRequest},
+    providers::analysis::{
+        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
+        registry, AiAnalysisProvider, ResearchDigestRequest,
+    },
     storage,
 };
 
@@ -60,8 +63,16 @@ fn provider_for_job(
     job: &storage::ResearchDigestJob,
 ) -> Result<Box<dyn AiAnalysisProvider>, String> {
     let settings = state.get_settings().map_err(|error| error.to_string())?;
+    if job.provider_id == CAPABILITY_ROUTED_PROVIDER_ID {
+        return crate::jobs::build_capability_provider(
+            state,
+            AiCapability::ResearchDigest,
+            settings.ai_providers.general_analysis_timeout_seconds,
+        );
+    }
     let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
-    registry::build_analysis_provider(
+    crate::jobs::build_gated_analysis_provider(
+        state,
         &job.provider_id,
         api_key,
         &job.model,

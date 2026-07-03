@@ -278,6 +278,26 @@ const MIGRATIONS: &[Migration] = &[
         name: "cockpit_layouts",
         sql: include_str!("../../migrations/0054_cockpit_layouts.sql"),
     },
+    Migration {
+        version: 55,
+        name: "autopilot",
+        sql: include_str!("../../migrations/0055_autopilot.sql"),
+    },
+    Migration {
+        version: 56,
+        name: "queue_worker_settings",
+        sql: include_str!("../../migrations/0056_queue_worker_settings.sql"),
+    },
+    Migration {
+        version: 57,
+        name: "fundamentals_provenance",
+        sql: include_str!("../../migrations/0057_fundamentals_provenance.sql"),
+    },
+    Migration {
+        version: 58,
+        name: "structured_attachment_fetch_gate",
+        sql: include_str!("../../migrations/0058_structured_attachment_fetch_gate.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -423,7 +443,7 @@ mod migration_invariants {
 
     #[test]
     fn versions_are_contiguous_unique_and_ordered() {
-        // Migrations are append-only and immutable once shipped (AGENTS.md): a
+        // Migrations are append-only and immutable once shipped (CLAUDE.md): a
         // reused, out-of-order, or gapped version number is the mistake this
         // guards. They must be exactly 1..=N in declaration order.
         for (index, migration) in MIGRATIONS.iter().enumerate() {

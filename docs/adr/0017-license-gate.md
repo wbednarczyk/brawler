@@ -1,8 +1,6 @@
 # ADR 0017: Local Entitlement Module
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

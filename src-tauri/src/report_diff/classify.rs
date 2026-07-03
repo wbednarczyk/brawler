@@ -128,10 +128,17 @@ fn parse_year(t: &str) -> Option<i32> {
     let mut i = 0;
     while i + 4 <= bytes.len() {
         if bytes[i].is_ascii_digit() {
-            let chunk = &t[i..i + 4];
-            if let Ok(y) = chunk.parse::<i32>() {
-                if (2000..=2099).contains(&y) {
-                    return Some(y);
+            // `i` is a char boundary (it points at an ASCII digit), but `i + 4` is a raw
+            // byte offset that can land inside a multi-byte char (e.g. a Polish diacritic
+            // shortly after a digit). A 4-digit year can only ever be ASCII, so when the
+            // window isn't a valid boundary it can't be a match anyway — skip it instead
+            // of slicing into a multi-byte char and panicking.
+            if t.is_char_boundary(i + 4) {
+                let chunk = &t[i..i + 4];
+                if let Ok(y) = chunk.parse::<i32>() {
+                    if (2000..=2099).contains(&y) {
+                        return Some(y);
+                    }
                 }
             }
         }
@@ -294,5 +301,43 @@ mod tests {
     #[test]
     fn unparseable_period_is_none() {
         assert_eq!(period_sort_key("some report", "x.pdf"), None);
+    }
+
+    #[test]
+    fn parse_year_does_not_panic_on_multibyte_char_after_digit_run() {
+        // "1abł " lowercased: an ASCII digit run (just "1") is followed within the
+        // 4-byte scan window by the multi-byte 'ł', so `i + 4` lands on its second
+        // byte — reproducing the char-boundary slicing panic (same class as
+        // signal_dates::find_date_for_labels).
+        assert_eq!(period_sort_key("1abł", ""), None);
+    }
+}
+
+#[cfg(test)]
+mod proptests {
+    //! Invariant (property-based) coverage of the pure classification/period
+    //! transforms (ADR 0049): `parse_year`'s byte-window digit scan panicked on
+    //! multi-byte chars shortly after a digit (see
+    //! `parse_year_does_not_panic_on_multibyte_char_after_digit_run`) — the same bug
+    //! class as `signal_dates::find_date_for_labels`. Arbitrary title/url text,
+    //! including unicode, must never panic.
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn classify_statement_never_panics(title in ".*", url in ".*") {
+            let _ = classify_statement(&title, &url);
+        }
+
+        #[test]
+        fn period_sort_key_never_panics(title in ".*", url in ".*") {
+            let _ = period_sort_key(&title, &url);
+        }
+
+        #[test]
+        fn period_label_never_panics(title in ".*", url in ".*") {
+            let _ = period_label(&title, &url);
+        }
     }
 }

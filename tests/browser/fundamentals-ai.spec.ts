@@ -17,8 +17,8 @@ test.describe("fundamentals + AI KPI extraction visual harness", () => {
     // which can fall on a watchlist chip.
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
 
-    await page.getByRole("button", { name: "Fundamentals", exact: true }).click();
-
+    // Opening a company lands the cockpit dashboard (ADR 0057); the Fundamentals
+    // panel is shown directly, no tab.
     const panel = page.getByLabel("Company fundamentals");
     await expect(panel).toBeVisible();
     await expect(page.getByRole("heading", { name: "Reporting periods" })).toBeVisible();
@@ -40,8 +40,8 @@ test.describe("fundamentals + AI KPI extraction visual harness", () => {
 
     await page.getByLabel("Nawigacja główna").getByRole("button", { name: "Spółki" }).click();
     await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
-    await page.getByRole("button", { name: "Wskaźniki finansowe", exact: true }).click();
 
+    // Cockpit dashboard (ADR 0057) shows the Fundamentals panel directly.
     const panel = page.getByLabel("Wskaźniki finansowe spółki");
     await expect(panel).toBeVisible();
     // Localized KPI labels (not English / internal ids).

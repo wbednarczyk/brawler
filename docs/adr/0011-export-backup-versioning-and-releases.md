@@ -1,8 +1,6 @@
 # ADR 0011: Export, Backup, Versioning, and Releases
 
-## Status
-
-Accepted
+Status: Accepted
 
 ## Context
 

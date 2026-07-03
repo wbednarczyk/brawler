@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Pre-commit gate (ADR 0062). A commit is a checkpoint, and it must be proof that
+# the single mandatory gate is green — "be sure at commit time, not at push time"
+# (the owner's decision: at push it is too late). This runs the WHOLE `make check`
+# (all deterministic suites, hard-fail, under Nix) before the commit is created; a
+# red gate blocks the commit.
+#
+# Fail-not-skip: unlike the pre-push smoke gate (which skips if Playwright is
+# absent), a missing tool here is a FAILURE with a fix instruction — a silent skip
+# is exactly the hole that lets a suite rot. `make check` installs Chromium itself
+# (idempotent `test:browser:install` step), so the usual missing tool self-heals;
+# anything else stops the commit with a clear message.
+#
+# `git commit --no-verify` exists for genuine WIP/emergency commits, but per
+# AGENTS.md a hand-back or "done" claim is never valid on a --no-verify commit.
+# Installed via `make install-git-hooks` (sets core.hooksPath to .githooks).
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+printf '▶ pre-commit: running the full mandatory gate (make check) under Nix…\n'
+
+if ! command -v make >/dev/null 2>&1; then
+  printf '✖ pre-commit: `make` not found — cannot run the gate. Install build tools, then retry.\n' >&2
+  exit 1
+fi
+if ! command -v nix >/dev/null 2>&1; then
+  printf '✖ pre-commit: `nix` not found — the gate runs under `nix develop`. Install Nix (see docs/engineering-workflow.md), then retry.\n' >&2
+  exit 1
+fi
+
+make check
+
+printf '✓ pre-commit: mandatory gate green — creating the commit.\n'

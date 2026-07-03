@@ -5,6 +5,7 @@ import type { CredentialStatus } from "./types";
 export const GEMINI_PROVIDER_ID = "provider_gemini";
 export const ANTHROPIC_PROVIDER_ID = "provider_anthropic";
 export const OPENAI_PROVIDER_ID = "provider_openai";
+export const OPENAI_COMPATIBLE_PROVIDER_ID = "provider_openai_compatible";
 
 /**
  * Credentialed analysis providers shown in settings besides Gemini (which keeps
@@ -17,6 +18,7 @@ export const ADDITIONAL_CREDENTIAL_PROVIDERS: ReadonlyArray<{
 }> = [
   { providerId: ANTHROPIC_PROVIDER_ID, label: "Claude (Anthropic)" },
   { providerId: OPENAI_PROVIDER_ID, label: "OpenAI (ChatGPT)" },
+  { providerId: OPENAI_COMPATIBLE_PROVIDER_ID, label: "OpenAI-compatible (custom)" },
 ];
 
 export function getProviderCredentialStatus(providerId: string) {

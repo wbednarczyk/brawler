@@ -2536,3 +2536,290 @@ Acceptance criteria:
 Docs/contracts touched: product spec, UI information architecture, roadmap.
 
 Test expectations: workflow tests for critical shortcuts.
+
+## Archived Investigation And Study Notes (moved 2026-07-02)
+
+Doc-slimming pass under [ADR 0063](adr/0063-claude-native-context-architecture.md) (Lean-docs layering policy). These blocks are pure execution chronicle — milestone-by-milestone narration of already-delivered work, or resolved investigation logs — moved here verbatim from their source doc, which now carries a pointer to this section instead. Current behavior for any feature named below is documented in its canonical spec (contracts.md / data-model.md / ui-flows.md / ui-information-architecture.md / the cited ADRs), not here.
+
+### From docs/product-spec.md — "Future Experience Directions" (Research Workspace)
+
+A future product-differentiation direction is to make the app a personal research memory system for public companies, not only a feed reader. The goal is to help the user answer what changed, why it matters, what management said before, and what should be checked next.
+
+Candidate capabilities:
+
+- company change timeline combining feed items, official reports, media items, notes, transcripts, claims, calendar events, and future AI outputs
+- "what changed since last review" views for a company, watchlist, or time window
+- expanded management claim tracking with source, expected period, follow-up date, related future events, and status history
+- source-grounded company or watchlist research brief with cited evidence and no buy/sell/hold recommendations
+- open research questions or threads per company, linked to notes, claims, events, and source items
+- watchlist review mode that guides the user company-by-company through unread items, upcoming events, unresolved claims, and open questions
+- event-aware reminders such as unresolved claims tied to an upcoming reporting period
+- source quality and trust signals that distinguish official reports, company publications, media articles, opinion, paid research, and other source types
+- daily or weekly personal research digest generated from the user's local watchlists and source items
+- evidence linking between related source items, notes, claims, transcripts, questions, AI briefs, and events
+
+This direction should not be implemented as ten separate isolated screens. Before implementation, a dedicated planning milestone should define a shared research evidence model, timeline/read-model boundary, review-session model, evidence-linking model, AI brief-building boundary, storage implications, and import/export impact. Existing notebooks, claims, feed items, transcripts, and future events should plug into this model through stable contracts instead of direct cross-screen coupling.
+
+M24 accepts that research-workspace features should be built on a dedicated research/evidence boundary. Existing feed items, notebook entries, claims, transcript segments, events, AI analysis results, watchlists, and sources remain canonical in their owning domains. Research views consume backend-owned evidence and timeline read models rather than independently combining unrelated screen APIs. Durable research-owned state starts with review checkpoints and typed evidence links; full stored timeline projections wait until performance or review semantics require them.
+
+M31 adds event-aware research reminders and on-demand personal research digests. Reminders are research-owned review pressure derived from open claims, upcoming events, and open research questions, plus explicit manual reminders. Digests are immutable, cited AI snapshots generated from backend-collected changed evidence and open reminders for the selected company or watchlist.
+
+M25 adds the first visible Research screen as a top-level navigation item. The first slice is company-scoped: the user selects a tracked company and sees a newest-first evidence timeline combining feed items, notebook entries, claims, events, transcript segments, and AI analysis through the backend research read model. The screen header shows the selected company, last reviewed state, total visible evidence, and changed-since-review count. Evidence type filters and a changed-only filter are sent to the backend; the UI renders the returned timeline result instead of recomputing review counts.
+
+The M25 review action is a single company-level `Mark reviewed` action. It stores a research review checkpoint for the selected company and refreshes the timeline so changed-since-review state is updated. Evidence rows should use product-language labels such as report, note, claim, event, transcript, or AI analysis instead of raw implementation identifiers. Where practical, an evidence row should offer an owning-domain action such as opening the source URL, opening the Inbox item, or moving to the relevant app area.
+
+M26 adds watchlist review mode inside the same Research screen. The user can switch between company and watchlist review, select a watchlist, and work through member companies using a compact company queue with backend-owned changed evidence counts. Marking a watchlist reviewed updates only the watchlist checkpoint by default. The UI exposes an explicit option to also mark current member companies reviewed, but the cascade behavior is owned by the backend command.
+
+M29 adds company-scoped research questions inside the Research screen. A question is a durable research-owned item with title, optional context, and `open`, `answered`, or `closed` status. The user can select a company, create questions for that company, select a question, delete a question, and link visible evidence rows to it through typed evidence links. Questions are shown in the company evidence timeline and imported/exported with research data. Watchlist-scoped questions remain a backend-compatible extension point, but normal UI creates company questions only until a dedicated watchlist-question workflow is designed.
+
+AI research briefs are separate research entities with citations and provider/model/prompt provenance. They are not ordinary notebook entries, though a future workflow may let the user create a note from a brief or selected excerpt.
+
+M30 adds on-demand AI research briefs for company and watchlist research scopes. Brief generation uses backend-owned evidence collection, prompt/context building, provider execution, citation mapping, rendering, and persistence boundaries. Generated briefs are immutable snapshots with visible citations and provenance. They are imported/exported with research data. Briefs must not contain buy/sell/hold recommendations, and creating a notebook note from a brief is not automatic.
+
+The management claims tracker (`v0.42.0`, [ADR 0040](adr/0040-management-claims-tracker.md)) delivers the "expanded management claim tracking" and "unresolved claims tied to an upcoming reporting period" capabilities above. Claims become a first-class entity with a due period, quantitative target, source evidence, and a user-set verdict. AI extraction proposes claims from report documents and transcripts for mandatory confirmation. A due-period derivation job resurfaces an open claim into a "claims to verify" review queue when the due period's report arrives, attaching the matching confirmed financial fact for quantitative claims; the user resolves the verdict against evidence. Claims plug into the existing research evidence boundary (timeline, evidence links, reminders, digests) and remain owner-durable in import/export. There are no automated verdicts.
+
+### From docs/product-spec.md — "Future Experience Directions" (Company Fundamentals)
+
+Milestones v0.34.0–v0.37.0 add a fundamentals view for tracked companies: key financial figures pulled from quarterly and annual reports, tracked per reporting period, and charted over time. The intent is to cut the time an investor spends re-reading reports to find the same handful of numbers each quarter.
+
+User-facing behavior:
+
+- a fundamentals panel in the company workspace presenting figures as a KPI-row × reporting-period-column matrix, where every value links back to the report it came from; a fact's detail shows its period, value, source, and status
+- figures are shown the way the report printed them (e.g. `319,7 mln PLN`, `8,63 PLN`) using the as-reported figure captured at extraction, falling back to a locale-aware formatted base value for manually entered numbers; KPI names are localized
+- a fixed set of standard figures (revenue, operating profit, net profit, EBITDA, EPS, gross/operating/net margin, net debt, cash) plus the ability to define custom figures for a company that the standard set does not cover, such as subscribers, stores, or order backlog; the add-fact KPI picker supports inline search
+- AI assistance that reads a stored report and proposes figures, reviewed in a centered modal where the user confirms, edits, or rejects each value, with bulk "confirm all known" and "accept all suggestions" actions; the modal auto-closes when nothing is left to review and no AI-proposed number is stored as a confirmed figure without review
+- the user can also enter and correct figures manually against a report
+- inline sparkline trends per KPI plus a larger per-KPI trend chart over comparable periods (built with in-house SVG primitives, no charting dependency), and (in v0.53.0) side-by-side comparison of the same figure across companies
+- the panel and the review modal remain usable in tall, narrow windows (e.g. a quarter of an ultrawide monitor), stacking or shrinking rather than clipping
+
+**Trust ladder for automated extraction ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)).** For a company opted into the autonomous report pipeline, deterministic structured extraction (ESEF/iXBRL, or a PDF whose reporting period is derivable) runs *before* AI, in both `assist` and `autopilot` mode. A figure that clears the objective validation gate (accounting identities, comparative cross-check, structure match) auto-confirms outright — no unreviewed grace period — in either mode; a figure that is uncontradicted but not fully proven still follows the per-company mode (auto-committed `auto_unreviewed` in autopilot, left `pending` for review in assist). A detected layout/structure change never silently blocks extraction — it falls through to the AI proposal path — but is always surfaced as a "structure changed" signal, never dropped: the fact detail shows its source tier (ESEF/tagged, structured HTML, PDF, aggregator, or **AI** — the AI-confirmed tier the pool falls through to) and validation status badges, and a drifted fact's detail shows the clean label diff (new/missing report lines, reporting-unit change); the same "structure changed" signal and label diff surface on the autopilot run's notification card on Today when a run's extraction carried it, so the user sees it without opening the company.
+
+Scope boundary: this covers report-derived fundamentals only. Price and volume charts, technical indicators, valuation tooling that needs live prices, and market dashboards stay out of scope, as recorded in [ADR 0027](adr/0027-company-fundamentals-scope.md). AI fundamentals features are part of the open core and free to use with a user-supplied provider API key.
+
+### From docs/product-spec.md — "Future Experience Directions" (Report Documents And History Backfill)
+
+Milestone v0.41.0 persists the actual report files and removes the cold-start problem when tracking a company ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
+
+User-facing behavior:
+
+- official ESPI/EBI report attachments are stored locally as report documents with durable attribution and linked from the company's evidence/timeline; periodic/financial reports keep the full file (so AI extraction and diff have a real document to cite), while routine filings keep only the link and title
+- the existing escape hatch — pasting a report PDF URL, or resolving one from the company's IR page — still stores the full file and flows through the same downstream path
+- an explicit **"Backfill history"** action on a tracked company (on track, or from the company workspace) fetches roughly the last 3 years of periodic reports and ESPI/EBI filings, so the company's research timeline is populated with prior years instead of starting at "now"; items appear with their original publication dates
+- backfill shows progress and diagnostics while it runs, can be cancelled, and is safe to re-run (no duplicates); it never runs automatically and only runs while the app is open
+- dividend and general-meeting filings that state a future date produce a **proposed** calendar event the user confirms before it appears on the calendar; a date is never guessed onto the calendar
+
+Scope boundary: backfill covers official report sources only (not media), does not backfill historical calendar entries (the calendar focuses on upcoming events), and does no per-company PDF parsing or ESEF/iXBRL parsing.
+
+### From docs/product-spec.md — "Future Experience Directions" (Report-Over-Report Diff)
+
+Milestone v0.47.0 lets the investor see what actually changed between two consecutive periodic **financial statements** instead of rereading the whole filing ([ADR 0052](adr/0052-report-over-report-diff.md)).
+
+User-facing behavior:
+
+- from a company's report documents (and on new periodic-report arrival), the investor can open a **section-by-section diff** of a financial statement against the previous same-type filing (consolidated SSF vs the prior SSF, standalone JSF vs the prior JSF)
+- each section is shown as unchanged, changed, or only-in-one-report; changed sections show the textual differences, with both reports cited so the investor can jump to the source
+- the diff is **deterministic and fully local** — pure-Rust text extraction, no AI and no network; the same two reports always produce the same diff, and a report compared against itself shows no changes
+- a report whose PDF has no extractable text layer (scanned) shows an explicit "can't diff — no extractable text" state rather than a misleading empty diff
+
+Scope boundary: v0.47.0 diffs the **structured financial statements only**. The narrative management report (MD&A) diff and an AI-written "what changed / new risks / tone shift" delta summary are deferred to a later milestone — a real-data spike showed narrative section headings drift too much for trustworthy deterministic alignment ([ADR 0052](adr/0052-report-over-report-diff.md)). Financial-table *value* reconciliation stays with KPI extraction, not the diff. No cross-company diffing.
+
+### From docs/data-model.md — Research Evidence Boundary (M24/M25 milestone narration)
+
+M24 uses a hybrid model governed by [ADR 0022](adr/0022-research-evidence-read-model-boundary.md) (bullets retained live in data-model.md; framing sentence only, moved here):
+
+- M25 uses one company-level review checkpoint per company for the first visible Research screen.
+- Timeline summary counts and changed-only filtering are derived read-model behavior; no stored timeline projection is added for M25.
+
+### From docs/source-strategy.md — "M6 Source Investigation Results"
+
+The current source ranking for GPW report bodies is:
+
+1. GPW detail page body extraction remains the primary path. The listing page links to `komunikat?geru_id=...` detail pages, and sampled detail pages include the official PAP-rendered report content under `.report-data`. The markup is noisy, but the report body and sections are present without login.
+2. PAP Biznes is the strongest official-adjacent fallback candidate because GPW detail pages embed PAP report markup and rewrite some report links to `https://espiebi.pap.pl/espi/pl/reports/view/...`. PAP also exposes public ESPI/EBI pages on `biznes.pap.pl`. PAP terms and direct URL patterns still need a separate review before implementation.
+3. Bankier and Parkiet RSS are technically useful as secondary cross-check, diagnostics, and emergency fallback signals. They are not original GPW/PAP source paths, so they should not become the canonical official-report source without a later ADR.
+4. Stooq is useful for general company and market news, but current investigation did not find a dedicated ESPI/EBI report-body path comparable to GPW or Bankier. Treat it as a later media/news candidate, not a primary report-body source.
+
+Do not weaken the v1 requirement because a source is inconvenient. If GPW parsing becomes unreliable, the next step is to harden the parser or evaluate PAP/Bankier/issuer alternatives, then explicitly discuss the trade-off before changing the roadmap.
+
+**Superseded (2026-07-02):** this ranking predates the M8 decision to run Bankier Company Komunikaty as the active v1 official-report source and disable `gpw-espi-ebi` pending a tracked-company-scoped fetch path (see the live "GPW ESPI/EBI Adapter" and "Media/RSS Sources" sections of source-strategy.md). PAP Biznes was never pursued; BiznesRadar + Bankier "wyniki finansowe" became the accepted aggregator/fallback tier instead ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)).
+
+### From docs/source-strategy.md — "Source Candidate Study"
+
+M22 includes a study task for all currently registered or documented source candidates. A candidate must not become visible in normal UI or user-enableable until its study records an accepted source path, usage posture, attribution, matching strategy, rate limit, tests, and implementation scope.
+
+Current candidates to study:
+
+- GPW ESPI/EBI official reports reliability path.
+- Portal Analiz authenticated private research.
+- Bankier Firma RSS.
+- Bankier Wiadomości RSS.
+- Strefa Inwestorów report calendar.
+- Money calendar/report-date pages.
+- Bankier ESPI RSS and Parkiet ESPI/EBI RSS as secondary official-report cross-checks.
+- PAP Biznes ESPI/EBI fallback path.
+- Investing.com Poland RSS categories.
+- Stooq ticker news and price/context endpoints.
+- XTB market news and analysis pages.
+- BiznesRadar and StockWatch public or authenticated research candidates.
+- Future official/public company and filing sources such as SEC EDGAR, Nasdaq RSS, and major European exchange feeds.
+
+Study output should classify each candidate as one of:
+
+- accepted for implementation,
+- keep as documented future candidate,
+- developer-only diagnostic/cross-check candidate,
+- rejected for policy, reliability, matching quality, licensing, cost, or UX reasons.
+
+Normal Sources must not show candidates that are not implemented. Developer mode and owner/developer docs may expose candidate status and study notes.
+
+Initial M22 candidate disposition:
+
+- GPW ESPI/EBI official reports: keep as developer-only reliability candidate; next action is tracked-company-scoped fetch reliability research before runtime promotion.
+- Portal Analiz authenticated private research: keep as developer-only authenticated-source candidate governed by ADR 0014; next action is account-scoped usage-path research before any implementation.
+- Bankier Firma RSS: keep as documented future candidate; next action is matching-quality review against tracked GPW companies.
+- Bankier Wiadomości RSS: keep as documented future candidate; next action is noise/backfill and matching-quality review before considering ingestion.
+- Strefa Inwestorów report calendar: keep as documented future candidate; next action is source-specific parsing and attribution review.
+- Money calendar/report-date pages: keep as documented future candidate; next action is source-specific parsing and matching review.
+- Bankier ESPI RSS and Parkiet ESPI/EBI RSS: keep as developer-only diagnostic/cross-check candidates; next action is reconciliation research against canonical official-report items.
+- PAP Biznes ESPI/EBI fallback path: keep as documented future official-adjacent fallback candidate; next action is policy/terms and URL-pattern review.
+- Investing.com Poland RSS categories: keep as documented future public-media candidate; next action is exact feed discovery and ticker/company matching review.
+- Stooq ticker news and price/context endpoints: keep as documented future media/price-context candidate; next action is separate source-type decision for news versus price context.
+- XTB market news and analysis pages: keep as documented future media/analysis candidate; next action is source policy and attribution review.
+- BiznesRadar and StockWatch: keep as documented future research/context candidates; next action is public/authenticated access and scraping-policy review.
+- SEC EDGAR, Nasdaq RSS, and major European exchange feeds: keep as future official/public market expansion candidates after GPW/NewConnect directory support is stable.
+
+### From docs/source-strategy.md — "Source Research Notes"
+
+Current checked references:
+
+- GPW ESPI/EBI report listing: `https://www.gpw.pl/komunikaty`
+- GPW public page shows report listings under "Raporty Spółek ESPI/EBI" with timestamps, report type, ESPI/EBI label, company name/ISIN, report title, and detail links.
+- GPW also describes processed information products available in CSV or XLS under its information services area; these are future options, not v1 assumptions.
+- No documented public GPW ESPI/EBI API has been accepted for v1 yet. M6 found an internal GPW AJAX listing endpoint used by the public page; this is cleaner than full-page listing parsing, but still must be treated as a public-page implementation detail rather than a contracted API.
+- PAP Biznes exposes ESPI/EBI-related public pages, including `https://biznes.pap.pl/espi` and `https://biznes.pap.pl/ebi/company`, and describes ESPI/EBI communications in its business service offer. Treat PAP as a source candidate only after policy and terms review; do not implement PAP scraping by default.
+- Bankier exposes ESPI/EBI listings and article pages, including a JSON listing endpoint used by its UI. Treat Bankier as a secondary cross-check/fallback candidate, not the primary v1 official source.
+- Bankier per-company komunikaty pages canonicalize short GPW tickers to Bankier instrument slugs such as `CDR -> CDPROJEKT` and `PKN -> PKNORLEN`, expose `data-tag-id` values, and feed the public article listing JSON endpoint with `tags_ids`, `pub_id=3,379`, `sort=time_utc desc`, and article fields.
+- Bankier exposes `https://www.bankier.pl/rss/espi.xml`, which is a convenient secondary ESPI feed. It should not replace GPW canonical ingestion.
+- Bankier's RSS directory also lists general market/news channels, including Giełda and Wiadomości dnia categories. Treat these as media/news candidates, not official-report sources.
+- Parkiet exposes `https://www.parkiet.com/rss/7111-komunikaty`, which is a convenient secondary ESPI/EBI feed. It should not replace GPW canonical ingestion.
+- Stooq exposes ticker news pages and PAP-sourced market news, but current investigation did not reveal a dedicated ESPI/EBI report-body source path suitable for v1 report ingestion.
+- Stooq also exposes CSV quote/history endpoints used by community tooling. Treat this as a later price-context candidate, not as a news or report-body source.
+- Investing.com Poland exposes an RSS directory with news and analysis categories, including company-news-style categories. Exact feed URLs and GPW ticker matching quality need source review.
+- `wegar-2/pyespiebipapapi` is a community scraping wrapper for PAP ESPI/EBI pages and can inform PAP fallback research, but it is not an official PAP API and should not be depended on directly in the Rust/Tauri app.
+- XTB market news and analysis pages are candidate media/analysis sources, not official-report sources, and need source review before ingestion.
+- Portal Analiz is desired for v1 as an authenticated private research source using the user's own paid account and is governed by ADR 0014 before implementation.
+
+### From docs/source-strategy.md — "Open Source Questions" (resolved/superseded items)
+
+- Should the GPW listing fetcher switch from full-page GET to the observed `ajaxindex.php` listing fragment POST? — **Resolved**: yes, the live `gpw-espi-ebi` adapter uses the AJAX fragment endpoint for listings (see "GPW ESPI/EBI Adapter").
+- Do GPW detail pages expose stable report body structure and attachments across enough report types? — **Resolved**: yes, accepted per [ADR 0013](adr/0013-gpw-detail-fetching-policy.md) (see "Detail Fetching").
+- Can PAP detail URLs be mapped directly from GPW/PAP identifiers without relying on search? — **Superseded**: PAP was never pursued as a source; BiznesRadar + Bankier became the accepted aggregator/fallback tier ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)).
+- Is PAP Biznes usable under acceptable terms for local personal polling, or is it a commercial/protected source unsuitable for v1 ingestion? — **Superseded**, same reason.
+- Which Bankier RSS channels have enough company-specific signal to justify a v1 media adapter? — **Substantially resolved**: `bankier-market-rss` (Giełda) was accepted and implemented first; `bankier-firma-rss`/`bankier-wiadomosci-rss` remain disabled reviewed placeholders pending matching-quality proof (see "Media/RSS Sources").
+- Are StockWatch/BiznesRadar technically and legally acceptable as scraping targets, or should they stay manual/open-in-browser references? — **Resolved**: BiznesRadar accepted as the primary aggregator witness (Bankier "wyniki finansowe" fallback), StockWatch not chosen ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md)).
+- Which Polish media/RSS sources should be considered after GPW official reports? — **Resolved/covered live**: candidate list and the M8 acceptance ranking are in "Media/RSS Sources".
+- Which public Polish article/news source should be implemented first after GPW details: Stooq, XTB, Bankier, or another source? — **Resolved**: Bankier Giełda RSS, implemented first (M8).
+
+### From docs/ui-information-architecture.md — "Company Workspace (retired)" framing and Milestone 3/4 interaction narration
+
+> **Superseded by [ADR 0057](adr/0057-composable-views-and-curated-dashboard.md).** The click-through tabbed company workspace is retired. The single-company deep-dive is now the **curated cockpit dashboard**: a seeded `cockpit_layout` scoped to the company that opens with a calm default panel set (Fundamentals, Feed, Claims, Quality, Report documents, Notebook) and stays composable (add/remove/move panels, then `Save dashboard` to persist per company). Each tabbed section below is now a **company-scoped cockpit panel** (Feed → `companyFeed`, Notebook → `companyNotebook`, Fundamentals/Claims/Quality/Report documents/diff as their panels); Metadata folded into the Companies library; Transcripts remains a future-milestone placeholder. The descriptions below are retained as the behavioral spec for those panels.
+
+The section was headed "Tabs or segmented views" (Feed, Notebook, Claims, Transcripts, Fundamentals, Metadata) — now cockpit panels; the behavioral spec for each panel moved live into "Company Cockpit Dashboard Panels".
+
+Retired Milestone-3 interaction narration (Feed tab):
+
+Milestone 3 starts with inline source/origin detail inside the Company Feed tab. The feed row itself is the click target instead of a separate inspect button. Clicking a feed row, or pressing Enter/Space on a focused feed row, expands the detail directly under that row; repeating the action collapses it. Up and Down arrows move through company feed rows while preserving expansion state: collapsed feed details stay collapsed, and already-open detail moves to the focused feed row. Company feed rows use the same unread dot and read/unread typography as Inbox feed rows.
+
+Retired Milestone-4 interaction narration (Notebook tab):
+
+Milestone 4 begins with a company-scoped Notebook tab that lists durable notes and provides a compact manual Markdown note form. Feed-item note drafts are added after the base manual-note path is stable.
+
+Retired Milestone chronicle (Claims tab):
+
+Milestone v0.42.0 makes claims a first-class entity (existing claim notes are migrated).
+
+### From docs/ui-information-architecture.md — "Future Research Workspace" (delivered M25/M26/M29/M31 chronicle)
+
+Purpose: provide source-grounded company and watchlist review surfaces once the research/evidence boundary exists.
+
+Candidate regions:
+
+- company or watchlist selector
+- evidence timeline
+- changed-since-review summary
+- open claims and research questions
+- upcoming events and reminder pressure
+- AI research brief panel with citations
+- related evidence links
+
+Rules:
+
+- Do not add visible Research Workspace placeholders before the feature is implemented.
+- M25 implements Research as a real top-level screen, scoped to a selected tracked company.
+- M25 Research shows a screen header with selected company context, last-reviewed state, total evidence count, changed-since-review count, evidence type filters, changed-only filter, and a `Mark reviewed` action.
+- M25 Research evidence rows are compact timeline rows with product-language type/trust labels, occurred timestamp, title, summary when available, changed-since-review state, and owning-domain/source actions where practical.
+- M31 Research shows open reminders and generated digest snapshots as real company/watchlist review tools. The screen receives reminder and digest read models from backend commands; it must not assemble digest inputs in React.
+- M26 Research adds a Company/Watchlist mode switch in the same screen, not a separate screen.
+- Watchlist mode uses a left-side member-company review queue and a right-side evidence timeline for the selected member company.
+- Watchlist review defaults to updating the watchlist checkpoint only. The optional cascade to member-company checkpoints must be an explicit user action and backend command input.
+- M29 Research adds a company-scoped Questions panel in the same Research screen. The user creates, selects, answers, closes, reopens, and links questions to evidence without leaving the research context.
+- The selected research question controls link actions on evidence rows. Evidence rows may show a compact link action only when a selected question can link to that evidence item.
+- Future research views consume backend-owned evidence and timeline read models.
+- Research views should not independently call Inbox, Notebooks, Events, Transcripts, Sources, and AI APIs to assemble timelines.
+- Research summary counts, changed-since-review state, and timeline filtering semantics belong to backend read models. The UI displays the result and captures user intent.
+- Review actions update research-owned review checkpoints.
+- Evidence-link interactions use typed research links while preserving existing notebook origin links.
+- AI brief UI must show citations and provenance enough for source-grounded review, without presenting buy/sell/hold recommendations.
+
+### From docs/ai-analysis-framework.md
+
+Retired 2026-07-03 (ADR 0065 evidence-based retire policy: the doc was never loaded into agent context across 20 days of session history, stale since 2026-06-19, superseded by later ADRs). Full M13/M30-era design record, kept verbatim as chronicle; current behavior is [ADR 0028](adr/0028-multi-provider-ai-boundary.md) (multi-provider boundary), [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md) (two-layer AI), [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md) (capability routing), [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) (deterministic fundamentals), and [Architecture](architecture.md).
+
+**M13 Goal.** M13 added source-grounded feed-item analysis using Gemini as the first live provider while keeping the runtime extensible for OpenAI, Anthropic, and other future providers (since delivered — [ADR 0028](adr/0028-multi-provider-ai-boundary.md)). The app analyzes local source material as decision support only; analysis must cite source material and must not be presented as buy/sell/hold advice.
+
+**Accepted architecture decisions (M13).**
+
+- Provider-neutral interface: app, command, storage, and UI code use an `AiAnalysisProvider`-style contract; Gemini was an adapter behind that boundary, not the domain model.
+- Async job model: AI analysis runs through an asynchronous job so the UI is not blocked while a provider request is in progress (generalized to all AI features by ADR 0028 decision 3).
+- Explicit user action: analysis starts from a visible user action, not automatically during ingestion or feed-detail open.
+- Settings surface: general AI analysis provider/model configuration and provider disclosure before feed-item analysis was broadly used.
+- Credential boundary: general analysis credentials stayed under the reusable provider credential boundary, purpose-aware (the same Gemini API key could satisfy multiple Gemini purposes when configured). **Superseded by ADR 0028 decision 4**: purpose is no longer part of credential identity — one `CredentialDescriptor` per provider only.
+- Initial source context: M13 analyzed feed-item title, summary/body text, source URL, attribution, company context, and language when available; attachments and transcript-derived analysis were later slices (since delivered — document input, ADR 0028 decision 6).
+- Prompt/version provenance: persisted results store provider ID, model, prompt version, source references, and created timestamp (still true, now documented live in [data-model.md](data-model.md) and [contracts.md](contracts.md)).
+- Recommendation enforcement deferral: M13 prompt policy said not to generate buy/sell/hold or portfolio advice; automated post-generation recommendation-language detection was deferred as a post-v1 task.
+
+**Non-goals (M13, since superseded by delivered scope).** No automatic batch analysis during source ingestion; no portfolio-aware or personalized advice; no opinionated mode; no hosted services, telemetry, remote logs, or cloud queues; no attachment ingestion or transcript-segment analysis in the first M13 slice (delivered later); no post-generation recommendation-language validator in M13; no research-brief generation in M13 (delivered as M30, see below).
+
+**Rust/Frontend ownership (M13 module boundary, since restructured).** M13 expected `src-tauri/src/providers/analysis/` (provider-neutral types, Gemini adapter, deterministic test provider), `jobs/ai_analysis.rs`, `storage/ai_analysis.rs`, `commands/ai_analysis.rs`, `storage/settings.rs`, `providers/credentials.rs`; and frontend `src/api/aiAnalysis.ts`, `AppStateRoot.tsx`/a focused controller, `src/screens/Inbox/`, `src/screens/Companies/`, `src/screens/Settings/`, `src/shared/locale/`. ADR 0028 restructured the Rust provider layer into `providers/analysis/{types,registry,transport,document,gemini,anthropic,openai}.rs`; current ownership is documented live in [modularization-design.md](modularization-design.md).
+
+**UI/UX direction (M13 ideation).** M13 considered an AI research-panel pattern inspired by AI-powered finance products (e.g. Google Finance), adapted to Brawler's local-first workflow: suggested prompts (source-grounded presets like "summarize what changed", "extract risks", "identify management claims", "explain why this may matter"), a custom question field, a short local follow-up thread per feed item, visible async progress, cited results, decision-support framing copy, and an optional animated accent border respecting reduced-motion. The implementation was directed not to copy another product's visual design directly.
+
+**Runtime flow (M13).** User opens a feed item and selects an analysis action/prompt/question → frontend calls a typed command to create/reuse an analysis job → Rust loads feed context and settings → Rust resolves provider credentials without exposing secrets to React → the async job calls the provider and maps output into the neutral result contract → storage persists job status and, on success, result fields plus source references → UI polls/refreshes through typed commands and renders queued/running/succeeded/failed → user can retry a failed job.
+
+**M30 Research Brief Boundary.** Company/watchlist research briefs reuse the provider-neutral AI posture without turning feed-item analysis into a catch-all module. Expected ownership: evidence collection belongs to the research/evidence domain; prompt/context building belongs to a research brief builder; provider execution uses the provider/job boundary; citation mapping links generated claims back to research evidence; rendering converts the stored brief into UI-facing read models; persistence stores brief provenance, rendered content, citations, provider ID, model, prompt version, and generation timestamps. Briefs are dedicated entities, not notebook entries by default, though may be converted through an explicit user action later. M30 accepted decisions: generation is explicit/on-demand only; both company and watchlist brief scopes are in scope; the initial provider configuration reused the general analysis provider/model settings; evidence collection used a backend-owned default collector for the selected scope; provider output was structured into sections with citation IDs then rendered by the backend; briefs are immutable snapshots (regeneration creates a new brief); citations store evidence references and short labels/snippets only, not full copied source bodies; briefs/citations are durable research data included in research import/export; creating notebook notes from briefs stayed out of scope for M30 and must never happen automatically. This boundary is delivered and now documented live in [modularization-design.md](modularization-design.md) § "Research/Evidence Boundary Ownership" (AI brief posture).
+
+**Initial commands (M13, names since evolved — see [contracts.md](contracts.md) for the current AI analysis/brief/digest command surface).** `start_ai_analysis(input)`: create or reuse an analysis job for a feed item, start async processing, return current job/result state. `list_ai_analysis(input)`: return current analysis jobs/results for one feed item. `retry_ai_analysis(jobId)`: rerun a failed analysis job with current settings.
+
+**Settings (M13, since superseded by ADR 0060 per-capability `capability_providers` routing).** `generalAnalysisProvider` (initially `provider_gemini` or unset), `generalAnalysisModel`, `generalAnalysisTimeoutSeconds`, `aiAnalysisMode` (`source_grounded`). Settings had to disclose that feed-item source text/metadata are sent to the configured provider when the user starts analysis.
+
+**Test strategy (M13).** Default checks must not require secrets or live external services. Required M13 test areas: storage migration/persistence for jobs/results/source references; settings defaults/updates/invalid-value handling; provider-neutral request/result mapping; deterministic test-provider job flow; Gemini adapter mapping with mocked HTTP; UI workflow for explicit analysis start/loading/success/failure/retry; Settings workflow for general AI analysis configuration. Live Gemini analysis smoke testing was to be opt-in and documented if it became part of M13 closure evidence.
+
+### From docs/modularization-design.md — "Historical Pain Points"
+
+The M13 modularization pass was started because these files had become mixed-responsibility architecture debt: `src/App.tsx` (app shell, routing, data loading, screen rendering, workflow logic, formatting helpers, and mutations mixed in one file); `src/App.test.tsx` (many unrelated workflows sharing one mock setup and one large test file); `src/styles.css` (app-wide and screen-specific styling mixed); `src-tauri/src/storage.rs` (migrations, data types, settings, source state, companies, watchlists, feed, notebooks, events, transcripts, and tests mixed in one module); `src-tauri/src/lib.rs` (Tauri command registration, command handlers, refresh orchestration, transcript runner orchestration, and source adapter dispatch mixed). All resolved by the M13 pass; current structure is documented live in modularization-design.md.
+
+### From docs/modularization-design.md — "Findings"
+
+Broad extraction is useful when a file mixes multiple architectural layers; it is less useful when a file is a cohesive domain view or facade. `AppStateRoot.tsx` is intentionally large because it coordinates app state — splitting it should wait for a feature-driven state-domain boundary, not a line-count target; the AI-analysis domain (per-feed-item jobs/error/in-flight maps, poll timers, start/retry commands, load+poll effects) was extracted to `src/app/useAiAnalysisController.ts` on exactly that basis, a cohesive self-contained boundary. The signals and fundamentals domains were intentionally left in place because their state fed `useAppViewModel` derivations; extracting them cleanly needed a coordinated controller/view-model boundary, not an in-place lift. Shared frontend primitives are useful only when they preserve existing class semantics and accessibility: `Button`, `EmptyState`, and `StatusPill` were adopted for generic controls; segmented controls, row selectors, field clear buttons, collapsible headers, suggestion rows, and anchor links stayed native/domain-specific on purpose (rule retained live in modularization-design.md § Frontend Ownership Rules). Screen tests became easier to reason about after screen extraction, but the shared app workflow harness remained useful for integration-style UI flows. Rust command modules should stay thin — most complexity belongs in storage, provider, source adapter, or job modules (rule retained live in modularization-design.md § Rust Ownership Rules). Storage facades are acceptable when they keep the public boundary clear and delegate domain behavior to focused modules. CSS extraction worked best after screen/component extraction stabilized.
+
+### From docs/modularization-design.md — "Completion Note" (narrative)
+
+The broad M13 modularization effort is complete. This document is treated as a standing architecture checklist, not a backlog of remaining extraction tasks. (Live extraction-trigger checklist and known-acceptable-large-files list retained in modularization-design.md § Future Extraction Triggers.)
+
+### From docs/modularization-design.md — "M24 Large-File Responsibility Audit"
+
+M24 reviewed the large/coordinating files in light of the research-workspace roadmap; the rule remained responsibility-first (line count is a signal to inspect, not a reason to split by itself). Required M24 extractions completed: `src/api/types.ts` (research/evidence DTOs moved to `src/api/researchTypes.ts`); `src/api/research.ts` added for research command calls; `src-tauri/src/storage/mod.rs` kept as the storage facade with research behavior extracted to `src-tauri/src/storage/research.rs`; `src-tauri/src/commands/research.rs` added; `src-tauri/src/storage/tests/research.rs` added for research boundary tests. Deferred until feature pressure (since resolved by later milestones): `AppStateRoot.tsx` (no split for M24, no visible research UI/state yet — M25 later added a focused research controller/view-model); `appWorkflowHarness.tsx` (split deferred until research UI workflow tests made setup harder); `storage/import_export.rs` (M24 research-owned durable state deferred from M20 export files); `CompanyWorkspace.tsx`/`NotebooksScreen.tsx` (M25/M27 later extracted research-facing timeline/review/evidence-link UI). No action taken in M24 on `lib.rs`/`commands/mod.rs` (remained registration facades), `storage/sources.rs`/`storage/transcripts.rs`/source adapters/source tests (outside M24 scope), and `storage/metrics.rs` (unrelated cohesive observability domain). Live forward-looking rule retained in modularization-design.md: if a future feature needs stored timeline/evidence projections, add the projection implementation behind the existing research/evidence API rather than moving aggregation into screens or broadening the storage facade.
+
+### From docs/modularization-design.md — "Research Workspace Readiness Check"
+
+Before implementing the (then-future) research-workspace direction, M24 ran a focused modularization readiness check to decide whether existing boundaries could support a shared research evidence model, timeline/read model, review workflow, research questions, claim expansion, source-grounded AI briefs, digests, reminders, and evidence links. Areas inspected: frontend app state/view-model ownership (whether `AppStateRoot` should compose a new research controller); frontend API DTO ownership (whether research evidence/timeline/review types should live outside the generic `src/api/types.ts`); screen ownership between Companies, Notebooks, Events, Inbox, Sources, and a future Research/Review surface; Rust command ownership for research evidence, review state, links, questions, reminders, and generated briefs; storage ownership for cross-domain evidence/read models versus existing feed/notebook/event/transcript/AI-analysis tables; import/export, backup, retention, and migration impact for new research-workspace entities; AI brief boundaries for evidence collection, prompt/building, provider execution, citation mapping, rendering, and persistence; test ownership for evidence aggregation, review state, linking integrity, citation grounding, and real-browser workflow/layout coverage. Output was a refactor-before-feature decision list (required before implementation / foldable into the first feature slice / defer until concrete pressure / no action needed). The resulting accepted research/evidence boundary (ADR 0022) is retained live in modularization-design.md § "Research/Evidence Boundary Ownership" — the readiness-check process itself was a one-time M24 planning exercise, now superseded by the delivered Research screen (M25/M26/M29/M31, see [ui-information-architecture.md](ui-information-architecture.md) and [ADR 0022](adr/0022-research-evidence-read-model-boundary.md)).

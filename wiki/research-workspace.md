@@ -13,13 +13,16 @@ The sidebar is grouped so you always know where you are:
 
 - **Modes** — the big destinations:
   - **🏠 Today** — your home and the default screen (see below).
-  - **Cockpit** — the advanced multi-panel layout (see *Advanced layout* below).
-  - **Companies** — open a single company's workspace.
+  - **Companies** — browse, search, add companies, and open one to its
+    dashboard (see below).
   - **Compare** — line companies up side by side *(coming with the valuation
     work)*.
+  - Below the built-in modes: your own **saved views** and a **"+ New view"**
+    entry to build one — see
+    [Composable cockpit views](cockpit-views.md).
 - **Pinned companies** — your favorites for one-click access. Pin a company from
-  its workspace header (the **Pin** button); it then appears here with a small
-  status dot. Unpin from the sidebar (hover the row) or the workspace.
+  its dashboard or the Companies list; it then appears here with a small
+  status dot. Unpin from the sidebar (hover the row) or the dashboard.
 - **Library** — the reference surfaces: **Inbox** (the full feed), **Watchlists**,
   **Transcripts**, **Sources**.
 - **Utilities** — **Settings** (and **Diagnostics** in developer mode).
@@ -31,6 +34,10 @@ digest, not a wall of feed items:
 
 - **What changed** — the freshest report disclosures, newest first. Click
   **Review** to jump to that company.
+- **Autopilot** — a card per automated run for a company you've opted into
+  **assist** or **autopilot** mode, with a summary, a **Structure changed**
+  note when the report's layout shifted, and **Review**/**Dismiss** (plus
+  **Undo** for autopilot-mode runs). See [Autopilot](autopilot.md).
 - **To verify** — management claims that are due or overdue for the companies you
   have **pinned**. (Pin companies to populate this.)
 - **Upcoming reports** — the next report dates on the calendar.
@@ -39,19 +46,19 @@ digest, not a wall of feed items:
 - **Recent activity** — a compact peek at the latest feed items, with a shortcut
   to the full **Inbox**.
 
-## The company workspace — and the Advanced layout
+## Opening a company: the curated dashboard
 
-Open a company (from Companies, a pinned row, or a Review button) to get its
-**workspace**: fixed, tabbed sections — Feed, Notebook, Claims, Transcripts,
-Fundamentals, Quality, Metadata.
+Open a company (from Companies, a pinned row, a feed item, or a Today
+**Review** button) to land its **dashboard** — a curated
+[cockpit view](cockpit-views.md) scoped to that company, opening with a calm
+starting set of panels (Fundamentals, Feed, Claims, Quality, Report
+documents, Notebook). It's the one place that shows you everything about a
+company at once, and it stays composable — add, remove, or move panels, then
+**Save dashboard** to keep the arrangement for next time.
 
-From the workspace header you can:
-
-- **Pin** the company to the sidebar.
-- Switch to **Advanced layout** — the dockview **Cockpit** opened *scoped to this
-  company*: multiple resizable, dockable panels (feed, inspector, claims, report
-  comparison, fundamentals, …) side by side, with task presets and saved layouts.
-  This is the power-user surface; the tabbed workspace remains the default.
+Pin the company to the sidebar from here or from the Companies list. Company
+metadata (exchange, ticker, ISIN, and other identifiers) lives in the
+Companies list, not on the dashboard.
 
 ## Focus mode — distraction-free reading and writing
 

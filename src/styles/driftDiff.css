@@ -1,0 +1,24 @@
+/* Shared `DriftDiff` body (ADR 0061 / Radicle 4fde931): the label-diff a
+   "structure changed" drift renders — new/missing report-line chip groups
+   plus a reporting-unit-changed line. Cross-screen (the fact-detail drift
+   card in Companies/FundamentalsPanel and Today's autopilot-run drift
+   block both render it), so it lives here rather than a `screens/*.css`
+   module; each caller supplies its own section wrapper/heading/aria-label. */
+.drift-diff {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.drift-diff-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.drift-diff .eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
