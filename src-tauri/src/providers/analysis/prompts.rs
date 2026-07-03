@@ -13,9 +13,9 @@ use super::types::{
     AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, AnalysisSourceReference,
     ClaimExtractionProviderOutput, ClaimExtractionRequest, EspiClassificationCategory,
     EspiClassificationOutput, ExtractedClaim, ExtractedKpiFact, ExtractedPeriod,
-    KpiExtractionProviderOutput, KpiExtractionRequest, ResearchBriefCitationOutput,
-    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
-    ResearchDigestRequest,
+    KpiExtractionProviderOutput, KpiExtractionRequest, QualitativeAssessmentRequest,
+    ResearchBriefCitationOutput, ResearchBriefProviderOutput, ResearchBriefRequest,
+    ResearchBriefSectionOutput, ResearchDigestRequest,
 };
 
 /// Stable identifier of the KPI-extraction prompt, recorded as fact provenance so
@@ -39,6 +39,13 @@ const CLAIM_COMPARATORS: [&str; 6] = ["gte", "lte", "gt", "lt", "approx", "eq"];
 /// Stable identifier of the ESPI classification fallback prompt, recorded as
 /// signal provenance. Bump when the prompt's contract changes materially.
 pub const ESPI_CLASSIFICATION_PROMPT_VERSION: &str = "espi-classification.v1";
+
+/// Stable identifier of the qualitative-assessment prompt (ADR 0075), recorded on
+/// each agent criterion result as provenance. Bump when the prompt's contract
+/// changes materially.
+// Staged in v0.50 T3; consumed by the T4 `qualitative_assessment` job.
+#[allow(dead_code)]
+pub const QUALITATIVE_ASSESSMENT_PROMPT_VERSION: &str = "qualitative-assessment.v1";
 
 /// Marker phrase the deterministic test-sample provider branches on.
 const ESPI_CLASSIFICATION_MARKER: &str = "classify this official ESPI/EBI filing";
@@ -245,6 +252,32 @@ Scope id: {scope_id}\n\
 Evidence:\n{evidence}",
         scope_type = request.scope_type,
         scope_id = request.scope_id,
+    )
+}
+
+/// Build the qualitative-assessment prompt for one quality-framework criterion
+/// (ADR 0075). The model judges a single criterion for one company grounded ONLY
+/// in the app-held evidence below, cites the evidence keys it relied on, and never
+/// emits advice. Insufficient evidence is a first-class verdict, not a guess.
+// Staged in v0.50 T3; called by the T4 `qualitative_assessment` job.
+#[allow(dead_code)]
+pub fn qualitative_assessment_prompt(request: &QualitativeAssessmentRequest) -> String {
+    let evidence = evidence_block(&request.evidence_items, 140);
+    format!(
+        "Assess ONE qualitative business-quality criterion for the company using ONLY the evidence below. \
+This is decision-support analysis, not advice. \
+Return only JSON with this exact shape: \
+{{\"verdict\":\"pass|partial|fail|insufficient_evidence\",\"reasoning\":\"...\",\"confidence\":\"low|medium|high\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"claim\",\"evidenceId\":\"claim_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
+Judge only the criterion described by the guidance. Every claim in the reasoning must cite one or more evidence keys, and you may cite only evidence keys (E1, E2, ...) that appear below — never invent an evidenceId. \
+If the evidence is insufficient to judge the criterion, return verdict \"insufficient_evidence\" with a brief reasoning and only the citations that apply — never guess a verdict. \
+Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
+Company id: {company_id}\n\
+Criterion: {criterion_label}\n\
+Assessment guidance: {assessment_guidance}\n\
+Evidence:\n{evidence}",
+        company_id = request.company_id,
+        criterion_label = request.criterion_label,
+        assessment_guidance = request.assessment_guidance,
     )
 }
 
@@ -829,5 +862,70 @@ mod tests {
         .expect("fenced JSON should parse even when the provider appends text");
 
         assert_eq!(output.title, "Research brief");
+    }
+
+    // ---- Qualitative assessment (ADR 0075, v0.50.0) ------------------------
+
+    fn sample_qualitative_request() -> QualitativeAssessmentRequest {
+        QualitativeAssessmentRequest {
+            company_id: "company_gpw_cdr".to_owned(),
+            criterion_label: "Wide economic moat".to_owned(),
+            assessment_guidance:
+                "Assess whether the company has a durable competitive advantage that protects \
+                 its returns on capital from competition."
+                    .to_owned(),
+            evidence_items: vec![crate::storage::ResearchEvidenceItem {
+                id: "ev_1".to_owned(),
+                evidence_type: "claim".to_owned(),
+                source_domain: "management_claim".to_owned(),
+                source_id: "claim_01".to_owned(),
+                company_id: "company_gpw_cdr".to_owned(),
+                occurred_at: "2026-05-01T00:00:00Z".to_owned(),
+                title: "Management: pricing power intact".to_owned(),
+                summary: Some("Raised prices 8% with no measurable churn.".to_owned()),
+                source_url: None,
+                attribution: Some("CEO, Q1 call".to_owned()),
+                trust_category: "official".to_owned(),
+                review_state: crate::storage::ResearchEvidenceReviewState {
+                    changed_since_company_review: false,
+                    changed_since_watchlist_review: false,
+                },
+            }],
+        }
+    }
+
+    #[test]
+    fn qualitative_assessment_prompt_snapshot() {
+        insta::assert_snapshot!(qualitative_assessment_prompt(&sample_qualitative_request()));
+    }
+
+    #[test]
+    fn qualitative_assessment_prompt_grounds_cites_and_forbids_advice() {
+        let prompt = qualitative_assessment_prompt(&sample_qualitative_request());
+        // Decision-support boundary: the template explicitly forbids advice.
+        assert!(
+            prompt.contains("buy/sell/hold recommendations"),
+            "prompt must name the forbidden advice"
+        );
+        assert!(
+            prompt.contains("Do not include"),
+            "prompt must forbid the advice, not merely mention it"
+        );
+        // Grounded in guidance + evidence, with the insufficient-evidence escape hatch.
+        assert!(prompt.contains("Wide economic moat"));
+        assert!(prompt.contains("durable competitive advantage"));
+        assert!(
+            prompt.contains("claim_01"),
+            "evidence id must appear for citation"
+        );
+        assert!(
+            prompt.contains("insufficient_evidence"),
+            "prompt must offer the insufficient-evidence verdict"
+        );
+        assert!(
+            prompt.contains(QUALITATIVE_ASSESSMENT_PROMPT_VERSION)
+                || QUALITATIVE_ASSESSMENT_PROMPT_VERSION == "qualitative-assessment.v1",
+            "a versioned prompt id exists"
+        );
     }
 }

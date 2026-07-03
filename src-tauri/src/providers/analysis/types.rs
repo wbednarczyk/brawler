@@ -40,6 +40,19 @@ pub struct ResearchDigestRequest {
     pub evidence_items: Vec<ResearchEvidenceItem>,
 }
 
+/// One agent qualitative-assessment request: a single quality-framework criterion
+/// judged for one company against app-held evidence only (ADR 0075).
+// Staged in v0.50 T3 (capability + prompt); wired by the `qualitative_assessment`
+// job in T4.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct QualitativeAssessmentRequest {
+    pub company_id: String,
+    pub criterion_label: String,
+    pub assessment_guidance: String,
+    pub evidence_items: Vec<ResearchEvidenceItem>,
+}
+
 #[derive(Debug, Clone)]
 pub struct ResearchBriefProviderOutput {
     pub title: String,

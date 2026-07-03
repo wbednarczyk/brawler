@@ -27,6 +27,9 @@ pub enum AiCapability {
     EventDate,
     /// ESPI signal/category classification.
     SignalClassification,
+    /// Agent-assessed qualitative quality-framework criteria (ADR 0075) — one
+    /// request per criterion per company, grounded in app-held evidence.
+    QualitativeAssessment,
 }
 
 /// Whether a capability's provider call takes a document (structured-first
@@ -38,7 +41,7 @@ pub enum CapabilityKind {
 }
 
 impl AiCapability {
-    pub const ALL: [AiCapability; 7] = [
+    pub const ALL: [AiCapability; 8] = [
         AiCapability::KpiExtraction,
         AiCapability::ClaimExtraction,
         AiCapability::FeedAnalysis,
@@ -46,6 +49,7 @@ impl AiCapability {
         AiCapability::ResearchDigest,
         AiCapability::EventDate,
         AiCapability::SignalClassification,
+        AiCapability::QualitativeAssessment,
     ];
 
     /// Stable settings-map key (`capability_providers` HashMap key) and wire
@@ -59,6 +63,7 @@ impl AiCapability {
             AiCapability::ResearchDigest => "research_digest",
             AiCapability::EventDate => "event_date",
             AiCapability::SignalClassification => "signal_classification",
+            AiCapability::QualitativeAssessment => "qualitative_assessment",
         }
     }
 
@@ -70,7 +75,8 @@ impl AiCapability {
             | AiCapability::ResearchBrief
             | AiCapability::ResearchDigest
             | AiCapability::EventDate
-            | AiCapability::SignalClassification => CapabilityKind::Text,
+            | AiCapability::SignalClassification
+            | AiCapability::QualitativeAssessment => CapabilityKind::Text,
         }
     }
 
@@ -127,8 +133,27 @@ mod tests {
             AiCapability::ResearchDigest,
             AiCapability::EventDate,
             AiCapability::SignalClassification,
+            AiCapability::QualitativeAssessment,
         ] {
             assert_eq!(capability.kind(), CapabilityKind::Text);
         }
+    }
+
+    #[test]
+    fn qualitative_assessment_is_a_text_capability() {
+        // ADR 0075: agent-assessed qualitative criteria route through the
+        // text-capable pool (no native document input).
+        assert_eq!(
+            AiCapability::QualitativeAssessment.key(),
+            "qualitative_assessment"
+        );
+        assert_eq!(
+            AiCapability::QualitativeAssessment.kind(),
+            CapabilityKind::Text
+        );
+        assert_eq!(
+            AiCapability::from_key("qualitative_assessment"),
+            Some(AiCapability::QualitativeAssessment)
+        );
     }
 }
