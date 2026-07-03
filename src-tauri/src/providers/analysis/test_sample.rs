@@ -201,10 +201,52 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
             Ok(TEST_SAMPLE_EVENT_DATE_JSON.to_owned())
         } else if prompt.contains("extract management claims") {
             Ok(TEST_SAMPLE_CLAIM_EXTRACTION_JSON.to_owned())
+        } else if prompt.contains(super::prompts::QUALITATIVE_ASSESSMENT_MARKER) {
+            Ok(test_sample_qualitative_assessment_json(prompt))
         } else {
             Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
         }
     }
+}
+
+/// Deterministic qualitative-assessment response (ADR 0075). The self-contained
+/// prompt already embeds the evidence, so the sample provider recovers the
+/// supplied evidence refs from it and cites only what was provided — never an
+/// invented id the job would (correctly) reject. The verdict/confidence scale
+/// with how much evidence backs the judgement, so a job test can exercise the
+/// success, low-confidence, and missing-evidence cases purely by seeding
+/// different amounts of evidence.
+fn test_sample_qualitative_assessment_json(prompt: &str) -> String {
+    let refs: Vec<(String, String)> = prompt.lines().filter_map(parse_evidence_ref_line).collect();
+    match refs.first() {
+        // No app-held evidence: the honest verdict is insufficient_evidence with
+        // no citations (never a guessed pass/fail).
+        None => r#"{"verdict":"insufficient_evidence","reasoning":"No app-held evidence was available to assess this criterion.","confidence":"low","citations":[]}"#.to_owned(),
+        Some((evidence_type, evidence_id)) => {
+            let (verdict, confidence) = if refs.len() == 1 {
+                ("partial", "low")
+            } else {
+                ("pass", "high")
+            };
+            format!(
+                r#"{{"verdict":"{verdict}","reasoning":"Deterministic sample assessment grounded in the supplied evidence.","confidence":"{confidence}","citations":[{{"citationKey":"E1","evidenceType":"{evidence_type}","evidenceId":"{evidence_id}","label":"Sample citation","snippet":"Sample snippet."}}]}}"#
+            )
+        }
+    }
+}
+
+/// Recover one `(evidenceType, evidenceId)` pair from a rendered evidence line
+/// (`E1: evidenceType=claim; evidenceId=claim_01; …`).
+fn parse_evidence_ref_line(line: &str) -> Option<(String, String)> {
+    let evidence_type = between(line, "evidenceType=", ";")?;
+    let evidence_id = between(line, "evidenceId=", ";")?;
+    Some((evidence_type.to_owned(), evidence_id.to_owned()))
+}
+
+fn between<'a>(haystack: &'a str, start: &str, end: &str) -> Option<&'a str> {
+    let after = &haystack[haystack.find(start)? + start.len()..];
+    let stop = after.find(end)?;
+    Some(after[..stop].trim())
 }
 
 #[cfg(test)]

@@ -13,9 +13,10 @@ use super::types::{
     AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, AnalysisSourceReference,
     ClaimExtractionProviderOutput, ClaimExtractionRequest, EspiClassificationCategory,
     EspiClassificationOutput, ExtractedClaim, ExtractedKpiFact, ExtractedPeriod,
-    KpiExtractionProviderOutput, KpiExtractionRequest, QualitativeAssessmentRequest,
-    ResearchBriefCitationOutput, ResearchBriefProviderOutput, ResearchBriefRequest,
-    ResearchBriefSectionOutput, ResearchDigestRequest,
+    KpiExtractionProviderOutput, KpiExtractionRequest, QualitativeAssessmentCitation,
+    QualitativeAssessmentOutput, QualitativeAssessmentRequest, ResearchBriefCitationOutput,
+    ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
+    ResearchDigestRequest,
 };
 
 /// Stable identifier of the KPI-extraction prompt, recorded as fact provenance so
@@ -43,9 +44,14 @@ pub const ESPI_CLASSIFICATION_PROMPT_VERSION: &str = "espi-classification.v1";
 /// Stable identifier of the qualitative-assessment prompt (ADR 0075), recorded on
 /// each agent criterion result as provenance. Bump when the prompt's contract
 /// changes materially.
-// Staged in v0.50 T3; consumed by the T4 `qualitative_assessment` job.
-#[allow(dead_code)]
 pub const QUALITATIVE_ASSESSMENT_PROMPT_VERSION: &str = "qualitative-assessment.v1";
+
+/// Marker phrase the deterministic test-sample provider branches on for
+/// qualitative assessment (mirrors `CLAIM_EXTRACTION_MARKER` /
+/// `ESPI_CLASSIFICATION_MARKER`): interpolated into the prompt below so the
+/// template is the single source, and the test-sample keys on the same literal.
+pub(crate) const QUALITATIVE_ASSESSMENT_MARKER: &str =
+    "Assess ONE qualitative business-quality criterion";
 
 /// Marker phrase the deterministic test-sample provider branches on.
 const ESPI_CLASSIFICATION_MARKER: &str = "classify this official ESPI/EBI filing";
@@ -259,12 +265,10 @@ Evidence:\n{evidence}",
 /// (ADR 0075). The model judges a single criterion for one company grounded ONLY
 /// in the app-held evidence below, cites the evidence keys it relied on, and never
 /// emits advice. Insufficient evidence is a first-class verdict, not a guess.
-// Staged in v0.50 T3; called by the T4 `qualitative_assessment` job.
-#[allow(dead_code)]
 pub fn qualitative_assessment_prompt(request: &QualitativeAssessmentRequest) -> String {
     let evidence = evidence_block(&request.evidence_items, 140);
     format!(
-        "Assess ONE qualitative business-quality criterion for the company using ONLY the evidence below. \
+        "{QUALITATIVE_ASSESSMENT_MARKER} for the company using ONLY the evidence below. \
 This is decision-support analysis, not advice. \
 Return only JSON with this exact shape: \
 {{\"verdict\":\"pass|partial|fail|insufficient_evidence\",\"reasoning\":\"...\",\"confidence\":\"low|medium|high\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"claim\",\"evidenceId\":\"claim_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
@@ -279,6 +283,122 @@ Evidence:\n{evidence}",
         criterion_label = request.criterion_label,
         assessment_guidance = request.assessment_guidance,
     )
+}
+
+/// Allowed qualitative verdicts (ADR 0075): the quantitative set plus the
+/// first-class `insufficient_evidence` escape hatch.
+const QUALITATIVE_VERDICTS: [&str; 4] = ["pass", "partial", "fail", "insufficient_evidence"];
+
+/// Allowed agent confidence levels (ADR 0075).
+const QUALITATIVE_CONFIDENCES: [&str; 3] = ["low", "medium", "high"];
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QualitativeAssessmentJson {
+    verdict: Option<String>,
+    reasoning: Option<String>,
+    confidence: Option<String>,
+    #[serde(default)]
+    citations: Vec<QualitativeAssessmentCitationJson>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QualitativeAssessmentCitationJson {
+    citation_key: Option<String>,
+    evidence_type: Option<String>,
+    evidence_id: Option<String>,
+    label: Option<String>,
+    snippet: Option<String>,
+}
+
+/// Parse the model's qualitative-assessment response (ADR 0075). Enforces the
+/// stored-shape invariants that must hold before the job can even consider a
+/// result: a verdict in the allowed set, a confidence in the allowed set, a
+/// non-empty reasoning, and citations that each carry a key + typed evidence
+/// reference. **Citation-to-evidence resolution is not done here** — the caller
+/// validates citation ids against the specific evidence it supplied (the
+/// research-brief `rejects_unknown_citation_keys` precedent), because only the
+/// caller knows that set.
+pub fn parse_qualitative_assessment_output(
+    text: &str,
+    provider_label: &str,
+) -> Result<QualitativeAssessmentOutput, AnalysisProviderError> {
+    let json_text = extract_json_object(
+        text,
+        &format!("{provider_label} qualitative-assessment response"),
+    )
+    .map_err(AnalysisProviderError::ParseError)?;
+    let parsed: QualitativeAssessmentJson = serde_json::from_str(json_text).map_err(|error| {
+        AnalysisProviderError::ParseError(format!(
+            "{provider_label} qualitative-assessment JSON: {error}"
+        ))
+    })?;
+
+    let verdict = clean_optional_string(parsed.verdict)
+        .map(|value| value.to_lowercase())
+        .filter(|value| QUALITATIVE_VERDICTS.contains(&value.as_str()))
+        .ok_or_else(|| {
+            AnalysisProviderError::ParseError(format!(
+                "{provider_label} qualitative-assessment verdict missing or not one of {QUALITATIVE_VERDICTS:?}"
+            ))
+        })?;
+
+    let confidence = clean_optional_string(parsed.confidence)
+        .map(|value| value.to_lowercase())
+        .filter(|value| QUALITATIVE_CONFIDENCES.contains(&value.as_str()))
+        .ok_or_else(|| {
+            AnalysisProviderError::ParseError(format!(
+                "{provider_label} qualitative-assessment confidence missing or not one of {QUALITATIVE_CONFIDENCES:?}"
+            ))
+        })?;
+
+    // A decisive verdict (pass/partial/fail) must justify itself, so empty
+    // reasoning is a hard parse error there. `insufficient_evidence` legitimately
+    // has little to say, so an empty reasoning is tolerated (stored as "") rather
+    // than failing an otherwise valid "nothing to assess" response.
+    let reasoning = clean_optional_string(parsed.reasoning).unwrap_or_default();
+    if verdict != "insufficient_evidence" && reasoning.is_empty() {
+        return Err(AnalysisProviderError::ParseError(format!(
+            "{provider_label} qualitative-assessment reasoning is empty for a decisive verdict"
+        )));
+    }
+
+    let citations = parsed
+        .citations
+        .into_iter()
+        .map(|citation| {
+            let citation_key = clean_optional_string(citation.citation_key).ok_or_else(|| {
+                AnalysisProviderError::ParseError(format!(
+                    "{provider_label} qualitative-assessment citation missing citationKey"
+                ))
+            })?;
+            let evidence_type = clean_optional_string(citation.evidence_type).ok_or_else(|| {
+                AnalysisProviderError::ParseError(format!(
+                    "{provider_label} qualitative-assessment citation {citation_key} missing evidenceType"
+                ))
+            })?;
+            let evidence_id = clean_optional_string(citation.evidence_id).ok_or_else(|| {
+                AnalysisProviderError::ParseError(format!(
+                    "{provider_label} qualitative-assessment citation {citation_key} missing evidenceId"
+                ))
+            })?;
+            Ok(QualitativeAssessmentCitation {
+                citation_key,
+                evidence_type,
+                evidence_id,
+                label: clean_optional_string(citation.label),
+                snippet: clean_optional_string(citation.snippet),
+            })
+        })
+        .collect::<Result<Vec<_>, AnalysisProviderError>>()?;
+
+    Ok(QualitativeAssessmentOutput {
+        verdict,
+        reasoning,
+        confidence,
+        citations,
+    })
 }
 
 /// Build the KPI-extraction prompt for a report document. The document bytes are
@@ -927,5 +1047,75 @@ mod tests {
                 || QUALITATIVE_ASSESSMENT_PROMPT_VERSION == "qualitative-assessment.v1",
             "a versioned prompt id exists"
         );
+    }
+
+    #[test]
+    fn parses_a_well_formed_qualitative_assessment_response() {
+        let output = parse_qualitative_assessment_output(
+            r#"{"verdict":"pass","reasoning":"Durable pricing power evident.","confidence":"high","citations":[{"citationKey":"E1","evidenceType":"claim","evidenceId":"claim_01","label":"Pricing power","snippet":"Raised prices 8%."}]}"#,
+            "test",
+        )
+        .expect("well-formed response should parse");
+        assert_eq!(output.verdict, "pass");
+        assert_eq!(output.confidence, "high");
+        assert_eq!(output.citations.len(), 1);
+        assert_eq!(output.citations[0].evidence_id, "claim_01");
+        assert_eq!(output.citations[0].evidence_type, "claim");
+    }
+
+    #[test]
+    fn parses_insufficient_evidence_with_no_citations() {
+        // The insufficient-evidence verdict is allowed to carry zero citations —
+        // the parser must not require any (the caller enforces the per-verdict rule).
+        let output = parse_qualitative_assessment_output(
+            r#"{"verdict":"insufficient_evidence","reasoning":"No app-held evidence.","confidence":"low","citations":[]}"#,
+            "test",
+        )
+        .expect("insufficient-evidence response should parse");
+        assert_eq!(output.verdict, "insufficient_evidence");
+        assert!(output.citations.is_empty());
+    }
+
+    #[test]
+    fn tolerates_empty_reasoning_for_insufficient_evidence() {
+        // A valid "nothing to assess" response with blank reasoning must not be a
+        // hard parse error (it would otherwise fail the whole job on retry).
+        let output = parse_qualitative_assessment_output(
+            r#"{"verdict":"insufficient_evidence","reasoning":"","confidence":"low","citations":[]}"#,
+            "test",
+        )
+        .expect("empty reasoning is allowed for insufficient_evidence");
+        assert_eq!(output.verdict, "insufficient_evidence");
+        assert_eq!(output.reasoning, "");
+    }
+
+    #[test]
+    fn rejects_empty_reasoning_for_a_decisive_verdict() {
+        let error = parse_qualitative_assessment_output(
+            r#"{"verdict":"pass","reasoning":"","confidence":"high","citations":[{"citationKey":"E1","evidenceType":"claim","evidenceId":"claim_01"}]}"#,
+            "test",
+        )
+        .expect_err("a pass verdict must justify itself");
+        assert_eq!(error.code(), "parse_error");
+    }
+
+    #[test]
+    fn rejects_a_verdict_outside_the_allowed_set() {
+        let error = parse_qualitative_assessment_output(
+            r#"{"verdict":"strong_buy","reasoning":"...","confidence":"high","citations":[]}"#,
+            "test",
+        )
+        .expect_err("an out-of-set verdict must be rejected");
+        assert_eq!(error.code(), "parse_error");
+    }
+
+    #[test]
+    fn rejects_a_citation_missing_its_evidence_id() {
+        let error = parse_qualitative_assessment_output(
+            r#"{"verdict":"pass","reasoning":"...","confidence":"high","citations":[{"citationKey":"E1","evidenceType":"claim"}]}"#,
+            "test",
+        )
+        .expect_err("a citation with no evidenceId must be rejected");
+        assert_eq!(error.code(), "parse_error");
     }
 }

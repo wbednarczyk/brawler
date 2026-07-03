@@ -134,8 +134,8 @@ pub use quality_frameworks::QualityFrameworkStore;
 pub use quality_frameworks::{
     CloneFrameworkInput, CriterionResult, EvaluateFrameworkInput, FrameworkCriterion,
     FrameworkEvaluation, ListFrameworkEvaluationsInput, MetricKeyInfo, NewFrameworkCriterion,
-    NewQualityFramework, QualityFramework, UpdateFrameworkCriterion, UpdateQualityFramework,
-    ValidateCriterionResult,
+    NewQualityFramework, PersistQualitativeAssessmentInput, QualitativeCriterionResult,
+    QualityFramework, UpdateFrameworkCriterion, UpdateQualityFramework, ValidateCriterionResult,
 };
 pub use queue_config::QueueConfig;
 pub use registry::SourceRegistryStore;
@@ -1150,6 +1150,14 @@ impl AppState {
         input: EvaluateFrameworkInput,
     ) -> StorageResult<FrameworkEvaluation> {
         self.quality_frameworks().evaluate_framework(input)
+    }
+
+    pub fn persist_qualitative_assessment(
+        &self,
+        input: PersistQualitativeAssessmentInput,
+    ) -> StorageResult<FrameworkEvaluation> {
+        self.quality_frameworks()
+            .persist_qualitative_assessment(input)
     }
 
     pub fn list_framework_evaluations(

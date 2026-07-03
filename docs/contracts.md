@@ -1452,7 +1452,7 @@ to `{}`. An absent key or an empty list for a key means "use
 `generalAnalysisProvider` / `generalAnalysisModel`" — every capability is
 backward-compatible with a single global provider.
 
-Capability keys (`AiCapability::key`, fixed set of 7):
+Capability keys (`AiCapability::key`, fixed set of 8):
 
 | Key | Kind | Provider call |
 |---|---|---|
@@ -1463,10 +1463,11 @@ Capability keys (`AiCapability::key`, fixed set of 7):
 | `research_digest` | text | `generate_research_digest` |
 | `event_date` | text | `complete_document` (extracted text) |
 | `signal_classification` | text | text |
+| `qualitative_assessment` | text | `complete_document` (self-contained prompt) |
 
 Validation rules for `capabilityProviders`:
 
-- Every map key must be one of the 7 capability keys above; an unknown key is rejected.
+- Every map key must be one of the 8 capability keys above; an unknown key is rejected.
 - Every entry's `provider` must be a currently selectable analysis provider id (the AI Provider Catalog below); an entry's `model` must be non-empty.
 - `model` must belong to the provider's curated model list, except for `provider_openai_compatible`, which has no curated list and accepts any non-empty freeform model id (same exemption as `generalAnalysisModel`).
 - An empty entry list for a key is valid — it is the explicit "use the global fallback" state.

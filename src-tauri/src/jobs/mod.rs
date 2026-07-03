@@ -7,6 +7,7 @@ pub mod event_derivation;
 pub mod feed_cleanup;
 pub mod handlers;
 pub mod kpi_extraction;
+pub mod qualitative_assessment;
 pub mod queue;
 pub mod report_extraction;
 pub mod research_briefs;

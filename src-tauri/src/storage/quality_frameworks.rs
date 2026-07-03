@@ -299,6 +299,33 @@ pub struct ListFrameworkEvaluationsInput {
     pub company_id: String,
 }
 
+/// A batch of agent-assessed qualitative results to persist as one immutable
+/// snapshot (ADR 0075, T4). The snapshot may be qualitative-only (Decision 5
+/// anticipates quant-only, qual-only, and combined snapshots).
+#[derive(Debug, Clone)]
+pub struct PersistQualitativeAssessmentInput {
+    pub framework_id: String,
+    pub company_id: String,
+    pub results: Vec<QualitativeCriterionResult>,
+}
+
+/// One validated qualitative criterion result, ready to write with `source =
+/// agent`. `citations_json` is the already-validated, serialized typed-evidence
+/// array (the job resolves every citation to supplied evidence before this).
+#[derive(Debug, Clone)]
+pub struct QualitativeCriterionResult {
+    pub criterion_id: String,
+    pub ordinal: i64,
+    pub label: String,
+    /// `pass` | `partial` | `fail` | `insufficient_evidence`.
+    pub verdict: String,
+    pub reasoning: String,
+    pub citations_json: String,
+    /// `low` | `medium` | `high`.
+    pub confidence: String,
+    pub prompt_version: String,
+}
+
 // ============================================================================
 // Frameworks CRUD
 // ============================================================================
@@ -772,6 +799,79 @@ pub(super) fn evaluate_framework(
                 outcome.threshold,
                 inputs_json,
                 None::<String>,
+            ],
+        )?;
+    }
+
+    get_framework_evaluation(connection, &evaluation_id)
+}
+
+/// Persist a batch of agent-assessed qualitative results as one immutable
+/// snapshot with `source = agent` (ADR 0075, T4). Company-level, not
+/// period-scoped, so `period_id` stays NULL; `engine_version` pins the shared
+/// snapshot schema version (the agent provenance lives per-criterion in
+/// `prompt_version`). `insufficient_evidence` counts into the "could not
+/// determine" bucket (`unavailable_count`), mirroring the quantitative
+/// `unavailable` verdict. Never touches quantitative rows or facts.
+pub(super) fn persist_qualitative_assessment(
+    connection: &Connection,
+    input: PersistQualitativeAssessmentInput,
+) -> StorageResult<FrameworkEvaluation> {
+    let framework = get_quality_framework(connection, &input.framework_id)?;
+    ensure_company_exists(connection, &input.company_id)?;
+
+    let mut pass = 0i64;
+    let mut partial = 0i64;
+    let mut fail = 0i64;
+    let mut unavailable = 0i64;
+    for result in &input.results {
+        match result.verdict.as_str() {
+            "pass" => pass += 1,
+            "partial" => partial += 1,
+            "fail" => fail += 1,
+            // insufficient_evidence (and any non-quantitative verdict) → could-not-determine.
+            _ => unavailable += 1,
+        }
+    }
+
+    let evaluation_id = evaluation_id(&framework.id, &input.company_id);
+    connection.execute(
+        "INSERT INTO framework_evaluations
+            (id, framework_id, framework_version, company_id, period_id,
+             pass_count, partial_count, fail_count, unavailable_count, engine_version)
+         VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8, ?9)",
+        params![
+            evaluation_id,
+            framework.id,
+            framework.version,
+            input.company_id,
+            pass,
+            partial,
+            fail,
+            unavailable,
+            ENGINE_VERSION,
+        ],
+    )?;
+
+    for result in &input.results {
+        connection.execute(
+            "INSERT INTO criterion_results
+                (id, evaluation_id, criterion_id, ordinal, label, expression, verdict,
+                 measured_value, measured_unit, threshold, inputs_json, note,
+                 reasoning, citations, confidence, prompt_version, source)
+             VALUES (?1, ?2, ?3, ?4, ?5, '', ?6, NULL, NULL, NULL, NULL, NULL,
+                     ?7, ?8, ?9, ?10, 'agent')",
+            params![
+                criterion_result_id(&evaluation_id, &result.criterion_id),
+                evaluation_id,
+                result.criterion_id,
+                result.ordinal,
+                result.label,
+                result.verdict,
+                result.reasoning,
+                result.citations_json,
+                result.confidence,
+                result.prompt_version,
             ],
         )?;
     }
@@ -1362,6 +1462,14 @@ impl QualityFrameworkStore {
     ) -> StorageResult<FrameworkEvaluation> {
         let connection = self.db.checkout()?;
         evaluate_framework(&connection, input)
+    }
+
+    pub fn persist_qualitative_assessment(
+        &self,
+        input: PersistQualitativeAssessmentInput,
+    ) -> StorageResult<FrameworkEvaluation> {
+        let connection = self.db.checkout()?;
+        persist_qualitative_assessment(&connection, input)
     }
 
     pub fn list_framework_evaluations(
