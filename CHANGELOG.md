@@ -1,5 +1,143 @@
 # Changelog
 
+## v0.49.0 — 2026-07-03
+
+Brawler learns to work while you don't: **Autopilot** turns a tracked company's
+new periodic report into one reviewed-or-reversible notification with no manual
+steps, and the research cockpit becomes **composable** — build your own
+multi-panel views and land on a curated per-company dashboard. Decision support
+only, as always: Brawler tells you *what changed* and *what to verify*, never
+buy/sell/hold, and everything stays local. Guides:
+[Autopilot](wiki/autopilot.md), [Cockpit views](wiki/cockpit-views.md),
+[Per-company settings](wiki/company-settings.md).
+
+### Added
+
+- **Autopilot — the autonomous report pipeline.** When a company you track
+  publishes a new report, Brawler detects it, fetches it, reads out the
+  figures, diffs it against the previous filing, cross-references your open
+  claims, and surfaces the result as a single card on **Today** — with a
+  **Review** button, an honest "couldn't finish" state when a run fails, and a
+  two-step **Undo** that reverts exactly the facts that one run produced
+  ("Reverted N facts"). Opt-in **per company** via a trust ladder: **Off**
+  (today's manual flow), **Assist** (figures extracted automatically but
+  nothing saved until you confirm), **Autopilot** (figures saved automatically,
+  flagged as not-yet-reviewed, fully cited, undoable). The refresh schedule now
+  runs in the Rust backend; Autopilot works while the app is open. See the
+  [Autopilot guide](wiki/autopilot.md).
+- **Structured-first KPI extraction, with provenance on every fact.** Before
+  asking an AI, Brawler now reads figures **deterministically** from the
+  report's own machine-readable data — official ESEF/iXBRL filings first, then
+  PDFs it can map with confidence, witnessed against an aggregator where
+  available — behind a validation gate (accounting identities plus a
+  prior-period cross-check), so no figure lands without a verdict. A clean
+  structured read auto-confirms in both Assist and Autopilot, because it's a
+  direct read, not a guess; AI extraction remains the fallback and follows your
+  chosen mode. Every fact shows **Source** and **Validation** chips in
+  Fundamentals, and when a report's structure shifts from what's on file (new
+  or missing line items, a different unit), the Today card shows the drift
+  instead of silently absorbing wrong numbers.
+- **Composable cockpit views.** A **"+ New view"** in the sidebar builds your
+  own dashboard: name it, pick a grid visually (2×2 / 2×3 / 3×3 presets, or a
+  custom size with linked sliders/inputs and a live preview), then click each
+  empty cell to choose its panel — feed, inspector, fundamentals, claims,
+  quality, report comparison, documents, notebook, and the library screens.
+  Saved views live in the sidebar as their own entries: open with a click,
+  delete from a hover action, persist rearrangements with **Save layout**. See
+  the [Cockpit views guide](wiki/cockpit-views.md).
+- **Company dashboard.** Opening a company now lands on a curated multi-panel
+  dashboard — fundamentals, feed, claims, quality, report documents, notebook
+  already in place — replacing the old tabbed workspace. It's a view like any
+  other: rearrange freely and **Save dashboard** to keep each company's own
+  arrangement. Pinned sidebar companies, feed items, and Today **Review**
+  buttons all land on the same dashboard.
+- **Per-company settings, including bulk manage.** Quick-edit a single
+  company's autopilot mode and IR reports-page URL from its Fundamentals
+  panel, or use **Companies → Manage settings** to change many at once: pick
+  companies on the left (individually, select-all, or a whole watchlist),
+  set grouped values on the right. Companies that don't share a value show as
+  **mixed** — nothing is overwritten until you explicitly choose. The surface
+  stacks in narrow windows instead of overflowing. See the
+  [Per-company settings guide](wiki/company-settings.md).
+- **AI provider pools per capability + an OpenAI-compatible provider.** Route
+  each AI capability to its own ordered list of (provider, model) pairs with
+  automatic failover and a cooldown for unavailable members; document-reading
+  capabilities can only route to document-capable providers. A new generic
+  **OpenAI-compatible** provider (base URL + model, key in the OS keychain)
+  opens the door to self-hosted and alternative endpoints, with presets in the
+  wiki.
+- **Fair background work.** Background jobs now run in isolated lanes
+  (sources / autopilot / AI / indexing), so a large watchlist refresh can no
+  longer starve an autopilot run; each source refreshes one company at a time
+  as resumable chunks, only one refresh per source runs at once, and AI calls
+  respect a per-provider concurrency limit. Tunable under **Settings →
+  Background work**.
+
+### Changed
+
+- The blank **Cockpit** sidebar entry is retired — saved views, **New view**,
+  and company dashboards are the ways into the cockpit now.
+- **Companies** is now a library and settings surface; clicking a company goes
+  straight to its dashboard.
+- The legacy cockpit layout toolbar is slimmed down to the **Preset** select.
+- Autopilot notifications are **localized and honest**: the Today card
+  composes its sentence in your language from the run's actual counts instead
+  of a canned English summary.
+- Dockview panel headers are visibly slimmer, so panels read as lightweight
+  building blocks rather than heavy windows.
+
+### Fixed
+
+- **Stuck autopilot runs.** A re-created or retried job whose ID matched an
+  already-finished row was silently ignored, leaving the run stuck forever;
+  such jobs now re-arm and complete (the same fix revived per-job retries and
+  the startup content-indexing refresh, both silently dead after their first
+  success).
+- **Crashes on Polish report text.** UTF-8 byte-slicing panics in date
+  scanning and report parsing are fixed with character-boundary handling, and
+  all similar slicing sites were swept.
+- A transient AI-provider outage during extraction was recorded as a
+  *succeeded* run with zero figures — permanently blocking re-detection. It
+  now fails properly and self-heals, so the next refresh re-runs it.
+- Autopilot picked "the newest report" by database insertion order, so a
+  history backfill could make it fire on a years-old report; it now ranks by
+  the report's actual disclosure date.
+- The test-sample AI provider can no longer auto-confirm figures in autopilot
+  mode — sample KPIs are never committed as real facts.
+- Free-text settings fields (provider base URL, model name) were impossible to
+  type into — each keystroke was validated and reverted; they now edit a local
+  draft and save on blur.
+- Narrow windows: the Today autopilot run card no longer overflows (its
+  metadata and actions wrap).
+
+### Under the hood (no user-facing change)
+
+- One mandatory test gate: `make check` now runs every deterministic suite
+  hard-fail (frontend, Rust, dead-export scan, contract-drift guard, the full
+  browser suite) with a self-enforcing anti-rot meta-guard, wired into the
+  pre-commit hook ([ADR 0062](docs/adr/0062-mandatory-test-gate-and-test-driven-loop.md)).
+- Docs architecture rework + spec–code drift gates: the agent contract was
+  consolidated and deduplicated, and `make check` now fails on drift between
+  docs and reality — commands vs. code, screens vs. navigation, settings keys
+  vs. schema ([ADR 0063](docs/adr/0063-claude-native-context-architecture.md),
+  [ADR 0065](docs/adr/0065-spec-code-drift-gates.md)).
+- Planning landed for the investor week calendar
+  ([ADR 0058](docs/adr/0058-investor-week-calendar.md), scheduled later) and
+  the AI-quality provider-routing epic
+  ([ADR 0060](docs/adr/0060-ai-capability-routing-and-openai-compatible-provider.md),
+  delivered above as amended); autopilot/queue/extraction design records:
+  [ADR 0055](docs/adr/0055-autonomous-report-pipeline-trust-ladder.md),
+  [ADR 0056](docs/adr/0056-per-company-settings-surface.md),
+  [ADR 0057](docs/adr/0057-composable-views-and-curated-dashboard.md),
+  [ADR 0059](docs/adr/0059-worker-pools-and-queue-fairness.md),
+  [ADR 0061](docs/adr/0061-deterministic-fundamentals-data-gathering.md).
+- Dev tooling: a `make live-up` live-drive cycle (rebuild + relaunch with CDP
+  for on-real-app verification); test-coverage floors raised after backfilling
+  behavior tests for the new v0.49 surfaces.
+
+---
+
+
 ## v0.48.0 - 2026-06-24
 
 A new home and a calmer, mode-based workspace. Brawler now opens on **Today** —

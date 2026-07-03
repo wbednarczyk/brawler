@@ -4,6 +4,19 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### v0.49.0: Autonomous report pipeline (epic 9a607da) + composable shell finish + lean-docs epics
+
+Intent: the North Star — a tracked company publishes a periodic report and the app detects, fetches, extracts, diffs, cross-references, and notifies with no manual steps, behind a per-company trust ladder (ADR 0055); plus the ADR 0057 composable-views finish and the Claude-native docs/enforcement epics (ADR 0063/0065).
+
+Delivered: chained durable-queue orchestration stamped with one autopilot_run id; event-driven detection off source refresh (AV5 Rust scheduler, frontend timer retired); trust ladder off/assist/autopilot with auto_unreviewed provenance; localized Today run card with review/undo/dismiss and honest structured+AI fact counts; structured-first deterministic KPI extraction with drift surfacing and per-capability provider pools (ADR 0061 slices; epic continues); worker-pool queue fairness (ADR 0059); per-company + bulk settings (ADR 0056); saved views as nav destinations, blank Cockpit retired, legacy layout toolbar slimmed to presets; CLAUDE.md-canonical lean context architecture with byte budgets (ADR 0063) and the docs-drift spec-code gate + planned-section convention (ADR 0065); live-drive CDP tooling (ADR 0066) incl. one-command live-up; memory-jailed mutation sweeps + manual mutants.yml CI workflow.
+
+Verification: check-epic green (coverage ratchet raised to 73.9/80.5); DoD I spec-conformance audit of ADR 0055/0056/0057/0059/0061-slices with live-path evidence; real-data validation on a production DB copy (stuck-run root cause found and fixed: silent INSERT OR IGNORE no-op on deterministic job ids, three instances); live-drive verification on the real Windows app (CBF run end-to-end, 40 facts, undo; card localization; toolbar). Mutation testing: partial local run 6 caught / 0 missed, full sweep deferred to the manual CI workflow (Radicle 120f2d6).
+
+Retrospective digest: real-data + live-drive found what synthetic tests could not (UTF-8 panics on Polish text, queue re-arm bug, lying run-card counts); enforcement worked (ratchet forced 16 behavior tests on undertested v0.49 surfaces, gates caught overflow and commit-format); stop: closing issues without per-point verification; improve: forbid sub-delegation in agent briefs, pre-validate commit messages (make commit), off-box mutation sweeps.
+
+Still open (tracked): run-now/run-detail surfaces (7062f7e); Flagged-outcome provenance + review surface (af4b481); manual structured-extraction trigger UI (a18db21); knip exports rule disabled vs CLAUDE.md claim (8070e7c); mock runtime fail-loud on unhandled commands (749a5a8); first mutants.yml CI run (120f2d6); saved-view rename UI (43d02c7); company-row dead-zone at narrow widths (67e588a, unreproduced).
+
+
 ### M29: Research questions and evidence links
 
 Intent: add durable company-scoped research questions and typed evidence-link workflows inside the Research workspace.
