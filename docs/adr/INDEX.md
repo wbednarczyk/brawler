@@ -67,3 +67,11 @@
 - [0064](0064-resolved-v1-ux-decisions.md) — Resolved V1 UX Decisions (Consolidated Record) — Accepted
 - [0065](0065-spec-code-drift-gates.md) — Spec↔Code Drift Gates and the Planned-Section Convention — Accepted
 - [0066](0066-live-drive-remote-debugging.md) — Live-Drive — Remote-Debugging-Based Verification of the Real Running App — Accepted
+- [0067](0067-market-data-foundation.md) — Market Data Foundation — EOD Quotes, Sector Classification, Level-0 Market Ratios — Accepted
+- [0068](0068-attention-routing-and-morning-briefing.md) — Attention Routing — Toasts, Alert Rules, Morning Briefing — Accepted
+- [0069](0069-source-reliability-and-disclosure-signals.md) — Source Reliability and Disclosure Signals — Accepted
+- [0070](0070-typed-command-error-envelope.md) — Typed Command Error Envelope — Accepted
+- [0071](0071-judgment-capture.md) — Judgment Capture — Early Decision Journal and Pre-Report Expectations — Accepted
+- [0072](0072-ownership-structure.md) — Ownership Structure — Shareholder Stakes, History, and Classification — Accepted
+- [0073](0073-analyst-recommendations-tracking.md) — Analyst Recommendations Tracking — Accepted
+- [0074](0074-ux-journeys-and-anti-rot.md) — UX Journeys as Spec — Journey Tests, Step Budgets, and Anti-Rot Guardrails — Accepted

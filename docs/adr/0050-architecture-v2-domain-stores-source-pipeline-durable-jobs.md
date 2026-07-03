@@ -2,6 +2,10 @@
 
 Status: Accepted
 
+> **Update (2026-07-03):** the `SourceAdapter` port gains a behavioral contract — a
+> `Fetcher` trait with polymorphic dispatch from `source_refresh`, replacing per-source
+> imperative branching — in [ADR 0069](0069-source-reliability-and-disclosure-signals.md).
+
 > **Update (post-v0.45.1):** this ADR cites **story clustering (`v0.46`)** as a
 > motivating consumer of the entity-resolution `story_key` and the embedding
 > `SimilarityProvider`. That milestone was subsequently implemented, evaluated

@@ -2,6 +2,11 @@
 
 Status: Accepted
 
+> **Update (2026-07-03):** the backup boundary gains an **offsite destination**: rotating
+> backups can additionally target a user-chosen folder (e.g. a user-synced drive), same
+> rotation and no-secrets rules, scheduled with Import/export v2 (`v0.52.0`). Local-first
+> and "no cloud services" stand — the app only writes to a local path the user picks.
+
 ## Context
 
 Milestone `v0.38.0` ("Search and data safety hardening", epic `2cc8bd6`) closes three gaps in the local data layer:

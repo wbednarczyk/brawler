@@ -2,6 +2,12 @@
 
 Status: Accepted
 
+> **Update (2026-07-03):** the taxonomy is extended by later ADRs under the same
+> rule/AI-confirm semantics: auditor-opinion/going-concern and short-position signals in
+> [ADR 0069](0069-source-reliability-and-disclosure-signals.md), major-holdings threshold
+> notifications in [ADR 0072](0072-ownership-structure.md), and consensus-shift signals
+> in [ADR 0073](0073-analyst-recommendations-tracking.md).
+
 This ADR captures the **design** for typed ESPI/EBI event classification (epic `0e1d6c5`, milestone `v0.40.0`). It records the classification taxonomy, the new `company_signals` model, the signals-vs-events boundary, the rule/AI execution split, and the confirmation policy, so the contracts and data model are decision-complete before implementation.
 
 ## Context

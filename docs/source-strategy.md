@@ -26,6 +26,8 @@ V1 source priority:
 
 ## GPW ESPI/EBI Adapter
 
+> **Update (2026-07-03, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)):** this adapter — disabled since migration 0011 in favor of the Bankier per-company path — returns as a **reconciliation second witness**: items are matched to Bankier-sourced reports by (company, disclosure date, report type/number); mismatches surface in diagnostics and a source-health signal. Bankier stays the primary ingestion path; promotion to co-primary is a later, evidence-gated decision. This closes the Bankier single-point-of-failure and the long-open reconciliation question.
+
 Adapter ID: `gpw-espi-ebi`
 
 Source URL: `https://www.gpw.pl/komunikaty`
@@ -361,9 +363,9 @@ Report-file persistence and history backfill ([ADR 0036](adr/0036-report-documen
 
 Price/fundamentals enrichment is useful for later context around reports and news, but it is not the same as official-report ingestion.
 
-Potential price source:
+**Decided price source (2026-07-03, [ADR 0067](adr/0067-market-data-foundation.md), milestone `v0.53.0`):**
 
-- Stooq exposes simple CSV-style quote/history endpoints used by community tools, for example historical daily data under `https://stooq.pl/q/d/l/?s={ticker}.PL&i=d` and latest quote-style CSV under `https://stooq.pl/q/l/?s={ticker}.PL&f=sd2t2ohlcv&h&e=csv`.
+- **Stooq EOD quotes** become a `market_data`-type adapter: historical daily data under `https://stooq.pl/q/d/l/?s={ticker}.PL&i=d` (full-history backfill on company add, throttled) plus one post-session daily pull per company. Conservative polling, durable attribution, EOD-only (decision support, not a trading feed). If Stooq terms prove constraining, the adapter boundary allows replacement without touching consumers. This resolves the former "potential price source" status and the roadmap's open Stooq question; the fundamentals-aggregator role for Stooq remains declined per [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md).
 
 Potential fundamentals sources:
 
@@ -435,6 +437,22 @@ Portal Analiz requirements before implementation:
 - explicit discussion if the source proves technically or policy-wise too troublesome.
 
 Authenticated sources must never become a generic "log in and scrape any website" subsystem in v1. Each one gets its own adapter, tests, rate policy, and ADR.
+
+## KNF Short-Selling Registry
+
+Planned (`v0.55.0`, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)): the KNF public register of net short positions becomes a `disclosure`-type adapter — per-company short-position entries (holder, size, date) with history, surfaced as a `short_position_change` typed signal and a company-workspace readout. Official public source; conservative daily polling; standard attribution rules.
+
+## Ownership Structure Sources
+
+Planned (`v0.56.0`, [ADR 0072](adr/0072-ownership-structure.md)) — three streams, no new scraping surface:
+
+- **Stored periodic reports** (already ingested): extraction of the mandatory "shareholders ≥5% of votes" section via the layered extraction pipeline (deterministic parse first, AI fallback with confirmation).
+- **ESPI major-holdings notifications**: threshold-crossing filings classified as the `major_holdings_change` typed signal; keeps stakes fresh between reports.
+- **Aggregator ownership pages** (BiznesRadar/Bankier "Akcjonariat"): routine second witness only, never the source of truth — mirroring the ADR 0061 witness pattern and each aggregator's existing policy review.
+
+## Analyst Recommendation Sources
+
+Planned (`v0.58.0`, [ADR 0073](adr/0073-analyst-recommendations-tracking.md)): recommendation items (firm, rating change, target price, date) from policy-reviewed public paths — Bankier/BiznesRadar recommendation items and brokerage RSS candidates. Each concrete source is enabled only after its own source-policy review; no scraping beyond policy, no paid consensus feeds (an aggregate-consensus adapter stays deferred behind a flag + ADR). Presentation is always attributed third-party opinion — tracking, never advice.
 
 ## Future Official Sources
 

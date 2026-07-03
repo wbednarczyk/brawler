@@ -2,6 +2,13 @@
 
 Status: Proposed (draft — planning)
 
+> **Update (2026-07-03):** valuation is delivered in layers (triangulation): **level 0**
+> market ratios ship with the market-data foundation (`v0.53.0`,
+> [ADR 0067](0067-market-data-foundation.md)); **level 1** comparative/multiples valuation
+> with a confidence grade and football-field readout ships with Compare (`v0.60.0`, ADR at
+> that milestone's planning); the DCF/owner-earnings engine below is unchanged and lands
+> `v0.61.0` — now with real prices, so upside is computable.
+
 This ADR captures the **design intent** for a deterministic valuation engine: a pure-computation
 domain slice that turns confirmed fundamentals into inspectable, scenario-based fair-value estimates.
 It is the foundation of the "decision-making augmentor" direction — the app should provide not only

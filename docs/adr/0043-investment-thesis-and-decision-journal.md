@@ -2,6 +2,12 @@
 
 Status: Proposed (draft — planning)
 
+> **Update (2026-07-03):** the decision journal lands **early** as a minimal slice in
+> `v0.51.0` ([ADR 0071](0071-judgment-capture.md)) because judgment history cannot be
+> backfilled. The journal's design here is unchanged; the `v0.64.0` workbench extends the
+> already-accumulating `decision_entries` (outcome review, thesis links) rather than
+> introducing the entity.
+
 This ADR captures the **design intent** for persisting an investment thesis as a first-class entity and
 for a decision journal — the memory and accountability layer of the decision-making augmentor.
 

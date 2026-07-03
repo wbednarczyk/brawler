@@ -365,6 +365,14 @@ Evidence policy: DOM/layout assertions are the pass/fail signal; screenshots and
 
 Do **not** use this layer for: live external source/API testing; real Tauri file dialogs/keychain/taskbar/packaging/WebView2; broad end-to-end coverage of every workflow; or screenshot comparison as pass/fail evidence — those are the live/packaging smoke and native Windows paths.
 
+## User-journey E2E and step budgets (ADR 0074)
+
+Journeys — the cross-screen tasks a user actually comes to do — are specced in [ux-journeys.md](ux-journeys.md) and enforced by dedicated Playwright specs (one per journey, `tests/browser/journeys/`, extending the existing `journeys.spec.ts` pattern on the same mock runtime):
+
+- **One spec per journey**, asserting the full cross-screen path (trigger → steps → done-well criteria), not per-screen features. The v0.44–0.49 E2E backfill (autopilot trust ladder, report season, quality frameworks, claims, transcripts/research) lands in this form — the coverage gap and the journey net are the same work.
+- **Interaction step budgets as assertions**: each journey spec counts its interactions (clicks/keys) against the budget documented in `ux-journeys.md`. Budgets are calibrated by first measurement, then ratcheted like coverage — a UX regression reddens the gate.
+- Closure hook: [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) requires every user-facing capability to name its journey (or be declared a utility).
+
 ## Manual desktop smoke
 
 When automated coverage can't realistically catch it, run the app in the normal desktop path and record pass/fail notes in the milestone review before closure. `make frontend-preview` is acceptable for browser-only layout review but does not validate Tauri commands, keychain, or native window behavior.
