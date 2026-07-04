@@ -177,6 +177,32 @@ export const plText: Record<string, string> = {
   "Clone framework": "Klonuj ramę",
   "New framework": "Nowa rama",
   "My quality checklist": "Moja lista kontrolna jakości",
+  // Qualitative assessment (ADR 0075)
+  "Assess": "Oceń jakościowo",
+  "Assessment queued. Agent results appear here when the job completes.":
+    "Ocena w kolejce. Wyniki agenta pojawią się tutaj po zakończeniu zadania.",
+  "Insufficient evidence": "Niewystarczające dowody",
+  "Agent-assessed": "Oceniono przez agenta",
+  "Confidence": "Pewność",
+  "High": "Wysoka",
+  "Medium": "Średnia",
+  "Low": "Niska",
+  "Re-run assessment": "Uruchom ocenę ponownie",
+  "Assess this criterion": "Oceń to kryterium",
+  "Not assessed yet. Click Assess to evaluate this criterion.":
+    "Jeszcze nie oceniono. Kliknij Oceń jakościowo, aby ocenić to kryterium.",
+  "No citations for this assessment.": "Brak cytowań dla tej oceny.",
+  "Prompt": "Prompt",
+  "Add qualitative criterion": "Dodaj kryterium jakościowe",
+  "Criterion type": "Typ kryterium",
+  "Quantitative": "Ilościowe",
+  "Qualitative": "Jakościowe",
+  "Wide, durable moat": "Szeroka, trwała fosa",
+  "Assessment guidance": "Wskazówki do oceny",
+  "Describe what the agent should assess and what strong evidence looks like.":
+    "Opisz, co agent ma ocenić i jak wyglądają mocne dowody.",
+  "The agent judges this from app-held evidence only (reports, notes, claims, signals) and cites it. Decision support, not advice.":
+    "Agent ocenia to wyłącznie na podstawie dowodów w aplikacji (raporty, notatki, deklaracje, sygnały) i cytuje je. Wsparcie decyzji, nie porada.",
   "Report Season": "Sezon raportów",
   "Upcoming report dates across your watchlists, each with a pre-report card.":
     "Nadchodzące terminy raportów z Twoich list obserwowanych, każdy z kartą przedraportową.",

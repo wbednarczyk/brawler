@@ -22,3 +22,8 @@ export type { NewFrameworkCriterion } from "./generated/NewFrameworkCriterion";
 export type { UpdateFrameworkCriterion } from "./generated/UpdateFrameworkCriterion";
 export type { EvaluateFrameworkInput } from "./generated/EvaluateFrameworkInput";
 export type { ListFrameworkEvaluationsInput } from "./generated/ListFrameworkEvaluationsInput";
+
+// Qualitative assessment (ADR 0075, v0.50.0)
+export type { RunQualitativeAssessmentInput } from "./generated/RunQualitativeAssessmentInput";
+export type { RerunQualitativeCriterionInput } from "./generated/RerunQualitativeCriterionInput";
+export type { GetQualitativeAssessmentInput } from "./generated/GetQualitativeAssessmentInput";

@@ -717,10 +717,19 @@ fn apply_quality_frameworks(
             ],
         )?;
         for criterion in &framework.criteria {
+            // ADR 0075: carry kind + guidance so a qualitative criterion round-trips
+            // (a pre-v0.50 bundle has no kind ⇒ quantitative, guidance ⇒ None).
+            let kind = criterion
+                .kind
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("quantitative");
             connection.execute(
                 "INSERT INTO framework_criteria
-                    (id, framework_id, ordinal, label, expression, weight, partial_band)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    (id, framework_id, ordinal, label, expression, weight, partial_band,
+                     kind, assessment_guidance)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     criterion.id.trim(),
                     framework.id.trim(),
@@ -729,6 +738,8 @@ fn apply_quality_frameworks(
                     criterion.expression.trim(),
                     empty_string_to_none(criterion.weight.clone()),
                     empty_string_to_none(criterion.partial_band.clone()),
+                    kind,
+                    empty_string_to_none(criterion.assessment_guidance.clone()),
                 ],
             )?;
         }

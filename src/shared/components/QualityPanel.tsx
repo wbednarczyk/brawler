@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { CheckCircle2, Copy, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { Bot, CheckCircle2, Copy, Plus, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 
 import {
   cloneFramework,
@@ -9,13 +9,17 @@ import {
   deleteFrameworkEvaluation,
   deleteQualityFramework,
   evaluateFramework,
+  getQualitativeAssessment,
   listAvailableMetricKeys,
   listFrameworkEvaluations,
   listQualityFrameworks,
+  rerunQualitativeCriterion,
   resetFrameworkToTemplate,
+  runQualitativeAssessment,
   validateCriterionExpression,
 } from "../../api/qualityFrameworks";
 import type {
+  CriterionResult,
   CriterionVerdict,
   FrameworkEvaluation,
   MetricKeyInfo,
@@ -32,8 +36,11 @@ import {
   ListRow,
   Modal,
   SectionHeader,
+  SegmentedControl,
+  SegmentedControlOption,
   SelectField,
   StatusChip,
+  TextareaField,
   TextField,
 } from "../../ui";
 
@@ -52,8 +59,40 @@ function verdictTone(verdict: CriterionVerdict): ChipTone {
     case "fail":
       return "danger";
     default:
+      // unavailable + insufficient_evidence → neutral (could not determine).
       return "neutral";
   }
+}
+
+/** A typed evidence reference stored on an agent result (ADR 0075). */
+type ParsedCitation = {
+  citationKey: string;
+  evidenceType: string;
+  evidenceId: string;
+  label?: string | null;
+  snippet?: string | null;
+};
+
+// A queued assessment has no completion event here, so poll the current-state
+// read this many times at this interval before clearing the "queued" hint.
+const ASSESSMENT_POLL_TICKS = 8;
+const ASSESSMENT_POLL_INTERVAL_MS = 3000;
+
+/** Parse a `criterion_results.citations` JSON blob into typed refs (safe on null/garbage). */
+function parseCitations(json: string | null): ParsedCitation[] {
+  if (!json) return [];
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return Array.isArray(parsed) ? (parsed as ParsedCitation[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** A criterion result's measured value + unit, or null when there is no measure. */
+function formatMeasured(result: Pick<CriterionResult, "measuredValue" | "measuredUnit">): string | null {
+  if (result.measuredValue == null) return null;
+  return `${result.measuredValue}${result.measuredUnit ? ` ${result.measuredUnit}` : ""}`;
 }
 
 /// The Quality tab (ADR 0046): manage user frameworks of DSL criteria and run a
@@ -66,15 +105,24 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   const [latest, setLatest] = useState<FrameworkEvaluation | null>(null);
   const [history, setHistory] = useState<FrameworkEvaluation[]>([]);
   const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  const [expandedCriterionId, setExpandedCriterionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // Add-criterion form.
+  const [criterionKind, setCriterionKind] = useState<"quantitative" | "qualitative">("quantitative");
   const [label, setLabel] = useState("");
   const [expression, setExpression] = useState("");
+  const [guidance, setGuidance] = useState("");
   const [exprError, setExprError] = useState<string | null>(null);
   const [exprMetrics, setExprMetrics] = useState<string[]>([]);
   const [metricKeys, setMetricKeys] = useState<MetricKeyInfo[]>([]);
+
+  // Current-state agent assessments (most-recent per qualitative criterion,
+  // ADR 0075 Decision 5) — NOT the latest snapshot, which may be quant-only.
+  const [qualResults, setQualResults] = useState<CriterionResult[]>([]);
+  const [assessmentQueued, setAssessmentQueued] = useState(false);
+  const [qualRefreshToken, setQualRefreshToken] = useState(0);
 
   // Name-a-framework modal (shared by New and Clone).
   const [nameModal, setNameModal] = useState<null | { mode: "new" | "clone"; value: string }>(null);
@@ -82,6 +130,11 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   const selected = useMemo(
     () => frameworks.find((framework) => framework.id === selectedId) ?? null,
     [frameworks, selectedId],
+  );
+
+  const hasQualitative = useMemo(
+    () => (selected?.criteria ?? []).some((criterion) => criterion.kind === "qualitative"),
+    [selected],
   );
 
   const verdictLabel = useCallback(
@@ -93,8 +146,26 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           return text("Partial");
         case "fail":
           return text("Fail");
+        case "insufficient_evidence":
+          return text("Insufficient evidence");
         default:
           return text("No data");
+      }
+    },
+    [text],
+  );
+
+  const confidenceLabel = useCallback(
+    (confidence: string) => {
+      switch (confidence) {
+        case "high":
+          return text("High");
+        case "medium":
+          return text("Medium");
+        case "low":
+          return text("Low");
+        default:
+          return confidence;
       }
     },
     [text],
@@ -168,6 +239,58 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
     return map;
   }, [latest]);
 
+  // Map criterionId → its most-recent agent assessment (current-state read).
+  const qualResultByCriterion = useMemo(() => {
+    const map = new Map<string, CriterionResult>();
+    for (const result of qualResults) {
+      if (result.criterionId) map.set(result.criterionId, result);
+    }
+    return map;
+  }, [qualResults]);
+
+  // Single fetch path for the current-state agent assessments (framework/company
+  // change, or a bumped refresh token after enqueue polling). One effect owns the
+  // read so the auto-load and the post-Assess refresh never diverge.
+  useEffect(() => {
+    let cancelled = false;
+    if (!selectedId) {
+      setQualResults([]);
+      return;
+    }
+    getQualitativeAssessment({ frameworkId: selectedId, companyId })
+      .then((rows) => {
+        if (!cancelled) setQualResults(rows);
+      })
+      .catch((reason) => {
+        if (!cancelled) fail(reason);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, companyId, qualRefreshToken, fail]);
+
+  // A queued assessment is async (jobs read model); there is no completion event
+  // here, so poll the current-state read a bounded number of times so a finished
+  // run appears on its own, then clear the "queued" hint.
+  useEffect(() => {
+    if (!assessmentQueued) return;
+    let ticks = 0;
+    const timer = setInterval(() => {
+      ticks += 1;
+      setQualRefreshToken((token) => token + 1);
+      if (ticks >= ASSESSMENT_POLL_TICKS) {
+        clearInterval(timer);
+        setAssessmentQueued(false);
+      }
+    }, ASSESSMENT_POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [assessmentQueued]);
+
+  // Switching framework/company clears a stale "queued" hint from another context.
+  useEffect(() => {
+    setAssessmentQueued(false);
+  }, [selectedId, companyId]);
+
   async function runGuarded(action: () => Promise<void>) {
     setBusy(true);
     setError(null);
@@ -213,17 +336,43 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   }
 
   function handleAddCriterion() {
-    if (!selectedId || label.trim() === "" || expression.trim() === "") return;
+    if (!selectedId || label.trim() === "") return;
+    const qualitative = criterionKind === "qualitative";
+    if (qualitative ? guidance.trim() === "" : expression.trim() === "" || exprError != null) return;
     void runGuarded(async () => {
       await createFrameworkCriterion({
         frameworkId: selectedId,
         label: label.trim(),
-        expression: expression.trim(),
+        expression: qualitative ? "" : expression.trim(),
+        kind: criterionKind,
+        assessmentGuidance: qualitative ? guidance.trim() : null,
       });
       setLabel("");
       setExpression("");
+      setGuidance("");
       setExprMetrics([]);
       await reloadFrameworks(selectedId);
+    });
+  }
+
+  // Enqueue the agent assessment over the framework's qualitative criteria. The
+  // job is async (surfaced via the jobs read model); we show a queued hint and
+  // refresh the current-state read so a completed run appears on the next load.
+  function handleRunAssessment() {
+    if (!selectedId) return;
+    void runGuarded(async () => {
+      await runQualitativeAssessment({ frameworkId: selectedId, companyId });
+      // Don't refresh now — the job has only been queued; the poll effect picks
+      // up the completed results and clears the hint.
+      setAssessmentQueued(true);
+    });
+  }
+
+  function handleRerunCriterion(criterionId: string) {
+    if (!selectedId) return;
+    void runGuarded(async () => {
+      await rerunQualitativeCriterion({ frameworkId: selectedId, companyId, criterionId });
+      setAssessmentQueued(true);
     });
   }
 
@@ -275,6 +424,126 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
       await deleteQualityFramework(selectedId);
       await reloadFrameworks();
     });
+  }
+
+  const deleteCriterionButton = (criterionId: string) => (
+    <Button
+      icon={<Trash2 size={12} />}
+      variant="icon"
+      className="danger-button"
+      disabled={busy}
+      onClick={() => handleDeleteCriterion(criterionId)}
+      aria-label={text("Delete criterion")}
+    />
+  );
+
+  function renderQuantitativeCriterion(criterion: QualityFramework["criteria"][number]) {
+    const result = resultByCriterion.get(criterion.id);
+    const measured = result ? formatMeasured(result) : null;
+    return (
+      <ListRow
+        key={criterion.id}
+        title={criterion.label}
+        titleAttr={criterion.label}
+        meta={criterion.expression}
+        trailing={
+          <span className="quality-criterion-trailing">
+            {measured ? <span className="quality-measured">{measured}</span> : null}
+            {result ? (
+              <StatusChip tone={verdictTone(result.verdict)}>{verdictLabel(result.verdict)}</StatusChip>
+            ) : null}
+            {deleteCriterionButton(criterion.id)}
+          </span>
+        }
+      />
+    );
+  }
+
+  // A qualitative criterion (ADR 0075): the agent's current-state assessment,
+  // visually distinct from measured quantitative rows — labelled "agent-assessed",
+  // regeneratable (re-run), never mutating quantitative data. Expands to reveal
+  // the reasoning and its evidence citations.
+  function renderQualitativeCriterion(criterion: QualityFramework["criteria"][number]) {
+    const result = qualResultByCriterion.get(criterion.id);
+    const expanded = expandedCriterionId === criterion.id;
+    // Parse citations only when the row is expanded (collapsed rows never show
+    // them), so a re-render of N criteria doesn't JSON.parse N blobs each time.
+    const citations = expanded ? parseCitations(result?.citations ?? null) : [];
+    const trailing = (
+      <span className="quality-criterion-trailing">
+        <StatusChip tone="accent">{text("Agent-assessed")}</StatusChip>
+        {result ? (
+          <StatusChip tone={verdictTone(result.verdict)}>{verdictLabel(result.verdict)}</StatusChip>
+        ) : null}
+        {result?.confidence ? (
+          <StatusChip tone="neutral">{`${text("Confidence")}: ${confidenceLabel(result.confidence)}`}</StatusChip>
+        ) : null}
+        <Button
+          icon={<RotateCcw size={12} />}
+          variant="icon"
+          disabled={busy}
+          onClick={() => handleRerunCriterion(criterion.id)}
+          // A never-assessed criterion's action is its first assessment, not a re-run.
+          aria-label={result ? text("Re-run assessment") : text("Assess this criterion")}
+        />
+        {deleteCriterionButton(criterion.id)}
+      </span>
+    );
+
+    // Not assessed yet → a plain row (no verdict chip), distinct from an
+    // `insufficient_evidence` verdict. The guidance is the row meta.
+    if (!result) {
+      return (
+        <ListRow
+          key={criterion.id}
+          title={criterion.label}
+          titleAttr={criterion.label}
+          meta={criterion.assessmentGuidance ?? text("Not assessed yet. Click Assess to evaluate this criterion.")}
+          trailing={trailing}
+        />
+      );
+    }
+
+    return (
+      <li key={criterion.id} className="quality-qualitative-row">
+      <ExpandableRow
+        label={`${criterion.label} — ${verdictLabel(result.verdict)}`}
+        isExpanded={expanded}
+        onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
+        detail={
+          <div className="quality-qualitative-detail">
+            {result.reasoning ? <p className="quality-reasoning">{result.reasoning}</p> : null}
+            {citations.length > 0 ? (
+              <div className="quality-citations">
+                <SectionHeader level="h4" title={text("Citations")} meta={citations.length} />
+                <ul className="ui-list-rows">
+                  {citations.map((citation, index) => (
+                    <ListRow
+                      key={`${citation.evidenceType}:${citation.evidenceId}:${index}`}
+                      icon={<Bot size={14} />}
+                      title={citation.label ?? citation.evidenceId}
+                      titleAttr={citation.label ?? citation.evidenceId}
+                      meta={citation.snippet ?? citation.evidenceType}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <Hint>{text("No citations for this assessment.")}</Hint>
+            )}
+            {result.promptVersion ? (
+              <Hint>{`${text("Prompt")}: ${result.promptVersion}`}</Hint>
+            ) : null}
+          </div>
+        }
+      >
+        <span className="quality-history-header">
+          <span className="quality-history-when">{criterion.label}</span>
+          {trailing}
+        </span>
+      </ExpandableRow>
+      </li>
+    );
   }
 
   return (
@@ -338,7 +607,22 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
             >
               {text("Evaluate")}
             </Button>
+            {hasQualitative ? (
+              <Button
+                icon={<Sparkles size={14} />}
+                disabled={busy || !selected}
+                onClick={handleRunAssessment}
+              >
+                {text("Assess")}
+              </Button>
+            ) : null}
           </ActionRow>
+
+          {assessmentQueued ? (
+            <Hint>
+              {text("Assessment queued. Agent results appear here when the job completes.")}
+            </Hint>
+          ) : null}
 
           {latest ? (
             <ActionRow ariaLabel={text("Scorecard summary")} className="quality-scorecard-summary">
@@ -355,84 +639,102 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
             <EmptyState>{text("This framework has no criteria yet. Add one below.")}</EmptyState>
           ) : (
             <ul className="ui-list-rows">
-              {selected?.criteria.map((criterion) => {
-                const result = resultByCriterion.get(criterion.id);
-                const measured =
-                  result?.measuredValue != null
-                    ? `${result.measuredValue}${result.measuredUnit ? ` ${result.measuredUnit}` : ""}`
-                    : null;
-                return (
-                  <ListRow
-                    key={criterion.id}
-                    title={criterion.label}
-                    titleAttr={criterion.label}
-                    meta={criterion.expression}
-                    trailing={
-                      <span className="quality-criterion-trailing">
-                        {measured ? <span className="quality-measured">{measured}</span> : null}
-                        {result ? (
-                          <StatusChip tone={verdictTone(result.verdict)}>
-                            {verdictLabel(result.verdict)}
-                          </StatusChip>
-                        ) : null}
-                        <Button
-                          icon={<Trash2 size={12} />}
-                          variant="icon"
-                          className="danger-button"
-                          disabled={busy}
-                          onClick={() => handleDeleteCriterion(criterion.id)}
-                          aria-label={text("Delete criterion")}
-                        />
-                      </span>
-                    }
-                  />
-                );
-              })}
+              {selected?.criteria.map((criterion) =>
+                criterion.kind === "qualitative"
+                  ? renderQualitativeCriterion(criterion)
+                  : renderQuantitativeCriterion(criterion),
+              )}
             </ul>
           )}
 
           <SectionHeader level="h4" title={text("Add criterion")} />
-          <ActionRow ariaLabel={text("Add criterion")} className="quality-add-criterion">
-            <TextField
-              label={text("Label")}
-              value={label}
-              onChange={(event) => setLabel(event.target.value)}
-              placeholder={text("Strong return on equity")}
-            />
-            <TextField
-              label={text("Expression")}
-              value={expression}
-              onChange={(event) => onExpressionChange(event.target.value)}
-              placeholder="roe >= 15%"
-            />
-            <SelectField
-              label={text("Insert metric")}
-              value=""
-              onChange={(event) => {
-                insertMetric(event.target.value);
-                event.target.value = "";
-              }}
+          <SegmentedControl ariaLabel={text("Criterion type")} className="quality-kind-switch">
+            <SegmentedControlOption
+              active={criterionKind === "quantitative"}
+              onClick={() => setCriterionKind("quantitative")}
             >
-              <option value="">{text("Pick a metric…")}</option>
-              {metricKeys.map((metric) => (
-                <option key={metric.key} value={metric.key}>
-                  {metric.label} ({metric.key})
-                  {metric.unit ? ` · ${metric.unit}` : ""}
-                </option>
-              ))}
-            </SelectField>
-            <Button
-              variant="primary"
-              disabled={busy || label.trim() === "" || expression.trim() === "" || exprError != null}
-              onClick={handleAddCriterion}
+              {text("Quantitative")}
+            </SegmentedControlOption>
+            <SegmentedControlOption
+              active={criterionKind === "qualitative"}
+              onClick={() => setCriterionKind("qualitative")}
             >
-              {text("Add")}
-            </Button>
-          </ActionRow>
-          {exprError ? <ErrorText>{exprError}</ErrorText> : null}
-          {exprMetrics.length > 0 && !exprError ? (
-            <Hint>{`${text("Uses metrics")}: ${exprMetrics.join(", ")}`}</Hint>
-          ) : null}
+              {text("Qualitative")}
+            </SegmentedControlOption>
+          </SegmentedControl>
+          {criterionKind === "quantitative" ? (
+            <>
+              <ActionRow ariaLabel={text("Add criterion")} className="quality-add-criterion">
+                <TextField
+                  label={text("Label")}
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                  placeholder={text("Strong return on equity")}
+                />
+                <TextField
+                  label={text("Expression")}
+                  value={expression}
+                  onChange={(event) => onExpressionChange(event.target.value)}
+                  placeholder="roe >= 15%"
+                />
+                <SelectField
+                  label={text("Insert metric")}
+                  value=""
+                  onChange={(event) => {
+                    insertMetric(event.target.value);
+                    event.target.value = "";
+                  }}
+                >
+                  <option value="">{text("Pick a metric…")}</option>
+                  {metricKeys.map((metric) => (
+                    <option key={metric.key} value={metric.key}>
+                      {metric.label} ({metric.key})
+                      {metric.unit ? ` · ${metric.unit}` : ""}
+                    </option>
+                  ))}
+                </SelectField>
+                <Button
+                  variant="primary"
+                  disabled={busy || label.trim() === "" || expression.trim() === "" || exprError != null}
+                  onClick={handleAddCriterion}
+                >
+                  {text("Add")}
+                </Button>
+              </ActionRow>
+              {exprError ? <ErrorText>{exprError}</ErrorText> : null}
+              {exprMetrics.length > 0 && !exprError ? (
+                <Hint>{`${text("Uses metrics")}: ${exprMetrics.join(", ")}`}</Hint>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <ActionRow ariaLabel={text("Add qualitative criterion")} className="quality-add-criterion">
+                <TextField
+                  label={text("Label")}
+                  value={label}
+                  onChange={(event) => setLabel(event.target.value)}
+                  placeholder={text("Wide, durable moat")}
+                />
+                <Button
+                  variant="primary"
+                  disabled={busy || label.trim() === "" || guidance.trim() === ""}
+                  onClick={handleAddCriterion}
+                >
+                  {text("Add")}
+                </Button>
+              </ActionRow>
+              <TextareaField
+                label={text("Assessment guidance")}
+                value={guidance}
+                rows={3}
+                onChange={(event) => setGuidance(event.target.value)}
+                placeholder={text("Describe what the agent should assess and what strong evidence looks like.")}
+              />
+              <Hint>
+                {text("The agent judges this from app-held evidence only (reports, notes, claims, signals) and cites it. Decision support, not advice.")}
+              </Hint>
+            </>
+          )}
 
           {history.length > 0 ? (
             <>
@@ -455,12 +757,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                       detail={
                         <ul className="ui-list-rows quality-history-detail">
                           {evaluation.results.map((result) => {
-                            const measured =
-                              result.measuredValue != null
-                                ? `${result.measuredValue}${
-                                    result.measuredUnit ? ` ${result.measuredUnit}` : ""
-                                  }`
-                                : null;
+                            const measured = formatMeasured(result);
                             return (
                               <ListRow
                                 key={result.id}

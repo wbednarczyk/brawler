@@ -922,6 +922,43 @@ pub(super) fn get_framework_evaluation(
     Ok(evaluation)
 }
 
+/// Current-state qualitative read (ADR 0075 Decision 5, "two read surfaces"):
+/// per criterion, the most-recent agent-assessed (`source = agent`) row across
+/// ALL snapshots for this framework × company. A later quant-only snapshot has
+/// no agent rows and so never blanks an assessment; a later single-criterion
+/// re-run only replaces that one criterion's row. A never-assessed criterion is
+/// absent (empty state — distinct from an `insufficient_evidence` verdict).
+pub(super) fn get_qualitative_assessment(
+    connection: &Connection,
+    framework_id: &str,
+    company_id: &str,
+) -> StorageResult<Vec<CriterionResult>> {
+    // "Most recent per criterion" tie-breaks on `framework_evaluations.rowid`
+    // (monotonic insertion order) when two snapshots share a `created_at`
+    // millisecond — the evaluation id's hex suffix is not lexically ordered.
+    let mut statement = connection.prepare(
+        "SELECT cr.id, cr.evaluation_id, cr.criterion_id, cr.ordinal, cr.label, cr.expression,
+                cr.verdict, cr.measured_value, cr.measured_unit, cr.threshold, cr.inputs_json,
+                cr.note, cr.reasoning, cr.citations, cr.confidence, cr.prompt_version, cr.source
+         FROM criterion_results cr
+         JOIN framework_evaluations fe ON fe.id = cr.evaluation_id
+         WHERE fe.framework_id = ?1 AND fe.company_id = ?2
+           AND cr.source = 'agent' AND cr.criterion_id IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM criterion_results cr2
+             JOIN framework_evaluations fe2 ON fe2.id = cr2.evaluation_id
+             WHERE fe2.framework_id = ?1 AND fe2.company_id = ?2
+               AND cr2.source = 'agent' AND cr2.criterion_id = cr.criterion_id
+               AND (fe2.created_at > fe.created_at
+                    OR (fe2.created_at = fe.created_at AND fe2.rowid > fe.rowid))
+           )
+         ORDER BY cr.ordinal, cr.id",
+    )?;
+    let rows = statement.query_map(params![framework_id, company_id], criterion_result_from_row)?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
 /// Prune one evaluation run from the history. Cascades to its `criterion_results`
 /// (FK `ON DELETE CASCADE`). Removing a whole run never mutates a retained run's
 /// snapshotted values, so the immutability guarantee holds for what remains.
@@ -1483,6 +1520,15 @@ impl QualityFrameworkStore {
     pub fn get_framework_evaluation(&self, id: &str) -> StorageResult<FrameworkEvaluation> {
         let connection = self.db.checkout()?;
         get_framework_evaluation(&connection, id)
+    }
+
+    pub fn get_qualitative_assessment(
+        &self,
+        framework_id: &str,
+        company_id: &str,
+    ) -> StorageResult<Vec<CriterionResult>> {
+        let connection = self.db.checkout()?;
+        get_qualitative_assessment(&connection, framework_id, company_id)
     }
 
     pub fn delete_framework_evaluation(&self, id: &str) -> StorageResult<()> {

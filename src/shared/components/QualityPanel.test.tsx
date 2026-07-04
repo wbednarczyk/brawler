@@ -4,13 +4,18 @@ import userEvent from "@testing-library/user-event";
 
 import { QualityPanel } from "./QualityPanel";
 import {
+  createFrameworkCriterion,
   evaluateFramework,
+  getQualitativeAssessment,
   listAvailableMetricKeys,
   listFrameworkEvaluations,
   listQualityFrameworks,
+  rerunQualitativeCriterion,
+  runQualitativeAssessment,
   validateCriterionExpression,
 } from "../../api/qualityFrameworks";
 import type {
+  CriterionResult,
   FrameworkEvaluation,
   QualityFramework,
 } from "../../api/qualityFrameworksTypes";
@@ -27,6 +32,9 @@ vi.mock("../../api/qualityFrameworks", () => ({
   cloneFramework: vi.fn(),
   resetFrameworkToTemplate: vi.fn(),
   deleteQualityFramework: vi.fn(),
+  getQualitativeAssessment: vi.fn(),
+  runQualitativeAssessment: vi.fn(),
+  rerunQualitativeCriterion: vi.fn(),
 }));
 
 const listQualityFrameworksMock = vi.mocked(listQualityFrameworks);
@@ -34,6 +42,10 @@ const listFrameworkEvaluationsMock = vi.mocked(listFrameworkEvaluations);
 const listAvailableMetricKeysMock = vi.mocked(listAvailableMetricKeys);
 const evaluateFrameworkMock = vi.mocked(evaluateFramework);
 const validateCriterionExpressionMock = vi.mocked(validateCriterionExpression);
+const createFrameworkCriterionMock = vi.mocked(createFrameworkCriterion);
+const getQualitativeAssessmentMock = vi.mocked(getQualitativeAssessment);
+const runQualitativeAssessmentMock = vi.mocked(runQualitativeAssessment);
+const rerunQualitativeCriterionMock = vi.mocked(rerunQualitativeCriterion);
 
 function framework(overrides: Partial<QualityFramework> = {}): QualityFramework {
   return {
@@ -124,7 +136,75 @@ describe("QualityPanel", () => {
       error: null,
       referencedMetricKeys: ["roe"],
     });
+    getQualitativeAssessmentMock.mockResolvedValue([]);
+    runQualitativeAssessmentMock.mockResolvedValue(undefined);
+    rerunQualitativeCriterionMock.mockResolvedValue(undefined);
+    createFrameworkCriterionMock.mockResolvedValue({
+      id: "qcriterion_new",
+      frameworkId: "qframework_1",
+      ordinal: 1,
+      label: "Wide moat",
+      expression: "",
+      weight: null,
+      partialBand: null,
+      kind: "qualitative",
+      assessmentGuidance: "Assess durable advantage.",
+      createdAt: "2026-06-01T10:00:00Z",
+      updatedAt: "2026-06-01T10:00:00Z",
+    });
   });
+
+  // A framework carrying one qualitative criterion (ADR 0075).
+  function qualitativeFramework(): QualityFramework {
+    return framework({
+      criteria: [
+        {
+          id: "qcriterion_moat",
+          frameworkId: "qframework_1",
+          ordinal: 0,
+          label: "Wide moat",
+          expression: "",
+          weight: null,
+          partialBand: null,
+          kind: "qualitative",
+          assessmentGuidance: "Assess durable competitive advantage.",
+          createdAt: "2026-06-01T10:00:00Z",
+          updatedAt: "2026-06-01T10:00:00Z",
+        },
+      ],
+    });
+  }
+
+  function agentResult(overrides: Partial<CriterionResult> = {}): CriterionResult {
+    return {
+      id: "qresult_moat",
+      evaluationId: "qeval_agent",
+      criterionId: "qcriterion_moat",
+      ordinal: 0,
+      label: "Wide moat",
+      expression: "",
+      verdict: "pass",
+      measuredValue: null,
+      measuredUnit: null,
+      threshold: null,
+      inputsJson: null,
+      note: null,
+      reasoning: "The company shows durable pricing power across cycles.",
+      citations: JSON.stringify([
+        {
+          citationKey: "E1",
+          evidenceType: "feed_item",
+          evidenceId: "feed_1",
+          label: "Q4 report",
+          snippet: "Margins expanded again.",
+        },
+      ]),
+      confidence: "high",
+      promptVersion: "qualitative_assessment_v1",
+      source: "agent",
+      ...overrides,
+    };
+  }
 
   it("renders the framework and its criteria", async () => {
     render(<QualityPanel companyId="company_gpw_cdr" />);
@@ -201,5 +281,99 @@ describe("QualityPanel", () => {
     expect(
       await screen.findByText("No quality frameworks yet. Create one or clone a template."),
     ).toBeInTheDocument();
+  });
+
+  it("creates a qualitative criterion with kind and guidance", async () => {
+    const user = userEvent.setup();
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Strong return on equity");
+
+    await user.click(screen.getByRole("button", { name: "Qualitative" }));
+    await user.type(screen.getByPlaceholderText("Wide, durable moat"), "Wide moat");
+    await user.type(
+      screen.getByLabelText("Assessment guidance"),
+      "Assess durable advantage.",
+    );
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => {
+      expect(createFrameworkCriterionMock).toHaveBeenCalledWith({
+        frameworkId: "qframework_1",
+        label: "Wide moat",
+        expression: "",
+        kind: "qualitative",
+        assessmentGuidance: "Assess durable advantage.",
+      });
+    });
+  });
+
+  it("renders an agent assessment result, labelled and cited", async () => {
+    const user = userEvent.setup();
+    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
+    getQualitativeAssessmentMock.mockResolvedValue([agentResult()]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+
+    // Wait for the assessment to load (verdict chip proves the result branch,
+    // distinct from the not-yet-assessed row).
+    expect(await screen.findByText("Pass")).toBeInTheDocument();
+    expect(screen.getByText("Agent-assessed")).toBeInTheDocument();
+
+    // Expanding reveals the reasoning and its citation.
+    await user.click(screen.getByRole("button", { name: /Wide moat/ }));
+    expect(
+      await screen.findByText("The company shows durable pricing power across cycles."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Q4 report")).toBeInTheDocument();
+  });
+
+  it("shows the insufficient-evidence verdict distinctly", async () => {
+    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
+    getQualitativeAssessmentMock.mockResolvedValue([
+      agentResult({ verdict: "insufficient_evidence", citations: null }),
+    ]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("Insufficient evidence")).toBeInTheDocument();
+  });
+
+  it("enqueues an assessment run for the framework", async () => {
+    const user = userEvent.setup();
+    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Wide moat");
+
+    await user.click(screen.getByRole("button", { name: "Assess" }));
+
+    await waitFor(() => {
+      expect(runQualitativeAssessmentMock).toHaveBeenCalledWith({
+        frameworkId: "qframework_1",
+        companyId: "company_gpw_cdr",
+      });
+    });
+    expect(
+      await screen.findByText(/Assessment queued/),
+    ).toBeInTheDocument();
+  });
+
+  it("re-runs a single qualitative criterion", async () => {
+    const user = userEvent.setup();
+    listQualityFrameworksMock.mockResolvedValue([qualitativeFramework()]);
+    getQualitativeAssessmentMock.mockResolvedValue([agentResult()]);
+
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Agent-assessed");
+
+    await user.click(screen.getByRole("button", { name: "Re-run assessment" }));
+
+    await waitFor(() => {
+      expect(rerunQualitativeCriterionMock).toHaveBeenCalledWith({
+        frameworkId: "qframework_1",
+        companyId: "company_gpw_cdr",
+        criterionId: "qcriterion_moat",
+      });
+    });
   });
 });

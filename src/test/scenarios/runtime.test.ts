@@ -91,6 +91,51 @@ describe("mock runtime — command coverage", () => {
     })) as { acceptance: string };
     expect(summary.acceptance).toBe("accepted");
   });
+
+  it("get_qualitative_assessment returns the newest agent row per criterion (ADR 0075)", async () => {
+    const runtime = createMockRuntime("minimal");
+    const base = {
+      frameworkId: "fw1",
+      frameworkVersion: 1,
+      companyId: "c1",
+      periodId: null,
+      passCount: 0,
+      partialCount: 0,
+      failCount: 0,
+      unavailableCount: 0,
+      engineVersion: "v1",
+    };
+    const agentRow = (id: string, verdict: string) => ({
+      id,
+      evaluationId: "",
+      criterionId: "crit1",
+      ordinal: 0,
+      label: "Wide moat",
+      expression: "",
+      verdict,
+      measuredValue: null,
+      measuredUnit: null,
+      threshold: null,
+      inputsJson: null,
+      note: null,
+      reasoning: "r",
+      citations: null,
+      confidence: "high",
+      promptVersion: "v1",
+      source: "agent",
+    });
+    // Newest-first (the real list_framework_evaluations ORDER BY created_at DESC).
+    runtime.data.frameworkEvaluations = [
+      { ...base, id: "eNew", createdAt: "2026-06-10T00:00:00Z", results: [agentRow("rNew", "fail")] },
+      { ...base, id: "eOld", createdAt: "2026-06-01T00:00:00Z", results: [agentRow("rOld", "pass")] },
+    ] as typeof runtime.data.frameworkEvaluations;
+
+    const rows = (await runtime.invoke("get_qualitative_assessment", {
+      input: { companyId: "c1", frameworkId: "fw1" },
+    })) as Array<{ verdict: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe("fail");
+  });
 });
 
 describe("mock runtime — re-render safety (new collection reference per mutation)", () => {

@@ -200,3 +200,30 @@
 .quality-history-detail {
   margin-left: 16px;
 }
+
+/* Qualitative criteria (ADR 0075): the kind switch sits above the add-criterion
+   form; an agent-assessed criterion expands in place to reveal reasoning +
+   citations, mirroring the evaluation-history row idiom. */
+.quality-kind-switch {
+  margin-top: 4px;
+}
+
+.quality-qualitative-row {
+  cursor: pointer;
+}
+
+.quality-qualitative-detail {
+  margin-left: 16px;
+  display: grid;
+  gap: 8px;
+}
+
+.quality-reasoning {
+  margin: 0;
+  color: var(--text);
+}
+
+.quality-citations {
+  display: grid;
+  gap: 4px;
+}

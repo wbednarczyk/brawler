@@ -1524,19 +1524,33 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const frameworkId = str(input.frameworkId) ?? "";
       const framework = d.qualityFrameworks.find((f) => f.id === frameworkId);
+      const kind = str(input.kind) === "qualitative" ? ("qualitative" as const) : ("quantitative" as const);
+      // Mirror the storage validation (ADR 0075) so dual-execution fidelity holds:
+      // a qualitative criterion requires non-empty guidance and stores no DSL
+      // expression; a quantitative one requires a non-empty predicate expression.
+      // NOTE: this mirrors PRESENCE, not DSL *semantics* — the real backend's
+      // validate_predicate rejects a malformed non-empty expression that this mock
+      // accepts. The fidelity corpus only replays valid inputs (the Rust replayer
+      // expects success), so a malformed-predicate case is out of its scope by
+      // design; the UI gates on validate_criterion_expression before create.
+      const guidance = kind === "qualitative" ? (str(input.assessmentGuidance) ?? "").trim() : "";
+      const expression = kind === "qualitative" ? "" : (str(input.expression) ?? "").trim();
+      if (kind === "qualitative" && guidance === "") {
+        throw new Error("a qualitative criterion requires assessment guidance");
+      }
+      if (kind === "quantitative" && expression === "") {
+        throw new Error("a quantitative criterion requires an expression");
+      }
       const criterion = {
         id: ctx.nextId("criterion"),
         frameworkId,
         ordinal: framework?.criteria.length ?? 0,
         label: str(input.label) ?? "Criterion",
-        expression: str(input.expression) ?? "true",
+        expression,
         weight: str(input.weight),
         partialBand: str(input.partialBand),
-        kind:
-          str(input.kind) === "qualitative"
-            ? ("qualitative" as const)
-            : ("quantitative" as const),
-        assessmentGuidance: str(input.assessmentGuidance),
+        kind,
+        assessmentGuidance: kind === "qualitative" ? guidance : null,
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
       };
@@ -1546,6 +1560,28 @@ function buildHandlers(): Record<string, Handler> {
     update_framework_criterion: (d, a) => {
       const input = unwrap(a);
       const id = str(input.id);
+      const existing = d.qualityFrameworks.flatMap((f) => f.criteria).find((c) => c.id === id);
+      // Resolve the EFFECTIVE kind/guidance/expression (input override else the
+      // existing value), then apply the same kind-specific validation the storage
+      // layer does — including a qualitative→quantitative switch that must not
+      // keep the empty expression a qualitative row carries (ADR 0075 T5).
+      const kind = str(input.kind) === "qualitative"
+        ? ("qualitative" as const)
+        : str(input.kind) === "quantitative"
+          ? ("quantitative" as const)
+          : (existing?.kind ?? "quantitative");
+      const guidance = kind === "qualitative"
+        ? (str(input.assessmentGuidance) ?? existing?.assessmentGuidance ?? "").trim()
+        : "";
+      const expression = kind === "qualitative"
+        ? ""
+        : (str(input.expression) ?? existing?.expression ?? "").trim();
+      if (kind === "qualitative" && guidance === "") {
+        throw new Error("a qualitative criterion requires assessment guidance");
+      }
+      if (kind === "quantitative" && expression === "") {
+        throw new Error("a quantitative criterion requires an expression");
+      }
       let updated: ScenarioData["qualityFrameworks"][number]["criteria"][number] | undefined;
       d.qualityFrameworks = d.qualityFrameworks.map((framework) =>
         !framework.criteria.some((c) => c.id === id)
@@ -1554,7 +1590,14 @@ function buildHandlers(): Record<string, Handler> {
               ...framework,
               criteria: framework.criteria.map((c) => {
                 if (c.id !== id) return c;
-                updated = { ...c, label: str(input.label) ?? c.label, expression: str(input.expression) ?? c.expression, updatedAt: SAMPLE_NOW };
+                updated = {
+                  ...c,
+                  label: str(input.label) ?? c.label,
+                  expression,
+                  kind,
+                  assessmentGuidance: kind === "qualitative" ? guidance : null,
+                  updatedAt: SAMPLE_NOW,
+                };
                 return updated;
               }),
             },
@@ -1594,6 +1637,36 @@ function buildHandlers(): Record<string, Handler> {
       const expression = str(unwrap(a).expression) ?? "";
       const referencedMetricKeys = d.metricKeys.map((m) => m.key).filter((key) => expression.includes(key));
       return { ok: true, error: null, referencedMetricKeys };
+    },
+    // Qualitative assessment (ADR 0075). run/rerun enqueue an async job — no
+    // synchronous result to surface (progress lands via the jobs read model),
+    // matching the real enqueue commands.
+    run_qualitative_assessment: () => undefined,
+    rerun_qualitative_criterion: () => undefined,
+    get_qualitative_assessment: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const frameworkId = str(input.frameworkId);
+      // Current-state read: per criterion, the most-recent agent-assessed row
+      // across all snapshots (ADR 0075 Decision 5). Mirror the real backend's
+      // MAX(created_at) — NOT array position: list ordering is newest-first, so a
+      // forward scan would pick the OLDEST. Keep the row with the newest createdAt.
+      type QualRow = ScenarioData["frameworkEvaluations"][number]["results"][number];
+      const latestByCriterion = new Map<string, { row: QualRow; createdAt: string }>();
+      for (const evaluation of d.frameworkEvaluations) {
+        if (companyId && evaluation.companyId !== companyId) continue;
+        if (frameworkId && evaluation.frameworkId !== frameworkId) continue;
+        for (const result of evaluation.results) {
+          if (result.source !== "agent" || !result.criterionId) continue;
+          const seen = latestByCriterion.get(result.criterionId);
+          if (!seen || evaluation.createdAt > seen.createdAt) {
+            latestByCriterion.set(result.criterionId, { row: result, createdAt: evaluation.createdAt });
+          }
+        }
+      }
+      return [...latestByCriterion.values()]
+        .map((entry) => entry.row)
+        .sort((x, y) => x.ordinal - y.ordinal || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
     },
 
     // --- Sources ---

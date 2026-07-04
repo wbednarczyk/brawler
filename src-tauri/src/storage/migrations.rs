@@ -303,6 +303,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "qualitative_criteria",
         sql: include_str!("../../migrations/0059_qualitative_criteria.sql"),
     },
+    Migration {
+        version: 60,
+        name: "qualitative_assessment_index",
+        sql: include_str!("../../migrations/0060_qualitative_assessment_index.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

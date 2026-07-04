@@ -14,7 +14,8 @@ use serde_json::{json, Map, Value};
 
 use super::*;
 use crate::storage::{
-    NewCockpitLayout, NewCompany, NewWatchlist, RenameCockpitLayoutInput, WatchlistUpdate,
+    NewCockpitLayout, NewCompany, NewFrameworkCriterion, NewQualityFramework, NewWatchlist,
+    RenameCockpitLayoutInput, WatchlistUpdate,
 };
 
 // Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS: the normal relative
@@ -166,6 +167,64 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
                     .expect("list_autopilot_runs"),
             )
             .unwrap()
+        }
+        "create_quality_framework" => {
+            let new: NewQualityFramework =
+                serde_json::from_value(inner).expect("NewQualityFramework");
+            serde_json::to_value(
+                state
+                    .create_quality_framework(new)
+                    .expect("create_quality_framework"),
+            )
+            .unwrap()
+        }
+        "create_framework_criterion" => {
+            let new: NewFrameworkCriterion =
+                serde_json::from_value(inner).expect("NewFrameworkCriterion");
+            serde_json::to_value(
+                state
+                    .create_framework_criterion(new)
+                    .expect("create_framework_criterion"),
+            )
+            .unwrap()
+        }
+        "get_qualitative_assessment" => {
+            let framework_id = inner["frameworkId"].as_str().expect("frameworkId");
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                state
+                    .get_qualitative_assessment(framework_id, company_id)
+                    .expect("get_qualitative_assessment"),
+            )
+            .unwrap()
+        }
+        // run/rerun enqueue the durable job (no per-job status table; the
+        // job_queue row IS the status). Call the SAME command helper production
+        // uses so the corpus can never diverge from the real enqueue id/payload.
+        "run_qualitative_assessment" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let framework_id = inner["frameworkId"].as_str().expect("frameworkId");
+            crate::commands::quality_frameworks::enqueue_assessment(
+                state,
+                company_id,
+                framework_id,
+                None,
+            )
+            .expect("run_qualitative_assessment");
+            Value::Null
+        }
+        "rerun_qualitative_criterion" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let framework_id = inner["frameworkId"].as_str().expect("frameworkId");
+            let criterion_id = inner["criterionId"].as_str().expect("criterionId");
+            crate::commands::quality_frameworks::enqueue_assessment(
+                state,
+                company_id,
+                framework_id,
+                Some(vec![criterion_id.to_owned()]),
+            )
+            .expect("rerun_qualitative_criterion");
+            Value::Null
         }
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")

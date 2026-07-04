@@ -644,6 +644,121 @@ fn updating_assessment_guidance_persists_and_preserves_kind() {
     assert_eq!(updated.kind, "qualitative", "kind preserved across update");
 }
 
+/// Helper: create a qualitative criterion with guidance.
+fn qualitative_criterion(state: &AppState, framework_id: &str, label: &str) -> FrameworkCriterion {
+    state
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework_id.to_owned(),
+            label: label.to_owned(),
+            expression: String::new(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: Some("qualitative".to_owned()),
+            assessment_guidance: Some(format!("Assess {label}.")),
+        })
+        .expect("qualitative criterion creates")
+}
+
+fn qual_result(
+    criterion_id: &str,
+    ordinal: i64,
+    label: &str,
+    verdict: &str,
+    reasoning: &str,
+) -> QualitativeCriterionResult {
+    QualitativeCriterionResult {
+        criterion_id: criterion_id.to_owned(),
+        ordinal,
+        label: label.to_owned(),
+        verdict: verdict.to_owned(),
+        reasoning: reasoning.to_owned(),
+        citations_json: "[]".to_owned(),
+        confidence: "medium".to_owned(),
+        prompt_version: "qualitative_assessment_v1".to_owned(),
+    }
+}
+
+/// ADR 0075 Decision 5 "two read surfaces": the current-state read returns, per
+/// qualitative criterion, the most-recent agent-assessed row across snapshots —
+/// so a later single-criterion re-run never blanks the other criteria, and a
+/// never-assessed criterion is simply absent (empty state).
+#[test]
+fn get_qualitative_assessment_returns_latest_agent_row_per_criterion() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let company = tracked_company(&state);
+    let framework = state
+        .create_quality_framework(NewQualityFramework {
+            name: "Q".to_owned(),
+            description: None,
+        })
+        .expect("framework");
+    let moat = qualitative_criterion(&state, &framework.id, "Wide moat");
+    let pricing = qualitative_criterion(&state, &framework.id, "Pricing power");
+    let recurring = qualitative_criterion(&state, &framework.id, "Recurring revenue");
+
+    // Run 1: moat + pricing assessed together.
+    state
+        .persist_qualitative_assessment(PersistQualitativeAssessmentInput {
+            framework_id: framework.id.clone(),
+            company_id: company.id.clone(),
+            results: vec![
+                qual_result(&moat.id, 0, "Wide moat", "pass", "Durable advantage."),
+                qual_result(
+                    &pricing.id,
+                    1,
+                    "Pricing power",
+                    "partial",
+                    "Some pricing power.",
+                ),
+            ],
+        })
+        .expect("run 1 persists");
+
+    // Run 2 (later snapshot): only moat re-assessed (single-criterion re-run),
+    // verdict changes fail. This must NOT blank pricing's earlier assessment.
+    state
+        .persist_qualitative_assessment(PersistQualitativeAssessmentInput {
+            framework_id: framework.id.clone(),
+            company_id: company.id.clone(),
+            results: vec![qual_result(
+                &moat.id,
+                0,
+                "Wide moat",
+                "fail",
+                "Moat eroding.",
+            )],
+        })
+        .expect("run 2 persists");
+
+    let current = state
+        .get_qualitative_assessment(&framework.id, &company.id)
+        .expect("current-state read");
+
+    assert_eq!(current.len(), 2, "only assessed criteria appear");
+    let moat_row = current
+        .iter()
+        .find(|r| r.criterion_id.as_deref() == Some(moat.id.as_str()))
+        .expect("moat present");
+    assert_eq!(moat_row.verdict, "fail", "latest moat verdict wins");
+    assert_eq!(moat_row.reasoning.as_deref(), Some("Moat eroding."));
+    assert_eq!(moat_row.source, "agent");
+    let pricing_row = current
+        .iter()
+        .find(|r| r.criterion_id.as_deref() == Some(pricing.id.as_str()))
+        .expect("pricing present");
+    assert_eq!(
+        pricing_row.verdict, "partial",
+        "a later single-criterion re-run must not blank pricing"
+    );
+    assert!(
+        current
+            .iter()
+            .all(|r| r.criterion_id.as_deref() != Some(recurring.id.as_str())),
+        "a never-assessed criterion is absent (empty state)"
+    );
+}
+
 #[test]
 fn updating_quantitative_criterion_revalidates_and_preserves_kind() {
     let state = AppState::new(open_in_memory_database().expect("database should initialize"));

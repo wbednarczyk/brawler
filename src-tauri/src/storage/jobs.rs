@@ -95,6 +95,23 @@ impl JobQueueStore {
         Ok(changed > 0)
     }
 
+    /// Read the opaque payload of a job that is still `pending` (not yet claimed),
+    /// or `None` if the id is absent, already `running`, or terminal. Callers use
+    /// this to merge a superseding enqueue into a not-yet-started row (e.g. union a
+    /// single-criterion re-run into a pending framework-wide assessment) rather
+    /// than racing a second, duplicate job.
+    pub fn pending_payload(&self, id: &str) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+        connection
+            .query_row(
+                "SELECT payload FROM job_queue WHERE id = ?1 AND status = 'pending'",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
     /// Atomically claim the next runnable job: the oldest `pending` row whose
     /// `available_at` has passed. The claim and the `attempts` increment happen
     /// in one statement, so two workers can never claim the same row and a crash

@@ -1171,6 +1171,15 @@ impl AppState {
         self.quality_frameworks().get_framework_evaluation(id)
     }
 
+    pub fn get_qualitative_assessment(
+        &self,
+        framework_id: &str,
+        company_id: &str,
+    ) -> StorageResult<Vec<CriterionResult>> {
+        self.quality_frameworks()
+            .get_qualitative_assessment(framework_id, company_id)
+    }
+
     pub fn delete_framework_evaluation(&self, id: &str) -> StorageResult<()> {
         self.quality_frameworks().delete_framework_evaluation(id)
     }
