@@ -1,5 +1,73 @@
 # Changelog
 
+## v0.50.0 — 2026-07-08
+
+Quality frameworks learn to judge what a formula can't: **qualitative criteria**
+(moat, pricing power, capital allocation…) assessed by an AI agent **from the
+evidence already stored in your app**, every verdict cited so you can check it
+yourself. Around it, a **systemic UX overhaul**: a normative design system with
+enforcement at every layer, a redesigned **Today** attention stream, a global
+**Ctrl+K** command palette, undo instead of "are you sure?", and an
+accessibility pass across every screen. Decision support only, local-first, as
+always. Guides: [Quality frameworks](wiki/quality-frameworks.md),
+[Research workspace](wiki/research-workspace.md).
+
+### Added
+
+- **Qualitative criteria in quality frameworks.** Add a criterion that carries
+  *assessment guidance* instead of a formula; click **Assess** and an AI agent
+  reads only your app-held evidence for that company — claims, notes, typed
+  signals, transcripts, stored report documents — and returns a verdict
+  (pass / partial / fail / **insufficient evidence**) with citations and a
+  written rationale, in the app's language. Never a buy/sell/hold. The shipped
+  Kroeze-style template gains six qualitative criteria (bilingual, upgraded in
+  place on existing installs). Assessments re-run on demand, re-run
+  automatically when Autopilot processes a new report, and a **changed verdict**
+  is surfaced in your research digest.
+- **Today, redesigned as a single attention stream.** One prioritized list —
+  autopilot runs, claims to verify, fresh disclosures, upcoming reports — with
+  counter tiles that filter the stream and full j/k keyboard flow. Measured at
+  6 interactions for the morning review, against a documented budget of 15.
+- **Global command palette (Ctrl+K)** — jump anywhere, run any command, without
+  the mouse; all shortcuts listed under Settings → Keyboard shortcuts.
+- **Undo instead of confirmation dialogs.** Where a deletion can be restored
+  faithfully, it now shows a toast with **Undo**; only genuinely irreversible
+  actions keep an inline confirm. Focus lands sensibly after a row disappears.
+- **Per-document "Extract data"** on report documents, with an honest
+  four-state result toast (new / already recorded / divergent / no definition),
+  plus a job-status surface so a failed assessment is never a silent nothing.
+
+### Changed
+
+- **One design system, enforced.** Spacing and type scales as tokens with a
+  stylelint gate, semantic tone colors consistent across the dark and light
+  palettes, one formatting layer for every date and number in the app (measured
+  criterion values now render as "28,6%", not a 28-digit decimal), and panel
+  **density contracts** so every cockpit panel stays usable at S/M/L pane
+  widths — each rule backed by a test that reddens on regression.
+- **Accessibility debt paid down**: automated WCAG A/AA checks now run over
+  every screen in both themes (jsdom + real browser), with zero excluded
+  screens; a live contrast bug in the light theme was found and fixed by the
+  new gate itself.
+- **Cockpit views follow a view-level company context** (panels can follow the
+  view's company or pin their own), and **Compare is hidden until its data
+  arrives in v0.53** rather than shipping as a dead tab.
+- AI assessment output (and future AI text surfaces) now answers **in the
+  app's language** (Polish/English), keeping source quotes verbatim.
+
+### Fixed
+
+- Six defect classes found by real-company validation on the maintainer's own
+  data, each closed with a durable regression gate: silent assessment-job
+  failures, no reachable extraction path for stored documents, a capability
+  missing from AI provider routing, dishonest extraction toasts and a stale
+  sibling panel, annual ESEF report packages (`.xbri`) yielding zero facts, and
+  a crash when re-extracting a document whose facts already existed
+  (re-observation policy: same value is idempotent, divergent values are
+  surfaced — never silently overwritten).
+- The mutation-testing memory jail no longer aborts the whole suite when a
+  single runaway mutant is OOM-killed (`OOMPolicy=continue`).
+
 ## v0.49.0 — 2026-07-03
 
 Brawler learns to work while you don't: **Autopilot** turns a tracked company's

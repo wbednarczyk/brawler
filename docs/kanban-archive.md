@@ -4,6 +4,18 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### v0.50.0: Quality frameworks — qualitative assessment (epic 5835112) + UX overhaul phase 2 (epic 44beb6e)
+
+Intent: extend quality frameworks with agent-assessed qualitative criteria (moat, pricing power, recurring revenue, capital allocation) with citations, composed into the scorecard and re-assessed by autopilot (ADR 0075); phase 2 (owner scope extension 2026-07-05): the UX journeys & anti-rot epic (ADR 0074) plus the normative UI design system with enforcement at every layer (ADR 0076).
+
+Delivered: qualitative criterion kind + assessment guidance (migrations 0059/0060); QualitativeAssessment capability with text-pool routing; agent job over app-held evidence only with citation integrity and verdicts incl. insufficient_evidence; verdict-change tracking bounded by review checkpoints; autopilot re-assessment + digest surfacing; bilingual Kroeze qualitative template with startup top-up; AI output language follows the app locale (prompt v2). UX: one format layer, space/type token scales + stylelint allowlist, semantic tone tokens + light theme in the test matrix, toast+undo/InlineConfirm/Skeleton, focus management, global Ctrl+K palette, dev-speak gate, a11y debt closed (jest-axe all screens + axe in Playwright both themes), cockpit view-level company context, Today attention-stream redesign, Compare hidden until v0.53, panel density contracts, journey E2E J1–J7 with interaction-budget ratchet, all-panels visual baseline, mockup-first + dogfooding rituals.
+
+Verification: T7 real-company validation on the owner's live Windows app — round 1 (owner clicks) surfaced six P1 defect classes, each fixed same-day with a durable gate; round 2 fully automated via live-drive (7/7: shell, 8-screen dogfooding walk, idempotent double extraction on the live DB, fundamentals, quantitative + qualitative assessment). DoD §I spec-conformance audit: ADR 0075 7/7 conforms, ADR 0074 5/5, ADR 0076 12/12 in substance (2 letter-level notes recorded in the ADR). check-epic green (gate + coverage ratchet); `make mutants` waived by the owner at closure after an OOM-abort investigation fixed the jail itself (`OOMPolicy=continue`) — full sweep remains available via the manual workflow.
+
+Owner verdict recorded at closure: the qualitative support is trusted; extraction of report data is not yet — carried forward as the cross-cutting trusted-extraction epic (ADR 0077, card 25cd300, branch feat/trusted-extraction-foundations with F0 spike + T5.1 pacing fix already landed).
+
+Retrospective digest: real-owner validation again out-found synthetic suites (six P1s invisible to mocks); spec-first agent fan-out held when specs were normative and verification lists complete (both codified); closure-day harvest: expensive-gate economics rules (subject pre-validation, generated files, long-suite launching), explicit timeouts for multi-screen workflow tests (card b6b866f), mutants jail OOMPolicy fix; deferred to v0.51: cockpit axe debt (02e991e), compact pane headers (b97e349), J3 budget-ceiling decision.
+
 ### v0.49.0: Autonomous report pipeline (epic 9a607da) + composable shell finish + lean-docs epics
 
 Intent: the North Star — a tracked company publishes a periodic report and the app detects, fetches, extracts, diffs, cross-references, and notifies with no manual steps, behind a per-company trust ladder (ADR 0055); plus the ADR 0057 composable-views finish and the Claude-native docs/enforcement epics (ADR 0063/0065).
