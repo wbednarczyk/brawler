@@ -4,6 +4,8 @@ Canonical catalog of user journeys — the cross-screen tasks the app exists for
 
 Format per journey: **Trigger** (why the user shows up) → **Steps** → **Screens** → **Budget** (max interactions: clicks + key presses, asserted in E2E) → **Done well** (what must be true at the end). Budgets are calibrated by first measurement, then ratcheted; a step referencing a future milestone is tagged with its version and joins the spec (and the budget) when it ships.
 
+Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey) with the ratchet floors in `tests/browser/journeys/budgets.json`; the budget numbers below are the normative **ceilings** those floors must never exceed ([testing.md](testing.md#user-journey-e2e-and-step-budgets-adr-0074)).
+
 ## J1 — Morning review
 
 - **Trigger:** opening the app at the start of the day.
@@ -11,6 +13,7 @@ Format per journey: **Trigger** (why the user shows up) → **Steps** → **Scre
 - **Screens:** Today, Inbox detail, (Company workspace).
 - **Budget:** ≤15 interactions at 10 new items.
 - **Done well:** no unhandled high-signal item; under 10 minutes; the user knows *what changed and whether anything needs action*.
+- **Redesign note (v0.50 phase 2):** the Today screen is being redesigned **to this journey** (task U-Rb, [plans/v0.50-ux-overhaul.md](plans/v0.50-ux-overhaul.md)) — J1's budget is the acceptance bar for that mockup.
 
 ## J2 — A company published a report
 

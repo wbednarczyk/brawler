@@ -15,20 +15,27 @@ import {
 const EVIDENCE = "tests/browser/__shell-evidence__";
 
 test.describe("mode-based shell (ADR 0054)", () => {
-  test("Today is the default home and lays out its attention sections without clipping", async ({
+  test("Today is the default home: a prioritized stream + counters column, no clipping", async ({
     page,
   }, testInfo) => {
     await openApp(page);
 
     await expect(page.getByRole("heading", { name: "Today", exact: true })).toBeVisible();
-    for (const section of ["What changed", "To verify", "Upcoming reports", "Conviction", "Recent activity"]) {
-      await expect(page.getByRole("heading", { name: section, exact: true })).toBeVisible();
-    }
 
-    // The card grid must not clip the Review buttons or overflow the page — the
-    // exact regression the maintainer caught on Windows.
+    // Redesigned to journey J1 (ADR 0076 U-Rb): one stream region + a counters
+    // column with three filter tiles — no 4-column card splat.
+    await expect(page.getByRole("region", { name: "Attention stream" })).toBeVisible();
+    const counters = page.getByRole("group", { name: "Filter the stream" });
+    await expect(counters.getByRole("button", { name: /Autopilot/ })).toBeVisible();
+    await expect(counters.getByRole("button", { name: /To verify/ })).toBeVisible();
+    await expect(counters.getByRole("button", { name: /Upcoming reports/ })).toBeVisible();
+
+    // The stream must not clip its Review buttons or overflow the page — the
+    // exact regression the maintainer caught on Windows — and no row may force a
+    // panel-internal horizontal scrollbar (ticker/date never truncate, K1).
     await expectNoPageOverflow(page);
     await expectNoHorizontalOverflow(page.locator(".today-body"));
+    await expectNoHorizontalOverflow(page.locator(".today-stream-region"));
 
     await page.screenshot({ path: `${EVIDENCE}/today-${testInfo.project.name}.png`, fullPage: true });
   });
@@ -40,7 +47,8 @@ test.describe("mode-based shell (ADR 0054)", () => {
     await expect(nav.getByText("Library", { exact: true })).toBeVisible();
     await expect(nav.getByText("Utilities", { exact: true })).toBeVisible();
     await expect(nav.getByRole("button", { name: "Today" })).toBeVisible();
-    await expect(nav.getByRole("button", { name: "Compare" })).toBeVisible();
+    // Compare is hidden from primary nav until v0.53 (U-Rc, ADR 0076 Resolved).
+    await expect(nav.getByRole("button", { name: "Compare" })).toHaveCount(0);
   });
 
   test("the cockpit feed marks only unread items bold and the inspector reads cleanly", async ({

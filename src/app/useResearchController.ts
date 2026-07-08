@@ -14,6 +14,8 @@ import type {
   ResearchTimelineResult,
 } from "../api/researchTypes";
 import type { Section } from "./navigation";
+import type { NewResearchReminder } from "../api/researchTypes";
+import type { UndoableDeleteConfig } from "../ui";
 
 export type ResearchMode = "company" | "watchlist";
 
@@ -23,7 +25,24 @@ type UseResearchControllerInput = {
   watchlists: Watchlist[];
   watchlistMemberships: WatchlistMembership[];
   text: (value: string) => string;
+  runUndoableDelete: (config: UndoableDeleteConfig) => void;
 };
+
+// Faithful undo restore (ADR 0076 D5): rebuild the reminder create-input from a
+// deleted reminder (dropping server-owned id/status/timestamps).
+function reminderRestoreInput(reminder: ResearchReminder): NewResearchReminder {
+  return {
+    scopeType: reminder.scopeType,
+    scopeId: reminder.scopeId,
+    companyId: reminder.companyId,
+    reminderKind: reminder.reminderKind,
+    sourceType: reminder.sourceType,
+    sourceId: reminder.sourceId,
+    title: reminder.title,
+    body: reminder.body,
+    dueAt: reminder.dueAt,
+  };
+}
 
 export function useResearchController({
   activeSection,
@@ -31,6 +50,7 @@ export function useResearchController({
   watchlists,
   watchlistMemberships,
   text,
+  runUndoableDelete,
 }: UseResearchControllerInput) {
   const requestVersionRef = useRef(0);
   const textRef = useRef(text);
@@ -412,13 +432,9 @@ export function useResearchController({
       return;
     }
 
-    const question = researchQuestions.find((current) => current.id === questionId);
-    const questionLabel = question?.title ?? textRef.current("this question");
-    const confirmed = window.confirm(`${textRef.current("Delete research question")} "${questionLabel}"?`);
-    if (!confirmed) {
-      return;
-    }
-
+    // Cascading (ADR 0076 D5): deleting a research question drops its evidence
+    // links, which create_research_question cannot restore, so the confirm gate
+    // is an InlineConfirm at the call site.
     setResearchQuestionInFlight(true);
     setResearchError(null);
 
@@ -580,27 +596,36 @@ export function useResearchController({
     }
   }
 
-  async function deleteResearchReminder(reminderId: string) {
+  // Reversible destroy (ADR 0076 D5): a reminder re-creates faithfully via
+  // create_research_reminder, so it deletes immediately with an undo toast.
+  function deleteResearchReminder(reminderId: string) {
     if (researchReminderInFlight) {
       return;
     }
 
-    const confirmed = window.confirm(textRef.current("Delete research reminder?"));
-    if (!confirmed) {
+    const reminder = researchReminders.find((current) => current.id === reminderId);
+    if (!reminder) {
       return;
     }
 
-    setResearchReminderInFlight(true);
-    setResearchError(null);
-
-    try {
-      await researchApi.deleteResearchReminder(reminderId);
-      await refreshResearchReminders();
-    } catch (error) {
-      setResearchError(error instanceof Error ? error.message : textRef.current("Research reminder delete failed"));
-    } finally {
-      setResearchReminderInFlight(false);
-    }
+    runUndoableDelete({
+      perform: () => researchApi.deleteResearchReminder(reminderId),
+      restore: () => researchApi.createResearchReminder(reminderRestoreInput(reminder)),
+      message: textRef.current("Reminder deleted"),
+      undoLabel: textRef.current("Undo"),
+      onPerformed: () => {
+        setResearchError(null);
+        void refreshResearchReminders();
+      },
+      onRestored: () => {
+        void refreshResearchReminders();
+      },
+      onError: (error) => {
+        setResearchError(
+          error instanceof Error ? error.message : textRef.current("Research reminder delete failed"),
+        );
+      },
+    });
   }
 
   async function createResearchReminder(title: string, body: string, dueAt: string | null) {

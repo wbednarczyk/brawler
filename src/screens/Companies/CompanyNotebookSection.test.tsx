@@ -68,6 +68,51 @@ describe("CompanyNotebookSection (ADR 0057 dashboard panel)", () => {
     expect(setComposerOpen).toHaveBeenCalledTimes(1);
   });
 
+  // U7-C density contract (ADR 0076 D6): at the S width / short height tiers the
+  // panel is single-column — selecting a note swaps the list for the detail with
+  // a back-to-list affordance. jsdom has no container queries, so we assert the
+  // toggle STATE (the data flag the tier CSS keys off + the back control); the
+  // visual collapse is browser-tested.
+  it("marks detail-open and shows a back-to-list control when a note is selected", async () => {
+    const user = userEvent.setup();
+    const setSelectedNotebookEntryId = vi.fn();
+
+    const { container, rerender } = render(
+      <CompanyNotebookSection
+        {...baseProps}
+        notebookEntries={[entry]}
+        isComposerOpen={false}
+        selectedNotebookEntry={null}
+        notebookEditMode={false}
+        isNotebookEditDirty={false}
+        setComposerOpen={noop}
+        setNotebookEditMode={noop}
+      />,
+    );
+
+    expect(container.querySelector(".notebook-workspace")).not.toHaveAttribute("data-detail-open");
+    expect(screen.queryByRole("button", { name: "Back to note list" })).not.toBeInTheDocument();
+
+    rerender(
+      <CompanyNotebookSection
+        {...baseProps}
+        notebookEntries={[entry]}
+        isComposerOpen={false}
+        selectedNotebookEntry={entry}
+        notebookEditMode={false}
+        isNotebookEditDirty={false}
+        setComposerOpen={noop}
+        setSelectedNotebookEntryId={setSelectedNotebookEntryId}
+        setNotebookEditMode={noop}
+      />,
+    );
+
+    expect(container.querySelector(".notebook-workspace")).toHaveAttribute("data-detail-open");
+    const back = screen.getByRole("button", { name: "Back to note list" });
+    await user.click(back);
+    expect(setSelectedNotebookEntryId).toHaveBeenCalledWith(null);
+  });
+
   it("enters edit mode for the selected note", async () => {
     const user = userEvent.setup();
     const setNotebookEditMode = vi.fn();

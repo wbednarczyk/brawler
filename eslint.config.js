@@ -16,8 +16,21 @@ import globals from "globals";
 // Input types that have no primitive equivalent and are always allowed raw.
 const NATIVE_INPUT_TYPES = "checkbox|radio|file|date|time|datetime-local|month|week|range|color";
 
+// Feedback policy (ADR 0076 Decision 5): no native window.confirm() outside
+// src/ui. A reversible destroy runs immediately with a `Cofnij` toast
+// (useUndoableDelete); an irreversible/cascading one uses the InlineConfirm
+// primitive. Native dialogs are unstyled, untranslatable, and untestable
+// without dialog auto-accept plumbing. Matches `window.confirm` specifically so
+// a legitimately-named local `confirm(...)` helper is not flagged.
+const CONFIRM_BAN = {
+  selector: "MemberExpression[object.name='window'][property.name='confirm']",
+  message:
+    "No native window.confirm() (ADR 0076 Decision 5). Use useUndoableDelete + Toast for reversible deletes, or the InlineConfirm primitive for irreversible/cascading actions.",
+};
+
 const PRIMITIVE_FIRST = [
   "error",
+  CONFIRM_BAN,
   {
     selector: "JSXOpeningElement[name.name='select']",
     message:
@@ -111,6 +124,16 @@ export default tseslint.config(
     ignores: ["src/ui/**", "**/*.test.tsx", "src/test/**"],
     rules: {
       "no-restricted-syntax": PRIMITIVE_FIRST,
+    },
+  },
+  {
+    // The window.confirm ban also reaches plain .ts controllers (a separate
+    // block so it does not clobber PRIMITIVE_FIRST on .tsx — flat config
+    // replaces rather than merges a rule across matching blocks).
+    files: ["src/**/*.ts"],
+    ignores: ["src/ui/**", "**/*.test.ts", "src/test/**"],
+    rules: {
+      "no-restricted-syntax": ["error", CONFIRM_BAN],
     },
   },
   {

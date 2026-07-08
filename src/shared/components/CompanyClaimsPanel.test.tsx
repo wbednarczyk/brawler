@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { CompanyClaimsPanel } from "./CompanyClaimsPanel";
+import { formatFinancialValue } from "../format/financialValue";
 import {
   createManagementClaim,
   listClaimsToVerify,
@@ -87,10 +88,14 @@ describe("CompanyClaimsPanel", () => {
 
     render(<CompanyClaimsPanel companyId="company_gpw_cdr" />);
 
+    // The reported figure renders humanized (audit K9, ADR 0076 D4): the raw
+    // integer never reaches the user.
+    const humanized = formatFinancialValue({ valueNumeric: "1250000" }, "en");
     await waitFor(() => {
       expect(screen.getByText("Claims to verify")).toBeInTheDocument();
-      expect(screen.getByText(/1250000/)).toBeInTheDocument();
+      expect(screen.getByText((content) => content.includes(humanized))).toBeInTheDocument();
     });
+    expect(screen.queryByText(/1250000/)).toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Delivered" }));
 
@@ -100,6 +105,60 @@ describe("CompanyClaimsPanel", () => {
         status: "delivered",
       });
     });
+  });
+
+  // U7-C density contract (ADR 0076 D6): at the S width tier the composer hides
+  // behind a "Dodaj obietnicę" (Add claim) disclosure. jsdom has no container
+  // queries, so we assert the disclosure STATE (aria-expanded + the data flag the
+  // S-tier CSS keys off); the tier switch itself is browser-tested.
+  it("exposes the composer behind an Add claim disclosure toggle", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<CompanyClaimsPanel companyId="company_gpw_cdr" />);
+
+    await waitFor(() => {
+      expect(screen.getByText("No management claims tracked yet.")).toBeInTheDocument();
+    });
+
+    const panel = container.querySelector(".company-claims-panel");
+    const toggle = container.querySelector(".claims-add-toggle");
+    expect(toggle).not.toBeNull();
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(panel).not.toHaveAttribute("data-composer-open");
+
+    await user.click(toggle as HTMLElement);
+
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(panel).toHaveAttribute("data-composer-open");
+  });
+
+  // U7-C short-tier contract: the queue summary shows per-status counts and only
+  // the top 3 due claims (rest behind expansion).
+  it("summarizes queue counts and only the top 3 due claims (short tier)", async () => {
+    const due = [1, 2, 3, 4].map((n) =>
+      claim({ id: `claim_due_${n}`, statement: `Due promise number ${n}` }),
+    );
+    listClaimsToVerifyMock.mockResolvedValue({
+      due: due.map((c) => ({ claim: c, arrivedPeriodId: null, verifyingFactCandidate: null })),
+      overdue: [{ claim: claim({ id: "claim_od" }), arrivedPeriodId: null, verifyingFactCandidate: null }],
+      upcoming: [],
+    });
+    listManagementClaimsMock.mockResolvedValue(due);
+
+    const { container } = render(<CompanyClaimsPanel companyId="company_gpw_cdr" />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".claims-queue-summary")).not.toBeNull();
+    });
+
+    const summary = container.querySelector(".claims-queue-summary") as HTMLElement;
+    // The counts line reflects the FULL live counts (4 due, 1 overdue).
+    expect(within(summary).getByText(/Due now/)).toBeInTheDocument();
+    expect(within(summary).getByText("4")).toBeInTheDocument();
+    // Only the top 3 due claims render in the summary.
+    const topItems = summary.querySelectorAll(".claims-queue-top-item");
+    expect(topItems).toHaveLength(3);
+    expect(within(summary).getByText("Due promise number 1")).toBeInTheDocument();
+    expect(within(summary).queryByText("Due promise number 4")).not.toBeInTheDocument();
   });
 
   it("creates a new claim from the form", async () => {
@@ -114,7 +173,10 @@ describe("CompanyClaimsPanel", () => {
       screen.getByPlaceholderText("What did management promise?"),
       "Dividend will be raised",
     );
-    await user.click(screen.getByRole("button", { name: "Add claim" }));
+    // The composer's own submit — disambiguated from the S-tier disclosure toggle
+    // (also "Add claim") by scoping to the create form (U7-C).
+    const composer = screen.getByRole("form", { name: "Add a claim" });
+    await user.click(within(composer).getByRole("button", { name: "Add claim" }));
 
     await waitFor(() => {
       expect(createManagementClaimMock).toHaveBeenCalledWith(

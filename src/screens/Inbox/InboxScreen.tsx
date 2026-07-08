@@ -10,8 +10,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useState } from "react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
+import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
 import { useLocale } from "../../shared/locale";
+import { formatListTimestamp } from "../../shared/format/datetime";
 import { useAiFallbackEnabled } from "../../app/state/SettingsContext";
 import {
   Button,
@@ -19,6 +22,7 @@ import {
   EmptyState,
   ErrorText,
   FilterToolbar,
+  InlineConfirm,
   PanelHeader,
   SearchField,
   SegmentedControl,
@@ -97,8 +101,23 @@ export function InboxScreen() {
     feedItemSummary,
     formatTimestamp,
   } = useInboxViewModel();
-  const { t, text } = useLocale();
+  const { t, text, locale } = useLocale();
   const aiSignalFallbackEnabled = useAiFallbackEnabled();
+  // Bulk data clear (ADR 0076 D5): confirm the unsaved-feed purge in place.
+  const [confirmDeleteUnsaved, setConfirmDeleteUnsaved] = useState(false);
+  // Density contract (ADR 0076 D6): at the S width tier the detail is a full-pane
+  // overlay over the list. The list always has a selection (it defaults to the
+  // first item), so this presentation-only flag — not the selection — decides
+  // whether the overlay is raised; activating a row opens it, the detail's back
+  // control closes it. It is inert above S, where list and detail sit together.
+  const [inboxDetailOpen, setInboxDetailOpen] = useState(false);
+  // When a feed item leaves the filtered list (e.g. marking it read under the
+  // "unread" filter hides it), keep keyboard focus in the feed by moving to the
+  // next row rather than dropping it on <body> (ADR 0076 D9).
+  const { listRef: feedListRef } = useFocusAfterRemove<HTMLDivElement>(
+    filteredFeedItems.map((item) => item.id),
+    { rowSelector: "[data-feed-row='true']" },
+  );
 
   return (
     <>
@@ -155,23 +174,27 @@ export function InboxScreen() {
           </Button>
         </div>
 
-        <FilterToolbar ariaLabel={text("Inbox filters")}>
-          <label className="inbox-search-field">
-            {text("Search")}
-            <SearchField
-              ariaLabel={t("app.search.ariaLabel")}
-              as="span"
-              className="search-box"
-              clearLabel={text("Clear inbox search")}
-              iconSize={16}
-              inputProps={{ "data-inbox-search-input": "true" }}
-              onChange={setSearchQuery}
-              onClear={() => setSearchQuery("")}
-              placeholder={t("app.search.placeholder")}
-              type="text"
-              value={searchQuery}
-            />
-          </label>
+        <FilterToolbar
+          ariaLabel={text("Inbox filters")}
+          search={
+            <label className="inbox-search-field">
+              {text("Search")}
+              <SearchField
+                ariaLabel={t("app.search.ariaLabel")}
+                as="span"
+                className="search-box"
+                clearLabel={text("Clear inbox search")}
+                iconSize={16}
+                inputProps={{ "data-inbox-search-input": "true" }}
+                onChange={setSearchQuery}
+                onClear={() => setSearchQuery("")}
+                placeholder={t("app.search.placeholder")}
+                type="text"
+                value={searchQuery}
+              />
+            </label>
+          }
+        >
           <SelectField
             label={text("Watchlist")}
             aria-label={text("Inbox watchlist")}
@@ -239,11 +262,11 @@ export function InboxScreen() {
           </SelectField>
         </FilterToolbar>
 
-        <div className="feed-list" aria-label={text("Feed items")}>
+        <div className="feed-list" aria-label={text("Feed items")} ref={feedListRef}>
           {filteredFeedItems.map((item) => (
             <DenseRow
+              as="button"
               aria-label={`${text("Select feed item")}: ${item.title}`}
-              aria-current={selectedFeedItem?.id === item.id ? "true" : undefined}
               className={[
                 "feed-row",
                 item.unread ? "unread" : "",
@@ -254,19 +277,25 @@ export function InboxScreen() {
               key={item.id}
               data-feed-item-id={item.id}
               data-feed-row="true"
-              onClick={() => setSelectedFeedItemId(item.id)}
+              onClick={() => {
+                setSelectedFeedItemId(item.id);
+                setInboxDetailOpen(true);
+              }}
               onDoubleClick={() => toggleFeedItemReadState(item)}
-              onKeyDown={(event) => selectFeedItemFromKeyboard(event, item)}
-              role="button"
+              onKeyDown={(event) => {
+                selectFeedItemFromKeyboard(event, item);
+                if (event.key === "Enter" || event.key === " ") {
+                  setInboxDetailOpen(true);
+                }
+              }}
               selected={selectedFeedItem?.id === item.id}
-              tabIndex={0}
               title={text("Select feed item")}
               unread={item.unread}
             >
               <div className="feed-row-main">
                 <div className="feed-row-topline">
                   <strong><TickerLabel value={item.company} /></strong>
-                  <span>{formatTimestamp(item.time, text("Unknown"))}</span>
+                  <span className="num-tabular">{formatListTimestamp(item.time, locale, text("Unknown"))}</span>
                 </div>
                 <div className="feed-row-source-line">
                   <span>{item.type}</span>
@@ -277,7 +306,14 @@ export function InboxScreen() {
                 <p>{feedItemSummary(item)}</p>
               </div>
               {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
-              {item.unread ? <span className="unread-dot" title={text("Unread")} /> : null}
+              {item.unread ? (
+                <span
+                  aria-label={text("Unread")}
+                  className="unread-dot"
+                  role="img"
+                  title={text("Unread")}
+                />
+              ) : null}
             </DenseRow>
           ))}
           {inboxEmptyState ? (
@@ -351,14 +387,29 @@ export function InboxScreen() {
 
         <div className="inbox-maintenance-row" aria-label={text("Inbox maintenance")}>
           <span>{text("Feed cleanup")}</span>
-          <Button
-            className="compact-button danger-subtle-button"
-            disabled={deleteUnsavedFeedState === "refreshing"}
-            onClick={deleteUnsavedFeedItems}
-          >
-            {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
-            {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
-          </Button>
+          {confirmDeleteUnsaved ? (
+            <InlineConfirm
+              cancelLabel={text("Cancel")}
+              confirmLabel={text("Delete unsaved")}
+              disabled={deleteUnsavedFeedState === "refreshing"}
+              onCancel={() => setConfirmDeleteUnsaved(false)}
+              onConfirm={() => {
+                setConfirmDeleteUnsaved(false);
+                deleteUnsavedFeedItems();
+              }}
+            >
+              {text("Delete all unsaved feed items? Saved items will stay.")}
+            </InlineConfirm>
+          ) : (
+            <Button
+              className="compact-button danger-subtle-button"
+              disabled={deleteUnsavedFeedState === "refreshing"}
+              onClick={() => setConfirmDeleteUnsaved(true)}
+            >
+              {deleteUnsavedFeedState === "done" ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
+              {deleteUnsavedFeedState === "refreshing" ? text("Deleting") : text("Delete unsaved")}
+            </Button>
+          )}
           {aiSignalFallbackEnabled ? (
             <Button
               className="compact-button"
@@ -397,6 +448,8 @@ export function InboxScreen() {
           selectedFeedItem={selectedFeedItem}
           selectedFeedCompany={selectedFeedCompany}
           selectedFeedSignals={selectedFeedItem ? signalsByFeedItemId[selectedFeedItem.id] : undefined}
+          detailOpen={inboxDetailOpen}
+          onBack={() => setInboxDetailOpen(false)}
           confirmCompanySignal={confirmCompanySignal}
           rejectCompanySignal={rejectCompanySignal}
           aiAnalysisJobsByFeedItemId={aiAnalysisJobsByFeedItemId}

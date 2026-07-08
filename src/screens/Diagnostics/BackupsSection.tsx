@@ -2,7 +2,7 @@ import { ChevronDown, DatabaseBackup, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as backupsApi from "../../api/backups";
 import type { BackupStatus } from "../../api/backups";
-import { ActionRow, Button, EmptyState, ErrorText, InfoGrid } from "../../ui";
+import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 export function BackupsSection() {
@@ -12,6 +12,9 @@ export function BackupsSection() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [inFlight, setInFlight] = useState(false);
+  // Irreversible/multi-consequence (ADR 0076 D5): restore replaces all data on the
+  // next launch, so it confirms in place via InlineConfirm rather than a native dialog.
+  const [confirmRestoreFile, setConfirmRestoreFile] = useState<string | null>(null);
 
   function refreshStatus() {
     backupsApi
@@ -42,13 +45,7 @@ export function BackupsSection() {
   }
 
   function restore(fileName: string) {
-    const confirmed = window.confirm(
-      text("Restore this backup? It is applied when the app restarts and replaces current data."),
-    );
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmRestoreFile(null);
     setInFlight(true);
     setNotice(null);
     backupsApi
@@ -71,7 +68,7 @@ export function BackupsSection() {
       >
         <span>
           <h2 id="diagnostics-backups-title">{text("Backups")}</h2>
-          <small>{text("Local database backups. Restore is applied on the next app launch.")}</small>
+          <small>{text("Local data backups. Restore is applied on the next app launch.")}</small>
         </span>
         <span className="diagnostics-section-meta">
           {status?.backupCount ?? 0}
@@ -117,13 +114,25 @@ export function BackupsSection() {
                       {backup.createdAt ? ` · ${backup.createdAt}` : ""}
                     </small>
                   </div>
-                  <Button
-                    className="compact-button"
-                    disabled={inFlight}
-                    onClick={() => restore(backup.fileName)}
-                  >
-                    {text("Restore")}
-                  </Button>
+                  {confirmRestoreFile === backup.fileName ? (
+                    <InlineConfirm
+                      cancelLabel={text("Cancel")}
+                      confirmLabel={text("Restore")}
+                      disabled={inFlight}
+                      onCancel={() => setConfirmRestoreFile(null)}
+                      onConfirm={() => restore(backup.fileName)}
+                    >
+                      {text("Restore this backup? It is applied when the app restarts and replaces current data.")}
+                    </InlineConfirm>
+                  ) : (
+                    <Button
+                      className="compact-button"
+                      disabled={inFlight}
+                      onClick={() => setConfirmRestoreFile(backup.fileName)}
+                    >
+                      {text("Restore")}
+                    </Button>
+                  )}
                 </article>
               ))
             ) : (

@@ -164,6 +164,44 @@ fn dedup_keeps_longest_duration() {
     assert_eq!(set.get("revenue"), Some(&d(250))); // YTD, not the 100 quarter
 }
 
+#[test]
+fn dimensional_member_facts_are_skipped_only_the_default_total_survives() {
+    // T7-C: a real ESEF statement-of-changes-in-equity tags `ifrs-full:Equity`
+    // once per component (dimensional `xbrldi:explicitMember` on
+    // `ComponentsOfEquityAxis`) AND once as the dimensionless line total. Only
+    // the default-member total is the balance-sheet figure; ingesting the
+    // component members would make `total_equity` ambiguous and break the
+    // Assets = Liabilities + Equity identity. Mirrors the CBF FY2025 filing.
+    let xml = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi">
+      <xbrli:context id="total">
+        <xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period>
+      </xbrli:context>
+      <xbrli:context id="nci">
+        <xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period>
+        <xbrli:scenario>
+          <xbrldi:explicitMember dimension="ifrs-full:ComponentsOfEquityAxis">ifrs-full:NoncontrollingInterestsMember</xbrldi:explicitMember>
+        </xbrli:scenario>
+      </xbrli:context>
+      <ix:nonFraction name="ifrs-full:Assets" contextRef="total" scale="0">1000</ix:nonFraction>
+      <ix:nonFraction name="ifrs-full:Liabilities" contextRef="total" scale="0">400</ix:nonFraction>
+      <ix:nonFraction name="ifrs-full:Equity" contextRef="total" scale="0">600</ix:nonFraction>
+      <ix:nonFraction name="ifrs-full:Equity" contextRef="nci" scale="0">50</ix:nonFraction>
+    </html>"#;
+    let facts = parse_esef(xml.as_bytes()).unwrap();
+    // The dimensional (NCI-member) Equity=50 must not appear at all.
+    assert!(
+        facts.iter().all(|f| f.value != d(50)),
+        "dimensional member fact leaked: {facts:?}"
+    );
+    let set = fact_set_for_period(&facts, "2025-12-31");
+    assert_eq!(set.get("total_equity"), Some(&d(600)));
+    // With only the default-member totals, the identity holds and validates.
+    let report = validate_period(&set, &Tolerance::default());
+    assert_eq!(report.status, Status::Passed);
+}
+
 // ---------------------------------------------------------------------------
 // Golden snapshot
 // ---------------------------------------------------------------------------

@@ -13,12 +13,16 @@
   display: grid;
   grid-template-columns: 150px minmax(0, 1fr) minmax(130px, 0.24fr);
   align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border);
   border-radius: 8px;
+  color: inherit;
   background: var(--surface-raised);
+  text-align: left;
   cursor: pointer;
+  appearance: none;
 }
 
 .event-row:hover,
@@ -41,14 +45,14 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--space-2) var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .event-date-box strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .event-date-box span {
@@ -67,14 +71,14 @@
 .event-title-line {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .event-title-line h2 {
   min-width: 0;
   overflow: hidden;
-  font-size: 15px;
+  font-size: var(--font-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -85,20 +89,20 @@
   display: inline-flex;
   align-items: center;
   min-height: 24px;
-  padding: 0 7px;
+  padding: 0 var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 8px;
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 56%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
 .event-row-main p {
-  margin-top: 5px;
+  margin-top: var(--space-1);
   overflow: hidden;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -110,13 +114,13 @@
 .event-row-status {
   display: flex;
   justify-content: flex-end;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .event-detail-panel {
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
   border-top: 0;
   border-radius: 0 0 8px 8px;
@@ -135,9 +139,9 @@
 .ui-list-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 3px 0;
+  padding: var(--space-1) 0;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
 }
 
@@ -155,7 +159,7 @@
 .ui-list-row-main {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   flex: 1 1 auto;
 }
@@ -173,6 +177,44 @@
 }
 
 .ui-list-row-meta {
-  flex: none;
+  /* Shrinkable single line, like the title: a row slot must never dictate the
+     row's minimum width — prose-length meta once forced panel-internal
+     horizontal scroll (guardrail, ADR 0045). Prose belongs in a wrapping
+     detail block, not a row slot. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
+}
+
+/* ExpandableRow (ui/ExpandableRow.tsx): a disclosure row that reveals its
+   detail in place. The primitive owns a leading rotating chevron so the
+   affordance is consistent and never ARIA-only (ADR 0076 D9). The row is a
+   flex line — chevron fixed, content fills — so consumers keep their own
+   internal layout inside the content wrapper. */
+.expandable-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  /* role="button" on an <article> is not covered by the global button cursor
+     rule, so the primitive owns the clickable affordance (ADR 0076 D9). */
+  cursor: pointer;
+}
+
+.expandable-row-chevron {
+  flex: 0 0 auto;
+  display: inline-flex;
+  color: var(--muted);
+  transition: transform 120ms ease;
+}
+
+.expandable-row-open .expandable-row-chevron {
+  transform: rotate(90deg);
+}
+
+.expandable-row-content {
+  flex: 1 1 auto;
+  min-width: 0;
 }

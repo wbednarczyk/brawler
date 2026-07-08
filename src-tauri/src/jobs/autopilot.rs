@@ -416,72 +416,23 @@ fn stage_extract(state: &AppState, run: &storage::AutopilotRun) -> Result<(), St
 /// be classified), so the caller falls back to the AI path. Runs in **both**
 /// trust-ladder modes — [`crate::jobs::structured_extraction::
 /// run_structured_extraction`] derives the per-fact confirmation state from
-/// `run.mode` and the pipeline's acceptance.
-///
-/// - **Xhtml/ESEF**: the period is self-derived from the iXBRL contexts (ESEF
-///   is an annual filing → `FY` at the latest context date).
-/// - **Pdf**: the period is derived from the document's title/URL via
-///   [`crate::report_diff::classify::period_sort_key`], assuming a calendar
-///   fiscal year (index 1→`Q1`/`-03-31`, 2→`H1`/`-06-30`, 3→`Q3`/`-09-30`,
-///   4→`FY`/`-12-31`). An unparseable or ambiguous intra-year period (index
-///   `0`) is not guessed — it falls to AI. A non-calendar fiscal year is
-///   either caught later by the cross-period comparative check or, worst
-///   case, falls to AI on the next report.
+/// `run.mode` and the pipeline's acceptance. The period derivation (ESEF vs
+/// PDF title/URL) lives in [`crate::jobs::structured_extraction::
+/// derive_report_period`], shared with the on-demand "Extract data" command.
 fn try_structured_extraction(
     state: &AppState,
     run: &storage::AutopilotRun,
 ) -> Result<Option<crate::jobs::structured_extraction::StructuredExtractionResult>, String> {
-    use crate::fundamentals::extraction::{esef::parse_esef, primary_period_end};
-    use crate::report_diff::classify::period_sort_key;
-    use crate::report_diff::extraction::SourceFormat;
-
     let document = state
         .get_report_document(&run.report_document_id)
         .map_err(|e| e.to_string())?;
-    let Some(local_path) = document.local_path.clone() else {
+    // Period derivation is shared with the on-demand "Extract data" command so
+    // the two paths never drift (`derive_report_period`). `None` → not eligible
+    // for the deterministic path; fall back to AI.
+    let Some((fiscal_year, period_type, period_end)) =
+        crate::jobs::structured_extraction::derive_report_period(state, &document)
+    else {
         return Ok(None);
-    };
-    let format = SourceFormat::resolve(document.content_type.as_deref(), &local_path);
-
-    let (fiscal_year, period_type, period_end): (i64, &'static str, String) = match format {
-        SourceFormat::Xhtml => {
-            let bytes = match std::fs::read(state.data_dir().join(&local_path)) {
-                Ok(b) => b,
-                Err(_) => return Ok(None),
-            };
-            let facts = match parse_esef(&bytes) {
-                Ok(f) => f,
-                Err(_) => return Ok(None), // Not valid iXBRL → fall back to AI.
-            };
-            let Some(period_end) = primary_period_end(&facts) else {
-                return Ok(None);
-            };
-            let Some(fiscal_year) = period_end.get(0..4).and_then(|y| y.parse::<i64>().ok()) else {
-                return Ok(None);
-            };
-            (fiscal_year, "FY", period_end)
-        }
-        SourceFormat::Pdf => {
-            let title = document.title.as_deref().unwrap_or("");
-            let Some((year, period_index)) = period_sort_key(title, &document.url) else {
-                return Ok(None); // No parseable period → fall back to AI.
-            };
-            let period_type = match period_index {
-                1 => "Q1",
-                2 => "H1",
-                3 => "Q3",
-                4 => "FY",
-                // Unknown intra-year period (0) — never guess; fall back to AI.
-                _ => return Ok(None),
-            };
-            let period_end = match period_type {
-                "Q1" => format!("{year}-03-31"),
-                "H1" => format!("{year}-06-30"),
-                "Q3" => format!("{year}-09-30"),
-                _ => format!("{year}-12-31"),
-            };
-            (i64::from(year), period_type, period_end)
-        }
     };
 
     let result = crate::jobs::structured_extraction::run_structured_extraction(
@@ -543,7 +494,45 @@ fn stage_cross_reference(state: &AppState, run: &storage::AutopilotRun) -> Resul
     let _ = state
         .autopilot()
         .set_cross_refs_json(&run.id, &cross_refs.to_string());
+
+    reenqueue_qualitative_assessments(state, run);
     Ok(())
+}
+
+/// §T6d (ADR 0075 Decision 5): on a new report, re-enqueue qualitative assessment
+/// for each framework that already has a prior agent assessment for this company
+/// — the bounded, meaningful "refresh existing judgment on new evidence" set (no
+/// explicit framework↔company assignment model exists). The assessment runs as
+/// its own durable job; this only re-arms it. Idempotent per `company:framework`
+/// via [`enqueue_assessment`] — a re-arm arriving while a run is in flight is parked
+/// in that pair's follow-up row, never dropped. Best-effort: a storage hiccup here
+/// must never fail the pipeline (the report is already processed).
+fn reenqueue_qualitative_assessments(state: &AppState, run: &storage::AutopilotRun) {
+    let frameworks = match state.frameworks_with_qualitative_assessments(&run.company_id) {
+        Ok(frameworks) => frameworks,
+        Err(error) => {
+            log::warn!(
+                "autopilot cross_reference: list assessed frameworks failed for {}: {error}",
+                run.company_id
+            );
+            return;
+        }
+    };
+    for framework in frameworks {
+        // `None` criterion set ⇒ refresh all qualitative criteria (§T6d, D3).
+        if let Err(error) = crate::commands::quality_frameworks::enqueue_assessment(
+            state,
+            &run.company_id,
+            &framework.framework_id,
+            None,
+        ) {
+            log::warn!(
+                "autopilot cross_reference: re-enqueue assessment failed for {}:{}: {error}",
+                run.company_id,
+                framework.framework_id
+            );
+        }
+    }
 }
 
 /// Stage 5 — compose the single notification summary and finalize the run. The
@@ -1708,6 +1697,106 @@ mod tests {
         assert_eq!(
             picked[0].id, "doc_ssf_pdf_new",
             "a strictly newer disclosure date must win regardless of format"
+        );
+    }
+
+    /// Helper: a company × framework with one qualitative criterion already
+    /// carrying a prior agent assessment (the §T6d re-enqueue precondition).
+    fn framework_with_prior_assessment(
+        state: &AppState,
+        company_id: &str,
+        name: &str,
+    ) -> storage::QualityFramework {
+        let framework = state
+            .create_quality_framework(storage::NewQualityFramework {
+                name: name.to_owned(),
+                description: None,
+            })
+            .expect("framework");
+        let criterion = state
+            .create_framework_criterion(storage::NewFrameworkCriterion {
+                framework_id: framework.id.clone(),
+                label: "Wide moat".to_owned(),
+                expression: String::new(),
+                weight: None,
+                partial_band: None,
+                ordinal: None,
+                kind: Some("qualitative".to_owned()),
+                assessment_guidance: Some("Assess moat.".to_owned()),
+            })
+            .expect("criterion");
+        state
+            .persist_qualitative_assessment(storage::PersistQualitativeAssessmentInput {
+                framework_id: framework.id.clone(),
+                company_id: company_id.to_owned(),
+                results: vec![storage::QualitativeCriterionResult {
+                    criterion_id: criterion.id,
+                    ordinal: 0,
+                    label: "Wide moat".to_owned(),
+                    verdict: "pass".to_owned(),
+                    reasoning: "Durable.".to_owned(),
+                    citations_json: "[]".to_owned(),
+                    confidence: "medium".to_owned(),
+                    prompt_version: "qualitative_assessment_v1".to_owned(),
+                }],
+            })
+            .expect("prior assessment");
+        framework
+    }
+
+    /// §T6d (ADR 0075 Decision 5): on a new report, the cross-reference stage
+    /// re-enqueues qualitative assessment for each framework that already has a
+    /// prior agent assessment for the company — and only those (bounded).
+    #[test]
+    fn cross_reference_reenqueues_qualitative_assessment_for_assessed_frameworks() {
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CBF".to_owned(),
+                display_name: "Cyber_Folks S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let assessed = framework_with_prior_assessment(&state, &company.id, "Kroeze");
+        // A framework never assessed for this company must NOT be re-enqueued.
+        let unassessed = state
+            .create_quality_framework(storage::NewQualityFramework {
+                name: "Unassessed".to_owned(),
+                description: None,
+            })
+            .expect("framework");
+
+        let run_id = "run_xref_qual";
+        state
+            .autopilot()
+            .create_run_if_absent(run_id, &company.id, "doc1", "manual", storage::MODE_ASSIST)
+            .expect("create run")
+            .expect("run created");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        stage_cross_reference(&state, &run).expect("cross_reference stage");
+
+        let assessed_job = format!("qualitative_assessment:{}:{}", company.id, assessed.id);
+        assert!(
+            state
+                .jobs()
+                .pending_payload(&assessed_job)
+                .expect("pending lookup")
+                .is_some(),
+            "an assessed framework should be re-enqueued"
+        );
+        let unassessed_job = format!("qualitative_assessment:{}:{}", company.id, unassessed.id);
+        assert!(
+            state
+                .jobs()
+                .pending_payload(&unassessed_job)
+                .expect("pending lookup")
+                .is_none(),
+            "a framework with no prior assessment must not be re-enqueued"
         );
     }
 }

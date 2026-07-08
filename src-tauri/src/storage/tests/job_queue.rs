@@ -34,6 +34,77 @@ fn reschedule_reruns_terminal_jobs_under_a_stable_id() {
 }
 
 #[test]
+fn a_followup_row_is_not_claimed_while_its_main_sibling_runs() {
+    // Sibling-serialization guard: a `<id>:followup` row parks a re-run behind a
+    // still-running main job (commands::quality_frameworks). The ai lane has >1
+    // worker, so without the guard a second worker could claim the follow-up and
+    // double-run a paid AI request. It becomes claimable only once the main
+    // sibling leaves `running`.
+    let jobs = state().jobs();
+    jobs.enqueue("qa:co:fw", "kind", "{}", 2).expect("main");
+    let main = jobs.claim_next().expect("claim").expect("main job");
+    assert_eq!(main.id, "qa:co:fw"); // now running
+
+    jobs.enqueue("qa:co:fw:followup", "kind", "{}", 2)
+        .expect("followup");
+    assert!(
+        jobs.claim_next().expect("claim").is_none(),
+        "the follow-up is not claimed while its main sibling runs"
+    );
+
+    // Once the main finishes, the parked follow-up becomes runnable.
+    jobs.mark_succeeded("qa:co:fw").expect("succeed");
+    let followup = jobs
+        .claim_next()
+        .expect("claim")
+        .expect("follow-up now runnable");
+    assert_eq!(followup.id, "qa:co:fw:followup");
+}
+
+#[test]
+fn a_main_row_is_not_claimed_while_its_followup_sibling_runs() {
+    // Symmetric guard: the reverse pairing must hold too — a main row re-armed while
+    // its follow-up runs (enqueue_assessment step 2 can re-arm a terminal main even
+    // as a follow-up is executing) must not run concurrently with that follow-up.
+    let jobs = state().jobs();
+    jobs.enqueue("qa:co:fw:followup", "kind", "{}", 2)
+        .expect("followup");
+    let followup = jobs.claim_next().expect("claim").expect("followup job");
+    assert_eq!(followup.id, "qa:co:fw:followup"); // now running
+
+    jobs.enqueue("qa:co:fw", "kind", "{}", 2).expect("main");
+    assert!(
+        jobs.claim_next().expect("claim").is_none(),
+        "the main row is not claimed while its follow-up sibling runs"
+    );
+
+    jobs.mark_succeeded("qa:co:fw:followup").expect("succeed");
+    let main = jobs
+        .claim_next()
+        .expect("claim")
+        .expect("main now runnable");
+    assert_eq!(main.id, "qa:co:fw");
+}
+
+#[test]
+fn the_sibling_guard_only_pairs_a_row_with_its_own_followup() {
+    // The guard must not over-block: a row that merely shares a prefix (not the exact
+    // `<id>:followup` pairing) is claimed normally while another runs.
+    let jobs = state().jobs();
+    jobs.enqueue("qa:co:fw", "kind", "{}", 2)
+        .expect("running one");
+    jobs.claim_next().expect("claim").expect("first"); // qa:co:fw running
+
+    jobs.enqueue("qa:co:fw2", "kind", "{}", 2)
+        .expect("prefix-sharing but unrelated");
+    let other = jobs
+        .claim_next()
+        .expect("claim")
+        .expect("an unrelated row is still claimable");
+    assert_eq!(other.id, "qa:co:fw2");
+}
+
+#[test]
 fn enqueue_is_idempotent_by_id() {
     let jobs = state().jobs();
 

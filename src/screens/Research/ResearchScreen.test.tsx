@@ -1,4 +1,4 @@
-import { describe, it, vi } from "vitest";
+import { describe, it } from "vitest";
 import {
   expect,
   invoke,
@@ -180,9 +180,8 @@ describe("Research screen workflows", () => {
     ).toBeInTheDocument();
   });
 
-  it("confirms and deletes a selected research question", async () => {
+  it("confirms in place and deletes a selected research question", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     renderApp({ section: "Research" });
 
@@ -190,16 +189,16 @@ describe("Research screen workflows", () => {
       expect(screen.getAllByText("Will margins recover?").length).toBeGreaterThan(0);
     });
 
+    // Cascading (ADR 0076 D5): confirm in place, then the delete fires.
     await user.click(screen.getByRole("button", { name: "Delete research question" }));
+    expect(invoke).not.toHaveBeenCalledWith("delete_research_question", expect.anything());
+    await user.click(screen.getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_research_question", {
         id: "research_question_company_gpw_cdr_margin",
       });
     });
-    expect(confirm).toHaveBeenCalledWith('Delete research question "Will margins recover?"?');
-
-    confirm.mockRestore();
   });
 
   it("loads watchlist evidence and can explicitly cascade review to member companies", async () => {
@@ -372,6 +371,27 @@ describe("Research screen workflows", () => {
 
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     expect(screen.getByLabelText("Inbox company")).toHaveValue("GPW:CDR");
+  });
+
+  it("folds the review queue and questions behind count chips that expand in place (density)", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Research" });
+
+    // U7-D density (ADR 0076 D6): below L / when short, secondary sections fold to
+    // a clickable count chip (aria-expanded) that reveals the section in place; the
+    // content stays in the DOM (CSS keys off the tier + data-expanded flag).
+    const reviewChip = await screen.findByRole("button", { name: /Review queue/i });
+    expect(reviewChip).toHaveAttribute("aria-expanded", "false");
+    expect(reviewChip.getAttribute("aria-controls")).toBeTruthy();
+
+    await user.click(reviewChip);
+    expect(reviewChip).toHaveAttribute("aria-expanded", "true");
+
+    const questionsChip = screen.getByRole("button", { name: /Research questions/i });
+    expect(questionsChip).toHaveAttribute("aria-expanded", "false");
+    await user.click(questionsChip);
+    expect(questionsChip).toHaveAttribute("aria-expanded", "true");
   });
 
   it("resizes research split panels with keyboard controls", async () => {

@@ -1,13 +1,19 @@
 # Quality frameworks
 
-A **quality framework** is your own checklist of quantitative criteria that a
-company should meet — for example: high return on equity, conservative debt,
-positive free cash flow, steady growth. Brawler evaluates the checklist against
-the company's reported fundamentals and produces a **scorecard**: pass / partial
-/ fail / no-data for each criterion, with the measured value shown next to it.
+A **quality framework** is your own checklist of criteria that a company should
+meet. Criteria come in two kinds:
 
-It's all deterministic and offline — no AI, no network. And it's decision
-support only: a framework measures facts, it never tells you to buy or sell.
+- **Quantitative** — measurable checks like high return on equity, conservative
+  debt, positive free cash flow. Brawler evaluates these against the company's
+  reported fundamentals, fully deterministic and offline — no AI, no network.
+- **Qualitative** — judgment questions like *does the company have a moat?* or
+  *is management's capital allocation disciplined?* These are assessed by an AI
+  agent **using only the evidence already stored in your app**, with citations
+  you can check (see [Qualitative criteria](#qualitative-criteria-agent-assessed)).
+
+Either way the result is a **scorecard**: pass / partial / fail / no-data (or
+*insufficient evidence*) per criterion. And it's decision support only: a
+framework measures facts and evidence, it never tells you to buy or sell.
 
 > New to the expression syntax? See the **[DSL reference](dsl-reference.md)**.
 
@@ -44,6 +50,38 @@ your edits to that framework are replaced.
 Criteria can be simple (`fcf > 0`) or combine several tests
 (`net_debt_to_ebitda < 2.5 AND fcf > 0`). See the
 [DSL reference](dsl-reference.md) for everything available.
+
+## Qualitative criteria (agent-assessed)
+
+Some things that matter — moat, pricing power, recurring revenue, capital
+allocation — can't be written as a formula. For those, add a **qualitative**
+criterion (*Add qualitative criterion*): instead of an expression it carries
+**assessment guidance** — your description of what the agent should look at and
+what strong evidence would look like.
+
+How it works:
+
+- Click **Assess** (whole framework) or **Assess this criterion** (one row). The
+  assessment runs as a background job; results appear when it completes.
+- The agent reads **only what your app already holds** for that company —
+  claims, notes, typed signals, transcript segments, and stored report documents.
+  It never searches the web, and every verdict must cite the evidence it used.
+  You can open each citation and judge it yourself.
+- The verdict is pass / partial / fail — or **insufficient evidence** when the
+  stored material simply doesn't answer the question. That's an honest "can't
+  tell yet", not a fail.
+- Answers are written in the app's current language.
+- **Re-run assessment** regenerates a verdict whenever you want (e.g. after new
+  reports arrive). When [Autopilot](autopilot.md) processes a new report, it
+  re-assesses qualitative criteria automatically, and a **changed verdict** is
+  surfaced in your research digest so shifts don't slip by silently.
+- Asking for an assessment while one is already running is safe — the request
+  is parked and runs right after, so nothing is lost and nothing runs twice.
+
+Qualitative assessment needs an AI provider: route the **Qualitative
+assessment** capability to a provider (and optionally a failover pool) in
+Settings → AI — see [AI provider pools](ai-provider-presets.md). Everything
+else on this page stays fully offline.
 
 ## Running an evaluation
 

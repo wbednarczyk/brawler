@@ -1,7 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import * as eventsApi from "../api/events";
 import type { Company, CompanyEvent } from "../api/types";
-import { formatLocalDate } from "../shared/formatting/date";
+import { formatLocalDate } from "../shared/format/datetime";
 import type { CompanyEventForm, CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import { emptyCompanyEventForm } from "./eventForms";
 

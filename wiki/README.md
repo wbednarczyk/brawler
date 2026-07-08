@@ -26,8 +26,9 @@ per feature.
   controls (autopilot mode, IR reports URL) and the bulk **Manage settings**
   surface for changing several companies, or a whole watchlist, at once.
 - **[Quality frameworks](quality-frameworks.md)** — score a company against your
-  own quantitative quality checklists, built from the company's reported
-  fundamentals.
+  own quality checklists: quantitative criteria computed from reported
+  fundamentals, plus qualitative criteria (moat, capital allocation…) assessed
+  by an AI agent from your stored evidence, with citations.
 - **[DSL reference](dsl-reference.md)** — the small expression language used to
   write quality-framework criteria (e.g. `roic >= 15%`,
   `net_debt_to_ebitda < 2.5 AND fcf > 0`).

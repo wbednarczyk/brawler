@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ChevronRight, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import type { FinancialFact, FinancialPeriod, KpiDefinition } from "../../api/financialsTypes";
 import { useLocale, type LocaleCode } from "../../shared/locale";
 import { localizedKpiLabel } from "../../shared/locale/kpiLabels";
@@ -109,6 +109,12 @@ export function FundamentalsPanel({
   const [companyDefinitions, setCompanyDefinitions] = useState<KpiDefinition[]>([]);
   const [kpiQuery, setKpiQuery] = useState("");
   const [confirmDeleteFact, setConfirmDeleteFact] = useState(false);
+  // U7-A density disclosures (ADR 0076 D6). Collapsed by default so the CSS tier
+  // switch only reveals them where the contract folds content: the Autopilot
+  // summary row at S, the reporting forms when the pane is short. At tall/wide
+  // tiers the container queries ignore the collapsed state and show them inline.
+  const [autopilotExpanded, setAutopilotExpanded] = useState(false);
+  const [formsExpanded, setFormsExpanded] = useState(false);
 
   // Structured-first provenance (ADR 0061): the source tier + validation verdict
   // the pipeline recorded per fact, badged on the fact detail. Legacy/manual
@@ -239,11 +245,11 @@ export function FundamentalsPanel({
 
   return (
     <div className="company-tab-panel fundamentals-panel" aria-label={text("Company fundamentals")}>
-      <SectionHeader
-        level="h3"
-        title={text("Fundamentals")}
-        description={factsRecordedLabel(financialFacts.length, locale)}
-      />
+      {/* Compact header (ADR 0076 D6 global rule): no in-panel heading repeating
+          the "Fundamentals" pane tab title — just the fact-count caption. */}
+      <p className="fundamentals-caption num-tabular">
+        {factsRecordedLabel(financialFacts.length, locale)}
+      </p>
 
       {fundamentalsError ? (
         <ErrorText>{text("Fundamentals command failed")}: {fundamentalsError}</ErrorText>
@@ -252,55 +258,28 @@ export function FundamentalsPanel({
         <ErrorText>{text("Failed to load fundamentals data")}: {fundamentalsLoadError}</ErrorText>
       ) : null}
 
-      <CompanyAutopilotField companyId={companyId} />
+      {/* Autopilot section (U7-A): folds to a summary row + expand at the S tier
+          (container query), inline field at M/L. */}
+      <div className={`fundamentals-autopilot${autopilotExpanded ? " is-expanded" : ""}`}>
+        <button
+          type="button"
+          className="fundamentals-autopilot-toggle"
+          aria-expanded={autopilotExpanded}
+          onClick={() => setAutopilotExpanded((value) => !value)}
+        >
+          <span aria-hidden="true" className="fundamentals-autopilot-chevron">
+            <ChevronRight size={15} />
+          </span>
+          {text("Autopilot")}
+        </button>
+        <div className="fundamentals-autopilot-body">
+          <CompanyAutopilotField companyId={companyId} />
+        </div>
+      </div>
 
       <CompanyIrReportsUrlField companyId={companyId} />
 
       <CustomKpiManager companyId={companyId} onDefinitionsChange={setCompanyDefinitions} />
-
-      {/* Create Financial Period Section */}
-      <section className="fundamentals-section" aria-label={text("Create reporting period")}>
-        <SectionHeader level="h4" title={text("New reporting period")} />
-        <form className="fundamentals-form" onSubmit={createFinancialPeriod}>
-          <div className="fundamentals-form-row">
-            <TextField
-              label={text("Fiscal year")}
-              aria-label={text("Fiscal year")}
-              type="number"
-              min="1900"
-              max="2100"
-              value={fundamentalsForm.periodFiscalYear}
-              onChange={(event) =>
-                updateFundamentalsForm("periodFiscalYear", event.target.value)
-              }
-              placeholder="2024"
-            />
-            <SelectField
-              label={text("Period type")}
-              aria-label={text("Period type")}
-              value={fundamentalsForm.periodType}
-              onChange={(event) =>
-                updateFundamentalsForm("periodType", event.target.value)
-              }
-            >
-              <option value="annual">{text("Annual")}</option>
-              <option value="q1">{text("Q1")}</option>
-              <option value="q2">{text("Q2")}</option>
-              <option value="q3">{text("Q3")}</option>
-              <option value="q4">{text("Q4")}</option>
-            </SelectField>
-            <Button
-              className="compact-button"
-              disabled={!fundamentalsForm.periodFiscalYear.trim()}
-              type="submit"
-              variant="primary"
-            >
-              <Plus size={15} />
-              {text("Create")}
-            </Button>
-          </div>
-        </form>
-      </section>
 
       {/* Financial Periods List */}
       <section className="fundamentals-section" aria-label={text("Reporting periods")}>
@@ -326,7 +305,9 @@ export function FundamentalsPanel({
 
         <div className="fundamentals-workspace">
           {factMatrix.rows.length > 0 ? (
-            <div className="facts-matrix-scroll" aria-label={text("Financial facts matrix")}>
+            /* The KPI × period matrix is DELIBERATE wide content: it scrolls inside
+               this bounded wrapper (data-hscroll exempts it from the layout gate). */
+            <div className="facts-matrix-scroll" data-hscroll aria-label={text("Financial facts matrix")}>
               <table className="facts-matrix">
                 <thead>
                   <tr>
@@ -612,10 +593,68 @@ export function FundamentalsPanel({
         </div>
       </section>
 
-      {/* Add Financial Fact Section */}
-      {financialPeriods.length > 0 ? (
-        <section className="fundamentals-section" aria-label={text("Add financial fact")}>
-          <SectionHeader level="h4" title={text("Add financial fact")} />
+      {/* Reporting forms (U7-A density row): create-period + add-fact side-by-side
+          at L, one column at M/S, folded behind a disclosure when the pane is
+          short (only the matrix + section headers stay visible). */}
+      <div className={`fundamentals-forms${formsExpanded ? " is-expanded" : ""}`}>
+        <button
+          type="button"
+          className="fundamentals-forms-toggle"
+          aria-expanded={formsExpanded}
+          onClick={() => setFormsExpanded((value) => !value)}
+        >
+          <span aria-hidden="true" className="fundamentals-forms-chevron">
+            <ChevronRight size={15} />
+          </span>
+          {text("Reporting forms")}
+        </button>
+        <div className="fundamentals-forms-grid">
+          <section className="fundamentals-section" aria-label={text("Create reporting period")}>
+            <SectionHeader level="h4" title={text("New reporting period")} />
+            <form className="fundamentals-form" onSubmit={createFinancialPeriod}>
+              <div className="fundamentals-form-row">
+                <TextField
+                  label={text("Fiscal year")}
+                  aria-label={text("Fiscal year")}
+                  type="number"
+                  min="1900"
+                  max="2100"
+                  value={fundamentalsForm.periodFiscalYear}
+                  onChange={(event) =>
+                    updateFundamentalsForm("periodFiscalYear", event.target.value)
+                  }
+                  placeholder="2024"
+                />
+                <SelectField
+                  label={text("Period type")}
+                  aria-label={text("Period type")}
+                  value={fundamentalsForm.periodType}
+                  onChange={(event) =>
+                    updateFundamentalsForm("periodType", event.target.value)
+                  }
+                >
+                  <option value="annual">{text("Annual")}</option>
+                  <option value="q1">{text("Q1")}</option>
+                  <option value="q2">{text("Q2")}</option>
+                  <option value="q3">{text("Q3")}</option>
+                  <option value="q4">{text("Q4")}</option>
+                </SelectField>
+                <Button
+                  className="compact-button"
+                  disabled={!fundamentalsForm.periodFiscalYear.trim()}
+                  type="submit"
+                  variant="primary"
+                >
+                  <Plus size={15} />
+                  {text("Create")}
+                </Button>
+              </div>
+            </form>
+          </section>
+
+          {financialPeriods.length > 0 ? (
+            <section className="fundamentals-section" aria-label={text("Add financial fact")}>
+              <SectionHeader level="h4" title={text("Add financial fact")} />
           <form
             className="fundamentals-form"
             onSubmit={async (event) => {
@@ -693,9 +732,11 @@ export function FundamentalsPanel({
                 {text("Add fact")}
               </Button>
             </div>
-          </form>
-        </section>
-      ) : null}
+              </form>
+            </section>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }

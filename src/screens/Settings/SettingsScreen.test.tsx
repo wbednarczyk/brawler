@@ -21,6 +21,11 @@ function updateSettingsCallCount(): number {
 }
 
 describe("Settings screen workflows", () => {
+  // Walks five settings sections plus a locale flip through the full app render —
+  // dozens of userEvent round-trips that legitimately exceed the 5s default when
+  // the whole suite transforms in parallel (flaked 3× at 50xx/5000ms under the
+  // full gate, always green in isolation — card b6b866f). Explicit budget, not a
+  // weaker assertion.
   it("shows local settings and persists theme changes", async () => {
     const user = userEvent.setup();
 
@@ -83,8 +88,11 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByText("Shortcuts are ignored while typing in fields and editors.")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Open Inbox")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Focus Inbox search")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Open command palette")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Ctrl+1")).toBeInTheDocument();
+    // The command palette now owns Ctrl+K; Focus Inbox search moved to Ctrl+F.
     expect(within(settingsRegion).getByText("Ctrl+K")).toBeInTheDocument();
+    expect(within(settingsRegion).getByText("Ctrl+F")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Shift+F9")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Select next inbox item")).toBeInTheDocument();
@@ -257,7 +265,7 @@ describe("Settings screen workflows", () => {
     await user.click(within(primaryNavigation).getByRole("button", { name: "Transkrypcje" }));
     expect(await screen.findByRole("heading", { name: "Transkrypcje" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Odśwież zadania" })).toBeInTheDocument();
-  });
+  }, 20_000);
 
   it("routes an AI capability to an ordered provider pool and configures the OpenAI-compatible provider (ADR 0060 amended)", async () => {
     const user = userEvent.setup();
@@ -595,9 +603,9 @@ describe("Settings screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Database" }));
+    await user.click(within(settingsRegion).getByRole("button", { name: "Data storage" }));
 
-    expect(within(settingsRegion).getByRole("heading", { name: "Database" })).toBeInTheDocument();
+    expect(within(settingsRegion).getByRole("heading", { name: "Data storage" })).toBeInTheDocument();
     expect(
       within(settingsRegion).getByText(
         "Advanced connection-pool tuning. Changes apply on the next app launch.",
@@ -614,7 +622,7 @@ describe("Settings screen workflows", () => {
       input: { dbBusyTimeoutMs: 30000 },
     });
 
-    const databaseSection = within(settingsRegion).getByRole("region", { name: "Database" });
+    const databaseSection = within(settingsRegion).getByRole("region", { name: "Data storage" });
     await user.click(within(databaseSection).getByRole("button", { name: "Reset to defaults" }));
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { dbMaxConnections: 4, dbBusyTimeoutMs: 5000, dbAcquireTimeoutMs: 10000 },
@@ -629,7 +637,7 @@ describe("Settings screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Settings" }));
     const settingsRegion = await screen.findByLabelText("Application settings");
 
-    await user.click(within(settingsRegion).getByRole("button", { name: "Database" }));
+    await user.click(within(settingsRegion).getByRole("button", { name: "Data storage" }));
 
     const queueSection = within(settingsRegion).getByRole("region", { name: "Background work" });
     expect(
@@ -653,5 +661,28 @@ describe("Settings screen workflows", () => {
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
     });
+  });
+
+  // U7-E2 density contract (ADR 0076 D6): at the S tier the section tab list
+  // collapses to a SelectField (same options + selection state as the Subnav).
+  // Both controls always render and share `activeSettingsTab`; the tier switch
+  // that hides one or the other is CSS-only, so here we assert the select's
+  // semantics (jsdom-visible) — the visual collapse is asserted in the browser
+  // spec (tests/browser/density-utility.spec.ts).
+  it("mirrors the settings sections in an S-tier section select", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Settings" });
+
+    const sectionSelect = await screen.findByLabelText("Settings section");
+    expect(sectionSelect).toHaveValue("appearance");
+    expect(within(sectionSelect).getByRole("option", { name: "Sources" })).toBeInTheDocument();
+    expect(within(sectionSelect).getByRole("option", { name: "AI" })).toBeInTheDocument();
+
+    // Selecting a section through the collapsed control switches the panel, the
+    // same effect as clicking the Subnav tab.
+    await user.selectOptions(sectionSelect, "ai");
+    const settingsRegion = screen.getByLabelText("Application settings");
+    expect(within(settingsRegion).getByRole("heading", { name: "AI" })).toBeInTheDocument();
   });
 });

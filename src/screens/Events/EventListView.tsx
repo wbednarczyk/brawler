@@ -52,8 +52,10 @@ export function EventListView({
 
         return (
           <div className="event-row-block" key={event.id} data-event-id={event.id}>
-            <article
+            <button
+              type="button"
               aria-label={`${text("Open event")}: ${event.title}`}
+              aria-pressed={isSelected}
               className={[
                 "event-row",
                 event.manual ? "event-manual" : "",
@@ -63,14 +65,6 @@ export function EventListView({
                 .filter(Boolean)
                 .join(" ")}
               onClick={() => toggleEvent(event)}
-              onKeyDown={(keyboardEvent) => {
-                if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-                  keyboardEvent.preventDefault();
-                  toggleEvent(event);
-                }
-              }}
-              role="button"
-              tabIndex={0}
             >
               <div className="event-date-box">
                 <CalendarDays size={16} aria-hidden="true" />
@@ -91,7 +85,7 @@ export function EventListView({
                 <span>{formatCompanyEventStatus(event.status)}</span>
                 <small>{event.manual ? text("Manual") : formatCompanyEventSourceType(event.sourceType)}</small>
               </div>
-            </article>
+            </button>
 
             {isSelected ? (
               <div className="event-detail-panel" aria-label={text("Event details")}>

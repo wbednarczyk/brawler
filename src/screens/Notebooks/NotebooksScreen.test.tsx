@@ -304,13 +304,13 @@ describe("Notebook and transcript workflows", () => {
       ).toHaveLength(1);
     });
 
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-
+    // Cascading (ADR 0076 D5): confirm in place, then the delete fires.
     await user.click(
       within(transcriptJobsRegion).getByRole("button", {
         name: "Delete transcript job New job conference",
       }),
     );
+    await user.click(within(transcriptJobsRegion).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_video_transcript_job", {
@@ -322,8 +322,6 @@ describe("Notebook and transcript workflows", () => {
         name: "Open transcript job: https://www.youtube.com/watch?v=newjob",
       }),
     ).not.toBeInTheDocument();
-
-    confirm.mockRestore();
   });
 
   it("edits and saves the selected notebook entry with shortcuts", async () => {
@@ -369,10 +367,38 @@ describe("Notebook and transcript workflows", () => {
     });
   });
 
+  // U7-C density contract (ADR 0076 D6): the global Notebooks screen is single
+  // column at the S width tier — selecting a note swaps the list for the detail
+  // with a back-to-list affordance that returns to the list. jsdom has no
+  // container queries, so this asserts the toggle STATE (the `data-detail-open`
+  // flag the S-tier CSS keys off + the back control); the visual collapse is
+  // browser-tested in tests/browser/density-notebook-claims.spec.ts.
+  it("toggles to a single-column detail with a back-to-list affordance", async () => {
+    const user = userEvent.setup();
+    appTestState.notebookEntriesResponse = [initialNotebookEntry];
+
+    renderApp({ section: "Notebooks" });
+
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+    expect(notebooksWorkspace).not.toHaveAttribute("data-detail-open");
+
+    const notebookRow = await within(notebooksWorkspace).findByRole("button", {
+      name: "Select notebook screen entry: Release schedule promise",
+    });
+    await user.click(notebookRow);
+
+    expect(notebooksWorkspace).toHaveAttribute("data-detail-open");
+    const back = within(notebooksWorkspace).getByRole("button", { name: "Back to note list" });
+    await user.click(back);
+
+    expect(notebooksWorkspace).not.toHaveAttribute("data-detail-open");
+    expect(
+      within(notebooksWorkspace).queryByRole("button", { name: "Back to note list" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("deletes the selected notebook entry from the detail toolbar", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-
     appTestState.notebookEntriesResponse = [initialNotebookEntry];
 
     renderApp({ section: "Notebooks" });
@@ -384,6 +410,8 @@ describe("Notebook and transcript workflows", () => {
     });
 
     await user.click(notebookRow);
+    // Reversible destroy (ADR 0076 D5): a note deletes immediately and offers undo
+    // — no blocking confirm.
     await user.click(within(notebooksWorkspace).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => {
@@ -391,7 +419,6 @@ describe("Notebook and transcript workflows", () => {
         id: "note_company_gpw_cdr_release_schedule",
       });
     });
-    expect(confirm).toHaveBeenCalledWith("Delete Release schedule promise?");
     await waitFor(() => {
       expect(
         within(notebooksWorkspace).queryByRole("button", {
@@ -400,6 +427,48 @@ describe("Notebook and transcript workflows", () => {
       ).not.toBeInTheDocument();
     });
     expect(screen.getByText("Select a note to read or edit it.")).toBeInTheDocument();
+    // The undo toast is offered instead of a confirm dialog.
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveTextContent("Note deleted");
+    expect(within(toast).getByRole("button", { name: "Undo" })).toBeInTheDocument();
+  });
+
+  it("moves focus to the next note row after deleting the selected note (ADR 0076 D9)", async () => {
+    const user = userEvent.setup();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    appTestState.notebookEntriesResponse = [
+      initialNotebookEntry,
+      {
+        ...initialNotebookEntry,
+        id: "note_company_gpw_cdr_second_focus",
+        title: "Second note for focus flow",
+      },
+    ];
+
+    renderApp({ section: "Notebooks" });
+
+    const notebooksWorkspace = await screen.findByLabelText("Notebooks workspace");
+    const firstRow = await within(notebooksWorkspace).findByRole("button", {
+      name: "Select notebook screen entry: Release schedule promise",
+    });
+    const secondRow = within(notebooksWorkspace).getByRole("button", {
+      name: "Select notebook screen entry: Second note for focus flow",
+    });
+
+    await user.click(firstRow);
+    // Delete lives in the detail-pane editor, outside the list; the list-side
+    // hook still lands focus on the next note rather than <body>.
+    await user.click(within(notebooksWorkspace).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(
+        within(notebooksWorkspace).queryByRole("button", {
+          name: "Select notebook screen entry: Release schedule promise",
+        }),
+      ).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(secondRow);
 
     confirm.mockRestore();
   });

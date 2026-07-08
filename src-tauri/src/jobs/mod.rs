@@ -7,6 +7,7 @@ pub mod event_derivation;
 pub mod feed_cleanup;
 pub mod handlers;
 pub mod kpi_extraction;
+pub mod qualitative_assessment;
 pub mod queue;
 pub mod report_extraction;
 pub mod research_briefs;
@@ -306,6 +307,36 @@ mod tests {
             registry::GEMINI_ANALYSIS_PROVIDER_ID
         );
         assert_eq!(members[0].model, "gemini-3.5-flash");
+    }
+
+    #[test]
+    fn qualitative_assessment_resolves_through_the_text_pool() {
+        // ADR 0075: the new capability routes like any text capability — its
+        // `capability_providers` override wins, else the general fallback.
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        state
+            .update_settings(SettingsUpdate {
+                general_analysis_provider: Some(registry::GEMINI_ANALYSIS_PROVIDER_ID.to_owned()),
+                general_analysis_model: Some("gemini-3.5-flash".to_owned()),
+                capability_providers: Some(HashMap::from([(
+                    AiCapability::QualitativeAssessment.key().to_owned(),
+                    vec![CapabilityProviderEntry {
+                        provider: registry::ANTHROPIC_ANALYSIS_PROVIDER_ID.to_owned(),
+                        model: "claude-sonnet-4-6".to_owned(),
+                    }],
+                )])),
+                ..Default::default()
+            })
+            .expect("settings should update");
+
+        let members = resolve_capability_members(&state, AiCapability::QualitativeAssessment)
+            .expect("resolution should succeed");
+        assert_eq!(members.len(), 1);
+        assert_eq!(
+            members[0].provider_id,
+            registry::ANTHROPIC_ANALYSIS_PROVIDER_ID
+        );
     }
 
     #[test]

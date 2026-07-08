@@ -32,10 +32,10 @@ test.describe("browser UI regression smoke", () => {
     // 0054). Cockpit ("Research cockpit") + the cockpit-hosted screens are walked
     // by smoke-walk / screen-walk-extended; Notebooks/Research/Events/ReportSeason
     // are no longer sidebar buttons.
+    // Compare is hidden from the sidebar until v0.53 (U-Rc, ADR 0076 Resolved).
     for (const screenName of [
       "Today",
       "Companies",
-      "Compare",
       "Inbox",
       "Watchlists",
       "Transcripts",
@@ -121,12 +121,20 @@ test.describe("browser UI regression smoke", () => {
     const workspace = page.getByLabel("Notebooks workspace");
     const companyNav = page.getByLabel("Notebook companies");
 
-    // The panel mounts cleanly and its company nav stays independently scrollable
-    // (the full-screen three-pane height budget no longer applies in a docked
-    // panel, which can be narrow enough to collapse to a single visible pane).
+    // The panel mounts cleanly and stays usable at any pane width. At L (≥760)
+    // the three panes scroll independently; below L the density contract (ADR
+    // 0076 D6, U7) stacks them into one column and the SCREEN becomes the
+    // bounded scroll container, so per-pane scrollability is tier-dependent.
     await expect(workspace).toBeVisible();
     await expect(companyNav).toBeVisible();
-    await expectScrollable(companyNav);
+    const paneWidth = await workspace
+      .locator("xpath=ancestor::*[contains(@class,'cockpit-pane')]")
+      .evaluate((el) => el.clientWidth);
+    if (paneWidth >= 760) {
+      await expectScrollable(companyNav);
+    } else {
+      await expectScrollable(page.locator(".notebooks-screen"));
+    }
   });
 
   test("keeps Sources rows compact and expanded rows readable", async ({ page }) => {
@@ -144,7 +152,10 @@ test.describe("browser UI regression smoke", () => {
     expect((await expectBox(groupHeader)).height).toBeLessThanOrEqual(38);
     expect((await expectBox(sourceRow)).height).toBeLessThanOrEqual(58);
 
-    await sourceRow.click();
+    // Selection lives on the row's primary button (post-U9 container+button
+    // a11y pattern); the U7 grid columns mean a container-center click can land
+    // on a non-interactive meta column, so target the affordance directly.
+    await sourceRow.locator(".source-row-main").click();
     await expect(sourceRow).toHaveClass(/source-row-selected/);
     await expect(page.getByLabel("Source details").first()).toBeVisible();
   });

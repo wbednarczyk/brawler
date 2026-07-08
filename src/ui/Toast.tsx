@@ -1,0 +1,139 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+
+// Feedback policy (ADR 0076 Decision 5). The Toast surface backs the
+// undo-vs-confirm contract: a reversible destroy runs immediately and offers a
+// `Cofnij` action here instead of a blocking native dialog. Bottom-left queue,
+// auto-dismiss after 6s (paused while hovered), at most 3 stacked, each toast a
+// `role="status"` live region. Strings arrive already translated — the primitive
+// is locale-agnostic so it can mount above LocaleContext.
+
+const AUTO_DISMISS_MS = 6000;
+const MAX_STACK = 3;
+
+export type ToastTone = "neutral" | "positive" | "caution" | "negative";
+
+export type ToastInput = {
+  message: string;
+  tone?: ToastTone;
+  actionLabel?: string;
+  onAction?: () => void;
+  /** Override the auto-dismiss window (ms). Defaults to 6000. */
+  durationMs?: number;
+};
+
+type ToastRecord = ToastInput & { id: string };
+
+export type ToastApi = {
+  show: (toast: ToastInput) => string;
+  dismiss: (id: string) => void;
+};
+
+const ToastContext = createContext<ToastApi | null>(null);
+
+export function useToast(): ToastApi {
+  const api = useContext(ToastContext);
+  if (!api) {
+    throw new Error("useToast must be used within a <ToastProvider>");
+  }
+  return api;
+}
+
+let toastCounter = 0;
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [toasts, setToasts] = useState<ToastRecord[]>([]);
+
+  const dismiss = useCallback((id: string) => {
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }, []);
+
+  const show = useCallback((toast: ToastInput) => {
+    const id = `toast-${(toastCounter += 1)}`;
+    // Newest at the end; keep only the last MAX_STACK, dropping the oldest.
+    setToasts((current) => [...current, { ...toast, id }].slice(-MAX_STACK));
+    return id;
+  }, []);
+
+  const api = useMemo<ToastApi>(() => ({ show, dismiss }), [show, dismiss]);
+
+  return (
+    <ToastContext.Provider value={api}>
+      {children}
+      <ToastViewport toasts={toasts} onDismiss={dismiss} />
+    </ToastContext.Provider>
+  );
+}
+
+function ToastViewport({
+  toasts,
+  onDismiss,
+}: {
+  toasts: ToastRecord[];
+  onDismiss: (id: string) => void;
+}) {
+  if (toasts.length === 0) {
+    return null;
+  }
+  return (
+    <ol className="ui-toast-viewport">
+      {toasts.map((toast) => (
+        <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
+      ))}
+    </ol>
+  );
+}
+
+function ToastItem({
+  toast,
+  onDismiss,
+}: {
+  toast: ToastRecord;
+  onDismiss: (id: string) => void;
+}) {
+  const [paused, setPaused] = useState(false);
+  const onDismissRef = useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  const duration = toast.durationMs ?? AUTO_DISMISS_MS;
+
+  useEffect(() => {
+    if (paused) {
+      return;
+    }
+    const timer = window.setTimeout(() => onDismissRef.current(toast.id), duration);
+    return () => window.clearTimeout(timer);
+    // Re-arm the timer whenever hover state flips (leave restarts the window).
+  }, [toast.id, duration, paused]);
+
+  const toneClass = toast.tone && toast.tone !== "neutral" ? ` ui-toast-${toast.tone}` : "";
+
+  function handleAction() {
+    toast.onAction?.();
+    onDismissRef.current(toast.id);
+  }
+
+  return (
+    <li
+      className={`ui-toast${toneClass}`}
+      role="status"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
+      <span className="ui-toast-message">{toast.message}</span>
+      {toast.actionLabel ? (
+        <button className="ui-toast-action" type="button" onClick={handleAction}>
+          {toast.actionLabel}
+        </button>
+      ) : null}
+    </li>
+  );
+}

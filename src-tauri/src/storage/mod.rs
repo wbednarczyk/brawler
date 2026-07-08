@@ -111,11 +111,11 @@ pub use financials::{
 pub use fundamentals_provenance::{FactProvenance, FundamentalsProvenanceStore, NewFactProvenance};
 pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
-pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore};
+pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore, JobStatusRow};
 pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
     CompletedKpiExtraction, ConfirmKpiProposalInput, KpiExtractionJob, KpiExtractionProposal,
-    NewKpiExtractionJob, NewKpiProposal, StructuredFactInput,
+    NewKpiExtractionJob, NewKpiProposal, StructuredFactCommit, StructuredFactInput,
 };
 pub use licensing::LicensingStore;
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
@@ -132,10 +132,11 @@ pub use notebooks::NotebookStore;
 pub use pool::open_pool;
 pub use quality_frameworks::QualityFrameworkStore;
 pub use quality_frameworks::{
-    CloneFrameworkInput, CriterionResult, EvaluateFrameworkInput, FrameworkCriterion,
-    FrameworkEvaluation, ListFrameworkEvaluationsInput, MetricKeyInfo, NewFrameworkCriterion,
-    NewQualityFramework, QualityFramework, UpdateFrameworkCriterion, UpdateQualityFramework,
-    ValidateCriterionResult,
+    AssessedFrameworkRef, CloneFrameworkInput, CriterionResult, EvaluateFrameworkInput,
+    FrameworkCriterion, FrameworkEvaluation, ListFrameworkEvaluationsInput, MetricKeyInfo,
+    NewFrameworkCriterion, NewQualityFramework, PersistQualitativeAssessmentInput,
+    QualitativeCriterionResult, QualitativeVerdictChange, QualityFramework,
+    UpdateFrameworkCriterion, UpdateQualityFramework, ValidateCriterionResult,
 };
 pub use queue_config::QueueConfig;
 pub use registry::SourceRegistryStore;
@@ -149,6 +150,7 @@ pub use report_season::{
 };
 pub use report_sections::{ReportSectionStore, StoredExtraction, StoredSection};
 pub use research::ResearchStore;
+pub use research::{citation_resolves, supplied_evidence_refs};
 pub use research_briefs::ResearchBriefStore;
 pub use research_briefs::{
     CompletedResearchBrief, NewResearchBriefCitation, NewResearchBriefJob, ResearchBrief,
@@ -1152,6 +1154,14 @@ impl AppState {
         self.quality_frameworks().evaluate_framework(input)
     }
 
+    pub fn persist_qualitative_assessment(
+        &self,
+        input: PersistQualitativeAssessmentInput,
+    ) -> StorageResult<FrameworkEvaluation> {
+        self.quality_frameworks()
+            .persist_qualitative_assessment(input)
+    }
+
     pub fn list_framework_evaluations(
         &self,
         input: ListFrameworkEvaluationsInput,
@@ -1161,6 +1171,32 @@ impl AppState {
 
     pub fn get_framework_evaluation(&self, id: &str) -> StorageResult<FrameworkEvaluation> {
         self.quality_frameworks().get_framework_evaluation(id)
+    }
+
+    pub fn get_qualitative_assessment(
+        &self,
+        framework_id: &str,
+        company_id: &str,
+    ) -> StorageResult<Vec<CriterionResult>> {
+        self.quality_frameworks()
+            .get_qualitative_assessment(framework_id, company_id)
+    }
+
+    pub fn qualitative_verdict_changes(
+        &self,
+        framework_id: &str,
+        company_id: &str,
+    ) -> StorageResult<Vec<QualitativeVerdictChange>> {
+        self.quality_frameworks()
+            .qualitative_verdict_changes(framework_id, company_id)
+    }
+
+    pub fn frameworks_with_qualitative_assessments(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<AssessedFrameworkRef>> {
+        self.quality_frameworks()
+            .frameworks_with_qualitative_assessments(company_id)
     }
 
     pub fn delete_framework_evaluation(&self, id: &str) -> StorageResult<()> {

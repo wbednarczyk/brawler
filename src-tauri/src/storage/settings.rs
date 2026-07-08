@@ -686,6 +686,17 @@ fn setting_string_or(
     }
 }
 
+/// The persisted app locale, normalized to a supported code (`pl` | `en`), for
+/// resolving bilingual template seeds (ADR 0076 Decision 8). An absent or
+/// unrecognized row falls back to the default `pl`.
+pub(super) fn seed_locale(connection: &Connection) -> StorageResult<String> {
+    let raw = setting_string_or(connection, "locale", "pl")?;
+    Ok(match raw.as_str() {
+        "en" => "en".to_owned(),
+        _ => "pl".to_owned(),
+    })
+}
+
 fn setting_json<T>(connection: &Connection, key: &'static str) -> StorageResult<T>
 where
     T: for<'de> Deserialize<'de>,

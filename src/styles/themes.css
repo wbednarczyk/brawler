@@ -13,11 +13,19 @@
   --primary: #57d7ff;
   --primary-strong: #2eb3ff;
   --secondary: #ff4fc4;
-  --accent: #9b6cff;
+  --accent: #a884ff;
   --highlight: #ff8ad8;
   --success: #4ade80;
   --warning: #fbbf24;
   --danger: #fb7185;
+  --tone-positive: var(--success);
+  --tone-caution: var(--warning);
+  --tone-negative: var(--danger);
+  --tone-neutral: var(--muted);
+  --tone-agent: var(--accent);
+  --tone-official: var(--primary);
+  --tone-media: var(--secondary);
+  --tone-user: var(--highlight);
   --shadow: 0 18px 60px rgb(0 0 0 / 32%);
 }
 
@@ -38,8 +46,16 @@
   --accent: #6941d9;
   --highlight: #c71985;
   --success: #15803d;
-  --warning: #a16207;
+  --warning: #8a5200;
   --danger: #be123c;
+  --tone-positive: var(--success);
+  --tone-caution: var(--warning);
+  --tone-negative: var(--danger);
+  --tone-neutral: var(--muted);
+  --tone-agent: var(--accent);
+  --tone-official: var(--primary);
+  --tone-media: var(--secondary);
+  --tone-user: var(--highlight);
   --shadow: 0 18px 50px rgb(28 40 80 / 16%);
 }
 
@@ -57,11 +73,19 @@
   --primary: #63c0e9;
   --primary-strong: #37a7d5;
   --secondary: #55388f;
-  --accent: #c550b9;
+  --accent: #d072c6;
   --highlight: #fb82c0;
   --success: #5bd69b;
   --warning: #f5c35b;
   --danger: #ff7392;
+  --tone-positive: var(--success);
+  --tone-caution: var(--warning);
+  --tone-negative: var(--danger);
+  --tone-neutral: var(--muted);
+  --tone-agent: var(--accent);
+  --tone-official: var(--primary);
+  --tone-media: var(--secondary);
+  --tone-user: var(--highlight);
   --shadow: 0 18px 60px rgb(0 2 30 / 40%);
 }
 
@@ -81,7 +105,15 @@
   --accent: #a02a96;
   --highlight: #d6388e;
   --success: #167a45;
-  --warning: #9a6514;
+  --warning: #875311;
   --danger: #b81e4c;
+  --tone-positive: var(--success);
+  --tone-caution: var(--warning);
+  --tone-negative: var(--danger);
+  --tone-neutral: var(--muted);
+  --tone-agent: var(--accent);
+  --tone-official: var(--primary);
+  --tone-media: var(--secondary);
+  --tone-user: var(--highlight);
   --shadow: 0 18px 50px rgb(6 17 53 / 16%);
 }

@@ -14,7 +14,7 @@
      Stack the row: main on top, watchlist chips beneath, full-width click target. */
   .company-row {
     grid-template-columns: 1fr;
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .company-row-context {

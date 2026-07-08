@@ -1,7 +1,7 @@
 .watchlists-workspace {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
-  gap: 14px;
+  gap: var(--space-4);
   min-height: 0;
   flex: 1;
 }
@@ -14,13 +14,13 @@
 .watchlists-sidebar {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .watchlist-list {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 0;
   max-height: none;
   overflow: auto;
@@ -28,9 +28,9 @@
 
 .watchlist-row {
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 42px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
 }
 
 .watchlist-row span {
@@ -42,8 +42,8 @@
 .watchlist-detail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
@@ -54,7 +54,7 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .watchlist-detail-header h3,
@@ -65,9 +65,9 @@
 }
 
 .watchlist-detail-header p {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .watchlist-detail-actions,
@@ -77,7 +77,7 @@
 .watchlist-table-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .watchlist-detail-actions {
@@ -95,9 +95,9 @@
 
 .watchlist-add-panel {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--primary) 7%, var(--surface));
@@ -110,13 +110,13 @@
 
 .watchlist-table-header span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .watchlist-members-section {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 0;
   flex: 1;
 }
@@ -125,7 +125,7 @@
 .watchlist-member-table {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 0;
   overflow: auto;
 }
@@ -146,9 +146,9 @@
 
 .watchlist-picker-row {
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 36px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   color: var(--text);
   text-align: left;
 }
@@ -166,8 +166,8 @@
 
 .watchlist-member-row {
   grid-template-columns: auto minmax(0, 1fr) minmax(110px, 0.45fr) auto;
-  gap: 10px;
-  padding: 7px 8px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
 }
 
 .watchlist-member-row span:not(.ticker-exchange):not(.ticker-symbol),
@@ -179,5 +179,47 @@
 
 .watchlist-member-row > span:nth-child(3) {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Watchlists density contract (U7-E2 / ADR 0076 Decision 6)                  */
+/* Rides the named `pane` size container (.workspace / .cockpit-pane). Base    */
+/* above is the L tier: names sidebar ∥ detail with the full company table     */
+/* (ticker · name · ISIN · remove).                                           */
+/* -------------------------------------------------------------------------- */
+
+/* Below L (M + S, <760px): the decorative ISIN column folds; the ticker
+   identity column is never truncated, so the membership editor keeps its
+   ticker + name + remove action. */
+@container pane (max-width: 759px) {
+  .watchlist-member-row {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .watchlist-member-row > span:nth-child(3) {
+    display: none;
+  }
+}
+
+/* S (<420px) + short (<480px tall): only the watchlist names + counts show; the
+   detail (membership editor + company table) folds until the pane widens. */
+@container pane (max-width: 419px) {
+  .watchlists-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchlist-detail {
+    display: none;
+  }
+}
+
+@container pane (max-height: 479px) {
+  .watchlists-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .watchlist-detail {
+    display: none;
+  }
 }

@@ -6,6 +6,14 @@ export const plText: Record<string, string> = {
   "Review": "Przejrzyj",
   "What changed": "Co się zmieniło",
   "To verify": "Do weryfikacji",
+  // U-Rb today — prioritized attention stream + counters (ADR 0076)
+  "Attention stream": "Strumień uwagi",
+  "Filter the stream": "Filtruj strumień",
+  "Nothing needs your attention.": "Nic nie wymaga Twojej uwagi.",
+  "Checking what needs your attention…": "Sprawdzanie, co wymaga uwagi…",
+  "Report": "Raport",
+  "Show all in Inbox": "Pokaż wszystko w Inbox",
+  "Show all in Claims": "Pokaż wszystko w Obietnicach",
   // Autopilot — autonomous report pipeline (ADR 0055)
   "Autopilot": "Autopilot",
   "Autopilot mode": "Tryb autopilota",
@@ -13,6 +21,10 @@ export const plText: Record<string, string> = {
   "New view": "Nowy widok",
   "Delete view": "Usuń widok",
   "Delete this saved view?": "Usunąć ten zapisany widok?",
+  // Undo toasts for reversible deletes (ADR 0076 D5)
+  "View deleted": "Widok usunięty",
+  "Note deleted": "Notatka usunięta",
+  "Reminder deleted": "Przypomnienie usunięte",
   "View name": "Nazwa widoku",
   "e.g. Earnings day": "np. Dzień wyników",
   "Grid presets": "Gotowe siatki",
@@ -21,6 +33,13 @@ export const plText: Record<string, string> = {
   "Preview": "Podgląd",
   "Create view": "Utwórz widok",
   "Save dashboard": "Zapisz dashboard",
+  // Cockpit view-company context (U-Ra, ADR 0076)
+  "View company": "Spółka widoku",
+  "Switch view company": "Przełącz spółkę widoku",
+  "Pin company": "Przypnij spółkę",
+  "Follow view company": "Podążaj za spółką widoku",
+  "Another panel already follows the view company": "Inny panel już podąża za spółką widoku",
+  "Choose the view company": "Wybierz spółkę widoku",
   // Per-company settings surface (ADR 0056)
   "Manage settings": "Zarządzaj ustawieniami",
   "Done": "Gotowe",
@@ -177,6 +196,33 @@ export const plText: Record<string, string> = {
   "Clone framework": "Klonuj ramę",
   "New framework": "Nowa rama",
   "My quality checklist": "Moja lista kontrolna jakości",
+  // Qualitative assessment (ADR 0075)
+  "Assess": "Oceń jakościowo",
+  "Assessment queued. Agent results appear here when the job completes.":
+    "Ocena w kolejce. Wyniki agenta pojawią się tutaj po zakończeniu zadania.",
+  "Insufficient evidence": "Niewystarczające dowody",
+  "Agent-assessed": "Oceniono przez agenta",
+  "Confidence": "Pewność",
+  "High": "Wysoka",
+  "Medium": "Średnia",
+  "Low": "Niska",
+  "Re-run assessment": "Uruchom ocenę ponownie",
+  "Assess this criterion": "Oceń to kryterium",
+  "Not assessed yet": "Jeszcze nie oceniono",
+  "Not assessed yet. Click Assess to evaluate this criterion.":
+    "Jeszcze nie oceniono. Kliknij Oceń jakościowo, aby ocenić to kryterium.",
+  "No citations for this assessment.": "Brak cytowań dla tej oceny.",
+  "Prompt": "Prompt",
+  "Add qualitative criterion": "Dodaj kryterium jakościowe",
+  "Criterion type": "Typ kryterium",
+  "Quantitative": "Ilościowe",
+  "Qualitative": "Jakościowe",
+  "Wide, durable moat": "Szeroka, trwała fosa",
+  "Assessment guidance": "Wskazówki do oceny",
+  "Describe what the agent should assess and what strong evidence looks like.":
+    "Opisz, co agent ma ocenić i jak wyglądają mocne dowody.",
+  "The agent judges this from app-held evidence only (reports, notes, claims, signals) and cites it. Decision support, not advice.":
+    "Agent ocenia to wyłącznie na podstawie dowodów w aplikacji (raporty, notatki, deklaracje, sygnały) i cytuje je. Wsparcie decyzji, nie porada.",
   "Report Season": "Sezon raportów",
   "Upcoming report dates across your watchlists, each with a pre-report card.":
     "Nadchodzące terminy raportów z Twoich list obserwowanych, każdy z kartą przedraportową.",
@@ -199,7 +245,7 @@ export const plText: Record<string, string> = {
   "No KPIs from the last reported period.": "Brak wskaźników KPI z ostatniego raportowanego okresu.",
   "Recent evidence": "Najnowsze dowody",
   "Loading…": "Ładowanie…",
-  "Database": "Baza danych",
+  "Data storage": "Przechowywanie danych",
   "Advanced connection-pool tuning. Changes apply on the next app launch.":
     "Zaawansowane strojenie puli połączeń. Zmiany działają po następnym uruchomieniu aplikacji.",
   "Max connections": "Maks. połączeń",
@@ -214,8 +260,8 @@ export const plText: Record<string, string> = {
   "AI workers": "Wątki AI",
   "Max concurrent calls per AI provider": "Maks. równoległych wywołań na dostawcę AI",
   "Backups": "Kopie zapasowe",
-  "Local database backups. Restore is applied on the next app launch.":
-    "Lokalne kopie zapasowe bazy danych. Przywracanie działa po następnym uruchomieniu aplikacji.",
+  "Local data backups. Restore is applied on the next app launch.":
+    "Lokalne kopie zapasowe danych. Przywracanie działa po następnym uruchomieniu aplikacji.",
   "Last backup": "Ostatnia kopia",
   "Backups kept": "Przechowywane kopie",
   "None yet": "Brak",
@@ -252,6 +298,7 @@ export const plText: Record<string, string> = {
   "Delete unsaved": "Usuń niezapisane",
   "Delete all unsaved feed items? Saved items will stay.": "Usunąć wszystkie niezapisane elementy kanału? Zapisane elementy pozostaną.",
   "Clear filters": "Wyczyść filtry",
+  "Filters": "Filtry",
   "Inbox filters": "Filtry inboxu",
   "Search": "Szukaj",
   "Watchlist": "Lista obserwowanych",
@@ -795,7 +842,7 @@ export const plText: Record<string, string> = {
   "Transcript segments": "Segmenty transkrypcji",
   "Select transcript segment": "Wybierz segment transkrypcji",
   "No transcript segments match this search.": "Brak segmentów transkrypcji pasujących do wyszukiwania.",
-  "Transcript runtime settings": "Ustawienia runtime transkrypcji",
+  "Transcript engine settings": "Ustawienia silnika transkrypcji",
   "Provider": "Dostawca",
   "Credentials": "Poświadczenia",
   "Timeout": "Limit czasu",
@@ -1219,6 +1266,8 @@ export const plText: Record<string, string> = {
   "Select a feed item — the inspector and the company's claims and diff follow it.":
     "Wybierz pozycję kanału — inspektor oraz obietnice i różnice spółki podążają za nią.",
   "Command palette": "Paleta poleceń",
+  "Open command palette": "Otwórz paletę poleceń",
+  "Open view": "Otwórz widok",
   "Commands": "Polecenia",
   "Search commands": "Szukaj poleceń",
   "Type to filter commands…": "Wpisz, aby filtrować polecenia…",
@@ -1260,4 +1309,43 @@ export const plText: Record<string, string> = {
   "OpenAI-compatible base URL": "Bazowy URL zgodny z OpenAI",
   "Presets for common OpenAI-compatible endpoints live in the wiki. Set the API key in Credentials below.":
     "Gotowe presety typowych punktów końcowych zgodnych z OpenAI znajdziesz w wiki. Klucz API ustaw w sekcji Poświadczenia poniżej.",
+  // U7-C — density contracts: Notebook + Claims panels (ADR 0076 D6)
+  "Back to note list": "Wróć do listy notatek",
+  "Claims summary": "Podsumowanie obietnic",
+  "Show all claims": "Pokaż wszystkie obietnice",
+  "Show fewer claims": "Pokaż mniej obietnic",
+  // U7-A — Fundamentals + company Feed density contracts (ADR 0076 D6)
+  "Reporting forms": "Formularze raportowania",
+  // U7-B — Quality + Report documents density contracts (ADR 0076 D6)
+  "Measured": "Zmierzono",
+  "Threshold": "Próg",
+  "IR page": "Strona IR",
+  "User link": "Link użytkownika",
+  // U7-D — Research + Events + Report Season density contracts (ADR 0076 D6)
+  "Toggle details": "Przełącz szczegóły",
+  // U7-E2 — Watchlists + Transcripts + Settings + Diagnostics density contracts (ADR 0076 D6)
+  "Segments": "Segmenty",
+  "Section": "Sekcja",
+  "Settings section": "Sekcja ustawień",
+  // U7-E1 — Inbox + Sources density contracts (ADR 0076 D6)
+  "Back to list": "Wróć do listy",
+  "Schedule": "Harmonogram",
+  "Last fetch": "Ostatnie pobranie",
+  // T7-B — per-document structured extraction action (ADR 0061 S5)
+  "Extract data": "Wyciągnij dane",
+  "Data extracted — review in Fundamentals": "Dane wyciągnięte — sprawdź Fundamenty",
+  // T7-A — Qualitative assessment failure surfacing (P1, ADR 0075)
+  "Qualitative assessment failed": "Ocena jakościowa nie powiodła się",
+  // T7-C — Qualitative assessment capability routing label (P1, ADR 0075)
+  "Qualitative assessment": "Ocena jakościowa",
+  // T7-D — Report-documents declutter + honest extraction toast (P1, ADR 0061 S5 / 0076 D6)
+  "Extracted new values: {n}": "Wyciągnięto nowe wartości: {n}",
+  "No new values extracted from this document": "Nie wyciągnięto nowych wartości z tego dokumentu",
+  "No new values — the document was flagged for review":
+    "Brak nowych wartości — dokument oznaczono do przeglądu",
+  // T7-F — re-extraction idempotency: re-observed vs divergent slots
+  "No new values — {n} already recorded from this document":
+    "Brak nowych wartości — {n} już zapisanych z tego dokumentu",
+  "Extracted values differ from stored facts: {n} — stored values kept, see Diagnostics":
+    "Wyciągnięte wartości różnią się od zapisanych: {n} — zachowano zapisane, szczegóły w Diagnostyce",
 };

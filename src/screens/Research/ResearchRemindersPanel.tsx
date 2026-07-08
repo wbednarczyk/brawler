@@ -1,5 +1,6 @@
 import { Check, Clock3, Plus, RotateCcw, Trash2 } from "lucide-react";
 import type { ResearchReminder } from "../../api/researchTypes";
+import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
 import { ActionRow, Button, EmptyState, SectionHeader } from "../../ui";
 import { formatReminderKind, formatReminderStatus } from "./researchFormatters";
 
@@ -28,6 +29,13 @@ export function ResearchRemindersPanel({
   formatTimestamp,
   text,
 }: ResearchRemindersPanelProps) {
+  const visibleReminders = reminders.slice(0, 6);
+  // After deleting a reminder, keep focus in the queue by landing on the next
+  // row's leading action button (ADR 0076 D9); the row article is not focusable.
+  const { listRef } = useFocusAfterRemove<HTMLDivElement>(
+    visibleReminders.map((reminder) => reminder.id),
+    { rowSelector: ".research-reminder-row", focusSelector: ".icon-button" },
+  );
   return (
     <section className="research-reminders" aria-label={text("Research reminders")}>
       <SectionHeader
@@ -43,8 +51,8 @@ export function ResearchRemindersPanel({
         title={text("Review queue")}
         variant="accent"
       />
-      <div className="research-reminder-list">
-        {reminders.slice(0, 6).map((reminder) => (
+      <div className="research-reminder-list" ref={listRef}>
+        {visibleReminders.map((reminder) => (
           <article className="research-reminder-row" key={reminder.id}>
             <div>
               <span>{text(formatReminderKind(reminder.reminderKind))}</span>

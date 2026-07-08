@@ -25,7 +25,7 @@ import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
 import { useSettingsScreenViewModel } from "../../app/state/screenViewModels";
-import { ErrorText, Panel, PanelHeader, Subnav } from "../../ui";
+import { ErrorText, Panel, PanelHeader, SelectField, Subnav } from "../../ui";
 
 type SettingsTab =
   | "appearance"
@@ -46,7 +46,7 @@ const settingsTabs = [
   { id: "importExport", icon: Download, labelKey: "settings.importExport.title" },
   { id: "shortcuts", icon: Keyboard, labelText: "Keyboard shortcuts" },
   { id: "logs", icon: Logs, labelText: "Logs" },
-  { id: "database", icon: Database, labelText: "Database" },
+  { id: "database", icon: Database, labelText: "Data storage" },
   { id: "license", icon: FileKey2, labelText: "License" },
 ] satisfies Array<{ id: SettingsTab; icon: LucideIcon; labelKey?: LocaleKey; labelText?: string }>;
 
@@ -133,6 +133,25 @@ export function SettingsScreen() {
           }))}
           onSelect={setActiveSettingsTab}
         />
+
+        {/* U7-E2 density contract (ADR 0076 D6): at the S tier the section tab
+            list collapses to this select (same options + shared selection). The
+            Subnav is hidden and this shown via container queries (settings.css);
+            both always render so the selection state stays a single source. */}
+        <div className="settings-section-select">
+          <SelectField
+            aria-label={text("Settings section")}
+            label={text("Section")}
+            value={activeSettingsTab}
+            onChange={(event) => setActiveSettingsTab(event.target.value as SettingsTab)}
+          >
+            {settingsTabs.map((tab) => (
+              <option key={tab.id} value={tab.id}>
+                {tabLabel(tab)}
+              </option>
+            ))}
+          </SelectField>
+        </div>
 
         <div className="settings-tab-panel">
           {activeSettingsTab === "appearance" ? (

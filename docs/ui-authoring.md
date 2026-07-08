@@ -10,6 +10,13 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Modularization
 
 **See the primitives rendered:** `src/ui/PrimitiveGallery.tsx` is a live catalog of every common primitive and its variants. View it with `npm run dev:vite` then open `/gallery.html` (a dev-only entry — it is never shipped). The gallery is also the surface the `jest-axe` accessibility test and the Playwright overflow check run against, so adding a primitive there gives it coverage for free. Keep it in sync when you add or change a primitive.
 
+## Mockup-first and no-spec-no-design (v0.50 U12, ADR 0045 harvest)
+
+Two process rules for anything beyond a mechanical change:
+
+- **Mockup-first.** A new panel/screen or a functional redesign starts as an HTML mockup the owner approves BEFORE code, and the approved mockup is **committed under `docs/mockups/`** — never left in a session scratchpad (the v0.50 U0 mockups were approved but lost with the scratchpad; the ADR prose had to stand in for them).
+- **No design decision without a spec.** Implementers (human or agent) execute normative specs — ADR tables, density-contract rows, approved mockups. If a spec is missing, ambiguous, or two rules conflict, STOP and escalate with the conflict spelled out; do not pick a design silently. Harvested from v0.50: every fan-out defect traced back to a gap or contradiction in the task spec, not to implementer judgment being too weak.
+
 ## Pre-write self-check (do this every time)
 
 Before writing JSX for a piece of UI, ask:
@@ -40,7 +47,8 @@ Rules:
 
 - The screen root is `feed-panel` (the panel chrome: border, radius, `overflow: hidden`, full height). Do **not** also wrap the body in the `Panel` primitive — that double-wraps the chrome. `Panel`/`PanelHeader` is for nested sub-panels inside a screen, not the screen shell.
 - Put screen content in a **padded, `overflow:auto`, `flex:1; min-height:0`** body container (the `.events-layout`/`.companies-layout` pattern). The panel itself has no body padding by design.
-- Rows that read as cards use the shared card idiom: a `var(--border)`-ish border, `border-radius: 8px`, and a `color-mix(... var(--surface-raised) …)` fill (see `.event-week-day`, `.report-season-row`). A selectable/expandable row gets a visible hover and active state; use the `ExpandableRow` primitive for expand-in-place.
+- Rows that read as cards use the shared card idiom: a `var(--border)`-ish border, `border-radius: 8px`, and a `color-mix(... var(--surface-raised) …)` fill (see `.event-week-day`, `.report-season-row`). A selectable/expandable row gets a visible hover and active state; use the `ExpandableRow` primitive for expand-in-place — it renders its own rotating disclosure chevron (▸/▾), so consumers must not add one.
+- **Focus after a destructive action** never falls back to `<body>` (ADR 0076 D9): when a list row is deleted/hidden, move focus to the next sibling row via the shared `useFocusAfterRemove(itemKeys, { rowSelector, focusSelector? })` hook (`src/shared/focus/focusAfterRemove.ts`). Attach its `listRef` to the list container; it auto-detects the removed row from the keys and only reclaims focus when the departed row (or the list) held it.
 
 ## Primitive catalog (what to use instead of hand-rolling)
 
@@ -111,12 +119,62 @@ A bare numeric/text field alone is the **fallback**, for values with no meaningf
 - Do not invent a new `*-panel` / `*-header` / `*-toolbar` class when a primitive renders that shape.
 - **Never `stopPropagation` on a whole sub-region of a clickable row/card — scope it to the actual interactive control.** A row that selects on click often nests a "context" block (chips, metadata, a delete button) with `onClick={(e) => e.stopPropagation()}` on the *wrapper* to stop those clicks from also selecting the row. That wrapper becomes a **dead click-zone**: when responsive CSS stacks the row to `flex-direction: column` at narrow widths, the wrapper occupies the row's lower half, so clicking there does nothing (the `.company-row-context` dead-zone bug — selection only worked on `.company-row-main`). Put `stopPropagation` on the specific buttons/links that must not bubble, never on a layout region that can grow to cover the row's click target.
 - **Grid/flex containers that hold variable or unbreakable content must let their children shrink, or they force a horizontal scrollbar.** A CSS grid item defaults to `min-width: auto` (= min-content), and an *unbreakable* string — a long ESPI filename like `cyber_Folks_SA_30.06.2023_raport.pdf`, a `nowrap` heading — has a min-content as wide as the whole string. So a content-bearing grid container needs **both** `min-width: 0` **and** `grid-template-columns: minmax(0, 1fr)` (plain `1fr` keeps an implicit min-content floor); only then do `ListRow`/`.ui-list-row-title` truncate instead of blowing the track out. This must hold for **every** ancestor down the chain — one missing link re-introduces the scrollbar (the `v0.47.0` report-diff panel overflowed because `.company-list → .company-row-block → .company-workspace → .company-report-documents` each needed it). Guard a panel that renders such content with a narrow-window Playwright assertion (see [Testing](testing.md) → no-horizontal-scroll).
+- **Panel-internal horizontal scrollbars are gated (ADR 0045 harvest, v0.50).** `expectNoPageOverflow` (browser harness) fails any element that *actually scrolls horizontally* (computed `overflow-x: auto|scroll` with wider content) anywhere on the page — a dockview pane scrolls internally, so the old document-level check never saw these. The rules that keep it green:
+  - **Row slots are single-line.** `ListRow` title *and* meta shrink + ellipsize by design; never put prose-length text (guidance, reasoning, descriptions) in a `meta`/`trailing` slot — prose belongs in a wrapping detail block (`ExpandableRow` detail, `.quality-reasoning`-style paragraph).
+  - **Deliberate wide content gets its own bounded scroller marked `data-hscroll`** (the facts matrix, the events week calendar, horizontal card strips, `FilterToolbar`). Pair `overflow-x: auto` with `contain: inline-size` — in a column flex/grid chain a scroller still propagates its content's min-content width upward without it.
+  - **A `<select>`'s min-content is its longest option** — `SelectField` is shrinkable (`min-width: 0` + capped select); don't undo it with fixed widths.
+  - **Pane-width responsiveness uses container queries, not media queries.** A cockpit pane can be narrow while the window is wide, so `@media` cannot stack a pane's columns — set `container-type: inline-size` on the hosting panel and `@container (max-width: …)` to stack (see `.notebook-panel`/`.notebook-workspace`).
 
 ## i18n
 
 Every user-visible string is `text("English text")` from `useLocale()`. The locale resources are typed: add the key to **both** `src/shared/locale/resources/en.ts` and `pl.ts`, or the build fails. See the en/pl maps and [ADR-tracked locale model]. Do not concatenate translated fragments where a single key reads better.
 
 **Use product language, not implementation terms.** Normal user-facing copy must avoid `SQLite`, `Tauri`, `adapter`, `schema`, `database`, `module`, `collector`, and `local`/`Local` — say what the user gets, not how it's built. Developer-only Diagnostics may use implementation terms (it's gated on Developer mode). Source-provided content/URLs may contain anything, but test samples in normal UI tests should not accidentally include the forbidden terms.
+
+## Panel density contracts (ADR 0076 Decision 6)
+
+Normative per-panel behavior at pane tiers — width **S** <420px · **M** 420–760px · **L** >760px,
+height **short** <480px · **tall** ≥480px — via container queries on the panel root. Global rules
+(apply to every panel; the tables list only panel-specific deltas): identity fields (ticker, date)
+never truncate; prose wraps at ≤72ch; no in-panel H1 repeating the pane tab title (compact header —
+mark the panel's leading `SectionHeader`/`PanelHeader` with `paneLead`; the shared `.cockpit-pane
+.ui-pane-lead-header` rule in `ui.css` visually hides that title, keeping it in the accessible tree
+via the `.visually-hidden` clip-path pattern so `aria-labelledby`/headings still resolve, and drops
+its subtitle — a header whose title is *more specific* than its tab, e.g. adds the ticker, stays
+visible and must not carry `paneLead`);
+filter toolbars collapse to a single row with a "Filtry" disclosure at S; secondary sections fold
+behind expansion when short; fixed-height artifacts (calendar, matrix) scroll inside bounded,
+`data-hscroll`-marked wrappers and never exceed the pane. Enforced by the panel-width matrix test
+(U7) + all-panels screenshot baseline (U11).
+
+| Panel | S (<420) | M (420–760) | L (>760) | short (<480h) |
+|---|---|---|---|---|
+| Fundamentals | sections stack; facts matrix scrolls; Autopilot section = one row + expand | matrix + one form column | matrix + forms side-by-side | only matrix + section headers; forms fold |
+| Feed (company) | item = badge+title+date, meta folds | + summary line | + detail split-pane | list only, detail on click |
+| Claims | list only; composer behind "Dodaj obietnicę" button | list + inline composer | + verdict detail column | queue counts + top 3 due |
+| Quality | scorecard chips + criteria list; expression folds into expansion | + expression column | + history side panel | chips + criteria; history folds |
+| Report documents | filename (middle-ellipsis, full in tooltip) + date + extract-data action (icon) | + storage-status chip (Stored/Link only) | + provenance preview (document kind + source); extract action gains its label | list only (action hidden) |
+| Notebook | single column (list OR detail, toggled) | list + detail stacked | list ∥ detail (existing container query) | list only, editor on select |
+| Research | tabs + timeline only; queue/questions/reminders fold to count chips | + review queue strip | + questions/reminders columns | summary counts + timeline |
+| Events | list mode forced (no week grid) | week grid in bounded scroller | full week grid | list mode forced |
+| Report Season | company rows: name+date+state chip | + prep checklist inline | + pre-report card column | rows only |
+| Watchlists | names + counts | + membership editor | + company table | names + counts |
+| Transcripts | list; player/segments fold | list + segments | list ∥ segments ∥ note | list only |
+| Inbox | list only (detail = overlay/route) | list + detail stacked | list ∥ detail | fewer visible filters |
+| Today (post U-Rb) | stream only; counters fold to a top strip | stream + counters column | same, wider stream | stream trimmed to actionable items |
+| Sources | source rows + status chip | + schedule/settings inline | + diagnostics column | rows only |
+| Settings | one section at a time (tab list collapses to select) | tab list + section | same | n/a (screen) |
+| Diagnostics | log list; filters collapse | + module/severity columns | full table | list only |
+
+Compare: hidden from nav until v0.53 (ADR 0076 resolved decisions) — no contract until it returns.
+
+### Implementing a contract row
+
+The cross-cutting infrastructure (U7) is in place: `.cockpit-pane` and `.workspace` are named `pane` **size** containers (`container: pane / size`), so a panel's CSS reacts to the *pane's* size, not the window's. To implement a row:
+
+1. **Write container queries against the named `pane` container** at the tier boundaries — `@container pane (max-width: 419px)` (S), `@container pane (max-width: 759px)` (below L), `@container pane (max-height: 479px)` (short). Never re-declare a local `container-type` on the panel root; the pane roots already own it. Values are fixed — do not invent breakpoints.
+2. **Assert it in `tests/browser/density-matrix.spec.ts`** — append a `PANEL_CONTRACTS` entry: `open(page)` returns the pane `Locator` to size, and each `tiers` check runs after `setPaneSize` forces that pane to the tier size. Assert visibility/layout via `boundingBox` (e.g. two columns → detail to the right of the list; stacked → detail below, same left edge) and rely on the runner's `expectNoPageOverflow` per tier. The `FilterToolbar` S-tier "Filtry" disclosure and other toggle semantics are unit-tested in `src/ui/primitives.test.tsx` — jsdom has no container queries, so the *tier switch itself* is browser-only.
+3. **`setPaneSize`/`resetPaneSize`** (`tests/browser/helpers/harness.ts`) force a pane's inline size directly (the sanctioned approach) so the query fires regardless of the real dock cell. A panel hosted in a multi-pane dashboard is not the first `.cockpit-pane` — return the specific pane (`page.locator(".cockpit-pane", { has: … })`) from `open`.
 
 ## When a native element is acceptable
 
@@ -133,7 +191,7 @@ Primitive-first authoring is policy ([ADR 0037](adr/0037-ui-component-framework-
 - **Button variants must have CSS** — `src/styles/buttonVariantContracts.test.ts` fails if any `Button` variant maps to a class with no CSS (a CSS-less variant silently renders as a default grey button).
 - **Polish translation ratchet** — `src/shared/locale/translationCompleteness.test.ts` fails when a **new** `text("…")` literal has no `plText` entry. The current backlog of intentionally/temporarily untranslated strings lives in `untranslated-baseline.json`; fix a new failure by translating it (preferred) or, for an intentionally-English string (acronym, brand), adding it to the baseline as a conscious choice. The baseline should shrink, never grow casually.
 - **Pluralization** — counts render their noun through `pluralNoun(locale, n, forms)` (`src/shared/locale/plural.ts`); a `n === 1 ? a : b` ternary is wrong for Polish (3 forms).
-- **Layout/containment** — `src/styles/layoutContracts.test.ts` and the browser-smoke viewport matrix in `playwright.config.ts`. Add a sample there when introducing a new layout shape.
+- **Layout/containment** — `src/styles/layoutContracts.test.ts` and the browser-smoke viewport matrix in `playwright.config.ts`. `expectNoPageOverflow` additionally fails on any *panel-internal* horizontal scrollbar not marked `data-hscroll` (see Styling rules above). Add a sample there when introducing a new layout shape; sample data must include realistic long content (the Kroeze-length guidance seed exists precisely so the gate has something to bite on).
 - **Primitive contracts + a11y** — `src/ui/primitives.test.tsx` covers each primitive's render/behavior contract (e.g. `SectionHeader`'s `level` prop renders the right heading, `Checkbox` fires `onChange`), and `src/ui/primitives.a11y.test.tsx` runs `jest-axe` over the whole `PrimitiveGallery` so the library keeps a clean accessibility baseline (this caught a real `aria-selected`-on-`<article>` bug in `DenseRow`). Add the primitive to the gallery + the contract test when you add one. `tests/browser/gallery.spec.ts` additionally checks the gallery for horizontal overflow across the viewport matrix.
 - **Barrel imports** — `no-restricted-imports` (in `eslint.config.js`) requires consumers to import primitives from the `…/ui` barrel, never a deep `…/ui/Button` path, so the public surface stays in `src/ui/index.ts`.
 - **CSS hygiene (`npm run stylelint`)** — bans hardcoded hex colors outside `tokens.css`/`themes.css` (use design tokens), and flags duplicate selectors, duplicate properties, and empty rules. Runs in the gate.

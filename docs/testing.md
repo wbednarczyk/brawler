@@ -13,12 +13,23 @@ The constraint is that the suite stays **lean and fast** — coverage of everyth
 1. **Test behavior and contracts, not implementation details.** One clear test per behavior; assert the observable result (the command's output, the rendered state, the stored row), not internal mechanics. **Delete tests that no longer protect behavior, and never add a redundant or brittle test "to be safe"** (especially screenshot-diff tests) — that bloat is exactly what makes a suite slow, flaky, and ignored. More tests is not the goal; covering every behavior *once, well* is.
 2. **Keep the bulk in the fast layers; every *deterministic* suite is on the one mandatory gate, and only the genuinely-slow/flaky/credentialed ones stay out.** `make check` is the single hard-fail gate ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — frontend + Rust + `knip` + the ts-rs drift guard + the **full Playwright browser suite** + `gate-integrity` + `docs-drift` (spec↔code enforcement — contracts/IA/data-model vs. the real commands/screens/settings, [ADR 0065](adr/0065-spec-code-drift-gates.md)) — and `.githooks/pre-commit` runs it before every commit. It must stay in the seconds-to-low-minutes range (the browser suite parallelizes to ~tens of seconds). Only suites disqualified from a per-commit hard gate stay periodic/manual, each for a stated reason: `coverage` (slow instrumented build), `mutants` (30 min–2 h), `bench` (machine-dependent), live provider / OS-keyring smokes (credentials/network/OS), packaging (OS/toolchain). This is the anti-rot contract: a deterministic suite that is *not* on the gate rots (the browser suite went 28-red for two sessions when it lived only in `check-epic` behind `-`-prefixed steps). Default CI/local checks stay deterministic and secret-free.
 
+**Workflow tests near the timeout budget flake under gate load.** A Vitest test that walks multiple screens/sections through the full app render must carry an explicit `it(..., timeout)` budget with a rationale comment — under the gate's parallel transform load such tests exceed the 5s default while passing in isolation (three distinct tests flaked this way in one v0.50 closure day; card `b6b866f`). Give the *specific* test a deliberate budget; never absorb the class with global retries or a global timeout bump — a silently retried suite stops reporting real races.
+
+### Expensive-gate economics
+
+Harvested at the v0.50.0 closure (ADR 0045) — each rule saves a burned ~15-minute gate run:
+
+- **Pre-validate the commit subject.** The commit-msg hook runs *after* the pre-commit gate, so a bad subject wastes a green run: `scripts/release/validate-commit-message.sh --message "<subject>"` (Conventional Commits, **72-byte** subject cap — multibyte characters count as bytes).
+- **Regenerate generated files, never hand-edit.** `docs/adr/INDEX.md` → `node scripts/check/docs-drift.mjs --write-adr-index`; docs-drift is the gate's *last* step, so a stale index fails a full run at the finish line. Always-loaded docs (`CLAUDE.md`, `engineering-workflow.md`, the session hook) carry ADR 0063 byte budgets checked by gate-integrity — trim or move content rather than grow them.
+- **A runaway mutant must not abort the whole `mutants` run.** Some mutants loop and eat memory — that is exactly why the jail exists — but a systemd scope's default `OOMPolicy=stop` turns the jail's first OOM-kill into termination of the *entire* run (four consecutive runs died this way at the v0.50 closure; `journalctl --user` showed `Failed with result 'oom-kill'` on each, initially misread as an external process reaper). The jail therefore sets `-p OOMPolicy=continue`: the kernel reaps the runaway test process, cargo-mutants records that mutant as failed/timeout, and the run continues. Corollaries: diagnose a dead long run from `journalctl --user`/`dmesg` before blaming the environment, and when driving `make mutants` from an agent harness, launch it as an independent unit (`systemd-run --user --collect --unit=<name> -p WorkingDirectory=<repo> bash -lc 'make mutants > <log> 2>&1'`, login shell for the Nix PATH) so tool timeouts can't SIGTERM it mid-run, and avoid running it concurrently with a full gate on a small-RAM box.
+
 **The layers (push coverage down to the cheapest layer that proves the behavior):**
 
 - many **Rust unit/contract tests** — domain logic, command contracts, parsing, dedupe, migrations, provider mapping, jobs; the bulk of coverage, milliseconds each;
 - **frontend component/workflow tests** (Vitest) for every UI state and workflow, not just critical ones;
 - **test-sample-backed integration tests** for source adapters and migrations (parsing, dedupe keys, company matching, error handling, migration safety, data persistence);
 - **browser UI smoke** (Playwright) for layout/scroll/overflow regressions Vitest/jsdom cannot catch — a hard-fail step of `make check`, not periodic;
+- **accessibility guards (two layers):** `src/app/screens.a11y.test.tsx` runs jest-axe over **every** primary screen (Today, Inbox, Cockpit, Companies, Watchlists, Research, Notebooks, Sources, Events, Settings — zero exclusions) in jsdom, catching ARIA/role/structure regressions; the real-browser layer (`expectNoA11yViolations` in `tests/browser/helpers/harness.ts`, `@axe-core/playwright`, WCAG 2.0/2.1 A/AA tags) runs in the smoke-walk per destination and in journeys at key screens, across the full viewport matrix incl. the light-theme project — the only layer that catches real **color-contrast** in both palettes × modes. Best-practice rules (region / heading-order / landmark-*) stay out of scope (structural desktop-workspace choices, not conformance failures);
 - a few **desktop / packaging / live-provider smoke** checks for what only the real runtime, package, or provider can prove — periodic/manual.
 
 ## Sample-data factory and per-test isolation
@@ -120,6 +131,32 @@ per-tier (esef/pdf/html_aggregator) rollup, and an overall summary.
 0) — no precision/recall floor yet. A quality threshold is a deliberate follow-up gate before
 relying on this pipeline by default or before the ADR 0060 decision-3 default-model flip, per
 the real-data-validation-precedes-implementation guardrail above.
+
+### Real-data extraction corpus (structural regression)
+
+A second, coarser real-data net pins the **extraction outcome** of every document in a real
+company's filing set, so a format-handling regression (e.g. ESEF `.xbri` packages silently
+misclassified) is caught without hand-labeling fact values. Corpus layout: `private/realdata/
+t7-cbf/` (gitignored) holds `brawler.sqlite3` (a full DB copy) plus `report_documents/**` (the
+fetched files at their DB-recorded `local_path`). The pinned baseline
+`src-tauri/src/storage/tests/t7_cbf_corpus_expectations.json` is **committed** — it carries only
+document ids/titles + outcome class + fact count + period, never report content.
+
+```bash
+make realdata-extraction-check                              # compare vs baseline
+BRAWLER_UPDATE_EXPECTATIONS=1 make realdata-extraction-check  # deliberately re-pin
+```
+
+A **regression fails** (fewer facts, an accepted doc now flagged/empty, a period drift, or a
+pinned doc vanished); an **improvement is a soft report** (new/more facts) that prints the
+refreshed table and passes — re-pin deliberately after review, same philosophy as the Playwright
+visual baseline. Same `BRAWLER_REAL_DB` + `BRAWLER_REAL_DATA_DIR` gating (skips cleanly when absent).
+
+The same target also runs the T7-F **double-extraction idempotency anchor**
+(`t7_cbf_double_extraction_is_idempotent_on_the_real_corpus`): it drives the full write path twice
+over the real `.xbri` filing and asserts the second run creates nothing, reports its re-observed
+slots as skipped, and leaves `financial_facts` unchanged. It **writes to the corpus DB** — the
+corpus copy is throwaway by contract (refresh it from the live DB when in doubt).
 
 The **report-over-report diff** (`v0.47.0`, [ADR 0052](adr/0052-report-over-report-diff.md))
 followed this rule and is the worked example of it paying off: a pure-Rust
@@ -367,11 +404,11 @@ Do **not** use this layer for: live external source/API testing; real Tauri file
 
 ## User-journey E2E and step budgets (ADR 0074)
 
-Journeys — the cross-screen tasks a user actually comes to do — are specced in [ux-journeys.md](ux-journeys.md) and enforced by dedicated Playwright specs (one per journey, `tests/browser/journeys/`, extending the existing `journeys.spec.ts` pattern on the same mock runtime):
+Journeys — the cross-screen tasks a user actually comes to do — are specced in [ux-journeys.md](ux-journeys.md) and enforced by dedicated Playwright specs (one per journey, `tests/browser/journeys/j1…j7-*.spec.ts`, tagged `@journey`, on the same mock runtime):
 
-- **One spec per journey**, asserting the full cross-screen path (trigger → steps → done-well criteria), not per-screen features. The v0.44–0.49 E2E backfill (autopilot trust ladder, report season, quality frameworks, claims, transcripts/research) lands in this form — the coverage gap and the journey net are the same work.
-- **Interaction step budgets as assertions**: each journey spec counts its interactions (clicks/keys) against the budget documented in `ux-journeys.md`. Budgets are calibrated by first measurement, then ratcheted like coverage — a UX regression reddens the gate.
-- Closure hook: [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) requires every user-facing capability to name its journey (or be declared a utility).
+- **One spec per journey**, asserting the full cross-screen path (trigger → steps → done-well criteria), not per-screen features, keeping `expectNoPageOverflow` + `expectNoA11yViolations` at key screens. The v0.44–0.49 E2E backfill (autopilot trust ladder, report season, quality frameworks, claims, transcripts/research) lands in this form — the coverage gap and the journey net are the same work.
+- **Interaction step budgets as assertions**: each spec drives its path through the explicit `journey(page, id)` wrapper (`helpers/harness.ts`) — one wrapper call (`click`/`fill`/`press`/`selectOption`) = one counted user interaction, navigation included. `assertBudget()` reads `tests/browser/journeys/budgets.json` and reddens when the count exceeds the floor; the floor is the first measured count +1 (never above the `ux-journeys.md` ceiling), ratcheted **down** — like coverage — when a journey gets measurably shorter, so a UX regression reddens the gate.
+- Closure hook: [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) requires every user-facing capability to name its journey (or be declared a utility) and `budgets.json` to be green.
 
 ## Manual desktop smoke
 

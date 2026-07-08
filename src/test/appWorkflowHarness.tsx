@@ -85,6 +85,8 @@ export interface AppTestState {
   autopilotRunsResponse: Data["autopilotRuns"];
   companyAutopilotModesResponse: Data["autopilotModes"];
   financialFactsResponse: Data["financialFacts"];
+  claimsToVerifyResponse: Data["claimsToVerify"];
+  reportSeasonUpcomingResponse: Data["reportSeasonUpcoming"];
   researchReviewCheckpointResponse: Data["researchReviewCheckpoints"][number] | null;
   geminiCredentialStatusResponse: Data["credentialStatuses"][number] | null;
   searchResponse: unknown | null;
@@ -120,6 +122,8 @@ export const appTestState = Object.defineProperties(
     autopilotRunsResponse: field("autopilotRuns"),
     companyAutopilotModesResponse: field("autopilotModes"),
     financialFactsResponse: field("financialFacts"),
+    claimsToVerifyResponse: field("claimsToVerify"),
+    reportSeasonUpcomingResponse: field("reportSeasonUpcoming"),
     // Single-row views over collection stores.
     researchReviewCheckpointResponse: {
       get: () => runtime.data.researchReviewCheckpoints[0] ?? null,

@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
-import { LocateFixed, Plus, Save, X } from "lucide-react";
+import { ArrowLeft, LocateFixed, Plus, Save, X } from "lucide-react";
 import { TickerLabel } from "../../shared/components/TickerLabel";
+import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
 import { useLocale } from "../../shared/locale";
 import { useNotebooksViewModel } from "../../app/state/screenViewModels";
 import {
@@ -61,6 +62,13 @@ export function NotebooksScreen() {
   renderNotebookOrigins,
   } = useNotebooksViewModel();
   const { t, text } = useLocale();
+  // Deleting the selected note (from the detail-pane editor) clears selection;
+  // move focus to the next note row instead of stranding it on <body>
+  // (ADR 0076 D9). The hook auto-detects the removed row from the list keys.
+  const { listRef: notesListRef } = useFocusAfterRemove<HTMLDivElement>(
+    selectedNotebookScreenEntries.map((entry) => entry.id),
+    { rowSelector: ".notebook-row" },
+  );
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const resizeStartRef = useRef<{
     handle: "companies" | "notes";
@@ -141,6 +149,7 @@ export function NotebooksScreen() {
   return (
     <section className="feed-panel" aria-labelledby="notebooks-title">
       <PanelHeader
+        paneLead
         title={t("notebooks.title")}
         description={t("notebooks.description")}
         titleId="notebooks-title"
@@ -151,6 +160,9 @@ export function NotebooksScreen() {
         aria-label={text("Notebooks workspace")}
         ref={workspaceRef}
         style={notebookWorkspaceStyle}
+        {...(isNotebookScreenComposerOpen || selectedNotebookScreenEntry
+          ? { "data-detail-open": "" }
+          : {})}
       >
         <div className="notebooks-company-nav" aria-label={text("Notebook companies")}>
           {companies.map((company) => {
@@ -376,7 +388,7 @@ export function NotebooksScreen() {
             </SelectField>
           </div>
 
-          <div className="notebooks-notes-list" aria-label={text("Notebook note list")}>
+          <div className="notebooks-notes-list" aria-label={text("Notebook note list")} ref={notesListRef}>
             {selectedNotebookScreenEntries.map((entry) => (
               <div className="notebook-row-block" key={entry.id} data-notebook-entry-id={entry.id}>
                 <button
@@ -431,6 +443,24 @@ export function NotebooksScreen() {
         />
 
         <aside className="notebooks-detail-pane" aria-label={text("Notebook selected entry")}>
+          {isNotebookScreenComposerOpen || selectedNotebookScreenEntry ? (
+            <Button
+              className="notebooks-back-to-list"
+              type="button"
+              variant="minimal"
+              onClick={() => {
+                if (isNotebookScreenComposerOpen) {
+                  discardNotebookScreenDraft();
+                } else if (selectedNotebookScreenEntry) {
+                  toggleNotebookScreenEntry(selectedNotebookScreenEntry);
+                }
+              }}
+              aria-label={text("Back to note list")}
+            >
+              <ArrowLeft size={15} />
+              {text("Back")}
+            </Button>
+          ) : null}
           {isNotebookScreenComposerOpen ? (
             <form
               id="notebook-screen-create-form"

@@ -201,13 +201,10 @@ export function useCompanyController({
       });
   }
 
+  // Irreversible/cascading (ADR 0076 D5): deleting a tracked company removes its
+  // feed, notebook, claims and events; there is no faithful re-create, so the
+  // confirm gate lives at the call site as an InlineConfirm — not here.
   function deleteCompany(company: Company) {
-    const confirmed = window.confirm(`${text("Delete")} ${company.qualifiedTicker} ${text("from tracked companies?")}`);
-
-    if (!confirmed) {
-      return;
-    }
-
     companiesApi.deleteCompany(company.id)
       .then(() => {
         setCompaniesError(null);
@@ -251,13 +248,10 @@ export function useCompanyController({
       });
   }
 
+  // Cascading (ADR 0076 D5): deleting a whole watchlist drops its company
+  // memberships and create_watchlist cannot restore them, so the confirm gate is
+  // an InlineConfirm at the call site.
   function deleteWatchlist(watchlist: Watchlist) {
-    const confirmed = window.confirm(`${text("Delete")} ${watchlist.name}?`);
-
-    if (!confirmed) {
-      return;
-    }
-
     watchlistsApi.deleteWatchlist(watchlist.id)
       .then(() => {
         setWatchlistsError(null);

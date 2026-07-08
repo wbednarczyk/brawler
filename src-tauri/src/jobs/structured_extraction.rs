@@ -72,14 +72,31 @@ fn expected_primary_keys(
     Ok(if keys.is_empty() { None } else { Some(keys) })
 }
 
+/// A re-extraction that observed an already-stored slot with a *different* value
+/// than the committed one (owner T7): never silently overwritten — surfaced so
+/// the divergence can be ratified. `existing` is the stored value, `incoming` the
+/// freshly-extracted one.
+#[derive(Debug, Clone)]
+pub struct FactDivergence {
+    pub fact_id: String,
+    pub metric_key: String,
+    pub existing: String,
+    pub incoming: String,
+}
+
 /// The outcome of a structured extraction attempt.
 #[derive(Debug, Clone)]
 pub struct StructuredExtractionResult {
     pub acceptance: Acceptance,
     /// Which tier produced the accepted (or attempted) facts.
     pub tier: Option<SourceTier>,
-    /// Ids of the `financial_facts` this run created.
+    /// Ids of the `financial_facts` this run created (genuinely new values).
     pub produced_fact_ids: Vec<String>,
+    /// Ids of facts already present at their slot (re-observations — same value,
+    /// or a divergence). A re-extraction of a landed period skips, never dupes.
+    pub skipped_fact_ids: Vec<String>,
+    /// Slots re-observed with a value that disagrees with the stored fact.
+    pub divergences: Vec<FactDivergence>,
     /// Serialized `DriftReport` when the layout drifted (for the notification).
     pub drift_json: Option<String>,
     /// Whether the pipeline detected a layout drift (`drift_json.is_some()`),
@@ -112,6 +129,99 @@ fn confirmation_state_for(acceptance: Acceptance, mode: &str) -> &'static str {
     }
 }
 
+/// Derives the reporting period `(fiscal_year, period_type, period_end)` for a
+/// stored report document the SAME way the autopilot pipeline does (ADR 0061
+/// dec. 3/8/9) — the single source of truth shared by the autopilot stage and
+/// the on-demand "Extract data" command, so the two never drift. `None` when the
+/// document has no stored file, is an unparsable ESEF, or is a PDF whose period
+/// can't be classified (the caller then falls back to AI, or surfaces an error).
+///
+/// - **Xhtml/ESEF**: the period is self-derived from the iXBRL contexts (ESEF is
+///   an annual filing → `FY` at the latest context date).
+/// - **Pdf**: the period is derived from the document's title/URL via
+///   [`crate::report_diff::classify::period_sort_key`], assuming a calendar
+///   fiscal year (index 1→`Q1`/`-03-31`, 2→`H1`/`-06-30`, 3→`Q3`/`-09-30`,
+///   4→`FY`/`-12-31`). An unparseable or ambiguous intra-year period (index `0`)
+///   is not guessed.
+pub fn derive_report_period(
+    state: &AppState,
+    document: &crate::storage::ReportDocument,
+) -> Option<(i64, &'static str, String)> {
+    use crate::fundamentals::extraction::{esef::parse_esef, primary_period_end};
+    use crate::report_diff::classify::period_sort_key;
+
+    let local_path = document.local_path.as_deref()?;
+    let content_type = document.content_type.as_deref();
+    // ESEF tier — a bare `.xhtml` instance OR a `.xbri`/`.zip` report package
+    // (ADR 0061 dec. 1). Read the file only for the formats that self-derive
+    // their period from the iXBRL contexts; a PDF derives it from its title/URL
+    // without a read.
+    if is_esef_route(content_type, local_path) {
+        let raw = std::fs::read(state.data_dir().join(local_path)).ok()?;
+        let instance = esef_instance_bytes(content_type, local_path, &raw)?;
+        let facts = parse_esef(&instance).ok()?; // Not valid iXBRL → no period.
+        let period_end = primary_period_end(&facts)?;
+        let fiscal_year = period_end.get(0..4).and_then(|y| y.parse::<i64>().ok())?;
+        return Some((fiscal_year, "FY", period_end));
+    }
+
+    // PDF: period from the document's title/URL.
+    let title = document.title.as_deref().unwrap_or("");
+    let (year, period_index) = period_sort_key(title, &document.url)?;
+    let period_type = match period_index {
+        1 => "Q1",
+        2 => "H1",
+        3 => "Q3",
+        4 => "FY",
+        // Unknown intra-year period (0) — never guess.
+        _ => return None,
+    };
+    let period_end = match period_type {
+        "Q1" => format!("{year}-03-31"),
+        "H1" => format!("{year}-06-30"),
+        "Q3" => format!("{year}-09-30"),
+        _ => format!("{year}-12-31"),
+    };
+    Some((i64::from(year), period_type, period_end))
+}
+
+/// Whether a stored document should be resolved through the ESEF/iXBRL tier
+/// rather than the PDF tier: a bare `.xhtml`/`.html` instance, or an ESEF report
+/// *package* (`.xbri`/`.zip`, ADR 0061 dec. 1). Extension/content-type only —
+/// no byte read — so callers can decide whether to load the file at all. A
+/// mislabeled package (generic `application/octet-stream`, no telltale
+/// extension) is still caught later by the ZIP-magic sniff in
+/// [`esef_instance_bytes`].
+fn is_esef_route(content_type: Option<&str>, local_path: &str) -> bool {
+    if SourceFormat::resolve(content_type, local_path) == SourceFormat::Xhtml {
+        return true;
+    }
+    let lower = local_path.to_ascii_lowercase();
+    lower.ends_with(".xbri") || lower.ends_with(".zip")
+}
+
+/// The inline-XBRL **instance** bytes for a stored document, if it is (or
+/// contains) one — the single seam shared by [`derive_report_period`] and
+/// [`run_structured_extraction`] so the on-demand button and autopilot resolve
+/// the ESEF tier identically (ADR 0061 dec. 1). A bare `.xhtml`/`.html` returns
+/// its own bytes; an ESEF report package (`.xbri`/`.zip`, or any ZIP by magic)
+/// is unpacked to its inner `reports/` instance. `None` for a PDF, or a package
+/// with no readable instance.
+fn esef_instance_bytes(
+    content_type: Option<&str>,
+    local_path: &str,
+    bytes: &[u8],
+) -> Option<Vec<u8>> {
+    use crate::fundamentals::extraction::esef_package;
+    if esef_package::is_report_package(local_path, bytes) {
+        return esef_package::extract_instance(bytes);
+    }
+    match SourceFormat::resolve(content_type, local_path) {
+        SourceFormat::Xhtml => Some(bytes.to_vec()),
+        SourceFormat::Pdf => None,
+    }
+}
+
 /// Runs the structured pipeline for one report document and persists the
 /// result. `mode` is the run's trust-ladder mode (`MODE_AUTOPILOT` /
 /// `MODE_ASSIST`) — it drives the per-fact `confirmation_state` via
@@ -135,7 +245,6 @@ pub fn run_structured_extraction(
         .ok_or_else(|| "the report document has no stored file".to_owned())?;
     let path = state.data_dir().join(&local_path);
     let bytes = std::fs::read(&path).map_err(|e| format!("failed to read report file: {e}"))?;
-    let format = SourceFormat::resolve(document.content_type.as_deref(), &local_path);
 
     // --- Build the pipeline input ---------------------------------------
     let profile = state
@@ -143,19 +252,23 @@ pub fn run_structured_extraction(
         .get_profile(company_id)
         .map_err(|e| e.to_string())?;
 
-    let (esef_opt, pdf_opt): (Option<Vec<u8>>, Option<String>) = match format {
-        SourceFormat::Xhtml => (Some(bytes.clone()), None),
-        SourceFormat::Pdf => {
-            let extracted = extract_report(&bytes, SourceFormat::Pdf);
-            let text = extracted
-                .sections
-                .iter()
-                .map(|s| s.body.clone())
-                .collect::<Vec<_>>()
-                .join("\n");
-            (None, Some(text))
-        }
-    };
+    // ESEF tier gets the inline-XBRL instance bytes — the document's own bytes
+    // for a bare `.xhtml`, or the inner instance unpacked from a `.xbri`/`.zip`
+    // report package (ADR 0061 dec. 1). Everything else is the PDF tier.
+    let (esef_opt, pdf_opt): (Option<Vec<u8>>, Option<String>) =
+        match esef_instance_bytes(document.content_type.as_deref(), &local_path, &bytes) {
+            Some(instance) => (Some(instance), None),
+            None => {
+                let extracted = extract_report(&bytes, SourceFormat::Pdf);
+                let text = extracted
+                    .sections
+                    .iter()
+                    .map(|s| s.body.clone())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                (None, Some(text))
+            }
+        };
 
     // --- Comparative cross-check + completeness inputs (ADR 0061 dec. 4b/4d) --
     let prior_end = prior_period_end(period_end);
@@ -185,14 +298,25 @@ pub fn run_structured_extraction(
 
     // --- Persist accepted facts + provenance ----------------------------
     let mut produced_fact_ids = Vec::new();
+    let mut skipped_fact_ids = Vec::new();
+    let mut divergences = Vec::new();
     if outcome.acceptance.emits() {
         let validation_status = outcome.acceptance.validation_status();
         let tier = outcome.tier.map(|t| t.as_str()).unwrap_or("unknown");
         let confirmation_state = confirmation_state_for(outcome.acceptance, mode);
         let store = state.kpi_extraction();
+        // Within-batch dedup: the structured commit ignores per-fact `basis` (all
+        // facts land on the default slot), so two facts sharing a `metric_key`
+        // collapse to one slot. Keep the FIRST occurrence deterministically — a
+        // later same-key fact would otherwise re-observe the row this same run
+        // just wrote and be mis-counted as a skip.
+        let mut seen_keys = BTreeSet::new();
         for fact in &outcome.facts {
+            if !seen_keys.insert(fact.metric_key.clone()) {
+                continue;
+            }
             let value = fact.value.to_string();
-            let id = store
+            let commit = store
                 .record_structured_fact(StructuredFactInput {
                     company_id,
                     fiscal_year,
@@ -209,8 +333,25 @@ pub fn run_structured_extraction(
                     citation: Some(&fact.citation),
                 })
                 .map_err(|e| e.to_string())?;
-            if let Some(id) = id {
-                produced_fact_ids.push(id);
+            match commit {
+                crate::storage::StructuredFactCommit::Created(id) => produced_fact_ids.push(id),
+                crate::storage::StructuredFactCommit::Reobserved(id) => skipped_fact_ids.push(id),
+                crate::storage::StructuredFactCommit::Divergent {
+                    fact_id,
+                    metric_key,
+                    existing,
+                    incoming,
+                } => {
+                    skipped_fact_ids.push(fact_id.clone());
+                    divergences.push(FactDivergence {
+                        fact_id,
+                        metric_key,
+                        existing,
+                        incoming,
+                    });
+                }
+                // Non-catalog key — the pipeline should not emit it; not counted.
+                crate::storage::StructuredFactCommit::NoDefinition => {}
             }
         }
 
@@ -233,6 +374,8 @@ pub fn run_structured_extraction(
         tier: outcome.tier,
         emitted: !produced_fact_ids.is_empty(),
         produced_fact_ids,
+        skipped_fact_ids,
+        divergences,
         drift_json,
         structure_changed,
     })
@@ -374,6 +517,309 @@ mod tests {
             )
             .expect("mark fetched");
         (state, company.id, document.id)
+    }
+
+    /// A minimal ESEF report package (ZIP) whose inner `reports/` instance is a
+    /// balanced iXBRL statement at `2025-12-31` — the shape of a real GPW `.xbri`
+    /// annual filing, without shipping a real one. Includes a dimensional
+    /// (`explicitMember`) Equity component that must be filtered out.
+    fn esef_package_bytes() -> Vec<u8> {
+        use std::io::Write;
+        let instance = r#"<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:xbrldi="http://xbrl.org/2006/xbrldi"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+      <xbrli:context id="i"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period></xbrli:context>
+      <xbrli:context id="nci"><xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period>
+        <xbrli:scenario><xbrldi:explicitMember dimension="ifrs-full:ComponentsOfEquityAxis">ifrs-full:NoncontrollingInterestsMember</xbrldi:explicitMember></xbrli:scenario>
+      </xbrli:context>
+      <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+      <ix:nonFraction name="ifrs-full:Assets" contextRef="i" unitRef="pln" scale="3">45 000</ix:nonFraction>
+      <ix:nonFraction name="ifrs-full:Liabilities" contextRef="i" unitRef="pln" scale="3">20 000</ix:nonFraction>
+      <ix:nonFraction name="ifrs-full:Equity" contextRef="i" unitRef="pln" scale="3">25 000</ix:nonFraction>
+      <ix:nonFraction name="ifrs-full:Equity" contextRef="nci" unitRef="pln" scale="3">3 000</ix:nonFraction>
+    </html>"#;
+        let mut buf = Vec::new();
+        {
+            let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut buf));
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            zip.start_file(
+                "CBF-2025-12-31-1-pl/reports/CBF-2025-12-31-1-pl.xhtml",
+                opts,
+            )
+            .unwrap();
+            zip.write_all(instance.as_bytes()).unwrap();
+            zip.finish().unwrap();
+        }
+        buf
+    }
+
+    fn seed_esef_package() -> (AppState, String, String) {
+        let dir = unique_temp_dir("esef-pkg");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir.clone());
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CBF".to_owned(),
+                display_name: "Cyber_Folks S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "espi_attachment".to_owned(),
+                url: "https://example.com/CBF-2025-12-31-1-pl.xbri".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                // Title carries no parseable period on purpose — the period MUST
+                // come from the iXBRL contexts, not the filename.
+                title: Some("CBF-2025-12-31-1-pl.xbri".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        let bytes = esef_package_bytes();
+        std::fs::write(dir.join("report.xbri"), &bytes).expect("write package");
+        state
+            .mark_report_document_fetched(
+                &document.id,
+                Some("report.xbri"),
+                // A real `.xbri` is stored with a generic content type.
+                Some("application/octet-stream"),
+                None,
+                Some(bytes.len() as i64),
+            )
+            .expect("mark fetched");
+        (state, company.id, document.id)
+    }
+
+    #[test]
+    fn esef_package_derives_fy_period_from_ixbrl_not_the_filename() {
+        // T7-C: a `.xbri` ZIP package resolves to the ESEF tier; the period is
+        // self-derived from the unpacked instance's contexts (FY 2025-12-31),
+        // even though the filename carries no parseable period.
+        let (state, _company_id, document_id) = seed_esef_package();
+        let document = state.get_report_document(&document_id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &document),
+            Some((2025, "FY", "2025-12-31".to_owned()))
+        );
+    }
+
+    #[test]
+    fn esef_package_extraction_emits_dimensionless_totals() {
+        // T7-C end to end: the button path (derive + run) over a `.xbri` package
+        // emits the three balance-sheet totals from the unpacked instance, with
+        // the dimensional NCI-component Equity filtered out (total_equity = 25m,
+        // not 25m+3m), so the identity validates and the set is Accepted.
+        let (state, company_id, document_id) = seed_esef_package();
+        let document = state.get_report_document(&document_id).expect("document");
+        let (fiscal_year, period_type, period_end) =
+            derive_report_period(&state, &document).expect("period derives");
+        let result = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            fiscal_year,
+            period_type,
+            &period_end,
+            MODE_AUTOPILOT,
+        )
+        .expect("structured extraction runs");
+
+        assert_eq!(result.tier, Some(SourceTier::Esef));
+        assert_eq!(result.acceptance, Acceptance::Accepted);
+        assert!(result.emitted, "the ESEF package should emit facts");
+        assert_eq!(result.produced_fact_ids.len(), 3);
+    }
+
+    #[test]
+    fn re_extracting_the_same_document_is_idempotent_not_a_unique_violation() {
+        // Owner T7 bug: clicking "Wyciągnij dane" a second time on a document
+        // whose facts already landed must NOT surface a UNIQUE constraint error.
+        // Each incoming fact whose full uniqueness slot matches an existing row
+        // is a RE-OBSERVATION: same value ⇒ skipped (counted, never produced),
+        // the run succeeds cleanly and the DB keeps exactly one row per slot.
+        let (state, company_id, document_id) = seed_esef_package();
+
+        let first = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        assert_eq!(first.produced_fact_ids.len(), 3);
+        assert!(first.skipped_fact_ids.is_empty());
+        assert!(first.divergences.is_empty());
+
+        // Second click over the identical document + period.
+        let second = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("re-extraction must not error with a UNIQUE violation");
+
+        assert!(
+            second.produced_fact_ids.is_empty(),
+            "a re-observation produces no new facts"
+        );
+        assert_eq!(
+            second.skipped_fact_ids.len(),
+            3,
+            "all three facts already exist at their slot → skipped"
+        );
+        assert!(!second.emitted, "no new facts emitted on re-extraction");
+        assert!(
+            second.divergences.is_empty(),
+            "identical values → no divergence"
+        );
+
+        // The DB still holds exactly one fact per slot — no duplication.
+        let facts = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts");
+        assert_eq!(facts.len(), 3, "re-extraction must not duplicate rows");
+    }
+
+    #[test]
+    fn re_extraction_with_a_diverging_value_is_skipped_and_reported_not_overwritten() {
+        // A re-observation whose slot matches but whose value differs from the
+        // already-committed (confirmed) fact must NOT silently overwrite it: the
+        // safe minimal behavior (spec is silent on value conflicts) is skip +
+        // record the divergence for ratification. The stored value is unchanged.
+        let (state, company_id, document_id) = seed_esef_package();
+        let first = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("first extraction runs");
+        assert_eq!(first.produced_fact_ids.len(), 3);
+
+        // Mutate one stored fact so the next identical extraction diverges.
+        let assets = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts")
+            .into_iter()
+            .find(|f| f.value_numeric.trim_start_matches('-').starts_with("45"))
+            .expect("the 45m total-assets fact should exist");
+        state
+            .update_financial_fact(crate::storage::UpdateFinancialFact {
+                id: assets.id.clone(),
+                value_numeric: Some("999000000".to_owned()),
+                currency: None,
+                data_quality: None,
+                confirmation_state: None,
+                supersedes_id: None,
+                source_document_ref: None,
+            })
+            .expect("mutate stored fact");
+
+        let second = run_structured_extraction(
+            &state,
+            &company_id,
+            &document_id,
+            2025,
+            "FY",
+            "2025-12-31",
+            MODE_AUTOPILOT,
+        )
+        .expect("re-extraction must not error");
+
+        assert!(second.produced_fact_ids.is_empty());
+        assert_eq!(
+            second.skipped_fact_ids.len(),
+            3,
+            "every matching slot is skipped, diverging or not"
+        );
+        assert_eq!(second.divergences.len(), 1, "the one mutated slot diverges");
+        let divergence = &second.divergences[0];
+        assert_eq!(divergence.existing.trim(), "999000000");
+
+        // The confirmed fact is untouched — never silently overwritten.
+        let after = state
+            .list_financial_facts(crate::storage::ListFinancialFactsInput {
+                company_id: Some(company_id.clone()),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("list facts")
+            .into_iter()
+            .find(|f| f.id == assets.id)
+            .expect("fact still present");
+        assert_eq!(after.value_numeric.trim(), "999000000");
+    }
+
+    #[test]
+    fn derive_report_period_reads_the_esef_period_from_the_stored_file() {
+        // The shared derivation the on-demand "Extract data" command relies on:
+        // an ESEF filing self-derives its `FY` period from the iXBRL contexts.
+        let (state, _company_id, document_id) = seed_esef();
+        let document = state.get_report_document(&document_id).expect("document");
+        assert_eq!(
+            derive_report_period(&state, &document),
+            Some((2026, "FY", "2026-03-31".to_owned()))
+        );
+    }
+
+    #[test]
+    fn derive_report_period_is_none_for_a_document_with_no_stored_file() {
+        // A metadata-only (unfetched) document has no local file to parse, so no
+        // period can be derived — the "Extract data" command surfaces this as a
+        // clear error instead of inventing a period.
+        let dir = unique_temp_dir("no-file");
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::with_data_dir(connection, dir);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        let document = state
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: company.id.clone(),
+                source_type: "user_url".to_owned(),
+                url: "https://example.com/pending.pdf".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Some report".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        // Never marked fetched → `local_path` is None.
+        assert_eq!(derive_report_period(&state, &document), None);
     }
 
     // A minimal balanced ESEF instance carrying a second, prior-period context

@@ -285,8 +285,11 @@ fn undo_deletes_produced_facts_regardless_of_confirmation_state() {
             drift_json: None,
             citation: Some("Przychody"),
         })
-        .expect("record structured fact")
-        .expect("revenue is a catalog metric");
+        .expect("record structured fact");
+    let fact_id = match fact_id {
+        crate::storage::kpi_extraction::StructuredFactCommit::Created(id) => id,
+        other => panic!("revenue is a catalog metric; expected Created, got {other:?}"),
+    };
 
     state
         .autopilot()

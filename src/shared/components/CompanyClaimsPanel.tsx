@@ -11,6 +11,7 @@ import {
   type ClaimToVerify,
   type ManagementClaim,
 } from "../../api/managementClaims";
+import { formatFinancialValue } from "../format/financialValue";
 import { useLocale } from "../locale";
 import {
   Button,
@@ -56,13 +57,18 @@ function verdictTone(status: ClaimStatus): StatusPillTone {
 /// a create-claim form. AI claim extraction is launched from the report/transcript
 /// context (like KPI extraction); this panel resolves the verdicts.
 export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
-  const { text } = useLocale();
+  const { text, locale } = useLocale();
   const [claims, setClaims] = useState<ManagementClaim[]>([]);
   const [queue, setQueue] = useState<ClaimsToVerify | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statement, setStatement] = useState("");
   const [dueYear, setDueYear] = useState("");
   const [duePeriod, setDuePeriod] = useState("");
+  // S-tier composer disclosure + short-tier "top 3 due" expansion (ADR 0076 D6).
+  // Both are driven by data flags the density CSS keys off; the tier switch is
+  // CSS-only (container queries) so these states are inert at M/L/tall.
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [shortExpanded, setShortExpanded] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -118,128 +124,178 @@ export function CompanyClaimsPanel({ companyId }: CompanyClaimsPanelProps) {
   const hasQueue =
     queue !== null &&
     (queue.due.length > 0 || queue.overdue.length > 0 || queue.upcoming.length > 0);
+  // Short-tier summary (ADR 0076 D6): per-status counts line + the top 3 due
+  // claims only; the full panel folds behind an expansion.
+  const topDue = (queue?.due ?? []).slice(0, 3);
 
   return (
-    <section className="company-claims-panel" aria-label={text("Management claims")}>
+    <section
+      className="company-claims-panel"
+      aria-label={text("Management claims")}
+      {...(composerOpen ? { "data-composer-open": "" } : {})}
+      {...(shortExpanded ? { "data-short-expanded": "" } : {})}
+    >
       <SectionHeader
         level="h3"
+        paneLead
         title={text("Management claims")}
         description={text(
           "Track management promises with a due period and a verdict. Claims resurface for review when the due-period report arrives.",
         )}
       />
 
-      {hasQueue ? (
-        <div className="claims-review-queue" aria-label={text("Claims to verify")}>
-          <SectionHeader level="h4" title={text("Claims to verify")} />
-          {queueBuckets.map(({ key, label }) =>
-            queue && queue[key].length > 0 ? (
-              <div className="claims-queue-bucket" key={key}>
-                <Hint>{`${label} · ${queue[key].length}`}</Hint>
-                {queue[key].map((entry: ClaimToVerify) => (
-                  <div className="claim-queue-row" key={entry.claim.id}>
-                    <div className="claim-queue-statement">{entry.claim.statement}</div>
-                    {entry.verifyingFactCandidate ? (
-                      <Hint>
-                        {text("Reported value")}: {entry.verifyingFactCandidate.valueNumeric}
-                      </Hint>
-                    ) : null}
-                    {key !== "upcoming" ? (
-                      <div className="claim-queue-actions">
-                        <Button
-                          className="compact-button"
-                          onClick={() => resolveVerdict(entry.claim, "delivered")}
-                        >
-                          {text("Delivered")}
-                        </Button>
-                        <Button
-                          className="compact-button"
-                          onClick={() => resolveVerdict(entry.claim, "missed")}
-                        >
-                          {text("Missed")}
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            ) : null,
-          )}
-        </div>
-      ) : null}
-
-      <form
-        className="claim-create-form"
-        aria-label={text("Add a claim")}
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submitNewClaim();
-        }}
-      >
-        <TextField
-          label={text("Claim")}
-          value={statement}
-          onChange={(event) => setStatement(event.target.value)}
-          placeholder={text("What did management promise?")}
-        />
-        <TextField
-          label={text("Due year")}
-          inputMode="numeric"
-          value={dueYear}
-          onChange={(event) => setDueYear(event.target.value.replace(/[^0-9]/g, ""))}
-          placeholder="2026"
-        />
-        <SelectField
-          label={text("Due period")}
-          value={duePeriod}
-          onChange={(event) => setDuePeriod(event.target.value)}
-        >
-          <option value="">{text("None")}</option>
-          {PERIOD_TYPES.map((period) => (
-            <option key={period} value={period}>
-              {period}
-            </option>
+      <div className="claims-queue-summary" aria-label={text("Claims summary")}>
+        <div className="claims-queue-counts">
+          {queueBuckets.map(({ key, label }) => (
+            <span className="claims-count" key={key}>
+              <span className="claims-count-value">{queue ? queue[key].length : 0}</span>
+              <span className="claims-count-label">{label}</span>
+            </span>
           ))}
-        </SelectField>
-        <Button type="submit" variant="primary" disabled={!statement.trim()}>
-          <Plus size={15} />
-          {text("Add claim")}
-        </Button>
-      </form>
-
-      <div className="claims-list" aria-label={text("Management claims")}>
-        {claims.map((claim) => (
-          <div className="claim-row" key={claim.id}>
-            <div className="claim-row-main">
-              <CheckCircle2 size={15} />
-              <span className="claim-row-statement">{claim.statement}</span>
-              <StatusPill tone={verdictTone(claim.status)}>
-                {text(claim.status.replace(/_/g, " "))}
-              </StatusPill>
-            </div>
-            <div className="claim-row-meta">
-              {claim.dueFiscalYear && claim.duePeriodType ? (
-                <Hint>{`${claim.duePeriodType} ${claim.dueFiscalYear}`}</Hint>
-              ) : null}
-              <SelectField
-                label={text("Verdict")}
-                aria-label={text("Claim verdict")}
-                value={claim.status}
-                onChange={(event) =>
-                  void resolveVerdict(claim, event.target.value as ClaimStatus)
-                }
-              >
-                {VERDICTS.map((verdict) => (
-                  <option key={verdict} value={verdict}>
-                    {text(verdict.replace(/_/g, " "))}
-                  </option>
-                ))}
-              </SelectField>
-            </div>
+        </div>
+        {topDue.length > 0 ? (
+          <div className="claims-queue-top">
+            {topDue.map((entry: ClaimToVerify) => (
+              <div className="claims-queue-top-item" key={entry.claim.id}>
+                {entry.claim.statement}
+              </div>
+            ))}
           </div>
-        ))}
-        {claims.length === 0 ? (
-          <EmptyState>{text("No management claims tracked yet.")}</EmptyState>
+        ) : null}
+        <Button
+          className="claims-short-toggle compact-button"
+          onClick={() => setShortExpanded((current) => !current)}
+          aria-expanded={shortExpanded}
+        >
+          {shortExpanded ? text("Show fewer claims") : text("Show all claims")}
+        </Button>
+      </div>
+
+      <div className="claims-body">
+        <div className="claims-main">
+          <Button
+            className="claims-add-toggle compact-button"
+            onClick={() => setComposerOpen((current) => !current)}
+            aria-expanded={composerOpen}
+          >
+            <Plus size={15} />
+            {text("Add claim")}
+          </Button>
+
+          <form
+            className="claim-create-form"
+            aria-label={text("Add a claim")}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitNewClaim();
+            }}
+          >
+            <TextField
+              label={text("Claim")}
+              value={statement}
+              onChange={(event) => setStatement(event.target.value)}
+              placeholder={text("What did management promise?")}
+            />
+            <TextField
+              label={text("Due year")}
+              inputMode="numeric"
+              value={dueYear}
+              onChange={(event) => setDueYear(event.target.value.replace(/[^0-9]/g, ""))}
+              placeholder="2026"
+            />
+            <SelectField
+              label={text("Due period")}
+              value={duePeriod}
+              onChange={(event) => setDuePeriod(event.target.value)}
+            >
+              <option value="">{text("None")}</option>
+              {PERIOD_TYPES.map((period) => (
+                <option key={period} value={period}>
+                  {period}
+                </option>
+              ))}
+            </SelectField>
+            <Button type="submit" variant="primary" disabled={!statement.trim()}>
+              <Plus size={15} />
+              {text("Add claim")}
+            </Button>
+          </form>
+
+          <div className="claims-list" aria-label={text("Management claims")}>
+            {claims.map((claim) => (
+              <div className="claim-row" key={claim.id}>
+                <div className="claim-row-main">
+                  <CheckCircle2 size={15} />
+                  <span className="claim-row-statement">{claim.statement}</span>
+                  <StatusPill tone={verdictTone(claim.status)}>
+                    {text(claim.status.replace(/_/g, " "))}
+                  </StatusPill>
+                </div>
+                <div className="claim-row-meta">
+                  {claim.dueFiscalYear && claim.duePeriodType ? (
+                    <Hint>{`${claim.duePeriodType} ${claim.dueFiscalYear}`}</Hint>
+                  ) : null}
+                  <SelectField
+                    label={text("Verdict")}
+                    aria-label={text("Claim verdict")}
+                    value={claim.status}
+                    onChange={(event) =>
+                      void resolveVerdict(claim, event.target.value as ClaimStatus)
+                    }
+                  >
+                    {VERDICTS.map((verdict) => (
+                      <option key={verdict} value={verdict}>
+                        {text(verdict.replace(/_/g, " "))}
+                      </option>
+                    ))}
+                  </SelectField>
+                </div>
+              </div>
+            ))}
+            {claims.length === 0 ? (
+              <EmptyState>{text("No management claims tracked yet.")}</EmptyState>
+            ) : null}
+          </div>
+        </div>
+
+        {hasQueue ? (
+          <aside className="claims-verdict-column claims-review-queue" aria-label={text("Claims to verify")}>
+            <SectionHeader level="h4" title={text("Claims to verify")} />
+            {queueBuckets.map(({ key, label }) =>
+              queue && queue[key].length > 0 ? (
+                <div className="claims-queue-bucket" key={key}>
+                  <Hint>{`${label} · ${queue[key].length}`}</Hint>
+                  {queue[key].map((entry: ClaimToVerify) => (
+                    <div className="claim-queue-row" key={entry.claim.id}>
+                      <div className="claim-queue-statement">{entry.claim.statement}</div>
+                      {entry.verifyingFactCandidate ? (
+                        <Hint>
+                          {text("Reported value")}:{" "}
+                          {formatFinancialValue(entry.verifyingFactCandidate, locale)}
+                        </Hint>
+                      ) : null}
+                      {key !== "upcoming" ? (
+                        <div className="claim-queue-actions">
+                          <Button
+                            className="compact-button"
+                            onClick={() => resolveVerdict(entry.claim, "delivered")}
+                          >
+                            {text("Delivered")}
+                          </Button>
+                          <Button
+                            className="compact-button"
+                            onClick={() => resolveVerdict(entry.claim, "missed")}
+                          >
+                            {text("Missed")}
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : null,
+            )}
+          </aside>
         ) : null}
       </div>
 

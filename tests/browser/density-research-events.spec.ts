@@ -1,0 +1,212 @@
+import { test, expect, openApp, openCockpitPanel, setPaneSize, resetPaneSize, expectNoPageOverflow } from "./helpers/harness";
+import type { Locator, Page } from "@playwright/test";
+
+// U7-D panel density contracts (ADR 0076 D6): Research, Events, Report Season.
+// Same table-driven runner as density-matrix.spec.ts — each panel appends a
+// PANEL_CONTRACTS entry whose `open` returns the pane Locator to size and whose
+// `tiers` assert the contract's per-tier visibility after `setPaneSize` forces
+// the hosting `pane` size container (.cockpit-pane) to that tier. jsdom has no
+// container queries, so the tier switch is browser-only here; the fold/expand and
+// list-override STATE is unit-tested in the screens' *.test.tsx files.
+//
+// The ADR names two audit regressions this cluster must fix — "Research rows
+// overlapping the reminder button" and "the Events week calendar reduced to day
+// headers" in short 2×2 cockpit cells — asserted as explicit cases below.
+
+type PaneLocator = Locator;
+type TierCheck = (page: Page, pane: PaneLocator) => Promise<void>;
+
+type PanelContract = {
+  panel: string;
+  open: (page: Page) => Promise<PaneLocator>;
+  tiers: { S?: TierCheck; M?: TierCheck; L?: TierCheck; short?: TierCheck };
+};
+
+const TIER_SIZE = {
+  S: { width: 380, height: 700 },
+  M: { width: 600, height: 700 },
+  L: { width: 900, height: 700 },
+  short: { width: 900, height: 440 },
+} as const;
+
+const TIER_ORDER = ["S", "M", "L", "short"] as const;
+
+// The pane hosting a freshly-added cockpit panel is the single `.cockpit-pane`
+// that contains the panel's root element.
+function paneWith(page: Page, rootSelector: string): PaneLocator {
+  return page.locator(".cockpit-pane", { has: page.locator(rootSelector) });
+}
+
+async function openResearch(page: Page): Promise<PaneLocator> {
+  await openCockpitPanel(page, "Research");
+  const pane = paneWith(page, ".research-panel");
+  await expect(pane).toBeVisible();
+  return pane;
+}
+
+async function openEvents(page: Page): Promise<PaneLocator> {
+  await openCockpitPanel(page, "Events");
+  const pane = paneWith(page, ".events-layout");
+  await expect(pane).toBeVisible();
+  return pane;
+}
+
+async function openReportSeason(page: Page): Promise<PaneLocator> {
+  await openCockpitPanel(page, "Report Season");
+  const pane = paneWith(page, ".report-season-layout");
+  await expect(pane).toBeVisible();
+  // The default cockpit cell is small (short); size the pane to L before expanding
+  // so the pre-report card is mounted and visible, then let the tier loop resize
+  // it (the expanded state persists across resizes).
+  await setPaneSize(page, { ...TIER_SIZE.L, pane });
+  const firstRow = pane.locator(".report-season-row").first();
+  await expect(firstRow).toBeVisible();
+  await firstRow.click();
+  await expect(pane.locator(".report-season-card").first()).toBeVisible();
+  return pane;
+}
+
+const PANEL_CONTRACTS: PanelContract[] = [
+  {
+    panel: "Research",
+    open: openResearch,
+    tiers: {
+      // S: tabs + timeline only; review-queue/questions fold to count chips; the
+      // AI-brief aside folds away. Summary counts stay.
+      S: async (page, pane) => {
+        await expect(pane.getByRole("button", { name: /Review queue/ })).toBeVisible();
+        await expect(pane.getByRole("button", { name: /Research questions/ })).toBeVisible();
+        await expect(pane.locator(".research-timeline")).toBeVisible();
+        await expect(pane.locator(".research-summary")).toBeVisible();
+        await expect(pane.locator(".research-reminders")).toBeHidden();
+        await expect(pane.locator(".research-questions")).toBeHidden();
+        await expect(pane.locator(".research-aside")).toBeHidden();
+      },
+      // M: + review-queue strip (reminders body reveals); questions stay a chip.
+      M: async (page, pane) => {
+        await expect(pane.locator(".research-reminders")).toBeVisible();
+        await expect(pane.getByRole("button", { name: /Research questions/ })).toBeVisible();
+        await expect(pane.locator(".research-questions")).toBeHidden();
+        await expect(pane.locator(".research-timeline")).toBeVisible();
+      },
+      // L: + questions/reminders columns; both chips gone, aside back as a column.
+      L: async (page, pane) => {
+        await expect(pane.locator(".research-reminders")).toBeVisible();
+        await expect(pane.locator(".research-questions")).toBeVisible();
+        await expect(pane.getByRole("button", { name: /Review queue/ })).toBeHidden();
+        await expect(pane.getByRole("button", { name: /Research questions/ })).toBeHidden();
+        await expect(pane.locator(".research-aside")).toBeVisible();
+      },
+      // short: summary counts + timeline; everything else re-folds behind chips.
+      short: async (page, pane) => {
+        await expect(pane.locator(".research-summary")).toBeVisible();
+        await expect(pane.locator(".research-timeline")).toBeVisible();
+        await expect(pane.locator(".research-reminders")).toBeHidden();
+        await expect(pane.locator(".research-aside")).toBeHidden();
+      },
+    },
+  },
+  {
+    panel: "Events",
+    open: openEvents,
+    tiers: {
+      // S: list mode forced — no week grid, no "Week" option offered.
+      S: async (page, pane) => {
+        await expect(pane.locator(".event-week-grid")).toHaveCount(0);
+        await expect(pane.getByRole("button", { name: "Week", exact: true })).toHaveCount(0);
+        await expect(pane.locator(".events-layout")).toBeVisible();
+      },
+      // M: week grid in its bounded scroller (persisted default mode = week).
+      M: async (page, pane) => {
+        await expect(pane.locator(".event-week-grid")).toBeVisible();
+        await expect(pane.locator(".event-week-scroll[data-hscroll]")).toBeVisible();
+      },
+      // L: full week grid.
+      L: async (page, pane) => {
+        await expect(pane.locator(".event-week-grid")).toBeVisible();
+      },
+      // short: list mode forced — no clipped week grid.
+      short: async (page, pane) => {
+        await expect(pane.locator(".event-week-grid")).toHaveCount(0);
+        await expect(pane.locator(".events-layout")).toBeVisible();
+      },
+    },
+  },
+  {
+    panel: "Report Season",
+    open: openReportSeason,
+    tiers: {
+      // S: rows only — name+date+state chip; the pre-report card folds away.
+      S: async (page, pane) => {
+        await expect(pane.locator(".report-season-row").first()).toBeVisible();
+        await expect(pane.locator(".report-season-card")).toBeHidden();
+      },
+      // M: + prep checklist inline; extended context (KPIs, evidence) still folds.
+      M: async (page, pane) => {
+        await expect(pane.locator(".report-season-card")).toBeVisible();
+        await expect(pane.locator(".report-season-card-prep")).toBeVisible();
+        await expect(pane.locator(".report-season-card-extended")).toBeHidden();
+      },
+      // L: + full pre-report card (prep + extended context).
+      L: async (page, pane) => {
+        await expect(pane.locator(".report-season-card-prep")).toBeVisible();
+        await expect(pane.locator(".report-season-card-extended")).toBeVisible();
+      },
+      // short: rows only.
+      short: async (page, pane) => {
+        await expect(pane.locator(".report-season-row").first()).toBeVisible();
+        await expect(pane.locator(".report-season-card")).toBeHidden();
+      },
+    },
+  },
+];
+
+test.describe("panel density — Research / Events / Report Season", { tag: "@clickable" }, () => {
+  for (const contract of PANEL_CONTRACTS) {
+    test(`${contract.panel} honors its pane-density tiers`, async ({ page }) => {
+      await openApp(page);
+      const pane = await contract.open(page);
+      for (const tier of TIER_ORDER) {
+        const check = contract.tiers[tier];
+        if (!check) continue;
+        await setPaneSize(page, { ...TIER_SIZE[tier], pane });
+        await check(page, pane);
+        await expectNoPageOverflow(page);
+        await resetPaneSize(page, pane);
+      }
+    });
+  }
+
+  // Audit regression (ADR 0076 D6): in a short 2×2 cockpit cell the Research rows
+  // overlapped the reminder button. The short tier must show summary counts +
+  // timeline with the review queue folded — never the full rows on top of it.
+  test("Research short cell shows summary + timeline with the review queue folded", async ({ page }) => {
+    await openApp(page);
+    const pane = await openResearch(page);
+    await setPaneSize(page, { ...TIER_SIZE.short, pane });
+    await expect(pane.locator(".research-summary")).toBeVisible();
+    await expect(pane.locator(".research-timeline")).toBeVisible();
+    await expect(pane.getByRole("button", { name: /Review queue/ })).toBeVisible();
+    await expect(pane.locator(".research-reminders")).toBeHidden();
+    await expectNoPageOverflow(page);
+  });
+
+  // Audit regression (ADR 0076 D6): the Events week calendar collapsed to bare day
+  // headers in a short/narrow cell. At S and short the list renders and the week
+  // grid is not rendered at all — nothing to clip.
+  test("Events short and S cells render the list, never a clipped week grid", async ({ page }) => {
+    await openApp(page);
+    const pane = await openEvents(page);
+
+    await setPaneSize(page, { ...TIER_SIZE.S, pane });
+    await expect(pane.locator(".event-week-grid")).toHaveCount(0);
+    await expect(pane.locator(".events-layout")).toBeVisible();
+    await expectNoPageOverflow(page);
+    await resetPaneSize(page, pane);
+
+    await setPaneSize(page, { ...TIER_SIZE.short, pane });
+    await expect(pane.locator(".event-week-grid")).toHaveCount(0);
+    await expect(pane.locator(".events-layout")).toBeVisible();
+    await expectNoPageOverflow(page);
+  });
+});

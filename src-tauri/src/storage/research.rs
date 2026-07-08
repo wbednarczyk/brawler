@@ -715,7 +715,11 @@ fn research_question_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Resea
     })
 }
 
-fn review_checkpoint_timestamp(
+/// The recorded `reviewed_at` checkpoint for a review scope, or `None` when the
+/// scope has never been reviewed. Exposed to sibling stores (e.g. research
+/// digests, F4) so synthetic evidence can be bounded by the *same* checkpoint the
+/// timeline read consults — see [`changed_since_checkpoint`].
+pub(super) fn review_checkpoint_timestamp(
     connection: &Connection,
     scope_type: &str,
     scope_id: &str,
@@ -855,6 +859,32 @@ fn validate_evidence_reference(
     }
 }
 
+/// Build the supplied-evidence citation set: the `(evidence_type, evidence_id)`
+/// pairs an AI response may cite. Single home for the citation-integrity
+/// reference rule (ADR 0075 guardrail; research-brief precedent) — research
+/// briefs, research digests, and qualitative assessments all resolve citations
+/// against a set built here, so a change to reference semantics (e.g. id
+/// normalization) lands once, not three times. Per-surface error messages stay
+/// at the call sites.
+pub fn supplied_evidence_refs(
+    items: &[ResearchEvidenceItem],
+) -> std::collections::HashSet<(String, String)> {
+    items
+        .iter()
+        .map(|item| (item.evidence_type.clone(), item.source_id.clone()))
+        .collect()
+}
+
+/// Whether a citation's `(evidence_type, evidence_id)` resolves to supplied
+/// evidence. Counterpart of [`supplied_evidence_refs`].
+pub fn citation_resolves(
+    refs: &std::collections::HashSet<(String, String)>,
+    evidence_type: &str,
+    evidence_id: &str,
+) -> bool {
+    refs.contains(&(evidence_type.to_owned(), evidence_id.to_owned()))
+}
+
 fn validate_visible_question_scope(
     connection: &Connection,
     scope_type: &str,
@@ -909,7 +939,10 @@ fn validate_allowed_research_value(
     }
 }
 
-fn changed_since_checkpoint(occurred_at: &str, checkpoint: Option<&str>) -> bool {
+/// Whether `occurred_at` is strictly newer than the review `checkpoint`. No
+/// checkpoint (never reviewed) ⇒ everything counts as changed. Shared with F4's
+/// synthetic framework-verdict gating so it mirrors the timeline semantics.
+pub(super) fn changed_since_checkpoint(occurred_at: &str, checkpoint: Option<&str>) -> bool {
     checkpoint
         .map(|reviewed_at| occurred_at > reviewed_at)
         .unwrap_or(true)

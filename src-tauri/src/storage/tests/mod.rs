@@ -36,5 +36,6 @@ mod search;
 mod settings;
 mod signals;
 mod source_registry;
+mod t7_cbf_corpus;
 mod transcripts;
 mod watchlists;

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Checkbox, ErrorText, Hint, ListRow, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { Checkbox, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
 
 describe("ErrorText", () => {
   it("renders an alert with the error-text class", () => {
@@ -73,6 +73,39 @@ describe("SectionHeader", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Reports" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
   });
+
+  // ADR 0076 Decision 6 (compact header, K3 double panel chrome): a panel's
+  // leading header opts into the pane-lead hook so the shared `.cockpit-pane`
+  // rule can visually compact its title. The class only tags the header — the
+  // title must stay in the accessible tree so `aria-labelledby` /
+  // `getByRole("heading")` keep resolving (the compaction is CSS clip-path, not
+  // removal), and it is inert (no compaction) outside a `.cockpit-pane`.
+  it("tags the leading header with the pane-lead hook while keeping the title accessible", () => {
+    const { container } = render(<SectionHeader title="Quality" paneLead />);
+    expect(container.querySelector(".ui-pane-lead-header")).not.toBeNull();
+    expect(screen.getByRole("heading", { level: 2, name: "Quality" })).toBeInTheDocument();
+  });
+
+  it("does not add the pane-lead hook by default", () => {
+    const { container } = render(<SectionHeader title="Quality" />);
+    expect(container.querySelector(".ui-pane-lead-header")).toBeNull();
+  });
+});
+
+describe("PanelHeader", () => {
+  it("tags the leading header with the pane-lead hook while keeping the title accessible", () => {
+    const { container } = render(<PanelHeader title="Research" paneLead titleId="r-title" />);
+    expect(container.querySelector(".ui-pane-lead-header")).not.toBeNull();
+    // The title stays an addressable h1 so `<section aria-labelledby>` and
+    // heading queries still resolve it under the compact rule.
+    const heading = screen.getByRole("heading", { level: 1, name: "Research" });
+    expect(heading).toHaveAttribute("id", "r-title");
+  });
+
+  it("does not add the pane-lead hook by default", () => {
+    const { container } = render(<PanelHeader title="Research" />);
+    expect(container.querySelector(".ui-pane-lead-header")).toBeNull();
+  });
 });
 
 describe("Checkbox", () => {
@@ -124,5 +157,98 @@ describe("StatusPill", () => {
     const idle = screen.getByText("Idle");
     expect(idle).toHaveClass("ui-status-pill");
     expect(idle.className).not.toContain("ui-status-pill-");
+  });
+});
+
+describe("ExpandableRow", () => {
+  it("renders a disclosure chevron whose rotation reflects expansion (ADR 0076 D9)", () => {
+    const { container, rerender } = render(
+      <ExpandableRow label="Row" isExpanded={false} onToggle={() => {}} detail={<p>body</p>}>
+        <span>header</span>
+      </ExpandableRow>,
+    );
+
+    // The primitive renders the chevron itself — disclosure is never ARIA-only.
+    const chevron = container.querySelector(".expandable-row-chevron");
+    expect(chevron).not.toBeNull();
+    // Decorative: the row already carries aria-expanded, so the icon is hidden.
+    expect(chevron).toHaveAttribute("aria-hidden", "true");
+
+    // Collapsed: the article advertises the collapsed state, chevron points right.
+    const article = screen.getByRole("button", { name: "Row" });
+    expect(article).toHaveAttribute("aria-expanded", "false");
+    expect(article).not.toHaveClass("expandable-row-open");
+
+    // Expanded: the open modifier drives the CSS rotation to ▾.
+    rerender(
+      <ExpandableRow label="Row" isExpanded={true} onToggle={() => {}} detail={<p>body</p>}>
+        <span>header</span>
+      </ExpandableRow>,
+    );
+    const openArticle = screen.getByRole("button", { name: "Row" });
+    expect(openArticle).toHaveAttribute("aria-expanded", "true");
+    expect(openArticle).toHaveClass("expandable-row-open");
+  });
+
+  it("toggles from keyboard without the chevron stealing the accessible name", () => {
+    const onToggle = vi.fn();
+    render(
+      <ExpandableRow label="Keyboard row" isExpanded={false} onToggle={onToggle}>
+        <span>header</span>
+      </ExpandableRow>,
+    );
+    const article = screen.getByRole("button", { name: "Keyboard row" });
+    fireEvent.keyDown(article, { key: "Enter" });
+    fireEvent.keyDown(article, { key: " " });
+    expect(onToggle).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("FilterToolbar", () => {
+  // jsdom has no container queries, so the *tier* (when the disclosure appears)
+  // is asserted in the Playwright density matrix. Here we assert the disclosure
+  // TOGGLE semantics the primitive owns so every consumer inherits the S-tier
+  // "Filtry" collapse (ADR 0076 D6): search stays visible; the rest fold behind
+  // an aria-expanded disclosure with a rotating chevron (D9).
+  it("keeps the search slot visible and folds the controls behind a Filters disclosure", () => {
+    render(
+      <FilterToolbar ariaLabel="Test filters" search={<input aria-label="Search box" />}>
+        <select aria-label="Kind filter" />
+      </FilterToolbar>,
+    );
+
+    // Search is always rendered outside the collapsible region.
+    expect(screen.getByLabelText("Search box")).toBeVisible();
+
+    // The disclosure is a real button (never ARIA-only) with a rotating chevron.
+    const disclosure = screen.getByRole("button", { name: "Filters" });
+    const chevron = disclosure.querySelector(".filter-toolbar-chevron");
+    expect(chevron).not.toBeNull();
+    expect(chevron).toHaveAttribute("aria-hidden", "true");
+
+    // Collapsed by default: the controls region advertises the folded state.
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    const controls = document.querySelector(".filter-toolbar-controls");
+    expect(controls).toHaveAttribute("data-collapsed", "true");
+    // The children live inside the collapsible region.
+    expect(controls).toContainElement(screen.getByLabelText("Kind filter"));
+  });
+
+  it("expands and collapses the controls region on toggle", () => {
+    render(
+      <FilterToolbar ariaLabel="Test filters">
+        <select aria-label="Kind filter" />
+      </FilterToolbar>,
+    );
+    const disclosure = screen.getByRole("button", { name: "Filters" });
+    const controls = document.querySelector(".filter-toolbar-controls");
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(controls).toHaveAttribute("data-collapsed", "false");
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(controls).toHaveAttribute("data-collapsed", "true");
   });
 });

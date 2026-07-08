@@ -8,6 +8,17 @@ export type CompanyEventWeekDay = {
   label: string;
 };
 
+// U7-D density (ADR 0076 D6): Events forces list mode at the S width tier and the
+// short height tier — the week grid is not offered/rendered there. This resolves
+// the *presentation* mode without mutating the persisted `companyEventViewMode`
+// preference, so widening the pane restores the stored choice.
+export function resolveEventViewMode(
+  stored: CompanyEventViewMode,
+  compact: boolean,
+): CompanyEventViewMode {
+  return compact ? "list" : stored;
+}
+
 export type EventsScreenProps = {
   companies: Company[];
   watchlists: Watchlist[];

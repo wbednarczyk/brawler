@@ -45,6 +45,7 @@ import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
 import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
 import { deleteCockpitLayout, listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
+import { useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -71,12 +72,12 @@ import {
   addLocalDays,
   companyEventDueClass,
   companyEventDueLabel,
+  formatDetailTimestamp,
   formatLocalDate,
   formatPollInterval,
-  formatTimestamp,
-  formatWeekRange,
+  formatWeekRange as formatWeekRangeBase,
   parseLocalDate,
-} from "../shared/formatting/date";
+} from "../shared/format/datetime";
 import {
   formatAiProvider,
   formatCompanyEventSourceType,
@@ -291,16 +292,31 @@ export function AppStateRoot({
     setActiveSection("Cockpit");
   }
 
+  // Reversible destroy (ADR 0076 D5): a saved view re-creates faithfully via
+  // save_cockpit_layout (name + panelsJson + layoutJson), so it deletes
+  // immediately with an undo toast rather than a blocking dialog.
   function deleteCockpitView(layoutId: string) {
-    if (!window.confirm(text("Delete this saved view?"))) return;
-    void deleteCockpitLayout(layoutId)
-      .then(() => {
+    const layout = cockpitLayouts.find((entry) => entry.id === layoutId);
+    if (!layout) return;
+    runUndoableDelete({
+      perform: () => deleteCockpitLayout(layoutId),
+      restore: () =>
+        saveCockpitLayout({
+          name: layout.name,
+          panelsJson: layout.panelsJson,
+          layoutJson: layout.layoutJson,
+          dockviewVersion: layout.dockviewVersion,
+        }),
+      message: text("View deleted"),
+      undoLabel: text("Undo"),
+      onPerformed: () => {
         if (activeCockpitLayoutId === layoutId) setActiveCockpitLayoutId(null);
         refreshCockpitLayouts();
-      })
-      .catch(() => {
-        /* surfaced by the runtime; the list refreshes on the next change */
-      });
+      },
+      onRestored: () => {
+        refreshCockpitLayouts();
+      },
+    });
   }
 
   // Composable views (ADR 0057): the "+" creates a new named view as a cockpit
@@ -315,6 +331,8 @@ export function AppStateRoot({
       closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
       selectedFeedItemId: null,
       grid: { cols: spec.cols, rows: spec.rows },
+      // A fresh view has no view company yet (U-Ra); follow cells prompt to choose.
+      viewCompanyId: null,
     });
     void saveCockpitLayout({ name: spec.name, panelsJson, layoutJson: null, dockviewVersion: null })
       .then((layout) => {
@@ -443,6 +461,18 @@ export function AppStateRoot({
   } = useAiAnalysisController({ selectedFeedItem, selectedCompanyFeedItem });
 
   const text = makeTextTranslator(locale);
+  // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
+  const runUndoableDelete = useUndoableDelete();
+  // ADR 0076 D4: threaded date formatters. Detail/audit rows (provenance,
+  // diagnostics) show the full `YYYY-MM-DD HH:MM`; the week label is locale-bound.
+  // List rows (feed streams) format at the leaf via formatListTimestamp.
+  const formatTimestamp = formatDetailTimestamp;
+  const formatWeekRange = (startDate: string, endDate: string) =>
+    formatWeekRangeBase(startDate, endDate, locale);
+  // Due labels ("Dziś"/"Za 2 dni") are user copy, so they bind the locale here
+  // like formatWeekRange does (audit K8: no English date words in the PL UI).
+  const companyEventDueLabelLocalized = (eventDate: string) =>
+    companyEventDueLabel(eventDate, locale);
   const shortcutBindings = settings?.shortcutBindings ?? {};
   const shortcutReferences = resolveAppShortcutReferenceItems(shortcutBindings);
   const licenseCanUseApp = licenseStatus?.canUseApp !== false;
@@ -502,6 +532,7 @@ export function AppStateRoot({
     watchlists,
     watchlistMemberships,
     text,
+    runUndoableDelete,
   });
 
   const {
@@ -586,7 +617,6 @@ export function AppStateRoot({
     setWatchlistMemberships,
     setWatchlists,
     setWatchlistsError,
-    text,
   });
 
   const {
@@ -805,6 +835,7 @@ export function AppStateRoot({
     setSelectedNotebookEntryId,
     setSelectedNotebookScreenEntryId,
     text,
+    runUndoableDelete,
   });
 
   const {
@@ -856,7 +887,6 @@ export function AppStateRoot({
     transcriptDescriptionDraftByJobId,
     transcriptJobForm,
     transcriptNoteForm,
-    text,
   });
 
   const {
@@ -1265,6 +1295,7 @@ export function AppStateRoot({
     "app.openTranscripts": () => undefined,
     "app.openSources": () => undefined,
     "app.openSettings": () => undefined,
+    "app.commandPalette": () => undefined,
     "app.focusSearch": () => undefined,
     "app.refreshSources": () => undefined,
     "app.refreshDatabase": () => undefined,
@@ -1558,7 +1589,7 @@ export function AppStateRoot({
     formatCompanyEventType,
     formatCompanyEventStatus,
     formatCompanyEventSourceType,
-    companyEventDueLabel,
+    companyEventDueLabel: companyEventDueLabelLocalized,
     companyEventDueClass,
     openExternalUrl,
   };
@@ -1740,7 +1771,6 @@ export function AppStateRoot({
           {activeSection === "Today" ? (
             <TodayScreen
               companies={companies}
-              watchlists={watchlists}
               pinnedCompanyIds={pinnedCompanyIds}
               recentFeedItems={feedState}
               openCompanyWorkspace={openCompanyWorkspaceById}

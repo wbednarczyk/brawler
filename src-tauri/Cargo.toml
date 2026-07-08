@@ -82,6 +82,10 @@ tokio = { version = "1", features = ["sync"] }
 time = { version = "0.3", features = ["formatting", "macros", "parsing"] }
 ts-rs = { version = "12", optional = true }
 url = "2"
+# ESEF report packages (ADR 0061 dec. 1) are ZIP containers; only DEFLATE is
+# needed to read the inline-XBRL instance inside (no encryption/bzip2/zstd).
+# Pins to the version already resolved transitively, so no new version enters.
+zip = { version = "7", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 # Property-based tests for the deterministic cores (DSL parser/evaluator, feed

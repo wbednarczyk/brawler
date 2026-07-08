@@ -1,4 +1,4 @@
-import { test, expect, openApp, openCockpitPanel, acceptDialogs } from "./helpers/harness";
+import { test, expect, openApp, openCockpitPanel } from "./helpers/harness";
 
 // Clickable Notebooks lifecycle against the stateful browser mock runtime
 // (ADR 0048): create a note, edit its title, then delete it — each step
@@ -27,8 +27,11 @@ test.describe("notebooks", { tag: "@clickable" }, () => {
 
     // The new note must appear in the list (stateful create). The controller
     // auto-selects it in view mode, so the detail editor is already open —
-    // clicking the row again would toggle it back off.
-    await expect(page.getByLabel("Select notebook screen entry: Margin watch Q3")).toBeVisible();
+    // clicking the row again would toggle it back off. Presence (not
+    // visibility) is asserted: at the S density tier the open detail hides the
+    // list by contract (ADR 0076 D6); tier presentation is covered by the
+    // density specs.
+    await expect(page.getByLabel("Select notebook screen entry: Margin watch Q3")).toHaveCount(1);
 
     // Edit the title; Save is enabled once the form is dirty.
     const detail = page.getByLabel("Notebook screen entry detail");
@@ -38,14 +41,14 @@ test.describe("notebooks", { tag: "@clickable" }, () => {
 
     await expect(
       page.getByLabel("Select notebook screen entry: Margin watch Q3 (rev)"),
-    ).toBeVisible();
+    ).toHaveCount(1);
     await expect(
       page.getByLabel("Select notebook screen entry: Margin watch Q3", { exact: true }),
     ).toHaveCount(0);
 
-    // Delete (confirms via window.confirm) — the entry leaves the list. The
-    // edited note stays selected in view mode, so Delete is already reachable.
-    acceptDialogs(page);
+    // Delete — a reversible destroy (ADR 0076 D5): the note leaves immediately
+    // with an undo toast, no native dialog. The edited note stays selected in
+    // view mode, so Delete is already reachable.
     await detail.getByRole("button", { name: "Delete" }).click();
     await expect(
       page.getByLabel("Select notebook screen entry: Margin watch Q3 (rev)"),

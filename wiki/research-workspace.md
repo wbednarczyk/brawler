@@ -29,22 +29,25 @@ The sidebar is grouped so you always know where you are:
 
 ## Today — what needs your attention
 
-**Today** answers one question: *what should I look at?* It is an attention
-digest, not a wall of feed items:
+**Today** answers one question: *what should I look at?* It is a single
+**attention stream**, ordered by priority — not a wall of feed items:
 
-- **What changed** — the freshest report disclosures, newest first. Click
-  **Review** to jump to that company.
-- **Autopilot** — a card per automated run for a company you've opted into
-  **assist** or **autopilot** mode, with a summary, a **Structure changed**
-  note when the report's layout shifted, and **Review**/**Dismiss** (plus
-  **Undo** for autopilot-mode runs). See [Autopilot](autopilot.md).
-- **To verify** — management claims that are due or overdue for the companies you
-  have **pinned**. (Pin companies to populate this.)
-- **Upcoming reports** — the next report dates on the calendar.
-- **Conviction** — a watchlist-level overview. A per-company conviction status is
-  coming with the valuation and thesis work; today this is a placeholder.
-- **Recent activity** — a compact peek at the latest feed items, with a shortcut
-  to the full **Inbox**.
+1. **Autopilot** — one row per automated run for a company you've opted into
+   **assist** or **autopilot** mode, with a summary, a **Structure changed**
+   note when the report's layout shifted, and **Review**/**Dismiss** (plus
+   **Undo** for autopilot-mode runs, with the undo confirm inline in the row).
+   See [Autopilot](autopilot.md).
+2. **To verify** — management claims that are due or overdue for the companies
+   you have **pinned**. (Pin companies to populate this.)
+3. **Fresh disclosures** — the newest report publications, with **Review** to
+   jump to that company.
+4. **Upcoming reports** — the next report dates on the calendar.
+
+The **counter tiles** above the stream (Autopilot / To verify / Upcoming
+reports) show how much of each is waiting — and clicking a tile **filters the
+stream** to that category; click again to restore. The stream is fully
+keyboard-friendly: **j / k** move focus between row actions. When nothing needs
+you, Today says so and stays calm. **Open Inbox** takes you to the full feed.
 
 ## Opening a company: the curated dashboard
 
@@ -59,6 +62,24 @@ company at once, and it stays composable — add, remove, or move panels, then
 Pin the company to the sidebar from here or from the Companies list. Company
 metadata (exchange, ticker, ISIN, and other identifiers) lives in the
 Companies list, not on the dashboard.
+
+## The command palette (Ctrl+K)
+
+Press **Ctrl+K** anywhere to open the **command palette**: type to filter, hit
+Enter to run. It's the fastest way to jump between screens or trigger an action
+without reaching for the mouse. (Inside a cockpit view, the palette also lists
+that view's panel commands.) All shortcuts are listed under
+**Settings → Keyboard shortcuts** — shortcuts are ignored while you're typing
+in a field or editor, so they never fight your text.
+
+## Deleting things: undo, not "are you sure?"
+
+Where Brawler can restore something faithfully after deletion (notes, research
+questions, and similar), deleting shows a **toast with Undo** instead of a
+blocking confirmation dialog — act first, change your mind within a few
+seconds. Destructive actions that *can't* be fully restored keep an explicit
+inline confirmation instead. Either way, focus lands somewhere sensible after a
+row disappears, so keyboard flow isn't broken.
 
 ## Focus mode — distraction-free reading and writing
 

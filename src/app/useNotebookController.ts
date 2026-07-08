@@ -8,6 +8,8 @@ import type {
 } from "../api/types";
 import type { Section } from "./navigation";
 import type { NotebookForm } from "../shared/types/notebook";
+import type { UndoableDeleteConfig } from "../ui";
+import type { CreateNotebookEntryInput } from "../api/notebooks";
 import {
   emptyNotebookForm,
   manualNotebookOrigins,
@@ -18,6 +20,30 @@ import {
 } from "./notebookForms";
 
 type PreventableFormEvent = Pick<FormEvent<HTMLFormElement>, "preventDefault">;
+
+// Faithful undo restore (ADR 0076 D5): rebuild the create-input from a deleted
+// entry, carrying content and provenance origins (NotebookOrigin → NewNotebookOrigin,
+// dropping the server-owned id/createdAt).
+function notebookEntryRestoreInput(entry: NotebookEntry): CreateNotebookEntryInput {
+  return {
+    companyId: entry.companyId,
+    title: entry.title,
+    body: entry.body,
+    bodyFormat: entry.bodyFormat,
+    tags: entry.tags,
+    kind: entry.kind,
+    claimStatus: entry.claimStatus,
+    eventDate: entry.eventDate,
+    followUpAfter: entry.followUpAfter,
+    followUpDate: entry.followUpDate,
+    origins: entry.origins.map((origin) => ({
+      sourceType: origin.sourceType,
+      sourceId: origin.sourceId,
+      sourceUrl: origin.sourceUrl,
+      label: origin.label,
+    })),
+  };
+}
 
 type NotebookControllerInput = {
   companies: Company[];
@@ -51,6 +77,7 @@ type NotebookControllerInput = {
   setSelectedNotebookEntryId: Dispatch<SetStateAction<string | null>>;
   setSelectedNotebookScreenEntryId: Dispatch<SetStateAction<string | null>>;
   text: (value: string) => string;
+  runUndoableDelete: (config: UndoableDeleteConfig) => void;
 };
 
 function updateNotebookFormState(
@@ -100,6 +127,7 @@ export function useNotebookController({
   setSelectedNotebookEntryId,
   setSelectedNotebookScreenEntryId,
   text,
+  runUndoableDelete,
 }: NotebookControllerInput) {
   function findCompanyForFeedItem(item: FeedItem) {
     return companies.find((company) => company.qualifiedTicker === item.company) ?? null;
@@ -333,30 +361,37 @@ export function useNotebookController({
       });
   }
 
+  // Reversible destroy (ADR 0076 D5): a note re-creates faithfully via
+  // create_notebook_entry — content and provenance origins are preserved — so it
+  // deletes immediately with an undo toast (the new id is inconsequential; nothing
+  // references a note by id after deletion).
   function deleteNotebookScreenEntry() {
     if (!selectedNotebookScreenEntry || !selectedNotebookScreenCompany) {
       return;
     }
 
-    const confirmed = window.confirm(`${text("Delete")} ${selectedNotebookScreenEntry.title}?`);
+    const entry = selectedNotebookScreenEntry;
+    const company = selectedNotebookScreenCompany;
 
-    if (!confirmed) {
-      return;
-    }
-
-    notebooksApi.deleteNotebookEntry(selectedNotebookScreenEntry.id)
-      .then(() => {
-        setNotebookEntries((current) =>
-          current.filter((entry) => entry.id !== selectedNotebookScreenEntry.id),
-        );
+    runUndoableDelete({
+      perform: () => notebooksApi.deleteNotebookEntry(entry.id),
+      restore: () => notebooksApi.createNotebookEntry(notebookEntryRestoreInput(entry)),
+      message: text("Note deleted"),
+      undoLabel: text("Undo"),
+      onPerformed: () => {
+        setNotebookEntries((current) => current.filter((item) => item.id !== entry.id));
         setSelectedNotebookScreenEntryId(null);
         setNotebookScreenEditMode(false);
         setNotebookError(null);
-        refreshNotebookEntries(selectedNotebookScreenCompany.id);
-      })
-      .catch((error) => {
+        refreshNotebookEntries(company.id);
+      },
+      onRestored: () => {
+        refreshNotebookEntries(company.id);
+      },
+      onError: (error) => {
         setNotebookError(String(error));
-      });
+      },
+    });
   }
 
   function cancelNotebookScreenEdit() {

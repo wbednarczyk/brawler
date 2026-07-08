@@ -1,4 +1,11 @@
-import { test, expect, openApp, expectNoPageOverflow, expectNoHorizontalOverflow } from "./helpers/harness";
+import {
+  test,
+  expect,
+  openApp,
+  expectNoPageOverflow,
+  expectNoHorizontalOverflow,
+  expectNoA11yViolations,
+} from "./helpers/harness";
 
 // Cheap, broad coverage of the recurring layout-overflow class: walk every
 // sidebar destination and assert the page never scrolls horizontally. Runs
@@ -42,6 +49,9 @@ test.describe("layout smoke-walk", () => {
       // The page-level gate is the meaningful, low-noise invariant: the window
       // must never scroll horizontally on any destination.
       await expectNoPageOverflow(page);
+      // Real-browser a11y gate on every destination, in both themes (the matrix
+      // includes the light project) — catches contrast + ARIA regressions (U9).
+      await expectNoA11yViolations(page, `destination "${label}"`);
     }
   });
 

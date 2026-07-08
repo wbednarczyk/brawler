@@ -5,7 +5,6 @@ import {
   renderApp,
   screen,
   userEvent,
-  vi,
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
@@ -237,18 +236,22 @@ describe("Companies screen workflows", () => {
     ).toBeInTheDocument();
   });
 
-  it("confirms and deletes a company", async () => {
+  it("confirms in place and deletes a company", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     renderApp();
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await user.click(await screen.findByTitle("Delete GPW:CDR"));
 
-    expect(confirm).toHaveBeenCalledWith("Delete GPW:CDR from tracked companies?");
+    // Irreversible/cascading (ADR 0076 D5): an in-place InlineConfirm, not a
+    // native dialog. The delete fires only after confirming.
+    expect(screen.getByText("Delete GPW:CDR from tracked companies?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Delete" }));
 
-    confirm.mockRestore();
+    await waitFor(() => {
+      expect(invoke).toHaveBeenCalledWith("delete_company", { companyId: "company_gpw_cdr" });
+    });
   });
 
   it("opens the curated cockpit dashboard from a company row (ADR 0057)", async () => {
@@ -337,7 +340,6 @@ describe("Companies screen workflows", () => {
 
   it("deletes a watchlist, keeps companies, and resets an active company watchlist filter", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     renderApp();
 
@@ -347,7 +349,10 @@ describe("Companies screen workflows", () => {
     expect(screen.getByText("1/4 companies")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Watchlists" }));
-    await user.click(within(screen.getByLabelText("Selected watchlist")).getByRole("button", { name: "Delete" }));
+    // In-place confirm (ADR 0076 D5): open then confirm to run the delete.
+    const selected = () => within(screen.getByLabelText("Selected watchlist"));
+    await user.click(selected().getByRole("button", { name: "Delete" }));
+    await user.click(selected().getByRole("button", { name: "Delete" }));
 
     await user.click(screen.getByRole("button", { name: "Companies" }));
     await waitFor(() => expect(screen.getByText("4/4 companies")).toBeInTheDocument());
@@ -355,8 +360,6 @@ describe("Companies screen workflows", () => {
     expect(invoke).toHaveBeenCalledWith("delete_watchlist", {
       watchlistId: "watchlist_main_gpw",
     });
-
-    confirm.mockRestore();
   });
 
 });

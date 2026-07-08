@@ -22,6 +22,7 @@ import { ActionRow, Button, ErrorText, PanelHeader } from "../../ui";
 import { ResearchAiPanel } from "./ResearchAiPanel";
 import { AddQuestionDialog, AddReminderDialog } from "./ResearchDialogs";
 import { ResearchEvidencePanel } from "./ResearchEvidencePanel";
+import { ResearchFoldSection } from "./ResearchFoldSection";
 import { ResearchQuestionsPanel } from "./ResearchQuestionsPanel";
 import { ResearchRemindersPanel } from "./ResearchRemindersPanel";
 import { ResearchScopeBar } from "./ResearchScopeBar";
@@ -153,6 +154,14 @@ export function ResearchScreen() {
   const [briefPanelWidth, setBriefPanelWidth] = useState<number | null>(null);
   const [questionDialogOpen, setQuestionDialogOpen] = useState(false);
   const [reminderDialogOpen, setReminderDialogOpen] = useState(false);
+  // U7-D density (ADR 0076 D6): expand/collapse state for the count-chip folds;
+  // the tier that decides whether the chip or the section shows is pure CSS.
+  const [openFolds, setOpenFolds] = useState<{ reminders: boolean; questions: boolean }>({
+    reminders: false,
+    questions: false,
+  });
+  const toggleFold = (key: "reminders" | "questions") =>
+    setOpenFolds((current) => ({ ...current, [key]: !current[key] }));
   const [reminderTitle, setReminderTitle] = useState("");
   const [reminderBody, setReminderBody] = useState("");
   const [reminderDueAt, setReminderDueAt] = useState("");
@@ -281,6 +290,7 @@ export function ResearchScreen() {
     <section className="feed-panel research-panel" aria-labelledby="research-title">
       <PanelHeader
         className="research-header"
+        paneLead
         title={text("Research")}
         description={text("Company evidence timeline and review checkpoint.")}
         titleId="research-title"
@@ -332,33 +342,53 @@ export function ResearchScreen() {
 
         <div className="research-main-layout" style={researchLayoutStyle}>
           <div className={mode === "watchlist" ? "research-main-stack watchlist" : "research-main-stack company"}>
-            <ResearchRemindersPanel
-              canAdd={mode === "company" ? Boolean(selectedCompany) : Boolean(selectedWatchlist)}
-              completeReminder={completeReminder}
-              deleteReminder={deleteReminder}
-              formatTimestamp={formatTimestamp}
-              onAdd={openReminderDialog}
-              reminderInFlight={reminderInFlight}
-              reminders={reminders}
-              reopenReminder={reopenReminder}
-              snoozeReminder={snoozeReminder}
-              text={text}
-            />
-            {mode === "company" ? (
-              <ResearchQuestionsPanel
-                canAdd={Boolean(selectedCompany)}
-                deleteQuestion={deleteQuestion}
-                onAdd={openQuestionDialog}
-                questionInFlight={questionInFlight}
-                questionLinks={questionLinks}
-                questions={questions}
-                selectedQuestion={selectedQuestion}
-                selectedQuestionId={selectedQuestionId}
-                setSelectedQuestionId={setSelectedQuestionId}
+            <ResearchFoldSection
+              bodyId="research-fold-reminders"
+              count={reminders.length}
+              expanded={openFolds.reminders}
+              foldTier="m"
+              label={text("Review queue")}
+              onToggle={() => toggleFold("reminders")}
+              toggleTitle={text("Toggle details")}
+            >
+              <ResearchRemindersPanel
+                canAdd={mode === "company" ? Boolean(selectedCompany) : Boolean(selectedWatchlist)}
+                completeReminder={completeReminder}
+                deleteReminder={deleteReminder}
+                formatTimestamp={formatTimestamp}
+                onAdd={openReminderDialog}
+                reminderInFlight={reminderInFlight}
+                reminders={reminders}
+                reopenReminder={reopenReminder}
+                snoozeReminder={snoozeReminder}
                 text={text}
-                unlinkEvidence={unlinkEvidence}
-                updateQuestionStatus={updateQuestionStatus}
               />
+            </ResearchFoldSection>
+            {mode === "company" ? (
+              <ResearchFoldSection
+                bodyId="research-fold-questions"
+                count={questions.length}
+                expanded={openFolds.questions}
+                foldTier="l"
+                label={text("Research questions")}
+                onToggle={() => toggleFold("questions")}
+                toggleTitle={text("Toggle details")}
+              >
+                <ResearchQuestionsPanel
+                  canAdd={Boolean(selectedCompany)}
+                  deleteQuestion={deleteQuestion}
+                  onAdd={openQuestionDialog}
+                  questionInFlight={questionInFlight}
+                  questionLinks={questionLinks}
+                  questions={questions}
+                  selectedQuestion={selectedQuestion}
+                  selectedQuestionId={selectedQuestionId}
+                  setSelectedQuestionId={setSelectedQuestionId}
+                  text={text}
+                  unlinkEvidence={unlinkEvidence}
+                  updateQuestionStatus={updateQuestionStatus}
+                />
+              </ResearchFoldSection>
             ) : null}
             <ResearchEvidencePanel
               companiesCount={companies.length}

@@ -29,16 +29,16 @@ const LOCALE_TAGS: Record<LocaleCode, string> = {
   pl: "pl-PL",
 };
 
-const SCALE_WORDS: Record<LocaleCode, { thousand: string; million: string; billion: string }> = {
+export const SCALE_WORDS: Record<LocaleCode, { thousand: string; million: string; billion: string }> = {
   en: { thousand: "k", million: "M", billion: "B" },
   pl: { thousand: "tys.", million: "mln", billion: "mld" },
 };
 
-function localeTag(locale: LocaleCode): string {
+export function localeTag(locale: LocaleCode): string {
   return LOCALE_TAGS[locale] ?? LOCALE_TAGS.en;
 }
 
-function groupFormat(value: number, locale: LocaleCode, maximumFractionDigits: number): string {
+export function groupFormat(value: number, locale: LocaleCode, maximumFractionDigits: number): string {
   return new Intl.NumberFormat(localeTag(locale), {
     minimumFractionDigits: 0,
     maximumFractionDigits,

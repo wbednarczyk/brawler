@@ -546,7 +546,7 @@ The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockvi
     "id": "layout_earnings_season",
     "name": "Earnings season",
     "ordinal": 0,
-    "panelsJson": "{\"panels\":[\"feed\",\"inspector\",\"reportDiff:company_gpw_cdr\"],\"selectedFeedItemId\":\"feed_01\"}",
+    "panelsJson": "{\"pinned\":[{\"id\":\"follow:fundamentals\",\"kind\":\"fundamentals\",\"mode\":\"follow\"},{\"id\":\"reportDiff:company_gpw_cdr\",\"kind\":\"reportDiff\",\"mode\":\"pinned\",\"companyId\":\"company_gpw_cdr\"}],\"openGlobals\":[],\"closedLinked\":[\"feed\",\"inspector\",\"claims-sel\",\"diff-sel\"],\"selectedFeedItemId\":\"feed_01\",\"grid\":null,\"cells\":null,\"viewCompanyId\":\"company_gpw_cdr\"}",
     "layoutJson": "{ /* dockview api.toJSON() */ }",
     "dockviewVersion": "6.6.1"
   }
@@ -1452,7 +1452,7 @@ to `{}`. An absent key or an empty list for a key means "use
 `generalAnalysisProvider` / `generalAnalysisModel`" — every capability is
 backward-compatible with a single global provider.
 
-Capability keys (`AiCapability::key`, fixed set of 7):
+Capability keys (`AiCapability::key`, fixed set of 8):
 
 | Key | Kind | Provider call |
 |---|---|---|
@@ -1463,10 +1463,11 @@ Capability keys (`AiCapability::key`, fixed set of 7):
 | `research_digest` | text | `generate_research_digest` |
 | `event_date` | text | `complete_document` (extracted text) |
 | `signal_classification` | text | text |
+| `qualitative_assessment` | text | `complete_document` (self-contained prompt) |
 
 Validation rules for `capabilityProviders`:
 
-- Every map key must be one of the 7 capability keys above; an unknown key is rejected.
+- Every map key must be one of the 8 capability keys above; an unknown key is rejected.
 - Every entry's `provider` must be a currently selectable analysis provider id (the AI Provider Catalog below); an entry's `model` must be non-empty.
 - `model` must belong to the provider's curated model list, except for `provider_openai_compatible`, which has no curated list and accepts any non-empty freeform model id (same exemption as `generalAnalysisModel`).
 - An empty entry list for a key is valid — it is the explicit "use the global fallback" state.
@@ -2235,7 +2236,8 @@ Input shapes follow the corresponding domain types above. Return shapes include 
 
 Structured-first extraction commands ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md); generated DTOs `RunStructuredExtractionInput` / `StructuredExtractionSummary` / `FactProvenance`):
 
-- `run_structured_extraction(input)`: `{ companyId, reportDocumentId, fiscalYear, periodType, periodEnd, mode? }` → runs the deterministic tiered pipeline (ESEF → PDF+profile → HTML witness) over one stored report document and persists accepted facts with provenance; returns `{ acceptance, tier, emitted, producedFactIds, driftJson }`. Offloaded (`spawn_blocking`). `mode` is the trust-ladder mode (`autopilot` | `assist`, default `autopilot`; any other value is rejected); the per-fact `confirmationState` is derived from the validation outcome (`accepted`/`accepted_via_witness` → `confirmed` in both modes; `accepted_unreviewed` → `auto_unreviewed`/`pending` by mode) — never from a caller-chosen literal (ADR 0061 dec. 3/8/9).
+- `run_structured_extraction(input)`: `{ companyId, reportDocumentId, fiscalYear, periodType, periodEnd, mode? }` → runs the deterministic tiered pipeline (ESEF → PDF+profile → HTML witness) over one stored report document and persists accepted facts with provenance; returns `{ acceptance, tier, emitted, producedFactIds, skippedFactIds, divergentCount, driftJson }`. Re-extraction is **idempotent** (T7-F): a fact whose uniqueness slot already holds the same value is a re-observation — counted in `skippedFactIds`, never re-inserted; a slot holding a **different** value is never silently overwritten — the stored fact wins, the divergence is counted in `divergentCount` and recorded as a `diagnostic_events` entry for review. Offloaded (`spawn_blocking`). `mode` is the trust-ladder mode (`autopilot` | `assist`, default `autopilot`; any other value is rejected); the per-fact `confirmationState` is derived from the validation outcome (`accepted`/`accepted_via_witness` → `confirmed` in both modes; `accepted_unreviewed` → `auto_unreviewed`/`pending` by mode) — never from a caller-chosen literal (ADR 0061 dec. 3/8/9). Period supplied by the caller (the KPI-extraction flow, which knows the detected period).
+- `extract_report_document_data(input)`: `{ companyId, reportDocumentId, mode? }` → **the reachable one-click "Extract data" action** on a report-document row (the company workspace's Report documents panel) — closes the ADR 0061 S5 live-path gap where the deterministic pipeline had no UI caller outside autopilot. Derives the reporting period **server-side** (the same `derive_report_period` the autopilot stage uses: ESEF self-derived `FY`; PDF from title/URL period classification), so the UI never invents `fiscalYear`/`periodType`/`periodEnd`, then runs `run_structured_extraction` and returns the same `StructuredExtractionSummary`. Offloaded (`spawn_blocking`). Same `mode`/confirmation semantics as `run_structured_extraction` (facts land unchanged — pending vs auto-committed by `mode` + validation outcome). Errors when the period can't be derived (no stored file, unparsable ESEF, or a PDF with no classifiable period). **UI entry point**: `CompanyReportDocumentsPanel` extract action.
 - `list_fact_provenance(factIds)`: returns the `FactProvenance` rows (`factId`, `sourceTier`, `validationStatus`, `driftJson`, `citation`) for the requested facts; facts predating the pipeline have no row (render as unvalidated).
 - `list_flagged_fact_provenance()`: returns every provenance row with `validationStatus = "flagged"` (the drift/notification read model).
 
@@ -2263,6 +2265,30 @@ Domain types follow the `quality_frameworks` / `framework_criteria` / `framework
 - `list_available_metric_keys(input?)`: returns the computable metric keys (catalog + derived + `user`-scope) with labels/units, for the criteria editor's discovery/autocomplete.
 
 Frameworks, criteria, and any `user`-scope `kpi_definitions` a criterion references are owner-durable state carried in the import/export bundle so an exported framework imports cleanly; evaluations are reproducible snapshots whose export is optional.
+
+### Qualitative Assessment
+
+Status: implemented (v0.50.0, ADR 0075) — pending T7 real-company validation
+
+(Commands + UI shipped in v0.50 T5, validated so far only against sample/mock data. Real-company validation and milestone closure are reserved for T7 per the [v0.50 plan](plans/v0.50-quality-frameworks-qualitative.md). This section is NOT tagged `Status: planned`: the docs-drift gate reads "planned" as "not yet in code" and fails when a planned section's commands already exist — these do.)
+
+Qualitative assessment ([ADR 0075](adr/0075-qualitative-assessment-frameworks.md), `v0.50.0`) extends quality frameworks with **agent-assessed** criteria (moat, pricing power, recurring revenue, capital-allocation quality…) that cannot be reduced to a metric comparison. A qualitative criterion carries `kind: "qualitative"` and an owner-authored `assessmentGuidance` prompt seed instead of a DSL expression; the existing criterion writes (`create_framework_criterion` / `update_framework_criterion`) gain optional `kind` and `assessmentGuidance` fields for this (empty `expression` for qualitative rows). Assessment is one AI request **per criterion per company** (the `qualitative_assessment` capability, ADR 0060), grounded only in app-held evidence — report documents, research evidence links, claims + verdicts, recent signals, notebook notes; **no web access**. Each result is agent opinion (not a fact): `verdict` (`pass | partial | fail | insufficient_evidence`), short `reasoning`, `citations` (typed evidence refs reusing the research-evidence citation model — `evidenceType`, `evidenceId`, `label`, `snippet`), `confidence` (`low | medium | high`), `promptVersion`, and `source: "agent"`. Results are labeled, regeneratable, and never mutate quantitative data; stored `reasoning` must contain no buy/sell/hold or allocation language. Agent results merge into the same immutable evaluation snapshot as quantitative results (per-criterion `source`); verdict changes vs the previous snapshot surface in digests and on autopilot re-evaluation.
+
+Two read surfaces with a fixed boundary (a snapshot may be quant-only, qual-only, or combined, so "the latest snapshot" is **not** a reliable source of qualitative rows):
+
+- `get_framework_evaluation` / `list_framework_evaluations` return the qualitative fields **as snapshotted in that specific run** — the audit/history view of one evaluation, unchanged and immutable.
+- `get_qualitative_assessment` is the Quality panel's **current-state** read: per qualitative criterion, the most recent agent-assessed row (`source = "agent"`) for the company × framework **across all snapshots**, so a later quant-only run never blanks an existing assessment.
+
+Commands:
+
+- `run_qualitative_assessment(input)`: `{ companyId, frameworkId }` → enqueues the durable `qualitative_assessment` job over the framework's qualitative criteria for the company; asynchronous, surfaced via the jobs read model. Fails with a clear error when no text-capable provider is configured (matches feed-analysis behavior).
+- `rerun_qualitative_criterion(input)`: `{ companyId, frameworkId, criterionId }` → re-enqueues assessment for a single qualitative criterion (the panel's re-run action).
+- `get_qualitative_assessment(input)`: `{ companyId, frameworkId }` → returns, **per qualitative criterion, the most recent agent-assessed result** (`source = "agent"`, latest by run) across the framework's evaluation snapshots for the company, with resolved citations (opening the cited evidence), confidence, prompt version, and `source`, for the Quality panel. A criterion with no assessment yet is omitted (empty state), distinct from an `insufficient_evidence` verdict.
+- `get_qualitative_assessment_status(input)`: `{ companyId, frameworkId }` → `{ status: "idle" | "queued" | "running" | "failed" | "succeeded", attempts, lastError }` — the lifecycle of the durable `qualitative_assessment:<company>:<framework>` job row, so the panel can stop its bounded poll and surface a terminal failure (the backend `lastError`, e.g. no configured provider) instead of silently clearing the "queued" hint. Maps the queue row honestly (`pending → queued`); a missing row is `succeeded` when an assessment is already stored, else `idle`. `lastError` is only meaningful on `failed`.
+
+Citations are rejected when they do not reference an evidence id supplied to the request (the research-brief `rejects_unknown_citation_keys` precedent): uncited reasoning is never stored.
+
+**Output language** (owner decision 2026-07-07): AI prose output follows the persisted app `locale` — the qualitative-assessment prompt instructs the model to write `reasoning` and citation `label` in Polish/English accordingly (prompt version `qualitative-assessment.v2`), while citation `snippet` stays **verbatim in the evidence's original language** (attribution durability — a quote must remain exact). Unknown locale codes degrade to English. Existing stored assessments keep the language they were generated in; only new runs follow the setting. The same rule extends to the other prose-producing prompts (feed analysis summary, research brief/digest) as a carded follow-up.
 
 ### AI KPI Extraction
 

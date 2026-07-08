@@ -1,12 +1,12 @@
 .company-row-actions {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .company-workspace {
   display: grid;
-  gap: 14px;
+  gap: var(--space-4);
   /* The workspace renders inline inside the scrollable .company-list. Its grid items
      (report-documents, the report-diff panel, etc.) hold long, unbreakable ESPI
      filenames. A plain auto-sized grid column grows to that content and forces the
@@ -14,8 +14,8 @@
      minmax(0, 1fr) pins the column to the available width so the panels' rows truncate. */
   grid-template-columns: minmax(0, 1fr);
   min-width: 0;
-  margin: 0 12px 12px;
-  padding: 16px;
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 8px;
   scroll-margin-top: 12px;
@@ -37,28 +37,28 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .company-workspace-header h2 {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 3px;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
   color: var(--text);
-  font-size: 22px;
+  font-size: var(--font-xl);
 }
 
 .company-pin-toggle,
 .company-advanced-layout {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* Focus writer (ADR 0054): the body textarea fills the distraction-free surface. */
 .notebook-writer {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   height: 100%;
   min-height: 0;
 }
@@ -70,13 +70,15 @@
 }
 
 .company-workspace-header p {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--muted);
 }
 
 .eyebrow {
-  color: var(--primary);
-  font-size: 11px;
+  /* --primary-strong (not --primary) clears WCAG AA on the light surface-raised
+     tints these small bold labels sit on (U9 a11y: contrast). */
+  color: var(--primary-strong);
+  font-size: var(--font-xs);
   font-weight: 700;
   text-transform: uppercase;
 }
@@ -85,13 +87,13 @@
   display: flex;
   justify-content: end;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .company-workspace-header-side {
   display: grid;
   justify-items: end;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: min(420px, 50%);
 }
 
@@ -99,12 +101,12 @@
   display: inline-flex;
   align-items: center;
   min-height: 26px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 48%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .company-tabs {
@@ -117,7 +119,7 @@
 
 .company-tab-panel {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Report-over-report diff (ADR 0052): a workspace-level section (sibling of the
@@ -135,7 +137,7 @@
 }
 
 .report-diff-group + .report-diff-group {
-  margin-top: 0.75rem;
+  margin-top: var(--space-3);
 }
 
 /* Report documents (ADR 0036): a SectionHeader + ui-list-rows (ui/ListRow). Rows own their
@@ -146,7 +148,7 @@
   /* Pin the column to the available width so the row titles (long unbreakable ESPI
      filenames) truncate instead of growing the panel and forcing horizontal scroll. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -156,7 +158,13 @@
    the panel stays usable in the narrow tall-window range. */
 .quality-panel {
   display: grid;
-  gap: 10px;
+  /* Clamp the single column track: a default `auto` track adopts the widest
+     row's min-content width, which widens the whole pane and forces a
+     panel-level horizontal scrollbar. With minmax(0,1fr) the track follows the
+     pane and rows shrink via their own min-width/ellipsis machinery
+     (guardrail, ADR 0045). */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
 }
 
 .quality-framework-bar,
@@ -165,13 +173,13 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .quality-criterion-trailing {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .quality-measured {
@@ -189,7 +197,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
 }
 
@@ -198,5 +206,239 @@
 }
 
 .quality-history-detail {
-  margin-left: 16px;
+  margin-left: var(--space-4);
+}
+
+/* Qualitative criteria (ADR 0075): the kind switch sits above the add-criterion
+   form; an agent-assessed criterion expands in place to reveal reasoning +
+   citations, mirroring the evaluation-history row idiom. */
+.quality-kind-switch {
+  margin-top: var(--space-1);
+}
+
+.quality-qualitative-row {
+  cursor: pointer;
+}
+
+.quality-qualitative-detail {
+  margin-left: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.quality-reasoning {
+  margin: 0;
+  color: var(--text);
+  /* Prose measure: long lines are hard to read; cap at ~72 characters
+     (docs/ui-authoring.md — prose blocks carry a max-width). */
+  max-width: 72ch;
+}
+
+.quality-citations {
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* ---------------------------------------------------------------------------
+   Panel density contracts (ADR 0076 D6 / U7-B): Quality + Report documents.
+   Container queries resolve against the named `pane` size container on
+   `.cockpit-pane` (cockpit.css). Tiers: S <420 · M 420–760 · L >760 (width),
+   short <480 (height).
+   --------------------------------------------------------------------------- */
+
+/* Quality — the criteria + add-criterion column and the evaluation-history side
+   panel. At L the history sits beside the criteria; below L it stacks under. */
+.quality-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.quality-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.quality-history {
+  display: grid;
+  gap: var(--space-2);
+  align-content: start;
+  min-width: 0;
+}
+
+/* Collapsible history header (ADR 0076 D9: a real disclosure, chevron + aria). */
+.quality-history-toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.quality-history-chevron {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.quality-history-toggle-title {
+  font-weight: 600;
+  font-size: var(--font-md);
+}
+
+.quality-history-toggle-count {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Quantitative criterion row: label (identity) + inline expression column +
+   trailing verdict cluster. The expression folds into the row's expansion at S. */
+.quality-criterion-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-width: 0;
+}
+
+.quality-criterion-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quality-expression {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-criterion-header .quality-criterion-trailing {
+  flex: none;
+}
+
+.quality-quantitative-row {
+  cursor: pointer;
+}
+
+.quality-quantitative-detail {
+  margin-left: var(--space-4);
+  display: grid;
+  gap: var(--space-2);
+}
+
+.quality-detail-line {
+  margin: 0;
+  color: var(--text);
+  max-width: 72ch;
+}
+
+.quality-detail-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+/* S: the inline expression column folds; it stays reachable in the expansion. */
+@container pane (max-width: 419px) {
+  .quality-expression {
+    display: none;
+  }
+}
+
+/* L: the evaluation history becomes a side panel beside the criteria column. */
+@container pane (min-width: 760px) {
+  .quality-body {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  }
+}
+
+/* Report documents — filename (middle-ellipsis) + date at every tier; the
+   single storage-status chip ("Stored"/"Link only") appears from M, and the
+   provenance preview (document kind + source) from L. The repeated type/source
+   chips were removed from the row line as K-class noise (ADR 0076 D6). */
+.doc-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  min-width: 0;
+}
+
+.doc-date {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.doc-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.doc-preview {
+  min-width: 0;
+  max-width: 22ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Per-document "Extract data" action (ADR 0061 S5): the one action per row,
+   pinned to the trailing edge. A real (secondary) Button primitive — a clear
+   affordance, compact for the dense row. Labeled from L; icon-only below L (its
+   aria-label keeps the accessible name), dropped on a short pane (list only). */
+.doc-extract {
+  flex: none;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  gap: var(--space-1);
+  font-size: var(--font-sm);
+}
+
+.doc-extract-label {
+  white-space: nowrap;
+}
+
+/* Below L: drop the attribution preview column (chips remain from M) and fold
+   the extract action to an icon (its label hides; the icon button stays). */
+@container pane (max-width: 759px) {
+  .company-report-documents .doc-preview,
+  .company-report-documents .doc-extract-label {
+    display: none;
+  }
+}
+
+/* S: filename + date only — also drop the type/status chips. */
+@container pane (max-width: 419px) {
+  .company-report-documents .doc-chips {
+    display: none;
+  }
+}
+
+/* short: list only — bare filename + date regardless of width (drop chips,
+   preview, and the extract action). */
+@container pane (max-height: 479px) {
+  .company-report-documents .doc-chips,
+  .company-report-documents .doc-preview,
+  .company-report-documents .doc-extract {
+    display: none;
+  }
 }

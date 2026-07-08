@@ -1,14 +1,20 @@
 import { callCommand } from "./tauri";
 import type {
   CloneFrameworkInput,
+  CriterionResult,
   EvaluateFrameworkInput,
   FrameworkCriterion,
   FrameworkEvaluation,
+  GetQualitativeAssessmentInput,
+  GetQualitativeAssessmentStatusInput,
   ListFrameworkEvaluationsInput,
   MetricKeyInfo,
   NewFrameworkCriterion,
   NewQualityFramework,
+  QualitativeAssessmentStatus,
   QualityFramework,
+  RerunQualitativeCriterionInput,
+  RunQualitativeAssessmentInput,
   UpdateFrameworkCriterion,
   UpdateQualityFramework,
   ValidateCriterionResult,
@@ -90,4 +96,28 @@ export function listAvailableMetricKeys(companyId?: string) {
   return callCommand<MetricKeyInfo[]>("list_available_metric_keys", {
     companyId: companyId ?? null,
   });
+}
+
+// ============================================================================
+// Qualitative assessment (ADR 0075)
+// ============================================================================
+
+/** Enqueue the agent assessment over a framework's qualitative criteria. */
+export function runQualitativeAssessment(input: RunQualitativeAssessmentInput) {
+  return callCommand<void>("run_qualitative_assessment", { input });
+}
+
+/** Re-enqueue assessment for a single qualitative criterion (panel re-run). */
+export function rerunQualitativeCriterion(input: RerunQualitativeCriterionInput) {
+  return callCommand<void>("rerun_qualitative_criterion", { input });
+}
+
+/** Current-state read: most-recent agent result per qualitative criterion. */
+export function getQualitativeAssessment(input: GetQualitativeAssessmentInput) {
+  return callCommand<CriterionResult[]>("get_qualitative_assessment", { input });
+}
+
+/** Lifecycle status of the durable assessment job (poll surface for the panel). */
+export function getQualitativeAssessmentStatus(input: GetQualitativeAssessmentStatusInput) {
+  return callCommand<QualitativeAssessmentStatus>("get_qualitative_assessment_status", { input });
 }

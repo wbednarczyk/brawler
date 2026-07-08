@@ -28,7 +28,6 @@ beforeEach(() => {
 describe("Diagnostics backups section", () => {
   it("lists backups, creates a backup, and stages a restore", async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<BackupsSection />);
 
@@ -40,13 +39,17 @@ describe("Diagnostics backups section", () => {
     expect(backupsApi.createBackup).toHaveBeenCalled();
     expect(await screen.findByText("Backup created.")).toBeInTheDocument();
 
+    // Irreversible/multi-consequence (ADR 0076 D5): confirm in place, no native
+    // dialog. Restore fires only after the InlineConfirm is confirmed.
     await user.click(screen.getByRole("button", { name: "Restore" }));
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(backupsApi.restoreBackup).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("Restore this backup? It is applied when the app restarts and replaces current data."),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Restore" }));
     expect(backupsApi.restoreBackup).toHaveBeenCalledWith("backup-123.sqlite3");
     await waitFor(() => {
       expect(screen.getByText("Restore staged. Restart the app to apply it.")).toBeInTheDocument();
     });
-
-    confirmSpy.mockRestore();
   });
 });

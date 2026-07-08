@@ -6,11 +6,11 @@
     minmax(280px, var(--notebooks-notes-panel-width, 420px))
     10px
     minmax(320px, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  padding: 18px;
+  padding: var(--space-5);
 }
 
 .notebooks-resizer {
@@ -47,20 +47,20 @@
 .notebooks-company-nav {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  padding-right: var(--space-0);
 }
 
 .notebooks-company-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
   width: 100%;
   min-height: 58px;
-  padding: 9px 10px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -72,7 +72,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
   flex: 1 1 auto;
   padding: 0;
@@ -92,14 +92,14 @@
 .notebooks-company-select > span {
   display: grid;
   min-width: 0;
-  gap: 2px;
+  gap: var(--space-0);
 }
 
 .notebooks-company-select > span > strong {
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 750;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -114,7 +114,7 @@
 .notebooks-company-select > span > small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -145,7 +145,7 @@
 .notebooks-company-cues {
   display: grid;
   justify-items: end;
-  gap: 3px;
+  gap: var(--space-1);
   flex: 0 0 auto;
 }
 
@@ -153,13 +153,13 @@
   display: grid;
   justify-items: end;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 750;
 }
 
 .notebooks-company-cue {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   font-weight: 500;
 }
 
@@ -180,7 +180,7 @@
 .notebooks-main {
   display: grid;
   grid-template-rows: auto auto auto minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -190,17 +190,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 30px;
-  padding: 0 2px;
+  padding: 0 var(--space-0);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .notebooks-context-line div {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -208,7 +208,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--font-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -217,8 +217,8 @@
   display: flex;
   align-items: end;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
@@ -226,16 +226,16 @@
 
 .notebooks-filter-row label {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: 132px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .notebooks-filter-row input,
 .notebooks-filter-row select {
   min-height: 32px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -252,17 +252,17 @@
 .notebooks-notes-list {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  padding-right: var(--space-0);
 }
 
 .notebooks-detail-pane {
   min-width: 0;
   min-height: 0;
   overflow: auto;
-  padding-right: 2px;
+  padding-right: var(--space-0);
 }
 
 .notebooks-create-form {
@@ -273,13 +273,13 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 28px;
 }
 
 .notebooks-draft-header h2 {
-  margin-top: 4px;
-  font-size: 18px;
+  margin-top: var(--space-1);
+  font-size: var(--font-lg);
 }
 
 .notebooks-draft-header .minimal-button:hover,
@@ -309,4 +309,62 @@
 .notebooks-detail-pane .notebook-form textarea,
 .notebooks-detail-pane .notebook-detail textarea {
   min-height: min(38vh, 420px);
+}
+
+.notebooks-detail-pane .notebooks-back-to-list {
+  display: none;
+}
+
+/* Density contract (ADR 0076 D6 Notebook row, U7-C): the global Notebooks screen
+   reshapes across pane tiers of the hosting `.workspace` size container. The
+   rigid 3-column resizable grid (L: list ∥ notes ∥ detail) collapses to a single
+   scrolling column below L, and to a list-OR-detail toggle at S. */
+@container pane (max-width: 759px) {
+  .notebooks-screen {
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+  }
+
+  .notebooks-resizer {
+    display: none;
+  }
+
+  .notebooks-company-nav,
+  .notebooks-main,
+  .notebooks-notes-list,
+  .notebooks-detail-pane {
+    /* Stacked panes must keep their natural height (flex: none): the default
+       flex-shrink squeezed a pane's box below its content, and with visible
+       overflow the spill painted OVER the pane below it, intercepting clicks
+       (caught by notebooks.spec on the quarter-ultrawide matrix). The column
+       itself (.notebooks-screen, overflow:auto) is the scroll container. */
+    flex: none;
+    min-height: 0;
+    overflow: visible;
+  }
+}
+
+/* S width tier (pane < 420px): single column, list OR detail toggled. With a
+   note selected or the composer open, the company/notes list collapses so only
+   the detail + a back-to-list control show; otherwise the detail pane folds. */
+@container pane (max-width: 419px) {
+  .notebooks-screen:not([data-detail-open]) .notebooks-detail-pane {
+    display: none;
+  }
+
+  .notebooks-screen[data-detail-open] .notebooks-company-nav {
+    display: none;
+  }
+
+  /* The list and filters fold, but the context line stays: it owns the
+     New note / Save action, and hiding the whole main pane stranded an open
+     composer with no way to save (caught by notebooks.spec at the S tier). */
+  .notebooks-screen[data-detail-open] .notebooks-main > :not(.notebooks-context-line) {
+    display: none;
+  }
+
+  .notebooks-screen[data-detail-open] .notebooks-back-to-list {
+    display: inline-flex;
+  }
 }

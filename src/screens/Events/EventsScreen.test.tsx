@@ -9,6 +9,23 @@ import {
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
+import { resolveEventViewMode } from "./eventTypes";
+
+// U7-D density (ADR 0076 D6): at S/short the week grid is not offered and the
+// list view renders regardless of the persisted mode preference — a presentation
+// override that never mutates the stored setting. jsdom has no container queries,
+// so the tier switch itself is browser-tested; this asserts the pure resolver.
+describe("resolveEventViewMode (density list-mode override)", () => {
+  it("forces list when the pane is compact, whatever the stored preference", () => {
+    expect(resolveEventViewMode("week", true)).toBe("list");
+    expect(resolveEventViewMode("list", true)).toBe("list");
+  });
+
+  it("preserves the stored preference when the pane is not compact", () => {
+    expect(resolveEventViewMode("week", false)).toBe("week");
+    expect(resolveEventViewMode("list", false)).toBe("list");
+  });
+});
 
 describe("Events screen workflows", () => {
   it("shows upcoming company events from real source-backed event data", async () => {

@@ -9,7 +9,7 @@ import {
   formatLocalDate,
   parseLocalDate,
   startOfIsoWeek,
-} from "../shared/formatting/date";
+} from "../shared/format/datetime";
 import type {
   Company,
   CompanyEvent,

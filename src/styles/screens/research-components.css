@@ -1,9 +1,9 @@
 .research-questions {
   display: grid;
   grid-template-rows: auto auto auto;
-  gap: 7px;
+  gap: var(--space-2);
   min-height: 0;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
@@ -14,9 +14,9 @@
 .research-briefs {
   display: grid;
   align-content: start;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
@@ -30,29 +30,29 @@
 .research-ai-modes {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .research-ai-mode-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: end;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
   border-radius: 7px;
-  padding: 9px;
+  padding: var(--space-2);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
 .research-ai-mode-card > div {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .research-ai-mode-card strong {
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .research-ai-mode-card p,
@@ -60,7 +60,7 @@
 .research-ai-output-heading p {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.3;
 }
 
@@ -72,15 +72,15 @@
 
 .research-ai-output-list {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
   overflow-y: auto;
-  padding-right: 2px;
+  padding-right: var(--space-0);
 }
 
 .research-ai-output {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 0;
 }
 
@@ -88,25 +88,25 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .research-ai-output-heading h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .research-ai-output-heading > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-reminders {
   display: grid;
   grid-template-rows: auto minmax(0, auto);
-  gap: 7px;
+  gap: var(--space-2);
   min-height: 0;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
@@ -114,7 +114,7 @@
 
 .research-reminder-list {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   max-height: 148px;
   overflow-y: auto;
 }
@@ -123,17 +123,17 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: 7px;
-  padding: 6px 7px;
+  padding: var(--space-2) var(--space-2);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
 .research-reminder-row > div:first-child {
   display: grid;
-  gap: 2px;
+  gap: var(--space-0);
   min-width: 0;
 }
 
@@ -141,7 +141,7 @@
 .research-reminder-row time,
 .research-reminder-row em {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .research-reminder-row em {
@@ -152,12 +152,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-reminder-actions {
   display: flex;
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .research-brief-actions,
@@ -166,15 +166,15 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .research-brief-card {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto auto;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface) 80%, transparent);
@@ -190,32 +190,32 @@
 }
 
 .research-brief-card h3 {
-  font-size: 15px;
+  font-size: var(--font-md);
 }
 
 .research-brief-card-header > span,
 .research-brief-provenance {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-brief-summary {
   max-width: 980px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.35;
 }
 
 .research-brief-content {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   max-height: none;
   min-height: 0;
   overflow-y: auto;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.45;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: 6px;
   background: color-mix(in srgb, var(--background) 28%, transparent);
@@ -224,7 +224,7 @@
 .research-brief-citations {
   min-width: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-brief-citations summary {
@@ -233,7 +233,7 @@
   min-height: 24px;
   border: 1px solid color-mix(in srgb, var(--primary) 25%, var(--border));
   border-radius: 999px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   color: var(--text);
   background: color-mix(in srgb, var(--primary) 9%, transparent);
   cursor: pointer;
@@ -242,24 +242,24 @@
 .research-brief-citation-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   max-height: 82px;
-  margin-top: 6px;
+  margin-top: var(--space-2);
   overflow-y: auto;
 }
 
 .research-brief-citation {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   max-width: 100%;
   border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
   border-radius: 999px;
-  padding: 3px 7px;
+  padding: var(--space-1) var(--space-2);
   color: var(--text);
   background: color-mix(in srgb, var(--primary) 10%, transparent);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -276,7 +276,7 @@
 
 .research-active-question strong,
 .research-dialog-header h2 {
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .research-section-ai {
@@ -299,7 +299,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -307,22 +307,22 @@
   display: grid;
   grid-auto-columns: minmax(220px, 280px);
   grid-auto-flow: column;
-  gap: 7px;
+  gap: var(--space-2);
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
-  padding-bottom: 2px;
+  padding-bottom: var(--space-0);
 }
 
 .research-question-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 28px;
-  gap: 5px;
+  gap: var(--space-1);
   align-items: center;
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: 7px;
-  padding: 4px 5px 4px 7px;
+  padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
 }
@@ -335,7 +335,7 @@
 
 .research-question-row-main {
   display: grid;
-  gap: 2px;
+  gap: var(--space-0);
   min-width: 0;
   border: 0;
   padding: 0;
@@ -354,7 +354,7 @@
 
 .research-question-row span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .research-question-delete {
@@ -385,9 +385,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) max-content;
   align-items: start;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
@@ -395,13 +395,13 @@
 
 .research-active-question-main {
   display: grid;
-  gap: 2px;
+  gap: var(--space-0);
   min-width: 0;
 }
 
 .research-active-question-main > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .research-active-question-main strong,
@@ -413,7 +413,7 @@
 
 .research-active-question-main p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.35;
 }
 
@@ -422,23 +422,23 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .research-linked-evidence span,
 .research-linked-evidence small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-linked-evidence button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 24px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   cursor: pointer;
@@ -450,18 +450,18 @@
   inset: 0;
   display: grid;
   place-items: center;
-  padding: 18px;
+  padding: var(--space-5);
   background: color-mix(in srgb, var(--background) 58%, transparent);
   backdrop-filter: blur(4px);
 }
 
 .research-question-dialog {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   width: min(520px, 100%);
   border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
   border-radius: 8px;
-  padding: 14px;
+  padding: var(--space-4);
   background: var(--surface-raised);
   box-shadow: var(--shadow);
 }
@@ -471,7 +471,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .research-dialog-actions {
@@ -480,9 +480,9 @@
 
 .research-question-dialog label {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-question-dialog input,
@@ -496,22 +496,22 @@
 
 .research-question-dialog input {
   min-height: 34px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
 }
 
 .research-question-dialog textarea {
   min-height: 96px;
   resize: vertical;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .research-company-queue-row {
   display: grid;
-  gap: 1px;
+  gap: var(--space-0);
   width: 100%;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: 6px;
-  padding: 3px 6px;
+  padding: var(--space-1) var(--space-2);
   color: var(--text);
   text-align: left;
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--surface));
@@ -529,17 +529,17 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.15;
 }
 
 .research-company-queue-row > span:first-child {
   align-items: flex-start;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
   color: var(--text);
 }
 
@@ -547,7 +547,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.1;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -556,9 +556,9 @@
 .research-evidence-row {
   display: grid;
   grid-template-columns: 9px minmax(0, 1fr) auto;
-  gap: 7px;
+  gap: var(--space-2);
   align-items: start;
-  padding: 6px 8px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--surface));
@@ -567,7 +567,7 @@
 .research-evidence-marker {
   width: 6px;
   height: 6px;
-  margin-top: 7px;
+  margin-top: var(--space-2);
   border-radius: 999px;
   background: var(--primary);
   box-shadow: 0 0 0 4px color-mix(in srgb, var(--primary) 13%, transparent);
@@ -581,9 +581,9 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .research-evidence-meta span,
@@ -593,7 +593,7 @@
   min-height: 17px;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
   border-radius: 999px;
-  padding: 0 6px;
+  padding: 0 var(--space-2);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
 }
 
@@ -603,14 +603,14 @@
 }
 
 .research-evidence-main h2 {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.25;
 }
 
 .research-evidence-main p {
-  margin-top: 3px;
+  margin-top: var(--space-1);
   color: var(--muted);
   line-height: 1.35;
   display: -webkit-box;
@@ -621,12 +621,81 @@
 
 .research-attribution {
   display: inline-block;
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-evidence-actions {
   display: flex;
-  gap: 5px;
+  gap: var(--space-1);
+  /* In a very narrow pane the icon-button cluster wraps vertically instead of
+     dictating the row's minimum width (guardrail, ADR 0045). */
+  flex-wrap: wrap;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+/* U7-D density folds (ADR 0076 D6): a secondary Research section (review queue,
+   questions) collapses to a clickable count chip below its reveal width tier and
+   when the pane is short. Mobile-first default IS the folded state — chip shown,
+   body hidden; the container queries in research-responsive.css reveal the body at
+   the section's tier. The body stays in the DOM at every tier so its content is
+   always reachable (the expansion just flips CSS visibility). */
+.research-fold,
+.research-fold-body {
+  min-height: 0;
+}
+
+.research-fold-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 30px;
+  max-width: 100%;
+  padding: 0 var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.research-fold-chip:hover,
+.research-fold-chip:focus-visible {
+  border-color: color-mix(in srgb, var(--primary) 62%, var(--border));
+  background: color-mix(in srgb, var(--primary) 13%, var(--surface-raised));
+}
+
+.research-fold-chip-caret {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.research-fold-chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.research-fold-chip-count {
+  min-width: 20px;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  color: var(--text);
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface));
+  font-size: var(--font-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.research-fold-body {
+  display: none;
+}
+
+.research-fold[data-expanded] > .research-fold-body {
+  display: block;
 }

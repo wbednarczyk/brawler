@@ -1,0 +1,68 @@
+import {
+  test,
+  expect,
+  openApp,
+  journey,
+  setPaneSize,
+  expectNoPageOverflow,
+  expectNoA11yViolations,
+} from "../helpers/harness";
+
+// J3 — Onboarding a new company (docs/ux-journeys.md, ADR 0074). Trigger:
+// deciding to track a company. Current cross-screen path: Companies → add the
+// company (registry lookup autofills a match; a genuinely new ticker is typed) →
+// history backfill kicks off automatically → open the company → record the first
+// note, "why I'm watching this". "Fueled" = tracked, with feed/reports/
+// fundamentals surfaces present and a recorded reason.
+//
+// Scope notes:
+//  - Add-to-watchlist is a J3 step too, but it is a separate current-portion flow
+//    already covered end-to-end by watchlists.spec.ts; folding its 5-interaction
+//    picker in here would push J3 past its ≤12 ceiling. It stays out of this
+//    measured path by design.
+//  - Future steps (dated): v0.53+ sector & ratios, v0.56 ownership, v0.57 health
+//    scores arrive automatically once tracked; they join this journey when built.
+
+test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
+  test("add a company and record why I'm watching it", async ({ page }) => {
+    const j = journey(page, "J3");
+    await openApp(page);
+
+    await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
+    await expect(page.getByLabel("Companies list")).toBeVisible();
+    await expectNoA11yViolations(page, "Companies list (onboarding)");
+
+    // Add a genuinely new company (exchange defaults to GPW). The registry lookup
+    // runs on blur; a new ticker simply has no match and is added as typed.
+    await j.fill(page.getByLabel("Ticker", { exact: true }), "TST");
+    await j.fill(page.getByLabel("Name", { exact: true }), "Test Co S.A.");
+    await j.click(page.getByRole("button", { name: "Add", exact: true }));
+
+    // Tracked: the new company is listed (backfill kicks off automatically — not a
+    // user interaction).
+    const list = page.getByLabel("Companies list");
+    await expect(list.getByLabel("Open GPW:TST dashboard")).toBeVisible();
+
+    // Open the new company's workspace and record the first note.
+    await j.click(list.getByLabel("Open GPW:TST dashboard"));
+    await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    await expectNoPageOverflow(page);
+
+    await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Notebook", exact: true }).first());
+    const notebookPane = page.locator(".cockpit-pane", { has: page.locator(".notebook-panel") });
+    await expect(notebookPane).toBeVisible();
+    await setPaneSize(page, { width: 900, height: 700, pane: notebookPane });
+    const notebook = notebookPane.getByLabel("Company notebook");
+    await j.click(notebook.getByRole("button", { name: "New note" }));
+    await j.fill(notebook.getByLabel("Notebook note title"), "Why I'm watching");
+    await j.fill(
+      notebook.getByLabel("Notebook note body"),
+      "Tracking for its growth runway; revisit after the next report.",
+    );
+    await j.click(notebook.getByRole("button", { name: "Save" }));
+    await expect(notebook.getByLabel("Select notebook entry: Why I'm watching")).toHaveCount(1);
+    await expectNoPageOverflow(page);
+
+    j.assertBudget();
+  });
+});

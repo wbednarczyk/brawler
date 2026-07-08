@@ -56,14 +56,14 @@
 /* Minimal-chrome tabs (ADR 0057): tighten the per-tab padding/height so the thin
  * header bar stays compact. Scoped to the theme class — no global leakage. */
 .dockview-theme-brawler .dv-tab {
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   min-height: 0;
   height: 26px;
   line-height: 26px;
 }
 
 .dockview-theme-brawler .dv-tab .dv-default-tab-action {
-  padding: 0 2px;
+  padding: 0 var(--space-0);
 }
 
 /* Full-screen cockpit: a viewport-owning canvas — the correct host for docking
@@ -73,19 +73,19 @@
   flex-direction: column;
   min-height: 0;
   height: 100%;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* Compact toolbar so the docking canvas gets the vertical space (ADR 0053). */
 .cockpit-toolbar {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
 .cockpit-toolbar-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 /* Empty named view (ADR 0057): a prompt to add the first panel. */
@@ -93,7 +93,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.5rem;
+  gap: var(--space-2);
   text-align: center;
 }
 
@@ -111,7 +111,7 @@
 .cockpit-palette {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
   min-width: min(32rem, 80vw);
 }
 
@@ -123,7 +123,7 @@
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
 }
 
 .cockpit-palette-item {
@@ -132,7 +132,7 @@
   border: none;
   background: transparent;
   color: var(--text);
-  padding: 0.4rem 0.6rem;
+  padding: var(--space-2) var(--space-3);
   border-radius: 6px;
 }
 
@@ -143,14 +143,14 @@
 
 .cockpit-palette-empty {
   color: var(--muted);
-  padding: 0.5rem 0.6rem;
+  padding: var(--space-2) var(--space-3);
 }
 
 .cockpit-add {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 0.75rem;
+  gap: var(--space-3);
 }
 
 .cockpit-dock {
@@ -165,27 +165,32 @@
 .cockpit-pane {
   height: 100%;
   overflow: auto;
-  padding: 1rem;
+  padding: var(--space-4);
+  /* Named size container for the panel density contracts (ADR 0076 D6): every
+     per-panel `@container pane (…)` rule resolves against the hosting pane. Size
+     containment is safe here — the pane has a definite height (the dock cell)
+     and width. */
+  container: pane / size;
 }
 
 /* Linked Feed panel (the triage queue) */
 .cockpit-feed {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: var(--space-2);
 }
 
 .cockpit-feed-item {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 0.25rem;
+  gap: var(--space-1);
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
   background: var(--surface);
   border-radius: 8px;
-  padding: 0.5rem 0.75rem;
+  padding: var(--space-2) var(--space-3);
 }
 
 .cockpit-feed-item:hover {
@@ -213,7 +218,7 @@
   display: inline-block;
   width: 7px;
   height: 7px;
-  margin-right: 7px;
+  margin-right: var(--space-2);
   border-radius: 999px;
   background: var(--primary);
   vertical-align: middle;
@@ -222,8 +227,8 @@
 .cockpit-feed-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  font-size: 0.75rem;
+  gap: var(--space-2);
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 
@@ -236,7 +241,7 @@
   top: 0;
   z-index: 1;
   background: var(--bg);
-  padding-bottom: 0.25rem;
+  padding-bottom: var(--space-1);
 }
 
 .cockpit-feed-time {
@@ -248,22 +253,22 @@
 .cockpit-inspector {
   display: flex;
   flex-direction: column;
-  gap: 0.85rem;
+  gap: var(--space-4);
   min-width: 0;
 }
 
 .cockpit-inspector-head {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
-  padding-bottom: 0.85rem;
+  gap: var(--space-2);
+  padding-bottom: var(--space-4);
   border-bottom: 1px solid var(--border);
 }
 
 .cockpit-inspector-title {
   margin: 0;
   color: var(--text);
-  font-size: 1.05rem;
+  font-size: var(--font-lg);
   font-weight: 700;
   line-height: 1.3;
 }
@@ -272,20 +277,20 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--space-2);
 }
 
 .cockpit-inspector-time {
   margin-left: auto;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
 .cockpit-inspector-attribution {
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--font-base);
 }
 
 .cockpit-inspector-summary {
@@ -305,10 +310,10 @@
 
 .cockpit-inspector-attachments ul {
   margin: 0;
-  padding-left: 1.1rem;
+  padding-left: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
 }
 
 .cockpit-inspector-open {
@@ -321,9 +326,9 @@
 .cockpit-tab {
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: var(--space-1);
   height: 100%;
-  padding: 0 0.5rem;
+  padding: 0 var(--space-2);
 }
 
 .cockpit-tab-activate {
@@ -331,7 +336,7 @@
   background: transparent;
   color: inherit;
   white-space: nowrap;
-  padding: 0 0.25rem;
+  padding: 0 var(--space-1);
   height: 100%;
   border-radius: 4px;
 }
@@ -342,18 +347,45 @@
 }
 
 .cockpit-tab-activate:focus-visible,
+.cockpit-tab-pin:focus-visible,
 .cockpit-tab-close:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
+}
+
+/* Follow/pin toggle on company-scoped tabs (U-Ra). Muted by default; the pinned
+   state and hover lift it to full contrast. */
+.cockpit-tab-pin {
+  display: inline-flex;
+  align-items: center;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 var(--space-1);
+  border-radius: 4px;
+}
+
+.cockpit-tab-pin[aria-pressed="true"] {
+  color: var(--primary);
+}
+
+.cockpit-tab-pin:hover:not(:disabled) {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+}
+
+.cockpit-tab-pin:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .cockpit-tab-close {
   border: none;
   background: transparent;
   color: var(--muted);
-  font-size: 1rem;
+  font-size: var(--font-lg);
   line-height: 1;
-  padding: 0 0.2rem;
+  padding: 0 var(--space-1);
   border-radius: 4px;
 }
 
@@ -366,8 +398,8 @@
 .cockpit-group-actions {
   display: flex;
   align-items: center;
-  gap: 0.1rem;
-  padding: 0 0.35rem;
+  gap: var(--space-0);
+  padding: 0 var(--space-2);
 }
 
 .cockpit-group-actions button {
@@ -377,7 +409,7 @@
   border: none;
   background: transparent;
   color: var(--muted);
-  padding: 0.2rem;
+  padding: var(--space-1);
   border-radius: 4px;
 }
 
@@ -396,22 +428,22 @@
 .create-view-form {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
   min-width: min(26rem, 80vw);
 }
 
 .create-view-presets {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .create-view-preset {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -432,13 +464,13 @@
 .create-view-custom {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--space-4);
 }
 
 .create-view-dim {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
   flex: 1 1 12rem;
 }
 
@@ -453,18 +485,18 @@
 .create-view-live {
   display: flex;
   justify-content: center;
-  padding: 8px;
+  padding: var(--space-2);
 }
 
 .view-grid-preview {
   display: inline-flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--space-1);
 }
 
 .view-grid-preview-row {
   display: flex;
-  gap: 3px;
+  gap: var(--space-1);
 }
 
 .view-grid-preview-cell {

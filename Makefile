@@ -179,7 +179,7 @@ mutants:
 	case "$(MUTANTS_JAIL)" in \
 	  off) jail_cmd="" ;; \
 	  auto) if systemd-run --user --scope true >/dev/null 2>&1; then \
-	          jail_cmd="systemd-run --user --scope -p MemoryMax=$(MUTANTS_MEMORY_MAX) -p MemorySwapMax=1G --same-dir"; \
+	          jail_cmd="systemd-run --user --scope -p MemoryMax=$(MUTANTS_MEMORY_MAX) -p MemorySwapMax=1G -p OOMPolicy=continue --same-dir"; \
 	        fi ;; \
 	  *) echo "MUTANTS_JAIL must be 'auto' or 'off' (got: $(MUTANTS_JAIL))" >&2; exit 1 ;; \
 	esac; \
@@ -385,6 +385,19 @@ smoke-gemini-analysis:
 
 smoke-keyring:
 	$(NIX) cargo test --manifest-path src-tauri/Cargo.toml live_keyring_persists_gemini_transcription_secret -- --ignored --nocapture
+
+# T7-C real-data corpus regression (docs/testing.md § Real-data extraction
+# corpus): drives the structured-extraction pipeline over the maintainer's
+# throwaway CBF corpus and diffs each document's outcome against the committed
+# baseline (src-tauri/src/storage/tests/t7_cbf_corpus_expectations.json).
+# Inert without the corpus. Refresh the baseline deliberately (after reviewing
+# the printed table) with: BRAWLER_UPDATE_EXPECTATIONS=1 make realdata-extraction-check
+# The t7_cbf filter also runs the T7-F double-extraction idempotency anchor,
+# which WRITES to the corpus DB — the corpus copy is throwaway by contract.
+REALDATA_DB ?= private/realdata/t7-cbf/brawler.sqlite3
+REALDATA_DIR ?= private/realdata/t7-cbf
+realdata-extraction-check:
+	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(REALDATA_DB)) BRAWLER_REAL_DATA_DIR=$(abspath $(REALDATA_DIR)) cargo test t7_cbf -- --ignored --nocapture'
 
 # Live-drive (ADR 0066, docs/testing.md § Live drive): drives the REAL packaged
 # Windows app — real backend, real local SQLite DB — via WebView2's Chrome

@@ -20,10 +20,42 @@ import {
   SelectField,
   TextField,
 } from "../../ui";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import { useLocale } from "../../shared/locale";
 import { useEventsViewModel } from "../../app/state/screenViewModels";
 import { EventListView } from "./EventListView";
 import { WeekEventsView } from "./WeekEventsView";
+import { resolveEventViewMode } from "./eventTypes";
+
+// U7-D density (ADR 0076 D6): the Events week grid can't collapse purely in CSS —
+// week vs list are distinct component trees — so the tier is measured on the
+// hosting `pane` size container (.cockpit-pane / .workspace, the same subject the
+// `@container pane` rules resolve against) and surfaced to React. Compact = S
+// width tier (<420px) OR short height tier (<480px). No ResizeObserver (jsdom,
+// some SSR) → not compact, i.e. the stored preference is honored.
+function usePaneCompact(ref: RefObject<HTMLElement | null>): boolean {
+  const [compact, setCompact] = useState(false);
+
+  useEffect(() => {
+    const host = ref.current;
+    if (!host || typeof ResizeObserver === "undefined") return;
+    const pane = (host.closest(".cockpit-pane, .workspace") as HTMLElement | null) ?? host;
+    const measure = () => {
+      // Guard against an unmeasured pane (0×0 in jsdom / before first layout):
+      // only a real, positive dimension below the tier boundary counts as compact,
+      // so the persisted mode is honored until the pane is actually laid out.
+      const width = pane.clientWidth;
+      const height = pane.clientHeight;
+      setCompact((width > 0 && width < 420) || (height > 0 && height < 480));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(pane);
+    return () => observer.disconnect();
+  }, [ref]);
+
+  return compact;
+}
 
 export function EventsScreen() {
   const {
@@ -87,10 +119,16 @@ export function EventsScreen() {
   confirmDerivedEvent,
   } = useEventsViewModel();
   const { t, text } = useLocale();
+  const panelRef = useRef<HTMLElement | null>(null);
+  const compact = usePaneCompact(panelRef);
+  // Presentation-only override; the persisted `companyEventViewMode` is untouched.
+  const effectiveViewMode = resolveEventViewMode(companyEventViewMode, compact);
+  const layoutModes = compact ? (["list"] as const) : (["week", "list"] as const);
 
   return (
-    <section className="feed-panel" aria-labelledby="events-title">
+    <section className="feed-panel" aria-labelledby="events-title" data-events-compact={compact || undefined} ref={panelRef}>
       <PanelHeader
+        paneLead
         title={t("events.title")}
         description={t("events.description")}
         titleId="events-title"
@@ -120,9 +158,9 @@ export function EventsScreen() {
 
       <FilterToolbar ariaLabel={text("Event view mode")} className="events-filter-toolbar">
         <SegmentedControl ariaLabel={text("Event layout")}>
-          {(["week", "list"] as const).map((viewMode) => (
+          {layoutModes.map((viewMode) => (
             <SegmentedControlOption
-              active={companyEventViewMode === viewMode}
+              active={effectiveViewMode === viewMode}
               key={viewMode}
               onClick={() => setCompanyEventViewMode(viewMode)}
             >
@@ -130,7 +168,7 @@ export function EventsScreen() {
             </SegmentedControlOption>
           ))}
         </SegmentedControl>
-        {companyEventViewMode === "week" ? (
+        {effectiveViewMode === "week" ? (
           <div className="week-toolbar" aria-label={text("Week navigation")}>
             <Button
               className="compact-button icon-only-button"
@@ -228,7 +266,7 @@ export function EventsScreen() {
             </option>
           ))}
         </SelectField>
-        {companyEventViewMode === "list" ? (
+        {effectiveViewMode === "list" ? (
           <>
             <NotebookDateField
               ariaLabel={text("Event date from filter")}
@@ -382,7 +420,7 @@ export function EventsScreen() {
       ) : null}
 
       <div className="events-layout" aria-label={text("Company events")}>
-        {companyEventViewMode === "week" ? (
+        {effectiveViewMode === "week" ? (
           <WeekEventsView
             companyEventWorkingWeekDays={companyEventWorkingWeekDays}
             companyEventWeekendDays={companyEventWeekendDays}

@@ -14,15 +14,39 @@ test.describe("settings", { tag: "@clickable" }, () => {
     await openApp(page);
     await navTo(page, "Settings").click();
 
-    // The mock seeds the dark theme; the Appearance section is the default tab.
-    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-
+    // Selecting a theme applies it to the document in both directions. The seed
+    // theme is intentionally not asserted here: the `chromium-compact-light`
+    // project forces the seed to light (ADR 0076 D3), so this test must exercise
+    // the switch itself, not a fixed starting mode.
     await page.getByLabel("Settings theme").selectOption("light");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
 
     // Switching back also takes effect.
     await page.getByLabel("Settings theme").selectOption("dark");
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  });
+
+  // Both accent palettes render cleanly in both modes (ADR 0076 D3). The
+  // semantic tone tokens are defined per palette × mode, so a token missing from
+  // one block surfaces as a console error / invalid color here; the harness
+  // console-error gate fails the test if any combination breaks. Full visual
+  // coverage of the light theme lives in the `chromium-compact-light` project.
+  test("renders both palettes in both modes without errors", async ({ page }) => {
+    await openApp(page);
+    await navTo(page, "Settings").click();
+
+    for (const palette of ["night-neon", "midnight-horizon"] as const) {
+      await page.getByLabel("Settings palette").selectOption(palette);
+      await expect(page.locator("html")).toHaveAttribute("data-palette", palette);
+
+      for (const theme of ["light", "dark"] as const) {
+        await page.getByLabel("Settings theme").selectOption(theme);
+        await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+        // The toned primitives gallery / appearance surface must stay visible —
+        // a hard render failure would drop it and trip the console-error gate.
+        await expect(page.getByLabel("Settings palette")).toBeVisible();
+      }
+    }
   });
 
   test("routes an AI capability to an ordered provider pool and persists across tab navigation", async ({

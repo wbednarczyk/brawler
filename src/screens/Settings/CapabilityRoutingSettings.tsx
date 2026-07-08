@@ -46,7 +46,7 @@ function CapabilityMemberModelField({ label, value, onCommit }: CapabilityMember
 // Fixed set of AI capabilities that can be individually routed to an ordered
 // provider fallback pool (ADR 0060 as amended). Keys match `AiCapability::key`
 // on the backend — do not rename without updating the Rust enum in lockstep.
-const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: string }> = [
+export const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: string }> = [
   { key: "kpi_extraction", labelEn: "KPI extraction" },
   { key: "claim_extraction", labelEn: "Claim extraction" },
   { key: "feed_analysis", labelEn: "Feed analysis" },
@@ -54,6 +54,7 @@ const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: string }> = 
   { key: "research_digest", labelEn: "Research digest" },
   { key: "event_date", labelEn: "Event date" },
   { key: "signal_classification", labelEn: "Signal classification" },
+  { key: "qualitative_assessment", labelEn: "Qualitative assessment" }, // T7-C
 ];
 
 // Per-capability ordered provider routing (ADR 0060 as amended). Each

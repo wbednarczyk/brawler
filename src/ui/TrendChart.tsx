@@ -1,7 +1,11 @@
-// Dependency-free bar chart for a single KPI across reporting periods. Values
-// are plotted against a zero baseline (so losses read as downward bars), with
-// per-bar value labels and period labels. Themed via night-neon tokens; no
-// animation, so reduced-motion needs no special handling.
+import { formatFinancialValue } from "../shared/format/financialValue";
+
+// Bar chart for a single KPI across reporting periods. Values are plotted
+// against a zero baseline (so losses read as downward bars), with per-bar value
+// labels and period labels. Themed via night-neon tokens; no animation, so
+// reduced-motion needs no special handling. When a consumer supplies no
+// `formatValue`, bar labels humanize through the shared financial formatter
+// (ADR 0076 D4) rather than rendering a raw `String(value)`.
 
 export type TrendChartPoint = {
   label: string;
@@ -42,7 +46,8 @@ export function TrendChart({ points, ariaLabel, formatValue, height = 180, class
   const zeroY = plotTop + (plotHeight * domainMax) / domainSpan;
 
   const width = usable.length * STEP;
-  const format = formatValue ?? ((value: number) => String(value));
+  const format =
+    formatValue ?? ((value: number) => formatFinancialValue({ valueNumeric: String(value) }));
 
   return (
     <svg

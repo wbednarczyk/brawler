@@ -1,21 +1,24 @@
 .error-text {
-  margin-top: 18px;
+  margin-top: var(--space-5);
   color: var(--danger);
 }
 
 .helper-text {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
+/* Modern sr-only: no negative margin, so the box never drifts outside its
+   parent (a point-dispatched click on a hidden control must stay inside the
+   label — guardrail, ADR 0045). clip-path replaces the deprecated clip. */
 .visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
   padding: 0;
-  margin: -1px;
+  margin: 0;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
 }

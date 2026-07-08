@@ -780,6 +780,116 @@ pub(super) fn stored_fact_set(
     }
 }
 
+/// The five slot-dimension columns of a fact with per-column defaults applied —
+/// the single source of truth for the uniqueness slot `(period_id, definition_id,
+/// statement_basis, attribution, variant, measure_window, data_quality)`, shared
+/// by the INSERT and the re-observation lookup so a re-extraction can never miss
+/// (or spuriously match) an existing row through a defaulting mismatch.
+pub(super) struct SlotDims {
+    pub statement_basis: String,
+    pub attribution: String,
+    pub variant: String,
+    pub measure_window: String,
+    pub data_quality: String,
+}
+
+pub(super) fn slot_dims(input: &NewFinancialFact) -> SlotDims {
+    fn or_default(value: &Option<String>, fallback: &str) -> String {
+        value
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or(fallback)
+            .to_owned()
+    }
+    SlotDims {
+        statement_basis: or_default(&input.statement_basis, "consolidated"),
+        attribution: or_default(&input.attribution, "total"),
+        variant: or_default(&input.variant, "reported"),
+        measure_window: or_default(&input.measure_window, "flow"),
+        data_quality: or_default(&input.data_quality, "final"),
+    }
+}
+
+/// The already-committed fact occupying a fully-qualified slot, if any — the
+/// lookup a re-observation is decided against.
+fn find_fact_by_slot(
+    connection: &Connection,
+    period_id: &str,
+    definition_id: &str,
+    dims: &SlotDims,
+) -> StorageResult<Option<FinancialFact>> {
+    let id: Option<String> = connection
+        .query_row(
+            "
+            SELECT id FROM financial_facts
+            WHERE period_id = ?1 AND definition_id = ?2 AND statement_basis = ?3
+              AND attribution = ?4 AND variant = ?5 AND measure_window = ?6
+              AND data_quality = ?7
+            ",
+            params![
+                period_id,
+                definition_id,
+                dims.statement_basis,
+                dims.attribution,
+                dims.variant,
+                dims.measure_window,
+                dims.data_quality,
+            ],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match id {
+        Some(id) => Ok(Some(get_financial_fact(connection, &id)?)),
+        None => Ok(None),
+    }
+}
+
+/// The outcome of a slot-aware fact write (re-observation semantics for the
+/// structured pipeline): a brand-new fact was created, or an existing row already
+/// occupies the slot — the incoming value either matches it (`Reobserved`) or
+/// disagrees (`Divergent`). The uniqueness slot admits exactly one row, so a
+/// re-extraction of an already-landed period is idempotent, never a UNIQUE
+/// violation, and a confirmed fact is never silently overwritten.
+pub(super) enum FactWriteOutcome {
+    Created(FinancialFact),
+    Reobserved(FinancialFact),
+    Divergent {
+        existing: FinancialFact,
+        incoming: String,
+    },
+}
+
+/// Create a fact, or — when its slot is already occupied — classify the
+/// re-observation instead of raising the slot's UNIQUE violation. Values are
+/// compared decimal-exact (so `25000` and `25000.0` are the same observation),
+/// falling back to a trimmed string compare only when either side is unparseable.
+pub(super) fn create_or_reobserve_financial_fact(
+    connection: &Connection,
+    input: NewFinancialFact,
+) -> StorageResult<FactWriteOutcome> {
+    let period_id = input.period_id.trim().to_owned();
+    let definition_id = input.definition_id.trim().to_owned();
+    let dims = slot_dims(&input);
+    if let Some(existing) = find_fact_by_slot(connection, &period_id, &definition_id, &dims)? {
+        let incoming = input.value_numeric.trim().to_owned();
+        let same = match (
+            Decimal::from_str(existing.value_numeric.trim()),
+            Decimal::from_str(incoming.trim()),
+        ) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => existing.value_numeric.trim() == incoming.trim(),
+        };
+        return Ok(if same {
+            FactWriteOutcome::Reobserved(existing)
+        } else {
+            FactWriteOutcome::Divergent { existing, incoming }
+        });
+    }
+    let created = create_financial_fact(connection, input)?;
+    Ok(FactWriteOutcome::Created(created))
+}
+
 pub(super) fn create_financial_fact(
     connection: &Connection,
     input: NewFinancialFact,
@@ -788,42 +898,14 @@ pub(super) fn create_financial_fact(
     let period_id = input.period_id.trim().to_owned();
     let definition_id = input.definition_id.trim().to_owned();
     let value_numeric = input.value_numeric.trim().to_owned();
+    let SlotDims {
+        statement_basis,
+        attribution,
+        variant,
+        measure_window,
+        data_quality,
+    } = slot_dims(&input);
     let currency = empty_string_to_none(input.currency.map(|s| s.trim().to_owned()));
-    let statement_basis = input
-        .statement_basis
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("consolidated")
-        .to_owned();
-    let attribution = input
-        .attribution
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("total")
-        .to_owned();
-    let variant = input
-        .variant
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("reported")
-        .to_owned();
-    let measure_window = input
-        .measure_window
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("flow")
-        .to_owned();
-    let data_quality = input
-        .data_quality
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("final")
-        .to_owned();
     let as_reported_value =
         empty_string_to_none(input.as_reported_value.map(|s| s.trim().to_owned()));
     let as_reported_scale =

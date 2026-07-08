@@ -745,11 +745,36 @@ function seedIrReportUrls(runtime: ReturnType<typeof createMockRuntime>) {
   }
 }
 
+// Reads a smoke-appearance override from localStorage, tolerating environments
+// where storage access throws (never a reason to fail app boot).
+function readSmokeOverride(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 export function installBrowserSmokeRuntime() {
+  const params = new URLSearchParams(window.location.search);
   // Allow `?locale=pl` to preview the app in Polish (used by UI screenshot specs).
-  const requestedLocale = new URLSearchParams(window.location.search).get("locale");
+  const requestedLocale = params.get("locale");
   if (requestedLocale === "pl" || requestedLocale === "en") {
     settings.locale = requestedLocale;
+  }
+  // Allow the seeded appearance to be forced deterministically, so the Playwright
+  // `chromium-compact-light` project can drive the whole suite under the light
+  // theme (ADR 0076 D3). Precedence: `?theme=`/`?palette=` query param (dev
+  // preview), then a localStorage key set via the project's storageState (survives
+  // navigations within the context, which a query param does not). The app then
+  // applies data-theme/data-palette from these persisted settings on first render.
+  const requestedTheme = params.get("theme") ?? readSmokeOverride("brawler:smoke:theme");
+  if (requestedTheme === "light" || requestedTheme === "dark" || requestedTheme === "system") {
+    settings.theme = requestedTheme;
+  }
+  const requestedPalette = params.get("palette") ?? readSmokeOverride("brawler:smoke:palette");
+  if (requestedPalette === "night-neon" || requestedPalette === "midnight-horizon") {
+    settings.accentPalette = requestedPalette;
   }
   const runtime = createMockRuntime("rich");
   seedBrowserStore(runtime.data);

@@ -1,6 +1,6 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import type { SourceAdapter, UserSettings } from "../api/types";
-import { formatPollInterval } from "../shared/formatting/date";
+import { formatPollInterval } from "../shared/format/datetime";
 import type { Section } from "./navigation";
 
 type SourceDisplayControllerInput = {

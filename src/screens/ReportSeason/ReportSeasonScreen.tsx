@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClock, CheckCircle2, ChevronDown, ChevronRight, ClipboardCheck } from "lucide-react";
+import { CalendarClock, CheckCircle2, ClipboardCheck } from "lucide-react";
 import { useLocale } from "../../shared/locale";
 import { useReportSeasonViewModel } from "../../app/state/screenViewModels";
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
@@ -17,6 +17,7 @@ import {
   PanelHeader,
   SectionHeader,
   SelectField,
+  Skeleton,
   StatusChip,
 } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
@@ -68,11 +69,6 @@ export function ReportSeasonScreen() {
     const showChip = expandable || entry.preparationStatus !== "upcoming";
     const row = (
       <ListRow
-        icon={
-          expandable ? (
-            isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />
-          ) : undefined
-        }
         title={
           <span className="report-season-row-title">
             <TickerLabel value={entry.qualifiedTicker} />
@@ -101,77 +97,90 @@ export function ReportSeasonScreen() {
     const detail = (
       <div className="report-season-card">
         {cardLoadingKey === key && !card ? (
-          <Hint>{text("Loading…")}</Hint>
+          <Skeleton variant="list-row" count={2} label={text("Loading…")} />
         ) : card ? (
           <>
-            <ActionRow>
-              <Button
-                variant="primary"
-                disabled={actionBusy || entry.preparationStatus === "processed"}
-                onClick={() => prepare(entry)}
-              >
-                <ClipboardCheck size={15} />
-                {text("Mark prepared")}
-              </Button>
-              <Button
-                disabled={actionBusy}
-                onClick={() => process(entry)}
-              >
-                <CheckCircle2 size={15} />
-                {text("Mark processed")}
-              </Button>
-              <Button variant="minimal" onClick={() => openCompanyWorkspace(entry.companyId, "Feed")}>
-                {text("Open workspace")}
-              </Button>
-              <Button variant="minimal" onClick={() => openCompanyWorkspace(entry.companyId, "Claims")}>
-                {text("Open claims")}
-              </Button>
-            </ActionRow>
+            {/* U7-D density (ADR 0076 D6): the pre-report card splits into a prep
+                checklist (actions + open questions + unresolved claims — the
+                "what to do before the report" the M tier surfaces) and an extended
+                context block (last-period KPIs + recent evidence — the fuller
+                pre-report card the L tier adds). Container queries fold the
+                extended block below L and the whole card at S / short (rows only).
+                Assumption recorded: the current card is click-to-expand rather
+                than an auto-revealed side column, so M/L gate the card's own
+                internal density instead of a separate selection pane. */}
+            <div className="report-season-card-prep">
+              <ActionRow>
+                <Button
+                  variant="primary"
+                  disabled={actionBusy || entry.preparationStatus === "processed"}
+                  onClick={() => prepare(entry)}
+                >
+                  <ClipboardCheck size={15} />
+                  {text("Mark prepared")}
+                </Button>
+                <Button
+                  disabled={actionBusy}
+                  onClick={() => process(entry)}
+                >
+                  <CheckCircle2 size={15} />
+                  {text("Mark processed")}
+                </Button>
+                <Button variant="minimal" onClick={() => openCompanyWorkspace(entry.companyId, "Feed")}>
+                  {text("Open workspace")}
+                </Button>
+                <Button variant="minimal" onClick={() => openCompanyWorkspace(entry.companyId, "Claims")}>
+                  {text("Open claims")}
+                </Button>
+              </ActionRow>
 
-            <SectionHeader level="h4" title={text("Open research questions")} />
-            {card.openQuestions.length > 0 ? (
-              <ul className="report-season-list">
-                {card.openQuestions.map((question) => (
-                  <li key={question.id}>{question.title}</li>
-                ))}
-              </ul>
-            ) : (
-              <Hint>{text("None yet")}</Hint>
-            )}
+              <SectionHeader level="h4" title={text("Open research questions")} />
+              {card.openQuestions.length > 0 ? (
+                <ul className="report-season-list">
+                  {card.openQuestions.map((question) => (
+                    <li key={question.id}>{question.title}</li>
+                  ))}
+                </ul>
+              ) : (
+                <Hint>{text("None yet")}</Hint>
+              )}
 
-            <SectionHeader level="h4" title={text("Unresolved claims")} />
-            <div className="report-season-claim-counts">
-              <StatusChip tone="danger">{`${text("Due")}: ${card.unresolvedClaims.due.length}`}</StatusChip>
-              <StatusChip tone="warn">{`${text("Overdue")}: ${card.unresolvedClaims.overdue.length}`}</StatusChip>
-              <StatusChip tone="neutral">{`${text("Upcoming")}: ${card.unresolvedClaims.upcoming.length}`}</StatusChip>
+              <SectionHeader level="h4" title={text("Unresolved claims")} />
+              <div className="report-season-claim-counts">
+                <StatusChip tone="danger">{`${text("Due")}: ${card.unresolvedClaims.due.length}`}</StatusChip>
+                <StatusChip tone="warn">{`${text("Overdue")}: ${card.unresolvedClaims.overdue.length}`}</StatusChip>
+                <StatusChip tone="neutral">{`${text("Upcoming")}: ${card.unresolvedClaims.upcoming.length}`}</StatusChip>
+              </div>
             </div>
 
-            <SectionHeader level="h4" title={text("Last-period KPIs")} />
-            {card.lastPeriodKpis.length > 0 ? (
-              <InfoGrid
-                ariaLabel={text("Last-period KPIs")}
-                items={card.lastPeriodKpis.map((kpi) => ({
-                  label: kpi.label,
-                  value: kpi.unit ? `${kpi.valueNumeric} ${kpi.unit}` : kpi.valueNumeric,
-                }))}
-              />
-            ) : (
-              <Hint>{text("No KPIs from the last reported period.")}</Hint>
-            )}
-
-            <SectionHeader level="h4" title={text("Recent evidence")} />
-            {card.recentEvidence.length > 0 ? (
-              card.recentEvidence.map((item) => (
-                <ListRow
-                  key={item.id}
-                  title={item.title}
-                  meta={item.occurredAt}
-                  trailing={<StatusChip tone="neutral">{item.evidenceType}</StatusChip>}
+            <div className="report-season-card-extended">
+              <SectionHeader level="h4" title={text("Last-period KPIs")} />
+              {card.lastPeriodKpis.length > 0 ? (
+                <InfoGrid
+                  ariaLabel={text("Last-period KPIs")}
+                  items={card.lastPeriodKpis.map((kpi) => ({
+                    label: kpi.label,
+                    value: kpi.unit ? `${kpi.valueNumeric} ${kpi.unit}` : kpi.valueNumeric,
+                  }))}
                 />
-              ))
-            ) : (
-              <Hint>{text("None yet")}</Hint>
-            )}
+              ) : (
+                <Hint>{text("No KPIs from the last reported period.")}</Hint>
+              )}
+
+              <SectionHeader level="h4" title={text("Recent evidence")} />
+              {card.recentEvidence.length > 0 ? (
+                card.recentEvidence.map((item) => (
+                  <ListRow
+                    key={item.id}
+                    title={item.title}
+                    meta={item.occurredAt}
+                    trailing={<StatusChip tone="neutral">{item.evidenceType}</StatusChip>}
+                  />
+                ))
+              ) : (
+                <Hint>{text("None yet")}</Hint>
+              )}
+            </div>
           </>
         ) : (
           <Hint>{text("None yet")}</Hint>
@@ -199,6 +208,7 @@ export function ReportSeasonScreen() {
   return (
     <section className="feed-panel" aria-labelledby="report-season-title">
       <PanelHeader
+        paneLead
         title={text("Report Season")}
         description={text("Upcoming report dates across your watchlists, each with a pre-report card.")}
         titleId="report-season-title"
@@ -237,7 +247,7 @@ export function ReportSeasonScreen() {
             meta={String(upcoming.length)}
           />
           {loading ? (
-            <Hint>{text("Loading…")}</Hint>
+            <Skeleton variant="list-row" count={4} label={text("Loading…")} />
           ) : upcoming.length > 0 ? (
             <div className="report-season-rows">
               {upcoming.map((entry) => renderEntry(entry, true))}

@@ -1,5 +1,6 @@
 import { fireEvent } from "@testing-library/react";
 import { describe, it } from "vitest";
+import packageJson from "../package.json";
 import {
   appTestState,
   expect,
@@ -21,17 +22,16 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     expect(within(nav).getByText("Library")).toBeInTheDocument();
     expect(within(nav).getByText("Utilities")).toBeInTheDocument();
     expect(within(nav).getByRole("button", { name: "Today" })).toBeInTheDocument();
-    expect(within(nav).getByRole("button", { name: "Compare" })).toBeInTheDocument();
+    // Compare is hidden from primary nav until v0.53 market data gives it
+    // content (U-Rc, ADR 0076 Resolved) — an empty mode in nav is trust debt.
+    expect(within(nav).queryByRole("button", { name: "Compare" })).not.toBeInTheDocument();
   });
 
-  it("opens the Today and Compare mode homes", async () => {
+  it("opens the Today mode home", async () => {
     renderApp();
 
     await userEvent.click(await screen.findByRole("button", { name: "Today" }));
     expect(await screen.findByRole("heading", { name: "Today" })).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole("button", { name: "Compare" }));
-    expect(await screen.findByRole("heading", { name: "Compare" })).toBeInTheDocument();
   });
 
   it("creates a named view and lists it as a Modes nav destination (ADR 0057)", async () => {
@@ -111,8 +111,10 @@ describe("App shell", () => {
     expect(
       screen.getAllByText("Sample official report used to validate feed filtering and detail rendering.").length,
     ).toBeGreaterThan(0);
-    expect(await screen.findByText("v0.3.0")).toBeInTheDocument();
-    expect(screen.queryByText("ok 0.3.0")).not.toBeInTheDocument();
+    // The brand chip shows the health-reported version; the mock mirrors
+    // package.json so this can never rot behind the real app (audit K12).
+    expect(await screen.findByText(`v${packageJson.version}`)).toBeInTheDocument();
+    expect(screen.queryByText(`ok ${packageJson.version}`)).not.toBeInTheDocument();
     expect(screen.queryByText("AI")).not.toBeInTheDocument();
     expect(screen.queryByText("Data")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open source status" })).toBeInTheDocument();
@@ -174,8 +176,8 @@ describe("App shell", () => {
     fireEvent.keyDown(document, { key: "2", code: "Digit2", ctrlKey: true });
     expect(await screen.findByRole("heading", { name: "Companies" })).toBeInTheDocument();
 
-    // Ctrl+K focuses global search without leaving the current section.
-    fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
+    // Ctrl+F focuses global search without leaving the current section.
+    fireEvent.keyDown(document, { key: "F", code: "KeyF", ctrlKey: true });
     const searchInput = screen.getByLabelText("Global search");
     await waitFor(() => expect(searchInput).toHaveFocus());
     expect(screen.getByRole("heading", { name: "Companies" })).toBeInTheDocument();
@@ -186,6 +188,32 @@ describe("App shell", () => {
     searchInput.blur();
     fireEvent.keyDown(document, { key: "8", code: "Digit8", ctrlKey: true });
     expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+  });
+
+  it("opens the global command palette on Ctrl+K", async () => {
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+
+    // Ctrl+K opens the global command palette (v0.50 U6), not focusing search.
+    fireEvent.keyDown(document, { key: "K", code: "KeyK", ctrlKey: true });
+    const palette = await screen.findByRole("dialog", { name: "Command palette" });
+    // App-level commands (derived from the shortcut registry) are listed.
+    expect(within(palette).getByRole("button", { name: "Open Settings" })).toBeInTheDocument();
+
+    // Running a listed command navigates and closes the palette.
+    await userEvent.click(within(palette).getByRole("button", { name: "Open Settings" }));
+    expect(await screen.findByRole("heading", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Command palette" })).not.toBeInTheDocument();
+  });
+
+  it("also opens the command palette on Meta+K (macOS ⌘K twin)", async () => {
+    renderApp();
+
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: "K", code: "KeyK", metaKey: true });
+    expect(await screen.findByRole("dialog", { name: "Command palette" })).toBeInTheDocument();
   });
 
   it("uses configured shortcut bindings from settings", async () => {

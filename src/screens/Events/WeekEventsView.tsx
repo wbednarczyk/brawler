@@ -50,8 +50,10 @@ export function WeekEventsView({
 
     return (
       <div className="event-week-card-block" key={event.id} data-event-id={event.id}>
-        <article
+        <button
+          type="button"
           aria-label={`${text("Open event")}: ${event.title}`}
+          aria-pressed={isSelected}
           className={[
             "event-week-card",
             event.manual ? "event-manual" : "",
@@ -61,14 +63,6 @@ export function WeekEventsView({
             .filter(Boolean)
             .join(" ")}
           onClick={() => toggleEvent(event)}
-          onKeyDown={(keyboardEvent) => {
-            if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
-              keyboardEvent.preventDefault();
-              toggleEvent(event);
-            }
-          }}
-          role="button"
-          tabIndex={0}
         >
           <div className="event-week-card-topline">
             <strong><TickerLabel value={event.company} /></strong>
@@ -82,7 +76,7 @@ export function WeekEventsView({
             <span>{formatCompanyEventType(event.eventType)}</span>
             <span>{event.manual ? text("Manual") : formatCompanyEventSourceType(event.sourceType)}</span>
           </div>
-        </article>
+        </button>
 
         {isSelected ? (
           <div className="event-week-card-detail" aria-label={text("Event details")}>
@@ -125,6 +119,10 @@ export function WeekEventsView({
 
   return (
     <>
+      {/* The week calendar is DELIBERATE wide content (5 day columns, min
+          920px): it scrolls inside this bounded wrapper; data-hscroll exempts
+          it from the panel-overflow layout gate (mirrors facts-matrix-scroll). */}
+      <div className="event-week-scroll" data-hscroll>
       <div className="event-week-grid" aria-label={text("Working week events")}>
         {companyEventWorkingWeekDays.map((day) => {
           const dayEvents = companyEventsByDate[day.date] ?? [];
@@ -152,6 +150,7 @@ export function WeekEventsView({
             <div className="event-weekend-list">{companyEventWeekendEvents.map(renderCompanyEventWeekCard)}</div>
           </section>
         ) : null}
+      </div>
       </div>
       {companyEventsError ? <ErrorText>{text("Events command failed")}: {companyEventsError}</ErrorText> : null}
     </>

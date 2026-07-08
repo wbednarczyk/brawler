@@ -1,6 +1,6 @@
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ExternalLink, Maximize2, PictureInPicture2 } from "lucide-react";
+import { ExternalLink, Maximize2, PictureInPicture2, Pin } from "lucide-react";
 import { DockviewReact } from "dockview";
 import { useLocale } from "../../shared/locale";
 import type {
@@ -47,6 +47,20 @@ export function clearCockpitLayoutStorage() {
 //    could not answer) with a reset path;
 //  - dynamic add/remove of panels reconciled from React state.
 
+/** A tab-level pin affordance for company-scoped cockpit panels (U-Ra, ADR 0076):
+ *  toggles a panel between following the view company and pinning a frozen company.
+ *  Only company-scoped panels carry one; other panels render no pin button. */
+export type DockPanelPin = {
+  /** True when the panel currently pins a frozen company (vs. following the view). */
+  pinned: boolean;
+  /** True when the toggle is unavailable (e.g. a follow panel of this kind exists). */
+  disabled: boolean;
+  /** aria-label + tooltip for the pin button. */
+  label: string;
+  /** Flip the panel's follow/pinned mode. */
+  onToggle: () => void;
+};
+
 export type DockPanelSpec = {
   /** Stable panel id. */
   id: string;
@@ -54,6 +68,8 @@ export type DockPanelSpec = {
   title: string;
   /** Pane body. Re-evaluated on every render via context — never stale. */
   render: () => ReactNode;
+  /** When set, the tab shows a pin toggle (company-scoped panels only, U-Ra). */
+  pin?: DockPanelPin;
 };
 
 /**
@@ -84,6 +100,10 @@ export async function popOutOrFloat(
 }
 
 const PanelContentContext = createContext<Map<string, () => ReactNode>>(new Map());
+// Per-panel pin affordance keyed by panel id (U-Ra). Rebuilt each render so the
+// tab's label/disabled/onToggle stay current as the view company / panel set
+// changes; absent id ⇒ no pin button (non-company-scoped panels).
+const PanelPinContext = createContext<Map<string, DockPanelPin>>(new Map());
 
 function DockPanel(props: IDockviewPanelProps) {
   const contents = useContext(PanelContentContext);
@@ -102,6 +122,8 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
   const { api } = props;
   const [active, setActive] = useState(api.isActive);
   const [title, setTitle] = useState(api.title);
+  const pins = useContext(PanelPinContext);
+  const pin = pins.get(api.id);
   useEffect(() => {
     const a = api.onDidActiveChange(() => setActive(api.isActive));
     const t = api.onDidTitleChange(() => setTitle(api.title));
@@ -120,6 +142,24 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
       >
         {title}
       </button>
+      {pin ? (
+        // Sibling <button> (not nested in the activate control): follow/pin toggle
+        // for company-scoped panels (U-Ra). aria-pressed carries the pinned state.
+        <button
+          type="button"
+          className="cockpit-tab-pin"
+          aria-label={pin.label}
+          title={pin.label}
+          aria-pressed={pin.pinned}
+          disabled={pin.disabled}
+          onClick={(event) => {
+            event.stopPropagation();
+            pin.onToggle();
+          }}
+        >
+          <Pin size={12} />
+        </button>
+      ) : null}
       <button
         type="button"
         className="cockpit-tab-close"
@@ -199,6 +239,10 @@ type DockLayoutProps = {
 export type DockLayoutHandle = {
   capture: () => SerializedDockview | null;
   restore: (layout: SerializedDockview) => void;
+  /** Remove a single panel by id without notifying onClosePanel (the owner has
+   *  already updated its state) — used when a pin toggle changes a panel's id and
+   *  the add-only reconciler needs the stale panel dropped (U-Ra, D5). */
+  removePanel: (id: string) => void;
 };
 
 export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function DockLayout(
@@ -206,6 +250,9 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   ref,
 ) {
   const contents = new Map(panels.map((panel) => [panel.id, panel.render]));
+  const pins = new Map(
+    panels.filter((panel) => panel.pin).map((panel) => [panel.id, panel.pin as DockPanelPin]),
+  );
   const apiRef = useRef<DockviewApi | null>(null);
   const panelsRef = useRef(panels);
   panelsRef.current = panels;
@@ -441,19 +488,37 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
         rebuildingRef.current = false;
       }
     },
+    removePanel: (id) => {
+      const api = apiRef.current;
+      if (!api) return;
+      const panel = api.getPanel(id);
+      if (!panel) return;
+      // Guard the remove so onDidRemovePanel does not re-drive onClosePanel — the
+      // owner is intentionally swapping this panel's id, not user-closing it.
+      rebuildingRef.current = true;
+      try {
+        api.removePanel(panel);
+      } catch {
+        /* panel already gone — nothing to remove */
+      } finally {
+        rebuildingRef.current = false;
+      }
+    },
   }));
 
   return (
     <PanelContentContext.Provider value={contents}>
-      <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
-        <DockviewReact
-          components={DOCK_COMPONENTS}
-          tabComponents={TAB_COMPONENTS}
-          defaultTabComponent={AccessibleTab}
-          rightHeaderActionsComponent={GroupActions}
-          onReady={onReady}
-        />
-      </div>
+      <PanelPinContext.Provider value={pins}>
+        <div ref={containerRef} className="cockpit-dock dockview-theme-brawler">
+          <DockviewReact
+            components={DOCK_COMPONENTS}
+            tabComponents={TAB_COMPONENTS}
+            defaultTabComponent={AccessibleTab}
+            rightHeaderActionsComponent={GroupActions}
+            onReady={onReady}
+          />
+        </div>
+      </PanelPinContext.Provider>
     </PanelContentContext.Provider>
   );
 });

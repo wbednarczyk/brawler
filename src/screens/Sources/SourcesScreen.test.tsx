@@ -31,8 +31,9 @@ describe("Sources screen workflows", () => {
     expect(screen.getByLabelText("Feed summary")).toHaveTextContent(
       "Refreshed GPW report from sample source",
     );
-    expect(await screen.findAllByText("2026-05-30 17:13:31")).not.toHaveLength(0);
-    expect(screen.getByText("2026-05-30 17:30:00")).toBeInTheDocument();
+    // ADR 0076 D4: detail/audit timestamps render `YYYY-MM-DD HH:MM` — no seconds.
+    expect(await screen.findAllByText("2026-05-30 17:13")).not.toHaveLength(0);
+    expect(screen.getByText("2026-05-30 17:30")).toBeInTheDocument();
     const officialBody = screen.getByLabelText("Official report body");
     expect(officialBody).toHaveTextContent("Stored");
     expect(officialBody).not.toHaveAttribute("open");
@@ -169,9 +170,11 @@ describe("Sources screen workflows", () => {
 
     expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
     const sourcesRegion = await screen.findByLabelText("Source list");
-    const sourceRow = within(sourcesRegion).getByRole("button", {
-      name: "Open source: GPW Company Directory",
-    });
+    // The open action is the primary <button>; selection state lives on its row
+    // container (the button is a sibling of the enable toggle — no nested interactive).
+    const sourceRow = within(sourcesRegion)
+      .getByRole("button", { name: "Open source: GPW Company Directory" })
+      .closest(".source-row");
 
     expect(sourceRow).toHaveClass("source-row-selected");
     expect(within(sourcesRegion).getByLabelText("Source details")).toBeInTheDocument();
@@ -185,9 +188,11 @@ describe("Sources screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
     const sourcesRegion = await screen.findByLabelText("Source list");
-    const sourceRow = await within(sourcesRegion).findByRole("button", {
+    const sourceRowOpen = await within(sourcesRegion).findByRole("button", {
       name: "Open source: Bankier Company Komunikaty",
     });
+    // Row container holds the open button, health text and enable toggle as siblings.
+    const sourceRow = sourceRowOpen.closest(".source-row") as HTMLElement;
 
     expect(within(sourcesRegion).queryByText("GPW ESPI/EBI")).not.toBeInTheDocument();
     expect(within(sourcesRegion).queryByText("Portal Analiz")).not.toBeInTheDocument();
@@ -203,7 +208,7 @@ describe("Sources screen workflows", () => {
       within(sourceRow).getByRole("switch", { name: "Turn off Bankier Company Komunikaty" }),
     ).toBeChecked();
 
-    await user.click(sourceRow);
+    await user.click(sourceRowOpen);
 
     expect(sourceRow).toHaveClass("source-row-selected");
     const sourceDetails = await screen.findByLabelText("Source details");
@@ -228,9 +233,9 @@ describe("Sources screen workflows", () => {
     await user.click(screen.getByRole("button", { name: "Sources" }));
 
     const sourcesRegion = await screen.findByLabelText("Source list");
-    const bankierRow = within(sourcesRegion).getByRole("button", {
-      name: "Open source: Bankier Giełda RSS",
-    });
+    const bankierRow = within(sourcesRegion)
+      .getByRole("button", { name: "Open source: Bankier Giełda RSS" })
+      .closest(".source-row") as HTMLElement;
     const bankierToggle = within(bankierRow).getByRole("switch", {
       name: "Turn off Bankier Giełda RSS",
     });
@@ -247,9 +252,9 @@ describe("Sources screen workflows", () => {
     ).not.toBeChecked();
     expect(within(bankierRow).getAllByText("Off").length).toBeGreaterThan(0);
 
-    const directoryRow = within(sourcesRegion).getByRole("button", {
-      name: "Open source: GPW Company Directory",
-    });
+    const directoryRow = within(sourcesRegion)
+      .getByRole("button", { name: "Open source: GPW Company Directory" })
+      .closest(".source-row") as HTMLElement;
     expect(within(directoryRow).queryByRole("checkbox")).not.toBeInTheDocument();
   });
 
@@ -265,9 +270,9 @@ describe("Sources screen workflows", () => {
       .getAllByRole("button", { name: /Open source:/ })
       .map((row) => row.getAttribute("aria-label"));
 
-    const bankierCalendarRow = within(calendarGroup).getByRole("button", {
-      name: "Open source: Bankier Kalendarium",
-    });
+    const bankierCalendarRow = within(calendarGroup)
+      .getByRole("button", { name: "Open source: Bankier Kalendarium" })
+      .closest(".source-row") as HTMLElement;
     await user.click(within(bankierCalendarRow).getByRole("switch", {
       name: "Turn off Bankier Kalendarium",
     }));
@@ -458,5 +463,25 @@ describe("Sources screen workflows", () => {
     await user.keyboard(" ");
 
     expect(screen.queryByLabelText("Source details")).not.toBeInTheDocument();
+  });
+
+  // U7-E1 density contract (ADR 0076 D6): each source row carries an inline
+  // schedule/settings summary (folded at S/short) and a last-fetch diagnostics
+  // summary (shown at L only). jsdom has no container queries, so the per-tier
+  // fold is browser-tested; here we assert the summaries render on every row.
+  it("renders inline schedule and diagnostics summaries on each source row", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Sources" }));
+
+    const sourcesRegion = await screen.findByLabelText("Source list");
+    const sourceRow = within(sourcesRegion)
+      .getByRole("button", { name: "Open source: Bankier Giełda RSS" })
+      .closest(".source-row") as HTMLElement;
+
+    expect(within(sourceRow).getByLabelText("Schedule")).toBeInTheDocument();
+    expect(within(sourceRow).getByLabelText("Last fetch")).toBeInTheDocument();
   });
 });

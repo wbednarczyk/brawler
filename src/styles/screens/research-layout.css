@@ -2,7 +2,7 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .research-workspace {
@@ -10,9 +10,9 @@
   flex: 1 1 auto;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 0;
-  padding: 14px 18px 18px;
+  padding: var(--space-4) var(--space-5) var(--space-5);
   overflow: hidden;
 }
 
@@ -21,19 +21,19 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .research-company-picker {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: min(360px, 100%);
 }
 
 .research-company-picker span,
 .research-summary span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .research-company-picker select {
@@ -48,18 +48,18 @@
   display: flex;
   flex: 1 1 360px;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .research-filter {
   min-height: 30px;
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 999px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   color: var(--muted);
   background: color-mix(in srgb, var(--surface-raised) 82%, transparent);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   cursor: pointer;
 }
 
@@ -77,10 +77,10 @@
 
 .research-mode-switch {
   display: inline-flex;
-  gap: 2px;
+  gap: var(--space-0);
   border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 999px;
-  padding: 3px;
+  padding: var(--space-1);
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--surface) 72%, transparent);
 }
@@ -89,11 +89,11 @@
   min-height: 28px;
   border: 1px solid transparent;
   border-radius: 999px;
-  padding: 0 12px;
+  padding: 0 var(--space-3);
   color: var(--muted);
   background: transparent;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
   cursor: pointer;
 }
@@ -118,14 +118,14 @@
 .research-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 30px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .research-summary {
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 76%, transparent);
@@ -133,18 +133,18 @@
 
 .research-summary > div {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
   min-width: 120px;
 }
 
 .research-summary strong {
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .research-summary-company {
   display: flex !important;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-left: auto;
   min-width: min(280px, 100%);
 }
@@ -152,7 +152,7 @@
 .research-main-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 10px minmax(360px, var(--research-brief-panel-width, 1fr));
-  gap: 12px;
+  gap: var(--space-3);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -160,7 +160,7 @@
 
 .research-main-stack {
   display: grid;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
   overflow: hidden;
 }
@@ -176,7 +176,7 @@
 .research-aside {
   display: grid;
   grid-template-rows: minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
   overflow: hidden;
 }
@@ -215,9 +215,9 @@
 .research-timeline-shell {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 0;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
@@ -226,11 +226,18 @@
 
 .research-timeline {
   display: grid;
+  /* Clamp the track: a default `auto` column adopts the widest row's
+     min-content width and turns this vertical list into a horizontal
+     scroller in a narrow pane (guardrail, ADR 0045). `overflow-wrap`
+     additionally lets long unbreakable tokens (tickers, urls, filenames)
+     break instead of dictating a minimum row width. */
+  grid-template-columns: minmax(0, 1fr);
+  overflow-wrap: anywhere;
   align-content: start;
-  gap: 5px;
+  gap: var(--space-1);
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: var(--space-1);
 }
 
 .research-review-region {
@@ -245,7 +252,7 @@
 .research-review-layout {
   display: grid;
   grid-template-columns: minmax(180px, var(--research-watchlist-queue-width, 220px)) 10px minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--space-3);
   height: 100%;
   min-height: 0;
   overflow: hidden;
@@ -254,8 +261,8 @@
 .research-company-queue {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: var(--space-1);
   min-height: 0;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-right: var(--space-1);
 }

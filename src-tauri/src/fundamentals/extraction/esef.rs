@@ -20,7 +20,7 @@
 //! ESEF report *package* (a ZIP) is a fetch-path concern handled where the
 //! pipeline is wired; this module parses the xHTML bytes it is handed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -231,11 +231,20 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
 
     let mut contexts: HashMap<String, ContextPeriod> = HashMap::new();
     let mut units: HashMap<String, String> = HashMap::new();
+    // Context ids carrying an XBRL dimension (an `xbrldi:explicitMember` /
+    // `typedMember` in their segment/scenario). Facts in these contexts are
+    // dimensional breakdowns (a segment, an equity component, …), NOT the
+    // reported line-item total — mapping e.g. every `ifrs-full:Equity` member to
+    // `total_equity` would ingest 60+ component values for one line and make the
+    // balance-sheet identity ambiguous/contradicted. Only default-member
+    // (dimensionless) facts are the statement totals, so these are skipped.
+    let mut dimensional: HashSet<String> = HashSet::new();
 
     // Streaming state.
     let mut depth: usize = 0;
     let mut ctx_id: Option<String> = None;
     let mut ctx_period = ContextPeriod::default();
+    let mut ctx_dimensional = false;
     let mut period_field: Option<PeriodField> = None;
     let mut unit_id: Option<String> = None;
     let mut in_measure = false;
@@ -251,6 +260,10 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
                     b"context" => {
                         ctx_id = attr(&e, b"id");
                         ctx_period = ContextPeriod::default();
+                        ctx_dimensional = false;
+                    }
+                    b"explicitMember" | b"typedMember" if ctx_id.is_some() => {
+                        ctx_dimensional = true;
                     }
                     b"instant" => period_field = Some(PeriodField::Instant),
                     b"startDate" => period_field = Some(PeriodField::Start),
@@ -321,8 +334,12 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
                 match local.as_slice() {
                     b"context" => {
                         if let Some(id) = ctx_id.take() {
+                            if ctx_dimensional {
+                                dimensional.insert(id.clone());
+                            }
                             contexts.insert(id, std::mem::take(&mut ctx_period));
                         }
+                        ctx_dimensional = false;
                     }
                     b"instant" | b"startDate" | b"endDate" => period_field = None,
                     b"unit" => unit_id = None,
@@ -340,6 +357,12 @@ pub fn parse_esef(bytes: &[u8]) -> Result<Vec<ExtractedFact>, EsefError> {
     // Resolve contexts/units into ExtractedFacts.
     let mut facts: Vec<ExtractedFact> = Vec::new();
     for rf in raw_facts {
+        // A dimensional context is a breakdown, not the reported total (see the
+        // `dimensional` set above) — skip it so only default-member line totals
+        // reach validation.
+        if dimensional.contains(&rf.context_ref) {
+            continue;
+        }
         let Some(period) = contexts.get(&rf.context_ref).and_then(|c| {
             ContextPeriod {
                 instant: c.instant.clone(),

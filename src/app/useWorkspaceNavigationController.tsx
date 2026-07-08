@@ -72,7 +72,9 @@ export function useWorkspaceNavigationController({
       const direction = event.key === "ArrowDown" ? 1 : -1;
       const nextIndex = Math.min(Math.max(currentIndex + direction, 0), rows.length - 1);
       const nextRow = rows[nextIndex];
-      const nextCompanyId = nextRow?.dataset.companyId;
+      // The focusable row control (data-company-row) is the primary <button>; the
+      // company id lives on its container (data-company-id).
+      const nextCompanyId = nextRow?.closest<HTMLElement>("[data-company-id]")?.dataset.companyId;
 
       if (nextRow && nextCompanyId) {
         nextRow.focus();

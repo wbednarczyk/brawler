@@ -10,6 +10,7 @@ import type { AiAnalysisJob, Company, FeedItem } from "../../api/types";
 import { FeedAiAnalysisPanel } from "../../shared/components/FeedAiAnalysisPanel";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
+import { formatListTimestamp } from "../../shared/format/datetime";
 import { useAiAnalysisProviderConfigured } from "../../app/state/SettingsContext";
 import { ActionRow, Button, DenseRow, EmptyState, InfoGrid, StatusChip } from "../../ui";
 
@@ -58,18 +59,19 @@ export function CompanyFeedSection({
   formatTimestamp,
   feedItemSummary,
 }: CompanyFeedSectionProps) {
-  const { text } = useLocale();
+  const { text, locale } = useLocale();
   const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
 
   return (
     <div
-      className="company-tab-panel"
+      className="company-tab-panel company-feed-panel"
       aria-label={text("Company feed")}
       data-company-feed-list="true"
     >
       {feedItems.map((item) => (
         <div className="company-feed-row-block" key={item.id}>
           <DenseRow
+            as="button"
             aria-label={`${text("Open company feed item")}: ${item.title}`}
             className={[
               "company-feed-row",
@@ -82,20 +84,21 @@ export function CompanyFeedSection({
             data-company-feed-row="true"
             onClick={() => toggleFeedItem(item)}
             onKeyDown={(event) => selectFeedItemFromKeyboard(event, item)}
-            role="button"
             selected={selectedFeedItem?.id === item.id}
-            tabIndex={0}
             title={text("Open company feed item details")}
             unread={item.unread}
           >
             <div className="feed-row-main">
+              {/* U7-A density row: badge (type) + date stay at every tier; the
+                  source folds at S (container query in companies.css). */}
               <div className="feed-meta">
-                <span>{item.type}</span>
-                <span>{item.source}</span>
-                <span>{formatTimestamp(item.time, text("Unknown"))}</span>
+                <span className="feed-meta-type">{item.type}</span>
+                <span className="feed-meta-source">{item.source}</span>
+                <span className="num-tabular">{formatListTimestamp(item.time, locale, text("Unknown"))}</span>
               </div>
               <h3>{item.title}</h3>
-              <p>{feedItemSummary(item)}</p>
+              {/* Summary line: hidden at S, shown from M up. */}
+              <p className="feed-row-summary">{feedItemSummary(item)}</p>
             </div>
             {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
             {item.unread ? <span className="unread-dot" title={text("Unread")} /> : null}

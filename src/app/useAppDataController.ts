@@ -58,7 +58,6 @@ type AppDataControllerInput = {
   setWatchlistMemberships: Dispatch<SetStateAction<WatchlistMembership[]>>;
   setWatchlists: Dispatch<SetStateAction<Watchlist[]>>;
   setWatchlistsError: Dispatch<SetStateAction<string | null>>;
-  text: (value: string) => string;
 };
 
 export function useAppDataController({
@@ -95,7 +94,6 @@ export function useAppDataController({
   setWatchlistMemberships,
   setWatchlists,
   setWatchlistsError,
-  text,
 }: AppDataControllerInput) {
   function refreshHealth() {
     return systemApi.getHealth()
@@ -280,13 +278,10 @@ export function useAppDataController({
     });
   }
 
+  // Bulk data clear (ADR 0076 D5): removes every unsaved feed item at once with
+  // no faithful re-create, so the confirm gate is an InlineConfirm at the call
+  // site.
   function deleteUnsavedFeedItems() {
-    const confirmed = window.confirm(text("Delete all unsaved feed items? Saved items will stay."));
-
-    if (!confirmed) {
-      return;
-    }
-
     setDeleteUnsavedFeedState("refreshing");
     setDeleteUnsavedFeedError(null);
 

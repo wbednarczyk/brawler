@@ -29,6 +29,47 @@ pub struct JobQueueCounts {
     pub failed: i64,
 }
 
+/// A single queue row's lifecycle fields, for a narrow "how is this job doing?"
+/// read (e.g. the qualitative-assessment panel poll). `status` is the raw
+/// `job_queue.status` string (`pending`/`running`/`succeeded`/`failed`);
+/// `last_error` is the most recent failure message the queue recorded, `None`
+/// once the row has succeeded or has never failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobStatusRow {
+    pub status: String,
+    pub attempts: i64,
+    pub last_error: Option<String>,
+}
+
+/// Suffix marking a **follow-up** row: one that must never run while its base
+/// sibling (the same id without this suffix) runs, and vice-versa. Used by the
+/// qualitative-assessment re-arm (`commands::quality_frameworks`), where a re-run
+/// arriving mid-run parks in `<main-id>{FOLLOWUP_SUFFIX}`. The ai worker lane has
+/// more than one worker ([`crate::jobs::pool_layout`], ADR 0059), so two rows of
+/// the same kind — a running job and its parked re-arm — could otherwise be
+/// claimed at once and double-run a paid AI request. The claim guard below keeps
+/// the pair serialized in both directions.
+pub const FOLLOWUP_SUFFIX: &str = ":followup";
+
+/// SQL predicate over an aliased `candidate` row: true unless the row's sibling is
+/// currently `running`. Pairs `<id>` with `<id>{FOLLOWUP_SUFFIX}` in both
+/// directions (a base row is held while its follow-up runs, and the follow-up is
+/// held while its base runs), so neither is ever claimed while the other runs.
+/// Constant SQL derived from [`FOLLOWUP_SUFFIX`] — no user input is interpolated.
+fn sibling_not_running_guard() -> String {
+    let suffix_len = FOLLOWUP_SUFFIX.len();
+    format!(
+        "NOT EXISTS (\
+             SELECT 1 FROM job_queue sibling \
+             WHERE sibling.status = 'running' AND (\
+                 sibling.id = candidate.id || '{FOLLOWUP_SUFFIX}' \
+                 OR (candidate.id LIKE '%{FOLLOWUP_SUFFIX}' \
+                     AND sibling.id = substr(candidate.id, 1, length(candidate.id) - {suffix_len}))\
+             )\
+         )"
+    )
+}
+
 /// Job-queue domain store. Reach it via `AppState::jobs()`.
 #[derive(Clone)]
 pub struct JobQueueStore {
@@ -95,42 +136,60 @@ impl JobQueueStore {
         Ok(changed > 0)
     }
 
-    /// Atomically claim the next runnable job: the oldest `pending` row whose
-    /// `available_at` has passed. The claim and the `attempts` increment happen
-    /// in one statement, so two workers can never claim the same row and a crash
-    /// mid-run still counts as an attempt. Returns `None` when nothing is
-    /// runnable.
-    pub fn claim_next(&self) -> StorageResult<Option<ClaimedJob>> {
+    /// Read the opaque payload of a job that is still `pending` (not yet claimed),
+    /// or `None` if the id is absent, already `running`, or terminal. Callers use
+    /// this to merge a superseding enqueue into a not-yet-started row (e.g. union a
+    /// single-criterion re-run into a pending framework-wide assessment) rather
+    /// than racing a second, duplicate job.
+    pub fn pending_payload(&self, id: &str) -> StorageResult<Option<String>> {
         let connection = self.db.checkout()?;
         connection
             .query_row(
-                "
+                "SELECT payload FROM job_queue WHERE id = ?1 AND status = 'pending'",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(StorageError::from)
+    }
+
+    /// Atomically claim the next runnable job: the oldest `pending` row whose
+    /// `available_at` has passed and whose sibling (see [`FOLLOWUP_SUFFIX`]) is not
+    /// currently `running`. The claim and the `attempts` increment happen in one
+    /// statement, so two workers can never claim the same row and a crash mid-run
+    /// still counts as an attempt. Returns `None` when nothing is runnable.
+    pub fn claim_next(&self) -> StorageResult<Option<ClaimedJob>> {
+        let connection = self.db.checkout()?;
+        let guard = sibling_not_running_guard();
+        let sql = format!(
+            "
                 UPDATE job_queue
                 SET status = 'running',
                     attempts = attempts + 1,
                     locked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
                 WHERE id = (
-                    SELECT id
-                    FROM job_queue
-                    WHERE status = 'pending'
-                        AND available_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                    ORDER BY available_at, created_at
+                    SELECT candidate.id
+                    FROM job_queue candidate
+                    WHERE candidate.status = 'pending'
+                        AND candidate.available_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                        AND {guard}
+                    ORDER BY candidate.available_at, candidate.created_at
                     LIMIT 1
                 )
                 RETURNING id, kind, payload, attempts, max_attempts
-                ",
-                [],
-                |row| {
-                    Ok(ClaimedJob {
-                        id: row.get(0)?,
-                        kind: row.get(1)?,
-                        payload: row.get(2)?,
-                        attempts: row.get(3)?,
-                        max_attempts: row.get(4)?,
-                    })
-                },
-            )
+                "
+        );
+        connection
+            .query_row(&sql, [], |row| {
+                Ok(ClaimedJob {
+                    id: row.get(0)?,
+                    kind: row.get(1)?,
+                    payload: row.get(2)?,
+                    attempts: row.get(3)?,
+                    max_attempts: row.get(4)?,
+                })
+            })
             .optional()
             .map_err(StorageError::from)
     }
@@ -145,6 +204,7 @@ impl JobQueueStore {
         }
         let connection = self.db.checkout()?;
         let placeholders = vec!["?"; kinds.len()].join(", ");
+        let guard = sibling_not_running_guard();
         let sql = format!(
             "
             UPDATE job_queue
@@ -153,12 +213,13 @@ impl JobQueueStore {
                 locked_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             WHERE id = (
-                SELECT id
-                FROM job_queue
-                WHERE status = 'pending'
-                    AND available_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-                    AND kind IN ({placeholders})
-                ORDER BY available_at, created_at
+                SELECT candidate.id
+                FROM job_queue candidate
+                WHERE candidate.status = 'pending'
+                    AND candidate.available_at <= strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                    AND candidate.kind IN ({placeholders})
+                    AND {guard}
+                ORDER BY candidate.available_at, candidate.created_at
                 LIMIT 1
             )
             RETURNING id, kind, payload, attempts, max_attempts
@@ -302,6 +363,30 @@ impl JobQueueStore {
             [],
         )?;
         Ok(reclaimed)
+    }
+
+    /// Read one job row's lifecycle fields by id, or `None` if the id is absent.
+    /// A narrow, id-scoped status read (unlike [`counts`](Self::counts), which
+    /// aggregates the whole queue): the qualitative-assessment panel polls the
+    /// primary `qualitative_assessment:<company>:<framework>` row this way to
+    /// surface a terminal failure (`status = 'failed'`, `last_error`) instead of
+    /// silently clearing its "queued" hint.
+    pub fn status(&self, id: &str) -> StorageResult<Option<JobStatusRow>> {
+        let connection = self.db.checkout()?;
+        connection
+            .query_row(
+                "SELECT status, attempts, last_error FROM job_queue WHERE id = ?1",
+                params![id],
+                |row| {
+                    Ok(JobStatusRow {
+                        status: row.get(0)?,
+                        attempts: row.get(1)?,
+                        last_error: row.get(2)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(StorageError::from)
     }
 
     /// Current status tallies.

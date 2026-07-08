@@ -283,7 +283,9 @@ describe("layout scroll contracts", () => {
     expect(itemLabelRule).toContain("white-space: nowrap");
     expect(activeRule).toContain("border-color: color-mix(in srgb, var(--primary) 52%, var(--border))");
     expect(chipRule).toContain("white-space: nowrap");
-    expect(accentChipRule).toContain("color: var(--accent)");
+    // Toned chips route through the semantic tone tokens (ADR 0076 D3), not raw
+    // palette anchors — accent maps to --tone-agent.
+    expect(accentChipRule).toContain("color: var(--tone-agent)");
     expect(pillRule).toContain("font-weight: 700");
     expect(dangerPillRule).toContain("color: var(--danger)");
     expect(chipListRule).toContain("flex-wrap: wrap");

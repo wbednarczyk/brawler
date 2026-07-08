@@ -6,16 +6,16 @@
   min-height: 0;
   min-width: 0;
   overflow: auto;
-  padding: 18px;
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-5);
 }
 
 .report-season-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .report-season-stale {
@@ -25,13 +25,13 @@
 .report-season-rows {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 /* Each report reads as a self-contained card. */
 .report-season-row,
 .report-season-row-static {
-  padding: 10px 14px;
+  padding: var(--space-3) var(--space-4);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
@@ -66,7 +66,7 @@
 .report-season-row-title {
   display: inline-flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -87,8 +87,8 @@
 .report-season-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--accent);
   border-top: none;
   border-radius: 0 0 8px 8px;
@@ -97,15 +97,51 @@
 
 .report-season-list {
   margin: 0;
-  padding-left: 1.1rem;
+  padding-left: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: var(--space-1);
   color: var(--text);
 }
 
 .report-season-claim-counts {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
+  gap: var(--space-2);
+}
+
+.report-season-card-prep,
+.report-season-card-extended {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* U7-D density contract (ADR 0076 D6) — driven by the hosting `pane` size
+   container (.cockpit-pane / .workspace). Rows always show name+date+state chip;
+   the pre-report card's density is tiered:
+   S (<420) rows only · M (420–759) + prep checklist · L (>=760) + extended
+   context (KPIs, recent evidence) · short (<480h) rows only. Identity fields
+   (ticker, date) never truncate — only the company name ellipsises. */
+
+/* Below L: fold the extended context (KPIs + recent evidence); keep the prep
+   checklist. */
+@container pane (max-width: 759px) {
+  .report-season-card-extended {
+    display: none;
+  }
+}
+
+/* S width and short height: rows only — the whole pre-report card folds away so
+   a short pane never renders a card taller than itself. */
+@container pane (max-width: 419px) {
+  .report-season-card {
+    display: none;
+  }
+}
+
+@container pane (max-height: 479px) {
+  .report-season-card {
+    display: none;
+  }
 }

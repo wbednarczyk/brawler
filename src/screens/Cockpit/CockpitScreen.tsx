@@ -11,7 +11,7 @@ import {
   StatusChip,
 } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
-import { formatFeedTimestamp } from "../../shared/format/timestamp";
+import { formatListTimestamp } from "../../shared/format/datetime";
 import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
@@ -22,7 +22,7 @@ import { CompanyNotebookSection } from "../Companies/CompanyNotebookSection";
 import { NotebookDateField } from "../../shared/components/NotebookDateField";
 import { NotebookQuarterField } from "../../shared/components/NotebookQuarterField";
 import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
-import { formatTimestamp } from "../../shared/formatting/date";
+import { formatDetailTimestamp as formatTimestamp } from "../../shared/format/datetime";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
 import { NotebooksScreen } from "../Notebooks/NotebooksScreen";
@@ -39,7 +39,8 @@ import { useCockpitFundamentals } from "./useCockpitFundamentals";
 import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
 import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
-import { CommandPalette, type PaletteCommand } from "./CommandPalette";
+import { CommandPalette, type PaletteCommand } from "../../shared/components/CommandPalette";
+import { useCommandPaletteCommands } from "../../app/commandPalette";
 import { listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../../api/cockpit";
 
 // Research cockpit — the full-screen docking shell spike (ADR 0053). It shows
@@ -102,10 +103,20 @@ function globalKindLabel(kind: GlobalKind, text: (s: string) => string): string 
   }
 }
 
-type Pinned = { id: string; companyId: string; kind: PinnedKind };
+// A company-scoped cockpit panel (U-Ra, ADR 0076). `follow` panels track the
+// view company and carry no companyId (resolved at render time); `pinned` panels
+// freeze a specific company (the pre-U-Ra behavior). Legacy descriptors without a
+// `mode` parse as `pinned` (see parsePanels), preserving the old semantics.
+type Pinned =
+  | { id: string; kind: PinnedKind; mode: "follow" }
+  | { id: string; kind: PinnedKind; mode: "pinned"; companyId: string };
 
 function pinnedId(companyId: string, kind: PinnedKind): string {
   return `${kind}:${companyId}`;
+}
+
+function followId(kind: PinnedKind): string {
+  return `follow:${kind}`;
 }
 
 // Per-company dashboard layouts (ADR 0057) are saved cockpit layouts under a
@@ -131,14 +142,19 @@ const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = [
 // the company feed is covered by the `companyFeed` panel.
 const DASHBOARD_CLOSED_LINKED = ["feed", "inspector", "claims-sel", "diff-sel"];
 
-function dashboardPinned(companyId: string): Pinned[] {
-  return DASHBOARD_DEFAULT_KINDS.map((kind) => ({ id: pinnedId(companyId, kind), companyId, kind }));
+// The curated dashboard now seeds FOLLOW panels (U-Ra): they track the view
+// company (set alongside), so their tab titles are kind-only and switching the
+// company retargets them in place.
+function dashboardPinned(): Pinned[] {
+  return DASHBOARD_DEFAULT_KINDS.map((kind) => ({ id: followId(kind), kind, mode: "follow" }));
 }
 
-function isDashboardPinnedFor(pinned: Pinned[], companyId: string): boolean {
+// The dashboard is already seeded when the panel set is exactly the curated
+// follow kinds — used to avoid re-seeding (and flashing) on first mount.
+function isDashboardFollowSeeded(pinned: Pinned[]): boolean {
   return (
     pinned.length === DASHBOARD_DEFAULT_KINDS.length &&
-    pinned.every((panel) => panel.companyId === companyId)
+    pinned.every((panel) => panel.mode === "follow")
   );
 }
 
@@ -218,6 +234,7 @@ const PRESETS: PresetSpec[] = [
 // screen. An unfilled cell renders a "pick a panel" button.
 type CellFill =
   | { type: "pinned"; companyId: string; kind: PinnedKind }
+  | { type: "follow"; kind: PinnedKind }
   | { type: "global"; kind: GlobalKind };
 
 type GridCell = { id: string; fill: CellFill | null };
@@ -233,9 +250,31 @@ type PanelsDescriptor = {
   // fill so it reopens pre-split with each cell's chosen panel (or empty).
   grid: GridSpec | null;
   cells: GridCell[] | null;
+  // The view company the cockpit view is scoped to (U-Ra); follow panels resolve
+  // their company from it. null ⇒ no view company chosen yet.
+  viewCompanyId: string | null;
 };
 
-function parsePanels(panelsJson: string): PanelsDescriptor | null {
+// Normalize a persisted company-scoped panel entry (U-Ra), tolerating legacy
+// rows that predate the `mode` field: those had a `companyId` and no `mode`, so
+// they parse as `pinned` — exactly the pre-U-Ra behavior. A `follow` entry drops
+// any companyId (its company comes from the view company at render time).
+function normalizePinned(raw: unknown): Pinned | null {
+  if (!raw || typeof raw !== "object") return null;
+  const entry = raw as { kind?: unknown; mode?: unknown; companyId?: unknown };
+  if (typeof entry.kind !== "string" || !PINNED_KINDS.includes(entry.kind as PinnedKind)) {
+    return null;
+  }
+  const kind = entry.kind as PinnedKind;
+  if (entry.mode === "follow") {
+    return { id: followId(kind), kind, mode: "follow" };
+  }
+  // Legacy (no mode) or explicit "pinned": requires a companyId.
+  if (typeof entry.companyId !== "string") return null;
+  return { id: pinnedId(entry.companyId, kind), kind, mode: "pinned", companyId: entry.companyId };
+}
+
+export function parsePanels(panelsJson: string): PanelsDescriptor | null {
   try {
     const parsed = JSON.parse(panelsJson) as Partial<PanelsDescriptor>;
     const grid =
@@ -243,7 +282,9 @@ function parsePanels(panelsJson: string): PanelsDescriptor | null {
         ? { cols: parsed.grid.cols, rows: parsed.grid.rows }
         : null;
     return {
-      pinned: Array.isArray(parsed.pinned) ? parsed.pinned : [],
+      pinned: Array.isArray(parsed.pinned)
+        ? parsed.pinned.map(normalizePinned).filter((panel): panel is Pinned => panel !== null)
+        : [],
       openGlobals: Array.isArray(parsed.openGlobals)
         ? parsed.openGlobals.filter((kind): kind is GlobalKind => GLOBAL_KINDS.includes(kind))
         : [],
@@ -252,6 +293,7 @@ function parsePanels(panelsJson: string): PanelsDescriptor | null {
         typeof parsed.selectedFeedItemId === "string" ? parsed.selectedFeedItemId : null,
       grid,
       cells: Array.isArray(parsed.cells) ? parsed.cells : null,
+      viewCompanyId: typeof parsed.viewCompanyId === "string" ? parsed.viewCompanyId : null,
     };
   } catch {
     return null;
@@ -316,13 +358,21 @@ function CockpitWorkspace({
   // the very first paint is already the curated dashboard — not the default
   // linked triad that then rebuilds into it (the "flash" on opening a company).
   const [pinned, setPinned] = useState<Pinned[]>(() =>
-    dashboardCompanyId ? dashboardPinned(dashboardCompanyId) : [],
+    dashboardCompanyId ? dashboardPinned() : [],
   );
+  // The view company (U-Ra): follow panels resolve to it; the header selector and
+  // the ⌘K "switch view company" action set it. Seeded from the opening company;
+  // a saved view's persisted value overrides it on apply.
+  const [viewCompanyId, setViewCompanyId] = useState<string | null>(dashboardCompanyId ?? null);
   const [openGlobals, setOpenGlobals] = useState<GlobalKind[]>([]);
   const [closedLinked, setClosedLinked] = useState<Set<string>>(
     () => new Set(dashboardCompanyId ? DASHBOARD_CLOSED_LINKED : []),
   );
   const [resetNonce, setResetNonce] = useState(0);
+  // The local palette instance stays for the cell-fill / add-panel / "Commands"
+  // toolbar flows (it arms fillTargetRef). The global ⌘K palette (AppShell) is
+  // opened by the Ctrl/⌘+K shortcut and is fed the cockpit commands contextually
+  // (see useCommandPaletteCommands below).
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [savedLayouts, setSavedLayouts] = useState<CockpitLayout[]>([]);
   const [pendingGeometry, setPendingGeometry] = useState<unknown>(null);
@@ -331,6 +381,12 @@ function CockpitWorkspace({
   // `gridCells` drives the dock specs instead of pinned/globals/linked.
   const [gridCells, setGridCells] = useState<GridCell[]>([]);
   const [gridDims, setGridDims] = useState<GridSpec | null>(null);
+  // Cross-panel invalidation: a fact-producing extraction in the report-documents
+  // panel bumps this so the sibling Fundamentals panel(s) refetch. Independent
+  // cockpit panels share no read model, so this is the minimal invalidation
+  // signal (kept local to the workspace, not a global event bus).
+  const [fundamentalsRevision, setFundamentalsRevision] = useState(0);
+  const bumpFundamentals = useCallback(() => setFundamentalsRevision((n) => n + 1), []);
   // The cell awaiting a panel pick (set by a cell's button before opening the
   // palette); null means the palette adds/opens normally.
   const fillTargetRef = useRef<string | null>(null);
@@ -358,18 +414,8 @@ function CockpitWorkspace({
     refreshLayouts();
   }, [refreshLayouts]);
 
-  // ⌘K / Ctrl+K opens the command palette.
-  useEffect(() => {
-    function onKey(event: KeyboardEvent) {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault();
-        fillTargetRef.current = null;
-        setPaletteOpen((open) => !open);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  // ⌘K / Ctrl+K is handled globally now (AppShell command palette, v0.50 U6);
+  // the cockpit only keeps its local palette for the cell-fill / add-panel flows.
 
   // Apply a named layout's geometry after its panel set has been put into state.
   useEffect(() => {
@@ -406,7 +452,7 @@ function CockpitWorkspace({
       // A saved per-company dashboard overrides the seeded default (restores the
       // user's arrangement + geometry).
       applyLayout(saved);
-    } else if (!isDashboardPinnedFor(pinned, dashboardCompanyId)) {
+    } else if (!(isDashboardFollowSeeded(pinned) && viewCompanyId === dashboardCompanyId)) {
       // No saved layout: the initializer already seeded this company on first
       // mount (no rebuild → no flash); only re-seed when switching companies
       // without a remount.
@@ -418,7 +464,8 @@ function CockpitWorkspace({
   function seedCompanyDashboard(companyId: string) {
     setGridDims(null);
     setGridCells([]);
-    setPinned(dashboardPinned(companyId));
+    setPinned(dashboardPinned());
+    setViewCompanyId(companyId);
     setOpenGlobals([]);
     setClosedLinked(new Set(DASHBOARD_CLOSED_LINKED));
     setResetNonce((nonce) => nonce + 1);
@@ -433,6 +480,7 @@ function CockpitWorkspace({
       selectedFeedItemId: selection.feedItemId,
       grid: null,
       cells: null,
+      viewCompanyId,
     };
     const geometry = dockRef.current?.capture() ?? null;
     void saveCockpitLayout({
@@ -474,7 +522,7 @@ function CockpitWorkspace({
   function renderPinned(kind: PinnedKind, companyId: string) {
     switch (kind) {
       case "fundamentals":
-        return <CockpitFundamentalsPanel companyId={companyId} />;
+        return <CockpitFundamentalsPanel companyId={companyId} revision={fundamentalsRevision} />;
       case "reportDiff":
         return <ReportDiffPanel companyId={companyId} />;
       case "claims":
@@ -482,7 +530,7 @@ function CockpitWorkspace({
       case "quality":
         return <QualityPanel companyId={companyId} />;
       case "documents":
-        return <CompanyReportDocumentsPanel companyId={companyId} reloadKey={0} />;
+        return <CompanyReportDocumentsPanel companyId={companyId} onExtracted={bumpFundamentals} />;
       case "companyFeed": {
         const company = companyById.get(companyId);
         return company ? (
@@ -524,13 +572,23 @@ function CockpitWorkspace({
       const ticker = companyById.get(fill.companyId)?.qualifiedTicker ?? fill.companyId;
       return `${ticker} · ${pinnedKindLabel(fill.kind, text)}`;
     }
+    if (fill.type === "follow") {
+      // Follow cells are kind-only (the view company carries the context, U-Ra).
+      return pinnedKindLabel(fill.kind, text);
+    }
     return globalKindLabel(fill.kind, text);
   }
 
   function renderCellFill(fill: CellFill) {
-    return fill.type === "pinned"
-      ? renderPinned(fill.kind, fill.companyId)
-      : renderGlobal(fill.kind);
+    if (fill.type === "pinned") return renderPinned(fill.kind, fill.companyId);
+    if (fill.type === "follow") {
+      return viewCompanyId ? (
+        renderPinned(fill.kind, viewCompanyId)
+      ) : (
+        <EmptyState>{text("Choose the view company")}</EmptyState>
+      );
+    }
+    return renderGlobal(fill.kind);
   }
 
   // A cell's center button arms the next palette pick for that cell.
@@ -583,13 +641,47 @@ function CockpitWorkspace({
       render: () => renderLinked(linked.kind),
     })),
     ...pinned
-      .filter((panel) => companyById.has(panel.companyId))
+      .filter((panel) => panel.mode === "follow" || companyById.has(panel.companyId))
       .map((panel) => {
+        if (panel.mode === "follow") {
+          // Follow panels: kind-only title, content resolved from the view company
+          // (or an empty state prompting to choose one, U-Ra / D2 / D4). The tab's
+          // pin toggle freezes the current view company onto the panel.
+          return {
+            id: panel.id,
+            title: pinnedKindLabel(panel.kind, text),
+            render: () =>
+              viewCompanyId ? (
+                renderPinned(panel.kind, viewCompanyId)
+              ) : (
+                <EmptyState>{text("Choose the view company")}</EmptyState>
+              ),
+            pin: {
+              pinned: false,
+              disabled: viewCompanyId == null,
+              label: text("Pin company"),
+              onToggle: () => togglePanelMode(panel),
+            },
+          };
+        }
         const ticker = companyById.get(panel.companyId)?.qualifiedTicker ?? panel.companyId;
+        // A pinned panel can rejoin the view company only when no follow panel of
+        // its kind already exists (ids are kind-keyed — a collision would clash).
+        const followExists = pinned.some(
+          (other) => other.mode === "follow" && other.kind === panel.kind,
+        );
         return {
           id: panel.id,
           title: `${ticker} · ${pinnedKindLabel(panel.kind, text)}`,
           render: () => renderPinned(panel.kind, panel.companyId),
+          pin: {
+            pinned: true,
+            disabled: followExists,
+            label: followExists
+              ? text("Another panel already follows the view company")
+              : text("Follow view company"),
+            onToggle: () => togglePanelMode(panel),
+          },
         };
       }),
     ...openGlobals.map((kind) => ({
@@ -630,8 +722,61 @@ function CockpitWorkspace({
     setPinned((current) =>
       current.some((panel) => panel.id === id)
         ? current
-        : [...current, { id, companyId, kind }],
+        : [...current, { id, kind, mode: "pinned", companyId }],
     );
+  }
+
+  // Open (or reveal) a FOLLOW panel of `kind` (U-Ra): it tracks the view company.
+  // Only reachable when a view company is set (the palette gates the entries).
+  function openFollow(kind: PinnedKind) {
+    if (fillTargetRef.current) {
+      fillCell(fillTargetRef.current, { type: "follow", kind });
+      fillTargetRef.current = null;
+      setPaletteOpen(false);
+      return;
+    }
+    const id = followId(kind);
+    setPinned((current) =>
+      current.some((panel) => panel.id === id)
+        ? current
+        : [...current, { id, kind, mode: "follow" }],
+    );
+  }
+
+  // Toggle a company-scoped panel between following the view company and pinning a
+  // frozen company (U-Ra / D5). The panel's id changes, so the stale panel is
+  // removed from dockview (geometry loss for that one panel is acceptable) and the
+  // add-only reconciler re-adds the new id — the rest of the layout is untouched.
+  function togglePanelMode(panel: Pinned) {
+    if (panel.mode === "follow") {
+      // follow → pinned: freeze the current view company onto this panel.
+      if (!viewCompanyId) return;
+      const nextId = pinnedId(viewCompanyId, panel.kind);
+      dockRef.current?.removePanel(panel.id);
+      setPinned((current) => {
+        // If a pinned panel for this (kind, company) already exists, just drop the
+        // follow panel rather than create a duplicate id.
+        if (current.some((other) => other.id === nextId)) {
+          return current.filter((other) => other.id !== panel.id);
+        }
+        return current.map((other) =>
+          other.id === panel.id
+            ? { id: nextId, kind: panel.kind, mode: "pinned", companyId: viewCompanyId }
+            : other,
+        );
+      });
+    } else {
+      // pinned → follow: rejoin the view company. Blocked (and the tab button is
+      // disabled) when a follow panel of this kind already exists.
+      const nextId = followId(panel.kind);
+      if (pinned.some((other) => other.id === nextId)) return;
+      dockRef.current?.removePanel(panel.id);
+      setPinned((current) =>
+        current.map((other) =>
+          other.id === panel.id ? { id: nextId, kind: panel.kind, mode: "follow" } : other,
+        ),
+      );
+    }
   }
 
   function openGlobal(kind: GlobalKind) {
@@ -678,7 +823,12 @@ function CockpitWorkspace({
     );
     setPinned(
       companyId
-        ? preset.pinned.map((kind) => ({ id: pinnedId(companyId, kind), companyId, kind }))
+        ? preset.pinned.map((kind) => ({
+            id: pinnedId(companyId, kind),
+            kind,
+            mode: "pinned" as const,
+            companyId,
+          }))
         : [],
     );
     setOpenGlobals(preset.globals);
@@ -691,6 +841,8 @@ function CockpitWorkspace({
   function applyLayout(layout: CockpitLayout) {
     const panels = parsePanels(layout.panelsJson);
     if (!panels) return;
+    // A saved view carries its view company (U-Ra); the persisted value wins.
+    setViewCompanyId(panels.viewCompanyId);
     if (panels.grid) {
       // A composable grid view: render the fixed cols×rows cell grid (with any
       // saved per-cell fills), not the pinned/global/linked panel set.
@@ -738,6 +890,22 @@ function CockpitWorkspace({
       label: `${text("Show panel")}: ${linkedTitle(linked.kind, text)}`,
       run: () => showLinked(linked.id),
     })),
+    // Switch the whole view to a different company (U-Ra): follow panels retarget
+    // in place. Also reachable from the header selector.
+    ...companies.map((company) => ({
+      id: `viewcompany:${company.id}`,
+      label: `${text("Switch view company")}: ${company.qualifiedTicker}`,
+      run: () => setViewCompanyId(company.id),
+    })),
+    // Open (or reveal) a FOLLOW panel that tracks the view company — only offered
+    // once a view company is chosen (U-Ra / D2).
+    ...(viewCompanyId
+      ? PINNED_KINDS.map((kind) => ({
+          id: `follow:${kind}`,
+          label: `${text("Open panel")}: ${pinnedKindLabel(kind, text)}`,
+          run: () => openFollow(kind),
+        }))
+      : []),
     ...companies.flatMap((company) =>
       PINNED_KINDS.map((kind) => ({
         id: `open:${company.id}:${kind}`,
@@ -757,6 +925,10 @@ function CockpitWorkspace({
     })),
     { id: "reset", label: text("Reset layout"), run: resetLayout },
   ];
+
+  // Contribute the cockpit's no-target commands to the global ⌘K palette while the
+  // cockpit is mounted (v0.50 U6). Cell-fill arming stays on the local palette.
+  useCommandPaletteCommands("cockpit", commands);
 
   return (
     <section className="cockpit-screen" aria-label={text("Research cockpit")}>
@@ -791,6 +963,18 @@ function CockpitWorkspace({
           }
         />
         <div className="cockpit-add">
+          <SelectField
+            label={text("View company")}
+            value={viewCompanyId ?? ""}
+            onChange={(event) => setViewCompanyId(event.target.value || null)}
+          >
+            <option value="">—</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.qualifiedTicker} - {company.displayName}
+              </option>
+            ))}
+          </SelectField>
           <SelectField
             label={text("Preset")}
             value=""
@@ -866,6 +1050,7 @@ function FeedPanel({
   onSelect: (id: string) => void;
   text: (s: string) => string;
 }) {
+  const { locale } = useLocale();
   // Cockpit-native feed (decision: clean cockpit panels, not the controller-bound
   // Inbox list). A local title/company filter keeps a long feed scannable in a
   // narrow panel; selection still flows through the shared store (decision 6A).
@@ -911,7 +1096,7 @@ function FeedPanel({
             <span>{item.type}</span>
             <span>{item.source}</span>
             <TickerLabel value={item.company} />
-            <span className="cockpit-feed-time">{formatFeedTimestamp(item.time)}</span>
+            <span className="cockpit-feed-time num-tabular">{formatListTimestamp(item.time, locale)}</span>
           </span>
           <span className="cockpit-feed-title">{item.title}</span>
           {item.saved ? <StatusChip tone="accent">{text("Saved")}</StatusChip> : null}
@@ -928,6 +1113,7 @@ function InspectorPanel({
   item: FeedItem | null;
   text: (s: string) => string;
 }) {
+  const { locale } = useLocale();
   if (!item) {
     return <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>;
   }
@@ -946,7 +1132,7 @@ function InspectorPanel({
           <StatusChip>{item.source}</StatusChip>
           <StatusChip>{item.type}</StatusChip>
           {item.language ? <StatusChip>{item.language.toUpperCase()}</StatusChip> : null}
-          <span className="cockpit-inspector-time">{formatFeedTimestamp(item.time)}</span>
+          <span className="cockpit-inspector-time num-tabular">{formatListTimestamp(item.time, locale)}</span>
         </div>
         {item.attribution ? (
           <p className="cockpit-inspector-attribution">{item.attribution}</p>
@@ -979,8 +1165,15 @@ function InspectorPanel({
 // `FundamentalsPanel` from the Companies screen — the cockpit owns the state via
 // `useCockpitFundamentals` (which calls api/financials directly), so editing
 // works for any pinned company with no AppStateRoot coupling.
-function CockpitFundamentalsPanel({ companyId }: { companyId: string }) {
-  const props = useCockpitFundamentals(companyId);
+function CockpitFundamentalsPanel({
+  companyId,
+  revision,
+}: {
+  companyId: string;
+  // Bumped by a sibling report-documents extraction; forces a facts refetch.
+  revision: number;
+}) {
+  const props = useCockpitFundamentals(companyId, revision);
   return <FundamentalsPanel {...props} />;
 }
 

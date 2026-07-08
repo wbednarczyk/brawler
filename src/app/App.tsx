@@ -1,6 +1,7 @@
 import { AppStateRoot } from "./AppStateRoot";
 import type { Section } from "./navigation";
 import type { LicenseStatus } from "../api/types";
+import { ToastProvider } from "../ui";
 
 type AppProps = {
   initialLicenseStatus?: LicenseStatus | null;
@@ -11,7 +12,13 @@ type AppProps = {
 };
 
 export function App({ initialLicenseStatus, initialSection }: AppProps = {}) {
+  // ToastProvider mounts above AppStateRoot so the state controllers (called in
+  // AppStateRoot's body) can consume useToast for the undo-vs-confirm contract
+  // (ADR 0076 Decision 5). Its viewport renders locale-agnostic, pre-translated
+  // strings, so sitting above LocaleContext is fine.
   return (
-    <AppStateRoot initialLicenseStatus={initialLicenseStatus} initialSection={initialSection} />
+    <ToastProvider>
+      <AppStateRoot initialLicenseStatus={initialLicenseStatus} initialSection={initialSection} />
+    </ToastProvider>
   );
 }

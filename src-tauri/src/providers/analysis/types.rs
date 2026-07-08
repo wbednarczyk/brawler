@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 
 use crate::storage::{FeedItem, ResearchEvidenceItem};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug)]
@@ -38,6 +39,49 @@ pub struct ResearchDigestRequest {
     pub scope_type: String,
     pub scope_id: String,
     pub evidence_items: Vec<ResearchEvidenceItem>,
+}
+
+/// One agent qualitative-assessment request: a single quality-framework criterion
+/// judged for one company against app-held evidence only (ADR 0075).
+#[derive(Debug, Clone)]
+pub struct QualitativeAssessmentRequest {
+    pub company_id: String,
+    pub criterion_label: String,
+    pub assessment_guidance: String,
+    pub evidence_items: Vec<ResearchEvidenceItem>,
+    /// App locale code (`pl` | `en`) the prose output (reasoning, citation
+    /// labels) must be written in; verbatim evidence snippets stay in their
+    /// source language. Unknown codes degrade to English.
+    pub output_language: String,
+}
+
+/// Provider-neutral qualitative-assessment output parsed from the model's response
+/// (ADR 0075). One verdict for one criterion, grounded in cited app-held evidence.
+#[derive(Debug, Clone)]
+pub struct QualitativeAssessmentOutput {
+    /// `pass` | `partial` | `fail` | `insufficient_evidence` (the qualitative set).
+    pub verdict: String,
+    /// Short rationale; must contain no buy/sell/hold or allocation language.
+    pub reasoning: String,
+    /// `low` | `medium` | `high`.
+    pub confidence: String,
+    /// Typed evidence refs; every one must resolve to a supplied evidence id, else
+    /// the job rejects the response (uncited reasoning is never stored).
+    pub citations: Vec<QualitativeAssessmentCitation>,
+}
+
+/// One typed citation in a qualitative assessment — the `ai_research_brief_citations`
+/// reference model (ADR 0075). Serialized verbatim into `criterion_results.citations`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct QualitativeAssessmentCitation {
+    pub citation_key: String,
+    pub evidence_type: String,
+    pub evidence_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snippet: Option<String>,
 }
 
 #[derive(Debug, Clone)]

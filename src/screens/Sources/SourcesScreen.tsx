@@ -31,7 +31,6 @@ export function SourcesScreen() {
     refreshCompanyRegistry,
     setSourceEnabled,
     toggleSourceAdapter,
-    toggleSourceAdapterFromKeyboard,
     toggleCompanyRegistryList,
     toggleUnmatchedSourceItems,
     setCompanyRegistrySearch,
@@ -109,9 +108,6 @@ export function SourcesScreen() {
                   setCompanyRegistrySearch={setCompanyRegistrySearch}
                   toggleCompanyRegistryList={toggleCompanyRegistryList}
                   toggleSourceAdapter={toggleSourceAdapter}
-                  toggleSourceAdapterFromKeyboard={(event) =>
-                    toggleSourceAdapterFromKeyboard(event, adapter.id)
-                  }
                   toggleUnmatchedSourceItems={toggleUnmatchedSourceItems}
                 />
               ))}

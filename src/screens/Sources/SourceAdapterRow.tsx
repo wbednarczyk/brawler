@@ -37,7 +37,6 @@ type SourceAdapterRowProps = {
   setCompanyRegistrySearch: (value: string) => void;
   toggleCompanyRegistryList: () => void;
   toggleSourceAdapter: (adapterId: string) => void;
-  toggleSourceAdapterFromKeyboard: React.KeyboardEventHandler<HTMLElement>;
   toggleUnmatchedSourceItems: (adapterId: string) => void;
 };
 
@@ -65,7 +64,6 @@ export function SourceAdapterRow({
   setCompanyRegistrySearch,
   toggleCompanyRegistryList,
   toggleSourceAdapter,
-  toggleSourceAdapterFromKeyboard,
 }: SourceAdapterRowProps) {
   const { text } = useLocale();
   const isCompanyDirectorySource = adapter.sourceType === "company_registry";
@@ -73,19 +71,23 @@ export function SourceAdapterRow({
   return (
     <div className="source-row-block">
       <DenseRow
-        aria-label={`${text("Open source")}: ${adapter.displayName}`}
         className={["source-row", adapter.enabled ? "" : "source-row-disabled", selected ? "source-row-selected" : ""]
           .filter(Boolean)
           .join(" ")}
         disabled={!adapter.enabled}
-        onClick={() => toggleSourceAdapter(adapter.id)}
-        onKeyDown={toggleSourceAdapterFromKeyboard}
-        role="button"
+        interactive={false}
         selected={selected}
-        tabIndex={0}
-        title={`${text("Open")} ${adapter.displayName} ${text("details")}`}
       >
-        <div className="source-row-main">
+        {/* Primary action is a real <button>, not a role="button" on the row: the
+            enable toggle below is then a sibling control, not a nested interactive
+            inside a clickable row (ADR 0076 D9). */}
+        <button
+          type="button"
+          aria-label={`${text("Open source")}: ${adapter.displayName}`}
+          className="source-row-main"
+          onClick={() => toggleSourceAdapter(adapter.id)}
+          title={`${text("Open")} ${adapter.displayName} ${text("details")}`}
+        >
           <div className="source-title-line">
             <span
               className={adapter.enabled ? "status-dot status-ok" : "status-dot status-warn"}
@@ -102,14 +104,14 @@ export function SourceAdapterRow({
               <span className="membership-empty">{text("No markets")}</span>
             ) : null}
           </ChipList>
-        </div>
+        </button>
         <div className="source-row-status">
           <span className={`source-health source-health-${adapter.healthStatus}`}>
             <span aria-hidden="true" />
             {text(formatSourceHealth(adapter))}
           </span>
           {adapter.userConfigurable ? (
-            <label className="source-enable-control" onClick={(event) => event.stopPropagation()}>
+            <label className="source-enable-control">
               <input
                 aria-label={`${adapter.enabled ? text("Turn off") : text("Turn on")} ${adapter.displayName}`}
                 checked={adapter.enabled}
@@ -122,6 +124,21 @@ export function SourceAdapterRow({
               </span>
             </label>
           ) : null}
+        </div>
+        {/* Density contract (ADR 0076 D6): the schedule/settings summary folds at
+            S/short and shows inline from M up; the last-fetch diagnostics summary
+            is an extra column at L only. Both fold via container queries
+            (sources.css) — the detail values remain available in the expanded
+            detail panel below. */}
+        <div className="source-row-schedule" aria-label={text("Schedule")}>
+          <span className="source-row-meta-value">{text(formatSourceScheduler(adapter))}</span>
+          <span className="source-row-meta-value source-row-meta-muted">{formatNextRefresh(adapter)}</span>
+        </div>
+        <div className="source-row-diagnostics" aria-label={text("Last fetch")}>
+          <span className="source-row-meta-value">{formatTimestamp(adapter.lastAttemptAt, text("Never"))}</span>
+          <span className="source-row-meta-value source-row-meta-muted">
+            {text(formatSourceLastResult(adapter))}
+          </span>
         </div>
       </DenseRow>
       {selected ? (

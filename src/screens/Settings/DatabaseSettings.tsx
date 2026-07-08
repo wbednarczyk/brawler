@@ -26,7 +26,7 @@ export function DatabaseSettings({
 
   return (
     <section className="settings-group" aria-labelledby="settings-database-title">
-      <h2 id="settings-database-title">{text("Database")}</h2>
+      <h2 id="settings-database-title">{text("Data storage")}</h2>
       <p className="settings-note">
         {text("Advanced connection-pool tuning. Changes apply on the next app launch.")}
       </p>

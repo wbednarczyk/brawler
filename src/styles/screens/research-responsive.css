@@ -1,7 +1,7 @@
 @media (max-width: 1380px) {
   .research-workspace {
-    padding: 12px;
-    gap: 10px;
+    padding: var(--space-3);
+    gap: var(--space-3);
   }
 
   .research-toolbar {
@@ -18,7 +18,7 @@
 
   .research-main-layout {
     grid-template-columns: minmax(0, 1fr) 8px minmax(320px, 0.9fr);
-    gap: 8px;
+    gap: var(--space-2);
   }
 
   .research-aside {
@@ -36,7 +36,7 @@
   .research-reminders,
   .research-questions,
   .research-timeline-shell {
-    padding: 7px;
+    padding: var(--space-2);
   }
 
   .research-reminder-list {
@@ -45,11 +45,11 @@
 
   .research-reminder-row {
     grid-template-columns: minmax(0, 1fr) auto;
-    padding: 5px 6px;
+    padding: var(--space-1) var(--space-2);
   }
 
   .research-reminder-actions {
-    gap: 4px;
+    gap: var(--space-1);
   }
 
   .research-question-card-list {
@@ -111,5 +111,141 @@
 
   .research-company-queue {
     max-height: 220px;
+  }
+}
+
+/* U7-D density contract (ADR 0076 D6) — driven by the hosting `pane` size
+   container (.cockpit-pane / .workspace), NOT the window. The tiers:
+   S (<420) tabs + timeline (chips only) · M (420–759) + review-queue strip ·
+   L (>=760) + questions/reminders columns · short (<480h) summary + timeline. */
+
+/* M+ reveals the review-queue (reminders) section in place of its chip. */
+@container pane (min-width: 420px) {
+  .research-fold[data-fold="m"] > .research-fold-chip {
+    display: none;
+  }
+
+  .research-fold[data-fold="m"] > .research-fold-body {
+    display: block;
+  }
+}
+
+/* L reveals the questions section (and any other L-tier fold). */
+@container pane (min-width: 760px) {
+  .research-fold[data-fold="l"] > .research-fold-chip {
+    display: none;
+  }
+
+  .research-fold[data-fold="l"] > .research-fold-body {
+    display: block;
+  }
+}
+
+/* Below L the AI-brief aside and watchlist queue can no longer share the row —
+   collapse the split layouts to a single column so nothing overlaps the pane
+   (the audit's "rows overlapping the reminder button"). The workspace scrolls
+   vertically and the timeline keeps a definite min-height so its `1fr` track
+   never collapses to zero inside the now auto-height stack. */
+@container pane (max-width: 759px) {
+  .research-workspace {
+    grid-template-rows: auto auto auto;
+    overflow-y: auto;
+  }
+
+  .research-main-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .research-main-layout > .research-resizer {
+    display: none;
+  }
+
+  .research-main-stack.company,
+  .research-main-stack.watchlist {
+    grid-template-rows: auto;
+  }
+
+  .research-review-region,
+  .research-timeline-shell {
+    min-height: 220px;
+  }
+
+  .research-review-layout {
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 220px;
+  }
+
+  .research-review-layout > .research-resizer {
+    display: none;
+  }
+
+  .research-aside {
+    grid-template-rows: minmax(200px, auto);
+    min-height: 200px;
+  }
+
+  .research-company-queue {
+    max-height: 200px;
+  }
+}
+
+/* S width: tabs + timeline only — the evidence-type filter chips and toggles fold
+   away (keeping the mode tabs + scope select), and the AI-brief aside and
+   watchlist queue fold away too (reachable by widening the pane). Folds stay chips
+   (mobile-first default). */
+@container pane (max-width: 419px) {
+  .research-filter-group,
+  .research-toggle,
+  .research-aside,
+  .research-company-queue {
+    display: none;
+  }
+}
+
+/* short (<480h): summary counts + timeline only. Re-fold every section behind its
+   chip (unless expanded in place); drop the aside + queue so no fixed-height
+   artifact exceeds the short pane; and reclaim vertical budget by folding the
+   filter chips/toggles and tightening padding so the timeline is never starved to
+   zero height (the audit's collapsed short cell). */
+@container pane (max-height: 479px) {
+  .research-workspace {
+    grid-template-rows: auto auto auto;
+    padding: var(--space-2) var(--space-3) var(--space-3);
+    gap: var(--space-2);
+    overflow-y: auto;
+  }
+
+  .research-main-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .research-main-layout > .research-resizer {
+    display: none;
+  }
+
+  .research-main-stack.company,
+  .research-main-stack.watchlist {
+    grid-template-rows: auto;
+  }
+
+  .research-review-region,
+  .research-review-layout,
+  .research-timeline-shell {
+    min-height: 180px;
+  }
+
+  .research-filter-group,
+  .research-toggle,
+  .research-aside,
+  .research-company-queue {
+    display: none;
+  }
+
+  .research-fold:not([data-expanded]) > .research-fold-chip {
+    display: inline-flex;
+  }
+
+  .research-fold:not([data-expanded]) > .research-fold-body {
+    display: none;
   }
 }

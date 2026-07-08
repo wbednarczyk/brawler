@@ -76,11 +76,11 @@ p {
 }
 
 h1 {
-  font-size: 26px;
+  font-size: var(--font-xl);
 }
 
 .detail-pane p {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   color: var(--muted);
   line-height: 1.5;
 }

@@ -19,7 +19,7 @@ export function TranscriptRuntimeStrip({
 
   return (
     <InfoGrid
-      ariaLabel={text("Transcript runtime settings")}
+      ariaLabel={text("Transcript engine settings")}
       className="transcript-runtime-strip"
       items={[
         { label: text("Provider"), value: formatAiProvider(settings?.aiProviders.youtubeTranscriptionProvider) },

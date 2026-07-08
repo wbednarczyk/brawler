@@ -166,6 +166,60 @@
           "expectContains": { "mode": "off" }
         }
       ]
+    },
+    {
+      "name": "qualitative criterion create + empty current-state read (ADR 0075)",
+      "steps": [
+        {
+          "command": "create_quality_framework",
+          "input": { "input": { "name": "Qual Fidelity", "description": null } },
+          "capture": "fid",
+          "expectField": { "name": "Qual Fidelity" }
+        },
+        {
+          "command": "create_framework_criterion",
+          "input": {
+            "input": {
+              "frameworkId": "$fid",
+              "label": "Wide moat",
+              "expression": "",
+              "weight": null,
+              "partialBand": null,
+              "kind": "qualitative",
+              "assessmentGuidance": "Assess durable competitive advantage."
+            }
+          },
+          "capture": "crit",
+          "expectField": {
+            "kind": "qualitative",
+            "assessmentGuidance": "Assess durable competitive advantage.",
+            "expression": ""
+          }
+        },
+        {
+          "command": "get_qualitative_assessment",
+          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } },
+          "expectAbsent": { "source": "agent" }
+        },
+        {
+          "command": "get_qualitative_assessment_status",
+          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } },
+          "expectField": { "status": "idle" }
+        },
+        {
+          "command": "run_qualitative_assessment",
+          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } }
+        },
+        {
+          "command": "rerun_qualitative_criterion",
+          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid", "criterionId": "$crit" } }
+        },
+        {
+          "command": "get_qualitative_assessment",
+          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } },
+          "expectAbsent": { "source": "agent" }
+        }
+      ]
     }
   ]
 }

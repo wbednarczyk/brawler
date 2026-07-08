@@ -4,6 +4,31 @@
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+
+  /* ADR 0076 Decision 1 — spacing scale (4px grid). The only allowed spacing steps. */
+  --space-0: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* ADR 0076 Decision 2 — type scale. The only allowed font sizes. */
+  --font-2xs: 10px;
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-base: 13px;
+  --font-md: 14px;
+  --font-lg: 16px;
+  --font-xl: 20px;
+
+  /* ADR 0076 Decision 2 — line-height, set once here (not per rule). */
+  --line-body: 1.45;
+  --line-heading: 1.25;
+  --line-numeric: 1.2;
 }
 
 html,
@@ -31,6 +56,7 @@ body {
   max-height: 100%;
   overflow: hidden;
   overscroll-behavior: none;
+  line-height: var(--line-body);
   background:
     radial-gradient(circle at 50% -20%, color-mix(in srgb, var(--primary) 32%, transparent), transparent 30rem),
     radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--secondary) 22%, transparent), transparent 24rem),
@@ -57,4 +83,19 @@ button:disabled,
 select:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  line-height: var(--line-heading);
+}
+
+/* ADR 0076 Decision 2/4 — numeric columns/tiles align digits (U1 applies the class). */
+.num-tabular {
+  font-variant-numeric: tabular-nums;
+  line-height: var(--line-numeric);
 }

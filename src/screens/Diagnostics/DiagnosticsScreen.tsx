@@ -348,6 +348,11 @@ export function DiagnosticsScreen({
                           <InfoGrid
                             className="settings-grid"
                             items={[
+                              // U7-E2 density (ADR 0076 D6): module + severity live
+                              // here so they stay reachable when the S-tier row
+                              // collapses to message + timestamp.
+                              { label: text("Module"), value: event.module },
+                              { label: text("Severity"), value: event.severity },
                               { label: text("Scope"), value: formatScope(event) },
                               { label: text("Created"), value: event.createdAt },
                             ]}

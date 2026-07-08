@@ -1,4 +1,4 @@
-import { test, expect, openApp, acceptDialogs } from "./helpers/harness";
+import { test, expect, openApp } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Clickable Watchlists CRUD journeys against the stateful browser mock runtime
@@ -65,8 +65,9 @@ test.describe("watchlists", { tag: "@clickable" }, () => {
     await expect(watchlistRows(page).filter({ hasText: "Renamed list" })).toBeVisible();
     await expect(watchlistRows(page).filter({ hasText: "Temp list" })).toHaveCount(0);
 
-    // Delete — confirms via window.confirm, then the row disappears (stateful).
-    acceptDialogs(page);
+    // Delete — an in-place InlineConfirm (ADR 0076 D5), not a native dialog:
+    // open then confirm, and the row disappears (stateful).
+    await detail.getByRole("button", { name: "Delete" }).click();
     await detail.getByRole("button", { name: "Delete" }).click();
     await expect(watchlistRows(page).filter({ hasText: "Renamed list" })).toHaveCount(0);
   });

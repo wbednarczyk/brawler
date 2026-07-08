@@ -107,11 +107,16 @@ ts_union!(ResearchReminderStatus {
 
 // --- Quality frameworks (ADR 0046) ---
 
+// Adds `insufficient_evidence` (ADR 0075): the agent-assessed qualitative
+// verdict for "not enough app-held evidence to judge", distinct from the
+// quantitative `unavailable` ("metric could not be computed"). Stored as a raw
+// `String` on the agent rows, so the union is the only thing pinning the value.
 ts_union!(CriterionVerdict {
     Pass,
     Partial,
     Fail,
     Unavailable,
+    InsufficientEvidence,
 });
 
 // --- Management claims (ADR 0040) ---

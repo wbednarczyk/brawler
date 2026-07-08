@@ -48,7 +48,6 @@ type TranscriptControllerInput = {
   transcriptDescriptionDraftByJobId: Record<string, string>;
   transcriptJobForm: TranscriptJobForm;
   transcriptNoteForm: NotebookForm;
-  text: (value: string) => string;
 };
 
 const missingGeminiCredentialMessage =
@@ -93,7 +92,6 @@ export function useTranscriptController({
   transcriptDescriptionDraftByJobId,
   transcriptJobForm,
   transcriptNoteForm,
-  text,
 }: TranscriptControllerInput) {
   function refreshTranscriptJobs(companyId: string | null = null) {
     return transcriptsApi.listVideoTranscriptJobs({ companyId })
@@ -269,16 +267,10 @@ export function useTranscriptController({
       });
   }
 
+  // Cascading (ADR 0076 D5): deleting a transcript job also removes its stored
+  // segments, which cannot be faithfully re-created, so the confirm gate is an
+  // InlineConfirm at the row call site.
   function deleteTranscriptJob(job: TranscriptJob) {
-    const label = job.sourceLabel ?? job.sourceUrl;
-    const confirmed = window.confirm(
-      `${text("Delete transcript job")} "${label}"? ${text("Stored transcript segments for this job will also be removed.")}`,
-    );
-
-    if (!confirmed) {
-      return;
-    }
-
     setTranscriptDeleteInFlight(job.id);
     void transcriptsApi.deleteVideoTranscriptJob(job.id)
       .then(() => {

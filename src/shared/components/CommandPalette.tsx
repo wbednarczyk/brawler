@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { Modal, SearchField } from "../../ui";
 
-// Cockpit command palette (ADR 0053, phase 3) — the keyboard-first panel
-// launcher (⌘K). Commands are supplied by the cockpit: open a company panel,
-// re-show a closed linked panel, load a saved layout, or reset. Extracted from
-// CockpitScreen so the launcher is a self-contained, testable unit and can be
-// shared with the v0.48.0 global command-palette work. Filter + arrow/enter
-// keyboard nav live here; the command set lives with the cockpit.
+// Shared command palette — the keyboard-first launcher (⌘K). A self-contained,
+// controlled presentation unit: it renders a filtered, arrow/enter-navigable
+// list of {id,label,run} commands inside a Modal. The command set is supplied
+// by the caller — the global palette (src/app/commandPalette.tsx, mounted in
+// AppShell) feeds it the merged app + contextual list; the cockpit still mounts
+// its own instance for the cell-fill flows. Filter + keyboard nav live here.
 
 export type PaletteCommand = { id: string; label: string; run: () => void };
 

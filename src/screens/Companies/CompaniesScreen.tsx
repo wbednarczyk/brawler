@@ -4,7 +4,7 @@ import type { Company, CompanyForm, CompanyRegistryEntry, Watchlist, WatchlistMe
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { useCompaniesViewModel } from "../../app/state/screenViewModels";
-import { Button, ClearButton, DenseRow, EmptyState, ErrorText, PanelHeader, SearchField, TextField } from "../../ui";
+import { Button, ClearButton, DenseRow, EmptyState, ErrorText, InlineConfirm, PanelHeader, SearchField, TextField } from "../../ui";
 import { CompanySettingsManager } from "./CompanySettingsManager";
 
 type CompanyFieldRefs = MutableRefObject<Record<keyof CompanyForm, HTMLInputElement | null>>;
@@ -69,6 +69,8 @@ export function CompaniesScreen() {
   } = useCompaniesViewModel();
   const { t, text } = useLocale();
   const [settingsMode, setSettingsMode] = useState(false);
+  // Irreversible/cascading (ADR 0076 D5): confirm a company delete in place.
+  const [confirmDeleteCompanyId, setConfirmDeleteCompanyId] = useState<string | null>(null);
 
   return (
     <section className="feed-panel" aria-labelledby="companies-title">
@@ -241,7 +243,6 @@ export function CompaniesScreen() {
             {filteredCompanies.map((company) => (
               <div className="company-row-block" key={company.id}>
                 <DenseRow
-                  aria-label={`${text("Open")} ${company.qualifiedTicker} ${text("dashboard")}`}
                   className={[
                     "company-row",
                     selectedCompany?.id === company.id ? "company-row-selected" : "",
@@ -249,19 +250,26 @@ export function CompaniesScreen() {
                     .filter(Boolean)
                     .join(" ")}
                   data-company-id={company.id}
-                  data-company-row="true"
-                  onClick={() => openCompanyWorkspace(company)}
-                  onKeyDown={(event) => openCompanyWorkspaceFromKeyboard(event, company)}
-                  role="button"
+                  interactive={false}
                   selected={selectedCompany?.id === company.id}
-                  tabIndex={0}
-                  title={`${text("Open")} ${company.qualifiedTicker} ${text("dashboard")}`}
                 >
-                  <div className="company-row-main">
+                  {/* Primary action is a real <button>, not a role="button" on the
+                      row: keeps the row axe-clean (aria-allowed-role) and lets the
+                      secondary controls below sit as siblings, not nested
+                      interactives (ADR 0076 D9). */}
+                  <button
+                    type="button"
+                    aria-label={`${text("Open")} ${company.qualifiedTicker} ${text("dashboard")}`}
+                    className="company-row-main"
+                    data-company-row="true"
+                    onClick={() => openCompanyWorkspace(company)}
+                    onKeyDown={(event) => openCompanyWorkspaceFromKeyboard(event, company)}
+                    title={`${text("Open")} ${company.qualifiedTicker} ${text("dashboard")}`}
+                  >
                     <h2><TickerLabel value={company.qualifiedTicker} /></h2>
                     <p>{company.displayName}</p>
-                  </div>
-                  <div className="company-row-context" onClick={(event) => event.stopPropagation()}>
+                  </button>
+                  <div className="company-row-context">
                     <div
                       className="membership-list"
                       aria-label={`${text("Watchlist memberships for")} ${company.qualifiedTicker}`}
@@ -283,14 +291,28 @@ export function CompaniesScreen() {
                     </div>
                     <div className="company-row-actions">
                       <span>{company.isin ?? text("No ISIN")}</span>
-                      <Button
-                        className="danger-button"
-                        onClick={() => deleteCompany(company)}
-                        title={`${text("Delete")} ${company.qualifiedTicker}`}
-                        variant="icon"
-                      >
-                        <Trash2 size={16} />
-                      </Button>
+                      {confirmDeleteCompanyId === company.id ? (
+                        <InlineConfirm
+                          cancelLabel={text("Cancel")}
+                          confirmLabel={text("Delete")}
+                          onCancel={() => setConfirmDeleteCompanyId(null)}
+                          onConfirm={() => {
+                            setConfirmDeleteCompanyId(null);
+                            deleteCompany(company);
+                          }}
+                        >
+                          {`${text("Delete")} ${company.qualifiedTicker} ${text("from tracked companies?")}`}
+                        </InlineConfirm>
+                      ) : (
+                        <Button
+                          className="danger-button"
+                          onClick={() => setConfirmDeleteCompanyId(company.id)}
+                          title={`${text("Delete")} ${company.qualifiedTicker}`}
+                          variant="icon"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </DenseRow>

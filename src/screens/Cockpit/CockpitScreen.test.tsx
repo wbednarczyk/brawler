@@ -8,6 +8,7 @@ import {
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
+import { parsePanels } from "./CockpitScreen";
 
 describe("Research cockpit shell", () => {
   it("is not the default shell and has no standalone blank nav entry (ADR 0057 decision 5)", async () => {
@@ -56,7 +57,7 @@ describe("Research cockpit shell", () => {
     expect(qualityTabs.length).toBeGreaterThan(0);
   });
 
-  it("opens a company directly into its curated dashboard panels (ADR 0057)", async () => {
+  it("opens a company directly into its curated dashboard as FOLLOW panels with unprefixed titles (U-Ra)", async () => {
     const user = userEvent.setup();
     renderApp();
 
@@ -64,10 +65,16 @@ describe("Research cockpit shell", () => {
     await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
 
     const cockpit = await screen.findByLabelText("Research cockpit");
-    // The dashboard renders the company-scoped panels (not the default linked
-    // triad) — so its tabs are present and the linked Inspector is not.
-    expect((await within(cockpit).findAllByRole("button", { name: /· Fundamentals/ })).length).toBeGreaterThan(0);
-    expect(within(cockpit).getAllByRole("button", { name: /· Notebook/ }).length).toBeGreaterThan(0);
+    // The dashboard renders company-scoped FOLLOW panels: their tab titles are
+    // kind-only (the header selector carries the company context), NOT prefixed
+    // with the ticker (D4), and the linked Inspector stays closed.
+    expect(await within(cockpit).findByRole("button", { name: "Fundamentals" })).toBeInTheDocument();
+    expect(within(cockpit).getByRole("button", { name: "Notebook" })).toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: /GPW:CDR · Fundamentals/ })).toBeNull();
+    // The view-company selector reflects the opened company (D2).
+    expect((within(cockpit).getByLabelText("View company") as HTMLSelectElement).value).toBe(
+      "company_gpw_cdr",
+    );
     expect(within(cockpit).queryByRole("button", { name: "Inspector" })).not.toBeInTheDocument();
   });
 
@@ -227,5 +234,170 @@ describe("Research cockpit shell", () => {
     expect(
       await screen.findByRole("button", { name: "Load layout: Deep dive" }),
     ).toBeInTheDocument();
+  });
+});
+
+// U-Ra (ADR 0076): a cockpit view carries one "view company"; company-scoped
+// panels follow it by default and retarget in place on switch; a single panel may
+// pin a different company; saved views persist the context.
+describe("Research cockpit — view company context (U-Ra)", () => {
+  async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
+    renderApp();
+    await user.click(await screen.findByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+    return screen.findByLabelText("Research cockpit");
+  }
+
+  it("retargets a FOLLOW panel's content in place when the view company changes", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+
+    // The follow Feed panel shows CD PROJEKT's feed item at first.
+    expect(
+      await within(cockpit).findByRole("button", {
+        name: "Open company feed item: Current report placeholder for watchlist company",
+      }),
+    ).toBeInTheDocument();
+    // Tab stays kind-only (no ticker prefix).
+    expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
+
+    // Switch the view company via the header selector.
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
+
+    // Content retargets in place to KGHM; the tab title is still kind-only "Feed".
+    expect(
+      await within(cockpit).findByRole("button", {
+        name: "Open company feed item: Transcript-derived note candidate waits for future provider work",
+      }),
+    ).toBeInTheDocument();
+    expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
+    expect(
+      within(cockpit).queryByRole("button", {
+        name: "Open company feed item: Current report placeholder for watchlist company",
+      }),
+    ).toBeNull();
+  });
+
+  it("keeps a PINNED panel frozen on its company across a view-company switch", async () => {
+    const user = userEvent.setup();
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+
+    // Open a PINNED CDR Feed panel from the palette (per-company entries pin).
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "Open panel: GPW:CDR · Feed");
+    await user.click(await screen.findByRole("button", { name: "Open panel: GPW:CDR · Feed" }));
+    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+
+    // Set the view company to KGH — the pinned panel must not move.
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
+    await waitFor(() => {
+      expect(within(cockpit).getByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+    });
+    expect(
+      within(cockpit).getByRole("button", {
+        name: "Open company feed item: Current report placeholder for watchlist company",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("pins a follow panel to the current company and rejoins the view company", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+
+    // The follow Feed panel offers a pin affordance on its own tab (each follow
+    // tab has a "Pin company" button, so scope to the Feed tab specifically).
+    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
+      ".cockpit-tab",
+    ) as HTMLElement;
+    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
+
+    // follow → pinned freezes CD PROJEKT: the tab gains the ticker prefix.
+    expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+
+    // Switching the view company leaves the now-pinned panel on CD PROJEKT.
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_kgh");
+    await waitFor(() => {
+      expect(within(cockpit).getByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
+    });
+
+    // pinned → follow rejoins the view company (now KGH): kind-only title returns.
+    await user.click(within(cockpit).getByRole("button", { name: "Follow view company" }));
+    expect(await within(cockpit).findByRole("button", { name: "Feed" })).toBeInTheDocument();
+    expect(within(cockpit).queryByRole("button", { name: "GPW:CDR · Feed" })).toBeNull();
+    expect(
+      await within(cockpit).findByRole("button", {
+        name: "Open company feed item: Transcript-derived note candidate waits for future provider work",
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it("lists a 'Switch view company' palette entry that changes the view company", async () => {
+    const user = userEvent.setup();
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "Switch view company: GPW:KGH");
+    await user.click(await screen.findByRole("button", { name: "Switch view company: GPW:KGH" }));
+
+    await waitFor(() => {
+      expect((within(cockpit).getByLabelText("View company") as HTMLSelectElement).value).toBe(
+        "company_gpw_kgh",
+      );
+    });
+  });
+});
+
+describe("parsePanels (U-Ra persistence)", () => {
+  it("round-trips viewCompanyId and per-panel modes", () => {
+    const descriptor = {
+      pinned: [
+        { id: "follow:fundamentals", kind: "fundamentals", mode: "follow" },
+        {
+          id: "claims:company_gpw_cdr",
+          kind: "claims",
+          mode: "pinned",
+          companyId: "company_gpw_cdr",
+        },
+      ],
+      openGlobals: [],
+      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+      selectedFeedItemId: null,
+      grid: null,
+      cells: null,
+      viewCompanyId: "company_gpw_kgh",
+    };
+    const parsed = parsePanels(JSON.stringify(descriptor));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.viewCompanyId).toBe("company_gpw_kgh");
+    expect(parsed?.pinned).toEqual([
+      { id: "follow:fundamentals", kind: "fundamentals", mode: "follow" },
+      {
+        id: "claims:company_gpw_cdr",
+        kind: "claims",
+        mode: "pinned",
+        companyId: "company_gpw_cdr",
+      },
+    ]);
+  });
+
+  it("parses a legacy descriptor (no mode / no viewCompanyId) as all-pinned with null view company", () => {
+    const legacy = JSON.stringify({
+      pinned: [{ id: "fundamentals:company_gpw_cdr", kind: "fundamentals", companyId: "company_gpw_cdr" }],
+      openGlobals: [],
+      closedLinked: ["feed", "inspector", "claims-sel", "diff-sel"],
+      selectedFeedItemId: null,
+    });
+    const parsed = parsePanels(legacy);
+    expect(parsed?.viewCompanyId).toBeNull();
+    expect(parsed?.pinned).toEqual([
+      {
+        id: "fundamentals:company_gpw_cdr",
+        kind: "fundamentals",
+        mode: "pinned",
+        companyId: "company_gpw_cdr",
+      },
+    ]);
   });
 });

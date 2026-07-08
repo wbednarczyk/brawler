@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpenText, Maximize2, Plus, Save, X } from "lucide-react";
+import { ArrowLeft, BookOpenText, Maximize2, Plus, Save, X } from "lucide-react";
 import type { Company, NotebookEntry } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
@@ -82,6 +82,7 @@ export function CompanyNotebookSection({
     <div className="company-tab-panel notebook-panel" aria-label={text("Company notebook")}>
       <SectionHeader
         level="h3"
+        paneLead
         title={text("Notebook")}
         description={
           <>
@@ -181,7 +182,7 @@ export function CompanyNotebookSection({
         </form>
       ) : null}
 
-      <div className="notebook-workspace">
+      <div className="notebook-workspace" {...(selectedNotebookEntry ? { "data-detail-open": "" } : {})}>
         <div className="notebook-list" aria-label={text("Notebook entries")}>
           {notebookEntries.map((entry) => (
             <button
@@ -220,6 +221,18 @@ export function CompanyNotebookSection({
           aria-label={text("Notebook entry detail")}
           onSubmit={saveNotebookEntry}
         >
+          {selectedNotebookEntry ? (
+            <Button
+              className="notebook-back-to-list"
+              type="button"
+              variant="minimal"
+              onClick={() => setSelectedNotebookEntryId(null)}
+              aria-label={text("Back to note list")}
+            >
+              <ArrowLeft size={15} />
+              {text("Back")}
+            </Button>
+          ) : null}
           {selectedNotebookEntry ? (
             notebookEditMode ? (
               <>

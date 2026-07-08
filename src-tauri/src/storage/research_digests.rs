@@ -1,11 +1,10 @@
-use std::collections::HashSet;
-
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    research, research_reminders, slug_part, NewResearchBriefCitation, ResearchEvidenceInput,
-    ResearchEvidenceItem, ResearchReminderListInput, StorageError, StorageResult,
+    quality_frameworks, research, research_reminders, slug_part, NewResearchBriefCitation,
+    ResearchEvidenceInput, ResearchEvidenceItem, ResearchReminderListInput, StorageError,
+    StorageResult,
 };
 
 pub const RESEARCH_DIGEST_PROMPT_VERSION: &str = "m31.research_digest.v1";
@@ -203,6 +202,41 @@ pub(super) fn get_research_digest_job(
     Ok(job)
 }
 
+/// Build a synthetic digest evidence row — one not produced by the timeline SQL
+/// but injected by the collector (open reminders and qualitative framework-verdict
+/// changes). `source_url` is always `None` for synthetic items; `review_state` is
+/// supplied by the caller because it differs by kind: reminders are always-visible,
+/// while framework verdicts are gated on the company review checkpoint (F4).
+#[allow(clippy::too_many_arguments)]
+fn synthetic_evidence_item(
+    id: String,
+    evidence_type: &str,
+    source_domain: &str,
+    source_id: String,
+    company_id: String,
+    occurred_at: String,
+    title: String,
+    summary: Option<String>,
+    attribution: Option<String>,
+    trust_category: &str,
+    review_state: super::ResearchEvidenceReviewState,
+) -> ResearchEvidenceItem {
+    ResearchEvidenceItem {
+        id,
+        evidence_type: evidence_type.to_owned(),
+        source_domain: source_domain.to_owned(),
+        source_id,
+        company_id,
+        occurred_at,
+        title,
+        summary,
+        source_url: None,
+        attribution,
+        trust_category: trust_category.to_owned(),
+        review_state,
+    }
+}
+
 pub(super) fn collect_research_digest_evidence(
     connection: &Connection,
     job_id: &str,
@@ -244,29 +278,98 @@ pub(super) fn collect_research_digest_evidence(
     timeline
         .items
         .extend(reminders.into_iter().take(40).map(|reminder| {
-            ResearchEvidenceItem {
-                id: format!("evidence_reminder_{}", reminder.id),
-                evidence_type: "reminder".to_owned(),
-                source_domain: "research".to_owned(),
-                source_id: reminder.id,
-                company_id: reminder
+            synthetic_evidence_item(
+                format!("evidence_reminder_{}", reminder.id),
+                "reminder",
+                "research",
+                reminder.id,
+                reminder
                     .company_id
                     .unwrap_or_else(|| reminder.scope_id.clone()),
-                occurred_at: reminder
+                reminder
                     .due_at
                     .clone()
                     .unwrap_or_else(|| reminder.updated_at.clone()),
-                title: reminder.title,
-                summary: Some(reminder.body),
-                source_url: None,
-                attribution: reminder.source_type,
-                trust_category: "user_note".to_owned(),
-                review_state: super::ResearchEvidenceReviewState {
+                reminder.title,
+                Some(reminder.body),
+                reminder.source_type,
+                "user_note",
+                // Reminders are always-visible in the digest (unbounded by review).
+                super::ResearchEvidenceReviewState {
                     changed_since_company_review: true,
                     changed_since_watchlist_review: true,
                 },
-            }
+            )
         }));
+
+    // Qualitative verdict changes (ADR 0075 Decision 5, §T6c): for a company
+    // digest, surface each criterion whose agent verdict changed since its
+    // previous assessment as a synthetic `framework_verdict` evidence item. Scope
+    // is company-only (watchlist digests aggregate per-company evidence; a
+    // watchlist roll-up of framework changes is a follow-up).
+    if job.scope_type == "company" {
+        // F4: bound synthetic `framework_verdict` items by the SAME review-checkpoint
+        // semantics real timeline evidence uses. A verdict change is included only
+        // when its `changed_at` is strictly newer than the company's active review
+        // checkpoint — the very checkpoint `changed_since_active_review` consults via
+        // `review_checkpoint_timestamp` / `changed_since_checkpoint`. No checkpoint
+        // recorded ⇒ everything is unreviewed ⇒ include. Without this bound, a
+        // one-time pass→fail change would re-emit into every subsequent (user-
+        // rerunnable) digest and "mark reviewed" could never suppress it.
+        let company_checkpoint =
+            research::review_checkpoint_timestamp(connection, "company", &job.scope_id)?;
+        for framework in
+            quality_frameworks::frameworks_with_qualitative_assessments(connection, &job.scope_id)?
+        {
+            for change in quality_frameworks::qualitative_verdict_changes(
+                connection,
+                &framework.framework_id,
+                &job.scope_id,
+            )? {
+                let changed_since_company_review = research::changed_since_checkpoint(
+                    &change.changed_at,
+                    company_checkpoint.as_deref(),
+                );
+                if !changed_since_company_review {
+                    continue;
+                }
+                timeline.items.push(synthetic_evidence_item(
+                    format!(
+                        "evidence_framework_verdict_{}_{}",
+                        framework.framework_id, change.criterion_id
+                    ),
+                    "framework_verdict",
+                    "quality_frameworks",
+                    change.criterion_id.clone(),
+                    job.scope_id.clone(),
+                    change.changed_at.clone(),
+                    format!(
+                        "{} verdict changed: {} → {}",
+                        change.label, change.previous_verdict, change.current_verdict
+                    ),
+                    Some(format!(
+                        "{} — {} changed from {} to {}.",
+                        framework.framework_name,
+                        change.label,
+                        change.previous_verdict,
+                        change.current_verdict
+                    )),
+                    Some(framework.framework_name.clone()),
+                    "ai_generated",
+                    super::ResearchEvidenceReviewState {
+                        // The change survived the checkpoint filter above, so this is
+                        // honestly `true` (computed, not hardcoded). The watchlist flag
+                        // mirrors the reminder path (always-visible in the aggregate):
+                        // framework verdicts are company-scoped and don't gate a
+                        // watchlist digest.
+                        changed_since_company_review,
+                        changed_since_watchlist_review: true,
+                    },
+                ));
+            }
+        }
+    }
+
     Ok(ResearchDigestEvidenceContext {
         scope_type: job.scope_type,
         scope_id: job.scope_id,
@@ -422,10 +525,8 @@ pub fn completed_digest_from_provider_output(
     evidence_items: &[ResearchEvidenceItem],
     output: crate::providers::analysis::ResearchBriefProviderOutput,
 ) -> Result<CompletedResearchDigest, String> {
-    let evidence_refs = evidence_items
-        .iter()
-        .map(|item| (item.evidence_type.clone(), item.source_id.clone()))
-        .collect::<HashSet<_>>();
+    // Shared citation-integrity reference set (single home: research module).
+    let evidence_refs = research::supplied_evidence_refs(evidence_items);
     if output.sections.is_empty() {
         return Err("Research digest did not include sections.".to_owned());
     }
@@ -433,9 +534,11 @@ pub fn completed_digest_from_provider_output(
         .citations
         .into_iter()
         .map(|citation| {
-            if !evidence_refs
-                .contains(&(citation.evidence_type.clone(), citation.evidence_id.clone()))
-            {
+            if !research::citation_resolves(
+                &evidence_refs,
+                &citation.evidence_type,
+                &citation.evidence_id,
+            ) {
                 return Err(format!(
                     "Research digest citation {} references unavailable evidence.",
                     citation.citation_key

@@ -5,16 +5,16 @@
 .source-group {
   display: grid;
   align-content: start;
-  gap: 4px;
-  padding: 0 0 5px;
+  gap: var(--space-1);
+  padding: 0 0 var(--space-1);
 }
 
 .source-group-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 2px 6px;
+  gap: var(--space-2);
+  padding: var(--space-0) var(--space-2);
   border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
   border-left: 2px solid var(--primary);
   border-radius: 5px;
@@ -25,14 +25,14 @@
 .source-group-header > div {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .source-group-header h2 {
   flex: 0 0 auto;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 800;
 }
 
@@ -41,7 +41,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -55,20 +55,22 @@
   border-radius: 999px;
   color: var(--primary);
   background: color-mix(in srgb, var(--primary) 8%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 750;
 }
 
 .source-group-list {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .sources-layout .source-row {
-  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.58fr);
-  gap: 8px;
-  padding: 3px 7px;
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 230px);
+  gap: var(--space-2);
+  padding: var(--space-1) var(--space-2);
   border-color: color-mix(in srgb, var(--border) 86%, transparent);
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface-raised) 82%, var(--surface));
@@ -102,34 +104,43 @@
 .source-row-main {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  width: 100%;
   min-width: 0;
+  padding: 0;
+  border: 0;
   overflow: hidden;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
 }
 
 .source-title-line {
   flex: 0 1 auto;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .source-title-line h2 {
   min-width: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--font-md);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .transcript-row .source-title-line h2 {
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .source-id {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-row p {
@@ -137,15 +148,15 @@
   min-width: 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .transcript-row p {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: var(--space-1);
+  font-size: var(--font-sm);
 }
 
 .sources-layout .ui-chip-list {
@@ -156,16 +167,16 @@
 .sources-layout .ui-status-pill,
 .sources-layout .membership-empty {
   min-height: 18px;
-  padding: 0 5px;
+  padding: 0 var(--space-1);
   border-radius: 5px;
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1;
 }
 
 .source-row-status {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   justify-content: flex-end;
   min-width: 0;
 }
@@ -173,26 +184,32 @@
 .source-enable-control {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  /* Anchor for the invisible input overlay below. */
+  position: relative;
+  gap: var(--space-2);
   min-height: 20px;
   padding: 0;
   border: 0;
   border-radius: 999px;
   background: transparent;
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   cursor: pointer;
 }
 
+/* The real checkbox is an INVISIBLE OVERLAY covering the whole control (not a
+   1px sr-only box): a point-dispatched click — user or test — always lands on
+   the input itself, and the entire label incl. text is the hit area. The old
+   negative-margin sr-only box drifted outside the label after the token
+   migration and clicks fell through to the row (guardrail, ADR 0045). */
 .source-enable-control input {
   position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .source-enable-control:focus-within {
@@ -205,7 +222,7 @@
   align-items: center;
   width: 32px;
   height: 18px;
-  padding: 2px;
+  padding: var(--space-0);
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--surface-raised) 76%, var(--surface));
@@ -233,20 +250,20 @@
 }
 
 .transcript-row .source-row-status {
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .source-row-status .source-health {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--space-1);
   min-height: 18px;
   padding: 0;
   border: 0;
   border-radius: 0;
   color: var(--muted);
   background: transparent;
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
 }
 
@@ -272,11 +289,11 @@
 
 .transcript-row .source-row-status span {
   min-height: 24px;
-  padding: 0 7px;
+  padding: 0 var(--space-2);
 }
 
 .search-highlight {
-  padding: 0 2px;
+  padding: 0 var(--space-0);
   border-radius: 3px;
   color: var(--surface);
   background: color-mix(in srgb, var(--primary) 78%, white);
@@ -285,25 +302,25 @@
 .source-status-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
 }
 
 .source-status-detail {
-  margin: 0 10px 10px;
+  margin: 0 var(--space-3) var(--space-3);
 }
 
 .source-detail-panel {
   display: grid;
-  gap: 8px;
-  margin-bottom: 10px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
 }
 
 .source-developer-summary {
   display: grid;
-  gap: 8px;
-  margin: 6px 0 0;
-  padding: 10px;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-3);
   border: 1px dashed color-mix(in srgb, var(--accent) 42%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
@@ -313,16 +330,16 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .source-developer-summary-header h2 {
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .source-developer-summary-header span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-refresh-summary {
@@ -331,7 +348,7 @@
 
 .source-status-grid div {
   min-width: 0;
-  padding: 6px 8px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 48%, transparent);
@@ -339,20 +356,20 @@
 
 .source-status-grid dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .source-status-grid dd {
-  margin: 2px 0 0;
+  margin: var(--space-0) 0 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-page-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   padding: 0;
   border: 0;
   background: transparent;
@@ -373,14 +390,14 @@
 .source-registry-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 0 10px;
-  padding: 8px;
+  gap: var(--space-3);
+  margin: 0 var(--space-3);
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 44%, transparent);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-registry-actions .error-text {
@@ -390,7 +407,7 @@
 .source-collapsible-panel,
 .source-unmatched-panel {
   display: grid;
-  margin: 0 10px;
+  margin: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 44%, transparent);
@@ -402,13 +419,13 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
   width: 100%;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font: inherit;
   text-transform: uppercase;
   cursor: pointer;
@@ -426,13 +443,13 @@
 .source-unmatched-header-meta {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .source-collapsible-header strong,
 .source-unmatched-header strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-collapsible-header svg,
@@ -448,16 +465,16 @@
 
 .source-unmatched-list {
   display: grid;
-  gap: 6px;
-  padding: 0 8px 8px;
+  gap: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
 }
 
 .source-unmatched-row {
   display: grid;
   grid-template-columns: minmax(110px, 0.6fr) minmax(160px, 1fr) max-content;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
-  padding: 6px 8px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
@@ -484,33 +501,33 @@
 
 .source-unmatched-row span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-unmatched-row strong {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
 }
 
 .source-unmatched-row small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .source-registry-list {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   max-height: 360px;
   overflow: auto;
-  padding: 0 8px 8px;
+  padding: 0 var(--space-2) var(--space-2);
 }
 
 .registry-search-field {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   min-height: 34px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface) 72%, transparent);
@@ -529,7 +546,7 @@
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
   outline: none;
 }
 
@@ -541,17 +558,17 @@
 
 .source-registry-count {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-align: right;
 }
 
 .source-registry-row {
   display: grid;
   grid-template-columns: minmax(82px, 0.28fr) minmax(180px, 1fr) minmax(100px, 0.36fr) max-content;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   min-height: 34px;
-  padding: 5px 8px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -567,11 +584,63 @@
 .source-registry-row span,
 .source-registry-row small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .source-registry-row strong {
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-weight: 650;
+}
+
+/* --------------------------------------------------------------------------- */
+/* U7-E1 Sources density contract (ADR 0076 D6)                                */
+/* --------------------------------------------------------------------------- */
+
+/* Source rows reshape across pane tiers of the hosting `.workspace` size
+   container: S/short show the adapter row + status chip only; M folds in the
+   schedule/settings summary column; L adds a last-fetch diagnostics column. Both
+   summaries fold at short height regardless of width ("rows only"). */
+.source-row-schedule,
+.source-row-diagnostics {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.source-row-meta-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--font-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-row-meta-muted {
+  color: var(--muted);
+}
+
+/* M (420–760, tall): schedule/settings inline. */
+@container pane (min-width: 420px) and (min-height: 480px) {
+  .sources-layout .source-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 230px) minmax(0, 0.6fr);
+  }
+
+  .source-row-schedule {
+    display: flex;
+  }
+}
+
+/* L (>760, tall): + last-fetch diagnostics column. */
+@container pane (min-width: 760px) and (min-height: 480px) {
+  .sources-layout .source-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 230px) minmax(0, 0.6fr) minmax(0, 0.6fr);
+  }
+
+  .source-row-diagnostics {
+    display: flex;
+  }
 }

@@ -13,6 +13,17 @@ acceptance: string,
  */
 tier: string | null, emitted: boolean, producedFactIds: Array<string>, 
 /**
+ * Facts already present at their slot on a re-extraction (re-observations):
+ * same value, or a value that diverges from the stored one. Lets the UI
+ * report "already recorded" honestly instead of a bare "no new values".
+ */
+skippedFactIds: Array<string>, 
+/**
+ * How many re-observed slots carried a value that disagrees with the stored
+ * fact (never silently overwritten — surfaced for ratification).
+ */
+divergentCount: number, 
+/**
  * Serialized `DriftReport` JSON when the layout drifted.
  */
 driftJson: string | null, };

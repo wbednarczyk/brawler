@@ -627,7 +627,7 @@ fn export_quality_frameworks(
     let mut with_criteria = Vec::with_capacity(frameworks.len());
     for mut framework in frameworks {
         let mut criteria_statement = connection.prepare(
-            "SELECT id, ordinal, label, expression, weight, partial_band
+            "SELECT id, ordinal, label, expression, weight, partial_band, kind, assessment_guidance
              FROM framework_criteria WHERE framework_id = ?1 ORDER BY ordinal, id",
         )?;
         framework.criteria = criteria_statement
@@ -639,6 +639,12 @@ fn export_quality_frameworks(
                     expression: row.get(3)?,
                     weight: row.get(4)?,
                     partial_band: row.get(5)?,
+                    // Safe-default read: a pre-0059 row has no kind ⇒ quantitative.
+                    kind: Some(
+                        row.get::<_, Option<String>>(6)?
+                            .unwrap_or_else(|| "quantitative".to_owned()),
+                    ),
+                    assessment_guidance: row.get(7)?,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()?;

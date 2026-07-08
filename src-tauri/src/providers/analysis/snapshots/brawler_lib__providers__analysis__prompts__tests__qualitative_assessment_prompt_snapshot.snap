@@ -1,0 +1,12 @@
+---
+source: src/providers/analysis/prompts.rs
+expression: qualitative_assessment_prompt(&sample_qualitative_request())
+---
+Assess ONE qualitative business-quality criterion for the company using ONLY the evidence below. This is decision-support analysis, not advice. Return only JSON with this exact shape: {"verdict":"pass|partial|fail|insufficient_evidence","reasoning":"...","confidence":"low|medium|high","citations":[{"citationKey":"E1","evidenceType":"claim","evidenceId":"claim_01","label":"...","snippet":"..."}]}. Judge only the criterion described by the guidance. Every claim in the reasoning must cite one or more evidence keys, and you may cite only evidence keys (E1, E2, ...) that appear below — never invent an evidenceId. If the evidence is insufficient to judge the criterion, return verdict "insufficient_evidence" with a brief reasoning and only the citations that apply — never guess a verdict. Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice. Write the "reasoning" and citation "label" fields in English; keep every citation "snippet" verbatim in the evidence's original language.
+
+Company id: company_gpw_cdr
+Criterion: Wide economic moat
+Assessment guidance: Assess whether the company has a durable competitive advantage that protects its returns on capital from competition.
+Evidence:
+E1: evidenceType=report_document; evidenceId=doc_01; companyId=company_gpw_cdr; occurredAt=2026-05-02T00:00:00Z; title=Skonsolidowane sprawozdanie finansowe 2026; summary=The company sustains a wide economic moat through proprietary technology and high customer switching costs.; sourceUrl=https://example.com/emitent/2026-05/ssf-2026.xhtml; attribution=Investor relations; trust=official
+E2: evidenceType=claim; evidenceId=claim_01; companyId=company_gpw_cdr; occurredAt=2026-05-01T00:00:00Z; title=Management: pricing power intact; summary=Raised prices 8% with no measurable churn.; sourceUrl=; attribution=CEO, Q1 call; trust=official

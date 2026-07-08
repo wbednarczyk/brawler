@@ -4,8 +4,8 @@
 .settings-layout,
 .section-placeholder {
   display: grid;
-  gap: 18px;
-  padding: 18px;
+  gap: var(--space-5);
+  padding: var(--space-5);
 }
 
 .companies-layout,
@@ -22,10 +22,20 @@
   align-content: start;
 }
 
+/* Bounded scroller for the deliberately-wide week calendar: the grid scrolls
+   INSIDE it instead of widening the pane (guardrail, ADR 0045; mirrors
+   .facts-matrix-scroll). Inline-size containment stops the grid's min-width
+   from propagating into the pane's intrinsic width. */
+.event-week-scroll {
+  overflow-x: auto;
+  contain: inline-size;
+  min-height: 0;
+}
+
 .event-week-grid {
   display: grid;
   grid-template-columns: repeat(5, minmax(170px, 1fr));
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 0;
   min-width: 920px;
 }
@@ -33,8 +43,8 @@
 .event-week-day {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  gap: 8px;
-  padding: 10px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
@@ -45,18 +55,18 @@
   align-items: center;
   justify-content: space-between;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .event-week-day-header strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .event-week-day-body {
   display: grid;
   align-content: start;
-  gap: 8px;
+  gap: var(--space-2);
   min-height: 0;
   min-width: 0;
   overflow: auto;
@@ -67,18 +77,18 @@
   min-height: 34px;
   display: flex;
   align-items: center;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   border: 1px dashed color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 8px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .event-composer {
   display: grid;
-  gap: 12px;
-  margin: 0 18px;
-  padding: 14px;
+  gap: var(--space-3);
+  margin: 0 var(--space-5);
+  padding: var(--space-4);
   border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--primary) 7%, var(--surface-raised));
@@ -87,17 +97,17 @@
 .transcript-runtime-strip {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 18px 0;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--space-5) 0;
 }
 
 .transcript-runtime-strip div {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 26px;
   min-width: 0;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 7px;
   background: color-mix(in srgb, var(--surface-raised) 58%, transparent);
@@ -105,19 +115,19 @@
 
 .transcript-runtime-strip dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .transcript-runtime-strip dd {
   margin: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1;
   white-space: nowrap;
 }
 
 .transcript-runtime-strip + .event-composer {
-  margin-top: 8px;
+  margin-top: var(--space-2);
 }
 
 .event-composer-header,
@@ -125,36 +135,36 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .event-composer-header h2 {
-  font-size: 16px;
+  font-size: var(--font-lg);
 }
 
 .event-composer-header p {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .event-composer-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(160px, 1fr));
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .event-composer-grid label {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .event-composer-grid select,
 .event-composer-grid input {
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -177,13 +187,17 @@
 
 .event-week-card {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
+  width: 100%;
   min-width: 0;
-  padding: 9px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
+  color: inherit;
   background: var(--surface-raised);
+  text-align: left;
   cursor: pointer;
+  appearance: none;
 }
 
 .event-week-card:hover,
@@ -222,7 +236,7 @@
   align-items: center;
   justify-content: flex-start;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
@@ -231,7 +245,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -242,7 +256,7 @@
   justify-content: flex-end;
   flex: 1 1 auto;
   flex-wrap: wrap;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
@@ -251,7 +265,7 @@
   min-height: 34px;
   overflow: hidden;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.3;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -266,12 +280,12 @@
   max-width: 100%;
   min-height: 21px;
   min-width: 0;
-  padding: 0 6px;
+  padding: 0 var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 7px;
   color: var(--muted);
   background: color-mix(in srgb, var(--surface) 56%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.25;
   overflow-wrap: anywhere;
   text-align: left;
@@ -309,8 +323,8 @@
 
 .event-week-card-detail {
   display: grid;
-  gap: 9px;
-  padding: 9px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--primary) 36%, var(--border));
   border-top: 0;
   border-radius: 0 0 8px 8px;
@@ -319,44 +333,44 @@
 
 .event-week-card-full-title {
   display: grid;
-  gap: 4px;
+  gap: var(--space-1);
   min-width: 0;
 }
 
 .event-week-card-full-title span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .event-week-card-full-title strong {
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
 .event-week-card-detail dl {
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .event-week-card-detail dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .event-week-card-detail dd {
   min-width: 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .event-weekend-row {
   grid-column: 1 / -1;
   display: grid;
-  gap: 8px;
-  padding: 10px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 48%, transparent);
@@ -365,5 +379,5 @@
 .event-weekend-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }

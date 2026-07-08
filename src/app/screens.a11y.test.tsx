@@ -8,12 +8,21 @@ import { expect, renderApp, screen } from "../test/appWorkflowHarness";
 // composed screens. Same jsdom-disabled rules as the gallery: region /
 // color-contrast (no layout/contrast in jsdom) and heading-order. Real-browser
 // contrast (axe-playwright) is a tracked follow-up.
-// Currently-clean screens — guarded against a11y regressions. Inbox, Companies,
-// Sources, and Events are intentionally NOT here yet: this guard surfaced real
-// pre-existing violations on them (aria-allowed-role, nested-interactive). Those
-// are tracked separately to fix, then fold into this list — we do NOT disable
-// those rules (that would gut the guard) nor commit a red test.
-const SCREENS = ["Watchlists", "Notebooks", "Research", "Settings", "Cockpit"] as const;
+// Every primary screen is guarded against a11y regressions (U9: the previously
+// excluded Inbox/Companies/Sources/Events were remediated — aria-allowed-role and
+// nested-interactive fixed at the DOM/ARIA level, not by disabling rules). Zero
+// exclusions: a new screen with violations reddens this guard.
+const SCREENS = [
+  "Watchlists",
+  "Notebooks",
+  "Research",
+  "Settings",
+  "Cockpit",
+  "Inbox",
+  "Companies",
+  "Sources",
+  "Events",
+] as const;
 
 const AXE_RULES = {
   region: { enabled: false },

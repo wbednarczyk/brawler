@@ -169,6 +169,7 @@ export function ReportDiffPanel({ companyId }: ReportDiffPanelProps) {
   return (
     <section className="company-report-documents report-diff-panel" aria-label={text("Report comparison")}>
       <SectionHeader
+        paneLead
         title={text("Report comparison")}
         description={text("Compare consecutive financial statements section by section.")}
       />

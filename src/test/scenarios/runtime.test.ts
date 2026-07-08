@@ -91,6 +91,136 @@ describe("mock runtime — command coverage", () => {
     })) as { acceptance: string };
     expect(summary.acceptance).toBe("accepted");
   });
+
+  it("get_qualitative_assessment returns the newest agent row per criterion (ADR 0075)", async () => {
+    const runtime = createMockRuntime("minimal");
+    const base = {
+      frameworkId: "fw1",
+      frameworkVersion: 1,
+      companyId: "c1",
+      periodId: null,
+      passCount: 0,
+      partialCount: 0,
+      failCount: 0,
+      unavailableCount: 0,
+      engineVersion: "v1",
+    };
+    const agentRow = (id: string, verdict: string) => ({
+      id,
+      evaluationId: "",
+      criterionId: "crit1",
+      ordinal: 0,
+      label: "Wide moat",
+      expression: "",
+      verdict,
+      measuredValue: null,
+      measuredUnit: null,
+      threshold: null,
+      inputsJson: null,
+      note: null,
+      reasoning: "r",
+      citations: null,
+      confidence: "high",
+      promptVersion: "v1",
+      source: "agent",
+    });
+    // Newest-first (the real list_framework_evaluations ORDER BY created_at DESC).
+    runtime.data.frameworkEvaluations = [
+      { ...base, id: "eNew", createdAt: "2026-06-10T00:00:00Z", results: [agentRow("rNew", "fail")] },
+      { ...base, id: "eOld", createdAt: "2026-06-01T00:00:00Z", results: [agentRow("rOld", "pass")] },
+    ] as typeof runtime.data.frameworkEvaluations;
+
+    const rows = (await runtime.invoke("get_qualitative_assessment", {
+      input: { companyId: "c1", frameworkId: "fw1" },
+    })) as Array<{ verdict: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe("fail");
+  });
+
+  it("get_qualitative_assessment tie-breaks equal createdAt on insertion order — the later row wins (mirrors backend rowid, quality_frameworks.rs)", async () => {
+    const runtime = createMockRuntime("minimal");
+    const base = {
+      frameworkId: "fw1",
+      frameworkVersion: 1,
+      companyId: "c1",
+      periodId: null,
+      passCount: 0,
+      partialCount: 0,
+      failCount: 0,
+      unavailableCount: 0,
+      engineVersion: "v1",
+    };
+    const agentRow = (id: string, verdict: string) => ({
+      id,
+      evaluationId: "",
+      criterionId: "crit1",
+      ordinal: 0,
+      label: "Wide moat",
+      expression: "",
+      verdict,
+      measuredValue: null,
+      measuredUnit: null,
+      threshold: null,
+      inputsJson: null,
+      note: null,
+      reasoning: "r",
+      citations: null,
+      confidence: "high",
+      promptVersion: "v1",
+      source: "agent",
+    });
+    // Two agent snapshots for the SAME criterion at an IDENTICAL createdAt. The
+    // backend (quality_frameworks.rs get_qualitative_assessment) tie-breaks on
+    // framework_evaluations.rowid — the LAST-inserted snapshot wins. In the mock,
+    // array order == insertion order == rowid order, so the LATER array element
+    // must win. With a strict `>` scan the FIRST row would incorrectly stick.
+    const tie = "2026-06-05T00:00:00Z";
+    runtime.data.frameworkEvaluations = [
+      { ...base, id: "eFirst", createdAt: tie, results: [agentRow("rFirst", "pass")] },
+      { ...base, id: "eLast", createdAt: tie, results: [agentRow("rLast", "fail")] },
+    ] as typeof runtime.data.frameworkEvaluations;
+
+    const rows = (await runtime.invoke("get_qualitative_assessment", {
+      input: { companyId: "c1", frameworkId: "fw1" },
+    })) as Array<{ verdict: string }>;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].verdict).toBe("fail");
+  });
+
+  it("evaluate_framework mints a fresh snapshot id per run (mirrors backend unique ids — a repeated id duplicates React keys in the history list)", async () => {
+    const runtime = createMockRuntime("minimal");
+    const base = {
+      frameworkId: "fw1",
+      frameworkVersion: 1,
+      companyId: "c1",
+      periodId: null,
+      passCount: 1,
+      partialCount: 0,
+      failCount: 0,
+      unavailableCount: 0,
+      engineVersion: "v1",
+      createdAt: "2026-06-01T00:00:00Z",
+      results: [],
+    };
+    runtime.data.frameworkEvaluations = [
+      { ...base, id: "evaluation_seeded" },
+    ] as typeof runtime.data.frameworkEvaluations;
+
+    const first = (await runtime.invoke("evaluate_framework", {
+      input: { companyId: "c1", frameworkId: "fw1" },
+    })) as { id: string };
+    const second = (await runtime.invoke("evaluate_framework", {
+      input: { companyId: "c1", frameworkId: "fw1" },
+    })) as { id: string };
+
+    const ids = runtime.data.frameworkEvaluations.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(first.id).not.toBe("evaluation_seeded");
+    expect(second.id).not.toBe(first.id);
+    // The minted snapshot lands in the store (list_framework_evaluations sees it).
+    expect(ids).toContain(first.id);
+    expect(ids).toContain(second.id);
+  });
 });
 
 describe("mock runtime — re-render safety (new collection reference per mutation)", () => {
@@ -164,6 +294,32 @@ describe("mock runtime — round-trip mutations", () => {
     await runtime.invoke("delete_research_question", { id: target.id });
     const after = (await runtime.invoke("list_research_questions", {})) as { id: string }[];
     expect(after.some((q) => q.id === target.id)).toBe(false);
+  });
+
+  it("update_framework_criterion falls back to existing kind/guidance when omitted (F9 resolver)", async () => {
+    const runtime = createMockRuntime("minimal");
+    const created = (await runtime.invoke("create_framework_criterion", {
+      input: {
+        frameworkId: "framework_sample_moat",
+        label: "Wide moat",
+        expression: "",
+        weight: null,
+        partialBand: null,
+        kind: "qualitative",
+        assessmentGuidance: "Assess durable competitive advantage.",
+      },
+    })) as { id: string; kind: string; assessmentGuidance: string | null };
+    expect(created.kind).toBe("qualitative");
+    // Update ONLY the label — kind and guidance are omitted, so the shared
+    // resolver must fall back to the existing qualitative row rather than reset
+    // the criterion to quantitative with an empty expression.
+    const updated = (await runtime.invoke("update_framework_criterion", {
+      input: { id: created.id, label: "Wide durable moat" },
+    })) as { id: string; label: string; kind: string; expression: string; assessmentGuidance: string | null };
+    expect(updated.label).toBe("Wide durable moat");
+    expect(updated.kind).toBe("qualitative");
+    expect(updated.expression).toBe("");
+    expect(updated.assessmentGuidance).toBe("Assess durable competitive advantage.");
   });
 
   it("reset restores a fresh store and clears mutations", async () => {

@@ -5,7 +5,7 @@ import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
 import { pluralNoun } from "../../shared/locale/plural";
 import { useWatchlistsViewModel } from "../../app/state/screenViewModels";
-import { ActionRow, Button, DenseRow, EmptyState, ErrorText, PanelHeader, SearchField, SectionHeader, TextField } from "../../ui";
+import { ActionRow, Button, DenseRow, EmptyState, ErrorText, InlineConfirm, PanelHeader, SearchField, SectionHeader, TextField } from "../../ui";
 
 // Polish needs three plural forms; "{n} companies" must read "18 spółek", not "18 spółki".
 const COMPANY_FORMS = { en: ["company", "companies"], pl: ["spółka", "spółki", "spółek"] } as const;
@@ -41,6 +41,8 @@ export function WatchlistsScreen() {
   const { t, text, locale } = useLocale();
   const [watchlistName, setWatchlistName] = useState("");
   const [watchlistRenameDraft, setWatchlistRenameDraft] = useState("");
+  // Cascading (ADR 0076 D5): confirm a watchlist delete in place.
+  const [confirmDeleteWatchlist, setConfirmDeleteWatchlist] = useState(false);
   const [watchlistSearch, setWatchlistSearch] = useState("");
   const [watchlistCompanySearch, setWatchlistCompanySearch] = useState("");
   const [isAddOpen, setAddOpen] = useState(false);
@@ -151,6 +153,7 @@ export function WatchlistsScreen() {
   return (
     <section className="feed-panel" aria-labelledby="watchlists-title">
       <PanelHeader
+        paneLead
         title={t("watchlists.title")}
         description={t("watchlists.description")}
         titleId="watchlists-title"
@@ -256,10 +259,28 @@ export function WatchlistsScreen() {
                       <Edit3 size={14} />
                       {text("Rename")}
                     </Button>
-                    <Button onClick={() => deleteWatchlist(selectedWatchlist)} type="button" variant="danger">
-                      <Trash2 size={14} />
-                      {text("Delete")}
-                    </Button>
+                    {confirmDeleteWatchlist ? (
+                      <InlineConfirm
+                        cancelLabel={text("Cancel")}
+                        confirmLabel={text("Delete")}
+                        onCancel={() => setConfirmDeleteWatchlist(false)}
+                        onConfirm={() => {
+                          setConfirmDeleteWatchlist(false);
+                          deleteWatchlist(selectedWatchlist);
+                        }}
+                      >
+                        {`${text("Delete")} ${selectedWatchlist.name}?`}
+                      </InlineConfirm>
+                    ) : (
+                      <Button
+                        onClick={() => setConfirmDeleteWatchlist(true)}
+                        type="button"
+                        variant="danger"
+                      >
+                        <Trash2 size={14} />
+                        {text("Delete")}
+                      </Button>
+                    )}
                   </ActionRow>
                 ) : null}
               </div>

@@ -8,7 +8,9 @@
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
-use super::financials::create_financial_fact;
+use super::financials::{
+    create_financial_fact, create_or_reobserve_financial_fact, FactWriteOutcome,
+};
 use super::{slug_part, FinancialFact, NewFinancialFact, StorageError, StorageResult};
 
 #[derive(Debug, Clone, Serialize)]
@@ -583,10 +585,30 @@ pub struct StructuredFactInput<'a> {
     pub citation: Option<&'a str>,
 }
 
+/// Outcome of committing one deterministically-extracted fact (ADR 0061) into
+/// its uniqueness slot. `Created` is a genuinely new value; `Reobserved`
+/// re-confirms an identical already-committed value (idempotent re-extraction —
+/// counted as skipped, never produced); `Divergent` re-observes the slot with a
+/// *different* value than the stored one (never silently overwritten — reported
+/// for ratification); `NoDefinition` is a non-catalog key the pipeline should not
+/// emit (defensive skip).
+#[derive(Debug, Clone)]
+pub enum StructuredFactCommit {
+    Created(String),
+    Reobserved(String),
+    Divergent {
+        fact_id: String,
+        metric_key: String,
+        existing: String,
+        incoming: String,
+    },
+    NoDefinition,
+}
+
 pub(crate) fn record_structured_fact(
     connection: &Connection,
     input: StructuredFactInput<'_>,
-) -> StorageResult<Option<String>> {
+) -> StorageResult<StructuredFactCommit> {
     let period_id = ensure_period(
         connection,
         input.company_id,
@@ -600,10 +622,12 @@ pub(crate) fn record_structured_fact(
     else {
         // Not a catalog metric — the structured pipeline only emits canonical
         // keys, so this is a defensive skip, never a silent bad write.
-        return Ok(None);
+        return Ok(StructuredFactCommit::NoDefinition);
     };
 
-    let fact = create_financial_fact(
+    // Slot-aware write: a re-extraction of a period whose facts already landed
+    // re-observes each slot instead of raising its UNIQUE violation (owner T7).
+    let fact = match create_or_reobserve_financial_fact(
         connection,
         NewFinancialFact {
             company_id: input.company_id.to_owned(),
@@ -626,7 +650,24 @@ pub(crate) fn record_structured_fact(
             supersedes_id: None,
             source_document_ref: Some(input.report_document_id.to_owned()),
         },
-    )?;
+    )? {
+        FactWriteOutcome::Created(fact) => fact,
+        // Same slot, same value — idempotent re-observation. Provenance already
+        // records the original tier/validation; leave it untouched.
+        FactWriteOutcome::Reobserved(existing) => {
+            return Ok(StructuredFactCommit::Reobserved(existing.id));
+        }
+        // Same slot, different value — never silently overwrite a stored
+        // (possibly confirmed) fact. Skip + report for ratification.
+        FactWriteOutcome::Divergent { existing, incoming } => {
+            return Ok(StructuredFactCommit::Divergent {
+                fact_id: existing.id,
+                metric_key: input.metric_key.to_owned(),
+                existing: existing.value_numeric,
+                incoming,
+            });
+        }
+    };
 
     connection.execute(
         "
@@ -649,7 +690,7 @@ pub(crate) fn record_structured_fact(
         ],
     )?;
 
-    Ok(Some(fact.id))
+    Ok(StructuredFactCommit::Created(fact.id))
 }
 
 /// Resolves a canonical/company KPI definition by metric key, without creating
@@ -926,13 +967,14 @@ impl KpiExtractionStore {
     /// Persists one deterministically-extracted fact (ADR 0061): ensures the
     /// period, resolves the canonical KPI definition, writes the fact with the
     /// given confirmation state, and records its structured provenance (source
-    /// tier + validation verdict + citation) — all in one transaction. Returns
-    /// the fact id, or `None` when the metric has no catalog definition (a
-    /// non-canonical key the structured pipeline should not emit).
+    /// tier + validation verdict + citation) — all in one transaction. Returns a
+    /// [`StructuredFactCommit`]: `Created` for a new value, `Reobserved`/`Divergent`
+    /// when the slot is already occupied (idempotent re-extraction, never a UNIQUE
+    /// violation), or `NoDefinition` when the metric has no catalog definition.
     pub fn record_structured_fact(
         &self,
         input: StructuredFactInput<'_>,
-    ) -> StorageResult<Option<String>> {
+    ) -> StorageResult<StructuredFactCommit> {
         let mut connection = self.db.checkout()?;
         let tx = connection.transaction()?;
         let result = record_structured_fact(&tx, input)?;
@@ -951,6 +993,15 @@ impl KpiExtractionStore {
 mod tests {
     use super::*;
     use crate::storage::open_in_memory_database;
+
+    /// The id of a freshly-created fact, asserting the commit was a new write
+    /// (not a re-observation) — the shape these unit tests exercise.
+    fn created_id(commit: StructuredFactCommit) -> String {
+        match commit {
+            StructuredFactCommit::Created(id) => id,
+            other => panic!("expected a newly created fact, got {other:?}"),
+        }
+    }
 
     fn seed_company_and_document(connection: &Connection) -> (String, String) {
         connection
@@ -1102,26 +1153,27 @@ mod tests {
         let drift =
             r#"{"addedLabels":[],"removedLabels":["total equity line"],"unitChanged":null}"#;
 
-        let id = record_structured_fact(
-            &connection,
-            StructuredFactInput {
-                company_id: &company_id,
-                fiscal_year: 2025,
-                period_type: "FY",
-                period_end: Some("2025-12-31"),
-                report_document_id: &document_id,
-                metric_key: "revenue",
-                value_numeric: "1000000",
-                currency: Some("PLN"),
-                confirmation_state: "confirmed",
-                source_tier: "pdf",
-                validation_status: "flagged",
-                drift_json: Some(drift),
-                citation: Some("Przychody netto ze sprzedazy"),
-            },
-        )
-        .expect("record structured fact")
-        .expect("revenue is a catalog metric");
+        let id = created_id(
+            record_structured_fact(
+                &connection,
+                StructuredFactInput {
+                    company_id: &company_id,
+                    fiscal_year: 2025,
+                    period_type: "FY",
+                    period_end: Some("2025-12-31"),
+                    report_document_id: &document_id,
+                    metric_key: "revenue",
+                    value_numeric: "1000000",
+                    currency: Some("PLN"),
+                    confirmation_state: "confirmed",
+                    source_tier: "pdf",
+                    validation_status: "flagged",
+                    drift_json: Some(drift),
+                    citation: Some("Przychody netto ze sprzedazy"),
+                },
+            )
+            .expect("record structured fact"),
+        );
 
         let (source_tier, validation_status, stored_drift, citation) =
             fact_provenance_row(&connection, &id).expect("a structured fact must carry provenance");
@@ -1145,26 +1197,29 @@ mod tests {
         let connection = open_in_memory_database().expect("db");
         let (company_id, document_id) = seed_company_and_document(&connection);
 
-        let id = record_structured_fact(
-            &connection,
-            StructuredFactInput {
-                company_id: &company_id,
-                fiscal_year: 2025,
-                period_type: "FY",
-                period_end: Some("2025-12-31"),
-                report_document_id: &document_id,
-                metric_key: "revenue",
-                value_numeric: "1000000",
-                currency: Some("PLN"),
-                confirmation_state: "flagged",
-                source_tier: "pdf",
-                validation_status: "flagged",
-                drift_json: Some(r#"{"addedLabels":[],"removedLabels":["x"],"unitChanged":null}"#),
-                citation: Some("Przychody"),
-            },
-        )
-        .expect("record structured fact")
-        .expect("revenue is a catalog metric");
+        let id = created_id(
+            record_structured_fact(
+                &connection,
+                StructuredFactInput {
+                    company_id: &company_id,
+                    fiscal_year: 2025,
+                    period_type: "FY",
+                    period_end: Some("2025-12-31"),
+                    report_document_id: &document_id,
+                    metric_key: "revenue",
+                    value_numeric: "1000000",
+                    currency: Some("PLN"),
+                    confirmation_state: "flagged",
+                    source_tier: "pdf",
+                    validation_status: "flagged",
+                    drift_json: Some(
+                        r#"{"addedLabels":[],"removedLabels":["x"],"unitChanged":null}"#,
+                    ),
+                    citation: Some("Przychody"),
+                },
+            )
+            .expect("record structured fact"),
+        );
 
         // Re-provenance the same fact (the same `ON CONFLICT(fact_id)` upsert
         // `record_structured_fact` issues) with a resolved, drift-free outcome.

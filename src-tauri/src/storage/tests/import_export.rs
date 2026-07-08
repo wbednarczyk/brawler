@@ -541,3 +541,171 @@ fn research_data_round_trips_management_claims() {
         1
     );
 }
+
+/// ADR 0075 (v0.50 T5): a qualitative criterion must survive an export/import
+/// round trip carrying its `kind` + `assessment_guidance` — before this the
+/// bundle dropped both, so a qualitative criterion re-imported as quantitative
+/// with its guidance lost. The user framework is created fresh; the seeded
+/// template is skipped on import (id/template_key already present).
+#[test]
+fn research_data_round_trips_qualitative_framework_criteria() {
+    let source = AppState::new(open_in_memory_database().expect("database should open"));
+    let framework = source
+        .create_quality_framework(NewQualityFramework {
+            name: "Moat checklist".to_owned(),
+            description: None,
+        })
+        .expect("framework should create");
+    source
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Wide moat".to_owned(),
+            expression: String::new(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: Some("qualitative".to_owned()),
+            assessment_guidance: Some("Assess durable competitive advantage.".to_owned()),
+        })
+        .expect("qualitative criterion should create");
+    source
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Strong ROE".to_owned(),
+            expression: "roe >= 15%".to_owned(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: None,
+            assessment_guidance: None,
+        })
+        .expect("quantitative criterion should create");
+
+    let export = source
+        .export_research_data()
+        .expect("research data exports");
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    target
+        .apply_research_import(&export.contents)
+        .expect("import should apply");
+
+    let imported = target
+        .get_quality_framework(&framework.id)
+        .expect("imported user framework should exist");
+    let qualitative = imported
+        .criteria
+        .iter()
+        .find(|c| c.label == "Wide moat")
+        .expect("qualitative criterion present");
+    assert_eq!(qualitative.kind, "qualitative");
+    assert_eq!(
+        qualitative.assessment_guidance.as_deref(),
+        Some("Assess durable competitive advantage."),
+        "guidance survives the round trip"
+    );
+    assert_eq!(qualitative.expression, "", "qualitative row stores no DSL");
+    let quantitative = imported
+        .criteria
+        .iter()
+        .find(|c| c.label == "Strong ROE")
+        .expect("quantitative criterion present");
+    assert_eq!(quantitative.kind, "quantitative");
+    assert_eq!(quantitative.assessment_guidance, None);
+    assert_eq!(quantitative.expression, "roe >= 15%");
+}
+
+/// Build a valid single-qualitative-criterion export bundle for corruption tests.
+/// Returns the source state, the created framework id, and the export JSON.
+fn export_with_qualitative_criterion() -> (AppState, String, String) {
+    let source = AppState::new(open_in_memory_database().expect("database should open"));
+    let framework = source
+        .create_quality_framework(NewQualityFramework {
+            name: "Moat checklist".to_owned(),
+            description: None,
+        })
+        .expect("framework should create");
+    source
+        .create_framework_criterion(NewFrameworkCriterion {
+            framework_id: framework.id.clone(),
+            label: "Wide moat".to_owned(),
+            expression: String::new(),
+            weight: None,
+            partial_band: None,
+            ordinal: None,
+            kind: Some("qualitative".to_owned()),
+            assessment_guidance: Some("Assess durable competitive advantage.".to_owned()),
+        })
+        .expect("qualitative criterion should create");
+    let export = source
+        .export_research_data()
+        .expect("research data exports");
+    (source, framework.id, export.contents)
+}
+
+/// ADR 0075 (v0.50 F5): the framework-criteria import must route through the same
+/// `kind` validator as the create path (not a raw insert that stores any non-empty
+/// string verbatim). A mis-cased `kind` (e.g. "Qualitative") is an invalid value;
+/// mirroring this file's philosophy for malformed rows (framework id/name required,
+/// mismatched ticker, unsupported scope → hard error, not skip+warn), the whole
+/// import fails and nothing lands — so no `framework_criteria` row can carry the
+/// verbatim kind, which downstream would mis-score as quantitative (the T6a bug).
+#[test]
+fn research_import_rejects_miscased_criterion_kind() {
+    let (_source, framework_id, contents) = export_with_qualitative_criterion();
+    let corrupted = contents.replace("\"kind\": \"qualitative\"", "\"kind\": \"Qualitative\"");
+    assert!(
+        corrupted.contains("\"kind\": \"Qualitative\""),
+        "fixture should carry the mis-cased kind"
+    );
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    let result = target.apply_research_import(&corrupted);
+    assert!(
+        result.is_err(),
+        "a mis-cased criterion kind must fail the whole import"
+    );
+    // Whole-import rollback ⇒ the user framework (and its verbatim-kind criterion)
+    // never landed. The seeded system templates are unaffected, so assert on the
+    // specific framework's absence rather than a global count.
+    assert!(
+        target.get_quality_framework(&framework_id).is_err(),
+        "no framework (and no verbatim-kind criterion) should be imported"
+    );
+    assert!(
+        !target
+            .list_quality_frameworks()
+            .unwrap_or_default()
+            .iter()
+            .flat_map(|framework| framework.criteria.iter())
+            .any(|criterion| criterion.kind == "Qualitative"),
+        "no framework_criteria row may carry the verbatim mis-cased kind"
+    );
+}
+
+/// ADR 0075 (v0.50 F5): a qualitative criterion with missing/blank guidance must be
+/// rejected on import (mirroring `require_guidance` on the create path), so the job's
+/// `unwrap_or_default()` can never build an empty-guidance, ungrounded prompt.
+#[test]
+fn research_import_rejects_qualitative_criterion_without_guidance() {
+    let (_source, framework_id, contents) = export_with_qualitative_criterion();
+    let corrupted = contents.replace(
+        "\"assessmentGuidance\": \"Assess durable competitive advantage.\"",
+        "\"assessmentGuidance\": null",
+    );
+    assert!(
+        corrupted.contains("\"assessmentGuidance\": null"),
+        "fixture should carry the null guidance"
+    );
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    let result = target.apply_research_import(&corrupted);
+    assert!(
+        result.is_err(),
+        "a qualitative criterion without guidance must fail the whole import"
+    );
+    assert!(
+        target.get_quality_framework(&framework_id).is_err(),
+        "no NULL-guidance qualitative criterion should be imported"
+    );
+}

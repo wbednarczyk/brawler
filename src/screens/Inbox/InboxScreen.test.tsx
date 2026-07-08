@@ -484,6 +484,47 @@ describe("Inbox screen workflows", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("keeps keyboard focus in the feed when a row is hidden by marking it read (ADR 0076 D9)", async () => {
+    const user = userEvent.setup();
+
+    appTestState.feedItemsResponse = [
+      initialFeedItems[0],
+      {
+        ...initialFeedItems[0],
+        id: "feed_sample_cdr_second_unread",
+        title: "Second unread report for focus flow",
+        summary: "Second unread item should receive focus after the first is hidden.",
+        unread: true,
+      },
+    ];
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Unread" }));
+
+    const firstRow = await screen.findByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    });
+    const secondRow = screen.getByRole("button", {
+      name: "Select feed item: Second unread report for focus flow",
+    });
+
+    // Double-click the focused row to mark it read; under the "unread" filter it
+    // leaves the list. Focus must move to the row that slid into its slot, not
+    // fall back to <body>.
+    firstRow.focus();
+    await user.dblClick(firstRow);
+
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("button", {
+          name: "Select feed item: Current report placeholder for watchlist company",
+        }),
+      ).not.toBeInTheDocument();
+    });
+    expect(document.activeElement).toBe(secondRow);
+  });
+
   it("marks all visible inbox items as read", async () => {
     const user = userEvent.setup();
 
@@ -523,7 +564,6 @@ describe("Inbox screen workflows", () => {
 
   it("confirms and deletes unsaved feed items without refreshing sources", async () => {
     const user = userEvent.setup();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     appTestState.feedItemsResponse = [
       {
@@ -545,17 +585,18 @@ describe("Inbox screen workflows", () => {
     const feedList = screen.getByLabelText("Feed items");
     await within(feedList).findByText("Unsaved report to delete");
 
+    // Bulk data clear (ADR 0076 D5): confirm in place, no native dialog.
+    await user.click(screen.getByRole("button", { name: "Delete unsaved" }));
+    expect(invoke).not.toHaveBeenCalledWith("delete_unsaved_feed_items");
+    expect(screen.getByText("Delete all unsaved feed items? Saved items will stay.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Delete unsaved" }));
 
-    expect(confirm).toHaveBeenCalledWith("Delete all unsaved feed items? Saved items will stay.");
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("delete_unsaved_feed_items");
     });
     await within(feedList).findByText("Saved report to keep");
     expect(within(feedList).queryByText("Unsaved report to delete")).not.toBeInTheDocument();
     expect(invoke).not.toHaveBeenCalledWith("refresh_sources", expect.anything());
-
-    confirm.mockRestore();
   });
 
   it("summarizes the current inbox review set", async () => {
@@ -796,5 +837,34 @@ describe("Inbox screen workflows", () => {
       expect(within(feedList).queryByText("Guidance change · Proposed")).not.toBeInTheDocument();
     });
     expect(within(feedList).getAllByText("Guidance change").length).toBeGreaterThan(0);
+  });
+
+  // U7-E1 density contract (ADR 0076 D6): at the S width tier the Inbox detail is
+  // a full-pane overlay over the list, raised presentation-only when a row is
+  // activated (`data-detail-open`) and lowered by a back control — the list keeps
+  // its selection. jsdom has no container queries, so the tier switch itself is
+  // browser-tested; here we assert the affordance's DOM + toggle behavior.
+  it("raises and lowers the detail overlay from the back control (S overlay affordance)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    // The detail starts lowered even though the list defaults to a selection.
+    expect(screen.getByLabelText("Feed item details")).not.toHaveAttribute("data-detail-open");
+
+    const selectedRow = await screen.findByRole("button", {
+      name: "Select feed item: Sample item proving the inbox layout can scan dense rows",
+    });
+    await user.click(selectedRow);
+    expect(selectedRow).toHaveClass("feed-row-selected");
+    expect(screen.getByLabelText("Feed item details")).toHaveAttribute("data-detail-open", "true");
+
+    await user.click(
+      within(screen.getByLabelText("Feed item details")).getByRole("button", { name: "Back to list" }),
+    );
+
+    // The overlay is lowered while the selection is preserved.
+    expect(screen.getByLabelText("Feed item details")).not.toHaveAttribute("data-detail-open");
+    expect(selectedRow).toHaveClass("feed-row-selected");
   });
 });

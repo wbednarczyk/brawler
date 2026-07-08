@@ -29,6 +29,11 @@ pub const RESEARCH_DIGEST_KIND: &str = "research_digest";
 /// payload carries `{run_id, stage}`; the handler runs that stage and chains the
 /// next, so a crash mid-stage resumes that stage only.
 pub use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
+/// Job kind: assess qualitative quality-framework criteria (ADR 0075, v0.50.0).
+/// The payload carries `{companyId, frameworkId, criterionIds?}`; the handler
+/// gathers evidence, assesses each criterion through the capability pool, and
+/// writes `source = agent` criterion results. Defined with the job.
+pub use crate::jobs::qualitative_assessment::QUALITATIVE_ASSESSMENT_KIND;
 
 struct ContentEmbeddingHandler;
 
@@ -100,6 +105,23 @@ per_job_handler!(
     mark_research_digest_job_failed,
     "unknown"
 );
+
+/// Qualitative assessment (ADR 0075). Runs the job directly and returns its
+/// Result: a provider/parse/citation failure returns `Err` so the queue retries
+/// with backoff, and nothing is persisted unless every criterion produced a
+/// valid, cited result. No per-job status table (the read model is the
+/// evaluation snapshots it writes).
+struct QualitativeAssessmentHandler;
+
+impl JobHandler for QualitativeAssessmentHandler {
+    fn kind(&self) -> &'static str {
+        QUALITATIVE_ASSESSMENT_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::qualitative_assessment::run_qualitative_assessment_job(state, payload)
+    }
+}
 
 /// One stage of an autopilot run. The handler runs the stage (reusing existing
 /// services) and chains the next on success; a fatal stage failure finalizes the
@@ -214,6 +236,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(KpiExtractionHandler));
     worker.register(Arc::new(ResearchBriefHandler));
     worker.register(Arc::new(ResearchDigestHandler));
+    worker.register(Arc::new(QualitativeAssessmentHandler));
     worker.register(Arc::new(AutopilotStageHandler));
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
     worker.register(Arc::new(SourceCompanyRefreshHandler));
@@ -253,6 +276,7 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 CLAIM_EXTRACTION_KIND,
                 RESEARCH_BRIEF_KIND,
                 RESEARCH_DIGEST_KIND,
+                QUALITATIVE_ASSESSMENT_KIND,
             ],
             workers: config.ai_workers.max(1) as usize,
         },

@@ -6,7 +6,7 @@
     "src/**/*.{test,spec}.{ts,tsx}",
     "scripts/**/*.mjs"
   ],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
+  "project": ["src/**/*.{ts,tsx}", "tests/browser/**/*.ts", "scripts/**/*.mjs"],
   "ignore": ["src/api/generated/**"],
   "exclude": ["exports", "types", "nsExports", "nsTypes", "enumMembers", "duplicates", "binaries"]
 }

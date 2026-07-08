@@ -5,7 +5,6 @@ import {
   Home,
   Inbox,
   ListChecks,
-  Scale,
   Settings,
   Video,
 } from "lucide-react";
@@ -66,7 +65,10 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Today", icon: Home, localeKey: "nav.today" },
       { label: "Companies", icon: Building2, localeKey: "nav.companies" },
-      { label: "Compare", icon: Scale, localeKey: "nav.compare" },
+      // Compare is hidden from the spine until v0.53 market data gives the mode
+      // content (U-Rc, ADR 0076 Resolved) — an empty mode in nav is trust debt.
+      // The Section value and CompareScreen stay; restore the entry with:
+      // { label: "Compare", icon: Scale, localeKey: "nav.compare" }
     ],
   },
   {

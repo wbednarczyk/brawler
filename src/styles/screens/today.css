@@ -1,99 +1,236 @@
-/* Today/Pulse attention home (ADR 0054). The screen owns the panel height; the
-   card grid scrolls internally and reflows from two columns to one as the window
-   narrows (tall/narrow ultrawide-quarter support). */
+/* Today/Pulse attention home (ADR 0054), redesigned to journey J1 (ADR 0076
+   U-Rb): a single prioritized "what changed" stream plus a narrow counters
+   column that doubles as a category filter. The screen owns the panel height;
+   the stream scrolls internally. A container query reflows the two regions to a
+   stacked layout (counters strip above, stream below) on narrow panes — no
+   page-level scroll, no panel-internal horizontal scrollbars. */
 .today-screen {
   min-height: 0;
 }
 
 .today-body {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: 14px;
-  align-content: start;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: "stream counters";
+  gap: var(--space-4);
   min-height: 0;
-  padding: 4px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  flex: 1 1 auto;
+  padding: var(--space-1);
 }
 
-.today-card {
+.today-counters {
+  grid-area: counters;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
   min-width: 0;
-  padding: 14px 16px;
+  align-content: start;
+}
+
+.today-counter {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: flex-start;
+  min-width: 0;
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface-raised);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
-/* The attention queue (what-changed / to-verify) reads top to bottom, so let it
-   span the full width when the grid has room for a second column. */
-.today-feed-peek {
-  grid-column: 1 / -1;
+.today-counter:hover {
+  border-color: var(--primary);
 }
 
-.today-conviction-rollup {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 6px 2px;
+.today-counter[aria-pressed="true"] {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-raised));
+}
+
+.today-counter-count {
+  font-size: var(--font-xl);
+  font-weight: 650;
+  color: var(--text);
+}
+
+.today-counter-label {
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 
-.today-row-meta {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+/* Zero-count tiles read as dimmed via a muted count color (not opacity, which
+   would drop text contrast below AA — axe gate). */
+.today-counter-empty {
+  background: var(--surface);
+}
+
+.today-counter-empty .today-counter-count {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+/* The stream region owns the internal scroll (panel-scroll convention). */
+.today-stream-region {
+  grid-area: stream;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: var(--space-1);
+}
+
+.today-stream-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-0);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.today-stream-row:last-child {
+  border-bottom: none;
+}
+
+.today-row-line {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.today-row-icon {
+  flex: none;
+  display: inline-flex;
+  margin-top: var(--space-1);
+  color: var(--muted);
+}
+
+.today-row-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.today-row-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.today-row-date {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--font-sm);
   white-space: nowrap;
 }
 
+/* Titles/statements wrap to a maximum of two lines — never a single-line
+   ellipsis at wide widths (kills audit class K1). Identity (ticker) and date
+   stay in the head row and are never truncated. */
+.today-row-title {
+  margin: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--text);
+}
+
 .today-row-actions {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.today-row-disclosure {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  padding: var(--space-1);
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
 }
 
-.today-autopilot-run {
+.today-row-disclosure:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.today-row-disclosure svg {
+  transition: transform 0.15s ease;
+}
+
+.today-row-disclosure-open svg {
+  transform: rotate(90deg);
+}
+
+/* Autopilot's in-place detail: undo/dismiss/drift, disclosed by the chevron. */
+.today-run-detail {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-0) var(--space-0) var(--space-6);
 }
 
-/* The run row carries more fixed-width freight than any other ListRow use
-   (ticker + status/"Reverted N facts" pills + Review/Undo/Dismiss actions), and
-   ListRow's single-line contract (meta/trailing flex:none, title-only shrink)
-   overflows the narrow quarter-ultrawide card column once the title hits zero
-   width. Scoped here — not in the shared ListRow, whose other uses rely on the
-   one-line layout — let the meta and actions wrap onto following lines instead
-   of forcing intrinsic width. */
-.today-autopilot-run .ui-list-row {
+.today-run-detail-actions {
+  display: flex;
   flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
-.today-autopilot-run .today-row-meta {
-  flex-wrap: wrap;
-  white-space: normal;
-}
-
-/* A run's carried-over "structure changed" drift (ADR 0061 wave 2 / 4fde931):
-   the shared `DriftDiff` body under its own eyebrow, separated from the run's
-   row like the fact-detail drift card it mirrors. */
 .today-run-drift {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: 6px;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
 
-.today-conviction-headline {
-  color: var(--text);
-  font-weight: 650;
+.today-stream-quiet {
+  padding: var(--space-5) var(--space-0);
 }
 
-.today-conviction-note {
-  margin-top: 2px;
-  font-size: 12px;
+.today-stream-showall {
+  padding: var(--space-1) var(--space-0);
+}
+
+/* At the S width tier (ADR 0076 D6 Today contract: pane < 420px) the counters
+   fold to a horizontal strip above the full-width stream (three tiles wrapping);
+   the M tier keeps the side column. Resolves against the named `pane` container
+   (.cockpit-pane / .workspace). */
+@container pane (max-width: 419px) {
+  .today-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "counters" "stream";
+  }
+
+  .today-counters {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .today-counter {
+    flex: 1 1 30%;
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
 }

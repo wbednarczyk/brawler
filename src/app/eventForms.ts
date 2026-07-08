@@ -1,4 +1,4 @@
-import { formatLocalDate } from "../shared/formatting/date";
+import { formatLocalDate } from "../shared/format/datetime";
 import type { CompanyEventForm } from "../shared/types/events";
 
 export const companyEventTypeOptions = [

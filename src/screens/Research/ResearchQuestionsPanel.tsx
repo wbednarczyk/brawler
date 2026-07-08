@@ -1,10 +1,12 @@
 import { Plus, Trash2, X } from "lucide-react";
+import { useState } from "react";
 import type {
   EvidenceLink,
   ResearchQuestion,
   ResearchQuestionStatus,
 } from "../../api/researchTypes";
-import { Button, EmptyState, SectionHeader } from "../../ui";
+import { useFocusAfterRemove } from "../../shared/focus/focusAfterRemove";
+import { Button, EmptyState, InlineConfirm, SectionHeader } from "../../ui";
 import { formatEvidenceType, formatQuestionStatus } from "./researchFormatters";
 
 type ResearchQuestionsPanelProps = {
@@ -36,6 +38,16 @@ export function ResearchQuestionsPanel({
   unlinkEvidence,
   text,
 }: ResearchQuestionsPanelProps) {
+  // Cascading (ADR 0076 D5): deleting a question drops its evidence links, so
+  // confirm in place rather than via a native dialog.
+  const [confirmDeleteQuestionId, setConfirmDeleteQuestionId] = useState<string | null>(null);
+  // Deleting a question row moves focus to the next row's select control rather
+  // than dropping it on <body> (ADR 0076 D9). The row div is not focusable, so
+  // land on its primary select button.
+  const { listRef } = useFocusAfterRemove<HTMLDivElement>(
+    questions.map((question) => question.id),
+    { rowSelector: ".research-question-row", focusSelector: ".research-question-row-main" },
+  );
   return (
     <section className="research-questions" aria-label={text("Research questions")}>
       <div className="research-question-strip">
@@ -51,7 +63,10 @@ export function ResearchQuestionsPanel({
           {text("Add question")}
         </Button>
       </div>
-      <div className="research-question-card-list">
+      {/* A DELIBERATE horizontal card strip (grid-auto-flow: column) — it scrolls
+          inside its own bounded container; data-hscroll exempts it from the
+          panel-overflow layout gate. */}
+      <div className="research-question-card-list" data-hscroll ref={listRef}>
         {questions.map((question) => (
           <div
             className={question.id === selectedQuestionId ? "research-question-row selected" : "research-question-row"}
@@ -65,16 +80,31 @@ export function ResearchQuestionsPanel({
               <strong>{question.title}</strong>
               <span>{text(formatQuestionStatus(question.status))}</span>
             </button>
-            <button
-              aria-label={text("Delete research question")}
-              className="research-question-delete"
-              disabled={questionInFlight}
-              title={text("Delete research question")}
-              type="button"
-              onClick={() => deleteQuestion(question.id)}
-            >
-              <Trash2 size={14} />
-            </button>
+            {confirmDeleteQuestionId === question.id ? (
+              <InlineConfirm
+                cancelLabel={text("Cancel")}
+                confirmLabel={text("Delete")}
+                disabled={questionInFlight}
+                onCancel={() => setConfirmDeleteQuestionId(null)}
+                onConfirm={() => {
+                  setConfirmDeleteQuestionId(null);
+                  deleteQuestion(question.id);
+                }}
+              >
+                {text("Delete research question")}
+              </InlineConfirm>
+            ) : (
+              <button
+                aria-label={text("Delete research question")}
+                className="research-question-delete"
+                disabled={questionInFlight}
+                title={text("Delete research question")}
+                type="button"
+                onClick={() => setConfirmDeleteQuestionId(question.id)}
+              >
+                <Trash2 size={14} />
+              </button>
+            )}
           </div>
         ))}
         {questions.length === 0 ? <EmptyState>{text("No research questions yet.")}</EmptyState> : null}

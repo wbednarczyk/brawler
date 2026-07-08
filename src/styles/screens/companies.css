@@ -7,14 +7,14 @@
 
 .watchlist-form {
   display: inline-flex;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .watchlist-form input,
 .watchlist-rename-form input,
 .company-row-actions select {
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -24,7 +24,7 @@
 .watchlist-management-grid {
   display: grid;
   grid-template-columns: minmax(180px, 0.8fr) minmax(320px, 1.6fr);
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 220px;
 }
 
@@ -37,7 +37,7 @@
 .watchlist-list {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: var(--space-2);
   max-height: 260px;
   overflow: auto;
 }
@@ -55,9 +55,9 @@
 
 .watchlist-row {
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  gap: var(--space-3);
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
 }
 
 .watchlist-row strong {
@@ -73,8 +73,8 @@
 
 .watchlist-detail {
   display: grid;
-  gap: 12px;
-  padding: 12px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 62%, transparent);
@@ -84,7 +84,7 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .watchlist-detail-header h3,
@@ -94,35 +94,35 @@
 }
 
 .watchlist-detail-header p {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .watchlist-detail-actions,
 .watchlist-rename-form {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .watchlist-member-columns {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
+  gap: var(--space-3);
   min-height: 0;
 }
 
 .watchlist-member-columns section {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .watchlist-company-list {
   display: grid;
   align-content: start;
-  gap: 6px;
+  gap: var(--space-2);
   max-height: 230px;
   overflow: auto;
 }
@@ -136,8 +136,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  padding: 8px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 65%, transparent);
@@ -147,7 +147,7 @@
 .watchlist-add-company {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .watchlist-company-row span:not(.ticker-exchange):not(.ticker-symbol),
@@ -159,7 +159,7 @@
 
 .watchlist-add-company {
   min-height: 36px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
 }
 
 .watchlist-add-company:hover,
@@ -171,21 +171,21 @@
 .company-form {
   display: grid;
   grid-template-columns: 110px 110px minmax(180px, 1fr) 170px auto auto;
-  gap: 10px;
+  gap: var(--space-3);
   align-items: end;
 }
 
 .company-form label {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .company-form input {
   width: 100%;
   min-height: 38px;
-  padding: 0 34px 0 10px;
+  padding: 0 var(--space-7) 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -201,8 +201,8 @@
 .company-registry-suggestions {
   display: grid;
   grid-column: 1 / -1;
-  gap: 8px;
-  padding: 8px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 64%, transparent);
@@ -210,22 +210,22 @@
 
 .company-registry-suggestions > span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
 }
 
 .company-registry-suggestions > div {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .company-registry-suggestion {
   display: grid;
   grid-template-columns: minmax(82px, 0.24fr) minmax(180px, 1fr) minmax(100px, 0.34fr) auto;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   min-height: 34px;
-  padding: 6px 8px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
@@ -246,30 +246,30 @@
 .company-registry-suggestion small {
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .company-registry-suggestion strong {
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .company-registry-suggestion em {
   color: var(--success);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-style: normal;
 }
 
 .company-list-toolbar {
   display: grid;
   grid-template-columns: minmax(220px, 1fr) minmax(180px, 240px) max-content;
-  gap: 10px;
+  gap: var(--space-3);
   align-items: center;
 }
 
 .company-form + .company-list-toolbar {
-  margin-top: -2px;
+  margin-top: calc(-1 * var(--space-0));
 }
 
 .company-list-toolbar .registry-search-field,
@@ -279,19 +279,19 @@
 }
 
 .company-list-toolbar .registry-search-field input {
-  padding-right: 28px;
+  padding-right: var(--space-7);
 }
 
 .company-list-filter {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .company-list-filter select {
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -300,7 +300,7 @@
 
 .company-list-toolbar > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .company-list {
@@ -332,9 +332,9 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(420px, 0.78fr);
   align-items: center;
-  gap: 16px;
+  gap: var(--space-4);
   min-height: 72px;
-  padding: 12px 14px;
+  padding: var(--space-3) var(--space-4);
   border: 0;
   border-radius: 0;
   background: var(--surface-raised);
@@ -342,11 +342,20 @@
 
 .company-row h2 {
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--font-md);
 }
 
 .company-row-main {
+  display: block;
   min-width: 0;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  appearance: none;
 }
 
 .company-row-main p {
@@ -359,7 +368,7 @@
   display: grid;
   grid-template-columns: minmax(170px, 1fr) auto;
   align-items: center;
-  gap: 14px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -374,7 +383,7 @@
 .fundamentals-panel {
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-5);
   min-width: 0;
   overflow-y: auto;
 }
@@ -382,8 +391,8 @@
 .fundamentals-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
@@ -391,7 +400,7 @@
 
 .fundamentals-section .section-heading h4 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--font-base);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -402,45 +411,45 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .fundamentals-form label,
 .fact-form-grid label {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--space-1);
+  font-size: var(--font-sm);
   color: var(--muted);
 }
 
 .fundamentals-form input,
 .fundamentals-form select,
 .fact-form-grid input {
-  padding: 6px 8px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--surface-raised);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 /* Reporting periods as chips rather than a cramped column. */
 .periods-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .period-item {
-  padding: 4px 10px;
+  padding: var(--space-1) var(--space-3);
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--surface-raised);
 }
 
 .period-label {
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -448,12 +457,19 @@
 .fundamentals-workspace {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
 .facts-matrix-scroll {
   overflow-x: auto;
+  /* An overflow-x scroller in a COLUMN flex chain still propagates its
+     content's min-content width upward (cross-axis intrinsic sizing), so the
+     wide table used to dictate the whole pane's minimum width and force a
+     panel-level horizontal scrollbar. Inline-size containment zeroes the
+     intrinsic contribution: the wrapper stretches to the pane and the table
+     scrolls INSIDE it, at any pane width (guardrail, ADR 0045). */
+  contain: inline-size;
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -461,7 +477,7 @@
 .facts-matrix {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .facts-matrix th,
@@ -475,8 +491,8 @@
 .facts-matrix thead th {
   position: sticky;
   top: 0;
-  padding: 8px 12px;
-  font-size: 11px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -499,7 +515,7 @@
 }
 
 .facts-matrix-kpi {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   font-weight: 600;
 }
 
@@ -510,11 +526,11 @@
 
 .facts-matrix-cell {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   border: none;
   background: transparent;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   text-align: right;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
@@ -530,7 +546,7 @@
 }
 
 .facts-matrix-cell-empty {
-  padding: 8px 12px;
+  padding: var(--space-2) var(--space-3);
   color: var(--muted);
 }
 
@@ -538,8 +554,8 @@
 .fact-detail {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: var(--space-3);
+  padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-raised);
@@ -549,16 +565,16 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .fact-detail-header h3 {
-  margin: 2px 0 0;
-  font-size: 15px;
+  margin: var(--space-0) 0 0;
+  font-size: var(--font-md);
 }
 
 .fact-detail-header .eyebrow {
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -567,7 +583,7 @@
 .facts-matrix-trend-head,
 .facts-matrix-trend {
   text-align: center;
-  padding: 6px 12px;
+  padding: var(--space-2) var(--space-3);
 }
 
 .facts-matrix-trend {
@@ -577,13 +593,13 @@
 .fact-detail-chart {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding-top: 6px;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
 
 .fact-detail-chart .eyebrow {
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
@@ -599,8 +615,8 @@
 .fact-detail-drift {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-top: 8px;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
   border-top: 1px solid var(--border);
 }
 
@@ -616,9 +632,9 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--space-4);
   min-width: 0;
-  padding: 7px 2px;
+  padding: var(--space-2) var(--space-0);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
@@ -629,7 +645,7 @@
 .fact-detail-grid dt {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .fact-detail-grid dd {
@@ -637,99 +653,18 @@
   min-width: 0;
   overflow-wrap: anywhere;
   text-align: right;
-  font-size: 14px;
+  font-size: var(--font-md);
   font-variant-numeric: tabular-nums;
 }
 
-/* Management claims tracker (ADR 0040). */
-.company-claims-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.claims-review-queue {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.claims-queue-bucket {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.claim-queue-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  justify-content: space-between;
-}
-
-.claim-queue-statement {
-  flex: 1 1 240px;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.claim-queue-actions {
-  display: flex;
-  gap: 6px;
-}
-
-.claim-create-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-.claims-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.claim-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.claim-row-main {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex: 1 1 260px;
-  min-width: 0;
-}
-
-.claim-row-statement {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.claim-row-meta {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+/* Management claims tracker styles moved to src/styles/claims.css (ADR 0076 D6
+   density-contract prep) so companies.css and the claims panel stay disjoint. */
 
 /* Per-company settings surface (ADR 0056): master-detail, stacks in narrow windows. */
 .company-settings {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr);
-  gap: 16px;
+  gap: var(--space-4);
   align-items: start;
 }
 
@@ -743,7 +678,7 @@
 .company-settings-detail {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -751,7 +686,7 @@
   display: flex;
   align-items: flex-end;
   flex-wrap: wrap;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 /* The header "select all" checkbox is intentionally larger than the per-row ones,
@@ -773,18 +708,18 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
 }
 
 .company-settings-row {
-  padding: 4px 2px;
+  padding: var(--space-1) var(--space-0);
   border-bottom: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
 }
 
 .company-settings-row-label {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-0);
   min-width: 0;
 }
 
@@ -796,12 +731,12 @@
 .company-settings-row-meta {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .company-settings-mode-badge {
-  font-size: 0.72rem;
+  font-size: var(--font-sm);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted, rgba(255, 255, 255, 0.6));
@@ -810,11 +745,128 @@
 .company-settings-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .company-settings-count {
-  font-size: 0.8rem;
+  font-size: var(--font-base);
   color: var(--text-muted, rgba(255, 255, 255, 0.6));
+}
+
+/* -------------------------------------------------------------------------- */
+/* Fundamentals density contract (U7-A / ADR 0076 Decision 6)                  */
+/* Tier switches ride the named `pane` size container (.cockpit-pane); base    */
+/* fundamentals styles above. Compact header: no in-panel title duplicating    */
+/* the "Fundamentals" pane tab.                                                */
+/* -------------------------------------------------------------------------- */
+
+.fundamentals-caption {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Autopilot disclosure. The summary toggle is hidden at tall/wide tiers (the
+   field renders inline via .fundamentals-autopilot-body); it only surfaces —
+   and can fold the field — at the S tier. */
+.fundamentals-autopilot-toggle,
+.fundamentals-forms-toggle {
+  display: none;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--font-base);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fundamentals-autopilot-chevron,
+.fundamentals-forms-chevron {
+  display: inline-flex;
+  transition: transform 120ms ease;
+}
+
+.fundamentals-autopilot.is-expanded .fundamentals-autopilot-chevron,
+.fundamentals-forms.is-expanded .fundamentals-forms-chevron {
+  transform: rotate(90deg);
+}
+
+/* Reporting forms: one column by default (M/S), toggle hidden (forms inline). */
+.fundamentals-forms {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.fundamentals-forms-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+/* L (>760px): reporting forms sit side-by-side beside the matrix. */
+@container pane (min-width: 760px) {
+  .fundamentals-forms-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+/* S (<420px): Autopilot folds to a summary row + expand. */
+@container pane (max-width: 419px) {
+  .fundamentals-autopilot-toggle {
+    display: inline-flex;
+  }
+
+  .fundamentals-autopilot:not(.is-expanded) .fundamentals-autopilot-body {
+    display: none;
+  }
+}
+
+/* short (<480px height): only the matrix + section headers stay; the reporting
+   forms fold behind the disclosure. Placed AFTER the L rule so it wins at
+   wide-but-short panes (equal specificity, later source order). */
+@container pane (max-height: 479px) {
+  .fundamentals-forms-toggle {
+    display: inline-flex;
+  }
+
+  .fundamentals-forms:not(.is-expanded) .fundamentals-forms-grid {
+    display: none;
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+/* Company feed density contract (U7-A / ADR 0076 Decision 6)                  */
+/* Base row/detail styles live in inbox.css; these are the pane-tier deltas.   */
+/* -------------------------------------------------------------------------- */
+
+/* S (<420px): item = badge (type) + title + date; source meta + summary fold. */
+@container pane (max-width: 419px) {
+  .company-feed-panel .feed-meta-source,
+  .company-feed-panel .feed-row-summary {
+    display: none;
+  }
+}
+
+/* L (>760px): the selected item's detail becomes a split-pane beside its row. */
+@container pane (min-width: 760px) {
+  .company-feed-panel .company-feed-row-block:has(.company-feed-detail) {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 0.85fr);
+    align-items: start;
+    gap: var(--space-3);
+  }
+}
+
+/* short (<480px height): list only — the split-pane collapses so the detail
+   stacks below its row again. AFTER the L rule to win at wide-but-short panes. */
+@container pane (max-height: 479px) {
+  .company-feed-panel .company-feed-row-block:has(.company-feed-detail) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
 }
 

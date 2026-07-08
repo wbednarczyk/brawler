@@ -30,7 +30,10 @@ const EMPTY_FACT_FORM: FinancialFactForm = {
 // (decision: clean cockpit panels reuse the real editable panel via api/* —
 // no AppStateRoot coupling). Lets the full, editable `FundamentalsPanel` render
 // for any company a panel pins (ADR 0053 phase 4b).
-export function useCockpitFundamentals(companyId: string) {
+// `revision` bumps when a sibling panel writes facts for this company (a
+// report-documents extraction); it forces the facts/periods refetch below so the
+// panel never shows stale data after a successful extraction.
+export function useCockpitFundamentals(companyId: string, revision = 0) {
   const { text } = useLocale();
   const [financialPeriods, setFinancialPeriods] = useState<FinancialPeriod[]>([]);
   const [financialFacts, setFinancialFacts] = useState<FinancialFact[]>([]);
@@ -78,7 +81,7 @@ export function useCockpitFundamentals(companyId: string) {
     return () => {
       cancelled = true;
     };
-  }, [companyId, text]);
+  }, [companyId, revision, text]);
 
   const actions = useFundamentalsController({
     companyId,

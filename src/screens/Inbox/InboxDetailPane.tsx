@@ -1,4 +1,5 @@
 import {
+  ArrowLeft,
   BookOpenText,
   Building2,
   Check,
@@ -38,6 +39,11 @@ type InboxDetailPaneProps = Pick<
   | "formatTimestamp"
 > & {
   selectedFeedSignals: CompanySignal[] | undefined;
+  // At the S width tier (ADR 0076 D6) the detail is a full-pane overlay over the
+  // list, raised when `detailOpen` is set (presentation-only — the list keeps its
+  // selection). The back control calls `onBack` to lower the overlay.
+  detailOpen: boolean;
+  onBack: () => void;
 };
 
 function isPdfAttachment(attachment: { label: string; url: string }) {
@@ -72,6 +78,8 @@ export function InboxDetailPane({
   rejectCompanySignal,
   feedItemSummary,
   formatTimestamp,
+  detailOpen,
+  onBack,
 }: InboxDetailPaneProps) {
   const { text } = useLocale();
   const aiAnalysisProviderConfigured = useAiAnalysisProviderConfigured();
@@ -79,7 +87,22 @@ export function InboxDetailPane({
   const signals = selectedFeedSignals ?? [];
 
   return (
-    <aside className="detail-pane" aria-label={text("Feed item details")}>
+    <aside
+      className="detail-pane"
+      aria-label={text("Feed item details")}
+      data-detail-open={detailOpen ? "true" : undefined}
+    >
+      {selectedFeedItem ? (
+        <Button
+          aria-label={text("Back to list")}
+          className="feed-detail-back compact-button"
+          onClick={onBack}
+          variant="minimal"
+        >
+          <ArrowLeft size={15} />
+          {text("Back to list")}
+        </Button>
+      ) : null}
       <div className="detail-icon">
         <FileText size={24} />
       </div>

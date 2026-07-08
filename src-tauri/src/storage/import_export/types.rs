@@ -181,6 +181,13 @@ pub(super) struct ExportFrameworkCriterion {
     pub(super) expression: String,
     pub(super) weight: Option<String>,
     pub(super) partial_band: Option<String>,
+    // ADR 0075: qualitative criteria carry `kind`/`assessmentGuidance`; both are
+    // `#[serde(default)]` so a pre-v0.50 bundle (no field) imports as a
+    // quantitative criterion (kind ⇒ quantitative, guidance ⇒ None) unchanged.
+    #[serde(default)]
+    pub(super) kind: Option<String>,
+    #[serde(default)]
+    pub(super) assessment_guidance: Option<String>,
 }
 
 /// A user-defined (global `user`-scope) custom metric definition, carried so a

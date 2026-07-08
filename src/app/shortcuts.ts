@@ -11,6 +11,7 @@ export type AppShortcutId =
   | "app.openTranscripts"
   | "app.openSources"
   | "app.openSettings"
+  | "app.commandPalette"
   | "app.focusSearch"
   | "app.refreshSources"
   | "app.refreshDatabase"
@@ -65,8 +66,8 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     hasCustomBinding: false,
   })),
   {
-    id: "app.focusSearch",
-    label: "Focus Inbox search",
+    id: "app.commandPalette",
+    label: "Open command palette",
     group: "Global actions",
     scope: "app",
     binding: {
@@ -76,6 +77,22 @@ export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [
     defaultBinding: {
       ctrlKey: true,
       key: "K",
+    },
+    disabled: false,
+    hasCustomBinding: false,
+  },
+  {
+    id: "app.focusSearch",
+    label: "Focus Inbox search",
+    group: "Global actions",
+    scope: "app",
+    binding: {
+      ctrlKey: true,
+      key: "F",
+    },
+    defaultBinding: {
+      ctrlKey: true,
+      key: "F",
     },
     disabled: false,
     hasCustomBinding: false,

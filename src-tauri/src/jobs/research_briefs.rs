@@ -86,10 +86,8 @@ fn completed_brief_from_provider(
     evidence_items: &[storage::ResearchEvidenceItem],
     output: ResearchBriefProviderOutput,
 ) -> Result<storage::CompletedResearchBrief, String> {
-    let evidence_refs = evidence_items
-        .iter()
-        .map(|item| (item.evidence_type.clone(), item.source_id.clone()))
-        .collect::<HashSet<_>>();
+    // Shared citation-integrity reference set (single home: storage::research).
+    let evidence_refs = storage::supplied_evidence_refs(evidence_items);
     let citation_keys = output
         .citations
         .iter()
@@ -124,9 +122,11 @@ fn completed_brief_from_provider(
         .citations
         .into_iter()
         .map(|citation| {
-            if !evidence_refs
-                .contains(&(citation.evidence_type.clone(), citation.evidence_id.clone()))
-            {
+            if !storage::citation_resolves(
+                &evidence_refs,
+                &citation.evidence_type,
+                &citation.evidence_id,
+            ) {
                 return Err(format!(
                     "Research brief citation {} references unavailable evidence.",
                     citation.citation_key

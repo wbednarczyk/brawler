@@ -1155,6 +1155,8 @@ export function makeQualityFramework(): QualityFramework {
         expression: "roic > 0.10",
         weight: "2",
         partialBand: "0.02",
+        kind: "quantitative",
+        assessmentGuidance: null,
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
       },
@@ -1166,6 +1168,26 @@ export function makeQualityFramework(): QualityFramework {
         expression: "operating_margin > 0.15",
         weight: "1",
         partialBand: null,
+        kind: "quantitative",
+        assessmentGuidance: null,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      },
+      // A qualitative criterion with owner-authored guidance at REALISTIC length
+      // (mirrors the shipped Kroeze template). Prose this long is exactly what
+      // once forced panel-internal horizontal scroll — layout gates need it in
+      // the sample data to bite (guardrail, ADR 0045).
+      {
+        id: "criterion_sample_moat",
+        frameworkId: id,
+        ordinal: 2,
+        label: "Durable moat",
+        expression: "",
+        weight: null,
+        partialBand: null,
+        kind: "qualitative",
+        assessmentGuidance:
+          "Assess whether the company has a durable competitive advantage — brand, network effects, switching costs, scale, or regulatory barriers — that protects returns on capital over time. Ground the judgment in evidence of pricing, market share, or margin durability from the supplied sources.",
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
       },
@@ -1201,6 +1223,11 @@ export function makeFrameworkEvaluation(spec: CompanySpec): FrameworkEvaluation 
         threshold: "0.10",
         inputsJson: '{"roic":0.14}',
         note: null,
+        reasoning: null,
+        citations: null,
+        confidence: null,
+        promptVersion: null,
+        source: "engine",
       },
       {
         id: `crit_result_sample_${spec.key}_margin`,
@@ -1215,6 +1242,11 @@ export function makeFrameworkEvaluation(spec: CompanySpec): FrameworkEvaluation 
         threshold: "0.15",
         inputsJson: '{"operating_margin":0.14}',
         note: "Just below threshold.",
+        reasoning: null,
+        citations: null,
+        confidence: null,
+        promptVersion: null,
+        source: "engine",
       },
     ],
   };

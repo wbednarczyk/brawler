@@ -7,8 +7,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 14px;
-  padding: 12px;
+  gap: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
@@ -19,9 +19,9 @@
 }
 
 .company-feed-row h3 {
-  margin: 5px 0 0;
+  margin: var(--space-1) 0 0;
   color: color-mix(in srgb, var(--text) 50%, var(--muted));
-  font-size: 15px;
+  font-size: var(--font-md);
   font-weight: 500;
 }
 
@@ -37,13 +37,13 @@
 .company-feed-row .feed-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .company-feed-row .feed-meta span {
-  padding-right: 8px;
+  padding-right: var(--space-2);
   border-right: 1px solid var(--border);
 }
 
@@ -52,49 +52,49 @@
 }
 
 .company-feed-row p {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.35;
 }
 
 .company-feed-detail {
   display: grid;
-  gap: 12px;
-  margin: 0 10px 10px;
-  padding: 12px;
+  gap: var(--space-3);
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 84%, transparent);
 }
 
 .company-feed-detail h3 {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--text);
-  font-size: 16px;
+  font-size: var(--font-lg);
 }
 
 .company-feed-detail p {
-  margin-top: 5px;
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.4;
 }
 
 .company-feed-detail .feed-detail-body,
 .detail-pane .feed-detail-body {
   max-height: 260px;
-  margin-top: 8px;
+  margin-top: var(--space-2);
   overflow: auto;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.5;
   white-space: pre-wrap;
 }
 
 .feed-body-section {
-  margin-top: 14px;
-  padding: 10px;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface-raised) 58%, transparent);
@@ -104,9 +104,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
 }
 
@@ -122,9 +122,9 @@ summary.feed-body-heading::-webkit-details-marker {
 .ai-analysis-panel {
   position: relative;
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 11px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--border));
   border-radius: 8px;
   background:
@@ -138,24 +138,24 @@ summary.feed-body-heading::-webkit-details-marker {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .ai-analysis-header h3 {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: var(--space-2);
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .ai-analysis-header p,
 .ai-analysis-empty,
 .ai-analysis-result p,
 .ai-analysis-error p {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
@@ -165,19 +165,19 @@ summary.feed-body-heading::-webkit-details-marker {
 .ai-analysis-sources {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .ai-analysis-question {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .ai-analysis-question label {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .ai-analysis-question textarea {
@@ -185,11 +185,11 @@ summary.feed-body-heading::-webkit-details-marker {
   resize: vertical;
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px;
+  padding: var(--space-2);
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 82%, transparent);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .ai-analysis-question textarea:focus {
@@ -199,8 +199,8 @@ summary.feed-body-heading::-webkit-details-marker {
 
 .ai-analysis-result {
   display: grid;
-  gap: 8px;
-  padding: 9px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
@@ -209,9 +209,9 @@ summary.feed-body-heading::-webkit-details-marker {
 .ai-analysis-result-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .ai-analysis-result p {
@@ -224,21 +224,21 @@ summary.feed-body-heading::-webkit-details-marker {
 }
 
 .ai-analysis-tags span {
-  padding: 3px 7px;
+  padding: var(--space-1) var(--space-2);
   border-radius: 999px;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 13%, transparent);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .ai-analysis-sources a {
   color: var(--primary);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .ai-analysis-error {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 @keyframes ai-panel-border {
@@ -261,9 +261,9 @@ summary.feed-body-heading::-webkit-details-marker {
 
 summary.feed-body-heading::before {
   content: "›";
-  margin-right: 2px;
+  margin-right: var(--space-0);
   color: var(--primary);
-  font-size: 16px;
+  font-size: var(--font-lg);
   line-height: 1;
   transition: transform 0.16s ease;
 }
@@ -274,31 +274,31 @@ summary.feed-body-heading::before {
 
 .feed-body-heading strong {
   color: var(--primary);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   text-transform: none;
 }
 
 .feed-detail-empty {
-  margin-top: 8px;
+  margin-top: var(--space-2);
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.45;
 }
 
 .feed-attachment-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
   border-top: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
 }
 
 .feed-attachment-heading {
   flex: 0 0 100%;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   font-weight: 700;
   line-height: 1.2;
   text-transform: uppercase;
@@ -307,14 +307,14 @@ summary.feed-body-heading::before {
 .feed-attachment-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   min-height: 28px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
   border-radius: 7px;
   color: var(--text);
   background: color-mix(in srgb, var(--primary) 10%, var(--surface-raised));
-  font-size: 12px;
+  font-size: var(--font-sm);
   text-decoration: none;
 }
 
@@ -325,7 +325,7 @@ summary.feed-body-heading::before {
 
 .metadata-grid > div {
   min-width: 0;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 70%, transparent);
@@ -333,24 +333,24 @@ summary.feed-body-heading::before {
 
 .metadata-grid dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .metadata-grid dd {
-  margin: 2px 0 0;
+  margin: var(--space-0) 0 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--font-base);
 }
 
 .origin-link-list {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .origin-link {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .origin-link > span {
@@ -360,21 +360,21 @@ summary.feed-body-heading::before {
 .origin-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .origin-actions .compact-button {
   min-height: 26px;
-  padding: 0 8px;
-  font-size: 12px;
+  padding: 0 var(--space-2);
+  font-size: var(--font-sm);
 }
 
 .feed-row {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--space-4);
   min-height: 86px;
-  padding: 14px 18px;
+  padding: var(--space-4) var(--space-5);
   border: 0;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
@@ -402,16 +402,16 @@ summary.feed-body-heading::before {
 
 .feed-row-topline {
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--space-3);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .feed-row-topline strong {
   min-width: 0;
   overflow: hidden;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--font-base);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -422,10 +422,10 @@ summary.feed-body-heading::before {
 
 .feed-row-source-line {
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 4px;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .feed-row-source-line span {
@@ -433,7 +433,7 @@ summary.feed-body-heading::before {
   align-items: center;
   max-width: 100%;
   min-height: 20px;
-  padding: 0 6px;
+  padding: 0 var(--space-2);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
   border-radius: 6px;
@@ -443,20 +443,20 @@ summary.feed-body-heading::before {
 }
 
 .feed-row h2 {
-  margin-top: 6px;
+  margin-top: var(--space-2);
   overflow: hidden;
   color: color-mix(in srgb, var(--text) 50%, var(--muted));
-  font-size: 16px;
+  font-size: var(--font-lg);
   font-weight: 500;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .feed-row p {
-  margin-top: 4px;
+  margin-top: var(--space-1);
   overflow: hidden;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -467,24 +467,24 @@ summary.feed-body-heading::before {
   font-weight: 700;
 }
 
-.feed-row:not(.unread) .feed-row-source-line,
-.feed-row:not(.unread) .feed-row-topline {
-  color: color-mix(in srgb, var(--muted) 58%, var(--surface-raised));
-}
+/* Read rows recede via the dimmed title (`.feed-row h2` above) and the missing
+   unread dot — NOT by dimming the meta line: mixing muted toward surface-raised
+   dropped the type/source/timestamp text below WCAG AA (U9, worst in the light
+   palettes where no dim ratio clears 4.5:1). Meta stays at the AA-safe --muted. */
 
 .inbox-maintenance-row {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
-  padding: 10px 18px;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
   border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   background: color-mix(in srgb, var(--surface) 48%, transparent);
 }
 
 .inbox-maintenance-row > span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .danger-subtle-button {
@@ -510,7 +510,7 @@ summary.feed-body-heading::before {
 .filter-toolbar .inbox-search-field .search-box {
   width: 100%;
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 var(--space-3);
   background: var(--surface-raised);
 }
 
@@ -537,7 +537,7 @@ summary.feed-body-heading::before {
   /* The rail is a fixed-width grid track. Never let a horizontal scrollbar or a
      clipped pane appear here: content must wrap/ellipsis within the track. */
   overflow-x: hidden;
-  padding: 16px;
+  padding: var(--space-4);
 }
 
 /* Single containment contract for the whole rail subtree. Block children take
@@ -560,10 +560,10 @@ summary.feed-body-heading::before {
 .detail-section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
-  margin-top: 14px;
-  padding: 11px;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-raised);
@@ -573,20 +573,20 @@ summary.feed-body-heading::before {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .detail-section-heading h3 {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: var(--space-2);
+  font-size: var(--font-base);
 }
 
 .detail-section-heading p {
-  margin: 4px 0 0;
+  margin: var(--space-1) 0 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.4;
 }
 
@@ -600,23 +600,23 @@ summary.feed-body-heading::before {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .detail-launcher-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .detail-icon {
   display: grid;
   width: 38px;
   height: 38px;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-4);
   place-items: center;
   border-radius: 8px;
   color: var(--primary);
@@ -624,15 +624,15 @@ summary.feed-body-heading::before {
 }
 
 .detail-pane h2 {
-  font-size: 17px;
+  font-size: var(--font-lg);
   line-height: 1.3;
 }
 
 .detail-context {
   display: grid;
-  gap: 7px;
-  margin: 10px 0 0;
-  padding: 0 0 10px;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+  padding: 0 0 var(--space-3);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
@@ -640,13 +640,13 @@ summary.feed-body-heading::before {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
   align-items: baseline;
-  gap: 10px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
 .detail-pane .detail-context dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   line-height: 1.3;
   text-transform: uppercase;
 }
@@ -656,7 +656,7 @@ summary.feed-body-heading::before {
   margin: 0;
   overflow-wrap: anywhere;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.3;
 }
 
@@ -673,32 +673,32 @@ summary.feed-body-heading::before {
 .detail-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
 }
 
 .detail-actions .compact-button {
   min-height: 28px;
-  padding: 0 8px;
+  padding: 0 var(--space-2);
   border-radius: 7px;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .detail-pane-footer-meta {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .detail-pane .detail-pane-footer-meta {
-  margin-top: 18px;
-  padding-top: 10px;
+  margin-top: var(--space-5);
+  padding-top: var(--space-3);
   border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .detail-pane-footer-meta div {
   min-width: 0;
-  padding: 5px 7px;
+  padding: var(--space-1) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
@@ -706,19 +706,19 @@ summary.feed-body-heading::before {
 
 .detail-pane dt {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
 }
 
 .status-label {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .detail-pane dd {
-  margin: 1px 0 0;
+  margin: var(--space-0) 0 0;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.25;
 }
 
@@ -730,9 +730,9 @@ summary.feed-body-heading::before {
 .kpi-extraction-panel {
   position: relative;
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 11px;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border));
   border-radius: 8px;
   background: var(--surface-raised);
@@ -740,13 +740,13 @@ summary.feed-body-heading::before {
 
 .kpi-extraction-sources {
   display: grid;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .kpi-extraction-paste {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
 }
 
@@ -761,10 +761,10 @@ summary.feed-body-heading::before {
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: var(--space-2);
   width: 100%;
   min-height: 40px;
-  padding: 6px 10px;
+  padding: var(--space-2) var(--space-3);
   text-align: left;
 }
 
@@ -785,14 +785,14 @@ summary.feed-body-heading::before {
 
 .kpi-extraction-source-label {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
 
 .kpi-extraction-source-name {
   overflow: hidden;
-  font-size: 13px;
+  font-size: var(--font-base);
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -804,7 +804,7 @@ summary.feed-body-heading::before {
   /* Pin the track to the container so a long unbreakable ESPI filename inside a
      source button truncates instead of forcing the modal wider (no-h-scroll). */
   grid-template-columns: minmax(0, 1fr);
-  gap: 6px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -815,9 +815,9 @@ summary.feed-body-heading::before {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* The document label (title + long unbreakable ESPI filename) must shrink and
@@ -832,15 +832,15 @@ summary.feed-body-heading::before {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .kpi-extraction-period {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .kpi-extraction-period .ui-text-field {
@@ -853,7 +853,7 @@ summary.feed-body-heading::before {
 .kpi-extraction-review {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--space-3);
   min-width: 0;
 }
 
@@ -862,28 +862,28 @@ summary.feed-body-heading::before {
 .ai-analysis-preview {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .ai-analysis-preview p {
   margin: 0;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--font-sm);
   line-height: 1.45;
 }
 
 .kpi-extraction-review > ul {
   display: grid;
-  gap: 12px;
-  margin: 8px 0 0;
+  gap: var(--space-3);
+  margin: var(--space-2) 0 0;
   padding: 0;
   list-style: none;
 }
 
 .kpi-extraction-proposal {
   display: grid;
-  gap: 6px;
-  padding: 8px;
+  gap: var(--space-2);
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 6px;
 }
@@ -893,40 +893,40 @@ summary.feed-body-heading::before {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .kpi-extraction-proposal-tags {
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .kpi-extraction-asreported {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
 }
 
 .kpi-extraction-asreported span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--font-xs);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .kpi-extraction-asreported strong {
   font-variant-numeric: tabular-nums;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .kpi-extraction-snippet {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
   font-style: italic;
 }
 
@@ -934,7 +934,7 @@ summary.feed-body-heading::before {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
 }
 
 .kpi-extraction-summary {
@@ -942,28 +942,28 @@ summary.feed-body-heading::before {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px 0;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
 }
 
 .kpi-extraction-summary span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 /* Typed ESPI/EBI signals (v0.40.0) */
 .feed-row-signals {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  margin: 4px 0 2px;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 var(--space-0);
 }
 
 /* Signal badges read as a distinct class from the plain source chips: a leading
    tag icon, heavier weight, and a restrained neon glow tied to the tone color. */
 .signal-badge {
-  gap: 4px;
-  font-size: 11px;
+  gap: var(--space-1);
+  font-size: var(--font-xs);
   font-weight: 600;
   letter-spacing: 0.01em;
   box-shadow:
@@ -979,13 +979,13 @@ summary.feed-body-heading::before {
 .feed-signals-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .feed-signals-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -996,21 +996,91 @@ summary.feed-body-heading::before {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .feed-signal-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .feed-signal-source {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .feed-signal-actions {
   flex: 0 0 auto;
+}
+
+/* --------------------------------------------------------------------------- */
+/* U7-E1 Inbox density contract (ADR 0076 D6)                                   */
+/* --------------------------------------------------------------------------- */
+
+/* The Inbox is the only `.content-grid` without `.content-grid-single`, so this
+   selector targets its list ∥ resizer ∥ detail grid without touching the
+   single-column screens. It reshapes across pane tiers of the hosting
+   `.workspace` size container (shell.css): L (>760) keeps the side-by-side grid
+   (shell.css default); M stacks list above detail; S shows the list alone with
+   the detail as a full-pane overlay on selection. The higher-specificity
+   `:not()` selector wins over the window-based responsive.css fallbacks. */
+
+/* The back-to-list control exists only in the S overlay. */
+.feed-detail-back {
+  display: none;
+  align-self: flex-start;
+  flex: 0 0 auto;
+  margin-bottom: var(--space-2);
+}
+
+/* M + S: single column; the drag resizer is only meaningful side by side at L. */
+@container pane (max-width: 759px) {
+  .content-grid:not(.content-grid-single) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .content-grid:not(.content-grid-single) > .pane-resizer {
+    display: none;
+  }
+}
+
+/* S: the list fills the pane; the detail stays lowered until a row is activated,
+   then it is raised as a full-pane overlay over the list with a visible back
+   control (`data-detail-open`, set presentation-only in InboxScreen). */
+@container pane (max-width: 419px) {
+  .content-grid:not(.content-grid-single) {
+    position: relative;
+  }
+
+  .content-grid:not(.content-grid-single) > .detail-pane {
+    display: none;
+  }
+
+  .content-grid:not(.content-grid-single) > .detail-pane[data-detail-open="true"] {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: var(--surface);
+  }
+
+  .detail-pane[data-detail-open="true"] .feed-detail-back {
+    display: inline-flex;
+  }
+}
+
+/* short (<480h): reduce the visible filters — reuse the FilterToolbar S-tier
+   disclosure hook (ui.css) so the secondary selects fold behind "Filters" while
+   the search field and status control stay visible. Scoped to the Inbox toolbar
+   so other screens' toolbars are untouched. */
+@container pane (max-height: 479px) {
+  .feed-panel .filter-toolbar-disclosure {
+    display: inline-flex;
+  }
+
+  .feed-panel .filter-toolbar-controls[data-collapsed="true"] {
+    display: none;
+  }
 }

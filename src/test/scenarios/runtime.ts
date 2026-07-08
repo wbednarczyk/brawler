@@ -9,6 +9,7 @@
 // Determinism: IDs come from a per-runtime counter (reset with the store), never
 // wall-clock/random, so parallel workers stay reproducible.
 
+import packageJson from "../../../package.json";
 import { SAMPLE_NOW } from "./entities";
 import {
   legacyInvalidLicenseStatus,
@@ -163,6 +164,41 @@ function runSearch(data: ScenarioData, query: string) {
   return { groups };
 }
 
+type FrameworkCriterion = ScenarioData["qualityFrameworks"][number]["criteria"][number];
+
+// Shared kind/guidance/expression resolution + validation for the
+// create_/update_framework_criterion handlers (F9 — one resolver, no
+// duplication). The effective kind is the input override else the existing
+// row's kind (defaulting to quantitative on create, where `existing` is
+// undefined — which makes this reduce to the create-path behaviour exactly).
+// Mirror the storage validation (ADR 0075): a qualitative criterion requires
+// non-empty guidance and stores no DSL expression; a quantitative one requires
+// a non-empty predicate expression. The thrown messages MUST stay byte-identical
+// — the dual-execution fidelity corpus replays these handlers.
+function resolveCriterionKindFields(
+  input: Record<string, unknown>,
+  existing?: FrameworkCriterion,
+): { kind: "qualitative" | "quantitative"; expression: string; assessmentGuidance: string } {
+  const kind = str(input.kind) === "qualitative"
+    ? ("qualitative" as const)
+    : str(input.kind) === "quantitative"
+      ? ("quantitative" as const)
+      : (existing?.kind ?? "quantitative");
+  const assessmentGuidance = kind === "qualitative"
+    ? (str(input.assessmentGuidance) ?? existing?.assessmentGuidance ?? "").trim()
+    : "";
+  const expression = kind === "qualitative"
+    ? ""
+    : (str(input.expression) ?? existing?.expression ?? "").trim();
+  if (kind === "qualitative" && assessmentGuidance === "") {
+    throw new Error("a qualitative criterion requires assessment guidance");
+  }
+  if (kind === "quantitative" && expression === "") {
+    throw new Error("a quantitative criterion requires an expression");
+  }
+  return { kind, expression, assessmentGuidance };
+}
+
 // ---------------------------------------------------------------------------
 // Handler table
 // ---------------------------------------------------------------------------
@@ -171,7 +207,9 @@ function buildHandlers(): Record<string, Handler> {
   const ok = () => undefined;
   const handlers: Record<string, Handler> = {
     // --- System / platform reads ---
-    health: () => ({ status: "ok", version: "0.3.0" }),
+    // Version mirrors package.json so the browser-smoke brand chip never rots
+    // behind the real app again (audit K12: it showed a stale hardcoded 0.3.0).
+    health: () => ({ status: "ok", version: packageJson.version }),
     database_status: (d) => d.databaseStatus,
     get_settings: (d) => d.settings,
     get_license_status: (d) => d.licenseStatus,
@@ -1254,6 +1292,19 @@ function buildHandlers(): Record<string, Handler> {
       tier: "esef",
       emitted: false,
       producedFactIds: [],
+      skippedFactIds: [],
+      divergentCount: 0,
+      driftJson: null,
+    }),
+    // Per-document structured extraction (ADR 0061 S5) — the period is derived
+    // server-side; the mock returns the same summary shape as the raw pipeline.
+    extract_report_document_data: () => ({
+      acceptance: "accepted",
+      tier: "pdf",
+      emitted: true,
+      producedFactIds: [],
+      skippedFactIds: [],
+      divergentCount: 0,
       driftJson: null,
     }),
     start_kpi_extraction: (d, a, ctx) => {
@@ -1524,14 +1575,23 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       const frameworkId = str(input.frameworkId) ?? "";
       const framework = d.qualityFrameworks.find((f) => f.id === frameworkId);
+      // Shared resolution + validation (F9). NOTE: this mirrors PRESENCE, not DSL
+      // *semantics* — the real backend's validate_predicate rejects a malformed
+      // non-empty expression that this mock accepts. The fidelity corpus only
+      // replays valid inputs (the Rust replayer expects success), so a
+      // malformed-predicate case is out of its scope by design; the UI gates on
+      // validate_criterion_expression before create.
+      const { kind, expression, assessmentGuidance: guidance } = resolveCriterionKindFields(input);
       const criterion = {
         id: ctx.nextId("criterion"),
         frameworkId,
         ordinal: framework?.criteria.length ?? 0,
         label: str(input.label) ?? "Criterion",
-        expression: str(input.expression) ?? "true",
+        expression,
         weight: str(input.weight),
         partialBand: str(input.partialBand),
+        kind,
+        assessmentGuidance: kind === "qualitative" ? guidance : null,
         createdAt: SAMPLE_NOW,
         updatedAt: SAMPLE_NOW,
       };
@@ -1541,6 +1601,12 @@ function buildHandlers(): Record<string, Handler> {
     update_framework_criterion: (d, a) => {
       const input = unwrap(a);
       const id = str(input.id);
+      const existing = d.qualityFrameworks.flatMap((f) => f.criteria).find((c) => c.id === id);
+      // Resolve the EFFECTIVE kind/guidance/expression (input override else the
+      // existing value) via the shared resolver (F9) — including a
+      // qualitative→quantitative switch that must not keep the empty expression a
+      // qualitative row carries (ADR 0075 T5).
+      const { kind, expression, assessmentGuidance: guidance } = resolveCriterionKindFields(input, existing);
       let updated: ScenarioData["qualityFrameworks"][number]["criteria"][number] | undefined;
       d.qualityFrameworks = d.qualityFrameworks.map((framework) =>
         !framework.criteria.some((c) => c.id === id)
@@ -1549,7 +1615,14 @@ function buildHandlers(): Record<string, Handler> {
               ...framework,
               criteria: framework.criteria.map((c) => {
                 if (c.id !== id) return c;
-                updated = { ...c, label: str(input.label) ?? c.label, expression: str(input.expression) ?? c.expression, updatedAt: SAMPLE_NOW };
+                updated = {
+                  ...c,
+                  label: str(input.label) ?? c.label,
+                  expression,
+                  kind,
+                  assessmentGuidance: kind === "qualitative" ? guidance : null,
+                  updatedAt: SAMPLE_NOW,
+                };
                 return updated;
               }),
             },
@@ -1566,7 +1639,28 @@ function buildHandlers(): Record<string, Handler> {
     evaluate_framework: (d, a) => {
       const input = unwrap(a);
       const companyId = str(input.companyId);
-      return d.frameworkEvaluations.find((e) => e.companyId === companyId) ?? d.frameworkEvaluations[0];
+      // The backend persists a NEW immutable snapshot with a unique id on every
+      // run (quality_frameworks.rs `evaluation_id` + unique_suffix). Returning a
+      // seeded row verbatim would hand the panel a repeated id — duplicate React
+      // keys in the history list. Mint a fresh snapshot from the newest matching
+      // one and prepend it (newest-first, like ORDER BY created_at DESC).
+      const template =
+        d.frameworkEvaluations.find((e) => e.companyId === companyId) ?? d.frameworkEvaluations[0];
+      if (!template) return undefined;
+      let serial = d.frameworkEvaluations.length + 1;
+      while (d.frameworkEvaluations.some((e) => e.id === `${template.id}_run${serial}`)) serial += 1;
+      const id = `${template.id}_run${serial}`;
+      const minted = {
+        ...template,
+        id,
+        results: template.results.map((result, index) => ({
+          ...result,
+          id: `${id}_r${index}`,
+          evaluationId: id,
+        })),
+      };
+      d.frameworkEvaluations = [minted, ...d.frameworkEvaluations];
+      return minted;
     },
     list_framework_evaluations: (d, a) => {
       const input = unwrap(a);
@@ -1589,6 +1683,62 @@ function buildHandlers(): Record<string, Handler> {
       const expression = str(unwrap(a).expression) ?? "";
       const referencedMetricKeys = d.metricKeys.map((m) => m.key).filter((key) => expression.includes(key));
       return { ok: true, error: null, referencedMetricKeys };
+    },
+    // Qualitative assessment (ADR 0075). run/rerun enqueue an async job — no
+    // synchronous result to surface (progress lands via the jobs read model),
+    // matching the real enqueue commands.
+    run_qualitative_assessment: () => undefined,
+    rerun_qualitative_criterion: () => undefined,
+    get_qualitative_assessment: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const frameworkId = str(input.frameworkId);
+      // Current-state read: per criterion, the most-recent agent-assessed row
+      // across all snapshots (ADR 0075 Decision 5). Mirror the real backend's
+      // MAX(created_at). The forward scan keeps the row with the newest createdAt;
+      // on an EQUAL createdAt it must keep the LATER-scanned row, because the
+      // backend (quality_frameworks.rs get_qualitative_assessment) tie-breaks on
+      // created_at THEN framework_evaluations.rowid — the last-inserted snapshot
+      // wins. Array order == insertion order == rowid order, so `>=` (not strict
+      // `>`) lets a later array element overwrite an equal-timestamp earlier one.
+      type QualRow = ScenarioData["frameworkEvaluations"][number]["results"][number];
+      const latestByCriterion = new Map<string, { row: QualRow; createdAt: string }>();
+      for (const evaluation of d.frameworkEvaluations) {
+        if (companyId && evaluation.companyId !== companyId) continue;
+        if (frameworkId && evaluation.frameworkId !== frameworkId) continue;
+        for (const result of evaluation.results) {
+          if (result.source !== "agent" || !result.criterionId) continue;
+          const seen = latestByCriterion.get(result.criterionId);
+          if (!seen || evaluation.createdAt >= seen.createdAt) {
+            latestByCriterion.set(result.criterionId, { row: result, createdAt: evaluation.createdAt });
+          }
+        }
+      }
+      return [...latestByCriterion.values()]
+        .map((entry) => entry.row)
+        .sort((x, y) => x.ordinal - y.ordinal || (x.id < y.id ? -1 : x.id > y.id ? 1 : 0));
+    },
+    // Lifecycle status of the durable assessment job (P1, ADR 0075). The mock
+    // does not model the job queue, so it reports the two states derivable from
+    // stored data — exactly what the real backend returns for a MISSING queue
+    // row: `succeeded` when an agent assessment is already stored, else `idle`.
+    // The `queued`/`running`/`failed` transitions live behind the queue and are
+    // covered by the Rust status tests + the panel test's direct mock.
+    get_qualitative_assessment_status: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const frameworkId = str(input.frameworkId);
+      const hasAssessment = d.frameworkEvaluations.some(
+        (evaluation) =>
+          (!companyId || evaluation.companyId === companyId) &&
+          (!frameworkId || evaluation.frameworkId === frameworkId) &&
+          evaluation.results.some((result) => result.source === "agent" && result.criterionId),
+      );
+      return {
+        status: hasAssessment ? "succeeded" : "idle",
+        attempts: 0,
+        lastError: null,
+      };
     },
 
     // --- Sources ---

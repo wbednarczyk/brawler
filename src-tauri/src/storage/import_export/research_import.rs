@@ -1,4 +1,7 @@
 use super::*;
+// ADR 0075 (F5): reuse the create-path criterion validators so the import applies
+// identical kind/guidance semantics instead of a divergent raw insert.
+use crate::storage::quality_frameworks::{normalize_kind, require_guidance};
 
 pub(super) fn preview_research_import(
     connection: &Connection,
@@ -599,6 +602,31 @@ fn plan_research_import(
             errors.push("Quality framework id and name are required".to_owned());
             continue;
         }
+        // ADR 0075 (F5): validate each criterion through the same kind/guidance
+        // semantics as the create path — a raw insert bypassing them would store a
+        // mis-cased kind verbatim (mis-scored as quantitative downstream: the T6a
+        // bug) or a NULL-guidance qualitative row (ungrounded prompt). An invalid
+        // value is a *hard error* that fails the whole import — mirroring this
+        // file's philosophy for malformed rows (framework id/name required,
+        // mismatched ticker, unsupported scope), not the dedup/dangling-FK
+        // skip+warn path.
+        for criterion in &framework.criteria {
+            match normalize_kind(criterion.kind.as_deref()) {
+                Ok("qualitative") => {
+                    if empty_string_to_none(criterion.assessment_guidance.clone()).is_none() {
+                        errors.push(format!(
+                            "Quality criterion {} is qualitative but has no assessment guidance",
+                            criterion.id
+                        ));
+                    }
+                }
+                Ok(_) => {}
+                Err(_) => errors.push(format!(
+                    "Quality criterion {} has unsupported kind {:?}",
+                    criterion.id, criterion.kind
+                )),
+            }
+        }
         if existing_framework_ids.contains(&framework.id) {
             summary.quality_frameworks_skipped += 1;
         } else {
@@ -717,10 +745,24 @@ fn apply_quality_frameworks(
             ],
         )?;
         for criterion in &framework.criteria {
+            // ADR 0075 (F5): route kind + guidance through the create-path validators
+            // rather than raw-inserting — never store a kind verbatim (a mis-cased
+            // "Qualitative" would mis-score as quantitative downstream), and require
+            // guidance on a qualitative criterion. A pre-v0.50 bundle has no kind ⇒
+            // quantitative, guidance ⇒ None. `plan_research_import` has already
+            // rejected any invalid bundle, so these `?` paths are unreachable in
+            // practice; they keep the insert correct in isolation.
+            let kind = normalize_kind(criterion.kind.as_deref())?;
+            let guidance = if kind == "qualitative" {
+                Some(require_guidance(criterion.assessment_guidance.clone())?)
+            } else {
+                empty_string_to_none(criterion.assessment_guidance.clone())
+            };
             connection.execute(
                 "INSERT INTO framework_criteria
-                    (id, framework_id, ordinal, label, expression, weight, partial_band)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    (id, framework_id, ordinal, label, expression, weight, partial_band,
+                     kind, assessment_guidance)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
                     criterion.id.trim(),
                     framework.id.trim(),
@@ -729,6 +771,8 @@ fn apply_quality_frameworks(
                     criterion.expression.trim(),
                     empty_string_to_none(criterion.weight.clone()),
                     empty_string_to_none(criterion.partial_band.clone()),
+                    kind,
+                    guidance,
                 ],
             )?;
         }

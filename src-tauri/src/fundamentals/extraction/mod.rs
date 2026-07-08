@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use super::validation::FactSet;
 
 pub mod esef;
+pub mod esef_package;
 pub mod html;
 pub mod pdf;
 pub mod pipeline;

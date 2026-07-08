@@ -1,0 +1,193 @@
+/* Management claims tracker (ADR 0040), extracted verbatim from companies.css
+   so the density-contract cluster tasks can evolve the companies screen and the
+   claims panel independently (ADR 0076 D6). Pure move — no value changes.
+   Imported before notebook-shared.css so the notebook `.claims-list` grid rule
+   still wins the cascade for the notebook claims panel, unchanged. */
+.company-claims-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.claims-review-queue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.claims-queue-bucket {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.claim-queue-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.claim-queue-statement {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.claim-queue-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.claim-create-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.claims-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.claim-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.claim-row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.claim-row-statement {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.claim-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Density contract (ADR 0076 D6 Claims row, U7-C): the panel reshapes across
+   pane tiers. Base (M / tall) = single column, inline composer (contract M). */
+.claims-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.claims-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* The "to verify" verdict work sits above the list at narrow widths and moves to
+   a dedicated right column at L (contract L: "+ verdict detail column"). */
+.claims-verdict-column {
+  order: -1;
+}
+
+/* The S composer disclosure and the short queue summary stay hidden until their
+   tier's container query reveals them. */
+.company-claims-panel .claims-add-toggle {
+  display: none;
+}
+
+.claims-queue-summary {
+  display: none;
+}
+
+.claims-queue-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.claims-count {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+
+.claims-count-value {
+  color: var(--primary);
+  font-size: var(--font-md);
+  font-weight: 750;
+}
+
+.claims-count-label {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.claims-queue-top {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.claims-queue-top-item {
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+
+/* L width tier: list ∥ verdict detail column. */
+@container pane (min-width: 760px) {
+  .claims-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+    align-items: start;
+  }
+
+  .claims-verdict-column {
+    order: 0;
+  }
+}
+
+/* S width tier (pane < 420px): list only; composer behind the "Dodaj obietnicę"
+   (Add claim) button. */
+@container pane (max-width: 419px) {
+  .company-claims-panel .claims-add-toggle {
+    display: inline-flex;
+  }
+
+  .company-claims-panel:not([data-composer-open]) .claim-create-form {
+    display: none;
+  }
+}
+
+/* short height tier (pane < 480px tall): queue counts + top 3 due; the full
+   panel folds behind an expansion. */
+@container pane (max-height: 479px) {
+  .claims-queue-summary {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .company-claims-panel:not([data-short-expanded]) .claims-body {
+    display: none;
+  }
+}

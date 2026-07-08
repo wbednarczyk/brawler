@@ -98,6 +98,23 @@ describe("Report-season cockpit", () => {
     });
   });
 
+  it("groups the pre-report card into prep + extended sections for tiered density", async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    // U7-D density (ADR 0076 D6): the pre-report card splits into a prep checklist
+    // (shown from M) and an extended context block (shown from L); container
+    // queries fold each by tier. jsdom asserts the structure the CSS keys off.
+    expect(await screen.findByText("Czy marża brutto się utrzyma?")).toBeInTheDocument();
+    expect(container.querySelector(".report-season-card-prep")).not.toBeNull();
+    expect(container.querySelector(".report-season-card-extended")).not.toBeNull();
+  });
+
   it("marks a report prepared and refreshes the season", async () => {
     const user = userEvent.setup();
     render(

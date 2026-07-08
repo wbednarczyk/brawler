@@ -1,8 +1,9 @@
-import { Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { ChevronRight, Plus, RefreshCw, Save, Trash2 } from "lucide-react";
+import { useState } from "react";
 import type { TranscriptJob } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, StatusPill, TextField } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, InlineConfirm, StatusPill, TextField } from "../../ui";
 import { formatTranscriptStatus } from "./transcriptHelpers";
 import { TranscriptNoteDraft } from "./TranscriptNoteDraft";
 import { TranscriptSegmentReview } from "./TranscriptSegmentReview";
@@ -96,6 +97,13 @@ export function TranscriptJobRow({
   formatEnumLabel,
 }: TranscriptJobRowProps) {
   const { text } = useLocale();
+  // Cascading (ADR 0076 D5): deleting a job also drops its stored segments, so
+  // confirm in place rather than via a native dialog.
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  // U7-E2 density (ADR 0076 D6): segments fold behind a disclosure at S/short.
+  // Collapsed by default so the CSS tier switch can hide the body only there;
+  // at M/L the body renders inline regardless (the toggle is CSS-hidden).
+  const [segmentsExpanded, setSegmentsExpanded] = useState(false);
   const transcriptSegments = transcriptSegmentsByJobId[job.id] ?? [];
   const transcriptSegmentSearch = transcriptSegmentSearchByJobId[job.id] ?? "";
   const selectedTranscriptSegmentIds = selectedTranscriptSegmentIdsByJobId[job.id] ?? [];
@@ -189,18 +197,33 @@ export function TranscriptJobRow({
               {transcriptJobRunInFlight === job.id ? text("Running") : text("Retry")}
             </Button>
           ) : null}
-          <Button
-            className="danger-button"
-            disabled={transcriptDeleteInFlight === job.id}
-            onClick={(event) => {
-              event.stopPropagation();
-              deleteTranscriptJob(job);
-            }}
-            title={`${text("Delete transcript job")} ${job.sourceLabel ?? job.sourceUrl}`}
-            variant="icon"
-          >
-            <Trash2 size={15} />
-          </Button>
+          {confirmDelete ? (
+            <InlineConfirm
+              cancelLabel={text("Cancel")}
+              confirmLabel={text("Delete")}
+              disabled={transcriptDeleteInFlight === job.id}
+              onCancel={() => setConfirmDelete(false)}
+              onConfirm={() => {
+                setConfirmDelete(false);
+                deleteTranscriptJob(job);
+              }}
+            >
+              {text("Stored transcript segments for this job will also be removed.")}
+            </InlineConfirm>
+          ) : (
+            <Button
+              className="danger-button"
+              disabled={transcriptDeleteInFlight === job.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                setConfirmDelete(true);
+              }}
+              title={`${text("Delete transcript job")} ${job.sourceLabel ?? job.sourceUrl}`}
+              variant="icon"
+            >
+              <Trash2 size={15} />
+            </Button>
+          )}
         </div>
       </DenseRow>
       {isTranscriptJobSelected ? (
@@ -288,46 +311,67 @@ export function TranscriptJobRow({
               {transcriptLinkError ? <ErrorText>{transcriptLinkError}</ErrorText> : null}
             </div>
           ) : null}
-          <TranscriptSegmentReview
-            job={job}
-            transcriptSegments={transcriptSegments}
-            transcriptSegmentsError={transcriptSegmentsError}
-            transcriptSegmentSearch={transcriptSegmentSearch}
-            selectedTranscriptSegmentIds={selectedTranscriptSegmentIds}
-            setTranscriptSegmentSearchByJobId={setTranscriptSegmentSearchByJobId}
-            toggleTranscriptSegment={toggleTranscriptSegment}
-          />
-          {job.status === "completed" && transcriptSegments.length > 0 ? (
-            <ActionRow className="transcript-note-actions">
-              <Button
-                className="compact-button"
-                disabled={!job.companyId || selectedTranscriptSegmentIds.length === 0}
-                onClick={() => openTranscriptNoteDraft(job, selectedTranscriptSegments)}
-                title={
-                  job.companyId
-                    ? text("Create a company notebook draft from selected segments")
-                    : text("Link a company before saving selected segments as a company notebook note")
-                }
-                variant="primary"
+          {/* U7-E2 density contract (ADR 0076 D6): segments fold behind the
+              disclosure at the S/short tiers (reachable, never lost); at L the
+              segments sit beside the note draft. The toggle is CSS-hidden above
+              S — segments render inline there regardless of `segmentsExpanded`. */}
+          <div className="transcript-review-columns">
+            <div className={segmentsExpanded ? "transcript-segments transcript-segments-open" : "transcript-segments"}>
+              <button
+                aria-expanded={segmentsExpanded}
+                className="transcript-segments-toggle"
+                onClick={() => setSegmentsExpanded((open) => !open)}
+                type="button"
               >
-                <Plus size={15} />
-                {text("Create company note draft")}
-              </Button>
-              {transcriptNoteError ? <ErrorText>{transcriptNoteError}</ErrorText> : null}
-            </ActionRow>
-          ) : null}
-          {isTranscriptNoteDraftOpen ? (
-            <TranscriptNoteDraft
-              job={job}
-              transcriptNoteForm={transcriptNoteForm}
-              transcriptNoteSaveInFlight={transcriptNoteSaveInFlight}
-              NotebookDateField={NotebookDateField}
-              NotebookQuarterField={NotebookQuarterField}
-              createTranscriptNotebookEntry={createTranscriptNotebookEntry}
-              discardTranscriptNoteDraft={discardTranscriptNoteDraft}
-              updateTranscriptNoteForm={updateTranscriptNoteForm}
-            />
-          ) : null}
+                <ChevronRight aria-hidden="true" className="transcript-segments-chevron" size={15} />
+                {text("Segments")}
+              </button>
+              <div className="transcript-segments-body">
+                <TranscriptSegmentReview
+                  job={job}
+                  transcriptSegments={transcriptSegments}
+                  transcriptSegmentsError={transcriptSegmentsError}
+                  transcriptSegmentSearch={transcriptSegmentSearch}
+                  selectedTranscriptSegmentIds={selectedTranscriptSegmentIds}
+                  setTranscriptSegmentSearchByJobId={setTranscriptSegmentSearchByJobId}
+                  toggleTranscriptSegment={toggleTranscriptSegment}
+                />
+              </div>
+            </div>
+            <div className="transcript-note-column">
+              {job.status === "completed" && transcriptSegments.length > 0 ? (
+                <ActionRow className="transcript-note-actions">
+                  <Button
+                    className="compact-button"
+                    disabled={!job.companyId || selectedTranscriptSegmentIds.length === 0}
+                    onClick={() => openTranscriptNoteDraft(job, selectedTranscriptSegments)}
+                    title={
+                      job.companyId
+                        ? text("Create a company notebook draft from selected segments")
+                        : text("Link a company before saving selected segments as a company notebook note")
+                    }
+                    variant="primary"
+                  >
+                    <Plus size={15} />
+                    {text("Create company note draft")}
+                  </Button>
+                  {transcriptNoteError ? <ErrorText>{transcriptNoteError}</ErrorText> : null}
+                </ActionRow>
+              ) : null}
+              {isTranscriptNoteDraftOpen ? (
+                <TranscriptNoteDraft
+                  job={job}
+                  transcriptNoteForm={transcriptNoteForm}
+                  transcriptNoteSaveInFlight={transcriptNoteSaveInFlight}
+                  NotebookDateField={NotebookDateField}
+                  NotebookQuarterField={NotebookQuarterField}
+                  createTranscriptNotebookEntry={createTranscriptNotebookEntry}
+                  discardTranscriptNoteDraft={discardTranscriptNoteDraft}
+                  updateTranscriptNoteForm={updateTranscriptNoteForm}
+                />
+              ) : null}
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

@@ -1,13 +1,13 @@
 .notebook-panel {
-  gap: 10px;
+  gap: var(--space-3);
 }
 
 .notebook-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 52%, transparent);
@@ -15,20 +15,20 @@
 
 .notebook-toolbar h3 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .notebook-toolbar p {
-  margin-top: 2px;
+  margin-top: var(--space-0);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .notebook-form,
 .notebook-detail {
   display: grid;
-  gap: 10px;
-  padding: 10px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 76%, transparent);
@@ -37,7 +37,7 @@
 .notebook-form-grid {
   display: grid;
   grid-template-columns: minmax(170px, 1.3fr) repeat(3, minmax(118px, 1fr)) auto;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: end;
 }
 
@@ -46,9 +46,9 @@
 .notebook-detail label,
 .date-picker-field {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .notebook-form input,
@@ -59,7 +59,7 @@
 .notebook-detail textarea {
   width: 100%;
   min-height: 32px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -69,7 +69,7 @@
 
 .notebook-form textarea {
   min-height: 68px;
-  padding: 8px 9px;
+  padding: var(--space-2) var(--space-2);
   resize: vertical;
 }
 
@@ -94,7 +94,7 @@
 .date-picker-input-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 32px;
-  gap: 4px;
+  gap: var(--space-1);
   align-items: center;
 }
 
@@ -117,9 +117,9 @@
   top: calc(100% + 5px);
   right: 0;
   display: grid;
-  gap: 7px;
+  gap: var(--space-2);
   min-width: 180px;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface-raised);
@@ -133,17 +133,17 @@
 .quarter-picker-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 5px;
+  gap: var(--space-1);
 }
 
 .quarter-option {
   min-height: 28px;
-  padding: 0 7px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: 7px;
   color: var(--text);
   background: color-mix(in srgb, var(--surface) 78%, transparent);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .quarter-option:hover,
@@ -157,28 +157,73 @@
 .notebook-list {
   display: grid;
   align-content: start;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .notebook-workspace {
   display: grid;
   grid-template-columns: minmax(300px, 0.78fr) minmax(0, 1.22fr);
-  gap: 10px;
+  gap: var(--space-3);
   align-items: start;
+}
+
+/* Pane-width responsiveness (ADR 0076 D6 density contract; guardrail ADR 0045):
+   the workspace stacks below the L width tier (pane ≤ 759px) instead of forcing
+   a panel-level horizontal scrollbar. Resolves against the named `pane`
+   container (.cockpit-pane / .workspace). The S-tier single-column-toggle
+   behavior is a follow-up cluster task; only the boundary moves here. */
+@container pane (max-width: 759px) {
+  .notebook-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.notebook-workspace .notebook-back-to-list {
+  display: none;
+}
+
+/* S width tier (pane < 420px): single column, list OR detail toggled (ADR 0076
+   D6 Notebook contract, U7-C). With a note selected the list collapses so only
+   the detail + a back-to-list control show; with no selection the list stays
+   primary (both remain stacked, matching the density-matrix reference). */
+@container pane (max-width: 419px) {
+  .notebook-workspace[data-detail-open] .notebook-list {
+    display: none;
+  }
+
+  .notebook-workspace[data-detail-open] .notebook-back-to-list {
+    display: inline-flex;
+  }
+}
+
+/* short height tier (pane < 480px tall): list only, editor on select. The empty
+   detail folds away so the list owns the limited height. */
+@container pane (max-height: 479px) {
+  .notebook-workspace:not([data-detail-open]) .notebook-detail {
+    display: none;
+  }
+
+  .notebook-workspace[data-detail-open] .notebook-list {
+    display: none;
+  }
+
+  .notebook-workspace[data-detail-open] .notebook-back-to-list {
+    display: inline-flex;
+  }
 }
 
 .claims-panel,
 .claims-list,
 .claim-row-block {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .claim-detail {
   display: grid;
-  gap: 10px;
-  margin: 0 8px 4px;
-  padding: 10px;
+  gap: var(--space-3);
+  margin: 0 var(--space-2) var(--space-1);
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--primary) 28%, var(--border));
   border-top: 0;
   border-radius: 0 0 8px 8px;
@@ -188,21 +233,21 @@
 .claim-status-control {
   display: flex;
   align-items: end;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .claim-status-control label {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   min-width: 180px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .claim-status-control select {
   width: 100%;
   min-height: 32px;
-  padding: 0 9px;
+  padding: 0 var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -217,10 +262,10 @@
 
 .notebook-row {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   width: 100%;
   min-height: 52px;
-  padding: 7px 9px;
+  padding: var(--space-2) var(--space-2);
   border: 1px solid var(--border);
   border-radius: 8px;
   color: var(--text);
@@ -243,21 +288,21 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .notebook-row-top span {
   flex: 0 0 auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-transform: uppercase;
 }
 
 .notebook-row h3 {
   margin: 0;
   overflow: hidden;
-  font-size: 14px;
+  font-size: var(--font-md);
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -267,17 +312,17 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--space-1);
 }
 
 .notebook-row-meta span {
   max-width: 132px;
   overflow: hidden;
-  padding: 1px 5px;
+  padding: var(--space-0) var(--space-1);
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--font-2xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -286,18 +331,18 @@
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .notebook-detail-actions {
   display: flex;
   flex: 0 0 auto;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .notebook-detail h3 {
-  margin: 4px 0 0;
-  font-size: 16px;
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-lg);
 }
 
 .notebook-entry-header label {
@@ -306,8 +351,8 @@
 
 .notebook-detail textarea {
   min-height: 210px;
-  padding: 9px;
-  font-size: 13px;
+  padding: var(--space-2);
+  font-size: var(--font-base);
   line-height: 1.45;
   resize: vertical;
   white-space: pre-wrap;
@@ -315,12 +360,12 @@
 
 .notebook-read-body {
   min-height: 210px;
-  padding: 10px;
+  padding: var(--space-3);
   border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
   border-radius: 8px;
   color: var(--text);
   background: color-mix(in srgb, var(--surface-raised) 72%, transparent);
-  font-size: 13px;
+  font-size: var(--font-base);
   line-height: 1.5;
 }
 
@@ -335,18 +380,18 @@
 .notebook-read-body h2,
 .notebook-read-body h3,
 .notebook-read-body h4 {
-  margin: 10px 0 6px;
+  margin: var(--space-3) 0 var(--space-2);
   color: var(--text);
   line-height: 1.25;
 }
 
 .notebook-read-body h2 {
-  font-size: 16px;
+  font-size: var(--font-lg);
 }
 
 .notebook-read-body h3,
 .notebook-read-body h4 {
-  font-size: 14px;
+  font-size: var(--font-md);
 }
 
 .notebook-read-body p,
@@ -354,32 +399,32 @@
 .notebook-read-body ol,
 .notebook-read-body blockquote,
 .notebook-read-body pre {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-2);
 }
 
 .notebook-read-body ul,
 .notebook-read-body ol {
-  padding-left: 20px;
+  padding-left: var(--space-5);
 }
 
 .notebook-read-body blockquote {
-  padding-left: 10px;
+  padding-left: var(--space-3);
   border-left: 3px solid color-mix(in srgb, var(--primary) 52%, var(--border));
   color: var(--muted);
 }
 
 .notebook-read-body code {
-  padding: 1px 4px;
+  padding: var(--space-0) var(--space-1);
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   border-radius: 5px;
   background: color-mix(in srgb, var(--surface) 78%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: var(--font-sm);
 }
 
 .notebook-read-body pre {
   overflow: auto;
-  padding: 8px;
+  padding: var(--space-2);
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   border-radius: 8px;
   background: color-mix(in srgb, var(--surface) 78%, transparent);
@@ -394,7 +439,7 @@
 .notebook-detail-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .notebook-entry-meta {
