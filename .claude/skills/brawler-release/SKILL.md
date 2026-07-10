@@ -15,7 +15,7 @@ Full closure order per [DoD §I](../../../docs/engineering-workflow.md#definitio
 
 1. **Write the retrospective** for the user, before closure sign-off: both domains (app + development loop) × went-well / went-wrong (incl. unexpected gaps) / stop / improve — closed vs still-open marked honestly.
 2. **Spec-conformance audit** of the epic's ADR(s), decision by decision: for each, verify a **live-path invocation** exists (`repoctx callers` from the real job/command/UI entry, not only unit tests) and record a verdict (conforms / partial / deviates / not built).
-3. **`make check-epic`** (full gate + coverage ratchet) + **`make mutants`** (+ **`make bench`** if a hot kernel changed) — triage every failure: fix it or file a tracked Radicle issue.
+3. **`make check-epic`** (full gate + coverage ratchet) + **mutants via `gh workflow run mutants.yml`** — NEVER `make mutants` locally: the sweep OOM-freezes the owner's WSL (it has done so three times); the workflow runs it on a GitHub runner (`.github/workflows/mutants.yml`; engineering-workflow.md CI Posture). (+ **`make bench`** if a hot kernel changed.) Triage every failure: fix it or file a tracked Radicle issue.
 4. **`wiki/`** entries for every user-facing change delivered by the epic.
 5. **`docs/roadmap.md`** status line + **`docs/kanban-archive.md`** completed-card entry + `rad issue state --solved` for delivered tasks/epic (never `--closed` for delivered work).
 6. **Squash-merge to master** (default integration — see Release Boundary).
@@ -123,7 +123,7 @@ Do not use the target before completing scope-specific closure work that it cann
 
 `make release` itself runs `make release-check` **and** the full `make check` — the single mandatory gate ([ADR 0062](../../../docs/adr/0062-mandatory-test-gate-and-test-driven-loop.md)). Never substitute piecemeal subset checks (a bare `typecheck`/`test`/`build`/`clippy` run) as release validation — that posture predates ADR 0062 and is not equivalent to the gate.
 
-For **milestone/epic closure**, run `make check-epic` (full gate + coverage ratchet) before sign-off, plus the closure-cadence suites per [DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate): `make mutants`, and `make bench` if a hot kernel changed.
+For **milestone/epic closure**, run `make check-epic` (full gate + coverage ratchet) before sign-off, plus the closure-cadence suites per [DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate): mutants via `gh workflow run mutants.yml` (never `make mutants` locally — WSL OOM), and `make bench` if a hot kernel changed.
 
 Validation counts only under Nix — the host toolchain can be silently split. A "gate green" claim needs the gate's own exit code as evidence: for a backgrounded run, grep the echoed `EXIT=` line rather than trusting a wrapper/task-notification exit code.
 
