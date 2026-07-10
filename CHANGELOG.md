@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.51.0 - 2026-07-10
 
 Trusted extraction: turn "add a company, see its fundamentals" into a measured,
 one-click flow. A new **Coverage map** shows what has data and what is missing
@@ -8,7 +8,8 @@ per reporting period; **Backfill history** fetches past reports and extracts
 them in one action; extraction now reads most interim reports **deterministically**,
 with a free-tier OCR fallback held to a spend budget you control; everything
 that can't be read cleanly lands in a **Review queue** instead of failing
-silently. Local-first, decision support only, as always.
+silently. Local-first, decision support only, as always. Guide:
+[Fundamentals coverage](wiki/fundamentals-coverage.md).
 
 ### Added
 
