@@ -8,6 +8,8 @@
 
 use serde::Serialize;
 
+use crate::fundamentals::extraction::classify::{classify_doc_kind, DocKind};
+
 /// The financial-statement type the diff aligns within (never across types).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
@@ -34,67 +36,28 @@ impl StatementType {
 
 /// Classify a document as a diffable financial statement, or `None` if it is not
 /// one (announcements, audit agreements, management reports, etc. are excluded).
+///
+/// A thin projection of the document taxonomy (ADR 0077 §1): only the two
+/// periodic-statement kinds are diffable, everything else — auditor work
+/// products, governance documents, presentations, filing companions — is not.
+/// The exclusion/marker rationale and its G-2 contract corpus live in
+/// [`crate::fundamentals::extraction::classify`], so the diff's notion of "a
+/// statement" cannot drift from the taxonomy's.
 pub fn classify_statement(title: &str, url: &str) -> Option<StatementType> {
-    let t = format!("{} {}", title, url).to_lowercase();
-    // Exclude non-statement document types up front. Hardened against real GPW
-    // filing components (ADR 0052): the market run surfaced mis-selected
-    // announcements, and CBF's real annual filing bundles supervisory-board reports
-    // (RN), audit reports (SzB / "z badania"), .xades signatures, and .xbri data
-    // files — none of which are the financial statement the diff compares.
-    for bad in [
-        "umowy o badanie",
-        "umowa o badanie",
-        "firmą audytorską",
-        "opóźnieni",
-        "szacunkow",
-        "projekty uchwał",
-        "ogłoszenie o zwołaniu",
-        "rady nadzorczej",
-        "sprawozdanie rn",
-        "_rn_",
-        "z oceny",
-        "z badania",
-        "sprawozdanie z badania",
-        "szb_",
-        "opinia",
-        "list prezesa",
-        "do akcjonariusz",
-        "z przegladu",
-        "z przeglądu",
-        "przeglad ",
-        "wybrane dane",
-        ".xades",
-        ".xbri",
-        ".xbrl",
-    ] {
-        if t.contains(bad) {
-            return None;
-        }
-    }
-    let is_consolidated = t.contains("ssf") || t.contains("skonsolidowan");
-    let is_standalone = t.contains("jsf") || t.contains("jednostkow");
-    // Require an explicit financial-statement marker (not just "sprawozdanie",
-    // which also appears in audit/board reports already excluded above).
-    let looks_financial = t.contains("sprawozdanie finansow")
-        || t.contains("financial statement")
-        || t.contains("ssf")
-        || t.contains("jsf")
-        || t.contains("raport kwartalny")
-        || t.contains("raport_kwartalny")
-        || t.contains("raport okresowy")
-        || t.contains("qsr")
-        || t.contains("psr");
-    if !looks_financial {
+    // DIFF capability limit, NOT taxonomy: the report diff compares parsed
+    // statement bodies, and an ESEF package (`.xbri`) or a zipped filing is not a
+    // body the diff can read. The taxonomy (`classify_doc_kind`, ADR 0077 §1
+    // amendment 2026-07-09) now classifies a bare `.xbri` package as a periodic
+    // statement, but the diff must still exclude it — hence this projection-side
+    // exclusion, documented and tested here, which does not touch the taxonomy.
+    let raw = format!("{title} {url}").to_lowercase();
+    if raw.contains(".xbri") || raw.contains(".zip") {
         return None;
     }
-    if is_consolidated {
-        Some(StatementType::Ssf)
-    } else if is_standalone {
-        Some(StatementType::Jsf)
-    } else {
-        // Default a financial report with no explicit consolidated/standalone marker
-        // to consolidated (the common case for group reports).
-        Some(StatementType::Ssf)
+    match classify_doc_kind(title, url) {
+        DocKind::PeriodicSsf => Some(StatementType::Ssf),
+        DocKind::PeriodicJsf => Some(StatementType::Jsf),
+        _ => None,
     }
 }
 
@@ -163,6 +126,9 @@ fn parse_period(t: &str) -> u8 {
         || t.contains("półrocz")
         || t.contains("polrocz")
         || t.contains("h1")
+        // The title form "1H" (e.g. "za_1H_2023") — the mirror of the already-
+        // present "h1"; bare `contains` matches the existing arm's idiom.
+        || t.contains("1h")
         || t.contains("ii kwarta")
     {
         2
@@ -226,6 +192,29 @@ mod tests {
         assert_eq!(
             classify_statement("JSF_CBF Jednostkowe Sprawozdanie finansowe", "x.xhtml"),
             Some(StatementType::Jsf)
+        );
+    }
+
+    #[test]
+    fn esef_package_is_a_statement_in_taxonomy_but_excluded_from_diff() {
+        // The taxonomy classifies a bare ESEF `.xbri` package as a periodic
+        // statement (ADR 0077 §1 amendment), but the diff cannot compare a
+        // package body, so `classify_statement` must still return `None` for it.
+        // This is the no-diff-regression proof paired with the unchanged golden.
+        assert_eq!(
+            classify_doc_kind("CBF-2025-12-31-1-pl.xbri", ""),
+            DocKind::PeriodicSsf
+        );
+        assert_eq!(classify_statement("CBF-2025-12-31-1-pl.xbri", ""), None);
+        assert_eq!(
+            classify_statement("Skonsolidowany raport 2025", "x.zip"),
+            None
+        );
+        // A `.xbri.xades` signature is already `Other` in the taxonomy — excluded
+        // by both layers.
+        assert_eq!(
+            classify_statement("CBF-2025-12-31-1-pl.xbri.xades", "x"),
+            None
         );
     }
 
@@ -301,6 +290,18 @@ mod tests {
     #[test]
     fn unparseable_period_is_none() {
         assert_eq!(period_sort_key("some report", "x.pdf"), None);
+    }
+
+    #[test]
+    fn parses_1h_title_form_as_half_year() {
+        // T-A1: the title form "za_1H_2023" lowercases to "1h", which no arm
+        // matched before — it collapsed to index 0 (unknown) and lost the period.
+        // It is the mirror of the already-handled "h1" and must map to H1.
+        assert_eq!(period_sort_key("za_1H_2023", ""), Some((2023, 2)));
+        assert_eq!(
+            period_label("za_1H_2023", "").as_deref(),
+            Some("2023 Q2/H1")
+        );
     }
 
     #[test]

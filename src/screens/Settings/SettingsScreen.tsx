@@ -73,6 +73,8 @@ export function SettingsScreen() {
   onAccentPaletteChange,
   onLocaleChange,
   onPollIntervalChange,
+  onBackfillYearsChange,
+  onHistorySweepAiCallLimitChange,
   onShortcutBindingsChange,
   onYoutubeTranscriptionModelChange,
   onYoutubeTranscriptionTimeoutChange,
@@ -171,6 +173,7 @@ export function SettingsScreen() {
               feedPruneResult={feedPruneResult}
               settings={settings}
               onPollIntervalChange={onPollIntervalChange}
+              onBackfillYearsChange={onBackfillYearsChange}
               formatPollInterval={formatPollInterval}
               formatTimestamp={formatTimestamp}
             />
@@ -186,6 +189,7 @@ export function SettingsScreen() {
                 onGeneralAnalysisTimeoutChange={onGeneralAnalysisTimeoutChange}
                 onEspiAiFallbackChange={onEspiAiFallbackChange}
                 onOpenAiCompatibleBaseUrlChange={onOpenAiCompatibleBaseUrlChange}
+                onHistorySweepAiCallLimitChange={onHistorySweepAiCallLimitChange}
               />
               <CapabilityRoutingSettings
                 capabilityProviders={settings?.capabilityProviders ?? {}}

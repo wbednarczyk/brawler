@@ -89,6 +89,7 @@ function succeededJob(proposals: ReturnType<typeof proposal>[]) {
     createdAt: "",
     startedAt: "",
     finishedAt: "",
+    committedFactCount: 0,
     proposals,
   };
 }
@@ -258,6 +259,21 @@ describe("FeedKpiExtractionPanel", () => {
     expect(dialog).toBeInTheDocument();
   });
 
+  it("shows the committed-fact count for a tier-4 validated-facts run (no proposals)", async () => {
+    // ADR 0077 §4 / T4.5: a confirmed OCR profile commits facts directly, so the
+    // job completes with zero proposals and an honest committedFactCount — the
+    // rail must read "N facts committed", not "0 KPI values extracted".
+    const user = userEvent.setup();
+    vi.mocked(startKpiExtraction).mockResolvedValue({ ...succeededJob([]), committedFactCount: 3 });
+
+    render(<FeedKpiExtractionPanel feedItem={feedItem} providerConfigured />);
+
+    await openExtractor(user);
+    await user.click(await screen.findByRole("button", { name: /Extract from attachment/ }));
+
+    expect(await screen.findByText(/3 facts committed/)).toBeInTheDocument();
+  });
+
   it("rejects a proposal without committing a fact", async () => {
     const user = userEvent.setup();
     vi.mocked(startKpiExtraction).mockResolvedValue(
@@ -303,6 +319,7 @@ describe("FeedKpiExtractionPanel", () => {
         fetchedAt: "",
         createdAt: "",
         updatedAt: "",
+        docKind: "other",
       },
     ]);
     vi.mocked(startKpiExtraction).mockResolvedValue(

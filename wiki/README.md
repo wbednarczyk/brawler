@@ -19,6 +19,10 @@ per feature.
 - **[Autopilot](autopilot.md)** — let Brawler detect, fetch, and extract a
   company's new report automatically, per company, with everything cited,
   flagged, and reversible.
+- **[Fundamentals coverage and history backfill](fundamentals-coverage.md)** —
+  the Coverage map (what has data, what's missing, per period), one-click
+  history backfill + extraction, deterministic and OCR reading, the review
+  queue, and the AI spend budget.
 - **[Composable cockpit views](cockpit-views.md)** — build your own
   multi-panel dashboards from a grid and a panel picker, save them by name,
   and switch between them from the sidebar.

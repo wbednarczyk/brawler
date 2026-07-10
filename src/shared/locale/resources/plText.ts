@@ -67,6 +67,28 @@ export const plText: Record<string, string> = {
   "New report processed": "Przetworzono nowy raport",
   "KPI extraction unavailable (no AI provider configured)":
     "Ekstrakcja KPI niedostępna (brak skonfigurowanego dostawcy AI)",
+  // Card b85ba3c: honest per-reason degrade messages (jobs/autopilot.rs).
+  "KPI extraction unavailable (no document-reading AI provider configured)":
+    "Ekstrakcja KPI niedostępna (brak skonfigurowanego dostawcy AI czytającego dokumenty)",
+  "KPI extraction unavailable (report format isn't extractable)":
+    "Ekstrakcja KPI niedostępna (format raportu nie pozwala na wyciąganie danych)",
+  "KPI extraction unavailable (report isn't a readable PDF)":
+    "Ekstrakcja KPI niedostępna (raport nie jest czytelnym plikiem PDF)",
+  "KPI extraction unavailable (no stored file for this report)":
+    "Ekstrakcja KPI niedostępna (brak zapisanego pliku dla tego raportu)",
+  "KPI extraction unavailable (no values were extracted)":
+    "Ekstrakcja KPI niedostępna (nie wyciągnięto żadnych wartości)",
+  "KPI extraction unavailable (extraction setup failed)":
+    "Ekstrakcja KPI niedostępna (przygotowanie ekstrakcji nie powiodło się)",
+  "KPI extraction unavailable (only basic non-AI values available)":
+    "Ekstrakcja KPI niedostępna (dostępne tylko podstawowe wartości bez AI)",
+  "KPI extraction unavailable (AI budget for this run was used up)":
+    "Ekstrakcja KPI niedostępna (wyczerpano budżet AI dla tego przebiegu)",
+  "KPI extraction unavailable (automation is off)":
+    "Ekstrakcja KPI niedostępna (automatyzacja jest wyłączona)",
+  "KPI extraction unavailable (the AI provider returned an error)":
+    "Ekstrakcja KPI niedostępna (dostawca AI zwrócił błąd)",
+  "KPI extraction unavailable ({reason})": "Ekstrakcja KPI niedostępna ({reason})",
   "{confirmed} KPI auto-confirmed (unreviewed) of {proposed} extracted":
     "{confirmed} KPI auto-zatwierdzonych (niezweryfikowane) z {proposed} wyciągniętych",
   "{proposed} KPI extracted, pending your confirmation":
@@ -410,7 +432,7 @@ export const plText: Record<string, string> = {
   "Brief output": "Wynik briefu",
   "Reminder and changed-evidence checkpoint.": "Punkt przeglądu przypomnień i zmian w dowodach.",
   "Source-grounded memo for the selected scope.": "Notatka oparta na źródłach dla wybranego zakresu.",
-  "Review queue": "Kolejka przeglądu",
+  "Review queue": "Do przeglądu",
   "Items that need a concrete follow-up action.": "Elementy wymagające konkretnej akcji kontrolnej.",
   "Open questions you are actively tracking.": "Otwarte pytania, które aktywnie śledzisz.",
   "Source items, notes, events, transcripts, and AI analysis for this scope.": "Elementy kanału, notatki, wydarzenia, transkrypcje i analizy AI dla tego zakresu.",
@@ -1117,6 +1139,7 @@ export const plText: Record<string, string> = {
   "Confirm all known": "Potwierdź wszystkie znane",
   "Accept all suggestions": "Zaakceptuj wszystkie sugestie",
   "KPI values extracted": "wyodrębnionych wartości KPI",
+  "facts committed": "zapisanych faktów",
   "to review": "do przeglądu",
   "As reported": "Jak w raporcie",
   "As stored": "Jak zapisano",
@@ -1302,6 +1325,8 @@ export const plText: Record<string, string> = {
   "Feed analysis": "Analiza kanału",
   "Research brief": "Brief researchu",
   "Signal classification": "Klasyfikacja sygnałów",
+  // ADR 0077 T4.2 — tier-4 vision-extraction capability routing label
+  "Vision extraction": "Ekstrakcja wizyjna",
   "Uses the general AI provider.": "Używa ogólnego dostawcy AI.",
   "Move up": "Przesuń w górę",
   "Move down": "Przesuń w dół",
@@ -1348,4 +1373,97 @@ export const plText: Record<string, string> = {
     "Brak nowych wartości — {n} już zapisanych z tego dokumentu",
   "Extracted values differ from stored facts: {n} — stored values kept, see Diagnostics":
     "Wyciągnięte wartości różnią się od zapisanych: {n} — zachowano zapisane, szczegóły w Diagnostyce",
+  // T1.4 — document-kind taxonomy badge + filter + reclassify (ADR 0077 §1)
+  "Consolidated report": "Raport skonsolidowany",
+  "Standalone report": "Raport jednostkowy",
+  "Audit report": "Raport z badania",
+  "Presentation": "Prezentacja",
+  "Governance": "Ład korporacyjny",
+  "Other": "Inne",
+  "Document type": "Rodzaj dokumentu",
+  "Unclassified": "Niesklasyfikowane",
+  "Filter documents by type": "Filtruj dokumenty według rodzaju",
+  "Refresh classification": "Odśwież klasyfikację",
+  "Classified documents: {n} of {total}": "Sklasyfikowane dokumenty: {n} z {total}",
+  // Panel B — grouped report-documents view (ADR 0077 §2, owner feedback 2026-07-09)
+  "Group by period": "Grupuj po okresie",
+  "Search titles…": "Szukaj w tytułach…",
+  "Search documents": "Szukaj dokumentów",
+  "Clear search": "Wyczyść wyszukiwanie",
+  "Canonical report for this period": "Raport kanoniczny dla okresu",
+  "Annual report": "Raport roczny",
+  "Half-year report": "Raport półroczny",
+  "Quarterly report": "Raport kwartalny",
+  "Periodic report": "Raport okresowy",
+  "No period": "Bez okresu",
+  "Show all ({n})": "Pokaż wszystkie ({n})",
+  // T2.2 — fundamentals coverage map panel (ADR 0077 §2)
+  // ("Period" and "Validated" are shared keys defined earlier in this map.)
+  "Coverage": "Pokrycie",
+  "Data": "Dane",
+  "To review": "Do przeglądu",
+  "Coverage map": "Mapa pokrycia",
+  "No report": "Brak raportu",
+  "not found in backfill": "nie znaleziono w backfillu",
+  "all validated": "wszystkie zwalidowane",
+  "{v} validated · {n} flagged/divergent": "{v} zwalid. · {n} rozbieżnych",
+  "not processed": "nieprzetworzony",
+  "click → Extract": "kliknij → Ekstrahuj",
+  "Skipped — AI budget": "Pominięto — budżet AI",
+  "→ review queue": "→ do przeglądu",
+  // F5 review-queue panel (ADR 0077 §4/§5, T5.3b). "AI", "Confirm", "Reject"
+  // already have plText entries above.
+  "OCR bootstrap": "OCR bootstrap",
+  "OCR · flagged": "OCR · oflagowany",
+  "No proposals to review — deterministic extractions write facts directly.":
+    "Brak propozycji do przeglądu — ekstrakcje deterministyczne zapisują fakty bezpośrednio.",
+  "Confirmed — validation flagged {metric}. Check it in the coverage map.":
+    "Zatwierdzono — walidacja oflagowała {metric}. Sprawdź w mapie pokrycia.",
+  "Can't confirm {metric}: a different value is already saved (saved {stored}, this proposal {proposed}). The saved value stays — reject this proposal or keep the saved fact; nothing was overwritten.":
+    "Nie można zatwierdzić {metric}: dla tego slotu zapisano już inną wartość (zapisano {stored}, ta propozycja {proposed}). Zapisana wartość pozostaje — odrzuć tę propozycję albo zachowaj zapisany fakt; nic nie zostało nadpisane.",
+  "Confirming an OCR proposal confirms the company's extraction profile — later documents read with the deterministic parser.":
+    "Zatwierdzenie propozycji OCR konfirmuje profil ekstrakcji spółki — kolejne dokumenty czyta deterministyczny parser.",
+  "Open report documents": "Otwórz dokumenty raportowe",
+  "No coverage data yet.": "Brak danych o pokryciu.",
+  "Needs review": "Do przeglądu",
+  "Missing": "Brak",
+  "Row click → documents": "Wiersz → dokumenty",
+  // T3.2 — history actions footer (ADR 0077 §3): backfill + history sweep
+  "Backfill history": "Uzupełnij historię",
+  "Extract missing periods": "Wydobądź brakujące okresy",
+  "Backfilling…": "Uzupełnianie…",
+  "Extracting…": "Wydobywanie…",
+  "Queued": "W kolejce",
+  "Automation off": "Automatyzacja wyłączona",
+  "Enable automation to extract history.": "Włącz automatyzację, aby wydobyć historię.",
+  "Extracted {n} · skipped {m}": "Wydobyto {n} · pominięto {m}",
+  "History sweep failed": "Przemiatanie historii nie powiodło się",
+  "Backfill failed": "Uzupełnianie nie powiodło się",
+  // Card bfc4c98: NewConnect / unsupported-market backfill failure.
+  "Backfill isn't available for this company's market (NewConnect) yet":
+    "Uzupełnianie historii nie jest jeszcze dostępne dla rynku tej spółki (NewConnect)",
+  "History sweep is taking longer than expected — reopen this company to check its status.":
+    "Przemiatanie historii trwa dłużej niż zwykle — otwórz spółkę ponownie, aby sprawdzić jej stan.",
+  // T3.3 (ADR 0077 §3): sweep drain counter, truncation honesty, metadata-only
+  // Data cell, and the configurable backfill-depth control.
+  "Extracting… {done}/{total}": "Wydobywanie… {done}/{total}",
+  "History truncated at the page cap — older filings may be missing.":
+    "Historia obcięta na limicie stron — starsze raporty mogą być niedostępne.",
+  "link-only — no stored file": "tylko odnośnik — brak pliku",
+  "OCR proposals to review: {n}": "Propozycje OCR do przeglądu: {n}",
+  "Backfill history depth": "Głębokość pobierania historii",
+  "Backfill depth presets": "Szybki wybór głębokości historii",
+  "Backfill history depth (slider)": "Głębokość pobierania historii (suwak)",
+  "Backfill history depth in years": "Głębokość pobierania historii w latach",
+  "Years of company history to fetch (1–10).": "Lata historii spółki do pobrania (1–10).",
+  // T5.3 (ADR 0077 §6): the history-sweep AI budget control (Settings → AI)
+  // and its matching Coverage-footer readout.
+  "History sweep AI budget": "Budżet AI na przegląd historii",
+  "History sweep AI budget presets": "Szybki wybór budżetu AI na przegląd historii",
+  "History sweep AI budget (slider)": "Budżet AI na przegląd historii (suwak)",
+  "History sweep AI budget in calls": "Budżet AI na przegląd historii w wywołaniach",
+  "AI calls per history sweep (0 = unlimited).": "Wywołania AI na jeden przegląd historii (0 = bez limitu).",
+  "AI: {used}/{limit}": "AI: {used}/{limit}",
+  "AI: {used}": "AI: {used}",
+  "(no limit)": "(bez limitu)",
 };

@@ -21,6 +21,10 @@ const OPENAI_COMPATIBLE_TARGET: &str = "brawler/provider_openai_compatible/api_k
 const OPENAI_COMPATIBLE_ACCOUNT: &str = "provider_openai_compatible:api_key";
 const OPENAI_COMPATIBLE_ENV_VAR: &str = "OPENAI_COMPATIBLE_API_KEY";
 
+const MISTRAL_TARGET: &str = "brawler/provider_mistral/api_key";
+const MISTRAL_ACCOUNT: &str = "provider_mistral:api_key";
+const MISTRAL_ENV_VAR: &str = "MISTRAL_API_KEY";
+
 // Legacy purpose-scoped entries removed in ADR 0028. They are best-effort
 // cleared once so no orphaned secrets linger; we never read or fall back to them.
 const LEGACY_GEMINI_PURPOSE_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
@@ -72,6 +76,7 @@ pub fn credentialed_provider_ids() -> &'static [&'static str] {
         "provider_anthropic",
         "provider_openai",
         "provider_openai_compatible",
+        "provider_mistral",
     ]
 }
 
@@ -109,6 +114,14 @@ pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDes
             target: OPENAI_COMPATIBLE_TARGET,
             account: OPENAI_COMPATIBLE_ACCOUNT,
             development_env_var: Some(OPENAI_COMPATIBLE_ENV_VAR),
+        }),
+        "provider_mistral" => Some(CredentialDescriptor {
+            provider_id: "provider_mistral",
+            secret_kind: "api_key",
+            label: "Mistral API key",
+            target: MISTRAL_TARGET,
+            account: MISTRAL_ACCOUNT,
+            development_env_var: Some(MISTRAL_ENV_VAR),
         }),
         _ => None,
     }

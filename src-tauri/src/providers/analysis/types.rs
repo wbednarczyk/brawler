@@ -367,4 +367,20 @@ pub trait AiAnalysisProvider: Send + Sync {
             "provider does not support document input".to_owned(),
         ))
     }
+
+    /// OCR a report document's raw bytes to its full-document markdown — the
+    /// tier-4 substrate (ADR 0077 §4). Only the Mistral provider overrides this;
+    /// the default errors so a non-OCR provider routed at `VisionExtraction`
+    /// degrades cleanly (a terminal `provider_error`, never a panic). This is the
+    /// sanctioned extension point that keeps the pool/failover semantics without
+    /// downcasting the trait object to the concrete Mistral type.
+    async fn ocr_document(
+        &self,
+        _bytes: &[u8],
+        _mime_type: &str,
+    ) -> Result<String, AnalysisProviderError> {
+        Err(AnalysisProviderError::ProviderError(
+            "provider does not support OCR".to_owned(),
+        ))
+    }
 }

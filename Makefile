@@ -399,6 +399,16 @@ REALDATA_DIR ?= private/realdata/t7-cbf
 realdata-extraction-check:
 	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(REALDATA_DB)) BRAWLER_REAL_DATA_DIR=$(abspath $(REALDATA_DIR)) cargo test t7_cbf -- --ignored --nocapture'
 
+# T0.1 recall/precision ratchet (guardrail G-3, ADR 0077; docs/testing.md
+# § Ground-truth metrics): grades the deterministic pipeline's emitted fact
+# VALUES against the hand-labeled ground truth in
+# private/realdata/t7-cbf/ground_truth/*.json (double-pass: agent proposes,
+# owner verifies) and asserts recall/precision against the pinned floors in
+# src-tauri/src/storage/tests/extraction_metrics.rs. Inert without the corpus
+# or the ground-truth dir. Floors only move deliberately (ratchet).
+realdata-extraction-metrics:
+	$(NIX) bash -c 'cd src-tauri && BRAWLER_REAL_DB=$(abspath $(REALDATA_DB)) BRAWLER_REAL_DATA_DIR=$(abspath $(REALDATA_DIR)) cargo test extraction_metrics -- --ignored --nocapture'
+
 # Live-drive (ADR 0066, docs/testing.md § Live drive): drives the REAL packaged
 # Windows app — real backend, real local SQLite DB — via WebView2's Chrome
 # DevTools Protocol, replacing most manual click-through testing. Requires a live

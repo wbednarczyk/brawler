@@ -4,6 +4,16 @@ Historical completed cards moved out of the active Kanban board to keep agent co
 
 ## Done
 
+### v0.51.0: Trusted extraction foundations (epic 25cd300, ADR 0077)
+
+Intent: turn the owner's post-v0.50 verdict ("extraction of report data is not trusted") into measured reliability — document taxonomy with a canonical report per period, a fundamentals coverage map (what has data, what is missing, why), a history sweep chained from backfill (add company → Backfill → data appears), a free-tier vision/OCR tier-4 fallback chosen by numeric spike, one validation regime for AI and deterministic facts, per-sweep AI budgets, and a recall/precision ratchet on real labeled reports.
+
+Delivered: `doc_kind` taxonomy + canonical-per-period (migration 0061, idempotent reclassify); coverage map read model + `CompanyCoveragePanel` with footer actions and honest cell states incl. `skipped_budget`; durable history sweep + backfill chaining + `backfill_years` setting (migration 0062); Mistral OCR tier-4 with per-company confirmable `OcrExtractionProfile` (facts require a human-confirmed profile; migrations 0063/0064), `VisionExtraction` capability (explicit-only pool), retirement of `validation_status='none'` (G-1); per-sweep AI budget (snapshot + atomic consume + G-4, migration 0065) with used/limit UI; review-queue panel (slot-aware confirm: re-observe links the existing fact, `value_conflict` never overwrites); F6 hardening — period derivation for non-iXBRL XHTML, sweep attacks the best extractable document, association guard + startup repair, `unsupported_market` honesty, production degrade log trail + un-flattened run reasons, migration 0066 `annual`→FY, Playwright build-freshness guard, the positional `html_positional` tier for pdf2htmlEX renders (33/33 vs hand-labeled ground truth, ratchet floor 0.99), and terminal-run re-arm on capability upgrades.
+
+Verification: live on the owner's real Windows app throughout — F4 full tier-4 journey on real Mistral; owner-requested 12-company validation matrix covering every reporting shape (ESEF packages, PDF text-layer, OCR bootstrap under budget, `skipped_budget` lit, honest degrades, NC failure surfaced); punchline journey: CDR sweep filled 9 interim periods (88 deterministic facts) in 7.6 s with `AI: 0/2`. Metrics: CBF ground-truth ratchet unchanged (no regression), new CDR positional ratchet 1.000/1.000 pinned at 0.99, corpus baseline stable, double-extraction idempotent. Spec-conformance audit: ADR 0077 7/7 conforms (amendments as dated annotations). check-epic green at closure. Retro + guardrail harvest on the card and in docs (testing.md, architecture.md).
+
+Owner decisions recorded: stop adding parsers — the error vector is cut by witnesses next (BiznesRadar CSV card + EODHD PoC under `ad9d24f`); plain-language communication standing preference; live-first-then-one-full-gate loop rule.
+
 ### v0.50.0: Quality frameworks — qualitative assessment (epic 5835112) + UX overhaul phase 2 (epic 44beb6e)
 
 Intent: extend quality frameworks with agent-assessed qualitative criteria (moat, pricing power, recurring revenue, capital allocation) with citations, composed into the scorecard and re-assessed by autopilot (ADR 0075); phase 2 (owner scope extension 2026-07-05): the UX journeys & anti-rot epic (ADR 0074) plus the normative UI design system with enforcement at every layer (ADR 0076).

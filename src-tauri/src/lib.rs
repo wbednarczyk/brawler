@@ -24,6 +24,11 @@ pub mod storage;
 #[cfg(test)]
 pub mod transform_invariants;
 
+/// Shared test-only helpers (e.g. the capturing logger). Test-only; never
+/// compiled into the shipped binary.
+#[cfg(test)]
+pub mod test_support;
+
 /// TypeScript marker enums for API string-literal unions (ADR 0048); compiled
 /// only for `make types`. See the module docs.
 #[cfg(feature = "ts-export")]
@@ -93,6 +98,20 @@ pub fn run() {
                     3,
                 ) {
                     log::warn!("failed to enqueue startup content embedding job: {error}");
+                }
+            }
+
+            // Repair report documents mis-associated onto the wrong company by
+            // tag-listing ingestion (T-A3, card 45fcece). Idempotent and
+            // self-healing: safe on every startup, records nothing when there is
+            // nothing to fix. Best-effort — a failure is logged, never fatal.
+            match state.repair_misassociated_report_documents() {
+                Ok(0) => {}
+                Ok(removed) => log::warn!(
+                    "startup mis-association repair removed {removed} report document(s)"
+                ),
+                Err(error) => {
+                    log::warn!("startup mis-association repair failed: {error}");
                 }
             }
 
@@ -220,6 +239,7 @@ pub fn run() {
             commands::financials::delete_financial_fact,
             commands::financials::capture_report_document,
             commands::financials::list_report_documents,
+            commands::financials::reclassify_report_documents,
             commands::financials::resolve_ir_report,
             commands::quality_frameworks::list_quality_frameworks,
             commands::quality_frameworks::get_quality_framework,
@@ -244,12 +264,17 @@ pub fn run() {
             commands::kpi_extraction::start_kpi_extraction,
             commands::kpi_extraction::retry_kpi_extraction,
             commands::kpi_extraction::list_kpi_extraction,
+            commands::kpi_extraction::list_pending_kpi_proposals,
             commands::kpi_extraction::confirm_kpi_proposal,
             commands::kpi_extraction::reject_kpi_proposal,
             commands::fundamentals_extraction::run_structured_extraction,
             commands::fundamentals_extraction::extract_report_document_data,
             commands::fundamentals_extraction::list_fact_provenance,
             commands::fundamentals_extraction::list_flagged_fact_provenance,
+            commands::fundamentals_coverage::get_fundamentals_coverage,
+            commands::history_sweep::run_history_sweep,
+            commands::history_sweep::get_history_sweep_progress,
+            commands::report_documents_view::get_report_documents_view,
             commands::transcripts::list_video_transcript_jobs,
             commands::transcripts::delete_video_transcript_job,
             commands::transcripts::create_video_transcript_job,

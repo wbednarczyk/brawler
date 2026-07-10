@@ -9,4 +9,20 @@ export type BackfillProgress = { companyId: string,
 /**
  * `running` | `completed` | `failed`.
  */
-status: "running" | "completed" | "failed", pagesFetched: number, itemsIngested: number, documentsStored: number, detailErrors: number, error: string | null, startedAt: string, updatedAt: string, };
+status: "running" | "completed" | "failed", pagesFetched: number, itemsIngested: number, documentsStored: number, detailErrors: number, 
+/**
+ * True when the page cap ended the fetch before the configured backfill
+ * cutoff was reached (ADR 0077 §3) — older filings may be missing. Surfaced
+ * as an explicit warning in the coverage panel, never silently dropped.
+ */
+truncated: boolean, 
+/**
+ * The chained history sweep's id, when a completed backfill auto-chained one
+ * (ADR 0077 §3). The sweep row is created **eagerly** at enqueue time, so this
+ * id is known before the command returns — the coverage panel polls THIS sweep
+ * specifically (never "the latest sweep", which could be a stale/other one) so
+ * its status line and AI-budget footer settle on the sweep the backfill
+ * started, never a false-settle. `None` when nothing was chained (a chain
+ * failure is best-effort, or the backfill itself failed).
+ */
+chainedSweepId: string | null, error: string | null, startedAt: string, updatedAt: string, };

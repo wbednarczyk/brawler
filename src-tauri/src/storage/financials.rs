@@ -396,12 +396,28 @@ pub(super) fn list_financial_periods(
         .map_err(StorageError::from)
 }
 
+/// Fold the one known out-of-spec fiscal label into the canonical spec set
+/// (card f64cea2): 'annual' (any case) is the FY alias. Everything else is left
+/// untouched — this is a targeted guardrail, not a whitelist that could reject
+/// legitimate labels produced by the extraction pipeline.
+fn normalize_period_type_label(period_type: &str) -> String {
+    if period_type.eq_ignore_ascii_case("annual") {
+        "FY".to_owned()
+    } else {
+        period_type.to_owned()
+    }
+}
+
 pub(super) fn create_financial_period(
     connection: &Connection,
     input: NewFinancialPeriod,
 ) -> StorageResult<FinancialPeriod> {
     let company_id = input.company_id.trim().to_owned();
-    let period_type = input.period_type.trim().to_owned();
+    // Guardrail (card f64cea2): normalize the one known out-of-spec fiscal label
+    // at the write boundary so a legacy 'annual' can never be reintroduced after
+    // migration 0066 folds it into FY. period_type is a fiscal label (FY, H1, H2,
+    // Q1..Q4, 9M, M01..M12); 'annual' is the FY alias.
+    let period_type = normalize_period_type_label(input.period_type.trim());
     let period_end_date = empty_string_to_none(input.period_end_date.map(|s| s.trim().to_owned()));
     let report_evidence_ref =
         empty_string_to_none(input.report_evidence_ref.map(|s| s.trim().to_owned()));
@@ -1490,4 +1506,66 @@ impl FinancialsStore {
 
         delete_financial_fact(&connection, id)
     }
+
+    /// Fact counts per `(fiscal_year, period_type)` for a company, split by
+    /// provenance validation state — the facts axis of the coverage read model
+    /// (ADR 0077 §2). `validated` = provenance `passed`/`witness_confirmed`,
+    /// `flagged` = provenance `flagged`, `unvalidated` = everything else (no
+    /// provenance row, `unreviewed`, `none`, …). Company-scoped through the
+    /// period join; periods with no facts are simply absent.
+    pub fn facts_coverage_by_period(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<PeriodFactCoverage>> {
+        let connection = self.db.checkout()?;
+
+        facts_coverage_by_period(&connection, company_id)
+    }
+}
+
+/// One `(fiscal_year, period_type)` bucket of fact counts for the coverage read
+/// model. Not an IPC DTO — the coverage command maps it into `CoverageFactsCell`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PeriodFactCoverage {
+    pub fiscal_year: i64,
+    pub period_type: String,
+    pub total: i64,
+    pub validated: i64,
+    pub unvalidated: i64,
+    pub flagged: i64,
+}
+
+fn facts_coverage_by_period(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Vec<PeriodFactCoverage>> {
+    let mut statement = connection.prepare(
+        "SELECT p.fiscal_year,
+                p.period_type,
+                COUNT(*) AS total,
+                SUM(CASE WHEN pv.validation_status IN ('passed', 'witness_confirmed')
+                         THEN 1 ELSE 0 END) AS validated,
+                SUM(CASE WHEN pv.validation_status = 'flagged' THEN 1 ELSE 0 END) AS flagged
+         FROM financial_facts f
+         JOIN financial_periods p ON p.id = f.period_id
+         LEFT JOIN financial_fact_provenance pv ON pv.fact_id = f.id
+         WHERE p.company_id = ?1
+         GROUP BY p.fiscal_year, p.period_type",
+    )?;
+    let rows = statement.query_map([company_id], |row| {
+        let fiscal_year: i64 = row.get(0)?;
+        let period_type: String = row.get(1)?;
+        let total: i64 = row.get(2)?;
+        let validated: i64 = row.get(3)?;
+        let flagged: i64 = row.get(4)?;
+        Ok(PeriodFactCoverage {
+            fiscal_year,
+            period_type,
+            total,
+            validated,
+            unvalidated: total - validated - flagged,
+            flagged,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }

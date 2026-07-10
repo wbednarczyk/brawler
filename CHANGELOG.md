@@ -1,5 +1,70 @@
 # Changelog
 
+## Unreleased
+
+Trusted extraction: turn "add a company, see its fundamentals" into a measured,
+one-click flow. A new **Coverage map** shows what has data and what is missing
+per reporting period; **Backfill history** fetches past reports and extracts
+them in one action; extraction now reads most interim reports **deterministically**,
+with a free-tier OCR fallback held to a spend budget you control; everything
+that can't be read cleanly lands in a **Review queue** instead of failing
+silently. Local-first, decision support only, as always.
+
+### Added
+
+- **Coverage map (per company).** A new **Coverage** panel on the company
+  dashboard: one row per reporting period (newest first) showing the canonical
+  report, how many figures are recorded (validated vs. still-to-review), and a
+  **to-review** count that opens the review queue. Gaps are never hidden — a
+  period with a report but no data reads "not processed → Extract", a
+  metadata-only filing reads "link-only — no stored file", and a period a report
+  couldn't be found for says so.
+- **One-click history backfill + sweep.** The Coverage footer's **Backfill
+  history** fetches a company's past reports and then automatically extracts
+  them — no per-document clicking. **Extract missing periods** runs the
+  extraction alone over reports already stored. A live status line follows the
+  work (backfilling → extracting N/M → done), and a company with automation off
+  says so rather than doing nothing silently.
+- **Deterministic interim extraction.** Quarterly and half-year reports that
+  ship as web-page (XHTML) renderings now extract **automatically and
+  deterministically**, without AI — including a new positional reader for
+  reports whose layout only makes sense by column position.
+- **Free-tier OCR fallback with a per-company profile.** When a report can't be
+  read deterministically, an optional **Mistral OCR** tier reads it. The first
+  read for a company lands as proposals you **confirm**; confirming teaches
+  Brawler that company's layout so later reports read straight through.
+- **Review queue.** A **Review queue** panel lists every figure awaiting your
+  confirmation, grouped by period, each tagged with where it came from (OCR
+  bootstrap, a flagged deterministic parse, or an older AI read) next to its
+  source snippet. **Confirm** records the value (and confirms the OCR layout on
+  the first one); **Reject** discards it. Reachable from the Coverage map's
+  to-review cell or the panel picker.
+- **AI spend budget for sweeps.** A new **Settings → AI** control caps how many
+  OCR/AI calls a single history sweep may spend (presets 0/10/30/100, default
+  30; **0 = no limit**). The Coverage footer shows the latest sweep's spend
+  ("AI: 2/30"). The budget is snapshotted per sweep, so a change only affects
+  future runs, and a sweep that hits the cap says "Skipped — AI budget" rather
+  than dropping a period quietly.
+- **Backfill depth setting.** Choose how many years of history a backfill
+  reaches back (default 3, up to 10).
+
+### Changed
+
+- **Honest failure reporting.** A backfill on an unsupported market fails fast
+  with a clear message instead of a silent no-op; OCR/AI fallbacks that degrade
+  now leave a trail under **Diagnostics → Logs**; and a report that genuinely
+  can't be extracted is reported as such, never as an empty success.
+- **One validation regime.** Deterministic and AI-read figures now pass through
+  the same validation, and the confirm step validates on confirm — the old
+  unvalidated "none" state is gone.
+
+### Fixed
+
+- **Data repairs on upgrade.** Existing installs self-heal on launch: report
+  documents are (re)classified into the new taxonomy, canonical-report links are
+  repaired, and legacy annual periods are normalized to full-year — so the
+  Coverage map is correct without re-importing anything.
+
 ## v0.50.0 — 2026-07-08
 
 Quality frameworks learn to judge what a formula can't: **qualitative criteria**

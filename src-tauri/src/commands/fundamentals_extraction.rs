@@ -55,6 +55,13 @@ pub struct StructuredExtractionSummary {
     pub divergent_count: i64,
     /// Serialized `DriftReport` JSON when the layout drifted.
     pub drift_json: Option<String>,
+    /// The tier-4 (OCR) fallback's honest outcome when it ran (ADR 0077 §4), else
+    /// `null`: `facts_emitted` · `bootstrap_proposals` · `proposals_flagged` ·
+    /// `no_vision_provider` · `not_pdf` · `provider_error:<code>` · `empty`.
+    pub tier4: Option<String>,
+    /// How many proposals tier-4 landed for confirmation (`0` when it emitted
+    /// facts or did not run).
+    pub tier4_proposals: i64,
 }
 
 /// Normalizes the optional trust-ladder `mode` input (default `autopilot`;
@@ -84,6 +91,8 @@ fn summarize(
         skipped_fact_ids: result.skipped_fact_ids,
         divergent_count: result.divergences.len() as i64,
         drift_json: result.drift_json,
+        tier4: result.tier4,
+        tier4_proposals: result.tier4_proposals as i64,
     }
 }
 
@@ -105,6 +114,8 @@ pub async fn run_structured_extraction(
             &input.period_type,
             &input.period_end,
             &mode,
+            // A user-invoked deterministic run permits the tier-4 OCR fallback.
+            jobs::structured_extraction::Tier4Gate::Allowed,
         )
         .map(summarize)
     })
@@ -199,6 +210,8 @@ pub async fn extract_report_document_data(
             period_type,
             &period_end,
             &mode,
+            // The one-click "Extract data" action permits the tier-4 OCR fallback.
+            jobs::structured_extraction::Tier4Gate::Allowed,
         );
 
         match &result {

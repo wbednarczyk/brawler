@@ -222,9 +222,23 @@ function buildHandlers(): Record<string, Handler> {
     list_ai_provider_catalog: (d) => d.providerCatalog,
     get_provider_credential_status: (d, a) => {
       const providerId = str(unwrap(a).providerId);
-      return providerId
-        ? d.credentialStatuses.find((c) => c.providerId === providerId) ?? d.credentialStatuses[0]
-        : d.credentialStatuses[0];
+      const found = providerId
+        ? d.credentialStatuses.find((c) => c.providerId === providerId)
+        : undefined;
+      if (found) return found;
+      // Mock fidelity: the real command reports an UNCONFIGURED status for a
+      // provider with no stored key — never another provider's row. Falling
+      // back to statuses[0] painted every new catalog provider as "configured"
+      // in tests (caught when Mistral joined the catalog, T4.1).
+      return {
+        providerId: providerId ?? "",
+        secretKind: "api_key",
+        configured: false,
+        storage: "keychain",
+        label: providerId ?? "",
+        devFallbackAvailable: false,
+        error: null,
+      };
     },
     list_available_metric_keys: (d) => d.metricKeys,
     backup_status: (d) => d.backupStatus,
@@ -1295,6 +1309,8 @@ function buildHandlers(): Record<string, Handler> {
       skippedFactIds: [],
       divergentCount: 0,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     }),
     // Per-document structured extraction (ADR 0061 S5) — the period is derived
     // server-side; the mock returns the same summary shape as the raw pipeline.
@@ -1306,6 +1322,8 @@ function buildHandlers(): Record<string, Handler> {
       skippedFactIds: [],
       divergentCount: 0,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     }),
     start_kpi_extraction: (d, a, ctx) => {
       // Build a fresh extraction job for the requested report, carrying the
@@ -1372,7 +1390,10 @@ function buildHandlers(): Record<string, Handler> {
         updatedAt: SAMPLE_NOW,
       };
       d.financialFacts = [...d.financialFacts, fact];
-      return fact;
+      // ADR 0077 T4.4: the confirm path returns the fact plus the validation
+      // status recorded on its provenance row (the retired `none` is never
+      // written). The mock reports the common lone-value verdict.
+      return { fact, validationStatus: "unreviewed" };
     },
     reject_kpi_proposal: (d, a) => {
       const proposalId = str(unwrap(a).proposalId);
@@ -1388,11 +1409,198 @@ function buildHandlers(): Record<string, Handler> {
       }
       return d.kpiExtractionJobs[0]?.proposals[0];
     },
+    // F5 review-queue read model (ADR 0077 §4/§5, T5.3b). Every pending proposal
+    // for the company joined to its job's detected period and its source document
+    // (id/title/url) — an inner join, so a proposal whose document is absent is
+    // dropped, mirroring the Rust query. Per-row correctness is pinned Rust-side
+    // (unit tests + the dual-execution fidelity corpus).
+    list_pending_kpi_proposals: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const docById = new Map(d.reportDocuments.map((doc) => [doc.id, doc]));
+      const rows: Array<Record<string, unknown>> = [];
+      for (const job of d.kpiExtractionJobs) {
+        if (job.companyId !== companyId) continue;
+        const doc = docById.get(job.reportDocumentId);
+        if (!doc) continue;
+        for (const p of job.proposals) {
+          if (p.status !== "pending") continue;
+          rows.push({
+            id: p.id,
+            jobId: job.id,
+            metricKey: p.metricKey,
+            label: p.label,
+            valueNumeric: p.valueNumeric,
+            unit: p.unit ?? null,
+            currency: p.currency ?? null,
+            sourceSnippet: p.sourceSnippet ?? null,
+            status: p.status,
+            fiscalYear: job.detectedFiscalYear ?? null,
+            periodType: job.detectedPeriodType ?? null,
+            documentId: doc.id,
+            documentTitle: doc.title ?? null,
+            documentUrl: doc.url,
+            createdAt: p.createdAt,
+            updatedAt: p.updatedAt,
+          });
+        }
+      }
+      return rows;
+    },
 
     // --- Report documents / season ---
     list_report_documents: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return companyId ? d.reportDocuments.filter((r) => r.companyId === companyId) : d.reportDocuments;
+    },
+    // Classification is deterministic Rust code (classify_doc_kind); the mock does
+    // NOT re-derive kinds (a TS port would drift and the dual-execution corpus
+    // pins correctness Rust-side). It reports the already-stored kinds grouped,
+    // and updated: 0 — a read-shaped no-op over the seeded docKind values.
+    reclassify_report_documents: (d) => {
+      const byKind: Record<string, number> = {};
+      for (const doc of d.reportDocuments) {
+        if (doc.docKind == null) continue;
+        byKind[doc.docKind] = (byKind[doc.docKind] ?? 0) + 1;
+      }
+      return { total: d.reportDocuments.length, updated: 0, byKind };
+    },
+    // Coverage read model (ADR 0077 §2). A simplified union over scenario data:
+    // periodic-docKind documents keyed by their period, plus facts grouped by
+    // period. Mirrors the Rust DTO shape; per-cell correctness is pinned by the
+    // Rust unit tests + the dual-execution fidelity corpus. skippedBudget is
+    // always false (the F3/T5.2 budget substrate is not modelled).
+    get_fundamentals_coverage: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const periodIndex = (pt: string): number =>
+        ({ Q1: 1, Q2: 2, H1: 2, Q3: 3, "9M": 3, Q4: 4, H2: 4, FY: 4 })[pt] ?? 0;
+      const periodById = new Map(d.financialPeriods.map((p) => [p.id, p]));
+      // Mirror of the Rust canonical_period_label: stored labels drift (legacy
+      // `annual`, lowercase `q3`), and raw keys would split one period into two
+      // rows. Uppercase + ANNUAL→FY; merged cells sum.
+      const canonicalLabel = (pt: string): string => {
+        const upper = pt.trim().toUpperCase();
+        return upper === "ANNUAL" ? "FY" : upper;
+      };
+      type Key = string;
+      const key = (fy: number, pt: string): Key => `${fy} ${canonicalLabel(pt)}`;
+      const rows = new Map<Key, { fiscalYear: number; periodType: string }>();
+
+      // Reports: canonical periodic document per period (ssf beats jsf).
+      const reports = new Map<Key, { documentId: string; docKind: string; title: string | null; structured: boolean; fetched: boolean }>();
+      for (const doc of d.reportDocuments) {
+        if (doc.companyId !== companyId) continue;
+        if (doc.docKind !== "periodic_ssf" && doc.docKind !== "periodic_jsf") continue;
+        const period = doc.periodId ? periodById.get(doc.periodId) : undefined;
+        if (!period) continue;
+        const k = key(period.fiscalYear, period.periodType);
+        rows.set(k, { fiscalYear: period.fiscalYear, periodType: canonicalLabel(period.periodType) });
+        const existing = reports.get(k);
+        if (existing && existing.docKind === "periodic_ssf" && doc.docKind === "periodic_jsf") continue;
+        reports.set(k, {
+          documentId: doc.id,
+          docKind: doc.docKind,
+          title: doc.title ?? null,
+          structured: (doc.contentType ?? "").includes("xhtml") || (doc.contentType ?? "").includes("html"),
+          fetched: doc.fetchStatus === "fetched",
+        });
+      }
+
+      // Facts grouped by period, split by provenance validation state.
+      const provenance = new Map(
+        ((d as { factProvenance?: Array<{ factId: string; validationStatus: string }> }).factProvenance ?? []).map(
+          (p) => [p.factId, p.validationStatus],
+        ),
+      );
+      const facts = new Map<Key, { total: number; validated: number; unvalidated: number; flagged: number }>();
+      for (const fact of d.financialFacts) {
+        if (fact.companyId !== companyId) continue;
+        const period = periodById.get(fact.periodId);
+        if (!period) continue;
+        const k = key(period.fiscalYear, period.periodType);
+        rows.set(k, { fiscalYear: period.fiscalYear, periodType: canonicalLabel(period.periodType) });
+        const cell = facts.get(k) ?? { total: 0, validated: 0, unvalidated: 0, flagged: 0 };
+        cell.total += 1;
+        const status = provenance.get(fact.id);
+        if (status === "passed" || status === "witness_confirmed") cell.validated += 1;
+        else if (status === "flagged") cell.flagged += 1;
+        else cell.unvalidated += 1;
+        facts.set(k, cell);
+      }
+
+      // Pending proposals grouped by the job's detected period.
+      const pending = new Map<Key, number>();
+      for (const job of d.kpiExtractionJobs) {
+        if (job.companyId !== companyId) continue;
+        if (job.detectedFiscalYear == null || job.detectedPeriodType == null) continue;
+        const count = job.proposals.filter((p) => p.status === "pending").length;
+        if (count === 0) continue;
+        const k = key(job.detectedFiscalYear, job.detectedPeriodType);
+        rows.set(k, { fiscalYear: job.detectedFiscalYear, periodType: canonicalLabel(job.detectedPeriodType) });
+        pending.set(k, (pending.get(k) ?? 0) + count);
+      }
+
+      const periods = [...rows.entries()]
+        .map(([k, { fiscalYear, periodType }]) => {
+          const factCell = facts.get(k) ?? { total: 0, validated: 0, unvalidated: 0, flagged: 0 };
+          return {
+            fiscalYear,
+            periodType,
+            report: reports.get(k) ?? null,
+            facts: factCell,
+            review: { pendingProposals: pending.get(k) ?? 0, flaggedFacts: factCell.flagged },
+            skippedBudget: false,
+          };
+        })
+        .sort((x, y) => y.fiscalYear - x.fiscalYear || periodIndex(y.periodType) - periodIndex(x.periodType) || y.periodType.localeCompare(x.periodType));
+
+      return { companyId, periods };
+    },
+    // Report-documents view read model (ADR 0077 §1/§2, Panel B). Every stored
+    // document for the company, tagged with its fiscal period and whether it is
+    // that period's canonical report. The mock derives the period from the
+    // document's LINKED financial period (periodId → financialPeriods) rather
+    // than re-deriving it from the title/URL the way the Rust `document_period`
+    // does — a TS port of that parser would drift, and the dual-execution
+    // fidelity corpus (empty company) plus the Rust unit tests pin real
+    // derivation. Canonical = the first periodic document per period, ssf
+    // preferred over jsf (mirror of canonical_reports_per_period's kind rank).
+    get_report_documents_view: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const periodById = new Map(d.financialPeriods.map((p) => [p.id, p]));
+      const docs = d.reportDocuments.filter((r) => r.companyId === companyId);
+      const periodOf = (doc: (typeof docs)[number]) => {
+        const p = doc.periodId ? periodById.get(doc.periodId) : undefined;
+        return p ? { fiscalYear: p.fiscalYear, periodType: p.periodType } : null;
+      };
+      const key = (fy: number, pt: string) => `${fy} ${pt}`;
+      const canonicalByKey = new Map<string, string>();
+      for (const doc of docs) {
+        if (doc.docKind !== "periodic_ssf" && doc.docKind !== "periodic_jsf") continue;
+        const period = periodOf(doc);
+        if (!period) continue;
+        const k = key(period.fiscalYear, period.periodType);
+        const currentId = canonicalByKey.get(k);
+        if (currentId == null) {
+          canonicalByKey.set(k, doc.id);
+          continue;
+        }
+        const current = docs.find((x) => x.id === currentId);
+        if (current?.docKind === "periodic_jsf" && doc.docKind === "periodic_ssf") {
+          canonicalByKey.set(k, doc.id);
+        }
+      }
+      const rows = docs.map((doc) => {
+        const period = periodOf(doc);
+        const canonical =
+          period != null && canonicalByKey.get(key(period.fiscalYear, period.periodType)) === doc.id;
+        return {
+          document: doc,
+          fiscalYear: period?.fiscalYear ?? null,
+          periodType: period?.periodType ?? null,
+          canonical,
+        };
+      });
+      return { companyId, rows };
     },
 
     // --- Report-over-report diff (ADR 0052) ---
@@ -1838,6 +2046,11 @@ function buildHandlers(): Record<string, Handler> {
           itemsIngested: 0,
           documentsStored: 0,
           detailErrors: 0,
+          truncated: false,
+          // A completed backfill eagerly chains a history sweep (ADR 0077 §3);
+          // its id matches the one get_history_sweep_progress reports, so the
+          // coverage panel can poll THIS sweep specifically.
+          chainedSweepId: `history_sweep:${companyId}:mock`,
           error: null,
           startedAt: SAMPLE_NOW,
           updatedAt: SAMPLE_NOW,
@@ -1847,6 +2060,61 @@ function buildHandlers(): Record<string, Handler> {
     get_backfill_progress: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return d.backfillProgress.find((p) => p.companyId === companyId) ?? null;
+    },
+
+    // History sweep (ADR 0077 §3). A manual sweep enqueues extraction runs for the
+    // company's fetched periodic reports. The mock synthesizes the sweep from
+    // scenario docs (per-run/per-cell correctness is pinned by the Rust unit tests
+    // + the dual-execution fidelity corpus). run_history_sweep returns a freshly
+    // queued sweep; get_history_sweep_progress returns the completed sweep.
+    run_history_sweep: (_d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return {
+        id: `history_sweep:${companyId}:mock`,
+        companyId,
+        trigger: "manual",
+        status: "queued",
+        candidatesTotal: 0,
+        runsEnqueued: 0,
+        skippedExisting: 0,
+        runsFailed: 0,
+        skippedReason: null,
+        enqueuedRunIds: [],
+        aiCallsUsed: 0,
+        aiCallLimit: 30,
+        error: null,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+    },
+    get_history_sweep_progress: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      // Fetched canonical periodic reports for this company are the sweep's
+      // candidates (the deterministic runs it would enqueue).
+      const candidates = d.reportDocuments.filter(
+        (doc) =>
+          doc.companyId === companyId &&
+          (doc.docKind === "periodic_ssf" || doc.docKind === "periodic_jsf") &&
+          doc.fetchStatus === "fetched",
+      ).length;
+      const sweep = {
+        id: `history_sweep:${companyId}:mock`,
+        companyId,
+        trigger: "backfill" as const,
+        status: "completed" as const,
+        candidatesTotal: candidates,
+        runsEnqueued: candidates,
+        skippedExisting: 0,
+        runsFailed: 0,
+        skippedReason: null,
+        enqueuedRunIds: [],
+        aiCallsUsed: 0,
+        aiCallLimit: 30,
+        error: null,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+      return { sweep, runsTotal: 0, runsDone: 0, runsFailed: 0 };
     },
 
     // --- Embedding / similarity ---
@@ -1886,6 +2154,8 @@ function buildHandlers(): Record<string, Handler> {
         locale: pick("locale", d.settings.locale),
         developerMode: pick("developerMode", d.settings.developerMode),
         pollIntervalSeconds: pick("pollIntervalSeconds", d.settings.pollIntervalSeconds),
+        backfillYears: pick("backfillYears", d.settings.backfillYears),
+        historySweepAiCallLimit: pick("historySweepAiCallLimit", d.settings.historySweepAiCallLimit),
         aiAnalysisMode: pick("aiAnalysisMode", d.settings.aiAnalysisMode),
         espiAiFallbackEnabled: pick("espiAiFallbackEnabled", d.settings.espiAiFallbackEnabled),
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),

@@ -1,6 +1,33 @@
+import { readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
+
 import { defineConfig, devices } from "@playwright/test";
 
 const port = 4321;
+
+// Build-freshness stamp (bug 2059fd8). `reuseExistingServer` locally can hand the
+// browser suite a dev server started from ANOTHER worktree/branch (or from before
+// your latest edit) that serves pre-rework code — the suite then byte-matches
+// STALE visual/density baselines and reports green. The newest source mtime is a
+// cheap identity for "the code this run expects to be served": it is baked into
+// the server the webServer command starts (→ `window.__BRAWLER_BUILD_STAMP__`) and
+// recorded as the expected value; `global-setup` refuses to run against a reused
+// server whose baked stamp differs. A freshly-started server (the normal local
+// flow) bakes this same value, so nothing changes there.
+function newestSourceMtime(dir: string): number {
+  let newest = 0;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    newest = entry.isDirectory()
+      ? Math.max(newest, newestSourceMtime(full))
+      : Math.max(newest, statSync(full).mtimeMs);
+  }
+  return newest;
+}
+
+const buildStamp = String(Math.round(newestSourceMtime(join(process.cwd(), "src"))));
+process.env.BRAWLER_EXPECTED_BUILD_STAMP = buildStamp;
+process.env.BRAWLER_SMOKE_URL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
   testDir: "./tests/browser",
@@ -20,6 +47,9 @@ export default defineConfig({
   // page load, one context per test) makes full parallelism safe — ADR 0048.
   // Workers are capped at half the cores so the browser fleet does not
   // oversubscribe the CPU and cause false-timeout flakiness.
+  // Build-freshness guard (bug 2059fd8): abort before the suite runs if a reused
+  // dev server is serving a stale build (see `newestSourceMtime` above).
+  globalSetup: "./tests/browser/global-setup.ts",
   fullyParallel: true,
   workers: process.env.CI ? 2 : "50%",
   // Local runs never retry (a flake should be seen and fixed); CI retries once
@@ -121,7 +151,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `VITE_BRAWLER_BROWSER_SMOKE=1 npx vite --host 127.0.0.1 --port ${port}`,
+    command: `VITE_BRAWLER_BROWSER_SMOKE=1 VITE_BRAWLER_BUILD_STAMP=${buildStamp} npx vite --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

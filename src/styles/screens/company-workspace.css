@@ -140,9 +140,10 @@
   margin-top: var(--space-3);
 }
 
-/* Report documents (ADR 0036): a SectionHeader + ui-list-rows (ui/ListRow). Rows own their
-   own compact layout/truncation; min-width: 0 lets this grid item shrink so the row
-   titles (long unbreakable ESPI filenames) truncate instead of forcing horizontal scroll. */
+/* Report documents (ADR 0036, ADR 0077 §2): a SectionHeader + filter toolbar + the grouped
+   .doc-groups list (see the .doc-* block below). Rows own their compact two-line layout and
+   truncation; min-width: 0 lets this grid item shrink so long unbreakable ESPI filenames
+   truncate instead of forcing horizontal scroll. */
 .company-report-documents {
   display: grid;
   /* Pin the column to the available width so the row titles (long unbreakable ESPI
@@ -365,35 +366,43 @@
   }
 }
 
-/* Report documents — filename (middle-ellipsis) + date at every tier; the
-   single storage-status chip ("Stored"/"Link only") appears from M, and the
-   provenance preview (document kind + source) from L. The repeated type/source
-   chips were removed from the row line as K-class noise (ADR 0076 D6). */
-.doc-trailing {
-  display: inline-flex;
-  align-items: center;
+/* Report documents — redesigned grouped view (ADR 0077 §2, owner feedback
+   2026-07-09, mockup docs/mockups/f2-coverage-map.html Panel B). Documents group
+   by fiscal period; the kind label leads and the raw filename is demoted to a
+   muted second line; signature/data companions fold away. Density (ADR 0076 D6):
+   kind label + filename + date at every tier; kind/status chips from M; the
+   extract action gains its label from L; a short/S pane drops the chips + action. */
+.doc-groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
-  flex: none;
   min-width: 0;
 }
 
-.doc-date {
+.doc-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+}
+
+/* Period header: accent period label + cadence word + document count. */
+.doc-grp {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-1);
+  min-width: 0;
+}
+
+.doc-grp-label {
   flex: none;
-  color: var(--muted);
-  font-size: var(--font-sm);
-  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+  font-weight: 700;
   white-space: nowrap;
 }
 
-.doc-chips {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-}
-
-.doc-preview {
+.doc-grp-meta {
   min-width: 0;
-  max-width: 22ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -401,10 +410,123 @@
   font-size: var(--font-sm);
 }
 
-/* Per-document "Extract data" action (ADR 0061 S5): the one action per row,
-   pinned to the trailing edge. A real (secondary) Button primitive — a clear
-   affordance, compact for the dense row. Labeled from L; icon-only below L (its
-   aria-label keeps the accessible name), dropped on a short pane (list only). */
+.doc-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-0);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two-line document row: leading icon · [kind label + chips / filename + date] ·
+   fixed trailing slots (status-chip column + reserved action column). */
+.doc-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1);
+  border-radius: 6px;
+  min-width: 0;
+}
+
+.doc-row:hover {
+  background: color-mix(in srgb, var(--surface-raised) 55%, transparent);
+}
+
+.doc-row-icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.doc-row-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.doc-row-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.doc-row-star {
+  flex: none;
+  display: inline-flex;
+  color: var(--warning);
+}
+
+.doc-row-kind {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.doc-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex: none;
+}
+
+/* Line 2: the raw filename (middle-ellipsis) + date, muted. The anchor keeps the
+   FULL filename in its title attribute (tooltip + a live-drive selector hook). */
+.doc-row-file {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  text-decoration: none;
+}
+
+.doc-row-file:hover {
+  color: var(--text);
+}
+
+.doc-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-date {
+  flex: none;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Fixed trailing slots: the status chip lands at the same x on every row because
+   the optional action column is always reserved (owner rule 2026-07-09). */
+.doc-side {
+  display: grid;
+  grid-template-columns: auto var(--doc-action-col, 40px);
+  align-items: center;
+  justify-items: end;
+  gap: var(--space-2);
+  flex: none;
+}
+
+.doc-status {
+  display: inline-flex;
+}
+
+.doc-action {
+  display: inline-flex;
+  justify-content: flex-end;
+}
+
 .doc-extract {
   flex: none;
   min-height: 28px;
@@ -414,31 +536,59 @@
 }
 
 .doc-extract-label {
+  display: none;
   white-space: nowrap;
 }
 
-/* Below L: drop the attribution preview column (chips remain from M) and fold
-   the extract action to an icon (its label hides; the icon button stays). */
-@container pane (max-width: 759px) {
-  .company-report-documents .doc-preview,
+/* Companion fold + "show all" disclosure (an intentional native button). */
+.doc-fold {
+  justify-self: start;
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: var(--font-sm);
+  cursor: pointer;
+  padding: var(--space-1) 0 var(--space-1) var(--space-6);
+  text-align: left;
+}
+
+.doc-fold:hover {
+  color: var(--text);
+}
+
+/* L: the extract action gains its label; widen its reserved column to match. */
+@container pane (min-width: 760px) {
+  .company-report-documents {
+    --doc-action-col: 132px;
+  }
+
   .company-report-documents .doc-extract-label {
-    display: none;
+    display: inline;
   }
 }
 
-/* S: filename + date only — also drop the type/status chips. */
+/* S: kind label + filename + date only — drop the chips, status, and action slot. */
 @container pane (max-width: 419px) {
-  .company-report-documents .doc-chips {
+  .company-report-documents .doc-chips,
+  .company-report-documents .doc-status,
+  .company-report-documents .doc-action {
     display: none;
+  }
+
+  .company-report-documents {
+    --doc-action-col: 0px;
   }
 }
 
-/* short: list only — bare filename + date regardless of width (drop chips,
-   preview, and the extract action). */
+/* short: list only — kind label + filename + date regardless of width. */
 @container pane (max-height: 479px) {
   .company-report-documents .doc-chips,
-  .company-report-documents .doc-preview,
-  .company-report-documents .doc-extract {
+  .company-report-documents .doc-status,
+  .company-report-documents .doc-action {
     display: none;
+  }
+
+  .company-report-documents {
+    --doc-action-col: 0px;
   }
 }

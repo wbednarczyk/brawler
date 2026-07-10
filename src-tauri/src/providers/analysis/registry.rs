@@ -7,7 +7,8 @@
 
 use super::{
     AiAnalysisProvider, ClaudeAnalysisProvider, DocumentSupport, GeminiAnalysisProvider,
-    OpenAiAnalysisProvider, TestSampleAnalysisProvider, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+    MistralAnalysisProvider, OpenAiAnalysisProvider, TestSampleAnalysisProvider,
+    TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
 };
 use crate::providers::credentials;
 
@@ -20,6 +21,10 @@ pub const OPENAI_ANALYSIS_PROVIDER_ID: &str = "provider_openai";
 /// Stable id for the generic OpenAI-compatible analysis provider (ADR 0060): a
 /// user-supplied base URL speaking the OpenAI chat-completions shape.
 pub const OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID: &str = "provider_openai_compatible";
+/// Stable id for the Mistral analysis provider (ADR 0077 §4): OCR + chat, the
+/// tier-4 last-resort substrate. The OCR model is provider-internal; only the
+/// chat model is user-selectable.
+pub const MISTRAL_ANALYSIS_PROVIDER_ID: &str = "provider_mistral";
 
 /// A user-selectable analysis provider with its curated model list and default.
 pub struct AnalysisProviderCatalogEntry {
@@ -72,6 +77,13 @@ pub fn analysis_provider_catalog() -> &'static [AnalysisProviderCatalogEntry] {
             default_model: "",
             requires_credential: true,
         },
+        AnalysisProviderCatalogEntry {
+            provider_id: MISTRAL_ANALYSIS_PROVIDER_ID,
+            label: "Mistral",
+            models: &["mistral-small-latest"],
+            default_model: "mistral-small-latest",
+            requires_credential: true,
+        },
     ]
 }
 
@@ -98,6 +110,7 @@ pub fn analysis_provider_ids() -> &'static [&'static str] {
         ANTHROPIC_ANALYSIS_PROVIDER_ID,
         OPENAI_ANALYSIS_PROVIDER_ID,
         OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID,
+        MISTRAL_ANALYSIS_PROVIDER_ID,
         TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
     ]
 }
@@ -118,6 +131,7 @@ pub fn analysis_provider_document_support(provider_id: &str) -> DocumentSupport 
     match provider_id {
         GEMINI_ANALYSIS_PROVIDER_ID => DocumentSupport::Native,
         ANTHROPIC_ANALYSIS_PROVIDER_ID => DocumentSupport::Native,
+        MISTRAL_ANALYSIS_PROVIDER_ID => DocumentSupport::Native,
         TEST_SAMPLE_ANALYSIS_PROVIDER_ID => DocumentSupport::Native,
         OPENAI_ANALYSIS_PROVIDER_ID => DocumentSupport::TextOnly,
         OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID => DocumentSupport::TextOnly,
@@ -160,6 +174,10 @@ pub fn build_analysis_provider(
             OpenAiAnalysisProvider::live(api_key, model.to_owned(), timeout_seconds)
                 .map_err(|error| error.to_string())?,
         )),
+        MISTRAL_ANALYSIS_PROVIDER_ID => Ok(Box::new(
+            MistralAnalysisProvider::live(api_key, model.to_owned(), timeout_seconds)
+                .map_err(|error| error.to_string())?,
+        )),
         OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID => {
             let base_url = openai_compatible_base_url
                 .map(str::trim)
@@ -200,7 +218,7 @@ mod tests {
     #[test]
     fn catalog_lists_providers_with_valid_defaults() {
         let catalog = analysis_provider_catalog();
-        assert_eq!(catalog.len(), 4);
+        assert_eq!(catalog.len(), 5);
         for entry in catalog {
             // The OpenAI-compatible entry has no curated model list — the model
             // is a freeform, user-supplied id (ADR 0060) — so it has no
@@ -222,6 +240,7 @@ mod tests {
         assert!(models.contains(&"gemini-3.5-flash"));
         assert!(models.contains(&"claude-sonnet-4-6"));
         assert!(models.contains(&"gpt-5.5"));
+        assert!(models.contains(&"mistral-small-latest"));
     }
 
     #[test]
@@ -245,6 +264,14 @@ mod tests {
         assert!(
             build_analysis_provider(OPENAI_ANALYSIS_PROVIDER_ID, None, "gpt-5.5", 90, None).is_ok()
         );
+        assert!(build_analysis_provider(
+            MISTRAL_ANALYSIS_PROVIDER_ID,
+            None,
+            "mistral-small-latest",
+            90,
+            None
+        )
+        .is_ok());
         assert!(
             build_analysis_provider(TEST_SAMPLE_ANALYSIS_PROVIDER_ID, None, "test", 90, None)
                 .is_ok()
@@ -297,7 +324,7 @@ mod tests {
         // same id — the static map exists so settings validation can ask the
         // question without building a live provider, and it must never drift
         // from reality (Radicle 6ea2a8a).
-        let cases: [(&str, &str, Option<&str>); 5] = [
+        let cases: [(&str, &str, Option<&str>); 6] = [
             (GEMINI_ANALYSIS_PROVIDER_ID, "gemini-3.5-flash", None),
             (ANTHROPIC_ANALYSIS_PROVIDER_ID, "claude-sonnet-4-6", None),
             (OPENAI_ANALYSIS_PROVIDER_ID, "gpt-5.5", None),
@@ -306,6 +333,7 @@ mod tests {
                 "custom-model",
                 Some("https://example.test/v1"),
             ),
+            (MISTRAL_ANALYSIS_PROVIDER_ID, "mistral-small-latest", None),
             (TEST_SAMPLE_ANALYSIS_PROVIDER_ID, "test", None),
         ];
 
@@ -341,6 +369,9 @@ mod tests {
         ));
         assert!(analysis_provider_requires_credential(
             OPENAI_COMPATIBLE_ANALYSIS_PROVIDER_ID
+        ));
+        assert!(analysis_provider_requires_credential(
+            MISTRAL_ANALYSIS_PROVIDER_ID
         ));
         assert!(!analysis_provider_requires_credential(
             TEST_SAMPLE_ANALYSIS_PROVIDER_ID

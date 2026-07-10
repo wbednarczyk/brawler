@@ -56,6 +56,20 @@ async function openDocuments(page: Page): Promise<PaneLocator> {
   return pane;
 }
 
+// The coverage panel is company-scoped, so it opens from the curated company
+// dashboard (its tab is seeded by DASHBOARD_DEFAULT_KINDS) rather than the
+// company-less `openCockpitPanel` "New view" flow, matching the sibling panels
+// in this file.
+async function openCoverage(page: Page): Promise<PaneLocator> {
+  await openDashboard(page);
+  await page.getByRole("button", { name: "Coverage" }).first().click();
+  const pane = page.locator(".cockpit-pane", {
+    has: page.locator('.company-coverage[aria-label="Coverage"]'),
+  });
+  await expect(pane).toBeVisible();
+  return pane;
+}
+
 async function box(locator: Locator) {
   const b = await locator.boundingBox();
   expect(b, "element rendered").not.toBeNull();
@@ -99,36 +113,54 @@ const PANEL_CONTRACTS: PanelContract[] = [
     panel: "Report documents",
     open: openDocuments,
     tiers: {
-      // S: filename (middle-ellipsis link) + date only — no chips, no preview.
+      // S: kind label + filename (middle-ellipsis link) + date — no chips, no
+      // trailing action slot (ADR 0077 §2 grouped redesign).
       S: async (_page, pane) => {
         await expect(pane.getByRole("link").first()).toBeVisible();
         await expect(pane.locator(".doc-date").first()).toBeVisible();
         await expect(pane.locator(".doc-chips").first()).toBeHidden();
-        await expect(pane.locator(".doc-preview").first()).toBeHidden();
       },
-      // M: + type/status chips (still no attribution preview column). The
-      // extract action is present but folded to an icon (its label hides).
+      // M: + kind/status chips. The extract action is present but folded to an
+      // icon (its label hides until L).
       M: async (_page, pane) => {
         await expect(pane.locator(".doc-chips").first()).toBeVisible();
-        await expect(pane.locator(".doc-preview").first()).toBeHidden();
         await expect(pane.getByRole("button", { name: "Extract data" }).first()).toBeVisible();
         await expect(pane.locator(".doc-extract-label").first()).toBeHidden();
       },
-      // L: + attribution/preview column.
+      // L: the per-document extract-data action gains its label.
       L: async (_page, pane) => {
-        await expect(pane.locator(".doc-preview").first()).toBeVisible();
-        // + the labeled per-document extract-data action.
         await expect(pane.getByRole("button", { name: "Extract data" }).first()).toBeVisible();
         await expect(pane.locator(".doc-extract-label").first()).toBeVisible();
       },
-      // short: list only — bare filename + date; chips, preview, and the extract
-      // action are all dropped.
+      // short: list only — kind label + filename + date; chips and the extract
+      // action are dropped.
       short: async (_page, pane) => {
         await expect(pane.getByRole("link").first()).toBeVisible();
         await expect(pane.locator(".doc-date").first()).toBeVisible();
         await expect(pane.locator(".doc-chips").first()).toBeHidden();
-        await expect(pane.locator(".doc-preview").first()).toBeHidden();
         await expect(pane.locator(".doc-extract").first()).toBeHidden();
+      },
+    },
+  },
+  {
+    panel: "Coverage",
+    open: openCoverage,
+    tiers: {
+      // The coverage table does not fold columns by tier; instead the whole table
+      // is wide content that scrolls inside its bounded `.coverage-scroll` wrapper
+      // (data-hscroll). At S the table still renders in full inside the scroller,
+      // and the runner's per-tier `expectNoPageOverflow` proves the pane itself
+      // does not gain a horizontal scrollbar.
+      S: async (_page, pane) => {
+        await expect(pane.locator(".coverage-scroll")).toBeVisible();
+        await expect(pane.locator("table.coverage-table")).toBeVisible();
+      },
+      M: async (_page, pane) => {
+        await expect(pane.locator("table.coverage-table")).toBeVisible();
+      },
+      L: async (_page, pane) => {
+        await expect(pane.locator("table.coverage-table")).toBeVisible();
+        await expect(pane.locator(".coverage-legend")).toBeVisible();
       },
     },
   },

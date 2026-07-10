@@ -30,6 +30,11 @@ pub enum AiCapability {
     /// Agent-assessed qualitative quality-framework criteria (ADR 0075) — one
     /// request per criterion per company, grounded in app-held evidence.
     QualitativeAssessment,
+    /// Tier-4 vision extraction from a report document (ADR 0077 §4): the
+    /// last-resort OCR path (Mistral OCR → parser/text-LLM) that runs only when
+    /// determinism ends Flagged|Empty. Document-kind — routes only to a
+    /// document-native provider.
+    VisionExtraction,
 }
 
 /// Whether a capability's provider call takes a document (structured-first
@@ -41,7 +46,7 @@ pub enum CapabilityKind {
 }
 
 impl AiCapability {
-    pub const ALL: [AiCapability; 8] = [
+    pub const ALL: [AiCapability; 9] = [
         AiCapability::KpiExtraction,
         AiCapability::ClaimExtraction,
         AiCapability::FeedAnalysis,
@@ -50,6 +55,7 @@ impl AiCapability {
         AiCapability::EventDate,
         AiCapability::SignalClassification,
         AiCapability::QualitativeAssessment,
+        AiCapability::VisionExtraction,
     ];
 
     /// Stable settings-map key (`capability_providers` HashMap key) and wire
@@ -64,13 +70,16 @@ impl AiCapability {
             AiCapability::EventDate => "event_date",
             AiCapability::SignalClassification => "signal_classification",
             AiCapability::QualitativeAssessment => "qualitative_assessment",
+            AiCapability::VisionExtraction => "vision_extraction",
         }
     }
 
     /// Whether this capability's provider call takes a document or plain text.
     pub fn kind(self) -> CapabilityKind {
         match self {
-            AiCapability::KpiExtraction | AiCapability::ClaimExtraction => CapabilityKind::Document,
+            AiCapability::KpiExtraction
+            | AiCapability::ClaimExtraction
+            | AiCapability::VisionExtraction => CapabilityKind::Document,
             AiCapability::FeedAnalysis
             | AiCapability::ResearchBrief
             | AiCapability::ResearchDigest
@@ -117,11 +126,34 @@ mod tests {
     }
 
     #[test]
-    fn document_capabilities_are_kpi_and_claim_extraction() {
+    fn document_capabilities_are_kpi_claim_and_vision_extraction() {
+        // ADR 0077 T4.2 (approved contract change): the document-kind set gains
+        // VisionExtraction, so the Document⇒Native routing enforcement covers it
+        // automatically at both the settings and build-capability sites.
         assert_eq!(AiCapability::KpiExtraction.kind(), CapabilityKind::Document);
         assert_eq!(
             AiCapability::ClaimExtraction.kind(),
             CapabilityKind::Document
+        );
+        assert_eq!(
+            AiCapability::VisionExtraction.kind(),
+            CapabilityKind::Document
+        );
+    }
+
+    #[test]
+    fn vision_extraction_is_a_document_capability() {
+        // ADR 0077 §4 / T4.2: the tier-4 vision-extraction call site routes only
+        // to a document-native provider (Mistral OCR), enforced identically to
+        // KpiExtraction/ClaimExtraction.
+        assert_eq!(AiCapability::VisionExtraction.key(), "vision_extraction");
+        assert_eq!(
+            AiCapability::VisionExtraction.kind(),
+            CapabilityKind::Document
+        );
+        assert_eq!(
+            AiCapability::from_key("vision_extraction"),
+            Some(AiCapability::VisionExtraction)
         );
     }
 

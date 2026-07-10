@@ -60,6 +60,10 @@ pub struct AutopilotRun {
     pub report_document_id: String,
     pub trigger: String,
     pub mode: String,
+    /// The history sweep that spawned this run, if any (ADR 0077 §6). `None` for
+    /// a detection/manual run, and for legacy rows predating the column. Lets a
+    /// sweep-triggered run charge the sweep's tier-4 budget in `stage_extract`.
+    pub sweep_id: Option<String>,
     pub status: String,
     pub stage: String,
     pub summary_text: Option<String>,
@@ -191,6 +195,45 @@ impl AutopilotStore {
         Ok(ids)
     }
 
+    /// Document ids whose autopilot run is a **budget-denied history sweep**: the
+    /// `trigger='history_sweep'` run for that document recorded
+    /// `{ extractionAvailable: false, reason: "skipped_budget" }` on its
+    /// `kpi_delta_json` (ADR 0077 §6). Feeds the coverage read model's
+    /// `skipped_budget` projection.
+    ///
+    /// Run ids are per-`(company, document)` deterministic
+    /// (`create_run_if_absent`), so there is at most ONE run row per document — a
+    /// plain lookup, no windowing. A later successful re-run overwrites that run's
+    /// delta and drops it from this set; a repaired extraction also makes the
+    /// period a non-gap regardless, so the flag clears naturally either way.
+    ///
+    /// JSON parsing is tolerant: an absent/garbled `kpi_delta_json`, or a `reason`
+    /// other than `skipped_budget`, excludes the document.
+    pub fn documents_skipped_by_budget(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<std::collections::BTreeSet<String>> {
+        let connection = self.db.checkout()?;
+        let mut statement = connection.prepare(
+            "SELECT report_document_id, kpi_delta_json FROM autopilot_run \
+             WHERE company_id = ?1 AND trigger = 'history_sweep'",
+        )?;
+        let rows = statement
+            .query_map([company_id], |row| {
+                Ok((
+                    row.get::<_, String>("report_document_id")?,
+                    row.get::<_, Option<String>>("kpi_delta_json")?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|(document_id, delta)| {
+                kpi_delta_reason_is_skipped_budget(delta.as_deref()).then_some(document_id)
+            })
+            .collect())
+    }
+
     /// Create a run for a detected report, idempotently. Returns `Some(run)` when a
     /// new row was inserted, `None` when one already exists for this
     /// `(company_id, report_document_id)` — the detection dedup that guarantees at
@@ -209,6 +252,7 @@ impl AutopilotStore {
         report_document_id: &str,
         trigger: &str,
         mode: &str,
+        sweep_id: Option<&str>,
     ) -> StorageResult<Option<AutopilotRun>> {
         let connection = self.db.checkout()?;
         connection.execute(
@@ -223,10 +267,10 @@ impl AutopilotStore {
         let inserted = connection.execute(
             "
             INSERT OR IGNORE INTO autopilot_run
-                (id, company_id, report_document_id, trigger, mode)
-            VALUES (?1, ?2, ?3, ?4, ?5)
+                (id, company_id, report_document_id, trigger, mode, sweep_id)
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6)
             ",
-            params![id, company_id, report_document_id, trigger, mode],
+            params![id, company_id, report_document_id, trigger, mode, sweep_id],
         )?;
         if inserted == 0 {
             return Ok(None);
@@ -369,6 +413,32 @@ impl AutopilotStore {
         self.get_run(id)
     }
 
+    /// Re-arm a TERMINAL run for a fresh extraction attempt (ADR 0077 §3,
+    /// 2026-07-10): reset it to `pending`/`fetch` and re-stamp the CURRENT driving
+    /// `trigger` + `sweep_id`, so a re-run enters `stage_extract` again (a
+    /// finalized run's stages are idempotent no-ops otherwise) and charges the
+    /// *current* sweep's budget, never an exhausted prior one. Only ever called for
+    /// a succeeded run that recorded `extractionAvailable:false` — it produced no
+    /// facts, so the produced-fact list is left untouched (a later emit merges into
+    /// it, de-duplicated). `last_error` is cleared.
+    pub fn rearm_run(&self, id: &str, trigger: &str, sweep_id: Option<&str>) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        connection.execute(
+            "
+            UPDATE autopilot_run
+            SET status = 'pending',
+                stage = 'fetch',
+                trigger = ?2,
+                sweep_id = ?3,
+                last_error = NULL,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            WHERE id = ?1
+            ",
+            params![id, trigger, sweep_id],
+        )?;
+        Ok(())
+    }
+
     /// Clear the run's produced-fact list after a run-level undo, so a repeated
     /// undo is a no-op (idempotent).
     pub fn clear_produced_facts(&self, id: &str) -> StorageResult<()> {
@@ -392,6 +462,22 @@ impl AutopilotStore {
     }
 }
 
+/// `true` iff a run's `kpi_delta_json` decodes to an object whose `reason` is
+/// exactly `skipped_budget`. Tolerant: `None`, non-JSON, or any other reason
+/// returns `false` (a denied run is never a silent skip, but a garbled column is
+/// never a false positive either).
+fn kpi_delta_reason_is_skipped_budget(kpi_delta_json: Option<&str>) -> bool {
+    kpi_delta_json
+        .and_then(|json| serde_json::from_str::<serde_json::Value>(json).ok())
+        .and_then(|value| {
+            value
+                .get("reason")
+                .and_then(|reason| reason.as_str())
+                .map(|reason| reason == "skipped_budget")
+        })
+        .unwrap_or(false)
+}
+
 fn map_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutopilotRun> {
     let produced_json: String = row.get("produced_fact_ids_json")?;
     let produced_fact_ids = serde_json::from_str::<Vec<String>>(&produced_json).unwrap_or_default();
@@ -401,6 +487,7 @@ fn map_run_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AutopilotRun> {
         report_document_id: row.get("report_document_id")?,
         trigger: row.get("trigger")?,
         mode: row.get("mode")?,
+        sweep_id: row.get("sweep_id")?,
         status: row.get("status")?,
         stage: row.get("stage")?,
         summary_text: row.get("summary_text")?,

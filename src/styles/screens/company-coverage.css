@@ -1,0 +1,194 @@
+/* Fundamentals coverage map (ADR 0077 §2, F2 mockup Panel A). A SectionHeader +
+   a period × axis table. One row per fiscal period unioned from reports, facts,
+   and the review queue; every gap stays visible. The table is deliberate wide
+   content: it scrolls inside `.coverage-scroll` so a narrow (S) pane scrolls it
+   horizontally instead of forcing a panel-level scrollbar. */
+.company-coverage {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.coverage-scroll {
+  overflow-x: auto;
+  /* An overflow-x scroller in a column flex/grid chain still propagates its
+     content's min-content width upward, so without inline-size containment the
+     wide table would dictate the pane's minimum width and force a panel-level
+     scrollbar (guardrail, ADR 0045). */
+  contain: inline-size;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.coverage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-base);
+}
+
+.coverage-table th {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.coverage-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  vertical-align: middle;
+}
+
+.coverage-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.coverage-row-clickable {
+  cursor: pointer;
+}
+
+.coverage-row-clickable:hover td,
+.coverage-row-clickable:focus-visible td {
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+}
+
+.coverage-row-clickable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.coverage-period {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.coverage-period-fy {
+  color: var(--primary);
+}
+
+/* A stacked cell: a primary line plus an optional muted sub-line. */
+.coverage-cell {
+  min-width: 0;
+}
+
+.coverage-report-chips {
+  display: inline-flex;
+  gap: var(--space-1);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.coverage-cell-ok,
+.coverage-cell-warn,
+.coverage-cell-acc {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.coverage-cell-ok {
+  color: var(--tone-positive);
+}
+
+.coverage-cell-warn {
+  color: var(--tone-caution);
+}
+
+.coverage-cell-acc {
+  color: var(--tone-agent);
+}
+
+.coverage-cell-miss {
+  color: var(--muted);
+  opacity: 0.75;
+}
+
+.coverage-primary {
+  font-variant-numeric: tabular-nums;
+}
+
+.coverage-sub {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  /* The doc-title sub-line can be long; keep it single-line + ellipsized so it
+     never widens the pane (row slots are single-line, ui-authoring § scrollbars). */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+/* The review cell is its own click target (ADR 0077 §5, T5.3b): clicking the
+   pending-proposals cell opens the review-queue panel, not the documents panel.
+   A bare button so it nests inside the clickable row without a second box —
+   stopPropagation (scoped to this button) keeps the row's documents handler off
+   (ui-authoring: scope stopPropagation to the actual interactive control). */
+.coverage-review-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.coverage-review-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: var(--radius-1);
+}
+
+.coverage-legend {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-1);
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+/* History actions footer (ADR 0077 §3, T3.2): two actions + a status line in
+   fixed slots. Buttons wrap on a narrow (S) pane; the status line sits below. */
+.coverage-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.coverage-action-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.coverage-action-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.coverage-action-status {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  min-height: 1em;
+}
+
+/* AI-budget readout (ADR 0077 §6, T5.3): shares the status line's fixed slot —
+   an inline suffix, never a new row (ui-authoring styling rules). */
+.coverage-ai-budget {
+  margin-left: var(--space-2);
+}

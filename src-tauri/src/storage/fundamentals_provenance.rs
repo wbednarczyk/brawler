@@ -12,6 +12,7 @@
 use super::database::Database;
 use super::*;
 
+use crate::fundamentals::extraction::ocr::OcrExtractionProfile;
 use crate::fundamentals::extraction::profile::ExtractionProfile;
 
 /// Per-fact structured-extraction provenance (read model).
@@ -172,6 +173,58 @@ impl FundamentalsProvenanceStore {
                 profile.company_id,
                 profile.template_hash,
                 unit_scale.trim_matches('"'),
+                profile_json,
+                profile.version,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Reads a company's confirmed OCR-markdown extraction profile, if
+    /// bootstrapped (ADR 0077 §4). Absence is a safe default: tier-4 cannot yet
+    /// parse deterministically for that company.
+    pub fn get_ocr_profile(&self, company_id: &str) -> StorageResult<Option<OcrExtractionProfile>> {
+        let connection = self.db.checkout()?;
+        let json: Option<String> = connection
+            .query_row(
+                "SELECT profile_json FROM company_ocr_extraction_profile WHERE company_id = ?1",
+                [company_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match json {
+            Some(json) => Ok(serde_json::from_str(&json).ok()),
+            None => Ok(None),
+        }
+    }
+
+    /// Upserts a company's OCR-markdown extraction profile (bootstrap or
+    /// confirmed re-bootstrap).
+    pub fn upsert_ocr_profile(&self, profile: &OcrExtractionProfile) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        let profile_json =
+            serde_json::to_string(profile).map_err(|e| StorageError::InvalidFinancialsValue {
+                key: "ocr_profile_json",
+                value: e.to_string(),
+            })?;
+        let scale =
+            serde_json::to_string(&profile.scale).unwrap_or_else(|_| "\"Thousands\"".to_owned());
+        connection.execute(
+            "
+            INSERT INTO company_ocr_extraction_profile
+                (company_id, template_hash, scale, profile_json, version)
+            VALUES (?1, ?2, ?3, ?4, ?5)
+            ON CONFLICT(company_id) DO UPDATE SET
+                template_hash = excluded.template_hash,
+                scale = excluded.scale,
+                profile_json = excluded.profile_json,
+                version = excluded.version,
+                updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ",
+            params![
+                profile.company_id,
+                profile.template_hash,
+                scale.trim_matches('"'),
                 profile_json,
                 profile.version,
             ],

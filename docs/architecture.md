@@ -46,6 +46,8 @@ The React UI talks to Rust through typed Tauri commands. Feed, job, transcriptio
 8. The user can create notebook entries from feed items.
 9. AI analysis, transcription, and note extraction can be requested once provider configuration exists.
 
+**Terminal states name their invalidation (harvested 2026-07-10, ADR 0045).** Whenever a pipeline stores a terminal conclusion — a dedup marker, a "cannot extract/process" outcome, a skip — the design must answer *what makes this conclusion stale* in the same change (a capability upgrade? fresh budget? new configuration?) and encode that re-arm/invalidation path. Three separate "permanent blindness" defects in the trusted-extraction epic (tier-eligibility, run dedup, budget skips) shared this one root cause: a terminal state with no invalidation answer. Precedent mechanics: the sweep run re-arm rules ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, [data-model.md](data-model.md) History Sweeps).
+
 ## Local Storage
 
 SQLite stores local app state and fetched content. The initial database should be migration-managed from the first code milestone.

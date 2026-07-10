@@ -264,6 +264,8 @@ export const legacySettings: UserSettings = {
   accentPalette: "night-neon",
   developerMode: false,
   pollIntervalSeconds: 900,
+  backfillYears: 3,
+  historySweepAiCallLimit: 30,
   settingsSource: "sqlite",
   settingsImportExportFormat: "yaml",
   yamlImportExportStatus: "accepted_deferred",

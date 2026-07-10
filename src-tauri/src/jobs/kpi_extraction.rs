@@ -1,29 +1,82 @@
-//! Async KPI extraction job (v0.36.0, epic 9879941).
+//! Async KPI extraction job (v0.36.0, epic 9879941; rewired to tier-4 in ADR
+//! 0077 §4 / T4.5).
 //!
-//! Loads a stored report document, sends it natively to the selected AI provider
-//! through the document-input boundary, parses the model output, and persists the
-//! results as PROPOSALS. No financial fact is written here — committing a value is
-//! an explicit user confirmation step (see `storage::confirm_kpi_proposal`).
+//! The manual "Extract KPIs" job is now **one implementation** with the tier-4
+//! OCR path ([`crate::jobs::structured_extraction::run_tier4_extraction`]): the
+//! LLM never reads numbers. A company with a confirmed OCR profile parses to
+//! VALIDATED facts (committed directly, `source_tier='ai'`); a never-bootstrapped
+//! company bootstraps the profile (labels only) and lands PROPOSALS for the
+//! existing confirm flow. The job/proposal lifecycle shape the review UI expects
+//! is preserved — a facts-emitting run completes with zero proposals and an
+//! honest `committed_fact_count`.
 
 use serde_json::json;
 
-use crate::{
-    app_state,
-    providers::analysis::{
-        capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
-        kpi_extraction_prompt, parse_kpi_extraction_output, registry, AiAnalysisProvider,
-        AnalysisDocument, DocumentSupport, KpiCatalogEntry, KpiExtractionRequest,
-    },
-    storage,
-};
+use crate::{app_state, storage};
+
+/// How [`run_kpi_extraction_job`] failed (T5.1, ADR 0077 pacing fix).
+///
+/// The split is what lets the two call sites react differently: the queue
+/// handler turns `TransientRetryScheduled` into an `Err` so the queue's capped
+/// backoff retry (2..64s) engages, while `Internal` keeps the pre-existing
+/// per-job semantics (mark the domain row failed, no queue retry). Autopilot's
+/// inline call site never sees `TransientRetryScheduled` — a run without a
+/// queue row for the job id has no retry budget, so transient failures there
+/// take the terminal path exactly as before.
+#[derive(Debug)]
+pub enum KpiExtractionJobError {
+    /// A transient provider failure (rate limit / unavailable / network) while
+    /// the queue still has retry budget. The domain job row was left
+    /// re-runnable (not terminally failed) and a `retry_scheduled` diagnostic
+    /// was recorded; the queue handler must propagate an `Err` so the backoff
+    /// retry is scheduled.
+    TransientRetryScheduled(String),
+    /// Any other runner failure (domain row lookup, result persistence).
+    Internal(String),
+}
+
+impl std::fmt::Display for KpiExtractionJobError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::TransientRetryScheduled(message) | Self::Internal(message) => {
+                write!(f, "{message}")
+            }
+        }
+    }
+}
+
+/// Provider error codes worth a queue retry: transient availability failures,
+/// never client/config/content errors. Mirrors
+/// [`crate::providers::analysis::AnalysisProviderError::is_availability_error`]
+/// on the `code()` strings the extraction pipeline carries (pinned by test).
+fn is_transient_error_code(code: &str) -> bool {
+    matches!(
+        code,
+        "provider_limit" | "provider_unavailable" | "network_error"
+    )
+}
+
+/// The durable-queue row currently executing this job, if any: per-job enqueues
+/// key the queue row by the domain job id (`enqueue_per_job`), so a `running`
+/// row under that id means this run was queue-dispatched and its
+/// `attempts`/`max_attempts` are the retry budget. `None` for inline runs
+/// (autopilot calls the runner directly on its own stage row).
+fn claimed_queue_row(state: &app_state::AppState, job_id: &str) -> Option<storage::JobStatusRow> {
+    state
+        .jobs()
+        .status(job_id)
+        .ok()
+        .flatten()
+        .filter(|row| row.status == "running")
+}
 
 pub fn run_kpi_extraction_job(
     state: &app_state::AppState,
     job_id: &str,
-) -> Result<storage::KpiExtractionJob, String> {
+) -> Result<storage::KpiExtractionJob, KpiExtractionJobError> {
     let job = state
         .get_kpi_extraction_job(job_id)
-        .map_err(|error| error.to_string())?;
+        .map_err(|error| KpiExtractionJobError::Internal(error.to_string()))?;
     if job.status == "succeeded" {
         return Ok(job);
     }
@@ -42,7 +95,7 @@ pub fn run_kpi_extraction_job(
         Ok(completed) => {
             let job = state
                 .complete_kpi_extraction_job(completed)
-                .map_err(|error| error.to_string())?;
+                .map_err(|error| KpiExtractionJobError::Internal(error.to_string()))?;
             record(
                 state,
                 &job,
@@ -53,6 +106,59 @@ pub fn run_kpi_extraction_job(
             Ok(job)
         }
         Err((error_code, error)) => {
+            // T5.1 pacing fix: a transient provider failure (429 rate limit,
+            // temporary unavailability, network error) with queue retry budget
+            // left must NOT terminally fail the domain job — return the
+            // transient error so the queue handler schedules the capped
+            // backoff retry, and record a queue-visible diagnostic so the UI
+            // never shows a silent stall. Terminal errors (bad config,
+            // non-PDF document, parse/provider errors) and the final exhausted
+            // attempt keep the fast-fail path below.
+            let queue_row = if is_transient_error_code(error_code) {
+                claimed_queue_row(state, &job.id)
+            } else {
+                None
+            };
+            if let Some(row) = queue_row
+                .as_ref()
+                .filter(|row| row.attempts < row.max_attempts)
+            {
+                log::warn!(
+                    "module=kpi_extraction stage=retry_scheduled jobId={} errorCode={} attempt={}/{} error={}",
+                    job.id,
+                    error_code,
+                    row.attempts,
+                    row.max_attempts,
+                    error
+                );
+                record_meta(
+                    state,
+                    &job,
+                    "retry_scheduled",
+                    "warning",
+                    "KPI extraction hit a transient provider failure; the queue will retry with backoff.",
+                    json!({
+                        "errorCode": error_code,
+                        "error": error,
+                        "attempt": row.attempts,
+                        "maxAttempts": row.max_attempts,
+                    }),
+                );
+                return Err(KpiExtractionJobError::TransientRetryScheduled(format!(
+                    "{error_code}: {error}"
+                )));
+            }
+            // A transient error that exhausted its queue attempts gets an
+            // explicit message so the terminal state is self-explanatory.
+            // (Inline/autopilot runs have no queue row and keep their message.)
+            let error = if let Some(row) = queue_row {
+                format!(
+                    "{error} (queue retries exhausted after {} attempts)",
+                    row.attempts
+                )
+            } else {
+                error
+            };
             log::error!(
                 "module=kpi_extraction stage=failed jobId={} errorCode={} error={}",
                 job.id,
@@ -61,7 +167,9 @@ pub fn run_kpi_extraction_job(
             );
             let failed = state
                 .mark_kpi_extraction_job_failed(job_id, error_code, &error)
-                .map_err(|storage_error| storage_error.to_string())?;
+                .map_err(|storage_error| {
+                    KpiExtractionJobError::Internal(storage_error.to_string())
+                })?;
             record_meta(
                 state,
                 &failed,
@@ -75,116 +183,17 @@ pub fn run_kpi_extraction_job(
     }
 }
 
+/// Runs the tier-4 OCR extraction for one job (T4.5). Derives the reporting
+/// period deterministically, then hands off to the shared
+/// [`crate::jobs::structured_extraction::run_tier4_extraction`] (LLM proposes the
+/// profile MAP only; the parser reads the numbers). Facts (if any) are persisted
+/// by tier-4; proposals ride back on this job. A "could not run" degradation
+/// (no vision provider, non-PDF document, failed bootstrap) becomes a terminal
+/// error so the job fails visibly rather than succeeding empty.
 fn extract(
     state: &app_state::AppState,
     job: &storage::KpiExtractionJob,
 ) -> Result<storage::CompletedKpiExtraction, (&'static str, String)> {
-    let provider = provider_for_job(state, job).map_err(|error| ("provider_error", error))?;
-    if provider.document_support() == DocumentSupport::None {
-        return Err((
-            "provider_error",
-            "the selected AI provider cannot read documents".to_owned(),
-        ));
-    }
-
-    let document = load_document(state, job)?;
-    let (mime_type, byte_size) = match &document {
-        AnalysisDocument::Native { mime_type, data } => (mime_type.clone(), data.len()),
-        AnalysisDocument::Text { text } => ("text/plain".to_owned(), text.len()),
-    };
-    record_meta(
-        state,
-        job,
-        "document_loaded",
-        "info",
-        "KPI extraction document loaded.",
-        json!({ "mimeType": mime_type, "byteSize": byte_size }),
-    );
-    let request = build_request(state, job).map_err(|error| ("provider_error", error))?;
-    let prompt = kpi_extraction_prompt(&request);
-
-    state
-        .mark_kpi_extraction_job_running(&job.id)
-        .map_err(|error| ("unknown", error.to_string()))?;
-    record_meta(
-        state,
-        job,
-        "request_sent",
-        "info",
-        "KPI extraction provider request sent.",
-        json!({ "knownKpiCount": request.known_kpis.len(), "documentSupport": format!("{:?}", provider.document_support()) }),
-    );
-
-    let text = tauri::async_runtime::block_on(provider.complete_document(&prompt, &document))
-        .map_err(|error| (error.code(), error.to_string()))?;
-    record(
-        state,
-        job,
-        "response_received",
-        "info",
-        "KPI extraction provider response received.",
-    );
-
-    let output = parse_kpi_extraction_output(&text, provider.provider_id())
-        .map_err(|error| (error.code(), error.to_string()))?;
-    record_meta(
-        state,
-        job,
-        "parsed",
-        "info",
-        "KPI extraction response parsed.",
-        json!({
-            "factCount": output.facts.len(),
-            "proposedCount": output.facts.iter().filter(|fact| fact.is_proposed_kpi).count(),
-            "responseChars": text.len(),
-            "detectedPeriodType": output.period.as_ref().map(|period| period.period_type.clone()),
-            "detectedFiscalYear": output.period.as_ref().map(|period| period.fiscal_year),
-        }),
-    );
-
-    let (detected_fiscal_year, detected_period_type, detected_period_end_date) = match output.period
-    {
-        Some(period) => (
-            Some(period.fiscal_year),
-            Some(period.period_type),
-            period.period_end_date,
-        ),
-        None => (None, None, None),
-    };
-
-    let proposals = output
-        .facts
-        .into_iter()
-        .map(|fact| storage::NewKpiProposal {
-            metric_key: fact.metric_key,
-            label: fact.label,
-            value_numeric: fact.value_numeric,
-            unit: fact.unit,
-            currency: fact.currency,
-            as_reported_value: fact.as_reported_value,
-            as_reported_scale: fact.as_reported_scale,
-            measure_window: fact.measure_window,
-            confidence: fact.confidence,
-            source_snippet: fact.source_snippet,
-            is_proposed_kpi: fact.is_proposed_kpi,
-        })
-        .collect();
-
-    Ok(storage::CompletedKpiExtraction {
-        job_id: job.id.clone(),
-        detected_fiscal_year,
-        detected_period_type,
-        detected_period_end_date,
-        detected_currency: output.currency,
-        detected_language: output.language,
-        proposals,
-    })
-}
-
-fn load_document(
-    state: &app_state::AppState,
-    job: &storage::KpiExtractionJob,
-) -> Result<AnalysisDocument, (&'static str, String)> {
     let document = state
         .get_report_document(&job.report_document_id)
         .map_err(|error| ("provider_error", error.to_string()))?;
@@ -194,142 +203,104 @@ fn load_document(
             "the report document has not been fetched yet".to_owned(),
         ));
     }
-    let local_path = document.local_path.ok_or_else(|| {
-        (
-            "provider_error",
-            "the report document has no stored file".to_owned(),
-        )
-    })?;
-    let path = state.data_dir().join(&local_path);
-    let data = std::fs::read(&path).map_err(|error| {
-        (
-            "provider_error",
-            format!("failed to read report document file: {error}"),
-        )
-    })?;
-    let mime_type = resolve_document_mime_type(document.content_type.as_deref(), &local_path);
+    // Tier-4 parses through a KNOWN reporting period — the LLM never reads the
+    // period or the numbers. Derive it deterministically from the title/URL/ESEF,
+    // exactly as the structured path does.
+    let Some((fiscal_year, period_type, period_end)) =
+        crate::jobs::structured_extraction::derive_report_period(state, &document)
+    else {
+        return Err((
+            "no_period",
+            "could not determine the reporting period for this document — tier-4 OCR \
+             extraction needs a period derivable from the title/URL (or an ESEF instance)"
+                .to_owned(),
+        ));
+    };
 
-    // Guard against extracting from an IR landing page (or any non-report web
-    // page) captured as a "report document": the model would only see the few
-    // headline figures on the page, producing a misleading partial result. Bug
-    // 3d9f7f9. The IR resolver and PDF-URL paths deliver the actual report PDF.
-    if let Some(message) = non_report_mime_rejection(&mime_type) {
-        return Err(("non_pdf_document", message.to_owned()));
-    }
-
-    Ok(AnalysisDocument::Native { mime_type, data })
-}
-
-/// Returns an actionable error message when a resolved MIME type is a web page
-/// rather than a report document, otherwise `None`. PDFs and unknown binary
-/// types (defaulted to PDF upstream) are accepted.
-fn non_report_mime_rejection(mime_type: &str) -> Option<&'static str> {
-    if mime_type == "text/html" {
-        Some(
-            "This looks like a web page (text/html), not a report PDF. \
-             Use \"Fetch report from IR page\" to pick the actual report, \
-             or paste the report's PDF URL.",
-        )
-    } else {
-        None
-    }
-}
-
-/// Resolve a provider-acceptable MIME type. Servers often deliver report PDFs as
-/// `application/octet-stream` (or with no type), which providers like Gemini reject;
-/// in that case infer the type from the stored file extension, defaulting to PDF.
-fn resolve_document_mime_type(content_type: Option<&str>, local_path: &str) -> String {
-    let declared = content_type
-        .map(|value| {
-            value
-                .split(';')
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_ascii_lowercase()
-        })
-        .filter(|value| !value.is_empty() && value != "application/octet-stream");
-    if let Some(declared) = declared {
-        return declared;
-    }
-    let lower = local_path.to_ascii_lowercase();
-    if lower.ends_with(".htm") || lower.ends_with(".html") {
-        "text/html".to_owned()
-    } else if lower.ends_with(".txt") {
-        "text/plain".to_owned()
-    } else {
-        "application/pdf".to_owned()
-    }
-}
-
-fn build_request(
-    state: &app_state::AppState,
-    job: &storage::KpiExtractionJob,
-) -> Result<KpiExtractionRequest, String> {
-    let company_name = state
-        .list_companies()
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .find(|company| company.id == job.company_id)
-        .map(|company| company.display_name)
-        .unwrap_or_else(|| job.company_id.clone());
-
-    // Canonical packs apply to every company; company-scoped custom KPIs are added.
-    // Sector relevance refinement is a later milestone (v0.37); the model can still
-    // surface sector metrics as proposed extras. Derived metrics (margins, ROE, FCF,
-    // …) are excluded: ADR 0027 computes them at read time from confirmed inputs, so
-    // they must not be extracted and stored as competing reported facts.
-    let known_kpis = state
-        .list_kpi_definitions(storage::ListKpiDefinitionsInput {
-            scope: None,
-            sector: None,
-            company_id: None,
-        })
-        .map_err(|error| error.to_string())?
-        .into_iter()
-        .filter(|definition| definition.computation != "derived")
-        .filter(|definition| {
-            definition.scope == "canonical"
-                || (definition.scope == "company"
-                    && definition.company_id.as_deref() == Some(job.company_id.as_str()))
-        })
-        .map(|definition| KpiCatalogEntry {
-            metric_key: definition.metric_key,
-            label: definition.label,
-            value_kind: definition.value_kind,
-            unit: definition.unit,
-        })
-        .collect();
-
-    Ok(KpiExtractionRequest {
-        company_name,
-        statement_type: None,
-        known_kpis,
-        period_hint: job.period_hint.clone(),
-    })
-}
-
-fn provider_for_job(
-    state: &app_state::AppState,
-    job: &storage::KpiExtractionJob,
-) -> Result<Box<dyn AiAnalysisProvider>, String> {
-    let settings = state.get_settings().map_err(|error| error.to_string())?;
-    let timeout_seconds = settings.ai_providers.general_analysis_timeout_seconds;
-    if job.provider_id == CAPABILITY_ROUTED_PROVIDER_ID {
-        return crate::jobs::build_capability_provider(
-            state,
-            AiCapability::KpiExtraction,
-            timeout_seconds,
-        );
-    }
-    let api_key = registry::read_analysis_provider_api_key(&job.provider_id);
-    crate::jobs::build_gated_analysis_provider(
+    state
+        .mark_kpi_extraction_job_running(&job.id)
+        .map_err(|error| ("unknown", error.to_string()))?;
+    record_meta(
         state,
-        &job.provider_id,
-        api_key,
-        &job.model,
-        timeout_seconds,
-    )
+        job,
+        "request_sent",
+        "info",
+        "Tier-4 OCR extraction started.",
+        json!({ "fiscalYear": fiscal_year, "periodType": period_type, "periodEnd": period_end }),
+    );
+
+    // Manual extraction runs in the `assist` trust ladder: a validation-clean OCR
+    // parse still auto-confirms (deterministic + validated), an unproven one lands
+    // `pending`. `run_tier4_extraction` maps this exactly like the structured tiers.
+    let outcome = crate::jobs::structured_extraction::run_tier4_extraction(
+        state,
+        &job.company_id,
+        &job.report_document_id,
+        fiscal_year,
+        period_type,
+        &period_end,
+        storage::MODE_ASSIST,
+    )?;
+
+    // Terminal "could not run" degradations fail the job with an actionable
+    // message (a manual click deserves a visible error, not an empty success).
+    match outcome.reason.as_str() {
+        "not_pdf" => {
+            return Err((
+                "non_pdf_document",
+                "tier-4 OCR extraction only handles PDF reports; this document is a \
+                 structured/ESEF filing (handled by the deterministic pipeline)"
+                    .to_owned(),
+            ))
+        }
+        "no_vision_provider" => {
+            return Err((
+                "provider_error",
+                "no vision-extraction provider is configured. Add a document-native \
+                 provider (Mistral) under Settings \u{2192} AI \u{2192} Vision extraction."
+                    .to_owned(),
+            ))
+        }
+        "no_stored_file" => {
+            return Err((
+                "provider_error",
+                "the report document has no stored file".to_owned(),
+            ))
+        }
+        "bootstrap_failed" => {
+            return Err((
+                "parse_error",
+                "the OCR profile bootstrap did not return a usable layout".to_owned(),
+            ))
+        }
+        // facts_emitted | bootstrap_proposals | proposals_flagged | empty → succeed.
+        _ => {}
+    }
+
+    let committed = outcome.produced_fact_ids.len() as i64;
+    record_meta(
+        state,
+        job,
+        "parsed",
+        "info",
+        "Tier-4 OCR extraction parsed.",
+        json!({
+            "reason": outcome.reason,
+            "committedFactCount": committed,
+            "proposalCount": outcome.proposals.len(),
+        }),
+    );
+
+    Ok(storage::CompletedKpiExtraction {
+        job_id: job.id.clone(),
+        detected_fiscal_year: outcome.detected_fiscal_year,
+        detected_period_type: outcome.detected_period_type,
+        detected_period_end_date: outcome.detected_period_end_date,
+        detected_currency: outcome.detected_currency,
+        detected_language: outcome.detected_language,
+        committed_fact_count: committed,
+        proposals: outcome.proposals,
+    })
 }
 
 fn record(
@@ -377,51 +348,60 @@ fn record_meta(
 
 #[cfg(test)]
 mod tests {
-    use super::{resolve_document_mime_type, run_kpi_extraction_job};
-
-    #[test]
-    fn mime_type_normalizes_octet_stream_and_missing_to_pdf() {
-        // Generic/empty server types fall back to the file extension.
-        assert_eq!(
-            resolve_document_mime_type(Some("application/octet-stream"), "report.pdf"),
-            "application/pdf"
-        );
-        assert_eq!(
-            resolve_document_mime_type(None, "report.pdf"),
-            "application/pdf"
-        );
-        // A real declared type wins, with parameters stripped.
-        assert_eq!(
-            resolve_document_mime_type(Some("application/pdf; charset=binary"), "x.bin"),
-            "application/pdf"
-        );
-        // No type, non-pdf extension.
-        assert_eq!(resolve_document_mime_type(None, "page.html"), "text/html");
-    }
-
-    #[test]
-    fn rejects_web_pages_but_accepts_pdfs_for_extraction() {
-        // IR landing pages (text/html) must be rejected with an actionable hint.
-        assert!(super::non_report_mime_rejection("text/html").is_some());
-        // Report PDFs (incl. octet-stream defaulted to PDF upstream) are accepted.
-        assert!(super::non_report_mime_rejection("application/pdf").is_none());
-    }
+    use super::run_kpi_extraction_job;
     use crate::{
+        fundamentals::extraction::ocr::{OcrExtractionProfile, ValueColumnLayout},
+        fundamentals::extraction::pdf::UnitScale,
         providers::analysis::{
-            capabilities::{AiCapability, CAPABILITY_ROUTED_PROVIDER_ID},
-            TEST_SAMPLE_ANALYSIS_MODEL, TEST_SAMPLE_ANALYSIS_PROVIDER_ID,
+            capabilities::AiCapability, TEST_SAMPLE_ANALYSIS_MODEL,
+            TEST_SAMPLE_ANALYSIS_PROVIDER_ID, TEST_SAMPLE_FAIL_PROVIDER_ERROR_MARKER,
+            TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER,
         },
         storage::{
             open_in_memory_database, AppState, CaptureReportDocumentInput, ConfirmKpiProposalInput,
             ListFinancialFactsInput, NewCompany, NewKpiExtractionJob,
         },
     };
+    use std::collections::BTreeMap;
 
-    fn state_with_report_document() -> (AppState, String, String) {
-        let dir =
-            std::env::temp_dir().join(format!("brawler-kpi-extraction-{}", std::process::id()));
+    /// A per-call-unique data dir: the pid-only dir collides across parallel test
+    /// threads sharing this module (each writes/reads the same `report.pdf`).
+    fn unique_dir() -> std::path::PathBuf {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("brawler-kpi-extraction-{}-{n}", std::process::id()))
+    }
+
+    /// Seeds `capability_providers[vision_extraction] = test_sample` directly on
+    /// the connection (bypassing `validate_capability_providers`, the same
+    /// technique the pool tests use) so the rewired tier-4 job resolves the
+    /// credential-less test-sample OCR provider.
+    fn seed_vision_test_sample(connection: &rusqlite::Connection) {
+        let json = serde_json::json!({
+            AiCapability::VisionExtraction.key(): [
+                { "provider": TEST_SAMPLE_ANALYSIS_PROVIDER_ID, "model": TEST_SAMPLE_ANALYSIS_MODEL },
+            ]
+        })
+        .to_string();
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, value_type) VALUES ('capability_providers', ?1, 'json') \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                [json],
+            )
+            .expect("seed vision capability provider");
+    }
+
+    /// A company + a fetched PDF report document whose title carries a derivable
+    /// Q3 2025 period, with the vision (OCR) capability wired to the test-sample
+    /// provider. `file_bytes` is the stored document the test-sample OCR "reads"
+    /// (its content, or a failure marker).
+    fn state_with_report_document_bytes(file_bytes: &[u8]) -> (AppState, String, String) {
+        let dir = unique_dir();
         std::fs::create_dir_all(&dir).expect("temp data dir");
         let connection = open_in_memory_database().expect("database should initialize");
+        seed_vision_test_sample(&connection);
         let state = AppState::with_data_dir(connection, dir.clone());
         let company = state
             .create_company(NewCompany {
@@ -433,7 +413,6 @@ mod tests {
                 lei: None,
             })
             .expect("company should be created");
-
         let document = state
             .create_or_find_pending_report_document(CaptureReportDocumentInput {
                 company_id: company.id.clone(),
@@ -441,103 +420,203 @@ mod tests {
                 url: "https://example.com/report-q3-2025.pdf".to_owned(),
                 period_id: None,
                 origin_ref: None,
-                title: Some("Q3 2025 report".to_owned()),
+                title: Some("ACME 2025 Q3 report".to_owned()),
                 attribution: Some("Investor relations".to_owned()),
             })
             .expect("report document should be captured");
-
-        // Simulate a fetched file on disk.
-        std::fs::write(dir.join("report.pdf"), b"%PDF-1.4 sample").expect("write sample pdf");
+        std::fs::write(dir.join("report.pdf"), file_bytes).expect("write sample pdf");
         state
             .mark_report_document_fetched(
                 &document.id,
                 Some("report.pdf"),
                 Some("application/pdf"),
                 None,
-                Some(15),
+                Some(file_bytes.len() as i64),
             )
             .expect("mark fetched");
-
         (state, company.id, document.id)
     }
 
-    /// ADR 0061 decision 5: a sentinel-routed job resolves its provider through
-    /// the capability pool at run time, not from `job.provider_id`/`job.model`.
-    ///
-    /// `validate_capability_providers` only ever allows currently-selectable
-    /// (non-test-sample) providers into the map — and every selectable provider
-    /// needs a credential this test environment does not have — so a pool that
-    /// actually builds here has to route through the credential-less test-sample
-    /// provider, seeded by writing the settings row directly (bypassing
-    /// validation, same technique used elsewhere in this codebase for states
-    /// validation would otherwise block).
-    #[test]
-    fn provider_for_job_routes_sentinel_through_capability_pool() {
-        let dir = std::env::temp_dir().join(format!(
-            "brawler-kpi-extraction-sentinel-{}",
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&dir).expect("temp data dir");
-        let connection = open_in_memory_database().expect("database should initialize");
-        let capability_providers_json = serde_json::json!({
-            AiCapability::KpiExtraction.key(): [
-                { "provider": TEST_SAMPLE_ANALYSIS_PROVIDER_ID, "model": TEST_SAMPLE_ANALYSIS_MODEL },
-            ]
-        })
-        .to_string();
-        connection
-            .execute(
-                "INSERT INTO settings (key, value, value_type) VALUES ('capability_providers', ?1, 'json') \
-                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                [capability_providers_json],
-            )
-            .expect("seed capability_providers bypassing validation");
-        let state = AppState::with_data_dir(connection, dir);
-        let company = state
-            .create_company(NewCompany {
-                exchange: "GPW".to_owned(),
-                ticker: "CDR".to_owned(),
-                display_name: "CD PROJEKT S.A.".to_owned(),
-                isin: Some("PLOPTTC00011".to_owned()),
-                cik: None,
-                lei: None,
-            })
-            .expect("company should be created");
-        let document = state
-            .create_or_find_pending_report_document(CaptureReportDocumentInput {
-                company_id: company.id.clone(),
-                source_type: "user_url".to_owned(),
-                url: "https://example.com/report-sentinel.pdf".to_owned(),
-                period_id: None,
-                origin_ref: None,
-                title: Some("Sentinel report".to_owned()),
-                attribution: None,
-            })
-            .expect("report document should be captured");
+    /// The common case: a clean stored PDF the test-sample OCR turns into its
+    /// canned Polish statement markdown.
+    fn state_with_report_document() -> (AppState, String, String) {
+        state_with_report_document_bytes(b"%PDF-1.4 sample")
+    }
 
+    /// Seeds a confirmed OCR profile matching `TEST_SAMPLE_OCR_MARKDOWN` so the
+    /// tier-4 job parses to VALIDATED facts (not proposals).
+    fn seed_ocr_profile(state: &AppState, company_id: &str) {
+        let label_map = BTreeMap::from([
+            ("przychody ze sprzedaży".to_string(), "revenue".to_string()),
+            ("aktywa razem".to_string(), "total_assets".to_string()),
+        ]);
+        let bootstrap = OcrExtractionProfile::bootstrap(
+            company_id,
+            UnitScale::Thousands,
+            label_map,
+            ValueColumnLayout::CurrentPeriodFirst,
+            Vec::new(),
+            false,
+        );
+        // CONFIRMED (v2): the facts path requires a user-confirmed profile
+        // (ADR 0077 §4 kickoff decision 3); a v1 bootstrap only yields proposals.
+        let profile = bootstrap.clone().confirm(
+            bootstrap.scale,
+            bootstrap.label_map.clone(),
+            bootstrap.value_column,
+            bootstrap.skip_columns.clone(),
+            bootstrap.strip_enumerators,
+        );
+        state
+            .fundamentals_provenance()
+            .upsert_ocr_profile(&profile)
+            .expect("seed ocr profile");
+    }
+
+    /// T4.5 rewire: a never-bootstrapped company's manual extraction runs the
+    /// tier-4 bootstrap (the text-LLM proposes the profile MAP, never numbers)
+    /// and lands PROPOSALS only — no facts. The reporting period is derived
+    /// deterministically from the document title, not the model.
+    #[test]
+    fn extraction_job_bootstraps_and_persists_proposals_without_writing_facts() {
+        let (state, company_id, document_id) = state_with_report_document();
         let job = state
             .create_kpi_extraction_job(NewKpiExtractionJob {
-                company_id: company.id,
-                report_document_id: document.id,
-                provider_id: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
-                model: CAPABILITY_ROUTED_PROVIDER_ID.to_owned(),
+                company_id: company_id.clone(),
+                report_document_id: document_id,
+                provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
                 prompt_version: "kpi-extraction.v1".to_owned(),
                 period_hint: None,
             })
             .expect("extraction job created");
 
-        let provider = super::provider_for_job(&state, &job)
-            .expect("a sentinel-routed job should build the pooled provider");
+        let completed = run_kpi_extraction_job(&state, &job.id).expect("job runs");
 
-        assert_eq!(provider.provider_id(), TEST_SAMPLE_ANALYSIS_PROVIDER_ID);
+        assert_eq!(completed.status, "succeeded");
+        assert_eq!(completed.detected_fiscal_year, Some(2025));
+        assert_eq!(completed.detected_period_type.as_deref(), Some("Q3"));
+        assert_eq!(
+            completed.proposals.len(),
+            2,
+            "bootstrap maps przychody + aktywa razem"
+        );
+        assert!(completed.proposals.iter().all(|p| p.status == "pending"));
+        assert_eq!(
+            completed.committed_fact_count, 0,
+            "a bootstrap run never writes facts"
+        );
+
+        // No facts committed by a bootstrap extraction.
+        let facts = state
+            .list_financial_facts(ListFinancialFactsInput {
+                company_id: Some(company_id),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("facts list");
+        assert!(
+            facts.is_empty(),
+            "a bootstrap extraction must not write facts"
+        );
     }
 
-    /// Regression pin: an explicit provider override must keep going through
-    /// `build_gated_analysis_provider` unchanged, never through the capability
-    /// pool.
+    /// T4.5 facts path: with a confirmed OCR profile the manual job parses to a
+    /// VALIDATED set and commits facts directly (`source_tier='ai'`), completing
+    /// with zero proposals and an honest `committed_fact_count`.
     #[test]
-    fn provider_for_job_explicit_override_is_unchanged() {
+    fn extraction_job_with_a_profile_commits_validated_facts_not_proposals() {
         let (state, company_id, document_id) = state_with_report_document();
+        seed_ocr_profile(&state, &company_id);
+        let job = state
+            .create_kpi_extraction_job(NewKpiExtractionJob {
+                company_id: company_id.clone(),
+                report_document_id: document_id,
+                provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
+                prompt_version: "kpi-extraction.v1".to_owned(),
+                period_hint: None,
+            })
+            .expect("extraction job created");
+
+        let completed = run_kpi_extraction_job(&state, &job.id).expect("job runs");
+
+        assert_eq!(completed.status, "succeeded");
+        assert!(
+            completed.proposals.is_empty(),
+            "a validated profile parse commits facts, not proposals"
+        );
+        assert_eq!(completed.committed_fact_count, 2);
+
+        let facts = state
+            .list_financial_facts(ListFinancialFactsInput {
+                company_id: Some(company_id),
+                period_id: None,
+                definition_id: None,
+            })
+            .expect("facts list");
+        assert_eq!(facts.len(), 2, "tier-4 committed the validated facts");
+        // The revenue value scaled from the OCR markdown (142 312 tys. → 142312000).
+        assert!(
+            facts.iter().any(|f| f.value_numeric.trim() == "142312000"),
+            "facts: {facts:?}"
+        );
+        // Every committed fact carries the honest `ai` source tier.
+        let provenance = state
+            .fundamentals_provenance()
+            .get_many(&facts.iter().map(|f| f.id.clone()).collect::<Vec<_>>())
+            .expect("provenance");
+        assert!(
+            provenance.iter().all(|p| p.source_tier == "ai"),
+            "tier-4 facts persist source_tier='ai': {provenance:?}"
+        );
+    }
+
+    /// Pin (T5.1): the transient/terminal split must mirror
+    /// `AnalysisProviderError::is_availability_error` on the carried `code()`
+    /// strings — drift here would retry client errors or fast-fail 429s.
+    #[test]
+    fn transient_classification_mirrors_provider_availability_errors() {
+        use crate::providers::analysis::AnalysisProviderError as E;
+        let all = [
+            E::ProviderNotConfigured,
+            E::ProviderLimit,
+            E::ProviderUnavailable("down".to_owned()),
+            E::ProviderError("bad request".to_owned()),
+            E::NetworkError("connection reset".to_owned()),
+            E::ParseError("bad json".to_owned()),
+            E::Unknown("x".to_owned()),
+        ];
+        for error in &all {
+            assert_eq!(
+                super::is_transient_error_code(error.code()),
+                error.is_availability_error(),
+                "classification drift for code {:?}",
+                error.code()
+            );
+        }
+        // Non-provider extraction codes are terminal too.
+        assert!(!super::is_transient_error_code("non_pdf_document"));
+        assert!(!super::is_transient_error_code("unknown"));
+    }
+
+    /// T5.1 (ADR 0077 pacing fix): a transient provider failure (429 rate
+    /// limit) must engage the queue's capped backoff retry — the queue row goes
+    /// back to `pending` with the attempt counted, and the domain job is NOT
+    /// terminally failed while attempts remain (it must stay re-runnable).
+    /// A queue-visible diagnostic records the transient failure so the UI does
+    /// not show a silent stall.
+    #[test]
+    fn transient_provider_failure_reschedules_the_queue_job_with_backoff() {
+        // The scripted OCR-failure marker rides in the stored document bytes the
+        // test-sample OCR "reads" (tier-4 OCRs the file, not a text prompt).
+        let (state, company_id, document_id) = state_with_report_document_bytes(
+            format!("%PDF {TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER}").as_bytes(),
+        );
+        // Diagnostic events are only persisted in developer mode.
+        state
+            .set_developer_mode_enabled(true)
+            .expect("enable developer mode");
         let job = state
             .create_kpi_extraction_job(NewKpiExtractionJob {
                 company_id,
@@ -549,44 +628,147 @@ mod tests {
             })
             .expect("extraction job created");
 
-        let provider = super::provider_for_job(&state, &job)
-            .expect("an explicit override must still build directly");
+        crate::jobs::handlers::enqueue_per_job(
+            &state,
+            crate::jobs::handlers::KPI_EXTRACTION_KIND,
+            &job.id,
+        );
+        let worker = crate::jobs::handlers::build_worker(state.clone());
+        assert!(worker.process_one().expect("process"), "job was claimed");
 
-        assert_eq!(provider.provider_id(), TEST_SAMPLE_ANALYSIS_PROVIDER_ID);
-        assert_eq!(provider.model(), TEST_SAMPLE_ANALYSIS_MODEL);
+        // Queue: retried with backoff — pending again, attempt counted, not
+        // terminal in either direction.
+        let counts = state.jobs().counts().expect("counts");
+        assert_eq!(counts.pending, 1, "rescheduled for a backoff retry");
+        assert_eq!(counts.failed, 0, "not dead-lettered on the first 429");
+        assert_eq!(counts.succeeded, 0, "a transient failure is not a success");
+        let row = state
+            .jobs()
+            .status(&job.id)
+            .expect("status")
+            .expect("queue row exists");
+        assert_eq!(row.attempts, 1, "the failed attempt is counted");
+        assert!(
+            row.last_error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("provider_limit"),
+            "the queue records the transient error: {:?}",
+            row.last_error
+        );
+
+        // Backoff: the retry is scheduled in the future, not immediately runnable.
+        assert!(
+            !worker.process_one().expect("process"),
+            "the retry waits out the backoff window"
+        );
+
+        // Domain job: not terminally failed while attempts remain.
+        let domain = state.get_kpi_extraction_job(&job.id).expect("domain job");
+        assert_ne!(
+            domain.status, "failed",
+            "the domain job stays re-runnable between retries"
+        );
+
+        // Queue-visible progress: the transient failure is recorded, not silent.
+        let events = state
+            .list_diagnostic_events(20)
+            .expect("diagnostic events should list");
+        assert!(
+            events
+                .iter()
+                .any(|event| event.module == "kpi_extraction" && event.stage == "retry_scheduled"),
+            "a retry_scheduled diagnostic records the transient failure"
+        );
     }
 
+    /// T5.1 regression pin: a terminal provider error keeps the fast-fail
+    /// behavior exactly — domain job marked failed with its error code, queue
+    /// row completes, no retry.
     #[test]
-    fn extraction_job_persists_proposals_without_writing_facts() {
-        let (state, company_id, document_id) = state_with_report_document();
+    fn terminal_provider_error_fast_fails_without_queue_retry() {
+        let (state, company_id, document_id) = state_with_report_document_bytes(
+            format!("%PDF {TEST_SAMPLE_FAIL_PROVIDER_ERROR_MARKER}").as_bytes(),
+        );
         let job = state
             .create_kpi_extraction_job(NewKpiExtractionJob {
-                company_id: company_id.clone(),
+                company_id,
                 report_document_id: document_id,
                 provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
                 model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
                 prompt_version: "kpi-extraction.v1".to_owned(),
-                period_hint: Some("Q3 2025".to_owned()),
+                period_hint: None,
             })
             .expect("extraction job created");
 
-        let completed = run_kpi_extraction_job(&state, &job.id).expect("job runs");
+        crate::jobs::handlers::enqueue_per_job(
+            &state,
+            crate::jobs::handlers::KPI_EXTRACTION_KIND,
+            &job.id,
+        );
+        let worker = crate::jobs::handlers::build_worker(state.clone());
+        assert!(worker.process_one().expect("process"));
 
-        assert_eq!(completed.status, "succeeded");
-        assert_eq!(completed.detected_fiscal_year, Some(2025));
-        assert_eq!(completed.detected_period_type.as_deref(), Some("Q3"));
-        assert_eq!(completed.proposals.len(), 2);
-        assert!(completed.proposals.iter().all(|p| p.status == "pending"));
+        let domain = state.get_kpi_extraction_job(&job.id).expect("domain job");
+        assert_eq!(domain.status, "failed", "terminal errors fast-fail");
+        assert_eq!(domain.error_code.as_deref(), Some("provider_error"));
 
-        // No facts committed by extraction alone.
-        let facts = state
-            .list_financial_facts(ListFinancialFactsInput {
-                company_id: Some(company_id),
-                period_id: None,
-                definition_id: None,
+        // The queue row is terminal (executed, domain outcome in its own table)
+        // and nothing is left to retry.
+        let counts = state.jobs().counts().expect("counts");
+        assert_eq!(counts.pending, 0, "no retry for a terminal error");
+        assert_eq!(counts.running, 0);
+        assert!(!worker.process_one().expect("process"), "queue is idle");
+    }
+
+    /// T5.1: when the queue's retry budget is exhausted by transient failures,
+    /// the domain job must end in a clear `failed` state with a message — never
+    /// stuck `running`/`queued` in limbo.
+    #[test]
+    fn exhausted_transient_retries_end_in_a_failed_domain_job() {
+        let (state, company_id, document_id) = state_with_report_document_bytes(
+            format!("%PDF {TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER}").as_bytes(),
+        );
+        let job = state
+            .create_kpi_extraction_job(NewKpiExtractionJob {
+                company_id,
+                report_document_id: document_id,
+                provider_id: TEST_SAMPLE_ANALYSIS_PROVIDER_ID.to_owned(),
+                model: TEST_SAMPLE_ANALYSIS_MODEL.to_owned(),
+                prompt_version: "kpi-extraction.v1".to_owned(),
+                period_hint: None,
             })
-            .expect("facts list");
-        assert!(facts.is_empty(), "extraction must not write facts");
+            .expect("extraction job created");
+
+        // max_attempts = 1: this run is the last (only) attempt — the exhaustion
+        // case, without waiting out real backoff windows.
+        state
+            .jobs()
+            .enqueue(
+                &job.id,
+                crate::jobs::handlers::KPI_EXTRACTION_KIND,
+                &job.id,
+                1,
+            )
+            .expect("enqueue");
+        let worker = crate::jobs::handlers::build_worker(state.clone());
+        assert!(worker.process_one().expect("process"));
+
+        let domain = state.get_kpi_extraction_job(&job.id).expect("domain job");
+        assert_eq!(
+            domain.status, "failed",
+            "an exhausted transient failure must terminally fail the domain job, not leave limbo"
+        );
+        assert_eq!(domain.error_code.as_deref(), Some("provider_limit"));
+        assert!(
+            !domain.error.as_deref().unwrap_or_default().is_empty(),
+            "the failure carries a clear message"
+        );
+
+        // Nothing lingers in the queue.
+        let counts = state.jobs().counts().expect("counts");
+        assert_eq!(counts.pending, 0);
+        assert_eq!(counts.running, 0);
     }
 
     #[test]
@@ -609,17 +791,16 @@ mod tests {
             .iter()
             .find(|p| p.metric_key == "revenue")
             .expect("revenue proposal");
-        let backlog = job
+        let total_assets = job
             .proposals
             .iter()
-            .find(|p| p.metric_key == "backlog")
-            .expect("backlog proposal");
+            .find(|p| p.metric_key == "total_assets")
+            .expect("total_assets proposal");
         assert!(!revenue.is_proposed_kpi);
-        assert!(backlog.is_proposed_kpi);
 
-        // Reject the out-of-taxonomy suggestion.
+        // Reject one bootstrap proposal.
         state
-            .reject_kpi_proposal(&backlog.id)
+            .reject_kpi_proposal(&total_assets.id)
             .expect("reject proposal");
 
         // Confirm the known KPI -> commits one fact with the detected period.
@@ -633,7 +814,8 @@ mod tests {
                 period_end_date: None,
                 accept_as_new_kpi: false,
             })
-            .expect("confirm proposal");
+            .expect("confirm proposal")
+            .fact;
         assert_eq!(fact.value_numeric, "142312000");
         assert_eq!(fact.confirmation_state, "confirmed");
         assert_eq!(fact.extraction_method, "ai");

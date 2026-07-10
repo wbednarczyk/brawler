@@ -29,6 +29,10 @@ pub const RESEARCH_DIGEST_KIND: &str = "research_digest";
 /// payload carries `{run_id, stage}`; the handler runs that stage and chains the
 /// next, so a crash mid-stage resumes that stage only.
 pub use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
+/// Job kind: run a history sweep (ADR 0077 §3). The payload carries `{sweepId}`;
+/// the handler enqueues a full autopilot run for every canonical periodic report
+/// whose period lacks accepted facts, through the shared `enqueue_extraction_run`.
+pub use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
 /// Job kind: assess qualitative quality-framework criteria (ADR 0075, v0.50.0).
 /// The payload carries `{companyId, frameworkId, criterionIds?}`; the handler
 /// gathers evidence, assesses each criterion through the capability pool, and
@@ -84,13 +88,35 @@ per_job_handler!(
     mark_claim_extraction_job_failed,
     "extraction_failed"
 );
-per_job_handler!(
-    KpiExtractionHandler,
-    KPI_EXTRACTION_KIND,
-    crate::jobs::kpi_extraction::run_kpi_extraction_job,
-    mark_kpi_extraction_job_failed,
-    "unknown"
-);
+/// KPI extraction departs from the `per_job_handler` shape (T5.1, ADR 0077
+/// pacing fix): a transient provider failure (429 rate limit, temporary
+/// unavailability, network error) propagates as `Err` so the queue's capped
+/// backoff retry (2..64s, [`crate::jobs::queue::retry_backoff_seconds`])
+/// engages instead of killing the job on the first 429 — the runner has
+/// already left the domain row re-runnable and recorded a `retry_scheduled`
+/// diagnostic. Every other failure keeps the prior semantics exactly: the
+/// domain row is marked failed and the queue row completes (no retry).
+/// [`enqueue_per_job`] gives this kind a retry budget > 1.
+struct KpiExtractionHandler;
+
+impl JobHandler for KpiExtractionHandler {
+    fn kind(&self) -> &'static str {
+        KPI_EXTRACTION_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        use crate::jobs::kpi_extraction::KpiExtractionJobError;
+        match crate::jobs::kpi_extraction::run_kpi_extraction_job(state, payload) {
+            Ok(_) => Ok(()),
+            Err(KpiExtractionJobError::TransientRetryScheduled(message)) => Err(message),
+            Err(KpiExtractionJobError::Internal(error)) => {
+                let _ = state.mark_kpi_extraction_job_failed(payload, "unknown", &error);
+                Ok(())
+            }
+        }
+    }
+}
+
 per_job_handler!(
     ResearchBriefHandler,
     RESEARCH_BRIEF_KIND,
@@ -120,6 +146,22 @@ impl JobHandler for QualitativeAssessmentHandler {
 
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::qualitative_assessment::run_qualitative_assessment_job(state, payload)
+    }
+}
+
+/// A history sweep (ADR 0077 §3). Runs the sweep directly and returns its Result:
+/// a storage-level abort returns `Err` so the queue retries with backoff, while
+/// domain outcomes (off-mode skip, per-candidate counts including runs that could
+/// not be enqueued) are recorded on the sweep row and return `Ok`.
+struct HistorySweepHandler;
+
+impl JobHandler for HistorySweepHandler {
+    fn kind(&self) -> &'static str {
+        HISTORY_SWEEP_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::history_sweep::run_history_sweep_job(state, payload)
     }
 }
 
@@ -237,6 +279,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(ResearchBriefHandler));
     worker.register(Arc::new(ResearchDigestHandler));
     worker.register(Arc::new(QualitativeAssessmentHandler));
+    worker.register(Arc::new(HistorySweepHandler));
     worker.register(Arc::new(AutopilotStageHandler));
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
     worker.register(Arc::new(SourceCompanyRefreshHandler));
@@ -265,7 +308,7 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
         },
         WorkerPool {
             name: "autopilot",
-            kinds: vec![AUTOPILOT_STAGE_KIND],
+            kinds: vec![AUTOPILOT_STAGE_KIND, HISTORY_SWEEP_KIND],
             workers: config.autopilot_workers.max(1) as usize,
         },
         WorkerPool {
@@ -288,15 +331,17 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
     ]
 }
 
-/// Enqueue a per-job-table job onto the durable queue (single attempt, keyed by
-/// the job's own id). Replaces the prior fire-and-forget `spawn_blocking`; the
+/// Enqueue a per-job-table job onto the durable queue, keyed by the job's own
+/// id (attempts budget per kind — see [`per_job_max_attempts`]). Replaces the
+/// prior fire-and-forget `spawn_blocking`; the
 /// worker runs the handler, so a crash mid-run resumes. Logs and drops on
 /// enqueue error (best-effort, matching the prior detached spawn).
 ///
 /// Uses `reschedule`, not plain `enqueue`: every `per_job_handler` (ai_analysis,
-/// claim_extraction, kpi_extraction, research_brief, research_digest) always
-/// returns `Ok` and so always ends its `job_queue` row `succeeded`, regardless of
-/// the *domain* outcome recorded in the job's own table — that is precisely what
+/// claim_extraction, research_brief, research_digest) always returns `Ok` — and
+/// [`KpiExtractionHandler`] does too except while a transient retry is pending —
+/// so the `job_queue` row ends `succeeded` regardless of the *domain* outcome
+/// recorded in the job's own table — that is precisely what
 /// lets a domain job land `failed` while its `job_queue` row is already terminal.
 /// The `retry_*` commands (`retry_kpi_extraction`, `retry_claim_extraction`,
 /// `retry_ai_analysis`) then re-enqueue under the **same** `job_id`; plain
@@ -305,8 +350,28 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
 /// `reschedule` re-arms a terminal row to `pending` and leaves a `running` row
 /// untouched (never double-run); a fresh `job_id` is inserted exactly as before.
 pub fn enqueue_per_job(state: &AppState, kind: &'static str, job_id: &str) {
-    if let Err(error) = state.jobs().reschedule(job_id, kind, job_id, 1) {
+    if let Err(error) = state
+        .jobs()
+        .reschedule(job_id, kind, job_id, per_job_max_attempts(kind))
+    {
         log::warn!("failed to enqueue {kind} job {job_id}: {error}");
+    }
+}
+
+/// Queue attempts budget for kpi_extraction: 1 first run + 4 backoff retries
+/// (2/4/8/16s waits) for transient provider failures — enough to ride out a
+/// short 429 window without hammering a rate-limited provider (T5.1, ADR 0077).
+const KPI_EXTRACTION_MAX_ATTEMPTS: i64 = 5;
+
+/// Retry budget per per-job kind. Only kpi_extraction gets queue-level backoff
+/// retries (its handler returns `Err` on transient provider failures); every
+/// other per-job kind keeps the original single-attempt semantics — their
+/// handlers always return `Ok`, so a larger budget would be dead config.
+fn per_job_max_attempts(kind: &str) -> i64 {
+    if kind == KPI_EXTRACTION_KIND {
+        KPI_EXTRACTION_MAX_ATTEMPTS
+    } else {
+        1
     }
 }
 

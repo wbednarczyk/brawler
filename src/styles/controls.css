@@ -106,8 +106,11 @@
   font-size: var(--font-sm);
 }
 
+/* Text-entry controls only: a checkbox inside the toolbar (the documents
+   panel's "Group by period" toggle) must keep its native box size — this rule
+   once painted it as a 180×36 bordered field (owner-flagged, 2026-07-09). */
 .filter-toolbar select,
-.filter-toolbar input {
+.filter-toolbar input:not([type="checkbox"]) {
   min-width: 180px;
   min-height: 36px;
   padding: 0 var(--space-3);
@@ -115,6 +118,15 @@
   border-radius: 8px;
   color: var(--text);
   background: var(--surface-raised);
+}
+
+/* The generic `.filter-toolbar label { display: grid }` stacks a checkbox
+   above its caption; the Checkbox primitive's own inline-flex row wins here. */
+.filter-toolbar label.ui-checkbox {
+  display: inline-flex;
+  align-items: center;
+  align-self: end;
+  min-height: 36px;
 }
 
 .events-filter-toolbar .date-picker-field {

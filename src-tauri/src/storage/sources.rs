@@ -270,7 +270,11 @@ pub(super) fn list_bankier_company_targets(
                 LIMIT 1
             ) AS bankier_tag_id
         FROM companies
-        WHERE companies.exchange = 'GPW'
+        WHERE companies.exchange IN (
+            SELECT market
+            FROM source_adapter_markets
+            WHERE source_adapter_id = ?1
+        )
         ORDER BY companies.qualified_ticker
         ",
     )?;
@@ -287,6 +291,53 @@ pub(super) fn list_bankier_company_targets(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
+}
+
+/// Whether a company can be history-backfilled (T-A4, card bfc4c98). Eligibility
+/// is data-driven from `source_adapter_markets` for the history-capable
+/// `bankier-company-komunikaty` adapter, not a hardcoded exchange.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BackfillMarketStatus {
+    /// No company row for the id.
+    NotFound,
+    /// The company exists but its exchange has no history-capable source adapter.
+    Ineligible { exchange: String },
+    /// The company's exchange is served by the history-capable adapter.
+    Eligible,
+}
+
+pub(super) fn backfill_market_status(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<BackfillMarketStatus> {
+    let exchange: Option<String> = connection
+        .query_row(
+            "SELECT exchange FROM companies WHERE id = ?1",
+            [company_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let Some(exchange) = exchange else {
+        return Ok(BackfillMarketStatus::NotFound);
+    };
+
+    let eligible: bool = connection.query_row(
+        "
+        SELECT EXISTS(
+            SELECT 1 FROM source_adapter_markets
+            WHERE source_adapter_id = ?1 AND market = ?2
+        )
+        ",
+        params![BANKIER_COMPANY_ADAPTER_ID, exchange],
+        |row| row.get(0),
+    )?;
+
+    if eligible {
+        Ok(BackfillMarketStatus::Eligible)
+    } else {
+        Ok(BackfillMarketStatus::Ineligible { exchange })
+    }
 }
 
 pub(super) fn upsert_bankier_company_identifiers(
@@ -376,6 +427,212 @@ pub(super) fn list_bankier_company_detail_cached_urls(
         .map_err(StorageError::from)
 }
 
+/// A tracked company reduced to the text signals used to detect whether a filing
+/// names it: its display-name signal, any aliases, and its ticker (T-A3, card
+/// 45fcece). Built once per ingest/repair pass.
+struct TrackedIssuer {
+    company_id: String,
+    /// Normalized name/alias phrases (empty entries dropped at build time).
+    signals: Vec<String>,
+    /// Uppercased ticker, matched only when it is a distinctive token (≥3 chars)
+    /// to avoid 1–2 letter false positives.
+    ticker: String,
+}
+
+/// Load every tracked company as a [`TrackedIssuer`] (display name + aliases +
+/// ticker). Shared by the ingestion guard and the startup repair so the two use
+/// one association predicate with no drift.
+fn load_tracked_issuers(connection: &Connection) -> StorageResult<Vec<TrackedIssuer>> {
+    use std::collections::HashMap;
+
+    let mut by_company: HashMap<String, TrackedIssuer> = HashMap::new();
+
+    {
+        let mut statement = connection.prepare("SELECT id, ticker, display_name FROM companies")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (id, ticker, display_name) = row?;
+            let mut signals = Vec::new();
+            let name_signal = crate::entity_resolution::company_name_signal(&display_name);
+            if !name_signal.is_empty() {
+                signals.push(name_signal);
+            }
+            by_company.insert(
+                id.clone(),
+                TrackedIssuer {
+                    company_id: id,
+                    signals,
+                    ticker: ticker.to_uppercase(),
+                },
+            );
+        }
+    }
+
+    {
+        let mut statement = connection.prepare("SELECT company_id, alias FROM company_aliases")?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (company_id, alias) = row?;
+            if let Some(issuer) = by_company.get_mut(&company_id) {
+                let signal = crate::entity_resolution::company_name_signal(&alias);
+                if !signal.is_empty() && !issuer.signals.contains(&signal) {
+                    issuer.signals.push(signal);
+                }
+            }
+        }
+    }
+
+    Ok(by_company.into_values().collect())
+}
+
+/// Whether `tokens` name `issuer`. `use_ticker` gates the 3+-char ticker match:
+/// enabled for **owner** detection (generous — keeps more), disabled for
+/// **foreign** detection (strict — a bare ticker like `BIO`/`PKO`/`PZU`/`COMP`
+/// is a common word or a counterparty mention and must not trigger a delete).
+fn issuer_named(issuer: &TrackedIssuer, tokens: &[&str], use_ticker: bool) -> bool {
+    if use_ticker
+        && issuer.ticker.chars().count() >= 3
+        && tokens.iter().any(|token| *token == issuer.ticker)
+    {
+        return true;
+    }
+    issuer
+        .signals
+        .iter()
+        .any(|signal| crate::entity_resolution::text_contains_phrase(tokens, signal))
+}
+
+/// The shared mis-association predicate (T-A3, card 45fcece). Returns true only
+/// with positive evidence that a **periodic report** was stamped onto the wrong
+/// company — the sole contamination that causes harm (a foreign periodic report
+/// WINS its period's canonical slot, ADR 0077 §1; every other `doc_kind` is
+/// ignored by canonical selection, so a latent non-periodic mis-association is
+/// left alone).
+///
+/// Conservative on real ESPI data (validated against the owner DB, where the
+/// naive "any different issuer in url/title" rule deleted 36 legitimate rows —
+/// board bios, resolutions, an AoA, counterparty mentions like `OFE PZU`/`PKO`,
+/// and Bankier hosting-folder names in the URL):
+/// - **doc_kind gate** — only `PeriodicSsf`/`PeriodicJsf` can be rejected.
+/// - **owner detection is generous** — name/alias/ticker over the article title,
+///   the filename, and the URL; a filing naming its owner anywhere is always
+///   kept (covers group filings whose individual files are generically named).
+/// - **foreign detection is strict** — a full company name/alias phrase in the
+///   **filename only** (never the noisy URL path, never a bare ticker), so a
+///   counterparty/shareholder mention or a hosting-folder name never deletes.
+fn names_foreign_issuer(
+    article_title: &str,
+    document_title: &str,
+    url: &str,
+    owner: &TrackedIssuer,
+    all_issuers: &[TrackedIssuer],
+) -> bool {
+    use crate::fundamentals::extraction::classify::{classify_doc_kind, DocKind};
+
+    if !matches!(
+        classify_doc_kind(document_title, url),
+        DocKind::PeriodicSsf | DocKind::PeriodicJsf
+    ) {
+        return false;
+    }
+
+    let owner_haystack = crate::entity_resolution::normalize_match_text(&format!(
+        "{article_title} {document_title} {url}"
+    ));
+    let owner_tokens = owner_haystack.split_whitespace().collect::<Vec<_>>();
+    if issuer_named(owner, &owner_tokens, true) {
+        return false;
+    }
+
+    let label_haystack = crate::entity_resolution::normalize_match_text(document_title);
+    let label_tokens = label_haystack.split_whitespace().collect::<Vec<_>>();
+    all_issuers.iter().any(|issuer| {
+        issuer.company_id != owner.company_id && issuer_named(issuer, &label_tokens, false)
+    })
+}
+
+/// Re-scan every `espi_attachment` report document and delete the ones that name
+/// a **different** tracked issuer than their owner (T-A3 repair, card 45fcece).
+/// Idempotent and self-healing: safe to run on every startup, records nothing
+/// when there is nothing to repair, and a second run finds no foreign rows. A row
+/// that merely lacks its owner's name is left alone (conservative — see
+/// [`names_foreign_issuer`]). Uses the same predicate as the ingestion guard, so
+/// the two cannot drift. The row's origin article title (via `origin_ref`) is
+/// included so the repair sees exactly the text the guard saw at ingest.
+/// Dependent rows are removed by the schema's `ON DELETE CASCADE`/`SET NULL`.
+pub(super) fn repair_misassociated_report_documents(
+    connection: &Connection,
+) -> StorageResult<usize> {
+    use std::collections::HashMap;
+
+    let issuers = load_tracked_issuers(connection)?;
+    if issuers.is_empty() {
+        return Ok(0);
+    }
+    let owners: HashMap<&str, &TrackedIssuer> = issuers
+        .iter()
+        .map(|issuer| (issuer.company_id.as_str(), issuer))
+        .collect();
+
+    // (id, company_id, title, url, origin_article_title).
+    type EspiAttachmentRow = (String, String, Option<String>, String, Option<String>);
+    let rows: Vec<EspiAttachmentRow> = {
+        let mut statement = connection.prepare(
+            "
+            SELECT
+                rd.id,
+                rd.company_id,
+                rd.title,
+                rd.url,
+                (SELECT fi.title FROM feed_items fi WHERE fi.id = rd.origin_ref)
+            FROM report_documents rd
+            WHERE rd.source_type = 'espi_attachment'
+            ",
+        )?;
+        let mapped = statement.query_map([], |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        })?;
+        mapped.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let mut deleted = 0usize;
+    for (id, company_id, title, url, origin_title) in rows {
+        let Some(owner) = owners.get(company_id.as_str()) else {
+            continue;
+        };
+        if names_foreign_issuer(
+            origin_title.as_deref().unwrap_or_default(),
+            title.as_deref().unwrap_or_default(),
+            &url,
+            owner,
+            &issuers,
+        ) {
+            connection.execute("DELETE FROM report_documents WHERE id = ?1", [&id])?;
+            log::warn!(
+                "module=sources stage=misassoc_repair deleted company={company_id} url={url} \
+                 (document names a different tracked issuer)"
+            );
+            deleted += 1;
+        }
+    }
+
+    Ok(deleted)
+}
+
 /// Register a filing's ESPI/EBI attachment links as `report_documents`, linked to the
 /// originating feed item. Status is decided per attachment (ADR 0036, ADR 0061 decision 1b):
 /// a digital-signature file (`.xades`) always registers `metadata_only` (no data to fetch); a
@@ -388,12 +645,16 @@ fn register_bankier_company_attachments(
     connection: &Connection,
     item: &BankierCompanyItem,
     feed_item_id: &str,
+    issuers: &[TrackedIssuer],
 ) -> StorageResult<()> {
     if item.company_id.trim().is_empty() || item.attachments.is_empty() {
         return Ok(());
     }
 
     let is_periodic = crate::source_adapters::bankier_company::is_periodic_report_item(item);
+    let owner = issuers
+        .iter()
+        .find(|issuer| issuer.company_id == item.company_id);
 
     for attachment in &item.attachments {
         let title = if attachment.label.trim().is_empty() {
@@ -401,6 +662,26 @@ fn register_bankier_company_attachments(
         } else {
             attachment.label.clone()
         };
+        // Mis-association guard (T-A3, card 45fcece): tag-listing ingestion stamps
+        // the target company onto every attachment. Drop an attachment that names
+        // a DIFFERENT tracked issuer (and not the owner) — the CBF↔Vercom/Energa
+        // contamination — before any row is created. Same predicate as the repair.
+        // Mis-association guard (T-A3, card 45fcece): tag-listing ingestion stamps
+        // the target company onto every attachment. Drop an attachment that names
+        // a DIFFERENT tracked issuer (and not the owner) — the CBF↔Vercom/Energa
+        // contamination — before any row is created. Same predicate as the repair.
+        if let Some(owner) = owner {
+            if names_foreign_issuer(&item.title, &title, &attachment.url, owner, issuers) {
+                log::warn!(
+                    "module=sources stage=attachment_guard rejected company={} article={} url={} \
+                     (attachment names a different tracked issuer)",
+                    item.company_id,
+                    feed_item_id,
+                    attachment.url
+                );
+                continue;
+            }
+        }
         let input = CaptureReportDocumentInput {
             company_id: item.company_id.clone(),
             source_type: "espi_attachment".to_owned(),
@@ -452,6 +733,9 @@ pub(super) fn ingest_bankier_company_items(
         .count();
     let detail_items_stored = items.iter().filter(|item| item.body_text.is_some()).count();
     let detail_items_failed = detail_items_attempted.saturating_sub(detail_items_stored);
+    // Load tracked issuers once so the per-attachment mis-association guard
+    // (T-A3) does not re-query per item.
+    let issuers = load_tracked_issuers(&transaction)?;
 
     for item in items {
         let existing_feed_item_id =
@@ -476,7 +760,7 @@ pub(super) fn ingest_bankier_company_items(
                     "secondary_official_duplicate",
                 ],
             )?;
-            register_bankier_company_attachments(&transaction, item, &feed_item_id)?;
+            register_bankier_company_attachments(&transaction, item, &feed_item_id, &issuers)?;
         } else {
             let feed_item_id = existing_feed_item_id
                 .clone()
@@ -505,7 +789,7 @@ pub(super) fn ingest_bankier_company_items(
                     ",
                     params![feed_item_id, item.company_id, "bankier_tag_id"],
                 )?;
-                register_bankier_company_attachments(&transaction, item, &feed_item_id)?;
+                register_bankier_company_attachments(&transaction, item, &feed_item_id, &issuers)?;
             }
         }
     }
@@ -999,6 +1283,18 @@ impl SourcesStore {
         let connection = self.db.checkout()?;
 
         list_bankier_company_targets(&connection)
+    }
+
+    pub fn backfill_market_status(&self, company_id: &str) -> StorageResult<BackfillMarketStatus> {
+        let connection = self.db.checkout()?;
+
+        backfill_market_status(&connection, company_id)
+    }
+
+    pub fn repair_misassociated_report_documents(&self) -> StorageResult<usize> {
+        let connection = self.db.checkout()?;
+
+        repair_misassociated_report_documents(&connection)
     }
 
     pub fn upsert_bankier_company_identifiers(

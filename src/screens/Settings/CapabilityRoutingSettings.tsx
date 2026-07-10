@@ -55,6 +55,7 @@ export const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: strin
   { key: "event_date", labelEn: "Event date" },
   { key: "signal_classification", labelEn: "Signal classification" },
   { key: "qualitative_assessment", labelEn: "Qualitative assessment" }, // T7-C
+  { key: "vision_extraction", labelEn: "Vision extraction" }, // ADR 0077 T4.2
 ];
 
 // Per-capability ordered provider routing (ADR 0060 as amended). Each

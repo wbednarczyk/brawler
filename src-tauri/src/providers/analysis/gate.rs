@@ -78,6 +78,15 @@ impl AiAnalysisProvider for GatedAnalysisProvider {
         let _permit = self.semaphore.acquire().await;
         self.inner.complete_document(prompt, document).await
     }
+
+    async fn ocr_document(
+        &self,
+        bytes: &[u8],
+        mime_type: &str,
+    ) -> Result<String, AnalysisProviderError> {
+        let _permit = self.semaphore.acquire().await;
+        self.inner.ocr_document(bytes, mime_type).await
+    }
 }
 
 #[cfg(test)]

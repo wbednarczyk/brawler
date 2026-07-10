@@ -72,6 +72,28 @@ fn stored_fact_set_bridges_definition_id_to_metric_key() {
     assert_eq!(set.len(), 2);
 }
 
+/// Guardrail (card f64cea2): the out-of-spec 'annual' fiscal label is folded to
+/// the canonical FY at the create-period boundary, so a legacy label cannot be
+/// reintroduced after migration 0066.
+#[test]
+fn create_financial_period_folds_annual_label_to_fy() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let period = state
+        .create_financial_period(NewFinancialPeriod {
+            company_id: company.id.clone(),
+            fiscal_year: 2025,
+            period_type: "annual".to_owned(),
+            period_end_date: None,
+            report_evidence_ref: None,
+        })
+        .expect("financial period should create");
+
+    assert_eq!(period.period_type, "FY", "annual must be stored as FY");
+}
+
 #[test]
 fn stored_fact_set_period_type_matches_case_insensitively() {
     let connection = open_in_memory_database().expect("database should initialize");

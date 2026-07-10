@@ -100,14 +100,21 @@ fn create_run_is_idempotent_per_company_and_document() {
 
     let first = state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_ASSIST)
+        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_ASSIST, None)
         .expect("create");
     assert!(first.is_some(), "first create inserts a run");
 
     // A second create for the same (company, document) is a no-op (detection dedup).
     let second = state
         .autopilot()
-        .create_run_if_absent("run1-again", &company.id, "doc1", "detection", MODE_ASSIST)
+        .create_run_if_absent(
+            "run1-again",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_ASSIST,
+            None,
+        )
         .expect("create");
     assert!(
         second.is_none(),
@@ -131,7 +138,14 @@ fn failed_run_without_facts_is_recreated_on_next_detection() {
 
     state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
     state
         .autopilot()
@@ -146,7 +160,14 @@ fn failed_run_without_facts_is_recreated_on_next_detection() {
 
     let recreated = state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
     assert!(
         recreated.is_some(),
@@ -171,7 +192,14 @@ fn failed_run_with_facts_is_preserved() {
 
     state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
     state
         .autopilot()
@@ -190,7 +218,14 @@ fn failed_run_with_facts_is_preserved() {
 
     let again = state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
     assert!(
         again.is_none(),
@@ -207,7 +242,14 @@ fn succeeded_run_without_facts_is_preserved() {
 
     state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
     state
         .autopilot()
@@ -216,7 +258,14 @@ fn succeeded_run_without_facts_is_preserved() {
 
     let again = state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
     assert!(again.is_none(), "a succeeded run is never re-created");
 }
@@ -227,7 +276,14 @@ fn produced_facts_merge_and_clear() {
     let company = test_company(&state);
     state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "detection", MODE_AUTOPILOT)
+        .create_run_if_absent(
+            "run1",
+            &company.id,
+            "doc1",
+            "detection",
+            MODE_AUTOPILOT,
+            None,
+        )
         .expect("create");
 
     state
@@ -281,6 +337,7 @@ fn undo_deletes_produced_facts_regardless_of_confirmation_state() {
             currency: Some("PLN"),
             confirmation_state: "confirmed",
             source_tier: "esef",
+            extraction_method: "api",
             validation_status: "passed",
             drift_json: None,
             citation: Some("Przychody"),
@@ -293,7 +350,7 @@ fn undo_deletes_produced_facts_regardless_of_confirmation_state() {
 
     state
         .autopilot()
-        .create_run_if_absent("run1", &company.id, "doc1", "manual", MODE_AUTOPILOT)
+        .create_run_if_absent("run1", &company.id, "doc1", "manual", MODE_AUTOPILOT, None)
         .expect("create run");
     state
         .autopilot()
@@ -369,11 +426,11 @@ fn list_runs_filters_by_notification_state() {
     let company = test_company(&state);
     state
         .autopilot()
-        .create_run_if_absent("r1", &company.id, "d1", "detection", MODE_ASSIST)
+        .create_run_if_absent("r1", &company.id, "d1", "detection", MODE_ASSIST, None)
         .expect("c");
     state
         .autopilot()
-        .create_run_if_absent("r2", &company.id, "d2", "detection", MODE_ASSIST)
+        .create_run_if_absent("r2", &company.id, "d2", "detection", MODE_ASSIST, None)
         .expect("c");
     state
         .autopilot()
@@ -488,7 +545,14 @@ fn recreated_run_rearms_stale_terminal_stage_jobs() {
     // First life: create the run, drive it to a terminal state.
     state
         .autopilot()
-        .create_run_if_absent(&run_id, &company.id, &doc_id, "detection", MODE_ASSIST)
+        .create_run_if_absent(
+            &run_id,
+            &company.id,
+            &doc_id,
+            "detection",
+            MODE_ASSIST,
+            None,
+        )
         .expect("create")
         .expect("first create inserts a run");
     jobs::autopilot::enqueue_first_stage(&state, &run_id);
@@ -510,7 +574,14 @@ fn recreated_run_rearms_stale_terminal_stage_jobs() {
 
     let recreated = state
         .autopilot()
-        .create_run_if_absent(&run_id, &company.id, &doc_id, "detection", MODE_ASSIST)
+        .create_run_if_absent(
+            &run_id,
+            &company.id,
+            &doc_id,
+            "detection",
+            MODE_ASSIST,
+            None,
+        )
         .expect("create")
         .expect("recreate inserts a fresh run row");
     assert_eq!(recreated.status, "pending");
@@ -565,7 +636,14 @@ fn detection_sweep_rearms_an_existing_stuck_pending_run() {
     // deterministic stage id an unrelated prior life would have left behind.
     state
         .autopilot()
-        .create_run_if_absent(&run_id, &company.id, &doc_id, "detection", MODE_ASSIST)
+        .create_run_if_absent(
+            &run_id,
+            &company.id,
+            &doc_id,
+            "detection",
+            MODE_ASSIST,
+            None,
+        )
         .expect("create")
         .expect("first create inserts a run");
     let raw = state.checkout().expect("connection");
@@ -602,6 +680,128 @@ fn detection_sweep_rearms_an_existing_stuck_pending_run() {
             .expect("list")
             .len(),
         1
+    );
+}
+
+/// T3.1 (ADR 0077 §3): the shared `enqueue_extraction_run` — extracted from the
+/// detection sweep so the future history sweep enqueues runs through the exact
+/// same path — creates a run and arms its first stage on the first call.
+#[test]
+fn enqueue_extraction_run_creates_a_run_and_arms_its_first_stage() {
+    use jobs::autopilot::{enqueue_extraction_run, EnqueueExtractionOutcome};
+
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+    let doc_id = fetched_statement(
+        &state,
+        &company.id,
+        "CD PROJEKT 2026 Q1 SSF",
+        "https://example.com/ssf.pdf",
+    );
+
+    let outcome =
+        enqueue_extraction_run(&state, &company.id, &doc_id, "detection", MODE_ASSIST, None);
+    assert_eq!(outcome, EnqueueExtractionOutcome::Created);
+
+    let run_id = format!("autopilot_run:{}:{}", company.id, doc_id);
+    let run = state.autopilot().get_run(&run_id).expect("run created");
+    assert_eq!(run.status, "pending");
+    assert_eq!(run.stage, "fetch");
+    assert!(
+        state
+            .jobs()
+            .pending_payload(&format!("autopilot:{run_id}:fetch"))
+            .expect("query")
+            .is_some(),
+        "the first (fetch) stage job must be armed and pending"
+    );
+}
+
+/// T3.1: on a second call the run dedups (`create_run_if_absent` → `Ok(None)`),
+/// but a still-pending run whose stage job went terminal in a prior life must be
+/// re-armed — the exact dce9ce8 stuck shape the detection sweep already guards,
+/// now shared. Mirrors `detection_sweep_rearms_an_existing_stuck_pending_run`.
+#[test]
+fn enqueue_extraction_run_rearms_a_stuck_pending_run() {
+    use jobs::autopilot::{enqueue_extraction_run, EnqueueExtractionOutcome};
+
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+    let doc_id = fetched_statement(
+        &state,
+        &company.id,
+        "CD PROJEKT 2026 Q1 SSF",
+        "https://example.com/ssf.pdf",
+    );
+    let run_id = format!("autopilot_run:{}:{}", company.id, doc_id);
+
+    let first =
+        enqueue_extraction_run(&state, &company.id, &doc_id, "detection", MODE_ASSIST, None);
+    assert_eq!(first, EnqueueExtractionOutcome::Created);
+
+    // Simulate the stuck shape: the fetch stage row goes terminal (`succeeded`)
+    // while the run itself is still pending/fetch, so nothing is left to drive it.
+    let raw = state.checkout().expect("connection");
+    raw.execute(
+        "UPDATE job_queue SET status = 'succeeded' WHERE id = ?1",
+        [format!("autopilot:{run_id}:fetch")],
+    )
+    .expect("mark stage terminal");
+    drop(raw);
+
+    let second =
+        enqueue_extraction_run(&state, &company.id, &doc_id, "detection", MODE_ASSIST, None);
+    assert_eq!(second, EnqueueExtractionOutcome::Rearmed);
+    assert!(
+        state
+            .jobs()
+            .pending_payload(&format!("autopilot:{run_id}:fetch"))
+            .expect("query")
+            .is_some(),
+        "the stuck fetch stage job must be re-armed back to pending"
+    );
+}
+
+/// T3.1: a terminal existing run (already `succeeded`) dedups without arming any
+/// stage job — re-running extraction on a finished report is a no-op.
+#[test]
+fn enqueue_extraction_run_dedups_a_terminal_run_without_arming_a_job() {
+    use jobs::autopilot::{enqueue_extraction_run, EnqueueExtractionOutcome};
+
+    let state = AppState::new(open_in_memory_database().expect("db"));
+    let company = test_company(&state);
+    let doc_id = fetched_statement(
+        &state,
+        &company.id,
+        "CD PROJEKT 2026 Q1 SSF",
+        "https://example.com/ssf.pdf",
+    );
+    let run_id = format!("autopilot_run:{}:{}", company.id, doc_id);
+
+    state
+        .autopilot()
+        .create_run_if_absent(
+            &run_id,
+            &company.id,
+            &doc_id,
+            "manual",
+            MODE_AUTOPILOT,
+            None,
+        )
+        .expect("create")
+        .expect("run created");
+    state
+        .autopilot()
+        .finalize_run(&run_id, "succeeded", "notify", Some("done"), None)
+        .expect("finalize");
+
+    let outcome =
+        enqueue_extraction_run(&state, &company.id, &doc_id, "detection", MODE_ASSIST, None);
+    assert_eq!(outcome, EnqueueExtractionOutcome::DedupedTerminal);
+    assert_eq!(
+        state.jobs().counts().expect("counts").pending,
+        0,
+        "no stage job should be armed for an already-terminal run"
     );
 }
 
@@ -660,7 +860,14 @@ fn autopilot_real_data_validation() {
         let run_id = format!("autopilot_run:{company}:{report_doc}");
         if state
             .autopilot()
-            .create_run_if_absent(&run_id, &company, &report_doc, "manual", MODE_AUTOPILOT)
+            .create_run_if_absent(
+                &run_id,
+                &company,
+                &report_doc,
+                "manual",
+                MODE_AUTOPILOT,
+                None,
+            )
             .expect("create run")
             .is_some()
         {
@@ -727,7 +934,7 @@ fn finalize_records_status_and_summary() {
     let company = test_company(&state);
     state
         .autopilot()
-        .create_run_if_absent("r1", &company.id, "d1", "detection", MODE_ASSIST)
+        .create_run_if_absent("r1", &company.id, "d1", "detection", MODE_ASSIST, None)
         .expect("c");
 
     let finalized = state

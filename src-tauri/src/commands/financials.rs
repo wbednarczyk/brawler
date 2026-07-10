@@ -160,6 +160,24 @@ pub fn list_report_documents(
         .map_err(|error| error.to_string())
 }
 
+/// Recompute `doc_kind` for every stored report document (ADR 0077 §1, T1.2).
+/// Classification is deterministic Rust code, so this is an idempotent self-heal
+/// used to backfill rows that predate the taxonomy; new documents are already
+/// classified at ingestion. Offloaded off the UI thread (corpus-wide scan).
+#[tauri::command]
+pub async fn reclassify_report_documents(
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<storage::ReclassifyReportDocumentsSummary, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state
+            .reclassify_report_documents()
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("reclassify task failed: {error}"))?
+}
+
 #[tauri::command]
 pub fn resolve_ir_report(
     input: crate::ir_resolution::ResolveIrReportInput,

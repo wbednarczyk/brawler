@@ -424,6 +424,166 @@ fn get_returns_document_by_id() {
     assert_eq!(retrieved.title, Some("Article Title".to_owned()));
 }
 
+/// Reads the raw `doc_kind` column for one document (the DTO does not carry it
+/// until T1.4, so tests query it directly).
+fn doc_kind_of(state: &AppState, id: &str) -> Option<String> {
+    let raw = state.checkout().expect("connection should check out");
+    raw.query_row(
+        "SELECT doc_kind FROM report_documents WHERE id = ?1",
+        rusqlite::params![id],
+        |row| row.get(0),
+    )
+    .expect("doc_kind column should read")
+}
+
+/// T1.2: inserting a report document classifies it immediately (no lingering
+/// NULL) — a consolidated statement title lands as `periodic_ssf`.
+#[test]
+fn insert_sets_doc_kind_immediately() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let doc = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "user_url".to_owned(),
+            url: "https://example.com/raport/SSF.pdf".to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Skonsolidowane sprawozdanie finansowe Grupy 2025".to_owned()),
+            attribution: None,
+        })
+        .expect("document should create");
+
+    assert_eq!(
+        doc_kind_of(&state, &doc.id).as_deref(),
+        Some("periodic_ssf"),
+        "insert must classify the document, not leave doc_kind NULL"
+    );
+}
+
+/// T1.2: an upsert that changes the stored title reclassifies in place — a row
+/// first stored as governance flips to periodic_jsf when re-ingested with a
+/// standalone-statement title.
+#[test]
+fn upsert_with_changed_title_reclassifies() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    let url = "https://example.com/doc.xhtml";
+    let first = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "user_url".to_owned(),
+            url: url.to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Projekty uchwał ZWZ".to_owned()),
+            attribution: None,
+        })
+        .expect("first create should succeed");
+    assert_eq!(
+        doc_kind_of(&state, &first.id).as_deref(),
+        Some("governance")
+    );
+
+    let second = state
+        .create_or_find_pending_report_document(CaptureReportDocumentInput {
+            company_id: company.id.clone(),
+            source_type: "user_url".to_owned(),
+            url: url.to_owned(),
+            period_id: None,
+            origin_ref: None,
+            title: Some("Jednostkowe sprawozdanie finansowe za 2025".to_owned()),
+            attribution: None,
+        })
+        .expect("upsert should succeed");
+
+    assert_eq!(first.id, second.id, "same (company, url) must be one row");
+    assert_eq!(
+        second.title.as_deref(),
+        Some("Jednostkowe sprawozdanie finansowe za 2025"),
+        "upsert must refresh the stored title"
+    );
+    assert_eq!(
+        doc_kind_of(&state, &first.id).as_deref(),
+        Some("periodic_jsf"),
+        "changed title must reclassify the document"
+    );
+}
+
+/// T1.2: `reclassify_report_documents` classifies every row and is idempotent —
+/// a second run reports `updated == 0` and the same per-kind counts.
+#[test]
+fn reclassify_report_documents_is_idempotent() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = test_company(&state);
+
+    // Seed rows directly with a NULL doc_kind to mimic pre-0061 documents.
+    let seeds = [
+        (
+            "doc_ssf",
+            "Skonsolidowane sprawozdanie finansowe Grupy 2025",
+            "periodic_ssf",
+        ),
+        (
+            "doc_jsf",
+            "Jednostkowe sprawozdanie finansowe za 2025",
+            "periodic_jsf",
+        ),
+        (
+            "doc_auditor",
+            "Opinia i raport biegłego rewidenta",
+            "auditor_opinion",
+        ),
+        ("doc_gov", "Projekty uchwał ZWZ", "governance"),
+        ("doc_other", "Wybrane dane finansowe", "other"),
+    ];
+    {
+        let raw = state.checkout().expect("connection should check out");
+        for (id, title, _) in &seeds {
+            raw.execute(
+                "INSERT INTO report_documents (id, company_id, source_type, url, title, fetch_status, doc_kind)
+                 VALUES (?1, ?2, 'user_url', ?3, ?4, 'pending', NULL)",
+                rusqlite::params![id, company.id, format!("https://example.com/{id}"), title],
+            )
+            .expect("seed row should insert");
+        }
+    }
+
+    let summary = state
+        .reclassify_report_documents()
+        .expect("reclassify should run");
+    assert_eq!(summary.total, seeds.len());
+    assert_eq!(summary.updated, seeds.len(), "every NULL row is classified");
+    for (id, _, expected) in &seeds {
+        assert_eq!(
+            doc_kind_of(&state, id).as_deref(),
+            Some(*expected),
+            "{id} should classify as {expected}"
+        );
+    }
+    for kind in [
+        "periodic_ssf",
+        "periodic_jsf",
+        "auditor_opinion",
+        "governance",
+        "other",
+    ] {
+        assert_eq!(summary.by_kind.get(kind).copied(), Some(1), "one {kind}");
+    }
+
+    let second = state
+        .reclassify_report_documents()
+        .expect("reclassify should re-run");
+    assert_eq!(second.total, seeds.len());
+    assert_eq!(second.updated, 0, "a second run must be a no-op");
+    assert_eq!(second.by_kind, summary.by_kind, "final counts are stable");
+}
+
 /// Migration 0058 (ADR 0061 decision 1b): a structured `.xhtml` attachment
 /// stuck `metadata_only` from before the per-attachment gate existed is
 /// flipped back to `pending`. An already-fetched xhtml doc and any non-xhtml

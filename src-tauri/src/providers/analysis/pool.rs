@@ -227,6 +227,26 @@ impl AiAnalysisProvider for PooledAnalysisProvider {
         }
         Err(last_error.expect("PooledAnalysisProvider has at least one member"))
     }
+
+    async fn ocr_document(
+        &self,
+        bytes: &[u8],
+        mime_type: &str,
+    ) -> Result<String, AnalysisProviderError> {
+        let mut last_error = None;
+        for index in self.ordered_member_indices() {
+            let member = &self.members[index];
+            match member.provider.ocr_document(bytes, mime_type).await {
+                Ok(value) => return Ok(value),
+                Err(error) if error.is_availability_error() => {
+                    self.note_failover(member, &error);
+                    last_error = Some(error);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.expect("PooledAnalysisProvider has at least one member"))
+    }
 }
 
 #[cfg(test)]

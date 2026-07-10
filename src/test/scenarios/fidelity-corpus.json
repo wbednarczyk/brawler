@@ -220,6 +220,149 @@
           "expectAbsent": { "source": "agent" }
         }
       ]
+    },
+    {
+      "name": "reclassify report documents is an idempotent no-op (ADR 0077 T1.4)",
+      "steps": [
+        {
+          "command": "reclassify_report_documents",
+          "input": {},
+          "expectField": { "updated": 0 }
+        }
+      ]
+    },
+    {
+      "name": "fundamentals coverage assembles a period row from a fact (ADR 0077 T2.1)",
+      "_comment": "Coverage is a computed read model returning an object (companyId + periods array), not an array, so the subset harness can only assert its invariant top-level field. expectField is NOT capture-substituted (only step input is), so the companyId is asserted as the deterministic derived id (company_{exchange}_{ticker}, identical on both sides — the same scheme the qualified-ticker journey relies on). Per-cell correctness — a period row with facts.total >= 1 and report null — is pinned by the Rust unit tests and the TS mock scenario tests; this step proves both dispatchers implement the command and key the DTO by the scoped company.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "COVRG",
+              "displayName": "Coverage Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_financial_period",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "fiscalYear": 2025,
+              "periodType": "FY",
+              "periodEndDate": null,
+              "reportEvidenceRef": null
+            }
+          },
+          "capture": "pid"
+        },
+        {
+          "command": "create_financial_fact",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "periodId": "$pid",
+              "definitionId": "kpidef_net_profit",
+              "valueNumeric": "1000"
+            }
+          }
+        },
+        {
+          "command": "get_fundamentals_coverage",
+          "input": { "companyId": "$cid" },
+          "expectField": { "companyId": "company_gpw_covrg" }
+        }
+      ]
+    },
+    {
+      "name": "report documents view returns an empty rows array for a company with no documents (ADR 0077 Panel B)",
+      "_comment": "The view is a computed read model returning an object (companyId + rows array). Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the corpus exercises the empty case: a fresh company has no documents, so rows is []. The subset harness compares scalar fields (TS uses ===, so it cannot deep-compare the empty array), hence we assert the deterministic derived companyId — this proves both dispatchers implement the command and key the DTO by the scoped company. Per-row correctness (period fields, canonical ★) is pinned by the Rust unit tests in commands/report_documents_view.rs and the TS mock scenario tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "DOCVW",
+              "displayName": "Docs View Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "get_report_documents_view",
+          "input": { "companyId": "$cid" },
+          "expectField": { "companyId": "company_gpw_docvw" }
+        }
+      ]
+    },
+    {
+      "name": "history sweep starts a manual sweep and reports empty progress (ADR 0077 T3.2)",
+      "_comment": "A history sweep enqueues extraction runs; run_history_sweep gates on mode != off (the UI disables the button in mode off), so the corpus opts the company into assist first. Report documents are seeded only through the network-bound fetch/backfill path (same rationale as the T2.1 coverage step), so the sweep runs over an empty company: it enqueues nothing, leaving runsTotal/runsDone/runsFailed at 0 — the stable scalars the subset harness pins. The returned sweep's trigger is the deterministic 'manual'. Per-run progress correctness is pinned by the Rust unit tests in commands/history_sweep.rs and the TS mock scenario tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "SWEEP",
+              "displayName": "Sweep Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "set_company_autopilot",
+          "input": { "input": { "companyId": "$cid", "mode": "assist" } }
+        },
+        {
+          "command": "run_history_sweep",
+          "input": { "companyId": "$cid" },
+          "expectField": { "trigger": "manual", "companyId": "company_gpw_sweep" }
+        },
+        {
+          "command": "get_history_sweep_progress",
+          "input": { "companyId": "$cid" },
+          "expectField": { "runsTotal": 0, "runsDone": 0, "runsFailed": 0 }
+        }
+      ]
+    },
+    {
+      "name": "review queue lists no pending proposals for a company with no extractions (ADR 0077 T5.3b)",
+      "_comment": "The F5 review-queue read model returns an array of pending proposals. KPI proposals are seeded only through the network-bound extraction-job path (same rationale as the T2.1 coverage step), so the corpus exercises the empty case: a fresh company has no jobs, so the array is []. expectAbsent asserts no returned item is a pending proposal — vacuously true over the empty array on BOTH dispatchers, proving each implements the command, returns an array, and keys it by the scoped company. Per-row correctness (period/document context, source_snippet passthrough, status filter) is pinned by the Rust unit test in storage/kpi_extraction.rs and the TS mock scenario tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "RVIEW",
+              "displayName": "Review Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "list_pending_kpi_proposals",
+          "input": { "companyId": "$cid" },
+          "expectAbsent": { "status": "pending" }
+        }
+      ]
     }
   ]
 }

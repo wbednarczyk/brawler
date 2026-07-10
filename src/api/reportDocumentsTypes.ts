@@ -10,3 +10,6 @@
 export type { ReportDocument } from "./generated/ReportDocument";
 export type { CaptureReportDocumentInput } from "./generated/CaptureReportDocumentInput";
 export type { DocumentCaptureResult } from "./generated/DocumentCaptureResult";
+export type { ReclassifyReportDocumentsSummary } from "./generated/ReclassifyReportDocumentsSummary";
+export type { ReportDocumentsView } from "./generated/ReportDocumentsView";
+export type { ReportDocumentViewRow } from "./generated/ReportDocumentViewRow";

@@ -26,4 +26,15 @@ divergentCount: number,
 /**
  * Serialized `DriftReport` JSON when the layout drifted.
  */
-driftJson: string | null, };
+driftJson: string | null, 
+/**
+ * The tier-4 (OCR) fallback's honest outcome when it ran (ADR 0077 §4), else
+ * `null`: `facts_emitted` · `bootstrap_proposals` · `proposals_flagged` ·
+ * `no_vision_provider` · `not_pdf` · `provider_error:<code>` · `empty`.
+ */
+tier4: string | null, 
+/**
+ * How many proposals tier-4 landed for confirmation (`0` when it emitted
+ * facts or did not run).
+ */
+tier4Proposals: number, };

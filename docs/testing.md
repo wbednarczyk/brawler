@@ -52,6 +52,10 @@ Realistic test data comes from a **canonical sample-data factory**, not a checke
 
 Suites run in parallel within and across frameworks to keep the loop fast, with isolation (above) as the precondition that keeps quality intact. Within frameworks: Rust uses `cargo nextest`, Vitest uses its default pool, Playwright runs `fullyParallel`. Across frameworks: `make check` is a staged concurrent orchestrator (fast-fail typecheck/fmt/lint stage, then heavy suites concurrently), the main win being the Rust compile overlapping the JS suites. Worker counts are capped so the sum ≈ core count (oversubscription causes false-timeout flakiness), output is grouped with hard-stop on first failure, and changes are kept only on a measured win. See [Engineering Workflow](engineering-workflow.md) and [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
 
+**Resource discipline (WSL OOM guardrail, 2026-07-10).** The WSL VM has ~15 GB RAM vs 24 cores; parallel `rustc` test builds saturate it and can kill the whole VM. Rules for every agent and script running tests OUTSIDE `make check` (whose orchestrator already stages suites): run **one heavy build/test invocation at a time** — never two cargo/nextest/vitest processes concurrently; bound compile parallelism with `CARGO_BUILD_JOBS=8` (or `-j 8`); scope `cargo nextest` to touched modules, never the whole suite ad hoc. A crashed VM can leave a **corrupted test binary** behind — a SIGSEGV in `nextest --list` right after a crash means delete the stale `target/debug/deps/<crate>-*` binary and relink, not a code bug.
+
+**Delegation contracts name the consumers of a changed boundary (harvested 2026-07-10, ADR 0045).** When a delegated slice changes what a creation/normalization boundary produces (e.g. a create call starts folding a legacy label), scoped module tests miss the OTHER modules whose seeds or reads assumed the old shape — the collision surfaces only at the full gate. The slice contract must enumerate the boundary's consumers (`repoctx callers <fn>` / `rdeps`) as modules the agent runs tests for, and any test that needs the legacy shape seeds it via raw SQL like migration tests do, never through the now-normalizing public surface.
+
 ## Coverage ratchet
 
 `make coverage` measures line coverage — frontend via Vitest's v8 provider, Rust via `cargo-llvm-cov` — then runs a **ratchet** (`scripts/check/coverage-ratchet.mjs`) that fails if either layer drops below the committed floor in `coverage-baseline.json`. This enforces the full-coverage policy as a *trend* (never regress) without a brittle absolute target; when coverage rises it prints the new floors to commit. It is periodic (the instrumented Rust build is slow), not part of `make check`. Policy: [ADR 0048](adr/0048-test-architecture-sample-data-broad-clickable-coverage-and-layered-parallelism.md).
@@ -68,6 +72,13 @@ harvested guardrail ([ADR 0045](adr/0045-guardrail-harvest-loop.md)): cross-sour
 story clustering (`v0.46.0`) passed every synthetic test and a green `make check`,
 yet real-data validation showed no local method reached trustworthy precision at
 useful recall, and the feature was dropped ([ADR 0051](adr/0051-story-clustering-across-sources.md)).
+
+**Corollary — content before metadata verdicts (harvested 2026-07-10).** A diagnosis
+that real data is mis-associated/contaminated must inspect the CONTENT of the accused
+artifacts before any repair is designed. A verdict built from metadata alone (URLs,
+slugs, filenames) once stood for two days accusing documents of belonging to other
+issuers — opening the files disproved it in minutes (misleading CDN slugs; the
+literal metadata-based repair would have deleted 36 legitimate rows).
 The cost of the up-front measurement is an afternoon; the cost of skipping it is a
 fully-built feature that has to be reverted.
 
@@ -158,6 +169,34 @@ over the real `.xbri` filing and asserts the second run creates nothing, reports
 slots as skipped, and leaves `financial_facts` unchanged. It **writes to the corpus DB** — the
 corpus copy is throwaway by contract (refresh it from the live DB when in doubt).
 
+### Ground-truth metrics ratchet (recall/precision, G-3)
+
+The value-level companion to the structural corpus net ([ADR 0077](adr/0077-trusted-extraction-foundations.md)
+T0.1): `storage::tests::extraction_metrics::extraction_metrics_recall_precision_ratchet` grades
+the deterministic pipeline's emitted fact **values** against hand-labeled ground truth.
+
+- **Ground truth** — one JSON per (document, period) in `private/realdata/t7-cbf/ground_truth/`
+  (gitignored, never committed): `{ document_file, company, fiscal_year, period_type,
+  facts: [{ metric_key, value, unit, statement, page }] }`. `metric_key`s come from the seeded
+  KPI catalog only; `value` is a decimal string in signed base units (tys.-PLN statements are
+  normalized ×1000). Labeling is **double-pass**: the agent proposes values read off the
+  statement pages, the owner verifies; anything not certain carries `"uncertain": true` (+
+  `why_uncertain`) instead of a silent guess.
+- **Metrics** — per document and overall: *recall* = labeled facts emitted with a matching value;
+  *precision* = emitted facts for labeled metrics that match the label (emitted facts nobody
+  labeled are excluded and reported as `unlabeled_emitted`). Values compare as numbers under the
+  pipeline's own `Tolerance` (0.5% relative / 1 base-unit absolute), never as strings. A
+  per-document `metric_key | labeled | extracted | match` table prints for eyeballing.
+- **Ratchet rule** — the floors (`RECALL_FLOOR`/`PRECISION_FLOOR` in `extraction_metrics.rs`) are
+  pinned at the measured baseline minus 0.02 slack (2026-07-08, after the owner's pass-2 label
+  decisions: recall 12/37 = 0.32, precision 12/12 = 1.00 → floors 0.30 / 0.98). They move only
+  **deliberately** — raise after a
+  verified improvement lands; never lower to absorb a regression.
+
+```bash
+make realdata-extraction-metrics   # same REALDATA_DB/REALDATA_DIR guards; skips without corpus/ground_truth
+```
+
 The **report-over-report diff** (`v0.47.0`, [ADR 0052](adr/0052-report-over-report-diff.md))
 followed this rule and is the worked example of it paying off: a pure-Rust
 extraction + section-alignment spike measured against real watchlist report PDFs
@@ -229,6 +268,20 @@ hand-edited** (`cargo insta review` / `cargo insta accept`). They lock *output
 shape* and make a deliberate shape change a reviewable diff instead of silent
 drift; they never replace the behavioral assertions/invariants above. Snapshot
 tests are deterministic and part of `make check`.
+
+The document taxonomy (ADR 0077 §1) uses a stronger form of the same idea: a
+**committed labeled corpus** `src-tauri/testdata/doc_titles_labeled.json` of
+real GPW title shapes with expected `doc_kind` labels (guardrail **G-2**,
+`fundamentals::extraction::classify::tests::contract_corpus_holds`). Unlike a
+regenerable snapshot, labels are hand-assigned — a failing row is resolved by
+a conscious relabel, never `insta accept`. Extend it with every newly observed
+misclassified real title.
+
+The tier-4 OCR parser (ADR 0077 §4) follows the same property + golden pattern
+on a **synthetic OCR-v4-shaped sample** — realistic Polish financial-statement
+pipe tables authored in the test itself, never copied from `private/` real data
+(the `parse_ocr_markdown` proptest enforces no-fabrication + no-unknown-labels;
+its golden locks a stitched multi-table document's parsed facts).
 
 ### Scale & performance gates
 
@@ -382,6 +435,7 @@ Setup and run:
 - `make ui-smoke-install` — first-time Chromium download into the local Playwright cache.
 - `make ui-smoke` — run the suite. (`npm run test:browser:install` / `npm run test:browser` are the direct equivalents.)
 - Run a subset: `npx playwright test journeys smoke-walk`.
+- **Build-freshness guard** (`tests/browser/global-setup.ts`, bug 2059fd8): the run aborts up front if a **reused** dev server (`reuseExistingServer` is on locally) is serving a stale build — one from another worktree/branch or from before your latest edit — which would false-green visual/density baselines. The config stamps the server with the newest `src/` mtime and `global-setup` refuses to proceed on a mismatch. Fix: stop the stale dev server on port 4321 so a fresh one starts (a normal `make ui-smoke` with no pre-existing server is unaffected).
 
 Use it for repeated layout risks: fixed app chrome + no global scrollbar; independently scrollable panels (Companies, Watchlists, Notebooks, Inbox, Events, Sources); dense row/category sizing; and **viewport regressions across the matrix in `playwright.config.ts`** — compact (1366×768), wide (1920×1080), and the tall/narrow quarter-ultrawide at 100% (1280×1440) and 125% (1024×1152) scaling, per the UI scaling requirement in [CLAUDE.md](../CLAUDE.md).
 
@@ -468,7 +522,7 @@ Expect provider ID, model, `job_status=succeeded`, a non-empty summary, and ≥1
 
 Drives the **real running Windows app** (real Tauri backend, real local SQLite DB) via WebView2's Chrome DevTools Protocol, so an agent on WSL (no GUI) can verify a change against the real app directly instead of relying on the manual desktop smoke checklist above. Policy: [ADR 0066](adr/0066-live-drive-remote-debugging.md).
 
-Use it when a change needs proof against the real runtime/DB — not the mocked Playwright suite above — and a human isn't available to click through it manually.
+**Standing owner authorization (2026-07-09): an agent may ALWAYS drive the owner's real Windows app live** — `make live-cycle` (or `live-up` + `live-drive`) needs no per-session permission. Prefer it whenever real-runtime/real-DB evidence would strengthen a verification or handover; do not report "not verified on the real Windows app" without having tried this path first.
 
 **One command from WSL** (rebuild → launch on Windows → wait for CDP → run the live suite):
 
@@ -483,6 +537,10 @@ Or the pieces separately:
 - Manual launch (a human at the Windows machine, e.g. against an already-built exe): `powershell -ExecutionPolicy Bypass -File scripts/windows/dev-live.ps1`, then `make live-drive` from WSL.
 
 `BRAWLER_CDP_URL` overrides the connection target (default `http://localhost:9222`); the helper (`tests/live/helpers/liveConnect.ts`) applies the same localhost → nameserver-IP fallback order when it is unset. Dev-only; **never** part of `make check`/`make check-epic` — no default/CI environment has a live GUI app with an open debug port.
+
+**Live-probe honesty rules (harvested 2026-07-10, ADR 0045).** Two classes that green-washed real defects on the owner's app:
+- **A punchline probe asserts the OUTCOME, not just settlement.** A probe whose purpose is "the flow produced X" must require a nonzero/expected result (`Wydobyto [1-9]`, a row count delta, a DB assertion) — "it settled" with a zero result is a probe FAILURE. A settle-only assert once passed while the feature under test silently did nothing.
+- **Panes are company-scoped.** A live cockpit layout can hold panels pinned to OTHER companies (the owner may be using the app concurrently); an unscoped `.first()` locator can silently read a neighbour's pane. Always scope by `data-company-id` (present on coverage + review panels for exactly this reason).
 
 ## Packaging smoke tests
 

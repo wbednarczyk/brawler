@@ -84,6 +84,7 @@ fn reads_default_settings_from_sqlite() {
     assert_eq!(settings.accent_palette, "night-neon");
     assert!(!settings.developer_mode);
     assert_eq!(settings.poll_interval_seconds, 900);
+    assert_eq!(settings.backfill_years, 3);
     assert_eq!(settings.settings_source, "sqlite");
     assert_eq!(settings.settings_import_export_format, "yaml");
     assert_eq!(settings.yaml_import_export_status, "accepted_deferred");
@@ -169,6 +170,8 @@ fn updates_settings_through_storage_api() {
             accent_palette: Some("midnight-horizon".to_owned()),
             locale: Some("pl".to_owned()),
             poll_interval_seconds: Some(1800),
+            backfill_years: None,
+            history_sweep_ai_call_limit: None,
             youtube_transcription_provider: None,
             youtube_transcription_model: None,
             youtube_transcription_timeout_seconds: Some(600),
@@ -274,6 +277,8 @@ fn updates_shortcut_bindings_through_storage_api() {
             accent_palette: None,
             locale: None,
             poll_interval_seconds: None,
+            backfill_years: None,
+            history_sweep_ai_call_limit: None,
             youtube_transcription_provider: None,
             youtube_transcription_model: None,
             youtube_transcription_timeout_seconds: None,
@@ -328,6 +333,8 @@ fn rejects_invalid_poll_interval_setting() {
         accent_palette: None,
         locale: None,
         poll_interval_seconds: Some(42),
+        backfill_years: None,
+        history_sweep_ai_call_limit: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
@@ -365,6 +372,8 @@ fn rejects_invalid_theme_setting() {
         accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
+        backfill_years: None,
+        history_sweep_ai_call_limit: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
@@ -415,6 +424,8 @@ fn rejects_invalid_locale_setting() {
         accent_palette: None,
         locale: Some("de".to_owned()),
         poll_interval_seconds: None,
+        backfill_years: None,
+        history_sweep_ai_call_limit: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
@@ -452,6 +463,8 @@ fn rejects_invalid_general_analysis_settings() {
         accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
+        backfill_years: None,
+        history_sweep_ai_call_limit: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
@@ -483,6 +496,8 @@ fn rejects_invalid_general_analysis_settings() {
         accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
+        backfill_years: None,
+        history_sweep_ai_call_limit: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
@@ -514,6 +529,8 @@ fn rejects_invalid_general_analysis_settings() {
         accent_palette: None,
         locale: None,
         poll_interval_seconds: None,
+        backfill_years: None,
+        history_sweep_ai_call_limit: None,
         youtube_transcription_provider: None,
         youtube_transcription_model: None,
         youtube_transcription_timeout_seconds: None,
@@ -830,6 +847,68 @@ fn rejects_openai_provider_for_claim_extraction_capability() {
 }
 
 #[test]
+fn rejects_text_only_provider_for_vision_extraction_capability() {
+    // ADR 0077 T4.2: VisionExtraction is a document-kind capability, so the
+    // existing Document⇒Native settings gate rejects a text-only provider for
+    // it automatically — no new rule, the same enforcement.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let mut capability_providers = HashMap::new();
+    capability_providers.insert(
+        "vision_extraction".to_owned(),
+        vec![CapabilityProviderEntry {
+            provider: crate::providers::analysis::registry::OPENAI_ANALYSIS_PROVIDER_ID.to_owned(),
+            model: "gpt-5.5".to_owned(),
+        }],
+    );
+
+    let result = state.update_settings(SettingsUpdate {
+        capability_providers: Some(capability_providers),
+        ..SettingsUpdate::default()
+    });
+
+    let message = result
+        .expect_err("a text-only provider must be rejected for vision_extraction")
+        .to_string();
+    assert!(
+        message.contains("vision_extraction"),
+        "error must name the capability: {message}"
+    );
+    assert!(
+        message.contains("cannot accept document input"),
+        "error must explain why: {message}"
+    );
+}
+
+#[test]
+fn accepts_mistral_provider_for_vision_extraction_capability() {
+    // ADR 0077 T4.2 / G-0 verdict: Mistral is document-native (OCR), so the
+    // Document⇒Native gate accepts it for the vision-extraction call site.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let mut capability_providers = HashMap::new();
+    capability_providers.insert(
+        "vision_extraction".to_owned(),
+        vec![CapabilityProviderEntry {
+            provider: crate::providers::analysis::registry::MISTRAL_ANALYSIS_PROVIDER_ID.to_owned(),
+            model: "mistral-small-latest".to_owned(),
+        }],
+    );
+
+    let settings = state
+        .update_settings(SettingsUpdate {
+            capability_providers: Some(capability_providers),
+            ..SettingsUpdate::default()
+        })
+        .expect("mistral (document-native) must be accepted for vision_extraction");
+    assert!(settings
+        .capability_providers
+        .contains_key("vision_extraction"));
+}
+
+#[test]
 fn rejects_test_sample_provider_in_capability_providers() {
     // `selectable_analysis_provider_ids` deliberately excludes the test
     // sample provider (it is not a user-selectable analysis provider), so
@@ -1034,5 +1113,183 @@ fn update_settings_is_atomic_on_validation_failure() {
         after.theme, before.theme,
         "the theme write must roll back when a later field fails validation \
          in the same update — update_settings is atomic"
+    );
+}
+
+#[test]
+fn backfill_years_defaults_tolerantly_when_row_absent() {
+    // No seed-row migration (ADR 0077 §3): a database that predates the key must
+    // still load settings, reading the default 3 rather than failing.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .checkout()
+        .expect("connection")
+        .execute("DELETE FROM settings WHERE key = 'backfill_years'", [])
+        .expect("delete row");
+
+    let settings = state
+        .get_settings()
+        .expect("settings should load without the backfill_years row");
+    assert_eq!(settings.backfill_years, 3);
+}
+
+#[test]
+fn backfill_years_clamps_out_of_range_stored_value_on_read() {
+    // A hand-edited / absurd stored value is clamped to the supported range on
+    // read so it can never drive an unbounded fetch.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    // Inline the checkout so the pooled connection is released before
+    // `get_settings` re-checks-out (the in-memory pool is size 1).
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "INSERT INTO settings (key, value, value_type) VALUES ('backfill_years', '999', 'integer')
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            [],
+        )
+        .expect("seed out-of-range value");
+
+    assert_eq!(state.get_settings().expect("settings").backfill_years, 10);
+}
+
+#[test]
+fn backfill_years_write_clamps_to_supported_range() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let low = state
+        .update_settings(SettingsUpdate {
+            backfill_years: Some(0),
+            history_sweep_ai_call_limit: None,
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(low.backfill_years, 1, "0 clamps up to the minimum");
+
+    let high = state
+        .update_settings(SettingsUpdate {
+            backfill_years: Some(50),
+            history_sweep_ai_call_limit: None,
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(high.backfill_years, 10, "50 clamps down to the maximum");
+
+    // The clamped value round-trips through a fresh read (durable in SQLite).
+    assert_eq!(state.get_settings().expect("settings").backfill_years, 10);
+
+    let ok = state
+        .update_settings(SettingsUpdate {
+            backfill_years: Some(5),
+            history_sweep_ai_call_limit: None,
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(ok.backfill_years, 5, "an in-range value is stored verbatim");
+}
+
+#[test]
+fn history_sweep_ai_call_limit_defaults_tolerantly_when_row_absent() {
+    // No seed-row migration (ADR 0077 §6): a database that predates the key must
+    // still load settings, reading the default 30 rather than failing.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "DELETE FROM settings WHERE key = 'history_sweep_ai_call_limit'",
+            [],
+        )
+        .expect("delete row");
+
+    let settings = state
+        .get_settings()
+        .expect("settings should load without the history_sweep_ai_call_limit row");
+    assert_eq!(settings.history_sweep_ai_call_limit, 30);
+}
+
+#[test]
+fn history_sweep_ai_call_limit_clamps_out_of_range_stored_value_on_read() {
+    // A hand-edited / absurd stored value is clamped to the supported range on
+    // read so it can never drive an unbounded AI spend.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "INSERT INTO settings (key, value, value_type) VALUES ('history_sweep_ai_call_limit', '9000', 'integer')
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            [],
+        )
+        .expect("seed out-of-range value");
+
+    assert_eq!(
+        state
+            .get_settings()
+            .expect("settings")
+            .history_sweep_ai_call_limit,
+        500
+    );
+}
+
+#[test]
+fn history_sweep_ai_call_limit_write_clamps_to_supported_range() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    // 0 is a valid value (the "off"/unlimited sentinel), so it is stored verbatim.
+    let off = state
+        .update_settings(SettingsUpdate {
+            history_sweep_ai_call_limit: Some(0),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(off.history_sweep_ai_call_limit, 0, "0 = off is preserved");
+
+    let high = state
+        .update_settings(SettingsUpdate {
+            history_sweep_ai_call_limit: Some(9000),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(
+        high.history_sweep_ai_call_limit, 500,
+        "9000 clamps down to the maximum"
+    );
+
+    let negative = state
+        .update_settings(SettingsUpdate {
+            history_sweep_ai_call_limit: Some(-5),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(
+        negative.history_sweep_ai_call_limit, 0,
+        "a negative value clamps up to the minimum"
+    );
+
+    // The clamped value round-trips through a fresh read (durable in SQLite).
+    assert_eq!(
+        state
+            .get_settings()
+            .expect("settings")
+            .history_sweep_ai_call_limit,
+        0
+    );
+
+    let ok = state
+        .update_settings(SettingsUpdate {
+            history_sweep_ai_call_limit: Some(30),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(
+        ok.history_sweep_ai_call_limit, 30,
+        "an in-range value is stored verbatim"
     );
 }

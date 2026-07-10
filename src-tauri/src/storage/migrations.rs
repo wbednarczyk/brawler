@@ -308,6 +308,36 @@ const MIGRATIONS: &[Migration] = &[
         name: "qualitative_assessment_index",
         sql: include_str!("../../migrations/0060_qualitative_assessment_index.sql"),
     },
+    Migration {
+        version: 61,
+        name: "report_document_kind",
+        sql: include_str!("../../migrations/0061_report_document_kind.sql"),
+    },
+    Migration {
+        version: 62,
+        name: "history_sweeps",
+        sql: include_str!("../../migrations/0062_history_sweeps.sql"),
+    },
+    Migration {
+        version: 63,
+        name: "ocr_extraction_profile",
+        sql: include_str!("../../migrations/0063_ocr_extraction_profile.sql"),
+    },
+    Migration {
+        version: 64,
+        name: "kpi_extraction_committed_facts",
+        sql: include_str!("../../migrations/0064_kpi_extraction_committed_facts.sql"),
+    },
+    Migration {
+        version: 65,
+        name: "sweep_ai_budget",
+        sql: include_str!("../../migrations/0065_sweep_ai_budget.sql"),
+    },
+    Migration {
+        version: 66,
+        name: "period_type_annual_to_fy",
+        sql: include_str!("../../migrations/0066_period_type_annual_to_fy.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

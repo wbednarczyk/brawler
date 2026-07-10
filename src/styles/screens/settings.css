@@ -26,6 +26,35 @@
   font-weight: 750;
 }
 
+/* Shared visual-first range control (docs/ui-authoring.md): presets + slider +
+   numeric input, all bound to the same value. Used by backfill depth (ADR
+   0077 §3, SourceSettings) and the history-sweep AI budget (ADR 0077 §6,
+   AiSettings) — a shared class rather than a per-screen copy, since the shape
+   now recurs in two places. */
+.settings-range-control {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.settings-range-control-label {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.settings-range-control-custom {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.settings-range-control-custom .ui-range-field {
+  flex: 1;
+}
+
+.settings-range-control-input {
+  width: 64px;
+}
+
 .credential-form {
   display: grid;
   gap: var(--space-2);

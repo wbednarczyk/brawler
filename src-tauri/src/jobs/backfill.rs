@@ -16,7 +16,10 @@ use crate::source_adapters::bankier_company::{
 };
 use crate::storage::{AppState, BackfillProgress};
 
-/// Years of history the backfill action covers.
+/// Fallback backfill depth in years, used only when the persisted
+/// `backfill_years` setting cannot be read (ADR 0077 §3). The live depth is the
+/// user-configurable setting (default 3, clamped 1–10); this const is the
+/// last-resort default so a settings read error never blocks the fetch.
 pub const BACKFILL_YEARS: i64 = 3;
 /// Page cap so a single backfill cannot run unbounded (25 items/page ≫ 3 years of filings).
 pub const MAX_BACKFILL_PAGES: usize = 80;
@@ -54,19 +57,44 @@ pub fn run_backfill(
         items_ingested: 0,
         documents_stored: 0,
         detail_errors: 0,
+        truncated: false,
+        chained_sweep_id: None,
         error: None,
         started_at: started_at.clone(),
         updated_at: started_at.clone(),
     };
     state.set_backfill_progress(progress.clone());
 
+    // Market eligibility (T-A4, card bfc4c98): derive the history-capable markets
+    // from `source_adapter_markets`, not a hardcoded exchange. A company on a
+    // market with no history-capable source adapter fails with the
+    // machine-readable `unsupported_market` prefix the UI maps to a localized
+    // message, instead of the misleading "not a tracked GPW company".
+    match state.backfill_market_status(company_id) {
+        Ok(crate::storage::BackfillMarketStatus::Ineligible { exchange }) => {
+            return fail(
+                state,
+                &mut progress,
+                &format!("unsupported_market: {exchange} has no history-capable source adapter"),
+            );
+        }
+        Ok(_) => {}
+        Err(error) => return fail(state, &mut progress, &error.to_string()),
+    }
+
     let target = match find_target(state, company_id) {
         Ok(Some(target)) => target,
-        Ok(None) => return fail(state, &mut progress, "company is not a tracked GPW company"),
+        Ok(None) => return fail(state, &mut progress, "company is not a tracked company"),
         Err(error) => return fail(state, &mut progress, &error),
     };
 
-    let cutoff = backfill_cutoff();
+    // Backfill depth is user-configurable (ADR 0077 §3); fall back to the const
+    // only if the settings read fails so the fetch is never blocked on it.
+    let years = state
+        .get_settings()
+        .map(|settings| settings.backfill_years)
+        .unwrap_or(BACKFILL_YEARS);
+    let cutoff = backfill_cutoff(years);
     // Report progress live as pages and items stream in, so the long fetch phase is visible
     // instead of sitting at zero until it finishes.
     let progress_company = company_id.to_owned();
@@ -85,6 +113,8 @@ pub fn run_backfill(
                 items_ingested: items_collected,
                 documents_stored: 0,
                 detail_errors: 0,
+                truncated: false,
+                chained_sweep_id: None,
                 error: None,
                 started_at: progress_started.clone(),
                 updated_at: now_rfc3339(),
@@ -97,6 +127,7 @@ pub fn run_backfill(
 
     progress.pages_fetched = stats.pages_fetched;
     progress.detail_errors = stats.detail_errors;
+    progress.truncated = stats.truncated;
     progress.updated_at = now_rfc3339();
     state.set_backfill_progress(progress.clone());
 
@@ -120,6 +151,21 @@ pub fn run_backfill(
 
     progress.status = "completed".to_owned();
     progress.updated_at = now_rfc3339();
+
+    // Chain a history sweep so a completed backfill automatically extracts the
+    // periods it just fetched (ADR 0077 §3, closes gap 1). Best-effort: a
+    // chaining failure is logged, never surfaced as a backfill error — the
+    // fetched documents are already stored and the sweep can be re-run manually.
+    // The sweep row is created eagerly here, so its id is known before this
+    // command returns; thread it onto the result so the coverage panel polls
+    // THIS sweep specifically instead of guessing from "the latest sweep".
+    match crate::jobs::history_sweep::enqueue_history_sweep(state, company_id, "backfill") {
+        Ok(sweep) => progress.chained_sweep_id = Some(sweep.id),
+        Err(error) => {
+            log::warn!("backfill {company_id}: failed to chain history sweep: {error}");
+        }
+    }
+
     state.set_backfill_progress(progress.clone());
     progress
 }
@@ -134,6 +180,17 @@ fn find_target(state: &AppState, company_id: &str) -> Result<Option<BankierCompa
 }
 
 fn fail(state: &AppState, progress: &mut BackfillProgress, message: &str) -> BackfillProgress {
+    // Every failed backfill leaves a production-visible trail (T-A4, card
+    // bfc4c98): the progress row alone was silent, so a failure could not be
+    // diagnosed from the logs.
+    // Every failed backfill leaves a production-visible trail (T-A4, card
+    // bfc4c98): the progress row alone was silent, so a failure could not be
+    // diagnosed from the logs.
+    log::warn!(
+        "module=backfill company={} status=failed error={}",
+        progress.company_id,
+        message
+    );
     progress.status = "failed".to_owned();
     progress.error = Some(message.to_owned());
     progress.updated_at = now_rfc3339();
@@ -141,10 +198,10 @@ fn fail(state: &AppState, progress: &mut BackfillProgress, message: &str) -> Bac
     progress.clone()
 }
 
-/// Lower bound for backfill, as `YYYY-MM-DDTHH:MM:SS` to compare against Bankier item dates.
-fn backfill_cutoff() -> String {
-    let cutoff =
-        OffsetDateTime::now_utc().saturating_sub(time::Duration::days(BACKFILL_YEARS * 365));
+/// Lower bound for backfill, as `YYYY-MM-DDTHH:MM:SS` to compare against Bankier
+/// item dates. `years` is the configured backfill depth (ADR 0077 §3).
+fn backfill_cutoff(years: i64) -> String {
+    let cutoff = OffsetDateTime::now_utc().saturating_sub(time::Duration::days(years * 365));
     cutoff
         .format(format_description!(
             "[year]-[month]-[day]T[hour]:[minute]:[second]"
@@ -273,6 +330,50 @@ mod tests {
         assert_eq!(stored.status, "completed");
     }
 
+    /// ADR 0077 §3: a completed backfill chains a history sweep — one queued
+    /// `history_sweep` job keyed by the sweep row it just created.
+    #[test]
+    fn completed_backfill_chains_a_history_sweep() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = tracked_company(&state);
+
+        let bankier = FakeBankier {
+            page_requests: RefCell::new(0),
+        };
+        let progress = run_backfill(&state, &company_id, &bankier, &FakeDocs, Duration::ZERO);
+        assert_eq!(progress.status, "completed", "error: {:?}", progress.error);
+
+        let sweep = state
+            .history_sweeps()
+            .get_latest_history_sweep(&company_id)
+            .expect("latest sweep")
+            .expect("backfill must create a sweep row");
+        assert_eq!(sweep.trigger, "backfill");
+        assert_eq!(sweep.status, "queued");
+
+        // The result threads the chained sweep's id so the coverage panel polls
+        // THIS sweep specifically (never "the latest sweep"): the row is created
+        // eagerly at enqueue time, so the id is known before the command returns.
+        assert_eq!(
+            progress.chained_sweep_id.as_deref(),
+            Some(sweep.id.as_str()),
+            "the backfill result must carry the chained sweep's id"
+        );
+
+        // The sweep's durable job is queued under the sweep id (still pending —
+        // no worker runs in this test).
+        let payload = state
+            .jobs()
+            .pending_payload(&sweep.id)
+            .expect("pending payload query")
+            .expect("a history_sweep job must be queued for the sweep");
+        assert!(
+            payload.contains(&sweep.id),
+            "the queued job payload names the sweep, got: {payload}"
+        );
+    }
+
     #[test]
     fn rerunning_backfill_does_not_duplicate() {
         let connection = open_in_memory_database().expect("database should initialize");
@@ -373,6 +474,92 @@ mod tests {
                 .is_some_and(|path| path.ends_with(".xhtml")),
             "local_path: {:?}",
             doc.local_path
+        );
+    }
+
+    #[test]
+    fn cutoff_respects_configured_years() {
+        // A shorter configured depth yields a more recent lower bound; a longer
+        // depth reaches further back (ADR 0077 §3).
+        let one = backfill_cutoff(1);
+        let ten = backfill_cutoff(10);
+        assert!(
+            one > ten,
+            "a 1-year depth cutoff must be more recent than a 10-year one: {one} vs {ten}"
+        );
+
+        let now_year = OffsetDateTime::now_utc().year();
+        let year_one: i32 = one[..4].parse().expect("cutoff year parses");
+        assert!(
+            (now_year - 1 - year_one).abs() <= 1,
+            "a 1-year cutoff lands about a year ago (now {now_year}, cutoff {one})"
+        );
+    }
+
+    /// T-A4 (card bfc4c98): a company on a market with no history-capable source
+    /// adapter (here NewConnect, `NC`) fails with the machine-readable
+    /// `unsupported_market` prefix the frontend maps to a localized message —
+    /// not the misleading "not a tracked GPW company".
+    #[test]
+    fn backfill_for_unsupported_market_fails_with_machine_readable_error() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "NC".to_owned(),
+                ticker: "XYZ".to_owned(),
+                display_name: "NewConnect Co S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        let bankier = FakeBankier {
+            page_requests: RefCell::new(0),
+        };
+        let progress = run_backfill(&state, &company.id, &bankier, &FakeDocs, Duration::ZERO);
+
+        assert_eq!(progress.status, "failed");
+        let error = progress.error.expect("a failed backfill carries an error");
+        assert!(
+            error.starts_with("unsupported_market"),
+            "error must start with the machine-readable prefix, got: {error}"
+        );
+    }
+
+    /// T-A4: every failed backfill leaves a log line (the `fail()` path was
+    /// previously silent). Uses the shared capture logger; assertions filter by
+    /// the unique company id since other tests append to the same buffer.
+    #[test]
+    fn failed_backfill_emits_a_log_line() {
+        crate::test_support::install_capture_logger();
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company = state
+            .create_company(NewCompany {
+                exchange: "NC".to_owned(),
+                ticker: "LOG".to_owned(),
+                display_name: "LogTrail NC S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+
+        let bankier = FakeBankier {
+            page_requests: RefCell::new(0),
+        };
+        let progress = run_backfill(&state, &company.id, &bankier, &FakeDocs, Duration::ZERO);
+        assert_eq!(progress.status, "failed");
+
+        let logs = crate::test_support::captured_logs()
+            .lock()
+            .expect("capture buffer");
+        assert!(
+            logs.iter()
+                .any(|line| line.contains(&company.id) && line.contains("status=failed")),
+            "a failed backfill must emit a warn line naming the company; buffer: {logs:?}"
         );
     }
 

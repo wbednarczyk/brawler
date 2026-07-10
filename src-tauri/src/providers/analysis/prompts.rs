@@ -12,7 +12,7 @@ use crate::providers::common::{clean_optional_string, extract_json_object};
 use super::types::{
     AnalysisProviderError, AnalysisProviderOutput, AnalysisRequest, AnalysisSourceReference,
     ClaimExtractionProviderOutput, ClaimExtractionRequest, EspiClassificationCategory,
-    EspiClassificationOutput, ExtractedClaim, ExtractedKpiFact, ExtractedPeriod,
+    EspiClassificationOutput, ExtractedClaim, ExtractedKpiFact, ExtractedPeriod, KpiCatalogEntry,
     KpiExtractionProviderOutput, KpiExtractionRequest, QualitativeAssessmentCitation,
     QualitativeAssessmentOutput, QualitativeAssessmentRequest, ResearchBriefCitationOutput,
     ResearchBriefProviderOutput, ResearchBriefRequest, ResearchBriefSectionOutput,
@@ -45,6 +45,49 @@ pub const ESPI_CLASSIFICATION_PROMPT_VERSION: &str = "espi-classification.v1";
 /// each agent criterion result as provenance. Bump when the prompt's contract
 /// changes materially.
 pub const QUALITATIVE_ASSESSMENT_PROMPT_VERSION: &str = "qualitative-assessment.v2";
+
+/// Stable identifier of the tier-4 OCR-profile bootstrap prompt (ADR 0077 §4),
+/// recorded on the bootstrapped profile. Bump when its contract changes.
+pub const OCR_PROFILE_BOOTSTRAP_PROMPT_VERSION: &str = "ocr-profile-bootstrap.v1";
+
+/// Marker phrase the deterministic test-sample provider branches on for the
+/// tier-4 profile bootstrap (mirrors the other extraction markers). Interpolated
+/// into the prompt below so the template is the single source of truth.
+pub(crate) const OCR_PROFILE_BOOTSTRAP_MARKER: &str = "propose an OCR extraction profile";
+
+/// Build the tier-4 OCR-profile bootstrap prompt (ADR 0077 §4). The text-LLM
+/// proposes the *layout* — scale, value-column, skip columns, enumerator
+/// convention, and a normalized-label → metric-key map — reading ONLY labels and
+/// headers, never numbers (the G0 spike's fabrication lesson). The OCR markdown
+/// itself is delivered as the [`super::types::AnalysisDocument::Text`] payload,
+/// not embedded here, so it is sent once. Every parsed value later lands as a
+/// proposal (bootstrap never writes facts).
+pub fn ocr_profile_bootstrap_prompt(known_kpis: &[KpiCatalogEntry]) -> String {
+    let known = if known_kpis.is_empty() {
+        "(none provided)".to_owned()
+    } else {
+        known_kpis
+            .iter()
+            .map(|entry| format!("- {} — {}", entry.metric_key, entry.label))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+    format!(
+        "You {OCR_PROFILE_BOOTSTRAP_MARKER} for one company's financial statements. \
+Read ONLY the row LABELS and column HEADERS of the markdown tables in the attached document — \
+NEVER read, copy, or return any numeric value. \
+Return only JSON with this exact shape: \
+{{\"scale\":\"ones|thousands|millions\",\"valueColumn\":\"current_period_first|current_period_last|labeled_by_period_header|single_value\",\"skipColumns\":[\"Nota\"],\"stripEnumerators\":true,\"labelMap\":{{\"<lower-cased polish row label>\":\"<metricKey>\"}}}}.\n\n\
+Rules:\n\
+- scale is the unit the statement is printed in (\"Dane w tys. zł\" → thousands; \"mln\" → millions; full złoty → ones).\n\
+- valueColumn names which value column carries the CURRENT reporting period (the leftmost value column is usually current_period_first).\n\
+- skipColumns lists non-value header columns to ignore (e.g. a \"Nota\" reference column).\n\
+- stripEnumerators is true when row labels carry a leading enumerator like \"1.\", \"II.\", or \"a)\".\n\
+- labelMap maps each statement row label (lower-cased, diacritics kept) to one of the known metric keys below. Map ONLY rows you are confident about; omit the rest. Never invent a metric key or a value.\n\
+- Do NOT include any figures, markdown fences, or commentary outside the JSON.\n\n\
+Known metric keys:\n{known}",
+    )
+}
 
 /// Human-readable output language for a persisted app locale code. The prose
 /// parts of AI output follow the app language (owner requirement, 2026-07-07);

@@ -1407,3 +1407,191 @@ fn records_successful_zero_item_gpw_refresh() {
     assert_eq!(adapter.last_items_matched, Some(0));
     assert_eq!(adapter.last_items_unmatched, Some(0));
 }
+
+// ---- T-A3: mis-association guard + repair (card 45fcece) --------------------
+
+fn seed_named_company(state: &AppState, ticker: &str, display_name: &str) -> Company {
+    state
+        .create_company(NewCompany {
+            exchange: "GPW".to_owned(),
+            ticker: ticker.to_owned(),
+            display_name: display_name.to_owned(),
+            isin: None,
+            cik: None,
+            lei: None,
+        })
+        .expect("company should create")
+}
+
+fn bankier_item_with_attachment(
+    company: &Company,
+    title: &str,
+    label: &str,
+    url: &str,
+) -> Vec<BankierCompanyItem> {
+    vec![BankierCompanyItem {
+        company_id: company.id.clone(),
+        qualified_ticker: company.qualified_ticker.clone(),
+        title: title.to_owned(),
+        link: "https://www.bankier.pl/wiadomosc/guard-case-9000001.html".to_owned(),
+        summary: "raporty okresowe".to_owned(),
+        published_at: Some("2026-05-28T17:33:09".to_owned()),
+        fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+        article_id: "9000001".to_owned(),
+        pub_id: 3,
+        dedupe_key: "bankier-company-komunikaty:article:9000001".to_owned(),
+        duplicate_signature: "official-secondary:guard:9000001".to_owned(),
+        body_text: Some("Body from the article page.".to_owned()),
+        attachments: vec![BankierCompanyAttachment {
+            label: label.to_owned(),
+            url: url.to_owned(),
+        }],
+        detail_fetch_attempted: true,
+    }]
+}
+
+/// (a) An attachment naming a DIFFERENT tracked issuer (Vercom) on an article
+/// tagged to CDR whose title does not name CDR is rejected — no report document.
+#[test]
+fn attachment_guard_rejects_foreign_issuer_attachment() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let owner = seed_named_company(&state, "CDR", "CD PROJEKT S.A.");
+    seed_named_company(&state, "VRC", "VERCOM S.A.");
+
+    state
+        .ingest_bankier_company_items(&bankier_item_with_attachment(
+            &owner,
+            "Skonsolidowany raport kwartalny QSr 1/2025",
+            "VERCOM SA - Skonsolidowany raport okresowy.xhtml",
+            "https://bonnier.pl/att/vercom-ssf.xhtml",
+        ))
+        .expect("items should ingest");
+
+    let docs = state
+        .list_report_documents_by_company(&owner.id)
+        .expect("documents should list");
+    assert!(
+        docs.is_empty(),
+        "a Vercom-named attachment must not be registered under CDR: {docs:?}"
+    );
+}
+
+/// (b) The company's own attachment (article title names the owner) is accepted.
+#[test]
+fn attachment_guard_accepts_owner_named_attachment() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let owner = seed_named_company(&state, "CDR", "CD PROJEKT S.A.");
+    seed_named_company(&state, "VRC", "VERCOM S.A.");
+
+    state
+        .ingest_bankier_company_items(&bankier_item_with_attachment(
+            &owner,
+            "CD PROJEKT skonsolidowany raport kwartalny",
+            "CD PROJEKT SA raport.xhtml",
+            "https://bonnier.pl/att/cdprojekt-ssf.xhtml",
+        ))
+        .expect("items should ingest");
+
+    let docs = state
+        .list_report_documents_by_company(&owner.id)
+        .expect("documents should list");
+    assert_eq!(docs.len(), 1, "the owner's own attachment must register");
+}
+
+/// (c) A group filing whose ARTICLE title names the owner is accepted even when
+/// the filename is generic (group filings attach many, generically-named files).
+#[test]
+fn attachment_guard_accepts_group_filing_via_article_title() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let owner = seed_named_company(&state, "CDR", "CD PROJEKT S.A.");
+    seed_named_company(&state, "VRC", "VERCOM S.A.");
+
+    state
+        .ingest_bankier_company_items(&bankier_item_with_attachment(
+            &owner,
+            "CD PROJEKT i spolka zalezna zawarly umowe",
+            "zalacznik_1.pdf",
+            "https://bonnier.pl/att/zalacznik_1.pdf",
+        ))
+        .expect("items should ingest");
+
+    let docs = state
+        .list_report_documents_by_company(&owner.id)
+        .expect("documents should list");
+    assert_eq!(
+        docs.len(),
+        1,
+        "a generically-named file on an owner-named article must register"
+    );
+}
+
+fn seed_report_document(state: &AppState, id: &str, company: &Company, title: &str, url: &str) {
+    let connection = state.checkout().expect("database connection");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, title, fetch_status)
+             VALUES (?1, ?2, 'espi_attachment', ?3, ?4, 'metadata_only')",
+            params![id, company.id, url, title],
+        )
+        .expect("seed a report document");
+}
+
+/// (d) + (e): the startup repair deletes a mis-associated row (naming another
+/// tracked issuer), leaves a legit row (owner-named) and an ambiguous row (no
+/// issuer named at all) intact, and is idempotent on a second run.
+#[test]
+fn misassociation_repair_deletes_only_foreign_rows_and_is_idempotent() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let owner = seed_named_company(&state, "CDR", "CD PROJEKT S.A.");
+    seed_named_company(&state, "VRC", "VERCOM S.A.");
+
+    // Mis-associated: a Vercom filing stamped onto CDR.
+    seed_report_document(
+        &state,
+        "doc_foreign",
+        &owner,
+        "VERCOM SA raport okresowy.xhtml",
+        "https://bonnier.pl/att/vercom-ssf.xhtml",
+    );
+    // Legit: the owner is named.
+    seed_report_document(
+        &state,
+        "doc_legit",
+        &owner,
+        "CD PROJEKT SA raport.xhtml",
+        "https://bonnier.pl/att/cdprojekt-ssf.xhtml",
+    );
+    // Ambiguous: no tracked issuer named — left alone (conservative).
+    seed_report_document(
+        &state,
+        "doc_ambiguous",
+        &owner,
+        "Skonsolidowany raport okresowy.xhtml",
+        "https://bonnier.pl/att/generic-ssf.xhtml",
+    );
+
+    let removed = state
+        .repair_misassociated_report_documents()
+        .expect("repair should run");
+    assert_eq!(removed, 1, "only the foreign row is removed");
+
+    let remaining: Vec<String> = state
+        .list_report_documents_by_company(&owner.id)
+        .expect("documents should list")
+        .into_iter()
+        .map(|doc| doc.id)
+        .collect();
+    assert!(!remaining.contains(&"doc_foreign".to_owned()));
+    assert!(remaining.contains(&"doc_legit".to_owned()));
+    assert!(remaining.contains(&"doc_ambiguous".to_owned()));
+
+    // Idempotent: a second run deletes nothing.
+    let removed_again = state
+        .repair_misassociated_report_documents()
+        .expect("repair should re-run");
+    assert_eq!(removed_again, 0, "a second run must be a no-op");
+}

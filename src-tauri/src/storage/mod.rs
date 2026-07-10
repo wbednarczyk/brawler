@@ -45,6 +45,7 @@ mod feed;
 mod feed_matching;
 mod financials;
 mod fundamentals_provenance;
+mod history_sweeps;
 mod import_export;
 mod ingestion;
 mod jobs;
@@ -105,17 +106,19 @@ pub use financials::FinancialsStore;
 pub use financials::{
     FinancialFact, FinancialPeriod, KpiDefinition, KpiRelevance, ListFinancialFactsInput,
     ListFinancialPeriodsInput, ListKpiDefinitionsInput, NewFinancialFact, NewFinancialPeriod,
-    NewKpiDefinition, NewKpiRelevance, UpdateFinancialFact, UpdateFinancialPeriod,
-    UpdateKpiRelevance,
+    NewKpiDefinition, NewKpiRelevance, PeriodFactCoverage, UpdateFinancialFact,
+    UpdateFinancialPeriod, UpdateKpiRelevance,
 };
 pub use fundamentals_provenance::{FactProvenance, FundamentalsProvenanceStore, NewFactProvenance};
+pub use history_sweeps::{HistorySweep, HistorySweepOutcome, HistorySweepStore};
 pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
 pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore, JobStatusRow};
 pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
-    CompletedKpiExtraction, ConfirmKpiProposalInput, KpiExtractionJob, KpiExtractionProposal,
-    NewKpiExtractionJob, NewKpiProposal, StructuredFactCommit, StructuredFactInput,
+    CompletedKpiExtraction, ConfirmKpiProposalInput, ConfirmedKpiFact, KpiExtractionJob,
+    KpiExtractionProposal, NewKpiExtractionJob, NewKpiProposal, PendingKpiProposal,
+    PeriodPendingProposals, StructuredFactCommit, StructuredFactInput,
 };
 pub use licensing::LicensingStore;
 pub use licensing::{LicenseMetadataUpdate, StoredLicenseMetadata};
@@ -141,7 +144,9 @@ pub use quality_frameworks::{
 pub use queue_config::QueueConfig;
 pub use registry::SourceRegistryStore;
 pub use report_documents::ReportDocumentStore;
-pub use report_documents::{CaptureReportDocumentInput, ReportDocument};
+pub use report_documents::{
+    CaptureReportDocumentInput, ReclassifyReportDocumentsSummary, ReportDocument,
+};
 pub use report_season::ReportSeasonStore;
 pub use report_season::{
     CalendarFreshness, MarkReportPreparedInput, MarkReportProcessedInput, PreReportCard,
@@ -177,7 +182,7 @@ pub use settings::{
 };
 pub use signals::SignalNeedingDate;
 pub use signals::SignalStore;
-pub use sources::SourcesStore;
+pub use sources::{BackfillMarketStatus, SourcesStore};
 pub use transcripts::TranscriptStore;
 pub use transcripts::{
     CreateNoteFromTranscriptSelectionInput, NewTranscriptJob, NewTranscriptSegment,
@@ -209,6 +214,18 @@ pub struct BackfillProgress {
     pub items_ingested: usize,
     pub documents_stored: usize,
     pub detail_errors: usize,
+    /// True when the page cap ended the fetch before the configured backfill
+    /// cutoff was reached (ADR 0077 §3) — older filings may be missing. Surfaced
+    /// as an explicit warning in the coverage panel, never silently dropped.
+    pub truncated: bool,
+    /// The chained history sweep's id, when a completed backfill auto-chained one
+    /// (ADR 0077 §3). The sweep row is created **eagerly** at enqueue time, so this
+    /// id is known before the command returns — the coverage panel polls THIS sweep
+    /// specifically (never "the latest sweep", which could be a stale/other one) so
+    /// its status line and AI-budget footer settle on the sweep the backfill
+    /// started, never a false-settle. `None` when nothing was chained (a chain
+    /// failure is best-effort, or the backfill itself failed).
+    pub chained_sweep_id: Option<String>,
     pub error: Option<String>,
     pub started_at: String,
     pub updated_at: String,
@@ -420,6 +437,13 @@ impl AppState {
         self.db.checkout()
     }
 
+    /// Test-only raw connection access, for seeding legacy DB shapes the public
+    /// creation surface can no longer produce (e.g. pre-0066 period labels).
+    #[cfg(test)]
+    pub(crate) fn checkout_for_tests(&self) -> StorageResult<DbGuard<'_>> {
+        self.checkout()
+    }
+
     /// Watchlist operations as a focused domain store (Architecture v2 / ADR 0050).
     /// Commands that only touch watchlists can depend on this store instead of the
     /// whole `AppState` facade.
@@ -483,6 +507,12 @@ impl AppState {
     /// Structured-first extraction provenance + per-company profiles (ADR 0061).
     pub fn fundamentals_provenance(&self) -> fundamentals_provenance::FundamentalsProvenanceStore {
         fundamentals_provenance::FundamentalsProvenanceStore::new(self.db.clone())
+    }
+
+    /// History sweep records (ADR 0077 §3): the durable backfill/manual
+    /// extraction-sweep counterpart to the refresh-time detection sweep.
+    pub fn history_sweeps(&self) -> history_sweeps::HistorySweepStore {
+        history_sweeps::HistorySweepStore::new(self.db.clone())
     }
 
     /// import_export domain store (Architecture v2 / ADR 0050).
@@ -974,6 +1004,20 @@ impl AppState {
 
     pub fn list_bankier_company_targets(&self) -> StorageResult<Vec<BankierCompanyTarget>> {
         self.sources().list_bankier_company_targets()
+    }
+
+    pub fn backfill_market_status(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<sources::BackfillMarketStatus> {
+        self.sources().backfill_market_status(company_id)
+    }
+
+    /// Delete `espi_attachment` report documents mis-associated onto the wrong
+    /// company by tag-listing ingestion (T-A3, card 45fcece). Idempotent startup
+    /// self-heal; returns the number of rows removed.
+    pub fn repair_misassociated_report_documents(&self) -> StorageResult<usize> {
+        self.sources().repair_misassociated_report_documents()
     }
 
     pub fn upsert_bankier_company_identifiers(
@@ -1768,7 +1812,7 @@ impl AppState {
     pub fn confirm_kpi_proposal(
         &self,
         input: ConfirmKpiProposalInput,
-    ) -> StorageResult<FinancialFact> {
+    ) -> StorageResult<ConfirmedKpiFact> {
         self.kpi_extraction().confirm_kpi_proposal(input)
     }
 
@@ -1849,6 +1893,10 @@ impl AppState {
     ) -> StorageResult<Vec<ReportDocument>> {
         self.report_documents()
             .list_report_documents_by_company(company_id)
+    }
+
+    pub fn reclassify_report_documents(&self) -> StorageResult<ReclassifyReportDocumentsSummary> {
+        self.report_documents().reclassify_report_documents()
     }
 }
 

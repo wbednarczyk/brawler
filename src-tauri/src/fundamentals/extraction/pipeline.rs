@@ -295,6 +295,46 @@ pub fn run_pipeline(input: &PipelineInput<'_>) -> PipelineOutcome {
     PipelineOutcome::empty()
 }
 
+/// Validates an already-parsed candidate set through the **same** gate the tiered
+/// pipeline applies to a structured tier, returning the acceptance verdict.
+///
+/// This exists for the tier-4 OCR path (ADR 0077 §4): its OCR/provider call lives
+/// in the job layer (never in this pure module), but the facts the deterministic
+/// OCR parser produces must pass the identical `validate`/`validate_tier` regime
+/// as ESEF/PDF — the balance-sheet identity and the prior-period magnitude
+/// cross-check are exactly what catch a 1000× mis-scale or a repainted total. The
+/// verdict mirrors the tier-1 arm: a self-contradiction (`Failed`) is `Flagged`
+/// (the caller routes those values to proposals), a clean set is `Accepted`
+/// (downgraded to `AcceptedUnreviewed` when it covers none of the expected
+/// primary KPIs), and an uncontradicted-but-unproven set is `AcceptedUnreviewed`.
+/// An empty set is `Empty`.
+pub fn validate_parsed_set(
+    facts: &[ExtractedFact],
+    period_end: &str,
+    prior: Option<&FactSet>,
+    prior_period_end: Option<&str>,
+    expected_keys: Option<&BTreeSet<String>>,
+) -> (Acceptance, Status) {
+    let set = fact_set_for_period(facts, period_end);
+    if set.is_empty() {
+        return (Acceptance::Empty, Status::Inconclusive);
+    }
+    let input = PipelineInput {
+        period_end,
+        prior,
+        prior_period_end,
+        expected_keys,
+        ..PipelineInput::default()
+    };
+    let report = validate_tier(&set, facts, &input, &Tolerance::default());
+    let acceptance = match report.status {
+        Status::Failed => Acceptance::Flagged,
+        Status::Passed => accepted_unless_hollow(report.completeness.as_ref()),
+        Status::Inconclusive => Acceptance::AcceptedUnreviewed,
+    };
+    (acceptance, report.status)
+}
+
 /// Keeps only the facts whose period end matches (the accepted set drops
 /// comparative-period rows an ESEF/witness parse also carries).
 fn facts_for_period(facts: Vec<ExtractedFact>, period_end: &str) -> Vec<ExtractedFact> {

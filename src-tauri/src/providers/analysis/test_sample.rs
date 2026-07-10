@@ -31,6 +31,29 @@ const TEST_SAMPLE_EVENT_DATE_JSON: &str = r#"{"date":"2030-09-15"}"#;
 pub const TEST_SAMPLE_ANALYSIS_PROVIDER_ID: &str = "test_sample";
 pub const TEST_SAMPLE_ANALYSIS_MODEL: &str = "test-sample-analysis-v1";
 
+/// Deterministic tier-4 OCR markdown (ADR 0077 §4): a minimal Polish interim
+/// statement in `tys. zł`, current-period-first, no enumerators/Nota — the
+/// [`TestSampleAnalysisProvider::ocr_document`] output a tier-4 test parses
+/// through a seeded (or bootstrapped) profile.
+pub const TEST_SAMPLE_OCR_MARKDOWN: &str = "# Skonsolidowane sprawozdanie finansowe\n\nDane w tys. zł.\n\n| Wyszczególnienie | 30.09.2025 | 30.09.2024 |\n| --- | --- | --- |\n| Przychody ze sprzedaży | 142 312 | 120 000 |\n| Aktywa razem | 500 000 | 480 000 |\n";
+
+/// Deterministic tier-4 profile-bootstrap response (ADR 0077 §4): the label map,
+/// scale, and layout the text-LLM proposes for [`TEST_SAMPLE_OCR_MARKDOWN`]. It
+/// reads *labels*, never numbers (the spike's fabrication lesson).
+pub const TEST_SAMPLE_OCR_BOOTSTRAP_JSON: &str = r#"{"scale":"thousands","valueColumn":"current_period_first","skipColumns":[],"stripEnumerators":false,"labelMap":{"przychody ze sprzedaży":"revenue","aktywa razem":"total_assets"}}"#;
+
+/// Prompt marker that scripts a deterministic transient failure from the test
+/// provider's document path: when the rendered prompt contains this string
+/// (e.g. via a KPI job's `period_hint`), `complete_document` fails with
+/// [`AnalysisProviderError::ProviderLimit`]. Lets job tests exercise the
+/// queue's transient-retry behavior (T5.1) without a network or a mock server.
+pub const TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER: &str = "TEST_SAMPLE_FAIL_PROVIDER_LIMIT";
+
+/// Prompt marker scripting a deterministic terminal failure
+/// ([`AnalysisProviderError::ProviderError`]) from `complete_document`, the
+/// counterpart of [`TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER`] for fast-fail paths.
+pub const TEST_SAMPLE_FAIL_PROVIDER_ERROR_MARKER: &str = "TEST_SAMPLE_FAIL_PROVIDER_ERROR";
+
 pub struct TestSampleAnalysisProvider;
 
 #[async_trait]
@@ -193,7 +216,15 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
     ) -> Result<String, AnalysisProviderError> {
         // The document path serves both KPI extraction and IR-page link resolution;
         // branch on the prompt so the deterministic output matches the caller.
-        if prompt.contains("candidate report links") {
+        // Scripted failures first: a test that plants a failure marker in the
+        // prompt gets the corresponding provider error deterministically.
+        if prompt.contains(TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER) {
+            Err(AnalysisProviderError::ProviderLimit)
+        } else if prompt.contains(TEST_SAMPLE_FAIL_PROVIDER_ERROR_MARKER) {
+            Err(AnalysisProviderError::ProviderError(
+                "scripted terminal provider error".to_owned(),
+            ))
+        } else if prompt.contains("candidate report links") {
             Ok(TEST_SAMPLE_IR_PICK_JSON.to_owned())
         } else if prompt.contains("classify this official ESPI/EBI filing") {
             Ok(TEST_SAMPLE_ESPI_CLASSIFICATION_JSON.to_owned())
@@ -203,8 +234,33 @@ impl AiAnalysisProvider for TestSampleAnalysisProvider {
             Ok(TEST_SAMPLE_CLAIM_EXTRACTION_JSON.to_owned())
         } else if prompt.contains(super::prompts::QUALITATIVE_ASSESSMENT_MARKER) {
             Ok(test_sample_qualitative_assessment_json(prompt))
+        } else if prompt.contains(super::prompts::OCR_PROFILE_BOOTSTRAP_MARKER) {
+            // Tier-4 profile bootstrap (ADR 0077 §4): the text-LLM proposes the
+            // label map / scale / layout for the OCR markdown, never the numbers.
+            Ok(TEST_SAMPLE_OCR_BOOTSTRAP_JSON.to_owned())
         } else {
             Ok(TEST_SAMPLE_KPI_EXTRACTION_JSON.to_owned())
+        }
+    }
+
+    /// Tier-4 OCR (ADR 0077 §4): returns a fixed Polish statement markdown so a
+    /// test can drive the deterministic parser, unless the stored document bytes
+    /// carry a failure marker (letting a job test exercise the queue's
+    /// transient/terminal split without a network).
+    async fn ocr_document(
+        &self,
+        bytes: &[u8],
+        _mime_type: &str,
+    ) -> Result<String, AnalysisProviderError> {
+        let text = String::from_utf8_lossy(bytes);
+        if text.contains(TEST_SAMPLE_FAIL_PROVIDER_LIMIT_MARKER) {
+            Err(AnalysisProviderError::ProviderLimit)
+        } else if text.contains(TEST_SAMPLE_FAIL_PROVIDER_ERROR_MARKER) {
+            Err(AnalysisProviderError::ProviderError(
+                "scripted terminal OCR error".to_owned(),
+            ))
+        } else {
+            Ok(TEST_SAMPLE_OCR_MARKDOWN.to_owned())
         }
     }
 }

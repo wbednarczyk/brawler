@@ -684,6 +684,7 @@ export function makeKpiExtractionJob(spec: CompanySpec): KpiExtractionJob {
     createdAt: SAMPLE_NOW,
     startedAt: SAMPLE_NOW,
     finishedAt: SAMPLE_NOW,
+    committedFactCount: 0,
     proposals: [
       {
         id: `kpi_proposal_sample_${spec.key}`,
@@ -727,6 +728,7 @@ export function makeReportDocument(spec: CompanySpec): ReportDocument {
     fetchedAt: SAMPLE_NOW,
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
+    docKind: "periodic_ssf",
   };
 }
 
@@ -926,6 +928,8 @@ export function makeBackfillProgress(spec: CompanySpec): BackfillProgress {
     itemsIngested: 24,
     documentsStored: 6,
     detailErrors: 0,
+    truncated: false,
+    chainedSweepId: `history_sweep:${companyId(spec)}:mock`,
     error: null,
     startedAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
@@ -955,6 +959,8 @@ export function makeUserSettings(): UserSettings {
     accentPalette: "night-neon",
     developerMode: false,
     pollIntervalSeconds: 900,
+    backfillYears: 3,
+    historySweepAiCallLimit: 30,
     settingsSource: "sample",
     settingsImportExportFormat: "yaml",
     yamlImportExportStatus: "accepted_deferred",

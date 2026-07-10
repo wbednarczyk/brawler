@@ -66,6 +66,19 @@ export function useSettingsController({
     updateSettings({ pollIntervalSeconds: nextPollIntervalSeconds });
   }
 
+  // Backfill depth in years (ADR 0077 §3). The backend clamps to [1, 10]; the UI
+  // offers presets + a bound input, so callers pass an already-sane value.
+  function updateBackfillYears(nextBackfillYears: number) {
+    updateSettings({ backfillYears: nextBackfillYears });
+  }
+
+  // Per-history-sweep tier-4 AI call budget (ADR 0077 §6). The backend clamps
+  // to [0, 500] (0 = unlimited); the UI offers presets + a bound input, so
+  // callers pass an already-sane value.
+  function updateHistorySweepAiCallLimit(nextLimit: number) {
+    updateSettings({ historySweepAiCallLimit: nextLimit });
+  }
+
   function updateYoutubeTranscriptionModel(nextModel: string) {
     updateSettings({ youtubeTranscriptionModel: nextModel });
   }
@@ -244,6 +257,8 @@ export function useSettingsController({
     updateLogLevel,
     updateLogMaxFileBytes,
     updateLogMaxFiles,
+    updateBackfillYears,
+    updateHistorySweepAiCallLimit,
     updatePinnedCompanyIds,
     updatePollInterval,
     updateShortcutBindings,

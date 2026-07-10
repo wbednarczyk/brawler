@@ -40,6 +40,18 @@ export async function shootPanel(
   name: string,
   opts: ShootOptions = {},
 ): Promise<void> {
+  // Maximize the pane's dockview group for the duration of the shots. A pane
+  // whose group cell is smaller than the forced tier size overflows the cell's
+  // `overflow: hidden` clip, and the neighbouring group then paints inside the
+  // screenshot box — the baseline silently framed the neighbour instead of the
+  // pane's own bottom (caught on the coverage actions footer, T3.2). Maximizing
+  // uses the real user affordance and gives the forced pane the whole dock.
+  const maximize = page
+    .locator(".dv-groupview", { has: pane })
+    .getByRole("button", { name: /Maximize panel group/ })
+    .first();
+  const canMaximize = (await maximize.count()) > 0;
+  if (canMaximize) await maximize.click();
   const tiers: Tier[] = lightPass() ? ["M"] : ["S", "M", "L"];
   for (const tier of tiers) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane });
@@ -47,6 +59,8 @@ export async function shootPanel(
     await expect(pane).toHaveScreenshot(`${name}-${tier}.png`, screenshotOptions(opts));
     await resetPaneSize(page, pane);
   }
+  // The header button toggles: a second click exits the maximized state.
+  if (canMaximize) await maximize.click();
 }
 
 // A full-screen sidebar/home screen hosted in `.workspace`: the M-equivalent is

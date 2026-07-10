@@ -38,6 +38,7 @@ pub struct JobQueueCounts {
 pub struct JobStatusRow {
     pub status: String,
     pub attempts: i64,
+    pub max_attempts: i64,
     pub last_error: Option<String>,
 }
 
@@ -375,13 +376,14 @@ impl JobQueueStore {
         let connection = self.db.checkout()?;
         connection
             .query_row(
-                "SELECT status, attempts, last_error FROM job_queue WHERE id = ?1",
+                "SELECT status, attempts, max_attempts, last_error FROM job_queue WHERE id = ?1",
                 params![id],
                 |row| {
                     Ok(JobStatusRow {
                         status: row.get(0)?,
                         attempts: row.get(1)?,
-                        last_error: row.get(2)?,
+                        max_attempts: row.get(2)?,
+                        last_error: row.get(3)?,
                     })
                 },
             )

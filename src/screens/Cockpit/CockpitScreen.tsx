@@ -14,6 +14,8 @@ import { TickerLabel } from "../../shared/components/TickerLabel";
 import { formatListTimestamp } from "../../shared/format/datetime";
 import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
+import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePanel";
+import { CompanyReviewQueuePanel } from "../../shared/components/CompanyReviewQueuePanel";
 import { QualityPanel } from "../../shared/components/QualityPanel";
 import { ReportDiffPanel } from "../Companies/ReportDiffPanel";
 import { FundamentalsPanel } from "../Companies/FundamentalsPanel";
@@ -51,6 +53,8 @@ import { listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../..
 type LinkedKind = "feed" | "inspector" | "claims-sel" | "diff-sel";
 type PinnedKind =
   | "fundamentals"
+  | "coverage"
+  | "review"
   | "reportDiff"
   | "claims"
   | "quality"
@@ -67,6 +71,8 @@ const LINKED: { id: string; kind: LinkedKind }[] = [
 
 const PINNED_KINDS: PinnedKind[] = [
   "fundamentals",
+  "coverage",
+  "review",
   "reportDiff",
   "claims",
   "quality",
@@ -130,6 +136,7 @@ const isDashboardLayout = (layout: { name: string }) => layout.name.startsWith(D
 // layout yet (ADR 0057): fundamentals + claims + quality + documents, plus the feed.
 const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = [
   "fundamentals",
+  "coverage",
   "companyFeed",
   "claims",
   "quality",
@@ -162,6 +169,10 @@ function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string 
   switch (kind) {
     case "fundamentals":
       return text("Fundamentals");
+    case "coverage":
+      return text("Coverage");
+    case "review":
+      return text("Review queue");
     case "reportDiff":
       return text("Report comparison");
     case "claims":
@@ -523,6 +534,24 @@ function CockpitWorkspace({
     switch (kind) {
       case "fundamentals":
         return <CockpitFundamentalsPanel companyId={companyId} revision={fundamentalsRevision} />;
+      case "coverage":
+        return (
+          <CompanyCoveragePanel
+            companyId={companyId}
+            reloadKey={fundamentalsRevision}
+            onOpenDocuments={() => openPinned(companyId, "documents")}
+            onOpenReview={() => openPinned(companyId, "review")}
+            onHistoryRefreshed={bumpFundamentals}
+          />
+        );
+      case "review":
+        return (
+          <CompanyReviewQueuePanel
+            companyId={companyId}
+            reloadKey={fundamentalsRevision}
+            onReviewed={bumpFundamentals}
+          />
+        );
       case "reportDiff":
         return <ReportDiffPanel companyId={companyId} />;
       case "claims":

@@ -239,6 +239,88 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
             .expect("rerun_qualitative_criterion");
             Value::Null
         }
+        "reclassify_report_documents" => serde_json::to_value(
+            state
+                .reclassify_report_documents()
+                .expect("reclassify_report_documents"),
+        )
+        .unwrap(),
+        "create_financial_period" => {
+            let new: crate::storage::NewFinancialPeriod =
+                serde_json::from_value(inner).expect("NewFinancialPeriod");
+            serde_json::to_value(
+                state
+                    .financials()
+                    .create_financial_period(new)
+                    .expect("create_financial_period"),
+            )
+            .unwrap()
+        }
+        "create_financial_fact" => {
+            let new: crate::storage::NewFinancialFact =
+                serde_json::from_value(inner).expect("NewFinancialFact");
+            serde_json::to_value(
+                state
+                    .financials()
+                    .create_financial_fact(new)
+                    .expect("create_financial_fact"),
+            )
+            .unwrap()
+        }
+        // Computed read model (ADR 0077 §2). Call the same helper the command
+        // wrapper delegates to so the corpus can never diverge from real assembly.
+        "get_fundamentals_coverage" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::fundamentals_coverage::compute_fundamentals_coverage(
+                    state, company_id,
+                )
+                .expect("get_fundamentals_coverage"),
+            )
+            .unwrap()
+        }
+        // History sweep (ADR 0077 §3, T3.2). Same gated core the command wrapper
+        // offloads, so the corpus can never diverge from real behavior.
+        "run_history_sweep" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::history_sweep::start_history_sweep(state, company_id)
+                    .expect("run_history_sweep"),
+            )
+            .unwrap()
+        }
+        "get_history_sweep_progress" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::history_sweep::compute_history_sweep_progress(state, company_id)
+                    .expect("get_history_sweep_progress"),
+            )
+            .unwrap()
+        }
+        // Computed read model (ADR 0077 §1/§2, Panel B). Same helper the command
+        // wrapper delegates to, so the corpus can never diverge from real assembly.
+        "get_report_documents_view" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::report_documents_view::compute_report_documents_view(
+                    state, company_id,
+                )
+                .expect("get_report_documents_view"),
+            )
+            .unwrap()
+        }
+        // F5 review-queue read model (ADR 0077 §4/§5, T5.3b). Same store method
+        // the command wrapper offloads, so the corpus can never diverge.
+        "list_pending_kpi_proposals" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                state
+                    .kpi_extraction()
+                    .list_pending_kpi_proposals(company_id)
+                    .expect("list_pending_kpi_proposals"),
+            )
+            .unwrap()
+        }
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")
         }

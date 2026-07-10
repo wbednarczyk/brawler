@@ -5,6 +5,39 @@ use serde::{Deserialize, Serialize};
 
 use super::{StorageError, StorageResult};
 
+/// Backfill depth (years of history the on-track backfill covers, ADR 0077 §3).
+/// The write path clamps to `[MIN, MAX]` rather than rejecting (like the pool
+/// settings, ADR 0032); reads clamp an out-of-range stored value to the same
+/// range so a hand-edited database never drives an absurd fetch. No seed-row
+/// migration — an absent row reads `DEFAULT` (tolerant, like ADR 0060's
+/// `openai_compatible_base_url`).
+pub(crate) const BACKFILL_YEARS_MIN: i64 = 1;
+pub(crate) const BACKFILL_YEARS_MAX: i64 = 10;
+pub(crate) const BACKFILL_YEARS_DEFAULT: i64 = 3;
+
+/// Clamp a requested backfill depth into the supported `[1, 10]` years range.
+pub(crate) fn clamp_backfill_years(value: i64) -> i64 {
+    value.clamp(BACKFILL_YEARS_MIN, BACKFILL_YEARS_MAX)
+}
+
+/// Per-history-sweep tier-4 AI call budget (ADR 0077 §6). One unit = one tier-4
+/// invocation (the OCR + optional bootstrap-chat bundle for one document). The
+/// limit is snapshotted onto the sweep row at creation, so this setting only ever
+/// governs *future* sweeps. Same tolerant/clamp posture as `backfill_years`:
+/// `0` disables the cap (unlimited), and the write/read paths clamp to `[0, 500]`
+/// rather than rejecting, so a hand-edited database never drives an absurd budget.
+pub(crate) const HISTORY_SWEEP_AI_CALL_LIMIT_MIN: i64 = 0;
+pub(crate) const HISTORY_SWEEP_AI_CALL_LIMIT_MAX: i64 = 500;
+pub(crate) const HISTORY_SWEEP_AI_CALL_LIMIT_DEFAULT: i64 = 30;
+
+/// Clamp a requested history-sweep AI call budget into `[0, 500]` (0 = off).
+pub(crate) fn clamp_history_sweep_ai_call_limit(value: i64) -> i64 {
+    value.clamp(
+        HISTORY_SWEEP_AI_CALL_LIMIT_MIN,
+        HISTORY_SWEEP_AI_CALL_LIMIT_MAX,
+    )
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -119,6 +152,13 @@ pub struct UserSettings {
     pub accent_palette: String,
     pub developer_mode: bool,
     pub poll_interval_seconds: i64,
+    /// Years of company history the on-track backfill covers (ADR 0077 §3).
+    /// Clamped to `[1, 10]`; an absent row reads the default `3`.
+    pub backfill_years: i64,
+    /// Per-history-sweep tier-4 AI call budget (ADR 0077 §6). Clamped to
+    /// `[0, 500]` (0 = off); an absent row reads the default `30`. Snapshotted
+    /// onto each sweep at creation, so a change only affects future sweeps.
+    pub history_sweep_ai_call_limit: i64,
     pub settings_source: &'static str,
     pub settings_import_export_format: String,
     pub yaml_import_export_status: &'static str,
@@ -166,6 +206,12 @@ pub struct SettingsUpdate {
     #[cfg_attr(feature = "ts-export", ts(optional, type = "\"en\" | \"pl\""))]
     pub locale: Option<String>,
     pub poll_interval_seconds: Option<i64>,
+    /// Requested backfill depth in years (ADR 0077 §3); clamped to `[1, 10]` on
+    /// write rather than rejected.
+    pub backfill_years: Option<i64>,
+    /// Requested per-history-sweep tier-4 AI call budget (ADR 0077 §6); clamped
+    /// to `[0, 500]` on write rather than rejected (0 = off).
+    pub history_sweep_ai_call_limit: Option<i64>,
     pub youtube_transcription_provider: Option<String>,
     pub youtube_transcription_model: Option<String>,
     pub youtube_transcription_timeout_seconds: Option<i64>,
@@ -203,6 +249,16 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
         accent_palette: setting_string(connection, "accent_palette")?,
         developer_mode: setting_bool(connection, "developer_mode")?,
         poll_interval_seconds: setting_i64(connection, "poll_interval_seconds")?,
+        backfill_years: clamp_backfill_years(setting_i64_or(
+            connection,
+            "backfill_years",
+            BACKFILL_YEARS_DEFAULT,
+        )?),
+        history_sweep_ai_call_limit: clamp_history_sweep_ai_call_limit(setting_i64_or(
+            connection,
+            "history_sweep_ai_call_limit",
+            HISTORY_SWEEP_AI_CALL_LIMIT_DEFAULT,
+        )?),
         settings_source: "sqlite",
         settings_import_export_format: setting_string(connection, "settings_import_export_format")?,
         yaml_import_export_status: "accepted_deferred",
@@ -351,6 +407,32 @@ pub(crate) fn update_settings(
             connection,
             "poll_interval_seconds",
             &poll_interval_seconds.to_string(),
+        )?;
+    }
+
+    // Backfill depth is clamped to the safe range rather than rejected (ADR 0077
+    // §3, same posture as the pool settings). No seed row — upsert like
+    // `openai_compatible_base_url` so the value is never silently dropped.
+    if let Some(backfill_years) = input.backfill_years {
+        let clamped = clamp_backfill_years(backfill_years);
+        upsert_setting(
+            connection,
+            "backfill_years",
+            &clamped.to_string(),
+            "integer",
+        )?;
+    }
+
+    // History-sweep AI budget, clamped to the safe range rather than rejected
+    // (ADR 0077 §6, same posture as `backfill_years`). No seed row — upsert so
+    // the value is never silently dropped.
+    if let Some(history_sweep_ai_call_limit) = input.history_sweep_ai_call_limit {
+        let clamped = clamp_history_sweep_ai_call_limit(history_sweep_ai_call_limit);
+        upsert_setting(
+            connection,
+            "history_sweep_ai_call_limit",
+            &clamped.to_string(),
+            "integer",
         )?;
     }
 
@@ -663,6 +745,20 @@ fn setting_bool_or(
             "false" => Ok(false),
             _ => Err(StorageError::InvalidSettingValue { key, value }),
         },
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(default),
+        Err(error) => Err(StorageError::from(error)),
+    }
+}
+
+/// Read an integer setting, tolerant of both an absent row and an unparseable
+/// value: either yields `default`. Used for keys introduced without a seed-row
+/// migration (ADR 0077 §3 `backfill_years`) so a database that predates the key
+/// never fails to load settings; the caller clamps the result to its valid range.
+fn setting_i64_or(connection: &Connection, key: &'static str, default: i64) -> StorageResult<i64> {
+    match connection.query_row("SELECT value FROM settings WHERE key = ?1", [key], |row| {
+        row.get::<_, String>(0)
+    }) {
+        Ok(value) => Ok(value.parse::<i64>().unwrap_or(default)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(default),
         Err(error) => Err(StorageError::from(error)),
     }

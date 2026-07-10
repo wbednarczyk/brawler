@@ -58,6 +58,51 @@ describe("composeAutopilotRunSummary", () => {
     );
   });
 
+  // Card b85ba3c: an `extractionAvailable:false` delta carries an honest `reason`
+  // (jobs/autopilot.rs, structured_extraction.rs); the card must not flatten every
+  // reason into one generic "no AI provider" line.
+  it("maps the bootstrap_failed reason to its specific text", () => {
+    const run: AutopilotRunSummarySource = {
+      ...base,
+      kpiDeltaJson: JSON.stringify({ extractionAvailable: false, reason: "bootstrap_failed" }),
+    };
+    expect(composeAutopilotRunSummary(run, identity, "en")).toBe(
+      "New report processed — KPI extraction unavailable (extraction setup failed).",
+    );
+  });
+
+  it("maps the skipped_budget reason to the AI-budget text", () => {
+    const run: AutopilotRunSummarySource = {
+      ...base,
+      kpiDeltaJson: JSON.stringify({ extractionAvailable: false, reason: "skipped_budget" }),
+    };
+    expect(composeAutopilotRunSummary(run, identity, "en")).toBe(
+      "New report processed — KPI extraction unavailable (AI budget for this run was used up).",
+    );
+  });
+
+  it("maps a provider_error:<code> reason to the provider-error text", () => {
+    const run: AutopilotRunSummarySource = {
+      ...base,
+      kpiDeltaJson: JSON.stringify({ extractionAvailable: false, reason: "provider_error:429" }),
+    };
+    expect(composeAutopilotRunSummary(run, identity, "en")).toBe(
+      "New report processed — KPI extraction unavailable (the AI provider returned an error).",
+    );
+  });
+
+  // Never silently generic: an unknown/new backend reason surfaces its raw code
+  // so it is visible rather than swallowed into a blanket message.
+  it("falls back to a reason-carrying message for an unknown reason", () => {
+    const run: AutopilotRunSummarySource = {
+      ...base,
+      kpiDeltaJson: JSON.stringify({ extractionAvailable: false, reason: "xyz" }),
+    };
+    expect(composeAutopilotRunSummary(run, identity, "en")).toBe(
+      "New report processed — KPI extraction unavailable (xyz).",
+    );
+  });
+
   // Never fabricate "0 of 0" for a delta that never actually carried the
   // normalized counts (e.g. a legacy/malformed shape) — exactly bug e77a1a2's
   // symptom, just with the fields missing instead of zeroed.

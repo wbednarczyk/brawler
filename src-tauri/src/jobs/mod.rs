@@ -6,6 +6,7 @@ pub mod content_embedding;
 pub mod event_derivation;
 pub mod feed_cleanup;
 pub mod handlers;
+pub mod history_sweep;
 pub mod kpi_extraction;
 pub mod qualitative_assessment;
 pub mod queue;
@@ -392,6 +393,26 @@ mod tests {
         assert!(!document_capability_needs_native_support(
             AiCapability::FeedAnalysis,
             DocumentSupport::TextOnly
+        ));
+    }
+
+    #[test]
+    fn capability_pool_rejects_vision_extraction_without_native_support() {
+        // ADR 0077 T4.2: VisionExtraction is document-kind, so the build-layer
+        // guard `build_capability_provider` applies rejects a non-native
+        // provider for it exactly like the other document capabilities — and
+        // accepts a Native provider (Mistral OCR).
+        assert!(document_capability_needs_native_support(
+            AiCapability::VisionExtraction,
+            DocumentSupport::TextOnly
+        ));
+        assert!(document_capability_needs_native_support(
+            AiCapability::VisionExtraction,
+            DocumentSupport::None
+        ));
+        assert!(!document_capability_needs_native_support(
+            AiCapability::VisionExtraction,
+            DocumentSupport::Native
         ));
     }
 

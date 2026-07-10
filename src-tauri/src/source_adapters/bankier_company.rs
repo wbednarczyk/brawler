@@ -154,6 +154,10 @@ fn fetch_company_items_with_detail_filter_at(
 pub struct BackfillFetchStats {
     pub pages_fetched: usize,
     pub detail_errors: usize,
+    /// True when the page cap (`max_pages`) ended the walk before the cutoff date
+    /// was reached — older filings may exist but were not fetched (ADR 0077 §3).
+    /// The caller surfaces this as an explicit truncation warning, never silent.
+    pub truncated: bool,
 }
 
 /// Paginate the company komunikaty listing backward, keeping items down to `cutoff` (an
@@ -196,6 +200,10 @@ pub fn fetch_company_backfill_items(
 
     let mut items: Vec<BankierCompanyItem> = Vec::new();
     let mut stats = BackfillFetchStats::default();
+    // The walk ends "naturally" when it runs out of filings (empty page) or
+    // reaches the cutoff date. If instead it exhausts `max_pages` while filings
+    // newer than the cutoff remain, the page cap truncated the history.
+    let mut reached_natural_end = false;
 
     for page in 1..=max_pages.max(1) {
         if page > 1 && !delay.is_zero() {
@@ -208,6 +216,7 @@ pub fn fetch_company_backfill_items(
         on_progress(stats.pages_fetched, items.len());
 
         if page_items.is_empty() {
+            reached_natural_end = true;
             break;
         }
 
@@ -238,9 +247,12 @@ pub fn fetch_company_backfill_items(
         }
 
         if reached_cutoff {
+            reached_natural_end = true;
             break;
         }
     }
+
+    stats.truncated = !reached_natural_end;
 
     Ok((identifiers, items, stats))
 }
@@ -1006,6 +1018,81 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "Recent report");
+    }
+
+    fn preset_target() -> BankierCompanyTarget {
+        BankierCompanyTarget {
+            bankier_slug: Some("CDPROJEKT".to_owned()),
+            bankier_tag_id: Some("722".to_owned()),
+            ..target()
+        }
+    }
+
+    /// Every listing page returns one filing dated far in the future (never older
+    /// than any realistic cutoff) and never empty, so the walk can only end by
+    /// exhausting the page cap.
+    struct AlwaysRecentFetcher;
+    impl BankierCompanyFetcher for AlwaysRecentFetcher {
+        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
+            if url.starts_with(API_SOURCE_URL) {
+                Ok(r#"{"articles":[{"title":"CD PROJEKT SA: Raport","url":"/wiadomosc/x-1.html","time":"2999-01-01 10:00:00","pub_id":3,"article_id":1,"messages_filters":["ESPI"]}]}"#.to_owned())
+            } else {
+                Ok("<html></html>".to_owned())
+            }
+        }
+    }
+
+    /// Page 1 carries a recent filing, page 2 is empty — the walk ends naturally
+    /// (out of filings) before the page cap.
+    struct RecentThenEmptyFetcher;
+    impl BankierCompanyFetcher for RecentThenEmptyFetcher {
+        fn fetch_text(&self, url: &str) -> Result<String, BankierCompanyError> {
+            if url.starts_with(API_SOURCE_URL) {
+                if url.contains("/listing/1/") {
+                    return Ok(r#"{"articles":[{"title":"CD PROJEKT SA: Raport","url":"/wiadomosc/x-1.html","time":"2999-01-01 10:00:00","pub_id":3,"article_id":1,"messages_filters":["ESPI"]}]}"#.to_owned());
+                }
+                return Ok(r#"{"articles":[]}"#.to_owned());
+            }
+            Ok("<html></html>".to_owned())
+        }
+    }
+
+    #[test]
+    fn backfill_reports_truncation_when_page_cap_ends_the_walk() {
+        let (_, items, stats) = fetch_company_backfill_items(
+            &AlwaysRecentFetcher,
+            &preset_target(),
+            "2000-01-01T00:00:00",
+            3,
+            std::time::Duration::ZERO,
+            |_, _| {},
+        )
+        .expect("backfill fetch should succeed");
+
+        assert_eq!(stats.pages_fetched, 3, "the page cap was exhausted");
+        assert!(
+            stats.truncated,
+            "the page cap ended the walk before the cutoff was reached"
+        );
+        assert_eq!(items.len(), 3);
+    }
+
+    #[test]
+    fn backfill_reports_no_truncation_when_walk_ends_naturally() {
+        let (_, _items, stats) = fetch_company_backfill_items(
+            &RecentThenEmptyFetcher,
+            &preset_target(),
+            "2000-01-01T00:00:00",
+            80,
+            std::time::Duration::ZERO,
+            |_, _| {},
+        )
+        .expect("backfill fetch should succeed");
+
+        assert!(
+            !stats.truncated,
+            "running out of filings before the cap is not truncation"
+        );
     }
 
     #[test]

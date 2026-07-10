@@ -19,6 +19,7 @@ const baseAutopilotRun = {
   companyId: pinnedCompanyId,
   reportDocumentId: "doc_1",
   trigger: "scheduled",
+  sweepId: null,
   mode: "autopilot",
   status: "completed",
   stage: "notify",

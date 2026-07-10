@@ -663,6 +663,53 @@ describe("Settings screen workflows", () => {
     });
   });
 
+  // T3.3 (ADR 0077 §3): backfill depth is configurable (default 3, 1–10). The
+  // Sources section offers clickable presets bound to a numeric input; a preset
+  // click persists the new depth and updates the bound value.
+  it("persists a backfill-depth preset selection and reflects it in the bound input", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Settings" });
+
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "Sources" }));
+
+    // Defaults to 3 (the sample settings value), shown in the bound numeric input.
+    const yearsInput = screen.getByLabelText("Backfill history depth in years");
+    expect(yearsInput).toHaveValue(3);
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "5" }));
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { backfillYears: 5 },
+    });
+    await waitFor(() => expect(yearsInput).toHaveValue(5));
+  });
+
+  // T5.3 (ADR 0077 §6): the history-sweep AI call budget is configurable
+  // (default 30, 0–500, 0 = unlimited). The AI section offers clickable
+  // presets bound to a numeric input; a preset click persists the new budget
+  // and updates the bound value.
+  it("persists a history-sweep AI budget preset selection and reflects it in the bound input", async () => {
+    const user = userEvent.setup();
+
+    renderApp({ section: "Settings" });
+
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
+
+    // Defaults to 30 (the sample settings value), shown in the bound numeric input.
+    const budgetInput = screen.getByLabelText("History sweep AI budget in calls");
+    expect(budgetInput).toHaveValue(30);
+
+    await user.click(within(settingsRegion).getByRole("button", { name: "10" }));
+
+    expect(invoke).toHaveBeenCalledWith("update_settings", {
+      input: { historySweepAiCallLimit: 10 },
+    });
+    await waitFor(() => expect(budgetInput).toHaveValue(10));
+  });
+
   // U7-E2 density contract (ADR 0076 D6): at the S tier the section tab list
   // collapses to a SelectField (same options + selection state as the Subnav).
   // Both controls always render and share `activeSettingsTab`; the tier switch

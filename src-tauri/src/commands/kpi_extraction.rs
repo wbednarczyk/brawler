@@ -60,11 +60,11 @@ pub async fn start_kpi_extraction(
         }
         None => {
             // No explicit override: defer to capability routing at run time when
-            // anything is actually configured for this capability; otherwise
-            // keep the legacy test-sample default so extraction still runs out
-            // of the box (ADR 0060 as amended — this enqueue path pins that
-            // pre-pool default).
-            let members = jobs::resolve_capability_members(&state, AiCapability::KpiExtraction)
+            // anything is actually configured. The job now runs the tier-4 OCR
+            // path (ADR 0077 §4 / T4.5), so it routes the **vision** capability;
+            // otherwise keep the legacy test-sample default so extraction still
+            // runs out of the box in tests/dev.
+            let members = jobs::resolve_capability_members(&state, AiCapability::VisionExtraction)
                 .map_err(|error| error.to_string())?;
             if members.is_empty() {
                 (
@@ -121,11 +121,31 @@ pub fn list_kpi_extraction(
         .map_err(|error| error.to_string())
 }
 
+/// The F5 review-queue read model (ADR 0077 §4/§5, T5.3b): every pending KPI
+/// proposal for a company with its period + source-document context, so the
+/// "Do przeglądu" panel can group by period and render a source chip. Offloaded
+/// off the UI thread — it joins three tables (CLAUDE.md off-UI-thread rule).
+#[tauri::command]
+pub async fn list_pending_kpi_proposals(
+    company_id: String,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::PendingKpiProposal>, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state
+            .kpi_extraction()
+            .list_pending_kpi_proposals(&company_id)
+            .map_err(|error| error.to_string())
+    })
+    .await
+    .map_err(|error| format!("review-queue task failed: {error}"))?
+}
+
 #[tauri::command]
 pub fn confirm_kpi_proposal(
     input: storage::ConfirmKpiProposalInput,
     state: tauri::State<'_, app_state::AppState>,
-) -> Result<storage::FinancialFact, String> {
+) -> Result<storage::ConfirmedKpiFact, String> {
     state
         .confirm_kpi_proposal(input)
         .map_err(|error| error.to_string())

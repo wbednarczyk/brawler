@@ -144,8 +144,16 @@ function extractContractsCommands(contractsPath) {
         break;
       }
       if (/^\s*-\s/.test(cur)) {
-        const m = bulletNameRe.exec(cur);
-        if (m) record(m[1], j);
+        // Only a TOP-LEVEL bullet declares a command. Indented sub-bullets under
+        // a command entry describe DTO fields/cells (e.g. "  - `canonical` is
+        // `true`…") and repeatedly false-flagged as documented-but-unimplemented
+        // commands (T2.1 `report:`/`facts:`, Panel B `canonical`; 2026-07-09).
+        // The code→doc direction (every #[tauri::command] must be documented)
+        // is a separate pass and is unaffected by skipping nested bullets here.
+        if (/^-\s/.test(cur)) {
+          const m = bulletNameRe.exec(cur);
+          if (m) record(m[1], j);
+        }
         j++;
         continue;
       }

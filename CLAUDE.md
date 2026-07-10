@@ -8,7 +8,7 @@ Apply at all times, in every session state, before anything else.
 
 ### 1. Token discipline
 
-Prefix every shell/file command with `rtk` (`rtk git`, `rtk grep`, `rtk read`, `rtk ls`, `rtk cargo`, `rtk npm`, `rtk rad`, `rtk make`, `rtk npx playwright`) — it compresses output before it reaches context. `rtk proxy <cmd>` runs raw; avoid for normal work. Run `rtk trust` once per checkout so `.rtk/` filters apply. Use **repoctx** for structural code questions (definition, callers, outline, impact, changed) instead of grep/find/whole-file reads — full reference in the `repoctx` skill; fall back to `rtk grep` for prose/string-literal scans. Read targeted ranges; never re-read a file just edited. Reserve the strongest model for hard reasoning; prefer cheaper models for routine edits/lookups. Batch independent tool calls in one turn. Subagent fan-out only for genuine breadth — every subagent uses rtk + repoctx too.
+Prefix every shell/file command with `rtk` (`rtk git`, `rtk grep`, `rtk read`, `rtk ls`, `rtk cargo`, `rtk npm`, `rtk rad`, `rtk make`, `rtk npx playwright`) — it compresses output before it reaches context. `rtk proxy <cmd>` runs raw; avoid for normal work. Run `rtk trust` once per checkout so `.rtk/` filters apply. Use **repoctx** for structural code questions (definition, callers, outline, impact, changed) instead of grep/find/whole-file reads — full reference in the `repoctx` skill; fall back to `rtk grep` for prose/string-literal scans. Read targeted ranges; never re-read a file just edited. Reserve the strongest model for hard reasoning; prefer cheaper models for routine edits/lookups. Batch independent tool calls in one turn. **Delegation (owner standing rule, 2026-07-10):** the strong model orchestrates and quality-gates; implementation slices go to cheaper-model subagents from written contracts (tests-that-redden enumerated, red evidence pasted), **up to 3 subagents concurrently** for independent slices — but never stacking heavy builds (testing.md § Resource discipline: one cargo/nextest/vitest at a time, `CARGO_BUILD_JOBS=8`, scoped nextest). Every subagent uses rtk + repoctx too.
 
 ### 2. Doc-first
 
@@ -79,7 +79,7 @@ Product and policy:
 - Radicle is the canonical forge. `rad issue ...` commands may run unattended for planning/tracking; publication, seeding, visibility, identity, node, and `rad init` operations may not (`rad init` is always `--private` unless an approved publication task). Label conventions: [docs/kanban.md](docs/kanban.md).
 - The private sibling `../brawler-private` (when present) is readable for owner-only context; never copy its content into this public repo unless explicitly asked.
 - Local build/test commands are primary; GitHub Actions mirrors them, staying conservative (no larger runners, no default macOS, no scheduled workflows; every CI check has a documented local equivalent). Nix from the first scaffold; no secrets in Nix files/`.envrc`.
-- Windows hands-on testing is a separate runtime validation path (WSL has no GUI; a WSL Tauri build is a Linux app).
+- Agents may always drive the owner's real Windows app live from WSL: `make live-cycle` ([testing.md](docs/testing.md) § Live drive). A WSL Tauri build is a Linux app — never desktop evidence.
 
 ## Testing Expectations
 

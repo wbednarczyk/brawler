@@ -1,23 +1,25 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 
 import { CompanyReportDocumentsPanel, middleTruncate } from "./CompanyReportDocumentsPanel";
-import { listReportDocuments } from "../../api/reportDocuments";
+import { getReportDocumentsView, reclassifyReportDocuments } from "../../api/reportDocuments";
 import { extractReportDocumentData } from "../../api/fundamentalsExtraction";
-import type { ReportDocument } from "../../api/reportDocumentsTypes";
+import type { ReportDocument, ReportDocumentViewRow } from "../../api/reportDocumentsTypes";
 import { ToastProvider } from "../../ui";
 
 vi.mock("../../api/reportDocuments", () => ({
-  listReportDocuments: vi.fn(),
+  getReportDocumentsView: vi.fn(),
+  reclassifyReportDocuments: vi.fn(),
 }));
 
 vi.mock("../../api/fundamentalsExtraction", () => ({
   extractReportDocumentData: vi.fn(),
 }));
 
-const listReportDocumentsMock = vi.mocked(listReportDocuments);
+const getReportDocumentsViewMock = vi.mocked(getReportDocumentsView);
+const reclassifyReportDocumentsMock = vi.mocked(reclassifyReportDocuments);
 const extractReportDocumentDataMock = vi.mocked(extractReportDocumentData);
 
 // The panel calls useToast(), so every render needs a ToastProvider ancestor.
@@ -44,8 +46,28 @@ function reportDocument(overrides: Partial<ReportDocument> = {}): ReportDocument
     fetchedAt: "2026-06-01T09:12:00Z",
     createdAt: "2026-06-01T09:12:00Z",
     updatedAt: "2026-06-01T09:12:00Z",
+    docKind: "periodic_ssf",
     ...overrides,
   };
+}
+
+// A view row: a document + its derived period + canonical flag. Defaults to a
+// canonical FY2025 periodic report so single-row tests read the common case.
+function viewRow(
+  document: Partial<ReportDocument> = {},
+  over: Partial<ReportDocumentViewRow> = {},
+): ReportDocumentViewRow {
+  return {
+    document: reportDocument(document),
+    fiscalYear: 2025,
+    periodType: "FY",
+    canonical: true,
+    ...over,
+  };
+}
+
+function mockView(rows: ReportDocumentViewRow[]) {
+  getReportDocumentsViewMock.mockResolvedValue({ companyId: "company_gpw_cdr", rows });
 }
 
 describe("middleTruncate", () => {
@@ -59,7 +81,6 @@ describe("middleTruncate", () => {
     const out = middleTruncate(name, 44);
     expect(out.length).toBeLessThanOrEqual(44);
     expect(out).toContain("…");
-    // Identity portion (head prefix + extension tail) survives.
     expect(out.startsWith("cyber_Folks")).toBe(true);
     expect(out.endsWith(".pdf")).toBe(true);
   });
@@ -68,7 +89,8 @@ describe("middleTruncate", () => {
 describe("CompanyReportDocumentsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    listReportDocumentsMock.mockResolvedValue([reportDocument()]);
+    mockView([viewRow()]);
+    reclassifyReportDocumentsMock.mockResolvedValue({ total: 1, updated: 0, byKind: {} });
     extractReportDocumentDataMock.mockResolvedValue({
       acceptance: "accepted",
       tier: "pdf",
@@ -77,66 +99,212 @@ describe("CompanyReportDocumentsPanel", () => {
       skippedFactIds: [],
       divergentCount: 0,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     });
   });
 
   it("renders the filename and preserves the full name in the link title", async () => {
     const longName =
-      "cyber_Folks_SA_30.06.2023_raport_okresowy_skonsolidowany_bardzo_dlugi.pdf";
-    listReportDocumentsMock.mockResolvedValue([reportDocument({ title: longName })]);
+      "cyber_Folks_SA_30.06.2023_raport_okresowy_skonsolidowany_bardzo_dlugi.xbri";
+    mockView([viewRow({ title: longName })]);
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 
     const link = await screen.findByRole("link");
-    // The full name is preserved in the tooltip (title attribute)…
+    // The full name (with .xbri) survives in the tooltip — a live-drive selector
+    // hook (a[title*=".xbri"]) depends on it.
     expect(link).toHaveAttribute("title", longName);
     // …while the visible label is middle-ellipsized.
     expect(link.textContent).toContain("…");
   });
 
-  it("keeps only the storage-status chip on the row and moves kind + source into the preview column", async () => {
-    const { container } = renderPanel(
-      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" />,
-    );
-    // The differentiating storage-state chip + the date stay on the row line.
-    expect(await screen.findByText("Stored")).toBeInTheDocument();
-    expect(screen.getByText(/2026-06-01/)).toBeInTheDocument();
-
-    // The repeated, non-differentiating type chip is gone from the row's chip
-    // cluster (audit K-class noise): the chip cluster holds the status only.
-    const chips = container.querySelector(".doc-chips");
-    expect(chips?.textContent).toContain("Stored");
-    expect(chips?.textContent).not.toContain("IR page");
-
-    // Provenance is not deleted — document kind + source stay reachable in the
-    // L-tier preview column (and its tooltip).
-    const preview = container.querySelector<HTMLElement>(".doc-preview");
-    expect(preview?.textContent).toContain("IR page");
-    expect(preview?.textContent).toContain("CD Projekt IR");
-    expect(preview?.title).toContain("IR page");
-    expect(preview?.title).toContain("CD Projekt IR");
-  });
-
-  it("labels a link-only (not-stored) document with the neutral status chip", async () => {
-    listReportDocumentsMock.mockResolvedValue([
-      reportDocument({ fetchStatus: "metadata_only" }),
-    ]);
+  it("leads with the document-kind label and keeps a storage-status chip in a fixed slot", async () => {
     const { container } = renderPanel(
       <CompanyReportDocumentsPanel companyId="company_gpw_cdr" />,
     );
     await screen.findByRole("link");
-    const chips = container.querySelector(".doc-chips");
-    expect(chips?.textContent).toContain("Link only");
+    // The kind label leads the row (line 1); the storage-status chip is trailing.
+    // (Scope to the row — the kind label also appears as a filter-select option.)
+    expect(container.querySelector(".doc-row-kind")?.textContent).toBe("Consolidated report");
+    expect(container.querySelector(".doc-status")?.textContent).toContain("Stored");
+    // The old provenance-preview column is gone in the redesign.
+    expect(container.querySelector(".doc-preview")).toBeNull();
+  });
+
+  it("labels a link-only (not-stored) document with the neutral status chip", async () => {
+    mockView([viewRow({ fetchStatus: "metadata_only" })]);
+    const { container } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" />,
+    );
+    await screen.findByRole("link");
+    expect(container.querySelector(".doc-status")?.textContent).toContain("Link only");
   });
 
   it("shows the empty state when there are no documents", async () => {
-    listReportDocumentsMock.mockResolvedValue([]);
+    mockView([]);
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
     await waitFor(() => {
       expect(screen.getByText("No report documents stored yet.")).toBeInTheDocument();
     });
   });
 
-  it("offers an Extract data action on a stored (fetched) document and reports the produced-fact count", async () => {
+  // --- Grouped view (ADR 0077 §2, mockup Panel B) ---
+
+  it("groups documents by period with headers in descending order", async () => {
+    mockView([
+      viewRow({ id: "d_2024", title: "2024 report" }, { fiscalYear: 2024, periodType: "FY" }),
+      viewRow({ id: "d_2025", title: "2025 report" }, { fiscalYear: 2025, periodType: "FY" }),
+      viewRow(
+        { id: "d_2025q1", title: "2025 Q1 report" },
+        { fiscalYear: 2025, periodType: "Q1" },
+      ),
+    ]);
+    const { container } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" />,
+    );
+    await screen.findByText("2025 report");
+    const labels = [...container.querySelectorAll(".doc-grp-label")].map((n) => n.textContent);
+    // Newest period first: 2025 FY, then 2025 Q1, then 2024 FY.
+    expect(labels).toEqual(["2025 FY", "2025 Q1", "2024 FY"]);
+  });
+
+  it("marks the canonical report of a period with a star", async () => {
+    mockView([
+      viewRow(
+        { id: "d_ssf", title: "Consolidated 2025", docKind: "periodic_ssf" },
+        { canonical: true },
+      ),
+      viewRow(
+        { id: "d_jsf", title: "Standalone 2025", docKind: "periodic_jsf" },
+        { canonical: false },
+      ),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    const ssfRow = (await screen.findByText("Consolidated 2025")).closest("li")!;
+    const jsfRow = screen.getByText("Standalone 2025").closest("li")!;
+    expect(within(ssfRow).getByLabelText("Canonical report for this period")).toBeInTheDocument();
+    expect(within(jsfRow).queryByLabelText("Canonical report for this period")).toBeNull();
+  });
+
+  it("folds companion files away and expands them on click", async () => {
+    mockView([
+      viewRow(
+        { id: "d_ssf", title: "Consolidated 2025", docKind: "periodic_ssf" },
+        { canonical: true },
+      ),
+      viewRow(
+        {
+          id: "d_sig",
+          title: "signature.xades",
+          docKind: "other",
+          fetchStatus: "metadata_only",
+        },
+        { canonical: false },
+      ),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    // The companion is hidden behind the fold; the periodic statement is not.
+    await screen.findByText("Consolidated 2025");
+    expect(screen.queryByText("signature.xades")).not.toBeInTheDocument();
+    const fold = screen.getByRole("button", { name: /companion file/ });
+    await userEvent.click(fold);
+    expect(await screen.findByText("signature.xades")).toBeInTheDocument();
+  });
+
+  it("never folds an extract-eligible row, even a companion kind", async () => {
+    mockView([
+      viewRow(
+        { id: "d_ssf", title: "Consolidated 2025", docKind: "periodic_ssf" },
+        { canonical: true },
+      ),
+      viewRow(
+        // An "other"-kind but STORED (fetched) document: its Extract action must
+        // stay reachable, so it is never hidden inside the fold.
+        { id: "d_other", title: "extractable other.pdf", docKind: "other", fetchStatus: "fetched" },
+        { canonical: false },
+      ),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    expect(await screen.findByText("extractable other.pdf")).toBeInTheDocument();
+    // No companion fold appears, because the only companion is extract-eligible.
+    expect(screen.queryByRole("button", { name: /companion file/ })).not.toBeInTheDocument();
+  });
+
+  it("collapses the No-period group and expands it with the count", async () => {
+    mockView([
+      viewRow(
+        { id: "d_ssf", title: "Consolidated 2025", docKind: "periodic_ssf" },
+        { canonical: true },
+      ),
+      viewRow(
+        { id: "d_gov1", title: "Governance notice A", docKind: "governance" },
+        { fiscalYear: null, periodType: null, canonical: false },
+      ),
+      viewRow(
+        { id: "d_gov2", title: "Governance notice B", docKind: "governance" },
+        { fiscalYear: null, periodType: null, canonical: false },
+      ),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    await screen.findByText("No period");
+    expect(screen.queryByText("Governance notice A")).not.toBeInTheDocument();
+    const showAll = screen.getByRole("button", { name: /Show all \(2\)/ });
+    await userEvent.click(showAll);
+    expect(await screen.findByText("Governance notice A")).toBeInTheDocument();
+    expect(screen.getByText("Governance notice B")).toBeInTheDocument();
+  });
+
+  it("narrows the visible rows with the search field", async () => {
+    mockView([
+      viewRow(
+        { id: "d_a", title: "Consolidated annual report", url: "https://example.test/a-fy.pdf" },
+        { periodType: "FY" },
+      ),
+      viewRow(
+        {
+          id: "d_b",
+          title: "Quarterly update deck",
+          docKind: "presentation",
+          url: "https://example.test/b-q1.pdf",
+        },
+        { periodType: "Q1", canonical: false },
+      ),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    await screen.findByText("Consolidated annual report");
+    expect(screen.getByText("Quarterly update deck")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Search documents"), "annual");
+    expect(screen.getByText("Consolidated annual report")).toBeInTheDocument();
+    expect(screen.queryByText("Quarterly update deck")).not.toBeInTheDocument();
+  });
+
+  it("falls back to a flat list when grouping is turned off", async () => {
+    mockView([
+      viewRow({ id: "d_2024", title: "2024 report" }, { fiscalYear: 2024, periodType: "FY" }),
+      viewRow({ id: "d_2025", title: "2025 report" }, { fiscalYear: 2025, periodType: "FY" }),
+    ]);
+    const { container } = renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" />,
+    );
+    await screen.findByText("2025 report");
+    // Grouped by default → group headers present.
+    expect(container.querySelectorAll(".doc-grp-label").length).toBeGreaterThan(0);
+
+    await userEvent.click(screen.getByLabelText("Group by period"));
+    // Flat list → no group headers, both rows still present.
+    expect(container.querySelectorAll(".doc-grp-label").length).toBe(0);
+    expect(container.querySelector(".doc-rows-flat")).not.toBeNull();
+    expect(screen.getByText("2024 report")).toBeInTheDocument();
+    expect(screen.getByText("2025 report")).toBeInTheDocument();
+  });
+
+  it("offers an Extract data action on a stored document and reports the produced-fact count", async () => {
     extractReportDocumentDataMock.mockResolvedValue({
       acceptance: "accepted",
       tier: "pdf",
@@ -145,6 +313,8 @@ describe("CompanyReportDocumentsPanel", () => {
       skippedFactIds: [],
       divergentCount: 0,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -152,8 +322,6 @@ describe("CompanyReportDocumentsPanel", () => {
     );
 
     const button = await screen.findByRole("button", { name: "Extract data" });
-    // Renders as a real secondary Button primitive (clear affordance), not a
-    // text-like minimal control.
     expect(button).toHaveClass("secondary-button");
     await userEvent.click(button);
 
@@ -161,16 +329,13 @@ describe("CompanyReportDocumentsPanel", () => {
       companyId: "company_gpw_cdr",
       reportDocumentId: "report_doc_1",
     });
-    // Honest completion feedback: the actual count of new values, not a blanket
-    // "done" — the toast reflects the summary the command returned.
     expect(await screen.findByText("Extracted new values: 3")).toBeInTheDocument();
-    // A fact-producing run invalidates the sibling fundamentals view.
     expect(onExtracted).toHaveBeenCalledTimes(1);
   });
 
-  it("reports a no-new-values result honestly (0 produced facts is not a success)", async () => {
-    // The owner's real case: re-extracting an already-covered period yields no
-    // new facts. The toast must say so instead of a false success.
+  // Tier-4 bootstrap/pending runs emit PROPOSALS, not facts (ADR 0077 §4) — the
+  // toast must say so instead of the misleading "no new values".
+  it("reports tier-4 proposals honestly instead of 'no new values'", async () => {
     extractReportDocumentDataMock.mockResolvedValue({
       acceptance: "empty",
       tier: "pdf",
@@ -179,6 +344,28 @@ describe("CompanyReportDocumentsPanel", () => {
       skippedFactIds: [],
       divergentCount: 0,
       driftJson: null,
+      tier4: "bootstrap_proposals",
+      tier4Proposals: 5,
+    });
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    const button = await screen.findByRole("button", { name: "Extract data" });
+    await userEvent.click(button);
+
+    expect(await screen.findByText("OCR proposals to review: 5")).toBeInTheDocument();
+  });
+
+  it("reports a no-new-values result honestly (0 produced facts is not a success)", async () => {
+    extractReportDocumentDataMock.mockResolvedValue({
+      acceptance: "empty",
+      tier: "pdf",
+      emitted: false,
+      producedFactIds: [],
+      skippedFactIds: [],
+      divergentCount: 0,
+      driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -191,7 +378,6 @@ describe("CompanyReportDocumentsPanel", () => {
     expect(
       await screen.findByText("No new values extracted from this document"),
     ).toBeInTheDocument();
-    // Nothing changed → the fundamentals view is not invalidated.
     expect(onExtracted).not.toHaveBeenCalled();
   });
 
@@ -204,6 +390,8 @@ describe("CompanyReportDocumentsPanel", () => {
       skippedFactIds: [],
       divergentCount: 0,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     });
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 
@@ -216,9 +404,6 @@ describe("CompanyReportDocumentsPanel", () => {
   });
 
   it("distinguishes a re-extraction (values already recorded) from an empty document", async () => {
-    // T7-F: re-extracting a landed period re-observes every slot — the summary
-    // carries them as skipped, and the toast says "already recorded" instead of
-    // the misleading generic "no new values".
     extractReportDocumentDataMock.mockResolvedValue({
       acceptance: "accepted",
       tier: "esef",
@@ -227,6 +412,8 @@ describe("CompanyReportDocumentsPanel", () => {
       skippedFactIds: ["fact_1", "fact_2"],
       divergentCount: 0,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     });
     const onExtracted = vi.fn();
     renderPanel(
@@ -243,8 +430,6 @@ describe("CompanyReportDocumentsPanel", () => {
   });
 
   it("surfaces divergent re-observed values without pretending success", async () => {
-    // T7-F: a re-observed slot whose fresh value disagrees with the stored fact
-    // is never silently overwritten — the toast points at the divergence.
     extractReportDocumentDataMock.mockResolvedValue({
       acceptance: "accepted",
       tier: "esef",
@@ -253,6 +438,8 @@ describe("CompanyReportDocumentsPanel", () => {
       skippedFactIds: ["fact_1"],
       divergentCount: 1,
       driftJson: null,
+      tier4: null,
+      tier4Proposals: 0,
     });
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 
@@ -267,12 +454,9 @@ describe("CompanyReportDocumentsPanel", () => {
   });
 
   it("does not offer the action on an ineligible (not-stored) document", async () => {
-    listReportDocumentsMock.mockResolvedValue([
-      reportDocument({ fetchStatus: "metadata_only" }),
-    ]);
+    mockView([viewRow({ fetchStatus: "metadata_only" })]);
     renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
 
-    // The row still renders (its link), but no extract action.
     await screen.findByRole("link");
     expect(screen.queryByRole("button", { name: "Extract data" })).not.toBeInTheDocument();
   });
@@ -289,5 +473,116 @@ describe("CompanyReportDocumentsPanel", () => {
     expect(
       await screen.findByText("Could not determine the reporting period for this document"),
     ).toBeInTheDocument();
+  });
+
+  it("shows the product-facing kind label for each doc_kind (flat list)", async () => {
+    mockView([
+      viewRow({ id: "d_ssf", title: "A", docKind: "periodic_ssf" }),
+      viewRow({ id: "d_jsf", title: "B", docKind: "periodic_jsf" }, { canonical: false }),
+      viewRow({ id: "d_audit", title: "C", docKind: "auditor_opinion" }, { canonical: false }),
+      viewRow({ id: "d_pres", title: "D", docKind: "presentation" }, { canonical: false }),
+      viewRow({ id: "d_gov", title: "E", docKind: "governance" }, { canonical: false }),
+      viewRow({ id: "d_other", title: "F", docKind: "other" }, { canonical: false }),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    // Flat list so every kind renders regardless of period grouping/folding.
+    await screen.findByText("Group by period");
+    await userEvent.click(screen.getByLabelText("Group by period"));
+
+    const rows = within(screen.getByRole("list"));
+    expect(rows.getByText("Consolidated report")).toBeInTheDocument();
+    expect(rows.getByText("Standalone report")).toBeInTheDocument();
+    expect(rows.getByText("Audit report")).toBeInTheDocument();
+    expect(rows.getByText("Presentation")).toBeInTheDocument();
+    expect(rows.getByText("Governance")).toBeInTheDocument();
+    expect(rows.getByText("Other")).toBeInTheDocument();
+  });
+
+  it("narrows the visible rows when a document type is selected", async () => {
+    mockView([
+      viewRow({ id: "d_ssf", title: "Consolidated 2026", docKind: "periodic_ssf" }),
+      viewRow(
+        { id: "d_pres", title: "Investor deck", docKind: "presentation" },
+        { canonical: false },
+      ),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+    // Flat list to avoid fold interference for the presentation companion.
+    await screen.findByText("Group by period");
+    await userEvent.click(screen.getByLabelText("Group by period"));
+
+    expect(screen.getByText(/Consolidated 2026/)).toBeInTheDocument();
+    expect(screen.getByText(/Investor deck/)).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Document type"), "presentation");
+
+    expect(screen.queryByText(/Consolidated 2026/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Investor deck/)).toBeInTheDocument();
+  });
+
+  it("matches unclassified documents with the Unclassified filter option", async () => {
+    mockView([
+      viewRow({ id: "d_ssf", title: "Consolidated 2026", docKind: "periodic_ssf" }),
+      viewRow({ id: "d_null", title: "Mystery filing", docKind: null }, { canonical: false }),
+    ]);
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+    await screen.findByText("Group by period");
+    await userEvent.click(screen.getByLabelText("Group by period"));
+
+    expect(screen.getByText(/Consolidated 2026/)).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Document type"), "unclassified");
+
+    expect(screen.queryByText(/Consolidated 2026/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Mystery filing/)).toBeInTheDocument();
+  });
+
+  it("refreshes classification: invokes the command, reloads the list, and toasts the count", async () => {
+    reclassifyReportDocumentsMock.mockResolvedValue({
+      total: 4,
+      updated: 3,
+      byKind: { periodic_ssf: 2, other: 2 },
+    });
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    await screen.findByRole("link");
+    expect(getReportDocumentsViewMock).toHaveBeenCalledTimes(1);
+
+    const button = await screen.findByRole("button", { name: "Refresh classification" });
+    await userEvent.click(button);
+
+    expect(reclassifyReportDocumentsMock).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText("Classified documents: 3 of 4")).toBeInTheDocument();
+    await waitFor(() => expect(getReportDocumentsViewMock).toHaveBeenCalledTimes(2));
+  });
+
+  // Bug 3579234: reclassification changes doc_kind, which the coverage read
+  // model consumes — it must invalidate the sibling coverage/fundamentals panels
+  // so they don't show stale kinds until a remount.
+  it("fires onExtracted on reclassify success so the coverage pane refetches", async () => {
+    reclassifyReportDocumentsMock.mockResolvedValue({
+      total: 4,
+      updated: 3,
+      byKind: { periodic_ssf: 2, other: 2 },
+    });
+    const onExtracted = vi.fn();
+    renderPanel(
+      <CompanyReportDocumentsPanel companyId="company_gpw_cdr" onExtracted={onExtracted} />,
+    );
+
+    const button = await screen.findByRole("button", { name: "Refresh classification" });
+    await userEvent.click(button);
+
+    await waitFor(() => expect(onExtracted).toHaveBeenCalledTimes(1));
+  });
+
+  it("surfaces a reclassification error on the toast", async () => {
+    reclassifyReportDocumentsMock.mockRejectedValue(new Error("reclassify failed"));
+    renderPanel(<CompanyReportDocumentsPanel companyId="company_gpw_cdr" />);
+
+    const button = await screen.findByRole("button", { name: "Refresh classification" });
+    await userEvent.click(button);
+
+    expect(await screen.findByText("reclassify failed")).toBeInTheDocument();
   });
 });

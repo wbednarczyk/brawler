@@ -77,3 +77,4 @@
 - [0074](0074-ux-journeys-and-anti-rot.md) — UX Journeys as Spec — Journey Tests, Step Budgets, and Anti-Rot Guardrails — Accepted
 - [0075](0075-qualitative-assessment-frameworks.md) — Qualitative Assessment Frameworks — Agent-Assessed Criteria with Citations — Accepted (v0.50.0)
 - [0076](0076-ui-design-system-and-density-contracts.md) — UI Design System — Scales, Semantic Tokens, Format Rules, Density Contracts — Accepted (v0.50.0 phase 2
+- [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Accepted (2026-07-08)

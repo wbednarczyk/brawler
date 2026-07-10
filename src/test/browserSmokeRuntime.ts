@@ -216,6 +216,8 @@ const settings: UserSettings = {
   accentPalette: "night-neon",
   developerMode: false,
   pollIntervalSeconds: 900,
+  backfillYears: 3,
+  historySweepAiCallLimit: 30,
   settingsSource: "browser-smoke",
   settingsImportExportFormat: "yaml",
   yamlImportExportStatus: "accepted_deferred",
@@ -359,6 +361,7 @@ const autopilotRuns: AutopilotRun[] = [
     companyId: FUNDAMENTALS_COMPANY_ID,
     reportDocumentId: "doc_cdr_q3_2025",
     trigger: "detected",
+    sweepId: null,
     mode: "autopilot",
     status: "succeeded",
     stage: "notify",
@@ -426,6 +429,7 @@ function seedExtractionJob(reportDocumentId: string): KpiExtractionJob {
     createdAt: NOW,
     startedAt: NOW,
     finishedAt: NOW,
+    committedFactCount: 0,
     proposals: [
       proposal(jobId, "p_revenue", "revenue", "Revenue", "319700000", "319,7", "mln", "high", false,
         "Przychody ze sprzedaży wyniosły 319,7 mln zł w III kwartale 2025 r."),
@@ -647,6 +651,7 @@ function reportDocument(
     fetchedAt: NOW,
     createdAt: NOW,
     updatedAt: NOW,
+    docKind: "periodic_ssf",
   };
 }
 

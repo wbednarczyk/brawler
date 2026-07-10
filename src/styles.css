@@ -22,6 +22,8 @@
 @import "./styles/screens/settings.css";
 @import "./styles/membership.css";
 @import "./styles/screens/company-workspace.css";
+@import "./styles/screens/company-coverage.css";
+@import "./styles/screens/company-review-queue.css";
 @import "./styles/notebook-shared.css";
 @import "./styles/screens/inbox.css";
 @import "./styles/screens/report-season.css";

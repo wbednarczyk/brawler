@@ -301,11 +301,15 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
         <div className="detail-launcher">
           <span className="detail-launcher-status">
             {job?.status === "succeeded"
-              ? `${proposals.length} ${text("KPI values extracted")}${
-                  hasPendingProposals
-                    ? ` · ${proposals.filter((p) => p.status === "pending").length} ${text("to review")}`
-                    : ""
-                }`
+              ? (job.committedFactCount ?? 0) > 0 && proposals.length === 0
+                ? // Tier-4 validated-facts path (ADR 0077 §4): a confirmed OCR
+                  // profile committed facts directly, so there are no proposals.
+                  `${job.committedFactCount} ${text("facts committed")}`
+                : `${proposals.length} ${text("KPI values extracted")}${
+                    hasPendingProposals
+                      ? ` · ${proposals.filter((p) => p.status === "pending").length} ${text("to review")}`
+                      : ""
+                  }`
               : text("Open the extractor to pick a report source and review proposed KPIs.")}
           </span>
           <Button

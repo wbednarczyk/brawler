@@ -262,6 +262,8 @@ pub fn trigger_autopilot_run(
             &input.report_document_id,
             "manual",
             mode,
+            // A manual run belongs to no sweep, so it charges no sweep budget.
+            None,
         )
         .map_err(|error| error.to_string())?
     {

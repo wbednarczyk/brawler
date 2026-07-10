@@ -4,7 +4,13 @@
  * One autonomous run: the durable record behind the single notification, the
  * review queue, and run-level undo.
  */
-export type AutopilotRun = { id: string, companyId: string, reportDocumentId: string, trigger: string, mode: string, status: string, stage: string, summaryText: string | null, kpiDeltaJson: string | null, reportDiffRef: string | null, crossRefsJson: string | null, 
+export type AutopilotRun = { id: string, companyId: string, reportDocumentId: string, trigger: string, mode: string, 
+/**
+ * The history sweep that spawned this run, if any (ADR 0077 §6). `None` for
+ * a detection/manual run, and for legacy rows predating the column. Lets a
+ * sweep-triggered run charge the sweep's tier-4 budget in `stage_extract`.
+ */
+sweepId: string | null, status: string, stage: string, summaryText: string | null, kpiDeltaJson: string | null, reportDiffRef: string | null, crossRefsJson: string | null, 
 /**
  * `financial_facts` ids this run produced (parsed from the JSON column), so a
  * single undo reverts exactly those facts.

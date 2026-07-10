@@ -42,6 +42,44 @@ function numberField(source: Record<string, unknown>, key: string): number | nul
   return typeof value === "number" ? value : null;
 }
 
+// Tier-4 KPI-extraction degrade reasons carried on an `extractionAvailable:false`
+// delta (jobs/autopilot.rs, jobs/structured_extraction.rs). Each stored reason
+// maps to an honest, product-facing line rather than one blanket "no AI provider"
+// string (card b85ba3c). Keep the copy short and free of implementation vocabulary
+// (dev-speak locale guard). `sweep_deterministic_only` covers legacy rows.
+const EXTRACTION_UNAVAILABLE_TEXT: Record<string, string> = {
+  no_ai_provider: "KPI extraction unavailable (no AI provider configured)",
+  no_vision_provider: "KPI extraction unavailable (no document-reading AI provider configured)",
+  not_extractable: "KPI extraction unavailable (report format isn't extractable)",
+  not_pdf: "KPI extraction unavailable (report isn't a readable PDF)",
+  no_stored_file: "KPI extraction unavailable (no stored file for this report)",
+  no_extraction: "KPI extraction unavailable (no values were extracted)",
+  bootstrap_failed: "KPI extraction unavailable (extraction setup failed)",
+  sweep_deterministic_only: "KPI extraction unavailable (only basic non-AI values available)",
+  skipped_budget: "KPI extraction unavailable (AI budget for this run was used up)",
+  automation_off: "KPI extraction unavailable (automation is off)",
+};
+
+/**
+ * The honest, localized "extraction unavailable" line for a degraded run. Known
+ * reasons get a specific message; a `provider_error:<code>` reason (prefix match)
+ * gets the generic provider-error text; an unknown/new reason surfaces its RAW
+ * code so it is never silently swallowed into a blanket message; a delta with no
+ * reason recorded (oldest legacy rows) keeps the historical generic line.
+ */
+function extractionUnavailableText(delta: Record<string, unknown>, text: TextFn): string {
+  const reason = typeof delta.reason === "string" ? delta.reason : null;
+  if (!reason) {
+    return text("KPI extraction unavailable (no AI provider configured)");
+  }
+  if (reason.startsWith("provider_error")) {
+    return text("KPI extraction unavailable (the AI provider returned an error)");
+  }
+  const known = EXTRACTION_UNAVAILABLE_TEXT[reason];
+  if (known) return text(known);
+  return text("KPI extraction unavailable ({reason})").replace("{reason}", reason);
+}
+
 /**
  * Composes the Today/Pulse autopilot run card's "what changed" sentence from
  * the run's DATA fields (bug e77a1a2, part 2) — `kpiDeltaJson`/`crossRefsJson`
@@ -67,7 +105,7 @@ export function composeAutopilotRunSummary(
   const delta = parseJsonObject(run.kpiDeltaJson);
   if (delta) {
     if (delta.extractionAvailable === false) {
-      parts.push(text("KPI extraction unavailable (no AI provider configured)"));
+      parts.push(extractionUnavailableText(delta, text));
     } else {
       const proposed = numberField(delta, "factsProposed");
       const confirmed = numberField(delta, "factsAutoConfirmed");

@@ -121,6 +121,15 @@ test("T7-B/D/F: extracting the FY2025 .xbri twice is honest and idempotent", asy
   await page.waitForTimeout(2_000);
   await page.screenshot({ path: `${SHOTS}/10-cockpit-cbf.png`, fullPage: true });
 
+  // The F2 Coverage pane seeds into the same tab group and can land as the
+  // group's active tab — activate Report documents explicitly (the user's own
+  // click) instead of assuming the group's default active tab.
+  const docsTab = page.getByRole("button", { name: /^Report documents$/ }).first();
+  if (await docsTab.isVisible().catch(() => false)) {
+    await docsTab.click();
+    await page.waitForTimeout(500);
+  }
+
   // The annual ESEF package row — the exact document from the owner's report.
   const xbriRow = page
     .locator("li", { has: page.locator('a[title*=".xbri" i]') })

@@ -526,6 +526,7 @@ fn t7_cbf_double_extraction_is_idempotent_on_the_real_corpus() {
             period_type,
             &period_end,
             MODE_AUTOPILOT,
+            crate::jobs::structured_extraction::Tier4Gate::DeniedSweep,
         )
         .unwrap_or_else(|e| panic!("{label} extraction must not error (owner T7-F): {e}"))
     };

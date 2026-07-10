@@ -2,7 +2,17 @@
 import type { CapabilityProviderEntry } from "./CapabilityProviderEntry";
 import type { ShortcutBindingSetting } from "./ShortcutBindingSetting";
 
-export type UpdateSettingsInput = { theme?: "dark" | "light" | "system", accentPalette?: "night-neon" | "midnight-horizon", locale?: "en" | "pl", pollIntervalSeconds?: number, youtubeTranscriptionProvider?: string, youtubeTranscriptionModel?: string, youtubeTranscriptionTimeoutSeconds?: number, generalAnalysisProvider?: string, generalAnalysisModel?: string, generalAnalysisTimeoutSeconds?: number, 
+export type UpdateSettingsInput = { theme?: "dark" | "light" | "system", accentPalette?: "night-neon" | "midnight-horizon", locale?: "en" | "pl", pollIntervalSeconds?: number, 
+/**
+ * Requested backfill depth in years (ADR 0077 §3); clamped to `[1, 10]` on
+ * write rather than rejected.
+ */
+backfillYears?: number, 
+/**
+ * Requested per-history-sweep tier-4 AI call budget (ADR 0077 §6); clamped
+ * to `[0, 500]` on write rather than rejected (0 = off).
+ */
+historySweepAiCallLimit?: number, youtubeTranscriptionProvider?: string, youtubeTranscriptionModel?: string, youtubeTranscriptionTimeoutSeconds?: number, generalAnalysisProvider?: string, generalAnalysisModel?: string, generalAnalysisTimeoutSeconds?: number, 
 /**
  * Base URL for the generic OpenAI-compatible provider (ADR 0060).
  */

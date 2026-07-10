@@ -1,0 +1,50 @@
+---
+source: src/fundamentals/extraction/html_positional/tests.rs
+expression: facts
+---
+[
+    ExtractedFact {
+        metric_key: "revenue",
+        value: 652375000,
+        period: Instant(
+            "2024-09-30",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "sales revenue",
+    },
+    ExtractedFact {
+        metric_key: "cash",
+        value: 82281000,
+        period: Instant(
+            "2024-09-30",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "cash and cash equivalents",
+    },
+    ExtractedFact {
+        metric_key: "total_equity",
+        value: 2570916000,
+        period: Instant(
+            "2024-09-30",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "equity",
+    },
+    ExtractedFact {
+        metric_key: "eps_basic",
+        value: 2.48,
+        period: Instant(
+            "2024-09-30",
+        ),
+        basis: None,
+        currency: None,
+        tier: Pdf,
+        citation: "basic earnings per share (in pln)",
+    },
+]

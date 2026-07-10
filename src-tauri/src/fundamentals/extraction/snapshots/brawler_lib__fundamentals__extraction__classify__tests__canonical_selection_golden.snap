@@ -1,0 +1,33 @@
+---
+source: src/fundamentals/extraction/classify.rs
+expression: rows
+---
+[
+    (
+        (
+            2024,
+            4,
+        ),
+        "C2_ssf",
+        "periodic_ssf",
+        "2025-03-01",
+    ),
+    (
+        (
+            2025,
+            2,
+        ),
+        "B2_ssf",
+        "periodic_ssf",
+        "2025-09-18",
+    ),
+    (
+        (
+            2025,
+            4,
+        ),
+        "A1_ssf",
+        "periodic_ssf",
+        "2026-03-10",
+    ),
+]

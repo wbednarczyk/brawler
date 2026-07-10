@@ -6,7 +6,18 @@ import type { LogSettings } from "./LogSettings";
 import type { QueueSettings } from "./QueueSettings";
 import type { ShortcutBindingSetting } from "./ShortcutBindingSetting";
 
-export type UserSettings = { theme: "dark" | "light" | "system", locale: "en" | "pl", accentPalette: "night-neon" | "midnight-horizon", developerMode: boolean, pollIntervalSeconds: number, settingsSource: string, settingsImportExportFormat: string, yamlImportExportStatus: string, aiProviders: AiProviderSettings, aiAnalysisMode: string, espiAiFallbackEnabled: boolean, logs: LogSettings, shortcutBindings: { [key in string]: ShortcutBindingSetting }, 
+export type UserSettings = { theme: "dark" | "light" | "system", locale: "en" | "pl", accentPalette: "night-neon" | "midnight-horizon", developerMode: boolean, pollIntervalSeconds: number, 
+/**
+ * Years of company history the on-track backfill covers (ADR 0077 §3).
+ * Clamped to `[1, 10]`; an absent row reads the default `3`.
+ */
+backfillYears: number, 
+/**
+ * Per-history-sweep tier-4 AI call budget (ADR 0077 §6). Clamped to
+ * `[0, 500]` (0 = off); an absent row reads the default `30`. Snapshotted
+ * onto each sweep at creation, so a change only affects future sweeps.
+ */
+historySweepAiCallLimit: number, settingsSource: string, settingsImportExportFormat: string, yamlImportExportStatus: string, aiProviders: AiProviderSettings, aiAnalysisMode: string, espiAiFallbackEnabled: boolean, logs: LogSettings, shortcutBindings: { [key in string]: ShortcutBindingSetting }, 
 /**
  * Per-capability ordered (provider, model) fallback pool (ADR 0060 as
  * amended), keyed by `AiCapability::key`. An absent key or an empty list

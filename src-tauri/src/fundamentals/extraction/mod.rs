@@ -19,9 +19,12 @@ use std::collections::BTreeMap;
 
 use super::validation::FactSet;
 
+pub mod classify;
 pub mod esef;
 pub mod esef_package;
 pub mod html;
+pub mod html_positional;
+pub mod ocr;
 pub mod pdf;
 pub mod pipeline;
 pub mod profile;

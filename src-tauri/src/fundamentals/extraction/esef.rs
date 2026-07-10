@@ -29,6 +29,21 @@ use rust_decimal::Decimal;
 
 use super::{ExtractedFact, FactPeriod, SourceTier, StatementBasis};
 
+/// Cheap, allocation-light detection of inline XBRL (iXBRL) in an XHTML prefix
+/// without a full parse: a real ESEF instance declares the inline-XBRL namespace
+/// and uses `ix:` tags in its root element, while a pdf2htmlEX-rendered interim
+/// XHTML (the tier-3b positional route) carries neither. Callers should pass the
+/// leading bytes only — the declarations live near the top of the document.
+///
+/// Shared single source of truth for "is this XHTML an ESEF instance?" used both
+/// by the history sweep's extractability check and the structured-extraction
+/// router (ADR 0077 T-B2), so the two can never disagree about which XHTMLs route
+/// to ESEF vs the positional tier.
+pub fn is_inline_xbrl(prefix: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(prefix);
+    text.contains("http://www.xbrl.org/2013/inlineXBRL") || text.contains("<ix:")
+}
+
 /// Maps an IFRS taxonomy concept (matched on its local name, prefix-agnostic)
 /// to our canonical `metric_key`. Kept deliberately small and explicit: only
 /// the concepts that back a seeded `kpi_definitions` metric. Company extension

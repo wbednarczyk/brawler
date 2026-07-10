@@ -4,7 +4,24 @@ import { listAiProviderCatalog } from "../../api/aiProviders";
 import { OPENAI_COMPATIBLE_PROVIDER_ID } from "../../api/credentials";
 import type { AiProviderCatalogEntry, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
-import { FieldRow, Hint, SelectField, TextField } from "../../ui";
+import {
+  FieldRow,
+  Hint,
+  RangeField,
+  SegmentedControl,
+  SegmentedControlOption,
+  SelectField,
+  TextField,
+} from "../../ui";
+
+// History-sweep AI budget presets (tier-4 call units per sweep). Visual-first
+// config UX (docs/ui-authoring.md): clickable presets + a slider + numeric
+// input, all bound to the same value. The backend clamps to [0, 500]; `0`
+// means unlimited (ADR 0077 §6).
+const AI_CALL_LIMIT_PRESETS = [0, 10, 30, 100];
+const AI_CALL_LIMIT_DEFAULT = 30;
+const clampAiCallLimit = (value: number): number =>
+  Number.isNaN(value) ? AI_CALL_LIMIT_DEFAULT : Math.min(500, Math.max(0, Math.round(value)));
 
 type AiSettingsProps = {
   settings: UserSettings | null;
@@ -15,6 +32,7 @@ type AiSettingsProps = {
   onGeneralAnalysisTimeoutChange: (timeoutSeconds: number) => void;
   onEspiAiFallbackChange: (enabled: boolean) => void;
   onOpenAiCompatibleBaseUrlChange: (baseUrl: string) => void;
+  onHistorySweepAiCallLimitChange: (historySweepAiCallLimit: number) => void;
 };
 
 export function AiSettings({
@@ -26,6 +44,7 @@ export function AiSettings({
   onGeneralAnalysisTimeoutChange,
   onEspiAiFallbackChange,
   onOpenAiCompatibleBaseUrlChange,
+  onHistorySweepAiCallLimitChange,
 }: AiSettingsProps) {
   const { t, text } = useLocale();
   const [catalog, setCatalog] = useState<AiProviderCatalogEntry[]>([]);
@@ -69,6 +88,8 @@ export function AiSettings({
   useEffect(() => {
     setBaseUrlDraft(savedBaseUrl);
   }, [savedBaseUrl]);
+
+  const historySweepAiCallLimit = settings?.historySweepAiCallLimit ?? AI_CALL_LIMIT_DEFAULT;
 
   return (
     <section className="settings-group" aria-labelledby="settings-ai-title">
@@ -181,6 +202,54 @@ export function AiSettings({
           "Presets for common OpenAI-compatible endpoints live in the wiki. Set the API key in Credentials below.",
         )}
       </Hint>
+
+      {/* History-sweep AI budget (ADR 0077 §6, T5.3): visual-first — clickable
+          presets + a slider two-way bound to a numeric input. The backend
+          clamps to [0, 500]; 0 means unlimited. */}
+      <FieldRow>
+        <div
+          className="settings-range-control"
+          role="group"
+          aria-label={text("History sweep AI budget")}
+        >
+          <span className="settings-range-control-label">{text("History sweep AI budget")}</span>
+          <SegmentedControl ariaLabel={text("History sweep AI budget presets")}>
+            {AI_CALL_LIMIT_PRESETS.map((preset) => (
+              <SegmentedControlOption
+                key={preset}
+                active={historySweepAiCallLimit === preset}
+                onClick={() => onHistorySweepAiCallLimitChange(preset)}
+              >
+                {preset}
+              </SegmentedControlOption>
+            ))}
+          </SegmentedControl>
+          <div className="settings-range-control-custom">
+            <RangeField
+              aria-label={text("History sweep AI budget (slider)")}
+              min={0}
+              max={500}
+              step={5}
+              value={historySweepAiCallLimit}
+              onChange={(event) =>
+                onHistorySweepAiCallLimitChange(clampAiCallLimit(Number(event.target.value)))
+              }
+            />
+            <TextField
+              aria-label={text("History sweep AI budget in calls")}
+              type="number"
+              min={0}
+              max={500}
+              value={String(historySweepAiCallLimit)}
+              onChange={(event) =>
+                onHistorySweepAiCallLimitChange(clampAiCallLimit(Number(event.target.value)))
+              }
+              className="settings-range-control-input"
+            />
+          </div>
+          <Hint>{text("AI calls per history sweep (0 = unlimited).")}</Hint>
+        </div>
+      </FieldRow>
     </section>
   );
 }

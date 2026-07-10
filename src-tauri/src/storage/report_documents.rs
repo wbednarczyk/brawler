@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+
+use crate::fundamentals::extraction::classify::classify_doc_kind;
+
 use super::*;
 
 // ============================================================================
@@ -29,6 +33,9 @@ pub struct ReportDocument {
     pub fetched_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+    /// doc_kind taxonomy (ADR 0077 §1): periodic_ssf | periodic_jsf |
+    /// auditor_opinion | presentation | governance | other. NULL = unclassified.
+    pub doc_kind: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -50,6 +57,22 @@ pub struct CaptureReportDocumentInput {
     pub title: Option<String>,
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub attribution: Option<String>,
+}
+
+/// Outcome of a corpus-wide `doc_kind` reclassification (ADR 0077 §1, T1.2):
+/// how many documents were scanned, how many changed kind, and the final count
+/// per kind over every row. Idempotent — a second run reports `updated == 0`.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ReclassifyReportDocumentsSummary {
+    pub total: usize,
+    pub updated: usize,
+    pub by_kind: BTreeMap<String, usize>,
 }
 
 // ============================================================================
@@ -106,10 +129,30 @@ pub(super) fn create_or_find_with_status(
         .ok()
         .flatten();
     if let Some(doc) = existing {
+        // Approved T1.2 scope addition (ADR 0077 §1): a re-ingest carrying a
+        // changed title reclassifies in place so a stored document never keeps a
+        // stale `doc_kind`. A same-title re-ingest stays a pure no-op (the
+        // idempotent upsert contract), preserving created_at/updated_at.
+        if title.is_some() && title != doc.title {
+            let doc_kind = classify_doc_kind(title.as_deref().unwrap_or(""), &url);
+            connection.execute(
+                "
+                UPDATE report_documents
+                SET title = ?2,
+                    doc_kind = ?3,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![doc.id, title, doc_kind.as_str()],
+            )?;
+            return get_report_document(connection, &doc.id);
+        }
         return Ok(doc);
     }
 
     let id = report_document_id(&company_id, &url);
+    // Classify at ingestion so a new document is never left unclassified (NULL).
+    let doc_kind = classify_doc_kind(title.as_deref().unwrap_or(""), &url);
 
     connection.execute(
         "
@@ -122,8 +165,9 @@ pub(super) fn create_or_find_with_status(
             url,
             title,
             attribution,
-            fetch_status
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            fetch_status,
+            doc_kind
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
         ",
         params![
             id,
@@ -134,7 +178,8 @@ pub(super) fn create_or_find_with_status(
             url,
             title,
             attribution,
-            initial_status
+            initial_status,
+            doc_kind.as_str()
         ],
     )?;
 
@@ -176,7 +221,7 @@ pub(super) fn list_pending_attachments(
         SELECT
             id, company_id, period_id, source_type, origin_ref, url, local_path,
             content_type, content_hash, byte_size, title, attribution, fetch_status,
-            fetch_error, fetched_at, created_at, updated_at
+            fetch_error, fetched_at, created_at, updated_at, doc_kind
         FROM report_documents
         WHERE source_type = 'espi_attachment'
           AND fetch_status = 'pending'
@@ -283,7 +328,8 @@ pub(super) fn list_by_company(
             fetch_error,
             fetched_at,
             created_at,
-            updated_at
+            updated_at,
+            doc_kind
         FROM report_documents
         WHERE company_id = ?1
         ORDER BY created_at DESC
@@ -294,6 +340,52 @@ pub(super) fn list_by_company(
 
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
+}
+
+/// Recompute `doc_kind` for every stored report document from its title + URL
+/// (ADR 0077 §1). Classification is deterministic Rust code, so this is a pure
+/// self-heal: a row is written only when its stored kind differs from the
+/// recomputed one, making the operation idempotent. Returns per-kind final
+/// counts over all rows plus how many were changed.
+pub(super) fn reclassify_all(
+    connection: &Connection,
+) -> StorageResult<ReclassifyReportDocumentsSummary> {
+    let rows: Vec<(String, Option<String>, String, Option<String>)> = {
+        let mut statement =
+            connection.prepare("SELECT id, title, url, doc_kind FROM report_documents")?;
+        let mapped = statement.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })?;
+        mapped.collect::<Result<Vec<_>, _>>()?
+    };
+
+    let mut updated = 0usize;
+    let mut by_kind: BTreeMap<String, usize> = BTreeMap::new();
+
+    for (id, title, url, current_kind) in &rows {
+        let kind = classify_doc_kind(title.as_deref().unwrap_or(""), url);
+        let kind_str = kind.as_str();
+        *by_kind.entry(kind_str.to_owned()).or_insert(0) += 1;
+
+        if current_kind.as_deref() != Some(kind_str) {
+            connection.execute(
+                "
+                UPDATE report_documents
+                SET doc_kind = ?2,
+                    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+                WHERE id = ?1
+                ",
+                params![id, kind_str],
+            )?;
+            updated += 1;
+        }
+    }
+
+    Ok(ReclassifyReportDocumentsSummary {
+        total: rows.len(),
+        updated,
+        by_kind,
+    })
 }
 
 // ============================================================================
@@ -321,7 +413,8 @@ fn get_report_document(connection: &Connection, id: &str) -> StorageResult<Repor
             fetch_error,
             fetched_at,
             created_at,
-            updated_at
+            updated_at,
+            doc_kind
         FROM report_documents
         WHERE id = ?1
         ",
@@ -356,7 +449,8 @@ fn get_by_company_and_url(
                 fetch_error,
                 fetched_at,
                 created_at,
-                updated_at
+                updated_at,
+                doc_kind
             FROM report_documents
             WHERE company_id = ?1 AND url = ?2
             ",
@@ -386,6 +480,7 @@ fn report_document_from_row(row: &rusqlite::Row) -> rusqlite::Result<ReportDocum
         fetched_at: row.get(14)?,
         created_at: row.get(15)?,
         updated_at: row.get(16)?,
+        doc_kind: row.get(17)?,
     })
 }
 
@@ -488,5 +583,11 @@ impl ReportDocumentStore {
         let connection = self.db.checkout()?;
 
         list_by_company(&connection, company_id)
+    }
+
+    pub fn reclassify_report_documents(&self) -> StorageResult<ReclassifyReportDocumentsSummary> {
+        let connection = self.db.checkout()?;
+
+        reclassify_all(&connection)
     }
 }

@@ -606,6 +606,7 @@ Company columns added to `companies`:
 
 - `id`, `company_id` → `companies(id)`, `fiscal_year`, `period_type` (fiscal label: `FY`, `H1`, `H2`, `Q1`–`Q4`, `9M`, `M01`–`M12`), `period_end_date`, `report_evidence_ref` (soft reference to a report document/feed item; FK tightened in a later milestone).
 - Unique on `(company_id, fiscal_year, period_type)`.
+- `period_type` is the canonical fiscal label; the legacy out-of-spec `annual` is the FY alias. `create_financial_period` folds `annual` → `FY` at the write boundary (guardrail, card f64cea2), and migration `0066_period_type_annual_to_fy.sql` (forward, idempotent, self-healing) merges any stored `annual` row into its `(company, fiscal_year, FY)` sibling — repointing `financial_facts` (dropping the annual-side duplicate on an `idx_financial_facts_slot` collision so the canonical FY value wins) plus `report_documents`/`framework_evaluations`/`management_claims`, then deleting it; a lone `annual` with no FY sibling is relabeled in place.
 
 `kpi_definitions` (catalog — what a metric *is*):
 
@@ -622,9 +623,10 @@ Company columns added to `companies`:
 
 - `value_numeric`: decimal-exact text in base units, signed (parsed with `rust_decimal`); `as_reported_value`/`as_reported_scale` keep the source form (e.g. "245 253 tys. zł").
 - Dimensions: `currency`, `statement_basis` (`consolidated`/`standalone`), `attribution` (`total`/`owners_of_parent`/`nci`), `variant` (`reported`/`adjusted`/`constant_currency`/`continuing`/`discontinued`/`net_of_cancellations`/`lifo_ccs`), `measure_window` (`flow`/`point_in_time`/`trailing`/`cumulative`/`duration`), `data_quality` (`final`/`estimated`), `reporting_standard` (override).
-- Provenance: `extraction_method` (`manual`/`ai_extracted`/`api`/`derived`), `confidence`, `confirmation_state` (`confirmed`/`pending`/`auto_unreviewed`), `supersedes_id` (final supersedes estimate, history kept), `source_document_ref`.
+- Provenance: `extraction_method` (`manual`/`ai_extracted`/`api`/`derived`/`html_positional`), `confidence`, `confirmation_state` (`confirmed`/`pending`/`auto_unreviewed`), `supersedes_id` (final supersedes estimate, history kept), `source_document_ref`. `html_positional` marks the **tier-3b pdf2htmlEX positional** sub-tier ([ADR 0077](adr/0077-trusted-extraction-foundations.md) T-B2), which persists under `source_tier='pdf'`; the marker is a sub-tier label only, never trust-bearing (`source_tier` + `validation_status` remain the trust signals).
 - Unique on `(period_id, definition_id, statement_basis, attribution, variant, measure_window, data_quality)` so estimate and final coexist.
 - **Re-observation policy** (T7-F): structured-extraction writes resolve the uniqueness slot before inserting — same stored value → skip (a re-observation, reported as skipped, not produced); different value → the stored fact is kept (no silent overwrite of possibly-confirmed data) and the divergence is surfaced via a diagnostic event and the run summary. A bare `INSERT` into `financial_facts` from an extraction path is a defect.
+- **Confirm is slot-aware too** (ADR 0077): confirming a KPI proposal resolves the same slot before writing. An identical fact already in the slot → re-observed (the proposal links to the existing fact id, no duplicate row, its original provenance is left untouched) while still validating and confirming any pending OCR bootstrap profile. A *different* value → a typed `value_conflict` error carrying both values (never a raw sqlite `UNIQUE` error, never an overwrite); the proposal stays pending and the user decides.
 
 Rules:
 
@@ -638,13 +640,20 @@ Structured-first extraction provenance ([ADR 0061](adr/0061-deterministic-fundam
 
 `financial_fact_provenance` (one row per fact the structured pipeline produced):
 
-- `fact_id` (PK → `financial_facts.id`), `source_tier` (`esef` | `structured_xhtml` | `pdf` | `html_aggregator` | `ai_text` | `ai`), `validation_status` (`passed` | `witness_confirmed` | `unreviewed` | `flagged` | `none`), `drift_json` (serialized `DriftReport` label diff when a drift accompanied the fact), `citation` (source concept/label the value was read from).
-- `ai`: the AI KPI-proposal confirm path (`confirm_kpi_proposal`/`auto_confirm_kpi_proposal`, both manual-confirm and autopilot auto-confirm) — sends the native report document to the model today, distinct from a future `ai_text`-tier (extracted-text) path. Every AI-confirmed fact now always carries a provenance row: `validation_status = "none"` (no validation attempted), `citation` = the proposal's label, `drift_json` = `NULL`.
+- `fact_id` (PK → `financial_facts.id`), `source_tier` (`esef` | `structured_xhtml` | `pdf` | `html_aggregator` | `ai_text` | `ai`), `validation_status` (`passed` | `witness_confirmed` | `unreviewed` | `flagged`; the legacy `none` is **retired from all production writes** — ADR 0077 §4 / G-1 — but readers must keep tolerating it on historical rows written before the retirement), `drift_json` (serialized `DriftReport` label diff when a drift accompanied the fact), `citation` (source concept/label the value was read from).
+- `pdf` also carries the **tier-3b positional** sub-tier ([ADR 0077](adr/0077-trusted-extraction-foundations.md) T-B2): a pdf2htmlEX visual-render XHTML (no `<table>`, no `ix:` tags — e.g. CD PROJEKT interims) that no ESEF tier can read, reconstructed from CSS glyph geometry. It reuses `source_tier='pdf'` (a deterministic visual-PDF reconstruction, no new trust-order variant) and is distinguished only by `financial_facts.extraction_method='html_positional'`. It clears the same `validate` gate as every tier; `validation_status` is never `none`.
+- `ai`: the AI-assisted fact sources — (a) the KPI-proposal confirm path (`confirm_kpi_proposal`/`auto_confirm_kpi_proposal`, both manual-confirm and autopilot auto-confirm), and (b) the **tier-4 OCR path** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §4 dec. 2), where a confirmed OCR profile parses the Mistral-OCR markdown to a validated set — the `citation` is the normalized OCR label the value was read from. Both write `source_tier='ai'` (the OCR-vs-text-LLM mechanism lives in the citation, not the tier). Every such fact carries a provenance row whose `validation_status` is the **real** deterministic verdict over the period's fact set: `passed` (an identity was checked and held), `flagged` (an identity was violated — e.g. a repainted/mis-scaled total), or `unreviewed` (nothing checkable in the period). `drift_json` = `NULL`. The fact persists regardless; the status records only what validation saw. A regression guard (`no_production_path_writes_validation_status_none`) reddens if any production path writes `none` again.
 - Reads tolerate a missing row: facts predating the pipeline are treated as unknown tier / unvalidated.
 
 `company_extraction_profile` (the confirmed, versioned PDF extraction layout per company, ADR 0061 decision 3):
 
 - `company_id` (PK), `template_hash`, `unit_scale` (`Ones` | `Thousands` | `Millions`), `profile_json` (serialized `ExtractionProfile` label map), `version`. A company with no row has never been bootstrapped — the parser uses the default dictionary and cannot yet detect drift (safe default).
+
+`company_ocr_extraction_profile` (the confirmed, versioned tier-4 OCR-markdown extraction layout per company, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §4, migration `0063_ocr_extraction_profile.sql`):
+
+- `company_id` (PK), `template_hash`, `scale` (`Ones` | `Thousands` | `Millions`), `profile_json` (serialized `OcrExtractionProfile`: `label_map`, `value_column` layout, `skip_columns`, `strip_enumerators`), `version`. Separate table from `company_extraction_profile` on purpose — OCR markdown has a different template fingerprint and drift semantics (a `Nota` column, a value-column layout, an enumerator convention) than the tier-2 PDF-text parser. A company with no row has never been bootstrapped at the OCR tier — tier-4 cannot yet parse deterministically for it (safe default).
+
+`kpi_extraction_jobs.committed_fact_count` (`INTEGER NOT NULL DEFAULT 0`, migration `0064_kpi_extraction_committed_facts.sql`): how many validated facts the run committed directly (tier-4 profile path, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §4 / T4.5). `0` for the classic proposals-only path, so the review panel reads an honest outcome ("N facts committed" vs "N proposals"). Reads tolerate the default on old rows.
 
 ### Management Claims
 
@@ -853,7 +862,8 @@ Rules:
 
 - `id` — primary key and run id stamped on each stage job.
 - `company_id` → `companies(id)`; `report_document_id` → `report_documents(id)` (the detected report).
-- `trigger` — `detection` (refresh-completion hook) | `manual` (user-initiated re-run).
+- `trigger` — `detection` (refresh-completion hook) | `manual` (user-initiated re-run) | `history_sweep` (enqueued by a history sweep, [History Sweeps](#history-sweeps) / [ADR 0077](adr/0077-trusted-extraction-foundations.md) §3; widened by migration `0062`). A `history_sweep`-triggered run's `extract` stage is **budget-gated** (F3b, ADR 0077 §6): when determinism does not emit, it enters tier-4 exactly like a detection run **iff** one unit of its sweep's snapshotted AI budget is granted; a denied unit (budget exhausted, or a legacy run with no `sweep_id`) records `{ extractionAvailable: false, reason: "skipped_budget" }` — never a silent skip. The retired text-AI `kpi_extraction` fallback is never taken for any trigger.
+- `sweep_id` — the `history_sweeps` row that enqueued this run (`NULL` for detection/manual runs and legacy rows; migration `0065`). The extract stage charges this sweep's budget when the run enters tier-4.
 - `mode` — the company autopilot mode captured at run time (`assist` | `autopilot`).
 - `status` — `pending` | `running` | `succeeded` | `failed` | `partial`.
 - `stage` — current/last stage reached: `fetch` | `extract` | `diff` | `cross_reference` | `notify`.
@@ -868,6 +878,37 @@ Rules:
 - **Stages are chained durable-queue jobs** ([Durable Job Queue](#durable-job-queue)) stamped with this `id`: `fetch → extract → diff → cross_reference → notify`. A crash mid-stage resumes that stage only; each stage reuses the existing service (fetch, KPI extraction, diff, cross-reference), never a reimplementation.
 - **Reversibility** reuses the existing fact supersede/reject mechanics; the run row only adds the grouping (`produced_fact_ids_json`) needed to undo a whole run at once. Auto-committed facts always carry `confirmation_state = auto_unreviewed` — never silently `confirmed`.
 - A `failed`/`partial` run still produces a notification describing how far it got (no silent dead-end).
+
+### History Sweeps
+
+The `history_sweeps` table (migration `0062`, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §3) is the durable record of a history sweep — the backfill/manual counterpart to the refresh-time detection sweep. A sweep enqueues a full `autopilot_run` (`trigger='history_sweep'`) for every **canonical periodic report whose period still lacks accepted facts**, through the shared `enqueue_extraction_run` (dedup + re-arm identical to detection). Driven by `storage::HistorySweepStore` + the `history_sweep` durable-queue job (autopilot lane).
+
+Fields:
+
+- `id` — primary key (`history_sweep:{company}:{nanos}`, collision-checked).
+- `company_id` — → the company being swept.
+- `trigger` — `backfill` (chained from `run_backfill`) | `manual` ("Extract missing periods").
+- `status` — `queued` (default) | `running` | `completed` | `failed`.
+- `candidates_total` — periods that needed extracting when the sweep ran.
+- `runs_enqueued` — runs freshly created or re-armed (`Created` | `Rearmed`); `Rearmed` now covers both a non-terminal run's stage re-arm and a **terminal-run re-arm on capability upgrade** (see the re-arm rule below).
+- `skipped_existing` — candidates whose extraction run was already terminal **and not re-armable** (`DedupedTerminal`): a run that emitted facts, or a couldn't-extract run whose document is still not extractable.
+- `runs_failed` — candidates a storage error prevented enqueuing (`Failed`); a sweep with `runs_failed > 0` still `completed`s (the count records the partial failure, never swallows it).
+- `skipped_reason` — why the sweep enqueued nothing, when it did: `automation_off` for a company in mode `off` ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3 amendment (c) — never a silent skip).
+- `enqueued_run_ids_json` — the `autopilot_run` ids this sweep enqueued (JSON array), so progress derives per-run status without a parallel query.
+- `ai_calls_used` — tier-4 AI units this sweep has spent (migration `0065`, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §6). One unit = one tier-4 invocation (the OCR + optional bootstrap-chat bundle for one document).
+- `ai_call_limit` — the tier-4 budget **snapshotted at sweep creation** from the `history_sweep_ai_call_limit` setting (default 30, clamp 0–500, `0` = unlimited); a mid-sweep settings change never moves an in-flight sweep's gate. Old rows read `0` (unlimited-by-default is safe: pre-0065 sweeps were deterministic-only).
+- `error` — a storage-level abort that failed the whole sweep.
+- `created_at`, `updated_at`.
+
+Rules:
+
+- **Trust ladder.** A sweep (chained or manual) runs only for mode ∈ {`assist`, `autopilot`}; mode `off` ends it with `status='completed'` + `skipped_reason='automation_off'` and zero enqueues.
+- **Candidate document = the period's best EXTRACTABLE document, not blindly the coverage canonical** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, T-A2): when the canonical is a non-iXBRL XHTML (a pdf2htmlEX render, extractable by no deterministic tier and ineligible for the PDF-only tier-4), the sweep attacks the period's next-best fetched periodic document that IS extractable (a PDF, or an iXBRL `.xhtml`/`.xbri`/`.zip`), preferring ssf over jsf then the newest; with no extractable sibling the canonical is still enqueued (the run degrades `not_pdf`), never a silent drop. Sweep-layer only — the canonical selection (ADR 0061 dec. 1b) is untouched. A report document's reporting period is self-derived from its iXBRL contexts when it is a valid instance, else from its title/URL (`period_sort_key`); a non-iXBRL XHTML now uses that title/URL fallback like a PDF.
+- **AI budget is consumed atomically** (ADR 0077 §6): a single guarded `UPDATE ... SET ai_calls_used = ai_calls_used + 1 WHERE id = ?1 AND (ai_call_limit = 0 OR ai_calls_used < ai_call_limit)` is the whole check-and-consume (`changes() == 1` ⇔ granted), so concurrent extract stages can never over-spend the last unit. Deterministic outcomes never consume — only a run actually entering tier-4 spends a unit; a denied run records `skipped_budget` on its `kpi_delta_json`, never a silent skip. **Statically-ineligible runs never consume either** (ADR 0077 §6 refinement, 2026-07-10): a missing `VisionExtraction` provider, no stored file, or the ESEF/iXBRL route (tier-4 is PDF-only) is decided by a pre-check *before* the guarded UPDATE, so the run degrades honestly (`no_vision_provider` / `no_stored_file` / `not_pdf`) and spends zero units — a unit buys a reachable provider invocation, not a configuration/format check. The computed **coverage read model** (`get_fundamentals_coverage`, [contracts.md](contracts.md)) projects this onto its period: `skippedBudget` is `true` when a period's canonical report's `history_sweep` run carries that reason (the run id is per-`(company, document)` deterministic, so it is a single lookup, not a windowing query).
+- **Terminal-run re-arm on capability upgrade** ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §3, 2026-07-10). The shared `enqueue_extraction_run` dedup no longer skips a terminal run forever. A terminal **succeeded** run whose `kpi_delta_json` says `extractionAvailable:false` with a re-arm-class reason is **re-armed** (`autopilot().rearm_run`: reset to `pending`/`fetch`, re-stamped with the current `trigger` + `sweep_id`, so the re-run re-enters `stage_extract` and charges the *current* sweep's budget) iff the document is **now extractable** — otherwise a period a prior pipeline version couldn't read stays permanently blind to every later version (live: the tier-3b positional tier made CDR interim XHTMLs newly extractable, yet the sweep skipped them). Classes: `not_extractable` / `not_pdf` / `no_stored_file` re-arm iff `document_is_extractable` is now true (a still-dead unreadable/zero-byte file stays deduped); `skipped_budget` re-arms so a fresh sweep's fresh budget retries it (the sweep's own `ai_call_limit` caps re-invocations, G-4); `no_vision_provider` re-arms only once a `VisionExtraction` provider is configured. A run that **emitted** facts, or any `partial`/`failed` run, is never re-armed.
+- **Backfill chaining.** `run_backfill` chains a `backfill` sweep at its successful end — best-effort (a chaining failure is logged, never fails the backfill).
+- **Backfill truncation honesty.** The in-memory `BackfillProgress` (not persisted; ADR 0036) carries `truncated: bool` — `true` when the page cap (`MAX_BACKFILL_PAGES`) ended the fetch before the configured `backfill_years` cutoff was reached, so older filings may be missing. Surfaced as an explicit coverage-panel warning, never a silent gap.
+- Access path: latest sweep per company (`idx_history_sweeps_company_created`). Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
 
 ### Content Embeddings
 
@@ -946,6 +987,8 @@ Initial keys:
 - `accent_palette`
 - `developer_mode`
 - `poll_interval_seconds`
+- `backfill_years`
+- `history_sweep_ai_call_limit`
 - `youtube_transcription_provider`
 - `youtube_transcription_model`
 - `youtube_transcription_timeout_seconds`
@@ -968,6 +1011,8 @@ Field defaults and allowed enum values (theme, accent palette, AI analysis mode,
 Rules:
 
 - Default poll interval is `900`.
+- `backfill_years` (ADR 0077 §3) is the years of company history the on-track backfill covers. No seed row: tolerant read defaults to `3`, clamped to `[1, 10]` on both read and write (never rejected, like the pool settings). The backfill job reads it live; the const in `jobs/backfill.rs` is only the last-resort fallback if the settings read fails.
+- `history_sweep_ai_call_limit` (ADR 0077 §6) is the per-history-sweep tier-4 AI call budget (one unit = one tier-4 invocation for one document; `0` = unlimited). No seed row: tolerant read defaults to `30`, clamped to `[0, 500]` on both read and write. `create_history_sweep` snapshots it onto the sweep row (`history_sweeps.ai_call_limit`), so a change only governs future sweeps.
 - Default YouTube transcription provider is `provider_gemini`.
 - Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.
 - `pinned_company_ids` (ADR 0054) stores the companies the user has pinned to the sidebar IA spine as a JSON array of company IDs, in pin order. It is a simple local UI preference: default `[]` when the row is absent (tolerant read, no seed migration), de-duplicated and overwritten wholesale on update. Unknown IDs (deleted companies) are ignored at read time by the frontend.
@@ -1100,8 +1145,11 @@ Report documents are the persisted report files behind fundamentals and the repo
 
 Fields (migration 0035): `id`, `company_id` → `companies(id)`, `period_id` → `financial_periods(id)` (nullable), `source_type` (`espi_attachment` | `user_url` | `article`), `origin_ref` (feed item / evidence id), `url` (original source URL), `local_path` (relative path under the app data dir; null when no file is stored), `content_type`, `content_hash` (sha256, optional dedup), `byte_size`, `title`, `attribution`, `fetch_status`, `fetch_error`, `fetched_at`, `created_at`, `updated_at`. `financial_facts.source_document_ref` is a soft reference to `report_documents.id`.
 
+`doc_kind` (migration 0061; nullable `TEXT`, indexed `(company_id, doc_kind)`): the document-kind taxonomy ([ADR 0077](adr/0077-trusted-extraction-foundations.md) §1) — `periodic_ssf | periodic_jsf | auditor_opinion | presentation | governance | other`, marking which stored documents can carry extractable financial data. Classified deterministically from title + URL by `fundamentals::extraction::classify::classify_doc_kind` (Rust, not a SQL backfill). **Set on write**: insert/upsert classify immediately, and an upsert with a changed title reclassifies in place, so new documents never linger `NULL`. `NULL` = not yet classified (rows predating migration 0061); reads tolerate it as "unclassified". The idempotent `reclassify_report_documents` command recomputes the column corpus-wide to backfill/self-heal legacy rows.
+
 Storage, dedup, and retention rules:
 
+- **Mis-association guard + repair** (card 45fcece): tag-listing ingestion (bankier-company-komunikaty) stamps the tag's company onto every attachment. Before a row is created, an attachment that classifies as a **periodic report** (`doc_kind` `periodic_ssf`/`periodic_jsf` — the only kind that can win a period's canonical slot) is **rejected** when its filename names a *different* tracked issuer and no owner mention (name/alias/ticker over the article title, filename, and URL) is found; rejections are logged, no row. An idempotent startup repair (`repair_misassociated_report_documents`, wired in `lib.rs` setup, mirroring the `reclassify_report_documents` precedent) re-scans `espi_attachment` rows with the **same predicate** (no drift) and deletes the mis-associated ones (FK `CASCADE`/`SET NULL` clean their derived rows). Deliberately conservative — foreign detection uses the filename's full company-name/alias phrase only (never a bare ticker, never the URL hosting path), so counterparty/shareholder mentions and Bankier folder names never delete a legitimate filing (validated against the owner DB: the naive url/ticker rule would have wrongly deleted 36 rows; the scoped rule deletes 0).
 - `local_path` always stores a **relative** path under a dedicated `report_documents/` subtree (keyed by company) so the store stays portable across machines and survives import/export. It is never an absolute path.
 - **Full files are stored for periodic / financial reports** (the extraction/diff targets), determined from the filing's classified `company_signals` category and ESPI/EBI report metadata, **and, independently, for any structured ESEF/iXBRL attachment** ([ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md) decision 1b): an attachment whose URL ends `.xhtml` is always a fetch candidate, even on a filing the periodic-report text classifier does not recognize (a filing can be xhtml-only under the EU ESEF mandate and miss the Polish-language heuristic). A digital-signature attachment (`.xades`) is always `metadata_only` — it carries no financial data, only kept for the audit trail. Every other ESPI/EBI attachment (e.g. a PDF on a non-periodic filing) persists as **metadata + URL only**: `local_path` null, `fetch_status = 'metadata_only'`, preserving `url`/`title`/`attribution`/`origin_ref` for citation and the source ladder. The user-URL and IR-page rungs always store the full file.
 - `fetch_status` is `pending | fetched | failed | metadata_only` (the `metadata_only` value is additive over migration 0035 — no new migration). It is the single source of truth for whether bytes exist locally; a failed fetch records `fetch_error`, stays retryable, and never blocks feed-item ingestion.
