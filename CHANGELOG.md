@@ -1,5 +1,81 @@
 # Changelog
 
+## v0.52.0 - 2026-07-12
+
+Judgment capture: start recording your own investment judgment — decisions and
+pre-report expectations — before the history is lost, and let the app replay it
+back as a **factual mirror, never a grade**. Plus the first slice of the
+"talk to your research" north star: a **read-only MCP server** that lets an AI
+assistant (Claude Code, Claude Desktop, …) read your local research over
+localhost. And a slimming pass: the local embedding model, which never beat the
+simpler static baseline, is retired. Local-first, decision support only, as
+always. Guides: [Decision journal](wiki/decision-journal.md),
+[MCP server](wiki/mcp-server.md).
+
+### Added
+
+- **Decision journal.** A per-company, append-only log of your decisions —
+  buy, pass, keep watching, or a sell note — each with a decision date, a
+  Markdown rationale, and optional **evidence links** to the reports, notes,
+  claims, or assessments you actually relied on. Entries are **immutable by
+  the database itself** (no edit, no delete); a change of mind is a follow-up
+  entry that supersedes the old one, and the chain stays visible. Available as
+  a cockpit panel per company and as **Journal (all companies)** from the
+  command palette.
+- **Pre-report expectations.** On a company's Report Season card, write down
+  your stance and expected figures before the report. Expectations stay
+  editable until the period's facts are confirmed — then they **freeze exactly
+  as written**, and the card shows **expected vs. actual** side by side, with
+  room for a resolution note on what you learned.
+- **MCP server (read-only).** Settings → MCP server: enable a small,
+  localhost-only (`127.0.0.1`) connector with a bearer token stored in the OS
+  keychain and shown exactly once. Four read-only tools — company dossier,
+  research search, claims due for verification, quality assessments — plus
+  ready-to-paste client snippets and a bundled stdio adapter
+  (`brawler-mcp-stdio.exe`) for clients that prefer pipes. Off by default;
+  no tool can write anything.
+- **Styled date picker.** A new app-wide date field replaces the raw native
+  date input (first used in the notebook and the journal).
+
+### Changed
+
+- **Add-panel palette rebuilt** (owner dogfooding): the cockpit's `+ Add
+  panel` surface now lists **generic panel types** that bind to the current
+  view company — instead of one entry per tracked company per panel kind
+  (296 entries → 16). Per-company "Switch view company" entries are gone too;
+  the header selector is the single way to retarget a view. The palette
+  search field now wears the app's design system instead of a bare native
+  input.
+- **New commands report errors as a typed code + message envelope** (first
+  delivery of the error-contract migration), so failures surface precisely
+  instead of as raw strings.
+- **AI prose follows the app language** in the remaining surfaces (feed
+  analysis, research briefs/digests), and untouched template frameworks
+  re-localize their criterion labels on startup after a locale switch.
+
+### Fixed
+
+- Inbox no longer shows 0 items on "Everything" while current feed rows exist.
+- Quality panel formats measured values (no more raw
+  `0.00986053636687284…`).
+- Journal evidence links validate against the right table — the first real
+  entry with a decision-entry evidence link failed with "invalid research
+  value"; a structural test now walks every allowed evidence type.
+- Cockpit accessibility debt: 4 latent WCAG violations fixed; compact
+  in-pane panel headers no longer duplicate the dock-tab title.
+- Two flaky tests stabilized (TodayScreen date-order dependence,
+  SettingsScreen theme-persistence timeout).
+
+### Removed
+
+- **Local embedding model retired.** The optional e5-small model, its vector
+  index and similarity scaffold, and the write-only story-key ingest path are
+  gone — the model never beat the simpler static baseline it was meant to
+  improve on. The app is **57 crates and ~3.3 MB lighter**; old databases
+  open cleanly (forward migrations clean up stored embeddings), and nothing
+  you can see changes: rule-based signal classification and management-claim
+  tracking are untouched.
+
 ## v0.51.0 - 2026-07-10
 
 Trusted extraction: turn "add a company, see its fundamentals" into a measured,
