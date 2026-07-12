@@ -20,6 +20,7 @@ import { SectionHeader } from "./SectionHeader";
 import { SegmentedControl, SegmentedControlOption } from "./SegmentedControl";
 import { StatusChip } from "./StatusChip";
 import { StatusPill } from "./StatusPill";
+import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import { TextareaField } from "./TextareaField";
 
@@ -98,6 +99,7 @@ export function PrimitiveGallery() {
             <option value="GPW">GPW</option>
             <option value="NC">NewConnect</option>
           </SelectField>
+          <DateField label="DateField" defaultValue="2026-06-01" />
         </FieldRow>
         <TextareaField label="TextareaField" defaultValue="Multi-line note…" />
         <Checkbox label="Checkbox" defaultChecked />

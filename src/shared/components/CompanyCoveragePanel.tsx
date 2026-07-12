@@ -491,6 +491,11 @@ export function CompanyCoveragePanel({
                 {periods.map((row) => {
                   const periodLabel = `${row.fiscalYear} ${periodTypeLabel(row.periodType)}`;
                   return (
+                    // The whole row opens documents on mouse click (convenience),
+                    // but the KEYBOARD/SR affordance is the period-cell button
+                    // below — the row itself is NOT `role="button"`, because a row
+                    // that is a button while containing the review button is an axe
+                    // nested-interactive (WCAG 4.1.2) violation.
                     <tr
                       key={`${row.fiscalYear}-${row.periodType}`}
                       className={[
@@ -499,24 +504,7 @@ export function CompanyCoveragePanel({
                       ]
                         .filter(Boolean)
                         .join(" ")}
-                      role={clickable ? "button" : undefined}
-                      tabIndex={clickable ? 0 : undefined}
-                      aria-label={
-                        clickable
-                          ? `${periodLabel} — ${text("Open report documents")}`
-                          : undefined
-                      }
                       onClick={clickable ? onOpenDocuments : undefined}
-                      onKeyDown={
-                        clickable
-                          ? (event) => {
-                              if (event.key === "Enter" || event.key === " ") {
-                                event.preventDefault();
-                                onOpenDocuments?.();
-                              }
-                            }
-                          : undefined
-                      }
                     >
                       <td
                         className={[
@@ -526,7 +514,23 @@ export function CompanyCoveragePanel({
                           .filter(Boolean)
                           .join(" ")}
                       >
-                        {periodLabel}
+                        {clickable ? (
+                          <button
+                            type="button"
+                            className="coverage-period-button"
+                            aria-label={`${periodLabel} — ${text("Open report documents")}`}
+                            onClick={(event) => {
+                              // The row's own onClick also opens documents — stop
+                              // the bubble so a single click fires it once.
+                              event.stopPropagation();
+                              onOpenDocuments?.();
+                            }}
+                          >
+                            {periodLabel}
+                          </button>
+                        ) : (
+                          periodLabel
+                        )}
                       </td>
                       <td className="coverage-cell">{renderReport(row.report)}</td>
                       <td className="coverage-cell">{renderFacts(row)}</td>

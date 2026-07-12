@@ -274,6 +274,53 @@ describe("QualityPanel", () => {
     expect(screen.getByText("18%")).toBeInTheDocument();
   });
 
+  it("formats the measured value AND threshold through the format layer (ADR 0076, card 619c8d9)", async () => {
+    // Live T7 finding (card 619c8d9): the panel rendered the raw decimal-exact
+    // engine value ("0.2862473442785260575536259831") and the normalized decimal
+    // threshold ("0.15") inline. Both are value_numeric-style measures and must
+    // render through the ONE shared format layer — a percent-threshold criterion
+    // as a locale percentage — never the raw high-precision / normalized string.
+    const user = userEvent.setup();
+    listFrameworkEvaluationsMock.mockResolvedValue([
+      evaluation({
+        results: [
+          {
+            id: "qresult_roe",
+            evaluationId: "qeval_1",
+            criterionId: "qcriterion_1",
+            ordinal: 0,
+            label: "Strong return on equity",
+            expression: "roe >= 15%",
+            verdict: "pass",
+            measuredValue: "0.2862473442785260575536259831",
+            measuredUnit: null,
+            threshold: "0.15",
+            inputsJson: '["roe"]',
+            note: null,
+            reasoning: null,
+            citations: null,
+            confidence: null,
+            promptVersion: null,
+            source: "engine",
+          },
+        ],
+      }),
+    ]);
+    render(<QualityPanel companyId="company_gpw_cdr" />);
+
+    // The measured value renders as a percentage, never the raw 26-digit decimal.
+    expect(await screen.findByText("28.6%")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("0.2862473442785260575536259831");
+
+    // Expand the row to reveal the measured / threshold detail line.
+    await user.click(screen.getByRole("button", { name: "Strong return on equity — Pass" }));
+
+    // The threshold is a value_numeric-style measure too: it must format through
+    // the same layer (percent threshold → "15%"), never the raw normalized decimal.
+    expect(screen.getByText("Threshold: 15%")).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("Threshold: 0.15");
+  });
+
   it("validates a criterion expression as it is typed", async () => {
     const user = userEvent.setup();
     validateCriterionExpressionMock.mockResolvedValue({

@@ -140,6 +140,16 @@ export function useFeedController({
     setInboxStatusFilter("all");
   }
 
+  // Single reset-then-scope entry for every cross-screen navigation into the
+  // Inbox. Hand-rolled partial resets at the call sites left stale filters
+  // behind (each site forgot a different one), silently hiding the whole feed
+  // — Inbox showed 0 items on "All" while feed_items had rows (bug c80dabe).
+  // Never set individual Inbox filters from a navigation flow; go through here.
+  function scopeInboxToCompany(company: string) {
+    clearInboxFilters();
+    setInboxCompanyFilter(company);
+  }
+
   function openCompanyWorkspaceFromFeedItem(item: FeedItem) {
     const company = companies.find((candidate) => candidate.qualifiedTicker === item.company);
 
@@ -157,7 +167,7 @@ export function useFeedController({
 
   function inspectCompanyFeedItem(item: FeedItem) {
     setSelectedFeedItemId(item.id);
-    setInboxCompanyFilter(item.company);
+    scopeInboxToCompany(item.company);
     setActiveSection("Inbox");
   }
 
@@ -166,6 +176,7 @@ export function useFeedController({
     inspectCompanyFeedItem,
     markVisibleInboxAsRead,
     openCompanyWorkspaceFromFeedItem,
+    scopeInboxToCompany,
     selectFeedItemFromKeyboard,
     toggleFeedItemReadState,
     updateFeedItemState,

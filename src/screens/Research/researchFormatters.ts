@@ -96,6 +96,8 @@ export function formatEvidenceType(evidenceType: ResearchEvidenceType) {
       return "Research question";
     case "company_signal":
       return "Signal";
+    case "decision_entry":
+      return "Decision entry";
     case "reminder":
       return "Reminder";
     case "ai_brief":

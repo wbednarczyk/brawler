@@ -18,7 +18,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J2 — A company published a report
 
 - **Trigger:** autopilot/alert notification of a new periodic report.
-- **Steps:** open the run card → review extracted KPIs (drift/diff views) → (v0.51: expectation-vs-actual review) → resolve claims-to-verify → capture a note / update the assessment.
+- **Steps:** open the run card → review extracted KPIs (drift/diff views) → (v0.52: expectation-vs-actual review) → resolve claims-to-verify → capture a note / update the assessment.
 - **Screens:** Today, Company workspace (Fundamentals / Report diff / Claims), Notebook.
 - **Budget:** ≤25 interactions.
 - **Done well:** facts confirmed or rejected, due claims resolved, a trace of the user's judgment exists in the notebook/journal.
@@ -34,10 +34,10 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J4 — Report-season preparation
 
 - **Trigger:** upcoming report dates across the watchlist.
-- **Steps:** Report-season cockpit → per-company pre-report card (open questions, unresolved claims, last KPIs, evidence) → (v0.51: write expectations) → mark prepared.
+- **Steps:** Report-season cockpit → per-company pre-report card (open questions, unresolved claims, last KPIs, evidence) → write expectations (stance + optional metric expectations) → mark prepared.
 - **Screens:** Report season, Company workspace.
-- **Budget:** ≤10 interactions per company.
-- **Done well:** every near-report company has a reviewed card and (from v0.51) recorded expectations before results land.
+- **Budget:** ≤13 interactions per company (re-baselined 10→13 in v0.52 when the expectations step shipped — 6 of the prior interactions are cockpit-panel-opening overhead; the expectations step is new recorded value, not a regression).
+- **Done well:** every near-report company has a reviewed card and recorded expectations before results land.
 
 ## J5 — Claim verification
 
@@ -47,10 +47,10 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 - **Budget:** ≤6 interactions per claim.
 - **Done well:** verdict recorded against evidence; nothing left silently overdue.
 
-## J6 — Buy / pass decision (full from v0.51, enriched through v0.64)
+## J6 — Buy / pass decision (full from v0.52, enriched through v0.64)
 
 - **Trigger:** research maturity or a price condition (v0.54 alert: price enters my range).
-- **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, valuation range, thesis when available) → record the decision in the journal with rationale and evidence links → (v0.64: link to thesis, plan the review).
+- **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review).
 - **Screens:** Company workspace, decision journal.
 - **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted).
 - **Done well:** the decision has a date, a rationale, provenance — and will come back for outcome review (NS2 calibration).
@@ -65,4 +65,4 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 
 ## Journey-independent utilities
 
-Settings, Diagnostics, Sources administration, import/export, and global search serve all journeys; capabilities there are declared `utility` in the DoD check rather than forced into a journey.
+Settings, Diagnostics, Sources administration, import/export, the **MCP server** section (ADR 0078 — enable/port/token + connection snippets), and global search serve all journeys; capabilities there are declared `utility` in the DoD check rather than forced into a journey.

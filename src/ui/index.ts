@@ -11,6 +11,8 @@ export type { ChipListProps } from "./ChipList";
 export { DenseRow } from "./DenseRow";
 export { DetailSection } from "./DetailSection";
 export type { DetailSectionProps } from "./DetailSection";
+export { DateField } from "./DateField";
+export type { DateFieldProps } from "./DateField";
 export { EmptyState } from "./EmptyState";
 export type { EmptyStateProps } from "./EmptyState";
 export { ErrorText } from "./ErrorText";

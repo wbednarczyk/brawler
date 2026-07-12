@@ -40,6 +40,10 @@ import {
 import { useCockpitFundamentals } from "./useCockpitFundamentals";
 import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
 import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
+import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
+import { DecisionJournalSection } from "./DecisionJournalSection";
+import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
+import { formatDetailTimestamp } from "../../shared/format/datetime";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
 import { CommandPalette, type PaletteCommand } from "../../shared/components/CommandPalette";
 import { useCommandPaletteCommands } from "../../app/commandPalette";
@@ -60,7 +64,8 @@ type PinnedKind =
   | "quality"
   | "documents"
   | "companyFeed"
-  | "companyNotebook";
+  | "companyNotebook"
+  | "decisionJournal";
 
 const LINKED: { id: string; kind: LinkedKind }[] = [
   { id: "feed", kind: "feed" },
@@ -79,12 +84,19 @@ const PINNED_KINDS: PinnedKind[] = [
   "documents",
   "companyFeed",
   "companyNotebook",
+  "decisionJournal",
 ];
 
 // Global singleton panels (ADR 0053 phase 4c): full app screens that own their
 // own scope/data via contexts (mounted prop-free in AppStateRoot), so the cockpit
 // renders them directly. Not company-scoped — opened once from the palette.
-type GlobalKind = "watchlists" | "research" | "notebook" | "events" | "reportSeason";
+type GlobalKind =
+  | "watchlists"
+  | "research"
+  | "notebook"
+  | "events"
+  | "reportSeason"
+  | "decisionJournalGlobal";
 
 const GLOBAL_KINDS: GlobalKind[] = [
   "watchlists",
@@ -92,6 +104,7 @@ const GLOBAL_KINDS: GlobalKind[] = [
   "notebook",
   "events",
   "reportSeason",
+  "decisionJournalGlobal",
 ];
 
 function globalKindLabel(kind: GlobalKind, text: (s: string) => string): string {
@@ -106,6 +119,8 @@ function globalKindLabel(kind: GlobalKind, text: (s: string) => string): string 
       return text("Events");
     case "reportSeason":
       return text("Report Season");
+    case "decisionJournalGlobal":
+      return text("Journal (all companies)");
   }
 }
 
@@ -185,6 +200,8 @@ function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string 
       return text("Feed");
     case "companyNotebook":
       return text("Notebook");
+    case "decisionJournal":
+      return text("Decision journal");
   }
 }
 
@@ -576,6 +593,14 @@ function CockpitWorkspace({
           <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
         );
       }
+      case "decisionJournal": {
+        const company = companyById.get(companyId);
+        return company ? (
+          <CockpitDecisionJournalPanel company={company} />
+        ) : (
+          <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
+        );
+      }
     }
   }
 
@@ -593,6 +618,8 @@ function CockpitWorkspace({
         return <EventsScreen />;
       case "reportSeason":
         return <ReportSeasonScreen />;
+      case "decisionJournalGlobal":
+        return <DecisionJournalGlobalPanel companies={companies} />;
     }
   }
 
@@ -919,15 +946,11 @@ function CockpitWorkspace({
       label: `${text("Show panel")}: ${linkedTitle(linked.kind, text)}`,
       run: () => showLinked(linked.id),
     })),
-    // Switch the whole view to a different company (U-Ra): follow panels retarget
-    // in place. Also reachable from the header selector.
-    ...companies.map((company) => ({
-      id: `viewcompany:${company.id}`,
-      label: `${text("Switch view company")}: ${company.qualifiedTicker}`,
-      run: () => setViewCompanyId(company.id),
-    })),
-    // Open (or reveal) a FOLLOW panel that tracks the view company — only offered
-    // once a view company is chosen (U-Ra / D2).
+    // Company-scoped panel TYPES — the add surface lists GENERIC kinds only, and
+    // each opens as a FOLLOW panel bound to the current view company (retargets in
+    // place when it changes, U-Ra / D2 / card 106f8a7). No entry here enumerates a
+    // specific company (owner dogfooding round 2): retargeting the view is the
+    // header selector's job, and freezing a company is a panel's own pin toggle.
     ...(viewCompanyId
       ? PINNED_KINDS.map((kind) => ({
           id: `follow:${kind}`,
@@ -935,13 +958,7 @@ function CockpitWorkspace({
           run: () => openFollow(kind),
         }))
       : []),
-    ...companies.flatMap((company) =>
-      PINNED_KINDS.map((kind) => ({
-        id: `open:${company.id}:${kind}`,
-        label: `${text("Open panel")}: ${company.qualifiedTicker} · ${pinnedKindLabel(kind, text)}`,
-        run: () => openPinned(company.id, kind),
-      })),
-    ),
+    // Global panels — app-wide singletons, not company-scoped (their own group).
     ...GLOBAL_KINDS.map((kind) => ({
       id: `global:${kind}`,
       label: `${text("Open panel")}: ${globalKindLabel(kind, text)}`,
@@ -1098,6 +1115,7 @@ function FeedPanel({
       <div className="cockpit-feed-filter">
         <SearchField
           ariaLabel={text("Filter feed items")}
+          className="search-box"
           value={query}
           onChange={setQuery}
           onClear={() => setQuery("")}
@@ -1288,6 +1306,35 @@ function CockpitCompanyNotebookPanel({ company }: { company: Company }) {
           </div>
         )
       }
+    />
+  );
+}
+
+// Company-scoped decision-journal panel (ADR 0071, J3). Reuses the props-driven
+// `DecisionJournalSection` with cockpit-owned state (`useCockpitDecisionJournal`),
+// mirroring the notebook panel. Not in the curated dashboard defaults — the
+// journal is an occasional-entry surface reached via the palette / add-panel.
+function CockpitDecisionJournalPanel({ company }: { company: Company }) {
+  const journal = useCockpitDecisionJournal(company);
+  return (
+    <DecisionJournalSection
+      company={company}
+      entries={journal.entries}
+      isComposerOpen={journal.isComposerOpen}
+      form={journal.form}
+      supersedingEntry={journal.supersedingEntry}
+      selectedEntry={journal.selectedEntry}
+      evidenceCandidates={journal.evidenceCandidates}
+      linkedEvidenceKeys={journal.linkedEvidenceKeys}
+      error={journal.error}
+      setComposerOpen={journal.setComposerOpen}
+      updateForm={journal.updateForm}
+      createEntry={journal.createEntry}
+      startSupersede={journal.startSupersede}
+      cancelSupersede={journal.cancelSupersede}
+      setSelectedEntryId={journal.setSelectedEntryId}
+      linkEvidence={journal.linkEvidence}
+      formatTimestamp={formatDetailTimestamp}
     />
   );
 }

@@ -5,7 +5,7 @@ use super::{
     research, slug_part, ResearchEvidenceInput, ResearchEvidenceItem, StorageError, StorageResult,
 };
 
-pub const RESEARCH_BRIEF_PROMPT_VERSION: &str = "m30.research_brief.v1";
+pub const RESEARCH_BRIEF_PROMPT_VERSION: &str = "m30.research_brief.v2";
 pub const RESEARCH_BRIEF_COLLECTOR_VERSION: &str = "m30.collector.v1";
 pub const RESEARCH_BRIEF_RENDERER_VERSION: &str = "m30.renderer.v1";
 

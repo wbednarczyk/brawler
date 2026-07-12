@@ -256,14 +256,13 @@ fn defer_requeues_without_consuming_an_attempt() {
 #[test]
 fn queue_config_reads_seeded_defaults_and_clamps_updates() {
     // Configurable pools (ADR 0059): migration 0056 seeds 2/3/2 workers + provider
-    // concurrency 2; indexing stays a constant 1. Out-of-range updates are clamped
-    // (never rejected), like the pool settings.
+    // concurrency 2. Out-of-range updates are clamped (never rejected), like the
+    // pool settings.
     let state = state();
     let cfg = state.queue_config();
     assert_eq!(cfg.sources_workers, 2);
     assert_eq!(cfg.autopilot_workers, 3);
     assert_eq!(cfg.ai_workers, 2);
-    assert_eq!(cfg.indexing_workers, 1);
     assert_eq!(cfg.ai_provider_concurrency, 2);
 
     state

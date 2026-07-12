@@ -843,6 +843,7 @@ mod tests {
 
     #[test]
     fn records_a_failed_diagnostic_when_the_job_fails() {
+        crate::providers::credentials::scrub_provider_env_fallbacks();
         // P1 (owner T7): a failing assessment job (no provider) must leave a
         // `failed` diagnostic event carrying the error string — mirroring the
         // ai_analysis lifecycle — not vanish silently (the panel showed a hint
@@ -911,6 +912,7 @@ mod tests {
 
     #[test]
     fn fails_cleanly_with_no_provider_configured() {
+        crate::providers::credentials::scrub_provider_env_fallbacks();
         // No general provider and no capability mapping → the job fails with a
         // clear error rather than degrading (ADR 0075).
         let state = AppState::new(open_in_memory_database().expect("db"));

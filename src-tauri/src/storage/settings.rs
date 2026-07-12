@@ -38,6 +38,21 @@ pub(crate) fn clamp_history_sweep_ai_call_limit(value: i64) -> i64 {
     )
 }
 
+/// MCP server listen port (ADR 0078 decision 4). Same tolerant/clamp posture as
+/// `backfill_years`: the write path clamps to the non-privileged port range
+/// `[1024, 65535]` rather than rejecting, and reads clamp an out-of-range (or
+/// default an unparseable) stored value so a hand-edited database never drives
+/// a privileged or impossible bind. No seed-row migration — an absent row
+/// reads `DEFAULT` (established keyless pattern).
+pub(crate) const MCP_PORT_MIN: i64 = 1024;
+pub(crate) const MCP_PORT_MAX: i64 = 65_535;
+pub(crate) const MCP_PORT_DEFAULT: i64 = 8317;
+
+/// Clamp a requested MCP port into the supported `[1024, 65535]` range.
+pub(crate) fn clamp_mcp_port(value: i64) -> i64 {
+    value.clamp(MCP_PORT_MIN, MCP_PORT_MAX)
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -133,6 +148,23 @@ pub struct QueueSettings {
     pub ai_provider_concurrency: i64,
 }
 
+/// MCP server settings group (ADR 0078 decisions 2 + 4). The server is off by
+/// default and binds `127.0.0.1:<port>` only (the bind address is deliberately
+/// not a setting — guardrail G-4). The auth token lives in the OS keychain
+/// under the credentials boundary, never in this table.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct McpSettings {
+    pub enabled: bool,
+    /// Listen port; clamped to `[1024, 65535]`, default `8317`.
+    pub port: u16,
+}
+
 #[derive(Debug, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
 #[cfg_attr(
@@ -178,6 +210,9 @@ pub struct UserSettings {
     /// local UI preference stored as a JSON array in the `settings` KV table;
     /// order is the user's pin order. Tolerant default `[]` when the row is absent.
     pub pinned_company_ids: Vec<String>,
+    /// Read-only MCP server (ADR 0078): off by default, port default `8317`.
+    /// Absent rows read the defaults (no seed-row migration).
+    pub mcp: McpSettings,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -240,6 +275,12 @@ pub struct SettingsUpdate {
     /// Replace the full pinned-company list (ADR 0054). The frontend sends the
     /// complete desired order, so this overwrites rather than merges.
     pub pinned_company_ids: Option<Vec<String>>,
+    /// Enable/disable persistence for the MCP server (ADR 0078). The live
+    /// start/stop lifecycle command is separate (`set_mcp_enabled`, M3).
+    pub mcp_enabled: Option<bool>,
+    /// Requested MCP listen port (ADR 0078); clamped to `[1024, 65535]` on
+    /// write rather than rejected.
+    pub mcp_port: Option<i64>,
 }
 
 pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSettings> {
@@ -297,6 +338,12 @@ pub(crate) fn get_settings(connection: &Connection) -> StorageResult<UserSetting
         shortcut_bindings: setting_json(connection, "shortcut_bindings")?,
         capability_providers: setting_json_or_default(connection, "capability_providers")?,
         pinned_company_ids: setting_json_or_default(connection, "pinned_company_ids")?,
+        mcp: McpSettings {
+            enabled: setting_bool_or(connection, "mcp_enabled", false)?,
+            // Clamp on read too, so a hand-edited row can never drive a
+            // privileged or impossible bind; `as u16` is safe post-clamp.
+            port: clamp_mcp_port(setting_i64_or(connection, "mcp_port", MCP_PORT_DEFAULT)?) as u16,
+        },
         database: {
             let config = super::pool::read_pool_config(connection);
             DatabaseSettings {
@@ -330,40 +377,23 @@ pub(crate) fn set_developer_mode_enabled(
     get_settings(connection)
 }
 
-/// The active interpretative-layer similarity strategy (`static` | `embedding`),
-/// defaulting to `static` when the row is absent so a database that recorded
-/// migration 0049 before the seed row materialized never fails to load (ADR 0035).
+/// The legacy interpretative-layer similarity strategy, kept as a tolerant read
+/// shim (ADR 0080): the embedding model was retired, so `static` is the only
+/// strategy. A missing row reads as `static` (a database that recorded migration
+/// 0049 before the seed row materialized must never fail to load, ADR 0035) and
+/// the retired persisted `embedding` value maps to `static` — never an error,
+/// never a resurrected strategy. There is no setter anymore.
 pub(crate) fn get_similarity_strategy(connection: &Connection) -> StorageResult<String> {
     match connection.query_row(
         "SELECT value FROM settings WHERE key = 'similarity_strategy'",
         [],
         |row| row.get::<_, String>(0),
     ) {
+        Ok(value) if value == "embedding" => Ok("static".to_owned()),
         Ok(value) => Ok(value),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok("static".to_owned()),
         Err(error) => Err(StorageError::from(error)),
     }
-}
-
-/// Persist the active similarity strategy. Upserts (self-healing) and validates
-/// the value; readiness checks for the `embedding` model live in the command layer.
-pub(crate) fn set_similarity_strategy(
-    connection: &Connection,
-    strategy: &str,
-) -> StorageResult<()> {
-    validate_allowed_setting("similarity_strategy", strategy, &["static", "embedding"])?;
-    connection.execute(
-        "
-        INSERT INTO settings (key, value, value_type)
-        VALUES ('similarity_strategy', ?1, 'string')
-        ON CONFLICT (key) DO UPDATE SET
-            value = excluded.value,
-            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-        ",
-        params![strategy],
-    )?;
-
-    Ok(())
 }
 
 pub(crate) fn update_settings(
@@ -630,6 +660,25 @@ pub(crate) fn update_settings(
         let deduped = dedupe_preserving_order(pinned_company_ids);
         let value = serde_json::to_string(&deduped).map_err(StorageError::from)?;
         upsert_setting(connection, "pinned_company_ids", &value, "json")?;
+    }
+
+    // MCP server settings (ADR 0078 decision 4). No seed rows — upsert like
+    // `backfill_years` so the values are never silently dropped; the port is
+    // clamped to the safe range rather than rejected.
+    if let Some(mcp_enabled) = input.mcp_enabled {
+        // Booleans are stored as 'string'-typed "true"/"false" rows everywhere
+        // else (developer_mode, espi_ai_fallback_enabled) — keep that.
+        upsert_setting(
+            connection,
+            "mcp_enabled",
+            if mcp_enabled { "true" } else { "false" },
+            "string",
+        )?;
+    }
+
+    if let Some(mcp_port) = input.mcp_port {
+        let clamped = clamp_mcp_port(mcp_port);
+        upsert_setting(connection, "mcp_port", &clamped.to_string(), "integer")?;
     }
 
     // Connection-pool tuning is clamped to safe ranges rather than rejected, so a
@@ -1065,11 +1114,5 @@ impl SettingsStore {
         let connection = self.db.checkout()?;
 
         get_similarity_strategy(&connection)
-    }
-
-    pub fn set_similarity_strategy(&self, strategy: &str) -> StorageResult<()> {
-        let connection = self.db.checkout()?;
-
-        set_similarity_strategy(&connection, strategy)
     }
 }

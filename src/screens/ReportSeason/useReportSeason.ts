@@ -8,10 +8,35 @@ import {
   type ReportSeasonEntry,
   type ReportSeasonResult,
 } from "../../api/reportSeason";
+import {
+  createReportExpectation,
+  expectationReview,
+  listReportExpectations,
+  recordExpectationResolution,
+  updateReportExpectation,
+  type ExpectationReview,
+  type NewExpectationMetric,
+  type ReportExpectation,
+} from "../../api/reportExpectations";
+import { CommandInvocationError } from "../../api/tauri";
 
 export function entryKey(entry: Pick<ReportSeasonEntry, "companyId" | "eventKey">) {
   return `${entry.companyId}::${entry.eventKey}`;
 }
+
+/** The recorded expectation (if any) for an occurrence plus its review read model. */
+export type ExpectationEntryState = {
+  expectation: ReportExpectation | null;
+  review: ExpectationReview | null;
+};
+
+/** What the composer submits — the occurrence-agnostic parts of the expectation. */
+export type ExpectationDraft = {
+  fiscalYear: number;
+  periodType: string;
+  stanceMd: string;
+  metrics: NewExpectationMetric[];
+};
 
 export type UseReportSeasonResult = {
   season: ReportSeasonResult | null;
@@ -21,9 +46,13 @@ export type UseReportSeasonResult = {
   cards: Record<string, PreReportCard>;
   cardLoadingKey: string | null;
   actionInFlightKey: string | null;
+  expectations: Record<string, ExpectationEntryState>;
+  expectationBusyKey: string | null;
   toggleExpanded: (entry: ReportSeasonEntry) => void;
   prepare: (entry: ReportSeasonEntry) => void;
   process: (entry: ReportSeasonEntry) => void;
+  writeExpectation: (entry: ReportSeasonEntry, draft: ExpectationDraft) => Promise<void>;
+  resolveExpectation: (entry: ReportSeasonEntry, note: string) => Promise<void>;
 };
 
 export function useReportSeason(watchlistId: string | null): UseReportSeasonResult {
@@ -34,6 +63,8 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
   const [cards, setCards] = useState<Record<string, PreReportCard>>({});
   const [cardLoadingKey, setCardLoadingKey] = useState<string | null>(null);
   const [actionInFlightKey, setActionInFlightKey] = useState<string | null>(null);
+  const [expectations, setExpectations] = useState<Record<string, ExpectationEntryState>>({});
+  const [expectationBusyKey, setExpectationBusyKey] = useState<string | null>(null);
 
   const refreshSeason = useCallback(async () => {
     setLoading(true);
@@ -55,21 +86,43 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
     void refreshSeason();
   }, [refreshSeason]);
 
-  const loadCard = useCallback(async (entry: ReportSeasonEntry) => {
+  // The occurrence's recorded expectation + review. Fetched via the J2 commands
+  // rather than baked into the pre-report card read model: the card is loaded
+  // lazily on expand already, so this matches that data-flow and keeps
+  // `get_pre_report_card` minimal (ADR 0071 J4 design note).
+  const loadExpectation = useCallback(async (entry: ReportSeasonEntry) => {
     const key = entryKey(entry);
-    setCardLoadingKey(key);
     try {
-      const card = await getPreReportCard({
-        companyId: entry.companyId,
-        eventKey: entry.eventKey,
-      });
-      setCards((current) => ({ ...current, [key]: card }));
+      const list = await listReportExpectations({ companyId: entry.companyId });
+      const expectation = list.find((item) => item.eventKey === entry.eventKey) ?? null;
+      const review = expectation
+        ? await expectationReview({ companyId: entry.companyId, eventKey: entry.eventKey })
+        : null;
+      setExpectations((current) => ({ ...current, [key]: { expectation, review } }));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setCardLoadingKey((current) => (current === key ? null : current));
     }
   }, []);
+
+  const loadCard = useCallback(
+    async (entry: ReportSeasonEntry) => {
+      const key = entryKey(entry);
+      setCardLoadingKey(key);
+      try {
+        const card = await getPreReportCard({
+          companyId: entry.companyId,
+          eventKey: entry.eventKey,
+        });
+        setCards((current) => ({ ...current, [key]: card }));
+        await loadExpectation(entry);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setCardLoadingKey((current) => (current === key ? null : current));
+      }
+    },
+    [loadExpectation],
+  );
 
   const toggleExpanded = useCallback(
     (entry: ReportSeasonEntry) => {
@@ -129,6 +182,69 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
     [runAction],
   );
 
+  const writeExpectation = useCallback(
+    async (entry: ReportSeasonEntry, draft: ExpectationDraft) => {
+      const key = entryKey(entry);
+      const existing = expectations[key]?.expectation ?? null;
+      setExpectationBusyKey(key);
+      setError(null);
+      try {
+        if (existing) {
+          await updateReportExpectation({
+            companyId: entry.companyId,
+            eventKey: entry.eventKey,
+            stanceMd: draft.stanceMd,
+            metrics: draft.metrics,
+          });
+        } else {
+          await createReportExpectation({
+            companyId: entry.companyId,
+            eventKey: entry.eventKey,
+            fiscalYear: draft.fiscalYear,
+            periodType: draft.periodType,
+            stanceMd: draft.stanceMd,
+            metrics: draft.metrics,
+          });
+        }
+        await loadExpectation(entry);
+      } catch (cause) {
+        // The freeze race: facts landed between opening the composer and saving.
+        // Reload so the UI flips to the read-only review state (ADR 0071).
+        if (cause instanceof CommandInvocationError && cause.code === "conflict") {
+          await loadExpectation(entry);
+          return;
+        }
+        setError(cause instanceof Error ? cause.message : String(cause));
+        throw cause;
+      } finally {
+        setExpectationBusyKey((current) => (current === key ? null : current));
+      }
+    },
+    [expectations, loadExpectation],
+  );
+
+  const resolveExpectation = useCallback(
+    async (entry: ReportSeasonEntry, note: string) => {
+      const key = entryKey(entry);
+      setExpectationBusyKey(key);
+      setError(null);
+      try {
+        await recordExpectationResolution({
+          companyId: entry.companyId,
+          eventKey: entry.eventKey,
+          resolutionNoteMd: note,
+        });
+        await loadExpectation(entry);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+        throw cause;
+      } finally {
+        setExpectationBusyKey((current) => (current === key ? null : current));
+      }
+    },
+    [loadExpectation],
+  );
+
   return useMemo(
     () => ({
       season,
@@ -138,9 +254,13 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       cards,
       cardLoadingKey,
       actionInFlightKey,
+      expectations,
+      expectationBusyKey,
       toggleExpanded,
       prepare,
       process,
+      writeExpectation,
+      resolveExpectation,
     }),
     [
       season,
@@ -150,9 +270,13 @@ export function useReportSeason(watchlistId: string | null): UseReportSeasonResu
       cards,
       cardLoadingKey,
       actionInFlightKey,
+      expectations,
+      expectationBusyKey,
       toggleExpanded,
       prepare,
       process,
+      writeExpectation,
+      resolveExpectation,
     ],
   );
 }

@@ -1,0 +1,69 @@
+---
+source: src/mcp/protocol.rs
+assertion_line: 346
+expression: redacted
+---
+{
+  "id": 9,
+  "jsonrpc": "2.0",
+  "result": {
+    "content": [
+      {
+        "text": "{\"company\":{\"cik\":null,\"displayName\":\"Test S.A.\",\"exchange\":\"GPW\",\"id\":\"company_gpw_tst\",\"isin\":\"PLTEST0000011\",\"lei\":null,\"qualifiedTicker\":\"GPW:TST\",\"ticker\":\"TST\"},\"confirmedFacts\":[{\"currency\":\"PLN\",\"dataQuality\":\"final\",\"fiscalYear\":2025,\"measureWindow\":\"flow\",\"metric\":\"kpidef_net_profit\",\"periodType\":\"FY\",\"value\":\"1250000\"}],\"fundamentalsCoverage\":{\"companyId\":\"company_gpw_tst\",\"periods\":[{\"facts\":{\"flagged\":0,\"total\":2,\"unvalidated\":2,\"validated\":0},\"fiscalYear\":2025,\"periodType\":\"FY\",\"report\":{\"docKind\":\"periodic_ssf\",\"documentId\":\"doc_company_gpw_tst_httpsexamplecomssf_2025pdf\",\"fetched\":true,\"structured\":false,\"title\":\"Skonsolidowany raport roczny 2025 SSF\"},\"review\":{\"flaggedFacts\":0,\"pendingProposals\":0},\"skippedBudget\":false}]},\"scorecards\":[]}",
+        "type": "text"
+      }
+    ],
+    "isError": false,
+    "structuredContent": {
+      "company": {
+        "cik": null,
+        "displayName": "Test S.A.",
+        "exchange": "GPW",
+        "id": "company_gpw_tst",
+        "isin": "PLTEST0000011",
+        "lei": null,
+        "qualifiedTicker": "GPW:TST",
+        "ticker": "TST"
+      },
+      "confirmedFacts": [
+        {
+          "currency": "PLN",
+          "dataQuality": "final",
+          "fiscalYear": 2025,
+          "measureWindow": "flow",
+          "metric": "kpidef_net_profit",
+          "periodType": "FY",
+          "value": "1250000"
+        }
+      ],
+      "fundamentalsCoverage": {
+        "companyId": "company_gpw_tst",
+        "periods": [
+          {
+            "facts": {
+              "flagged": 0,
+              "total": 2,
+              "unvalidated": 2,
+              "validated": 0
+            },
+            "fiscalYear": 2025,
+            "periodType": "FY",
+            "report": {
+              "docKind": "periodic_ssf",
+              "documentId": "doc_company_gpw_tst_httpsexamplecomssf_2025pdf",
+              "fetched": true,
+              "structured": false,
+              "title": "Skonsolidowany raport roczny 2025 SSF"
+            },
+            "review": {
+              "flaggedFacts": 0,
+              "pendingProposals": 0
+            },
+            "skippedBudget": false
+          }
+        ]
+      },
+      "scorecards": []
+    }
+  }
+}

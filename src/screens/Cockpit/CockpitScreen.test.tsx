@@ -48,7 +48,9 @@ describe("Research cockpit shell", () => {
     const tabs = await within(cockpit).findAllByRole("button");
     expect(tabs.length).toBeGreaterThan(0);
 
-    // Open a Quality panel via the command palette (⌘K launcher).
+    // A company-scoped panel type binds to the view company (card 106f8a7), so
+    // choose one before opening a Quality panel via the command palette (⌘K).
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
     await user.type(await screen.findByLabelText("Search commands"), "Quality");
     await user.keyboard("{Enter}");
@@ -165,8 +167,10 @@ describe("Research cockpit shell", () => {
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
-    // Launch a Fundamentals panel via the command palette; it must render the
-    // real editable panel (period/fact forms), not a read-only matrix.
+    // A company-scoped panel type binds to the view company (card 106f8a7): choose
+    // one, then launch a Fundamentals panel via the command palette; it must render
+    // the real editable panel (period/fact forms), not a read-only matrix.
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
     await user.type(await screen.findByLabelText("Search commands"), "Fundamentals");
     await user.keyboard("{Enter}");
@@ -280,13 +284,15 @@ describe("Research cockpit — view company context (U-Ra)", () => {
 
   it("keeps a PINNED panel frozen on its company across a view-company switch", async () => {
     const user = userEvent.setup();
-    renderApp({ section: "Cockpit" });
-    const cockpit = await screen.findByLabelText("Research cockpit");
+    const cockpit = await openCdrDashboard(user);
 
-    // Open a PINNED CDR Feed panel from the palette (per-company entries pin).
-    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Open panel: GPW:CDR · Feed");
-    await user.click(await screen.findByRole("button", { name: "Open panel: GPW:CDR · Feed" }));
+    // Freeze the follow Feed panel onto CD PROJEKT via its tab pin toggle. The
+    // add-panel surface no longer offers per-company entries (card 106f8a7), so
+    // pinning is reached through the panel's own "Pin company" affordance.
+    const feedTab = (await within(cockpit).findByRole("button", { name: "Feed" })).closest(
+      ".cockpit-tab",
+    ) as HTMLElement;
+    await user.click(within(feedTab).getByRole("button", { name: "Pin company" }));
     expect(await within(cockpit).findByRole("button", { name: "GPW:CDR · Feed" })).toBeInTheDocument();
 
     // Set the view company to KGH — the pinned panel must not move.
@@ -332,20 +338,102 @@ describe("Research cockpit — view company context (U-Ra)", () => {
     ).toBeInTheDocument();
   });
 
-  it("lists a 'Switch view company' palette entry that changes the view company", async () => {
+  it("offers no per-company palette entries — the header selector is the one way to retarget", async () => {
     const user = userEvent.setup();
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
     await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
-    await user.type(await screen.findByLabelText("Search commands"), "Switch view company: GPW:KGH");
-    await user.click(await screen.findByRole("button", { name: "Switch view company: GPW:KGH" }));
+    // Owner dogfooding round 2: enumerating every tracked company as a
+    // "Switch view company: <ticker>" command duplicated the header selector
+    // and bloated the palette — the selector is the single retarget surface.
+    await user.type(await screen.findByLabelText("Search commands"), "Switch view company");
+    expect(screen.queryAllByRole("button", { name: /Switch view company/ })).toHaveLength(0);
+    expect(within(cockpit).getByLabelText("View company")).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect((within(cockpit).getByLabelText("View company") as HTMLSelectElement).value).toBe(
-        "company_gpw_kgh",
-      );
-    });
+  it("styles the palette search through the design system (search-box), not a bare input", async () => {
+    const user = userEvent.setup();
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+
+    // Both cockpit search surfaces wear the shared search-box dressing — a bare
+    // native input (owner dogfooding round 2) reads as unfinished.
+    expect(within(cockpit).getByLabelText("Filter feed items").closest(".search-box")).not.toBeNull();
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    const input = await screen.findByLabelText("Search commands");
+    expect(input.closest(".search-box")).not.toBeNull();
+  });
+});
+
+// Card 106f8a7 (owner dogfooding): the add-panel surface must list GENERIC
+// company-scoped panel TYPES (bound to the view company) plus global panels —
+// never a per-company entry for every tracked company (the old flow bloated the
+// palette to hundreds of "Open panel: <TICKER> · <Kind>" rows).
+describe("Research cockpit — add-panel surface (card 106f8a7)", () => {
+  async function openCdrDashboard(user: ReturnType<typeof userEvent.setup>) {
+    renderApp();
+    await user.click(await screen.findByRole("button", { name: "Companies" }));
+    await user.click(await screen.findByRole("button", { name: "Open GPW:CDR dashboard" }));
+    return screen.findByLabelText("Research cockpit");
+  }
+
+  it("lists each generic company-scoped panel type once, with no per-company duplication", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "Open panel");
+
+    // Each generic company-scoped type appears exactly once (the follow entry) —
+    // no ticker-prefixed duplicate.
+    expect(screen.getAllByRole("button", { name: "Open panel: Fundamentals" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Open panel: Coverage" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Open panel: Decision journal" })).toHaveLength(1);
+
+    // No per-company entries: nothing prefixes a company ticker onto a panel kind.
+    expect(screen.queryAllByRole("button", { name: /Open panel: GPW:/ })).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: /Open panel: NC:/ })).toHaveLength(0);
+    expect(screen.queryAllByRole("button", { name: /Open panel: .+ · / })).toHaveLength(0);
+  });
+
+  it("keeps the global panels group present alongside the company-scoped types", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(await screen.findByLabelText("Search commands"), "Open panel");
+
+    // Global singletons stay reachable from the same surface (own group).
+    expect(screen.getByRole("button", { name: "Open panel: Report Season" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open panel: Research" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open panel: Journal (all companies)" }),
+    ).toBeInTheDocument();
+  });
+
+  it("adds a company-scoped panel bound to the view company (kind-only tab, no ticker prefix)", async () => {
+    const user = userEvent.setup();
+    const cockpit = await openCdrDashboard(user);
+
+    // Report comparison is not a default dashboard panel — add it from the palette.
+    await user.click(within(cockpit).getByRole("button", { name: /Commands/ }));
+    await user.type(
+      await screen.findByLabelText("Search commands"),
+      "Open panel: Report comparison",
+    );
+    await user.click(
+      await screen.findByRole("button", { name: "Open panel: Report comparison" }),
+    );
+
+    // It opens as a FOLLOW panel bound to the view company: kind-only tab title,
+    // no ticker prefix — so switching the view company will retarget it in place.
+    expect(
+      await within(cockpit).findByRole("button", { name: "Report comparison" }),
+    ).toBeInTheDocument();
+    expect(
+      within(cockpit).queryByRole("button", { name: /GPW:CDR · Report comparison/ }),
+    ).toBeNull();
   });
 });
 

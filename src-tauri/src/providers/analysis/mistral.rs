@@ -552,6 +552,7 @@ mod tests {
             },
             prompt_preset_id: "default_summary".to_owned(),
             custom_question: None,
+            output_language: "en".to_owned(),
         }
     }
 

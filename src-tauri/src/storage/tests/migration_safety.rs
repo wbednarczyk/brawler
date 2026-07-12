@@ -483,6 +483,169 @@ fn migration_0066_merges_annual_into_fy_sibling_and_repoints_facts() {
     assert_eq!(remaining, 0, "no annual rows may remain after a second run");
 }
 
+/// ADR 0071 (J1): migration 0067 creates the immutable decision journal. An
+/// older database must upgrade cleanly, the immutability triggers must be live
+/// (raw UPDATE/DELETE rejected), the kind CHECK must hold, deleting the company
+/// must still cascade the journal away, and the runner must stay idempotent.
+#[test]
+fn migration_0067_decision_entries_upgrade_triggers_and_idempotence() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .expect("enable FKs");
+    apply_migrations_up_to(&mut connection, 66).expect("apply schema through 0066");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+
+    apply_migrations(&mut connection).expect("upgrade to 0067+");
+
+    connection
+        .execute(
+            "INSERT INTO decision_entries (id, company_id, kind, rationale_md, decided_at)
+             VALUES ('de1', 'c1', 'buy', 'thesis holds', '2026-06-01')",
+            [],
+        )
+        .expect("an entry must be storable");
+
+    // Immutability triggers reject direct mutation.
+    assert!(
+        connection
+            .execute(
+                "UPDATE decision_entries SET rationale_md = 'rewrite' WHERE id = 'de1'",
+                [],
+            )
+            .is_err(),
+        "UPDATE must be rejected"
+    );
+    assert!(
+        connection
+            .execute("DELETE FROM decision_entries WHERE id = 'de1'", [])
+            .is_err(),
+        "DELETE must be rejected"
+    );
+
+    // The kind CHECK rejects values outside the recorded-judgment set.
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO decision_entries (id, company_id, kind, rationale_md, decided_at)
+                 VALUES ('de2', 'c1', 'moon', 'x', '2026-06-01')",
+                [],
+            )
+            .is_err(),
+        "an unknown kind must be rejected by the CHECK"
+    );
+
+    // Removing the company still works: the trigger carves out the FK cascade
+    // (entries die with their company; only direct deletes are immutable).
+    connection
+        .execute("DELETE FROM companies WHERE id = 'c1'", [])
+        .expect("deleting a company with journal entries must still work");
+    let remaining: i64 = connection
+        .query_row("SELECT COUNT(*) FROM decision_entries", [], |row| {
+            row.get(0)
+        })
+        .expect("count");
+    assert_eq!(remaining, 0, "the cascade must remove the journal entries");
+
+    // Idempotent by version.
+    let before = count_applied_migrations(&connection).expect("count");
+    apply_migrations(&mut connection).expect("re-run is safe");
+    assert_eq!(
+        before,
+        count_applied_migrations(&connection).expect("count"),
+        "0067 must not re-apply"
+    );
+}
+
+/// ADR 0071 (J1): migration 0068 creates report_expectations + the metrics
+/// child. The occurrence UNIQUE must hold, the comparator CHECK must hold, and
+/// child rows must CASCADE with their parent. Runner idempotent by version.
+#[test]
+fn migration_0068_report_expectations_unique_check_and_cascade() {
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    connection
+        .pragma_update(None, "foreign_keys", "ON")
+        .expect("enable FKs");
+    apply_migrations_up_to(&mut connection, 66).expect("apply schema through 0066");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+
+    apply_migrations(&mut connection).expect("upgrade to 0068+");
+
+    connection
+        .execute(
+            "INSERT INTO report_expectations
+                (id, company_id, event_key, fiscal_year, period_type, stance_md)
+             VALUES ('re1', 'c1', 'evt-1', 2026, 'H1', 'stance')",
+            [],
+        )
+        .expect("an expectation must be storable");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO report_expectations
+                    (id, company_id, event_key, fiscal_year, period_type, stance_md)
+                 VALUES ('re2', 'c1', 'evt-1', 2026, 'H1', 'duplicate')",
+                [],
+            )
+            .is_err(),
+        "UNIQUE (company_id, event_key) must reject a duplicate occurrence"
+    );
+
+    connection
+        .execute(
+            "INSERT INTO report_expectation_metrics
+                (id, expectation_id, metric_key, comparator, expected_value)
+             VALUES ('rem1', 're1', 'revenue', 'gte', '100')",
+            [],
+        )
+        .expect("a metric row must be storable");
+    assert!(
+        connection
+            .execute(
+                "INSERT INTO report_expectation_metrics
+                    (id, expectation_id, metric_key, comparator, expected_value)
+                 VALUES ('rem2', 're1', 'revenue', 'approx', '100')",
+                [],
+            )
+            .is_err(),
+        "a comparator outside ('lt','lte','eq','gte','gt') must be rejected"
+    );
+
+    // Child rows cascade with their parent expectation.
+    connection
+        .execute("DELETE FROM report_expectations WHERE id = 're1'", [])
+        .expect("expectations are deletable (only decision entries are immutable)");
+    let orphans: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM report_expectation_metrics",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count");
+    assert_eq!(orphans, 0, "metric rows must cascade with the parent");
+
+    // Idempotent by version.
+    let before = count_applied_migrations(&connection).expect("count");
+    apply_migrations(&mut connection).expect("re-run is safe");
+    assert_eq!(
+        before,
+        count_applied_migrations(&connection).expect("count"),
+        "0068 must not re-apply"
+    );
+}
+
 /// T-A6: a lone out-of-spec 'annual' row with no FY sibling is relabeled to FY
 /// in place (no merge, no orphans), and re-running is a no-op.
 #[test]
@@ -535,4 +698,137 @@ fn migration_0066_relabels_lone_annual_to_fy() {
         )
         .unwrap();
     assert_eq!(annuals, 0);
+}
+
+#[test]
+fn migration_0069_drops_content_embeddings_and_purges_embedding_jobs() {
+    // ADR 0080 decision 4: the embedding model is retired; the disposable vector
+    // index is dropped and its queued jobs purged. A real pre-removal state —
+    // embedding rows, a queued content_embedding job, and the legacy
+    // `similarity_strategy='embedding'` setting — must upgrade cleanly, and
+    // unrelated queued jobs must survive.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 68).expect("apply schema through 0068");
+
+    connection
+        .execute(
+            "INSERT INTO content_embeddings
+                 (content_type, content_id, model_id, dim, vector, content_hash)
+             VALUES ('feed_item', 'feed_01', 'intfloat/multilingual-e5-small', 2,
+                     X'0000803F00000000', 'hash-1')",
+            [],
+        )
+        .expect("seed an embedding row on the old schema");
+    connection
+        .execute(
+            "INSERT INTO job_queue (id, kind, status)
+             VALUES ('content_embedding', 'content_embedding', 'pending'),
+                    ('unrelated-job', 'source_refresh', 'pending')",
+            [],
+        )
+        .expect("seed queued jobs on the old schema");
+    connection
+        .execute(
+            "INSERT INTO settings (key, value, value_type)
+             VALUES ('similarity_strategy', 'embedding', 'string')
+             ON CONFLICT (key) DO UPDATE SET value = 'embedding'",
+            [],
+        )
+        .expect("seed the legacy embedding strategy");
+
+    apply_migrations(&mut connection).expect("upgrade to the latest schema");
+
+    let table_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'table' AND name = 'content_embeddings')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("table existence check");
+    assert!(!table_exists, "content_embeddings must be dropped");
+
+    let embedding_jobs: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM job_queue WHERE kind = 'content_embedding'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count embedding jobs");
+    assert_eq!(embedding_jobs, 0, "content_embedding jobs must be purged");
+
+    let unrelated_jobs: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM job_queue WHERE id = 'unrelated-job'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count unrelated jobs");
+    assert_eq!(unrelated_jobs, 1, "unrelated queued jobs must survive");
+
+    // Re-run is a safe no-op (self-heal / idempotence on an already-clean DB).
+    apply_migrations(&mut connection).expect("re-run is safe");
+    assert_eq!(
+        count_applied_migrations(&connection).expect("count applied"),
+        crate::storage::migrations::expected_migration_count(),
+    );
+}
+
+#[test]
+fn migration_0070_drops_feed_items_story_key_and_index() {
+    // ADR 0080 decision 3: the write-only story-key path is removed. A real old
+    // database with story_key values must upgrade cleanly: the column and its
+    // index go, the feed items themselves survive untouched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 68).expect("apply schema through 0068");
+
+    let adapter_id: String = connection
+        .query_row("SELECT id FROM source_adapters LIMIT 1", [], |row| {
+            row.get(0)
+        })
+        .expect("a seeded source adapter");
+    connection
+        .execute(
+            "INSERT INTO feed_items
+                 (id, type, source_adapter_id, source_name, source_url, title,
+                  fetched_at, dedupe_key, story_key)
+             VALUES ('feed_old', 'Public media', ?1, 'Seed', 'https://example.com/a',
+                     'Spolka ABC podpisala znaczaca umowe', '2026-06-08T10:00:00Z',
+                     'dk-1', 'story:ABC:GPW:2026-06-08:spolka-abc')",
+            [&adapter_id],
+        )
+        .expect("seed a feed item with a story_key on the old schema");
+
+    apply_migrations(&mut connection).expect("upgrade to the latest schema");
+
+    let has_story_key: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('feed_items')
+              WHERE name = 'story_key')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("column existence check");
+    assert!(!has_story_key, "feed_items.story_key must be dropped");
+
+    let index_exists: bool = connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master
+              WHERE type = 'index' AND name = 'idx_feed_items_story_key')",
+            [],
+            |row| row.get(0),
+        )
+        .expect("index existence check");
+    assert!(!index_exists, "idx_feed_items_story_key must be dropped");
+
+    let survived: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM feed_items WHERE id = 'feed_old'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count seeded feed items");
+    assert_eq!(survived, 1, "feed items must survive the column drop");
+
+    apply_migrations(&mut connection).expect("re-run is safe");
 }

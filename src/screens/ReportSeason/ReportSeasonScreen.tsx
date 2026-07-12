@@ -23,6 +23,7 @@ import {
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import type { Watchlist } from "../../api/types";
 import { entryKey, useReportSeason } from "./useReportSeason";
+import { ExpectationsSection } from "./ExpectationsSection";
 
 export type ReportSeasonScreenProps = {
   watchlists: Watchlist[];
@@ -43,9 +44,13 @@ export function ReportSeasonScreen() {
     cards,
     cardLoadingKey,
     actionInFlightKey,
+    expectations,
+    expectationBusyKey,
     toggleExpanded,
     prepare,
     process,
+    writeExpectation,
+    resolveExpectation,
   } = useReportSeason(scope === ALL_SCOPE ? null : scope);
 
   function preparationChip(status: ReportSeasonEntry["preparationStatus"]) {
@@ -89,7 +94,8 @@ export function ReportSeasonScreen() {
     if (!expandable) {
       return (
         <div key={key} className="report-season-row-static">
-          {row}
+          {/* ListRow renders an <li>; a lone <li> needs a list parent (axe listitem). */}
+          <ul className="ui-list-rows">{row}</ul>
         </div>
       );
     }
@@ -151,6 +157,15 @@ export function ReportSeasonScreen() {
                 <StatusChip tone="warn">{`${text("Overdue")}: ${card.unresolvedClaims.overdue.length}`}</StatusChip>
                 <StatusChip tone="neutral">{`${text("Upcoming")}: ${card.unresolvedClaims.upcoming.length}`}</StatusChip>
               </div>
+
+              <ExpectationsSection
+                entry={entry}
+                kpis={card.lastPeriodKpis}
+                state={expectations[key]}
+                busy={expectationBusyKey === key}
+                onWrite={(draft) => writeExpectation(entry, draft)}
+                onResolve={(note) => resolveExpectation(entry, note)}
+              />
             </div>
 
             <div className="report-season-card-extended">
@@ -169,14 +184,16 @@ export function ReportSeasonScreen() {
 
               <SectionHeader level="h4" title={text("Recent evidence")} />
               {card.recentEvidence.length > 0 ? (
-                card.recentEvidence.map((item) => (
-                  <ListRow
-                    key={item.id}
-                    title={item.title}
-                    meta={item.occurredAt}
-                    trailing={<StatusChip tone="neutral">{item.evidenceType}</StatusChip>}
-                  />
-                ))
+                <ul className="ui-list-rows">
+                  {card.recentEvidence.map((item) => (
+                    <ListRow
+                      key={item.id}
+                      title={item.title}
+                      meta={item.occurredAt}
+                      trailing={<StatusChip tone="neutral">{item.evidenceType}</StatusChip>}
+                    />
+                  ))}
+                </ul>
               ) : (
                 <Hint>{text("None yet")}</Hint>
               )}
@@ -197,7 +214,8 @@ export function ReportSeasonScreen() {
         onToggle={() => toggleExpanded(entry)}
         detail={detail}
       >
-        {row}
+        {/* ListRow renders an <li>; a lone <li> needs a list parent (axe listitem). */}
+        <ul className="ui-list-rows">{row}</ul>
       </ExpandableRow>
     );
   }

@@ -278,31 +278,31 @@ describe("Settings screen workflows", () => {
 
     expect(within(settingsRegion).getByRole("heading", { name: "AI capability routing" })).toBeInTheDocument();
 
-    const kpiRow = screen
-      .getByRole("heading", { name: "KPI extraction", level: 3 })
+    const claimRow = screen
+      .getByRole("heading", { name: "Claim extraction", level: 3 })
       .closest(".capability-routing-row") as HTMLElement;
 
-    expect(within(kpiRow).getByText("Uses the general AI provider.")).toBeInTheDocument();
+    expect(within(claimRow).getByText("Uses the general AI provider.")).toBeInTheDocument();
 
     // (a) adding a member defaults to the catalog's first provider + its default model.
-    await user.click(within(kpiRow).getByRole("button", { name: "Add provider" }));
+    await user.click(within(claimRow).getByRole("button", { name: "Add provider" }));
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         capabilityProviders: expect.objectContaining({
-          kpi_extraction: [expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" })],
+          claim_extraction: [expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" })],
         }),
       },
     });
-    expect(within(kpiRow).queryByText("Uses the general AI provider.")).not.toBeInTheDocument();
+    expect(within(claimRow).queryByText("Uses the general AI provider.")).not.toBeInTheDocument();
 
     // (b) a second member appended preserves order.
-    await user.click(within(kpiRow).getByRole("button", { name: "Add provider" }));
+    await user.click(within(claimRow).getByRole("button", { name: "Add provider" }));
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         capabilityProviders: expect.objectContaining({
-          kpi_extraction: [
+          claim_extraction: [
             expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" }),
             expect.objectContaining({ provider: "provider_gemini", model: "gemini-3.5-flash" }),
           ],
@@ -315,12 +315,12 @@ describe("Settings screen workflows", () => {
     // draft, committed on blur (docs/ui-authoring.md) — a field bound directly
     // to the settings value cannot be typed into, because the async
     // round-trip reverts each keystroke before the next one lands.
-    await user.selectOptions(screen.getByLabelText("Provider KPI extraction 2"), "provider_openai_compatible");
+    await user.selectOptions(screen.getByLabelText("Provider Claim extraction 2"), "provider_openai_compatible");
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         capabilityProviders: expect.objectContaining({
-          kpi_extraction: [
+          claim_extraction: [
             expect.objectContaining({ provider: "provider_gemini" }),
             expect.objectContaining({ provider: "provider_openai_compatible", model: "" }),
           ],
@@ -328,7 +328,7 @@ describe("Settings screen workflows", () => {
       },
     });
 
-    const modelField = screen.getByLabelText("Model KPI extraction 2");
+    const modelField = screen.getByLabelText("Model Claim extraction 2");
     expect(modelField.tagName).toBe("INPUT");
 
     const callsBeforeModelTyping = updateSettingsCallCount();
@@ -350,7 +350,7 @@ describe("Settings screen workflows", () => {
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         capabilityProviders: expect.objectContaining({
-          kpi_extraction: [
+          claim_extraction: [
             expect.objectContaining({ provider: "provider_gemini" }),
             expect.objectContaining({ provider: "provider_openai_compatible", model: "custom-model-x" }),
           ],
@@ -479,16 +479,16 @@ describe("Settings screen workflows", () => {
     const settingsRegion = await screen.findByLabelText("Application settings");
     await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
 
-    const kpiRow = screen
-      .getByRole("heading", { name: "KPI extraction", level: 3 })
+    const claimRow = screen
+      .getByRole("heading", { name: "Claim extraction", level: 3 })
       .closest(".capability-routing-row") as HTMLElement;
 
-    await user.click(within(kpiRow).getByRole("button", { name: "Add provider" }));
+    await user.click(within(claimRow).getByRole("button", { name: "Add provider" }));
 
     expect(invoke).toHaveBeenCalledWith("update_settings", {
       input: {
         capabilityProviders: expect.objectContaining({
-          kpi_extraction: [expect.objectContaining({ provider: "provider_openai_compatible", model: "" })],
+          claim_extraction: [expect.objectContaining({ provider: "provider_openai_compatible", model: "" })],
         }),
       },
     });

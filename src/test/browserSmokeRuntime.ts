@@ -23,7 +23,6 @@ import type {
 import type { KpiExtractionJob, KpiExtractionProposal } from "../api/kpiExtraction";
 import type { FactProvenance } from "../api/generated/FactProvenance";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
-import type { EmbeddingModelStatus } from "../api/interpretation";
 import type { AutopilotRun } from "../api/autopilot";
 import { createMockRuntime } from "./scenarios/runtime";
 import type { ScenarioData, ScenarioName } from "./scenarios/scenarios";
@@ -238,6 +237,7 @@ const settings: UserSettings = {
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
   queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
   pinnedCompanyIds: [],
+  mcp: { enabled: false, port: 8317 },
 };
 
 const licenseStatus: LicenseStatus = {
@@ -444,19 +444,6 @@ function seedExtractionJob(reportDocumentId: string): KpiExtractionJob {
   extractionJobs[reportDocumentId] = [job];
   return job;
 }
-
-
-const embeddingModelStatus: EmbeddingModelStatus = {
-  modelId: "intfloat/multilingual-e5-small",
-  dim: 384,
-  weightsState: "ready",
-  downloadProgress: null,
-  downloadError: null,
-  activeSimilarityStrategy: "embedding",
-  embeddedCounts: [{ contentType: "feed_item", count: 374 }],
-  indexModelId: "intfloat/multilingual-e5-small",
-  featureCompiled: true,
-};
 
 
 function company(id: string, exchange: string, ticker: string, displayName: string, isin: string): Company {
@@ -715,7 +702,6 @@ function seedBrowserStore(data: ScenarioData) {
   data.licenseStatus = structuredClone(licenseStatus);
   data.credentialStatuses = [structuredClone(credentialStatus)];
   data.metricsSnapshot = structuredClone(localMetricsSnapshot);
-  data.embeddingModelStatus = structuredClone(embeddingModelStatus);
   data.kpiDefinitions = structuredClone(kpiDefinitions);
   data.financialPeriods = structuredClone(financialPeriods);
   data.financialFacts = structuredClone(financialFacts);

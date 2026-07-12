@@ -117,6 +117,73 @@
   gap: var(--space-3);
 }
 
+/* --- Pre-report expectations (J4, ADR 0071) ------------------------------- */
+
+.report-season-expectations,
+.report-season-expectation-composer,
+.report-season-expectation-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.report-season-expectation-metrics {
+  margin: 0;
+  padding-left: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  color: var(--text);
+}
+
+/* The period picker (year + period type) and each metric row let their fields
+   shrink so long option text can't blow out a track (ui-authoring styling). */
+.report-season-expectation-period {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.report-season-metric-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.5fr) auto;
+  gap: var(--space-2);
+  align-items: end;
+  min-width: 0;
+}
+
+/* Expectation-vs-actual comparison: fixed column slots so the outcome chip lands
+   at the same x on every row (trailing-chips rule). Deliberate wide content →
+   its own bounded, data-hscroll scroller so the overflow gate stays green. */
+.report-season-expectation-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  overflow-x: auto;
+  contain: inline-size;
+  min-width: 0;
+}
+
+.report-season-expectation-review-head,
+.report-season-expectation-review-row {
+  display: contents;
+}
+
+.report-season-expectation-review-head > span {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.report-season-expectation-review-row > span {
+  color: var(--text);
+  min-width: 0;
+}
+
 /* U7-D density contract (ADR 0076 D6) — driven by the hosting `pane` size
    container (.cockpit-pane / .workspace). Rows always show name+date+state chip;
    the pre-report card's density is tiered:

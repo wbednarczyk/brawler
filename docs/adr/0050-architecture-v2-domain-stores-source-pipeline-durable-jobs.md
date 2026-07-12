@@ -18,6 +18,14 @@ Status: Accepted
 > scheduler** (decision 5, lands with the autonomous pipeline `v0.49`) and **ANN
 > activation** (decision 6, near `v0.53`) — are still open as described.
 
+> **Update (2026-07-11, v0.52.0):** of the two carried consumers, the **Rust-side
+> scheduler delivered** with `v0.49.0`; **AV6 (ANN activation) is retired** — no
+> embedding consumer ever cleared its eval bar, and the model + vector index are
+> removed by [ADR 0080](0080-retire-embedding-model.md). The **`story_key` persist
+> path is removed** by the same ADR: it was write-only from the day clustering was
+> dropped (computed on every ingest, never read). The entity-resolution *design*
+> stays recorded here; re-introduction requires a consumer-first ADR.
+
 ## Context
 
 A whole-application architecture review (the QA-architect pass that followed the

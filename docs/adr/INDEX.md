@@ -78,3 +78,5 @@
 - [0075](0075-qualitative-assessment-frameworks.md) — Qualitative Assessment Frameworks — Agent-Assessed Criteria with Citations — Accepted (v0.50.0)
 - [0076](0076-ui-design-system-and-density-contracts.md) — UI Design System — Scales, Semantic Tokens, Format Rules, Density Contracts — Accepted (v0.50.0 phase 2
 - [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Accepted (2026-07-08)
+- [0078](0078-mcp-external-surface.md) — External Surface — Read-Only MCP Server MVP (NS1 Slice 1) — Accepted (2026-07-11, owner sign-off)
+- [0080](0080-retire-embedding-model.md) — Retire the Local Embedding Model and Dead Subsystems — Accepted (2026-07-11, owner sign-off)

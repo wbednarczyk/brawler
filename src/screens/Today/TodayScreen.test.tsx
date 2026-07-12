@@ -6,6 +6,7 @@ import {
   renderApp,
   screen,
   userEvent,
+  waitFor,
   within,
 } from "../../test/appWorkflowHarness";
 import type { FeedItem } from "../../api/types";
@@ -88,6 +89,19 @@ function streamCategories(container: HTMLElement): string[] {
   );
 }
 
+/**
+ * Await one stream category's rows to land. The verify (claims) and upcoming
+ * (report-season) categories load on their own async effects — independent of
+ * the autopilot "Details" row — so a test that asserts a category is present
+ * must wait for THAT category, not just the first row to render, or it races
+ * the slower load and intermittently sees the category dropped.
+ */
+async function findCategoryRow(container: HTMLElement, category: string): Promise<void> {
+  await waitFor(() =>
+    expect(container.querySelector(`li[data-category="${category}"]`)).not.toBeNull(),
+  );
+}
+
 const PRIORITY: Record<string, number> = { autopilot: 0, verify: 1, changed: 2, upcoming: 3 };
 
 describe("Today/Pulse — prioritized attention stream (J1, ADR 0076 U-Rb)", () => {
@@ -95,11 +109,13 @@ describe("Today/Pulse — prioritized attention stream (J1, ADR 0076 U-Rb)", () 
     appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
     const { container } = renderApp({ section: "Today" });
 
-    // Wait for the async claim/feed loads to settle into stream rows.
+    // Wait for the async claim/feed loads to settle into stream rows. Each
+    // category loads on its own effect, so wait for the two slower async ones
+    // (verify = claims, upcoming = report season) explicitly — not just the
+    // autopilot "Details" row — or the assertion races the verify load.
     await screen.findByRole("button", { name: "Details" });
-    await within(container as HTMLElement)
-      .findAllByText(/report/i)
-      .catch(() => []);
+    await findCategoryRow(container as HTMLElement, "verify");
+    await findCategoryRow(container as HTMLElement, "upcoming");
 
     const cats = streamCategories(container as HTMLElement);
     // All four attention categories are represented.
@@ -153,6 +169,10 @@ describe("Today counters column (ADR 0076 U-Rb D5)", () => {
     const { container } = renderApp({ section: "Today" });
 
     await screen.findByRole("button", { name: "Details" });
+    // Filtering TO verify only makes sense once the claims have loaded — await
+    // the verify rows, not just the autopilot "Details" row (same race the
+    // all-four-categories test guards against).
+    await findCategoryRow(container as HTMLElement, "verify");
     expect(new Set(streamCategories(container as HTMLElement)).size).toBeGreaterThan(1);
 
     const verifyTile = screen.getByRole("button", { name: /To verify/ });

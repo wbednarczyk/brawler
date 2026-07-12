@@ -37,8 +37,8 @@ mod claim_extraction;
 mod cockpit_layouts;
 mod companies;
 mod database;
+mod decision_journal;
 mod diagnostics;
-mod embeddings;
 mod error;
 mod events;
 mod feed;
@@ -60,6 +60,7 @@ mod quality_frameworks;
 mod queue_config;
 mod registry;
 mod report_documents;
+mod report_expectations;
 mod report_season;
 mod report_sections;
 mod research;
@@ -88,17 +89,15 @@ pub use claim_extraction::{
     ConfirmClaimProposalInput, NewClaimExtractionJob, NewClaimProposal,
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
-pub use embeddings::{
-    EmbeddableContent, EmbeddedCount, EmbeddedVector, NewContentEmbedding, FEED_ITEM_CONTENT_TYPE,
-};
-// `EmbeddingDownloadState` and `AppState` are defined in this module.
+// `AppState` is defined in this module.
 pub use ai_analysis::AiAnalysisStore;
 pub use claim_extraction::ClaimExtractionStore;
-pub use cockpit_layouts::{
-    CockpitLayout, CockpitLayoutStore, NewCockpitLayout, RenameCockpitLayoutInput,
+pub use cockpit_layouts::{CockpitLayout, CockpitLayoutStore, NewCockpitLayout};
+pub use decision_journal::{
+    DecisionEntry, DecisionEntryListInput, DecisionJournalStore, NewDecisionEntry,
+    DECISION_ENTRY_KINDS,
 };
 pub use diagnostics::DiagnosticsStore;
-pub use embeddings::EmbeddingStore;
 pub use error::{StorageError, StorageResult};
 pub use events::EventStore;
 pub use feed::FeedStore;
@@ -147,6 +146,12 @@ pub use report_documents::ReportDocumentStore;
 pub use report_documents::{
     CaptureReportDocumentInput, ReclassifyReportDocumentsSummary, ReportDocument,
 };
+pub use report_expectations::{
+    evaluate_metric_expectation, ExpectationMetric, ExpectationReview, ExpectationReviewInput,
+    ListReportExpectationsInput, MetricExpectationOutcome, MetricExpectationReview,
+    NewExpectationMetric, NewReportExpectation, RecordExpectationResolutionInput,
+    ReportExpectation, ReportExpectationStore, UpdateReportExpectation, EXPECTATION_COMPARATORS,
+};
 pub use report_season::ReportSeasonStore;
 pub use report_season::{
     CalendarFreshness, MarkReportPreparedInput, MarkReportProcessedInput, PreReportCard,
@@ -176,6 +181,7 @@ pub use research_reminders::{
 };
 pub use search::SearchMatch;
 pub use settings::SettingsStore;
+pub(crate) use settings::MCP_PORT_DEFAULT;
 pub use settings::{
     AiProviderSettings, CapabilityProviderEntry, LogSettings, SettingsUpdate,
     ShortcutBindingSetting, UserSettings,
@@ -231,15 +237,6 @@ pub struct BackfillProgress {
     pub updated_at: String,
 }
 
-/// In-memory state of the optional embedding-model weights download (ADR 0035).
-/// Not persisted: the download is an explicit, app-open-only action and the
-/// on-disk weights are the durable truth; a lost in-flight flag is harmless.
-#[derive(Clone, Debug, Default)]
-pub struct EmbeddingDownloadState {
-    pub in_progress: bool,
-    pub error: Option<String>,
-}
-
 /// Next-due snapshot published by the Rust-side source scheduler (ADR 0055, AV5)
 /// for the UI to render "next refresh at …". Times are epoch milliseconds so they
 /// map directly onto the frontend's existing display. Not persisted: the schedule
@@ -282,7 +279,6 @@ pub struct AppState {
     runtime_metrics: Arc<RuntimeMetricCounters>,
     data_dir: PathBuf,
     backfill_progress: Arc<Mutex<HashMap<String, BackfillProgress>>>,
-    embedding_download: Arc<Mutex<EmbeddingDownloadState>>,
     scheduler_status: Arc<Mutex<SchedulerStatus>>,
     /// Source adapter ids currently being refreshed by a worker (ADR 0059). The
     /// per-source lock lets multiple source-lane workers run *different* sources
@@ -310,7 +306,6 @@ impl AppState {
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
-            embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
             provider_semaphores: Arc::new(Mutex::new(HashMap::new())),
@@ -326,7 +321,6 @@ impl AppState {
             runtime_metrics: Arc::new(RuntimeMetricCounters::default()),
             data_dir,
             backfill_progress: Arc::new(Mutex::new(HashMap::new())),
-            embedding_download: Arc::new(Mutex::new(EmbeddingDownloadState::default())),
             scheduler_status: Arc::new(Mutex::new(SchedulerStatus::default())),
             sources_in_flight: Arc::new(Mutex::new(HashSet::new())),
             provider_semaphores: Arc::new(Mutex::new(HashMap::new())),
@@ -484,14 +478,15 @@ impl AppState {
         autopilot::AutopilotStore::new(self.db.clone())
     }
 
+    /// Decision journal domain store (ADR 0071): immutable record of the
+    /// user's own judgments; the ADR 0043 workbench extends it later.
+    pub fn decision_journal(&self) -> decision_journal::DecisionJournalStore {
+        decision_journal::DecisionJournalStore::new(self.db.clone())
+    }
+
     /// diagnostics domain store (Architecture v2 / ADR 0050).
     pub fn diagnostics(&self) -> diagnostics::DiagnosticsStore {
         diagnostics::DiagnosticsStore::new(self.db.clone())
-    }
-
-    /// embeddings domain store (Architecture v2 / ADR 0050).
-    pub fn embeddings(&self) -> embeddings::EmbeddingStore {
-        embeddings::EmbeddingStore::new(self.db.clone())
     }
 
     /// events domain store (Architecture v2 / ADR 0050).
@@ -557,6 +552,12 @@ impl AppState {
 
     pub fn report_sections(&self) -> report_sections::ReportSectionStore {
         report_sections::ReportSectionStore::new(self.db.clone())
+    }
+
+    /// Pre-report expectations domain store (ADR 0071): stance + per-metric
+    /// expectations for a report occurrence, frozen once the period's facts land.
+    pub fn report_expectations(&self) -> report_expectations::ReportExpectationStore {
+        report_expectations::ReportExpectationStore::new(self.db.clone())
     }
 
     /// report_season domain store (Architecture v2 / ADR 0050).
@@ -1534,112 +1535,12 @@ impl AppState {
         self.settings().set_developer_mode_enabled(enabled)
     }
 
-    /// Read the active similarity strategy setting (`static` | `embedding`),
-    /// tolerating a missing row with the static default (ADR 0035).
+    /// Read the legacy similarity-strategy setting, mapping the retired
+    /// `embedding` value to `static` (ADR 0080): the embedding model is gone,
+    /// so `static` is the only strategy — but an old database may still hold
+    /// the `embedding` row and must never error or resurrect the old behavior.
     pub fn get_similarity_strategy(&self) -> StorageResult<String> {
         self.settings().get_similarity_strategy()
-    }
-
-    /// Persist the active similarity strategy. Validation that the embedding
-    /// model is ready lives in the command layer.
-    pub fn set_similarity_strategy(&self, strategy: &str) -> StorageResult<()> {
-        self.settings().set_similarity_strategy(strategy)
-    }
-
-    /// Insert or replace one content embedding (vector store, ADR 0035).
-    pub fn upsert_content_embedding(&self, embedding: &NewContentEmbedding) -> StorageResult<()> {
-        self.embeddings().upsert_content_embedding(embedding)
-    }
-
-    /// Feed items as embeddable content for the embed job (ADR 0035).
-    pub fn feed_item_embeddable_contents(&self) -> StorageResult<Vec<EmbeddableContent>> {
-        self.embeddings().feed_item_embeddable_contents()
-    }
-
-    /// `content_id -> content_hash` already embedded for a content type/model.
-    pub fn embedded_content_hashes(
-        &self,
-        content_type: &str,
-        model_id: &str,
-    ) -> StorageResult<std::collections::HashMap<String, String>> {
-        self.embeddings()
-            .embedded_content_hashes(content_type, model_id)
-    }
-
-    /// All stored vectors for a content type/model — the brute-force scan input.
-    pub fn scan_content_vectors(
-        &self,
-        content_type: &str,
-        model_id: &str,
-    ) -> StorageResult<Vec<EmbeddedVector>> {
-        self.embeddings()
-            .scan_content_vectors(content_type, model_id)
-    }
-
-    /// The stored vector for a single content row under a model, if embedded.
-    pub fn content_vector(
-        &self,
-        content_type: &str,
-        content_id: &str,
-        model_id: &str,
-    ) -> StorageResult<Option<Vec<f32>>> {
-        self.embeddings()
-            .content_vector(content_type, content_id, model_id)
-    }
-
-    /// Drop every vector not built with `keep_model_id` (model change). Returns
-    /// the number of pruned rows.
-    pub fn prune_embeddings_other_models(&self, keep_model_id: &str) -> StorageResult<usize> {
-        self.embeddings()
-            .prune_embeddings_other_models(keep_model_id)
-    }
-
-    /// Per-content-type embedded counts for one model (status read model).
-    pub fn embedding_counts(&self, model_id: &str) -> StorageResult<Vec<EmbeddedCount>> {
-        self.embeddings().embedding_counts(model_id)
-    }
-
-    /// The `model_id` the current index was built with, or `None` when empty.
-    pub fn embedding_index_model_id(&self) -> StorageResult<Option<String>> {
-        self.embeddings().embedding_index_model_id()
-    }
-
-    /// Drop the entire (disposable) vector index. Returns dropped row count.
-    pub fn clear_content_embeddings(&self) -> StorageResult<usize> {
-        self.embeddings().clear_content_embeddings()
-    }
-
-    /// Read the in-memory embedding-model download state.
-    pub fn embedding_download_state(&self) -> EmbeddingDownloadState {
-        self.embedding_download
-            .lock()
-            .expect("embedding download mutex poisoned")
-            .clone()
-    }
-
-    /// Mark a download as started (clears any prior error). Returns `false` when
-    /// one is already in progress, so callers don't launch a duplicate.
-    pub fn begin_embedding_download(&self) -> bool {
-        let mut guard = self
-            .embedding_download
-            .lock()
-            .expect("embedding download mutex poisoned");
-        if guard.in_progress {
-            return false;
-        }
-        guard.in_progress = true;
-        guard.error = None;
-        true
-    }
-
-    /// Record the outcome of a download attempt.
-    pub fn finish_embedding_download(&self, result: Result<(), String>) {
-        let mut guard = self
-            .embedding_download
-            .lock()
-            .expect("embedding download mutex poisoned");
-        guard.in_progress = false;
-        guard.error = result.err();
     }
 
     pub fn get_license_metadata(&self) -> StorageResult<Option<StoredLicenseMetadata>> {

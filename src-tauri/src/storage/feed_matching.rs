@@ -79,23 +79,78 @@ pub(super) fn media_duplicate_signature(
     ))
 }
 
-// The pure text-normalization transforms below are owned by the
-// `entity_resolution` module (the SSOT, ADR 0050) and property-tested there;
-// these `pub(super)` wrappers keep the storage-internal call sites stable.
-pub(super) fn normalized_company_name_signal(value: &str) -> String {
-    crate::entity_resolution::company_name_signal(value)
-}
+// The pure text-normalization transforms below are the SSOT for how every
+// adapter normalizes names/media text before matching (ADR 0050; relocated here
+// from the retired `entity_resolution` module by ADR 0080 — its other half, the
+// write-only story-key path, was removed). Property-tested in `proptests` at the
+// end of this file.
 
-pub(super) fn normalized_text_contains_phrase(tokens: &[&str], phrase: &str) -> bool {
-    crate::entity_resolution::text_contains_phrase(tokens, phrase)
-}
-
-pub(super) fn normalize_media_match_text(value: &str) -> String {
-    crate::entity_resolution::normalize_match_text(value)
-}
-
+/// Fold a single character toward the matching alphabet: Polish diacritics map
+/// to their base Latin letter, everything else upper-cases. The canonical
+/// character normalization shared by every name/media matcher.
 pub(super) fn normalize_media_character(character: char) -> char {
-    crate::entity_resolution::normalize_match_char(character)
+    match character {
+        'ą' | 'Ą' => 'A',
+        'ć' | 'Ć' => 'C',
+        'ę' | 'Ę' => 'E',
+        'ł' | 'Ł' => 'L',
+        'ń' | 'Ń' => 'N',
+        'ó' | 'Ó' => 'O',
+        'ś' | 'Ś' => 'S',
+        'ż' | 'Ż' | 'ź' | 'Ź' => 'Z',
+        other => other.to_uppercase().next().unwrap_or(other),
+    }
+}
+
+/// Normalize free text for matching: fold diacritics, upper-case, replace every
+/// non-alphanumeric run with a single space, and trim. Idempotent and
+/// order-preserving over the input's tokens.
+pub(super) fn normalize_media_match_text(value: &str) -> String {
+    value
+        .chars()
+        .map(normalize_media_character)
+        .map(|character| {
+            if character.is_alphanumeric() {
+                character
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// Reduce a company display name to a comparable signal: normalized, with common
+/// Polish joint-stock suffixes (`SPÓŁKA AKCYJNA` / `S A` / `SA`) stripped. Returns
+/// an empty string when the remaining signal is too short to match safely.
+pub(super) fn normalized_company_name_signal(value: &str) -> String {
+    let mut normalized = normalize_media_match_text(value);
+    for suffix in [" SPOLKA AKCYJNA", " S A", " SA"] {
+        if let Some(stripped) = normalized.strip_suffix(suffix) {
+            normalized = stripped.trim().to_owned();
+        }
+    }
+
+    if normalized.chars().count() < 4 {
+        String::new()
+    } else {
+        normalized
+    }
+}
+
+/// Whether the whitespace-tokenized `phrase` appears as a contiguous run within
+/// `tokens`.
+pub(super) fn normalized_text_contains_phrase(tokens: &[&str], phrase: &str) -> bool {
+    let phrase_tokens = phrase.split_whitespace().collect::<Vec<_>>();
+    if phrase_tokens.is_empty() || phrase_tokens.len() > tokens.len() {
+        return false;
+    }
+
+    tokens
+        .windows(phrase_tokens.len())
+        .any(|window| window == phrase_tokens.as_slice())
 }
 
 pub(super) struct MatchedCompany {
@@ -223,4 +278,39 @@ pub(super) fn registry_ticker_for_exchange_isin(
         )
         .optional()
         .map_err(StorageError::from)
+}
+
+#[cfg(test)]
+mod proptests {
+    use super::*;
+    use crate::transform_invariants::{
+        assert_charset, assert_deterministic_str, assert_idempotent_str,
+    };
+    use proptest::prelude::*;
+
+    /// Arbitrary text including Polish diacritics, punctuation, and whitespace —
+    /// the long tail real source titles exercise.
+    fn matchable_text() -> impl Strategy<Value = String> {
+        proptest::string::string_regex("[a-zA-Z0-9 ąćęłńóśżźĄĆĘŁŃÓŚŻŹ.,/&-]{0,40}").unwrap()
+    }
+
+    proptest! {
+        #[test]
+        fn normalize_media_match_text_is_idempotent_and_bounded(input in matchable_text()) {
+            assert_idempotent_str(normalize_media_match_text, &input);
+            assert_deterministic_str(normalize_media_match_text, &input);
+            // Output charset: upper-case Latin, digits, single spaces only.
+            assert_charset(
+                &normalize_media_match_text(&input),
+                |character| character.is_ascii_uppercase() || character.is_numeric() || character == ' ',
+                "normalize_media_match_text",
+            );
+        }
+
+        #[test]
+        fn normalized_company_name_signal_is_idempotent(input in matchable_text()) {
+            // The signal is a fixed point once stripped/normalized.
+            assert_idempotent_str(normalized_company_name_signal, &input);
+        }
+    }
 }

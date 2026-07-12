@@ -194,6 +194,8 @@ fn updates_settings_through_storage_api() {
             ai_workers: None,
             ai_provider_concurrency: None,
             pinned_company_ids: None,
+            mcp_enabled: None,
+            mcp_port: None,
         })
         .expect("settings should update");
 
@@ -301,6 +303,8 @@ fn updates_shortcut_bindings_through_storage_api() {
             ai_workers: None,
             ai_provider_concurrency: None,
             pinned_company_ids: None,
+            mcp_enabled: None,
+            mcp_port: None,
         })
         .expect("settings should update");
 
@@ -357,6 +361,8 @@ fn rejects_invalid_poll_interval_setting() {
         ai_workers: None,
         ai_provider_concurrency: None,
         pinned_company_ids: None,
+        mcp_enabled: None,
+        mcp_port: None,
     });
 
     assert!(result.is_err());
@@ -396,6 +402,8 @@ fn rejects_invalid_theme_setting() {
         ai_workers: None,
         ai_provider_concurrency: None,
         pinned_company_ids: None,
+        mcp_enabled: None,
+        mcp_port: None,
     });
 
     assert!(result.is_err());
@@ -448,6 +456,8 @@ fn rejects_invalid_locale_setting() {
         ai_workers: None,
         ai_provider_concurrency: None,
         pinned_company_ids: None,
+        mcp_enabled: None,
+        mcp_port: None,
     });
 
     assert!(result.is_err());
@@ -487,6 +497,8 @@ fn rejects_invalid_general_analysis_settings() {
         ai_workers: None,
         ai_provider_concurrency: None,
         pinned_company_ids: None,
+        mcp_enabled: None,
+        mcp_port: None,
     });
 
     assert!(invalid_provider.is_err());
@@ -520,6 +532,8 @@ fn rejects_invalid_general_analysis_settings() {
         ai_workers: None,
         ai_provider_concurrency: None,
         pinned_company_ids: None,
+        mcp_enabled: None,
+        mcp_port: None,
     });
 
     assert!(invalid_model.is_err());
@@ -553,6 +567,8 @@ fn rejects_invalid_general_analysis_settings() {
         ai_workers: None,
         ai_provider_concurrency: None,
         pinned_company_ids: None,
+        mcp_enabled: None,
+        mcp_port: None,
     });
 
     assert!(invalid_timeout.is_err());
@@ -1291,5 +1307,150 @@ fn history_sweep_ai_call_limit_write_clamps_to_supported_range() {
     assert_eq!(
         ok.history_sweep_ai_call_limit, 30,
         "an in-range value is stored verbatim"
+    );
+}
+
+#[test]
+fn mcp_settings_default_tolerantly_when_rows_absent() {
+    // No seed-row migration (ADR 0078 decision 4, established keyless pattern):
+    // a database that predates the `mcp_enabled` / `mcp_port` keys must still
+    // load settings, reading the defaults (off, port 8317) rather than failing.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let settings = state
+        .get_settings()
+        .expect("settings should load without the mcp rows");
+    assert!(!settings.mcp.enabled, "MCP server defaults to off");
+    assert_eq!(settings.mcp.port, 8317, "MCP port defaults to 8317");
+}
+
+#[test]
+fn mcp_settings_upsert_and_round_trip() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let settings = state
+        .update_settings(SettingsUpdate {
+            mcp_enabled: Some(true),
+            mcp_port: Some(9000),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(settings.mcp.enabled);
+    assert_eq!(settings.mcp.port, 9000);
+
+    // The values round-trip through a fresh read (durable in SQLite).
+    let persisted = state.get_settings().expect("settings should persist");
+    assert!(persisted.mcp.enabled);
+    assert_eq!(persisted.mcp.port, 9000);
+
+    // Disabling upserts over the existing row (self-healing, never dropped).
+    let disabled = state
+        .update_settings(SettingsUpdate {
+            mcp_enabled: Some(false),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert!(!disabled.mcp.enabled);
+    assert_eq!(
+        disabled.mcp.port, 9000,
+        "an enabled-only update leaves the port untouched"
+    );
+}
+
+#[test]
+fn mcp_port_write_clamps_to_supported_range() {
+    // Same clamp posture as the pool settings / backfill_years: an out-of-range
+    // requested port is corrected, never rejected. Privileged ports (<1024) are
+    // clamped up; values beyond the u16 port space are clamped down.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+
+    let low = state
+        .update_settings(SettingsUpdate {
+            mcp_port: Some(80),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(low.mcp.port, 1024, "80 clamps up to the minimum");
+
+    let high = state
+        .update_settings(SettingsUpdate {
+            mcp_port: Some(70_000),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(high.mcp.port, 65_535, "70000 clamps down to the maximum");
+
+    let ok = state
+        .update_settings(SettingsUpdate {
+            mcp_port: Some(8317),
+            ..Default::default()
+        })
+        .expect("settings should update");
+    assert_eq!(ok.mcp.port, 8317, "an in-range value is stored verbatim");
+}
+
+#[test]
+fn mcp_port_clamps_out_of_range_stored_value_on_read() {
+    // A hand-edited / absurd stored value is clamped on read so it can never
+    // drive a bind outside the sane port range; an unparseable value falls
+    // back to the default (tolerant `setting_i64_or` posture).
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "INSERT INTO settings (key, value, value_type) VALUES ('mcp_port', '70000', 'integer')
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            [],
+        )
+        .expect("seed out-of-range value");
+
+    assert_eq!(state.get_settings().expect("settings").mcp.port, 65_535);
+
+    state
+        .checkout()
+        .expect("connection")
+        .execute(
+            "UPDATE settings SET value = 'not-a-port' WHERE key = 'mcp_port'",
+            [],
+        )
+        .expect("seed unparseable value");
+
+    assert_eq!(state.get_settings().expect("settings").mcp.port, 8317);
+}
+
+#[test]
+fn similarity_strategy_reads_map_the_retired_embedding_value_to_static() {
+    // ADR 0080: the embedding model is retired, so `static` is the only
+    // strategy. An old database that persisted `embedding` must read as
+    // `static` — tolerant, never an error — and a missing row still defaults
+    // to `static` (ADR 0035 seed-row tolerance).
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    assert_eq!(
+        state.get_similarity_strategy().expect("default read"),
+        "static",
+        "missing row defaults to static",
+    );
+
+    {
+        let connection = state.checkout().expect("database connection");
+        connection
+            .execute(
+                "INSERT INTO settings (key, value, value_type)
+                 VALUES ('similarity_strategy', 'embedding', 'string')
+                 ON CONFLICT (key) DO UPDATE SET value = 'embedding'",
+                [],
+            )
+            .expect("seed the legacy embedding value");
+    }
+
+    assert_eq!(
+        state.get_similarity_strategy().expect("legacy read"),
+        "static",
+        "the retired embedding value maps to static",
     );
 }

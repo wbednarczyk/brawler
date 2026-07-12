@@ -7,7 +7,7 @@ use super::{
     StorageResult,
 };
 
-pub const RESEARCH_DIGEST_PROMPT_VERSION: &str = "m31.research_digest.v1";
+pub const RESEARCH_DIGEST_PROMPT_VERSION: &str = "m31.research_digest.v2";
 pub const RESEARCH_DIGEST_COLLECTOR_VERSION: &str = "m31.digest_collector.v1";
 pub const RESEARCH_DIGEST_RENDERER_VERSION: &str = "m31.digest_renderer.v1";
 

@@ -3,6 +3,7 @@ import type { AiProviderSettings } from "./AiProviderSettings";
 import type { CapabilityProviderEntry } from "./CapabilityProviderEntry";
 import type { DatabaseSettings } from "./DatabaseSettings";
 import type { LogSettings } from "./LogSettings";
+import type { McpSettings } from "./McpSettings";
 import type { QueueSettings } from "./QueueSettings";
 import type { ShortcutBindingSetting } from "./ShortcutBindingSetting";
 
@@ -30,4 +31,9 @@ capabilityProviders: { [key in string]: Array<CapabilityProviderEntry> }, databa
  * local UI preference stored as a JSON array in the `settings` KV table;
  * order is the user's pin order. Tolerant default `[]` when the row is absent.
  */
-pinnedCompanyIds: Array<string>, };
+pinnedCompanyIds: Array<string>, 
+/**
+ * Read-only MCP server (ADR 0078): off by default, port default `8317`.
+ * Absent rows read the defaults (no seed-row migration).
+ */
+mcp: McpSettings, };

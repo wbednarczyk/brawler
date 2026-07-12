@@ -126,7 +126,10 @@ for (const [marker, label] of Object.entries(MANDATORY_MARKERS)) {
 const CONTEXT_ARCH_BUDGETS = {
   "CLAUDE.md": 18432,
   ".claude/hooks/session-context.sh": 2560,
-  "docs/engineering-workflow.md": 26624,
+  // 26624 → 27648 (2026-07-11, ADR 0063 amendment): the doc was 34 bytes from
+  // the ceiling when the disk-hygiene guardrail (ADR 0045 harvest) had to join
+  // the mandatory-read layer; deliberate +1 KiB, not silent growth.
+  "docs/engineering-workflow.md": 27648,
   "AGENTS.md": 1024,
 };
 

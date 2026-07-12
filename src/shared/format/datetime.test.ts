@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   companyEventDueClass,
@@ -72,6 +72,17 @@ describe("formatWeekRange — localized 'D mon – D mon' with en-dash", () => {
 });
 
 describe("moved helpers preserve behavior", () => {
+  // companyEventDueLabel/Class read `new Date()` internally (no injectable now),
+  // so pin the wall clock — otherwise the offset dates and the function's own
+  // clock can straddle midnight and shift the relative bucket by a day.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("companyEventDueLabel/Class relative to today, localized (audit K8)", () => {
     const local = (offsetDays: number) => {
       const d = new Date();

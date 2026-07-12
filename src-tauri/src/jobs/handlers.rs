@@ -12,9 +12,6 @@ use std::sync::Arc;
 use crate::app_state::AppState;
 use crate::jobs::queue::{JobHandler, JobWorker, WorkerPool};
 
-/// Job kind: refresh the disposable embedding index (ADR 0035). Idempotent —
-/// skips unchanged content — so retry/resume is safe.
-pub const CONTENT_EMBEDDING_KIND: &str = "content_embedding";
 /// Job kind: run an AI analysis for a feed item (status tracked in `ai_analysis_jobs`).
 pub const AI_ANALYSIS_KIND: &str = "ai_analysis";
 /// Job kind: extract management claims for a source (status in `claim_extraction_jobs`).
@@ -38,18 +35,6 @@ pub use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
 /// gathers evidence, assesses each criterion through the capability pool, and
 /// writes `source = agent` criterion results. Defined with the job.
 pub use crate::jobs::qualitative_assessment::QUALITATIVE_ASSESSMENT_KIND;
-
-struct ContentEmbeddingHandler;
-
-impl JobHandler for ContentEmbeddingHandler {
-    fn kind(&self) -> &'static str {
-        CONTENT_EMBEDDING_KIND
-    }
-
-    fn run(&self, _payload: &str, state: &AppState) -> Result<(), String> {
-        crate::jobs::content_embedding::run_content_embedding_job(state).map(|_outcome| ())
-    }
-}
 
 /// Handlers for the user-initiated AI jobs. Each preserves the prior
 /// fire-and-forget behavior exactly: run the job (which updates its own
@@ -272,7 +257,6 @@ impl JobHandler for ScheduledRegistryRefreshHandler {
 /// this, then [`crate::jobs::queue::spawn`] to reclaim residue and run the loop.
 pub fn build_worker(state: AppState) -> JobWorker {
     let mut worker = JobWorker::new(state);
-    worker.register(Arc::new(ContentEmbeddingHandler));
     worker.register(Arc::new(AiAnalysisHandler));
     worker.register(Arc::new(ClaimExtractionHandler));
     worker.register(Arc::new(KpiExtractionHandler));
@@ -322,11 +306,6 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 QUALITATIVE_ASSESSMENT_KIND,
             ],
             workers: config.ai_workers.max(1) as usize,
-        },
-        WorkerPool {
-            name: "indexing",
-            kinds: vec![CONTENT_EMBEDDING_KIND],
-            workers: config.indexing_workers.max(1) as usize,
         },
     ]
 }
@@ -379,22 +358,6 @@ fn per_job_max_attempts(kind: &str) -> i64 {
 mod tests {
     use super::*;
     use crate::storage::open_in_memory_database;
-
-    #[test]
-    fn worker_runs_the_registered_content_embedding_handler() {
-        let state = AppState::new(open_in_memory_database().expect("db"));
-        // Default similarity strategy is static, so the embedding job is a no-op
-        // success — enough to prove the handler is registered and dispatched (not
-        // an "unknown kind" terminal failure).
-        state
-            .jobs()
-            .enqueue(CONTENT_EMBEDDING_KIND, CONTENT_EMBEDDING_KIND, "{}", 3)
-            .expect("enqueue");
-
-        let worker = build_worker(state.clone());
-        assert!(worker.process_one().expect("process one"));
-        assert_eq!(state.jobs().counts().expect("counts").succeeded, 1);
-    }
 
     #[test]
     fn enqueue_per_job_rearms_a_stale_terminal_row_under_the_same_id() {

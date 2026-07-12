@@ -17,7 +17,6 @@ import { ActionRow, Button, EmptyState, ErrorText, FilterToolbar, InfoGrid, Pane
 import { useLocale } from "../../shared/locale";
 import { useDeveloperMode } from "../../app/state/SettingsContext";
 import { BackupsSection } from "./BackupsSection";
-import { EmbeddingModelSection } from "./EmbeddingModelSection";
 
 const eventLimit = 200;
 const severityOptions: Array<DiagnosticSeverity | "all"> = [
@@ -534,8 +533,6 @@ export function DiagnosticsScreen({
             </div>
           ) : null}
         </section>
-
-        <EmbeddingModelSection />
 
         <BackupsSection />
       </div>

@@ -72,44 +72,6 @@ fn layout_without_geometry_is_valid() {
 }
 
 #[test]
-fn rename_changes_name_and_rejects_conflicts() {
-    let connection = open_in_memory_database().expect("database should initialize");
-    let state = AppState::new(connection);
-    let store = state.cockpit_layouts();
-    let a = store.save_cockpit_layout(input("Alpha")).expect("save a");
-    let _b = store.save_cockpit_layout(input("Beta")).expect("save b");
-
-    let renamed = store
-        .rename_cockpit_layout(RenameCockpitLayoutInput {
-            id: a.id.clone(),
-            name: "Gamma".to_owned(),
-        })
-        .expect("rename");
-    assert_eq!(renamed.name, "Gamma");
-    assert_eq!(renamed.id, a.id, "id is stable across rename");
-
-    // Renaming onto a name another layout already uses is rejected.
-    let conflict = store.rename_cockpit_layout(RenameCockpitLayoutInput {
-        id: a.id.clone(),
-        name: "Beta".to_owned(),
-    });
-    assert!(matches!(
-        conflict,
-        Err(StorageError::InvalidCockpitLayoutName { .. })
-    ));
-
-    // Renaming a layout that does not exist is not_found.
-    let missing = store.rename_cockpit_layout(RenameCockpitLayoutInput {
-        id: "layout_missing".to_owned(),
-        name: "Whatever".to_owned(),
-    });
-    assert!(matches!(
-        missing,
-        Err(StorageError::CockpitLayoutNotFound { .. })
-    ));
-}
-
-#[test]
 fn delete_removes_a_layout() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

@@ -37,7 +37,6 @@ import type {
 } from "../../api/types";
 import type { BackupStatus } from "../../api/backups";
 import type { ClaimExtractionJob } from "../../api/claimExtraction";
-import type { EmbeddingModelStatus } from "../../api/interpretation";
 import type { IrReportResolution } from "../../api/ir";
 import type { KpiExtractionJob } from "../../api/kpiExtraction";
 import type {
@@ -981,6 +980,7 @@ export function makeUserSettings(): UserSettings {
     database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
     queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
     pinnedCompanyIds: [],
+    mcp: { enabled: false, port: 8317 },
   };
 }
 
@@ -1101,23 +1101,6 @@ export function makeLogStatus(): LogStatus {
     level: "info",
     maxFiles: 5,
     maxFileBytes: 5_242_880,
-  };
-}
-
-export function makeEmbeddingModelStatus(): EmbeddingModelStatus {
-  return {
-    modelId: "bge-small-en-v1.5",
-    dim: 384,
-    weightsState: "ready",
-    downloadProgress: null,
-    downloadError: null,
-    activeSimilarityStrategy: "embedding",
-    embeddedCounts: [
-      { contentType: "feed_item", count: 12 },
-      { contentType: "notebook_entry", count: 6 },
-    ],
-    indexModelId: "bge-small-en-v1.5",
-    featureCompiled: true,
   };
 }
 

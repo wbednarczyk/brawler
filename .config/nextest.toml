@@ -1,0 +1,11 @@
+# Guardrail 2026-07-12 (v0.52 closure): tests that bind real loopback sockets
+# (MCP lifecycle/server + the live-toggle command test) race each other for
+# probed ports under nextest's default parallelism — the probe→bind window let
+# a parallel test steal the port and redden the gate intermittently. Serialize
+# them among themselves; everything else keeps full parallelism.
+[test-groups]
+loopback-sockets = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(mcp::lifecycle) | test(mcp::server) | test(set_enabled_starts_and_stops_live)'
+test-group = 'loopback-sockets'

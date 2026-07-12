@@ -1,7 +1,7 @@
 use super::sources;
 use super::*;
 
-const EVIDENCE_TYPES: &[&str] = &[
+pub(crate) const EVIDENCE_TYPES: &[&str] = &[
     "feed_item",
     "notebook_entry",
     "claim",
@@ -10,6 +10,7 @@ const EVIDENCE_TYPES: &[&str] = &[
     "ai_analysis",
     "research_question",
     "company_signal",
+    "decision_entry",
 ];
 
 const RELATION_TYPES: &[&str] = &[
@@ -240,6 +241,23 @@ pub(super) fn list_research_evidence(
             JOIN signal_categories ON signal_categories.key = company_signals.category
             JOIN scope_companies ON scope_companies.company_id = company_signals.company_id
             WHERE company_signals.status = 'confirmed'
+
+            UNION ALL
+
+            SELECT
+                'evidence_decision_entry_' || decision_entries.id AS id,
+                'decision_entry' AS evidence_type,
+                'research' AS source_domain,
+                decision_entries.id AS source_id,
+                decision_entries.company_id AS company_id,
+                decision_entries.decided_at AS occurred_at,
+                decision_entries.kind AS title,
+                NULLIF(substr(decision_entries.rationale_md, 1, 240), '') AS summary,
+                NULL AS source_url,
+                NULL AS attribution,
+                'user_note' AS trust_category
+            FROM decision_entries
+            JOIN scope_companies ON scope_companies.company_id = decision_entries.company_id
         )
         SELECT
             id,
@@ -852,6 +870,8 @@ fn validate_evidence_reference(
         "research_question" => {
             validate_reference_exists(connection, "research_questions", evidence_id)
         }
+        "company_signal" => validate_reference_exists(connection, "company_signals", evidence_id),
+        "decision_entry" => validate_reference_exists(connection, "decision_entries", evidence_id),
         _ => Err(StorageError::InvalidResearchValue {
             key: "evidence_type",
             value: evidence_type.to_owned(),

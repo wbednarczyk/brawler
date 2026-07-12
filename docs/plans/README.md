@@ -31,5 +31,10 @@ Operating model: the owner orchestrates (card → session → review), the imple
 
 ## Files
 
-- Detailed (ready to implement): `v0.50` … `v0.56` — execution order stays dependency-driven (roadmap order); the heavy-but-ADR-frozen v0.55/v0.56 were planned in full up front deliberately.
+- Cross-cutting, ready to implement after the active `v0.52` worktree closes:
+  [`ux-quality-loop-v2.md`](ux-quality-loop-v2.md) — experience contracts,
+  adversarial frontend scenarios, expanded journey evidence, continuous dogfooding,
+  and the J1/J2 pilot (Radicle epic `bd1a6af`).
+- Detailed (ready to implement): `v0.52` (active milestone: judgment + MCP MVP + cleanup) and `v0.53` … `v0.56` — execution order stays dependency-driven (roadmap order); the heavy-but-ADR-frozen v0.55/v0.56 were planned in full up front deliberately.
 - Skeletons (need a planning session before start): `v0.57` — do **not** start implementation from a skeleton.
+- Parked: `v0.67-import-export-v2-offsite-backup.md` (deferred 2026-07-11, schema stability first — re-validate at take-up).

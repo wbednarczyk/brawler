@@ -47,19 +47,6 @@ pub struct NewCockpitLayout {
     pub dockview_version: Option<String>,
 }
 
-/// Input for `rename_cockpit_layout`.
-#[derive(Debug, Deserialize)]
-#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
-#[cfg_attr(
-    feature = "ts-export",
-    ts(export, export_to = "../../src/api/generated/")
-)]
-#[serde(rename_all = "camelCase")]
-pub struct RenameCockpitLayoutInput {
-    pub id: String,
-    pub name: String,
-}
-
 #[derive(Clone)]
 pub struct CockpitLayoutStore {
     db: Database,
@@ -78,14 +65,6 @@ impl CockpitLayoutStore {
     pub fn save_cockpit_layout(&self, input: NewCockpitLayout) -> StorageResult<CockpitLayout> {
         let connection = self.db.checkout()?;
         save_cockpit_layout(&connection, input)
-    }
-
-    pub fn rename_cockpit_layout(
-        &self,
-        input: RenameCockpitLayoutInput,
-    ) -> StorageResult<CockpitLayout> {
-        let connection = self.db.checkout()?;
-        rename_cockpit_layout(&connection, input)
     }
 
     pub fn delete_cockpit_layout(&self, layout_id: &str) -> StorageResult<()> {
@@ -204,33 +183,6 @@ pub(super) fn save_cockpit_layout(
         ],
     )?;
     fetch_by_id(connection, &id)?.ok_or(StorageError::CockpitLayoutNotFound { id })
-}
-
-pub(super) fn rename_cockpit_layout(
-    connection: &Connection,
-    input: RenameCockpitLayoutInput,
-) -> StorageResult<CockpitLayout> {
-    let name = input.name.trim().to_owned();
-    if name.is_empty() {
-        return Err(StorageError::InvalidCockpitLayoutName { name: input.name });
-    }
-    if fetch_by_id(connection, &input.id)?.is_none() {
-        return Err(StorageError::CockpitLayoutNotFound { id: input.id });
-    }
-    // A different layout already using this name is a name conflict.
-    if let Some(other) = fetch_by_name(connection, &name)? {
-        if other.id != input.id {
-            return Err(StorageError::InvalidCockpitLayoutName { name });
-        }
-    }
-    connection.execute(
-        "UPDATE cockpit_layouts
-         SET name = ?2,
-             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-         WHERE id = ?1",
-        params![input.id, name],
-    )?;
-    fetch_by_id(connection, &input.id)?.ok_or(StorageError::CockpitLayoutNotFound { id: input.id })
 }
 
 pub(super) fn delete_cockpit_layout(connection: &Connection, layout_id: &str) -> StorageResult<()> {

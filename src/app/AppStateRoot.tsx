@@ -675,6 +675,7 @@ export function AppStateRoot({
     updateCapabilityProviders,
     updatePollInterval,
     updateBackfillYears,
+    updateMcpPort,
     updateHistorySweepAiCallLimit,
     updateLogLevel,
     updateLogMaxFileBytes,
@@ -895,6 +896,7 @@ export function AppStateRoot({
     clearInboxFilters,
     markVisibleInboxAsRead,
     openCompanyWorkspaceFromFeedItem,
+    scopeInboxToCompany,
     selectFeedItemFromKeyboard,
     toggleFeedItemReadState,
     updateSelectedFeedItem,
@@ -1001,15 +1003,10 @@ export function AppStateRoot({
   } = useWorkspaceNavigationController({
     companiesById,
     feedState,
+    scopeInboxToCompany,
     selectedCompanyFeedItemId,
     selectedCompanyId,
     setActiveSection,
-    setInboxCompanyFilter,
-    setInboxSourceFilter,
-    setInboxStatusFilter,
-    setInboxTypeFilter,
-    setInboxWatchlistFilter,
-    setSearchQuery,
     setSelectedCompanyFeedItemId,
     setSelectedCompanyId,
     setSelectedFeedItemId,
@@ -1131,12 +1128,7 @@ export function AppStateRoot({
 
     switch (item.sourceDomain) {
       case "feed":
-        setInboxCompanyFilter(itemCompanyTicker);
-        setInboxStatusFilter("all");
-        setInboxTypeFilter("all");
-        setInboxSourceFilter("all");
-        setInboxWatchlistFilter("all");
-        setSearchQuery("");
+        scopeInboxToCompany(itemCompanyTicker);
         setSelectedFeedItemId(item.sourceId);
         setActiveSection("Inbox");
         break;
@@ -1166,7 +1158,7 @@ export function AppStateRoot({
         setActiveSection("Transcripts");
         break;
       case "ai_analysis":
-        setInboxCompanyFilter(itemCompanyTicker);
+        scopeInboxToCompany(itemCompanyTicker);
         setActiveSection("Inbox");
         break;
     }
@@ -1184,13 +1176,9 @@ export function AppStateRoot({
         setSearchFocusSelector(`[data-watchlist-id="${match.sourceId}"]`);
         break;
       case "feed_item":
-        // Clear filters so the selected item is not hidden by an active filter.
-        setInboxCompanyFilter("all");
-        setInboxStatusFilter("all");
-        setInboxTypeFilter("all");
-        setInboxSourceFilter("all");
-        setInboxWatchlistFilter("all");
-        setSearchQuery("");
+        // Clear ALL filters (via the canonical reset) so the selected item is
+        // not hidden by any active filter (c80dabe).
+        clearInboxFilters();
         setSelectedFeedItemId(match.sourceId);
         setActiveSection("Inbox");
         setSearchFocusSelector(`[data-feed-item-id="${match.sourceId}"]`);
@@ -1964,6 +1952,7 @@ export function AppStateRoot({
                 onLocaleChange: updateLocale,
                 onPollIntervalChange: updatePollInterval,
                 onBackfillYearsChange: updateBackfillYears,
+                onMcpPortChange: updateMcpPort,
                 onHistorySweepAiCallLimitChange: updateHistorySweepAiCallLimit,
                 onShortcutBindingsChange: updateShortcutBindings,
                 onYoutubeTranscriptionModelChange: updateYoutubeTranscriptionModel,

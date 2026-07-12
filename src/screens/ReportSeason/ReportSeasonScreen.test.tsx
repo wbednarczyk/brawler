@@ -2,11 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as reportSeasonApi from "../../api/reportSeason";
+import * as expectationsApi from "../../api/reportExpectations";
+import { CommandInvocationError } from "../../api/tauri";
 import type { Watchlist } from "../../api/types";
 import { ReportSeasonScreen } from "./ReportSeasonScreen";
 import { ReportSeasonProvider } from "../../app/state/screenViewModels";
 
 vi.mock("../../api/reportSeason");
+vi.mock("../../api/reportExpectations");
 
 const watchlists: Watchlist[] = [
   { id: "watchlist_main", name: "Main GPW", description: null, companyCount: 1 },
@@ -73,6 +76,218 @@ beforeEach(() => {
     preparedAt: "2099-08-02T00:00:00Z",
     processedAt: "2099-08-30T00:00:00Z",
     linkedReportDocumentId: null,
+  });
+});
+
+// --- Pre-report expectations (J4, ADR 0071) ---------------------------------
+
+function sampleExpectation(
+  overrides: Partial<expectationsApi.ReportExpectation> = {},
+): expectationsApi.ReportExpectation {
+  return {
+    id: "report_expectation_1",
+    companyId: "company_gpw_cdr",
+    eventKey: "evt-upcoming",
+    fiscalYear: 2099,
+    periodType: "H1",
+    stanceMd: "Old stance",
+    frozenAt: null,
+    resolutionNoteMd: null,
+    resolvedAt: null,
+    createdAt: "2099-08-01T00:00:00Z",
+    updatedAt: "2099-08-01T00:00:00Z",
+    metrics: [],
+    ...overrides,
+  };
+}
+
+function sampleReview(
+  overrides: Partial<expectationsApi.ExpectationReview> = {},
+): expectationsApi.ExpectationReview {
+  return {
+    companyId: "company_gpw_cdr",
+    eventKey: "evt-upcoming",
+    fiscalYear: 2099,
+    periodType: "H1",
+    stanceMd: "Old stance",
+    frozenAt: null,
+    factsAvailable: false,
+    resolutionNoteMd: null,
+    resolvedAt: null,
+    metrics: [],
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  // Default: the occurrence has no recorded expectation yet.
+  vi.mocked(expectationsApi.listReportExpectations).mockResolvedValue([]);
+  vi.mocked(expectationsApi.expectationReview).mockResolvedValue(sampleReview());
+  vi.mocked(expectationsApi.createReportExpectation).mockResolvedValue(sampleExpectation());
+  vi.mocked(expectationsApi.updateReportExpectation).mockResolvedValue(sampleExpectation());
+  vi.mocked(expectationsApi.recordExpectationResolution).mockResolvedValue(
+    sampleExpectation({ resolutionNoteMd: "done", resolvedAt: "2099-08-31T00:00:00Z" }),
+  );
+});
+
+describe("Report-season expectations (J4)", () => {
+  it("offers writing expectations when none exist yet", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    expect(
+      await screen.findByRole("button", { name: /Write expectations/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("writes a stance-only expectation for the occurrence", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    await user.click(await screen.findByRole("button", { name: /Write expectations/ }));
+    await user.selectOptions(await screen.findByLabelText("Period type"), "H1");
+    await user.type(screen.getByLabelText("Your stance"), "Margin recovery on the launch.");
+    await user.click(screen.getByRole("button", { name: /Save expectations/ }));
+
+    await waitFor(() =>
+      expect(expectationsApi.createReportExpectation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companyId: "company_gpw_cdr",
+          eventKey: "evt-upcoming",
+          fiscalYear: 2099,
+          periodType: "H1",
+          stanceMd: "Margin recovery on the launch.",
+          metrics: [],
+        }),
+      ),
+    );
+  });
+
+  it("adds a metric expectation via the KPI picker", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    await user.click(await screen.findByRole("button", { name: /Write expectations/ }));
+    await user.selectOptions(await screen.findByLabelText("Period type"), "H1");
+    await user.type(screen.getByLabelText("Your stance"), "Revenue above a billion.");
+    await user.click(screen.getByRole("button", { name: /Add metric expectation/ }));
+    await user.selectOptions(screen.getByLabelText("Metric"), "net_revenue");
+    await user.selectOptions(screen.getByLabelText("Comparator"), "gte");
+    await user.type(screen.getByLabelText("Expected value"), "1000000000");
+    await user.click(screen.getByRole("button", { name: /Save expectations/ }));
+
+    await waitFor(() =>
+      expect(expectationsApi.createReportExpectation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companyId: "company_gpw_cdr",
+          eventKey: "evt-upcoming",
+          metrics: [
+            {
+              metricKey: "net_revenue",
+              comparator: "gte",
+              expectedValue: "1000000000",
+              unit: "PLN",
+            },
+          ],
+        }),
+      ),
+    );
+  });
+
+  it("shows expectation-vs-actual and records a resolution note once facts land", async () => {
+    vi.mocked(expectationsApi.listReportExpectations).mockResolvedValue([
+      sampleExpectation({ frozenAt: "2099-08-30T00:00:00Z" }),
+    ]);
+    vi.mocked(expectationsApi.expectationReview).mockResolvedValue(
+      sampleReview({
+        frozenAt: "2099-08-30T00:00:00Z",
+        factsAvailable: true,
+        metrics: [
+          {
+            metricKey: "net_revenue",
+            comparator: "gte",
+            expectedValue: "1000000000",
+            unit: "PLN",
+            actualValue: "1200000000",
+            outcome: "met",
+          },
+        ],
+      }),
+    );
+
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+
+    // Frozen → read-only review, no composer trigger.
+    expect(await screen.findByText(/Expectations vs actuals/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Write expectations/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Edit expectations/ })).toBeNull();
+    // Expected vs actual side by side, plus the factual outcome.
+    expect(screen.getByText(/1200000000/)).toBeInTheDocument();
+    expect(screen.getByText("Met")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Your verdict"), "Revenue beat my bar.");
+    await user.click(screen.getByRole("button", { name: /Save verdict/ }));
+
+    await waitFor(() =>
+      expect(expectationsApi.recordExpectationResolution).toHaveBeenCalledWith(
+        expect.objectContaining({
+          companyId: "company_gpw_cdr",
+          eventKey: "evt-upcoming",
+          resolutionNoteMd: "Revenue beat my bar.",
+        }),
+      ),
+    );
+  });
+
+  it("flips an editable expectation to read-only when the update hits the freeze conflict", async () => {
+    vi.mocked(expectationsApi.listReportExpectations).mockResolvedValue([sampleExpectation()]);
+    // Editable on expand; frozen after the conflict reload.
+    vi.mocked(expectationsApi.expectationReview)
+      .mockResolvedValueOnce(sampleReview({ factsAvailable: false }))
+      .mockResolvedValue(sampleReview({ factsAvailable: true, frozenAt: "2099-08-30T00:00:00Z" }));
+    vi.mocked(expectationsApi.updateReportExpectation).mockRejectedValue(
+      new CommandInvocationError({ code: "conflict", message: "expectation is frozen" }),
+    );
+
+    const user = userEvent.setup();
+    render(
+      <ReportSeasonProvider value={{ watchlists, openCompanyWorkspace: vi.fn() }}>
+        <ReportSeasonScreen />
+      </ReportSeasonProvider>,
+    );
+
+    await user.click(await screen.findByText("CD Projekt"));
+    await user.click(await screen.findByRole("button", { name: /Edit expectations/ }));
+    await user.clear(screen.getByLabelText("Your stance"));
+    await user.type(screen.getByLabelText("Your stance"), "Hindsight rewrite");
+    await user.click(screen.getByRole("button", { name: /Save expectations/ }));
+
+    // The conflict envelope reloads the review, which is now frozen → read-only:
+    // the composer's save action is gone.
+    expect(await screen.findByText(/Expectations vs actuals/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Save expectations/ })).toBeNull();
   });
 });
 

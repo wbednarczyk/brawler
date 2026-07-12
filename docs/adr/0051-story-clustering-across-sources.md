@@ -108,6 +108,9 @@ worth a milestone on its own.
   as "evaluated, not shipped" with this ADR as the rationale.
 - `story_key` (shipped in `v0.45.1` Architecture v2) remains; it is harmless and was
   not the failure point. No migration is added or removed from released history.
+  *(Update 2026-07-11: removed after all — with clustering dropped it was write-only
+  on every ingest; retired in `v0.52.0` via a forward migration,
+  [ADR 0080](0080-retire-embedding-model.md).)*
 - The throwaway validation harness lived only on the feature branch against a
   gitignored DB copy; nothing touched a real database.
 

@@ -44,6 +44,10 @@ pub enum StorageError {
     InvalidReportSeasonValue { key: &'static str, value: String },
     #[error("missing report season reference for {table}: {id}")]
     MissingReportSeasonReference { table: String, id: String },
+    #[error(
+        "report expectation for {event_key} is frozen: the period's facts are already recorded"
+    )]
+    ReportExpectationFrozen { event_key: String },
     #[error("invalid quality framework value for {key}: {value}")]
     InvalidFrameworkValue { key: &'static str, value: String },
     #[error("missing quality framework reference for {table}: {id}")]
@@ -54,8 +58,6 @@ pub enum StorageError {
     NotATemplate { id: String },
     #[error("classification error: {0}")]
     Classification(String),
-    #[error("invalid embedding value: {message}")]
-    InvalidEmbeddingValue { message: String },
     #[error("cockpit layout not found: {id}")]
     CockpitLayoutNotFound { id: String },
     #[error("invalid cockpit layout name: {name}")]

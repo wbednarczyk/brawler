@@ -338,6 +338,26 @@ const MIGRATIONS: &[Migration] = &[
         name: "period_type_annual_to_fy",
         sql: include_str!("../../migrations/0066_period_type_annual_to_fy.sql"),
     },
+    Migration {
+        version: 67,
+        name: "decision_entries",
+        sql: include_str!("../../migrations/0067_decision_entries.sql"),
+    },
+    Migration {
+        version: 68,
+        name: "report_expectations",
+        sql: include_str!("../../migrations/0068_report_expectations.sql"),
+    },
+    Migration {
+        version: 69,
+        name: "drop_content_embeddings",
+        sql: include_str!("../../migrations/0069_drop_content_embeddings.sql"),
+    },
+    Migration {
+        version: 70,
+        name: "drop_feed_item_story_key",
+        sql: include_str!("../../migrations/0070_drop_feed_item_story_key.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

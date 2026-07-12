@@ -2,7 +2,6 @@ pub mod ai_analysis;
 pub mod autopilot;
 pub mod backfill;
 pub mod claim_extraction;
-pub mod content_embedding;
 pub mod event_derivation;
 pub mod feed_cleanup;
 pub mod handlers;
@@ -432,6 +431,7 @@ mod tests {
     /// other tests.
     #[test]
     fn build_capability_provider_hard_fails_text_only_provider_for_document_capability() {
+        crate::providers::credentials::scrub_provider_env_fallbacks();
         std::env::set_var("OPENAI_COMPATIBLE_API_KEY", "test-key");
 
         let connection = open_in_memory_database().expect("database should initialize");
@@ -486,6 +486,10 @@ mod tests {
         // so it survives the credential check and is skipped for the *other*
         // reason instead (missing base URL), while Gemini is skipped for
         // missing credential — exercising both skip-reason messages at once.
+        // Scrub first: an exported GEMINI_API_KEY in the developer's shell
+        // would otherwise give Gemini a dev-fallback credential (guardrail
+        // 2026-07-11).
+        crate::providers::credentials::scrub_provider_env_fallbacks();
         std::env::set_var("OPENAI_COMPATIBLE_API_KEY", "test-key");
 
         let connection = open_in_memory_database().expect("database should initialize");
@@ -536,6 +540,7 @@ mod tests {
 
     #[test]
     fn skips_member_without_credential() {
+        crate::providers::credentials::scrub_provider_env_fallbacks();
         // `validate_capability_providers` only ever allows currently-selectable
         // (non-test-sample) providers into the map, so a mixed real +
         // test-sample pool can never be configured through the public

@@ -72,6 +72,13 @@ export function useSettingsController({
     updateSettings({ backfillYears: nextBackfillYears });
   }
 
+  // MCP listen port (ADR 0078). The backend clamps to [1024, 65535]; the UI
+  // commits an already-clamped value on blur (never per keystroke). Enable/token
+  // lifecycle is owned by McpSettings via its dedicated commands.
+  function updateMcpPort(nextPort: number) {
+    updateSettings({ mcpPort: nextPort });
+  }
+
   // Per-history-sweep tier-4 AI call budget (ADR 0077 §6). The backend clamps
   // to [0, 500] (0 = unlimited); the UI offers presets + a bound input, so
   // callers pass an already-sane value.
@@ -259,6 +266,7 @@ export function useSettingsController({
     updateLogMaxFiles,
     updateBackfillYears,
     updateHistorySweepAiCallLimit,
+    updateMcpPort,
     updatePinnedCompanyIds,
     updatePollInterval,
     updateShortcutBindings,

@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::{StorageError, StorageResult};
 
 const DEFAULT_PROMPT_PRESET_ID: &str = "default_summary";
-const DEFAULT_PROMPT_VERSION: &str = "m13.source_grounded.v1";
+const DEFAULT_PROMPT_VERSION: &str = "m13.source_grounded.v2";
 
 #[derive(Debug, Clone, Serialize)]
 #[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]

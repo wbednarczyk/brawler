@@ -141,15 +141,18 @@ const PANEL_CONTRACTS: PanelContract[] = [
         await expect(pane.locator(".report-season-row").first()).toBeVisible();
         await expect(pane.locator(".report-season-card")).toBeHidden();
       },
-      // M: + prep checklist inline; extended context (KPIs, evidence) still folds.
+      // M: + prep checklist inline (incl. the expectations block); extended
+      // context (KPIs, evidence) still folds.
       M: async (page, pane) => {
         await expect(pane.locator(".report-season-card")).toBeVisible();
         await expect(pane.locator(".report-season-card-prep")).toBeVisible();
+        await expect(pane.locator(".report-season-expectations").first()).toBeVisible();
         await expect(pane.locator(".report-season-card-extended")).toBeHidden();
       },
-      // L: + full pre-report card (prep + extended context).
+      // L: + full pre-report card (prep + expectations + extended context).
       L: async (page, pane) => {
         await expect(pane.locator(".report-season-card-prep")).toBeVisible();
+        await expect(pane.locator(".report-season-expectations").first()).toBeVisible();
         await expect(pane.locator(".report-season-card-extended")).toBeVisible();
       },
       // short: rows only.
@@ -207,6 +210,30 @@ test.describe("panel density — Research / Events / Report Season", { tag: "@cl
     await setPaneSize(page, { ...TIER_SIZE.short, pane });
     await expect(pane.locator(".event-week-grid")).toHaveCount(0);
     await expect(pane.locator(".events-layout")).toBeVisible();
+    await expectNoPageOverflow(page);
+  });
+
+  // J4 (ADR 0071): the expectations composer's period picker + metric rows are
+  // the widest new content in the pre-report card. Opened in a narrow M pane with
+  // a metric row added, neither the pane nor an inner scroller overflows.
+  test("Report Season expectations composer stays within a narrow pane", async ({ page }) => {
+    await openApp(page);
+    const pane = await openReportSeason(page);
+    await setPaneSize(page, { ...TIER_SIZE.M, pane });
+
+    await pane.getByRole("button", { name: /Write expectations/ }).click();
+    await expect(pane.locator(".report-season-expectation-composer")).toBeVisible();
+    await pane.getByRole("button", { name: /Add metric expectation/ }).click();
+    await expect(pane.locator(".report-season-metric-row")).toBeVisible();
+
+    // The pre-report card scrolls internally; assert its own scroll container plus
+    // the metric row do not blow out horizontally (document.scrollWidth reads 0
+    // for inner overflow — check the container).
+    const card = pane.locator(".report-season-card").first();
+    const overflow = await card.evaluate(
+      (el) => el.scrollWidth - el.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
     await expectNoPageOverflow(page);
   });
 });

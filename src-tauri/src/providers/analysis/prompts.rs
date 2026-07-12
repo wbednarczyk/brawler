@@ -231,7 +231,8 @@ pub fn analysis_prompt(request: &AnalysisRequest) -> String {
         "Analyze this source item for an investor research workflow. \
 Return only JSON with this exact shape: \
 {{\"summary\":\"...\",\"significance\":\"low|medium|high|unknown\",\"tags\":[\"...\"],\"reasoning\":\"...\",\"language\":\"en\",\"sourceReferences\":[{{\"sourceUrl\":\"...\",\"label\":\"...\"}}]}}. \
-Use only the provided source context. Cite the source URL. Do not include markdown fences, commentary, buy/sell/hold recommendations, portfolio allocation advice, or personalized investment advice.\n\n\
+Use only the provided source context. Cite the source URL. Do not include markdown fences, commentary, buy/sell/hold recommendations, portfolio allocation advice, or personalized investment advice. \
+Write the \"summary\", \"reasoning\", \"tags\", and each sourceReference \"label\" in {output_language}; keep any directly quoted text verbatim in its original language.\n\n\
 Prompt preset: {prompt_preset}\n\
 User question: {custom_question}\n\
 Company: {company}\n\
@@ -252,6 +253,7 @@ Language: {language}",
         attribution = item.attribution,
         source_url = item.source_url,
         language = item.language,
+        output_language = output_language_name(&request.output_language),
     )
 }
 
@@ -287,12 +289,14 @@ pub fn research_brief_prompt(request: &ResearchBriefRequest) -> String {
 Return only JSON with this exact shape: \
 {{\"title\":\"...\",\"summary\":\"...\",\"sections\":[{{\"heading\":\"...\",\"body\":\"...\",\"citationKeys\":[\"E1\"]}}],\"language\":\"en\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"feed_item\",\"evidenceId\":\"feed_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
 Use only the evidence below. Every material claim in every section must cite one or more evidence keys. \
-Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
+Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice. \
+Write the \"title\", \"summary\", every section \"heading\" and \"body\", and each citation \"label\" in {output_language}; keep every citation \"snippet\" verbatim in the evidence's original language.\n\n\
 Scope type: {scope_type}\n\
 Scope id: {scope_id}\n\
 Evidence:\n{evidence}",
         scope_type = request.scope_type,
         scope_id = request.scope_id,
+        output_language = output_language_name(&request.output_language),
     )
 }
 
@@ -305,12 +309,14 @@ Focus on changed evidence, open reminders, upcoming review work, and unresolved 
 Return only JSON with this exact shape: \
 {{\"title\":\"...\",\"summary\":\"...\",\"sections\":[{{\"heading\":\"...\",\"body\":\"...\",\"citationKeys\":[\"E1\"]}}],\"language\":\"en\",\"citations\":[{{\"citationKey\":\"E1\",\"evidenceType\":\"feed_item\",\"evidenceId\":\"feed_01\",\"label\":\"...\",\"snippet\":\"...\"}}]}}. \
 Use only the evidence below. Every material claim in every section must cite one or more evidence keys. \
-Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice.\n\n\
+Do not include markdown fences, commentary outside JSON, buy/sell/hold recommendations, price targets, portfolio allocation advice, or personalized investment advice. \
+Write the \"title\", \"summary\", every section \"heading\" and \"body\", and each citation \"label\" in {output_language}; keep every citation \"snippet\" verbatim in the evidence's original language.\n\n\
 Scope type: {scope_type}\n\
 Scope id: {scope_id}\n\
 Evidence:\n{evidence}",
         scope_type = request.scope_type,
         scope_id = request.scope_id,
+        output_language = output_language_name(&request.output_language),
     )
 }
 
@@ -1228,5 +1234,187 @@ mod tests {
         )
         .expect_err("a citation with no evidenceId must be rejected");
         assert_eq!(error.code(), "parse_error");
+    }
+
+    // ---- Output language follows app locale (owner decision 2026-07-07) ------
+    //
+    // Every prose-producing prompt instructs the model to write its prose in the
+    // app locale, while verbatim quotes/snippets stay in the source language.
+    // Structured-extraction prompts (KPI, claims) deliberately carry NO such
+    // instruction — their output is data traced to the source, not app prose.
+
+    fn sample_analysis_request() -> AnalysisRequest {
+        AnalysisRequest {
+            feed_item: crate::storage::FeedItem {
+                id: "feed_1".to_owned(),
+                company: "GPW:CDR".to_owned(),
+                item_type: "official_report".to_owned(),
+                source: "Bankier Company Komunikaty".to_owned(),
+                time: "2026-06-03T10:00:00Z".to_owned(),
+                title: "Quarterly report".to_owned(),
+                unread: true,
+                saved: false,
+                source_url: "https://example.com/report".to_owned(),
+                language: "pl".to_owned(),
+                published_at: "2026-06-03T10:00:00Z".to_owned(),
+                fetched_at: "2026-06-03T10:05:00Z".to_owned(),
+                attribution: "Bankier".to_owned(),
+                summary: "Summary".to_owned(),
+                body_text: "Body".to_owned(),
+                attachments: Vec::new(),
+            },
+            prompt_preset_id: "default_summary".to_owned(),
+            custom_question: None,
+            output_language: "en".to_owned(),
+        }
+    }
+
+    fn sample_prose_evidence() -> Vec<crate::storage::ResearchEvidenceItem> {
+        vec![crate::storage::ResearchEvidenceItem {
+            id: "feed_item:feed_01".to_owned(),
+            evidence_type: "feed_item".to_owned(),
+            source_domain: "feed_item".to_owned(),
+            source_id: "feed_01".to_owned(),
+            company_id: "company_gpw_cdr".to_owned(),
+            occurred_at: "2026-05-02T00:00:00Z".to_owned(),
+            title: "Skonsolidowane sprawozdanie finansowe 2026".to_owned(),
+            summary: Some("Przychody wzrosly o 12%.".to_owned()),
+            source_url: Some("https://example.com/report".to_owned()),
+            attribution: Some("Investor relations".to_owned()),
+            trust_category: "official".to_owned(),
+            review_state: crate::storage::ResearchEvidenceReviewState {
+                changed_since_company_review: false,
+                changed_since_watchlist_review: false,
+            },
+        }]
+    }
+
+    fn sample_brief_request() -> ResearchBriefRequest {
+        ResearchBriefRequest {
+            scope_type: "company".to_owned(),
+            scope_id: "company_gpw_cdr".to_owned(),
+            evidence_items: sample_prose_evidence(),
+            output_language: "en".to_owned(),
+        }
+    }
+
+    fn sample_digest_request() -> ResearchDigestRequest {
+        ResearchDigestRequest {
+            scope_type: "company".to_owned(),
+            scope_id: "company_gpw_cdr".to_owned(),
+            evidence_items: sample_prose_evidence(),
+            output_language: "en".to_owned(),
+        }
+    }
+
+    #[test]
+    fn analysis_prompt_responds_in_the_app_language() {
+        let mut request = sample_analysis_request();
+        request.output_language = "pl".to_owned();
+        assert!(
+            analysis_prompt(&request).contains("in Polish"),
+            "pl locale must ask for Polish prose"
+        );
+        request.output_language = "en".to_owned();
+        assert!(
+            analysis_prompt(&request).contains("in English"),
+            "en locale must ask for English prose"
+        );
+        // Unknown/legacy locale codes degrade safely to English.
+        request.output_language = "de".to_owned();
+        let prompt = analysis_prompt(&request);
+        assert!(
+            prompt.contains("in English"),
+            "unknown locale degrades to English"
+        );
+        // Decision-support boundary must remain in the template (invariant).
+        assert!(
+            prompt.contains("buy/sell/hold recommendations") && prompt.contains("Do not include"),
+            "analysis prompt must keep forbidding buy/sell/hold advice"
+        );
+    }
+
+    #[test]
+    fn research_brief_prompt_responds_in_the_app_language() {
+        let mut request = sample_brief_request();
+        request.output_language = "pl".to_owned();
+        assert!(
+            research_brief_prompt(&request).contains("in Polish"),
+            "pl locale must ask for Polish prose"
+        );
+        request.output_language = "en".to_owned();
+        assert!(
+            research_brief_prompt(&request).contains("in English"),
+            "en locale must ask for English prose"
+        );
+        request.output_language = "de".to_owned();
+        let prompt = research_brief_prompt(&request);
+        assert!(
+            prompt.contains("in English"),
+            "unknown locale degrades to English"
+        );
+        assert!(
+            prompt.contains("original language"),
+            "verbatim citation snippets must stay in the source language"
+        );
+        assert!(
+            prompt.contains("buy/sell/hold recommendations") && prompt.contains("Do not include"),
+            "brief prompt must keep forbidding buy/sell/hold advice"
+        );
+    }
+
+    #[test]
+    fn research_digest_prompt_responds_in_the_app_language() {
+        let mut request = sample_digest_request();
+        request.output_language = "pl".to_owned();
+        assert!(
+            research_digest_prompt(&request).contains("in Polish"),
+            "pl locale must ask for Polish prose"
+        );
+        request.output_language = "en".to_owned();
+        assert!(
+            research_digest_prompt(&request).contains("in English"),
+            "en locale must ask for English prose"
+        );
+        request.output_language = "de".to_owned();
+        let prompt = research_digest_prompt(&request);
+        assert!(
+            prompt.contains("in English"),
+            "unknown locale degrades to English"
+        );
+        assert!(
+            prompt.contains("original language"),
+            "verbatim citation snippets must stay in the source language"
+        );
+        assert!(
+            prompt.contains("buy/sell/hold recommendations") && prompt.contains("Do not include"),
+            "digest prompt must keep forbidding buy/sell/hold advice"
+        );
+    }
+
+    #[test]
+    fn structured_extraction_prompts_carry_no_app_locale_instruction() {
+        // Claim and KPI extraction produce structured data with verbatim source
+        // snippets and a source-language `language` field. Forcing the paraphrase
+        // into the app locale would break source traceability, so these prompts
+        // deliberately carry NO app-locale prose instruction.
+        let claim = claim_extraction_prompt(&ClaimExtractionRequest {
+            company_name: "cyber_Folks".to_owned(),
+            source_kind: "report document".to_owned(),
+        });
+        assert!(
+            !claim.contains("in English") && !claim.contains("in Polish"),
+            "claim extraction must not instruct an app-locale output language"
+        );
+        let kpi = kpi_extraction_prompt(&KpiExtractionRequest {
+            company_name: "cyber_Folks".to_owned(),
+            statement_type: None,
+            known_kpis: Vec::new(),
+            period_hint: None,
+        });
+        assert!(
+            !kpi.contains("in English") && !kpi.contains("in Polish"),
+            "kpi extraction must not instruct an app-locale output language"
+        );
     }
 }

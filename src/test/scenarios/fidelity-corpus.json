@@ -72,7 +72,7 @@
       ]
     },
     {
-      "name": "cockpit layout save-list-rename-delete lifecycle",
+      "name": "cockpit layout save-list-delete lifecycle",
       "steps": [
         {
           "command": "save_cockpit_layout",
@@ -93,24 +93,13 @@
           "expectContains": { "name": "Fidelity Cockpit" }
         },
         {
-          "command": "rename_cockpit_layout",
-          "input": { "input": { "id": "$lid", "name": "Fidelity Renamed" } },
-          "expectField": { "name": "Fidelity Renamed" }
-        },
-        {
-          "command": "list_cockpit_layouts",
-          "input": {},
-          "expectContains": { "name": "Fidelity Renamed" },
-          "expectAbsent": { "name": "Fidelity Cockpit" }
-        },
-        {
           "command": "delete_cockpit_layout",
           "input": { "layoutId": "$lid" }
         },
         {
           "command": "list_cockpit_layouts",
           "input": {},
-          "expectAbsent": { "name": "Fidelity Renamed" }
+          "expectAbsent": { "name": "Fidelity Cockpit" }
         }
       ]
     },
@@ -361,6 +350,169 @@
           "command": "list_pending_kpi_proposals",
           "input": { "companyId": "$cid" },
           "expectAbsent": { "status": "pending" }
+        }
+      ]
+    },
+    {
+      "name": "decision journal create + list + kind filter (ADR 0071 J2)",
+      "_comment": "Decision entries are immutable, per-company judgments (ADR 0071). Seed-free: create a company, record a buy, assert it lists, then assert the kind filter excludes it. Ordering (decided_at, not created_at) is pinned by the Rust storage tests; this corpus proves both dispatchers implement create/list + the kind filter and key entries by the scoped company.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "DJRNL",
+              "displayName": "Journal Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_decision_entry",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "kind": "buy",
+              "rationaleMd": "Durable moat and improving cash generation.",
+              "decidedAt": "2026-01-15"
+            }
+          },
+          "capture": "eid",
+          "expectField": { "kind": "buy", "companyId": "company_gpw_djrnl" }
+        },
+        {
+          "command": "list_decision_entries",
+          "input": { "input": { "companyId": "$cid" } },
+          "expectContains": { "kind": "buy" }
+        },
+        {
+          "command": "list_decision_entries",
+          "input": { "input": { "companyId": "$cid", "kind": "pass" } },
+          "expectAbsent": { "kind": "buy" }
+        }
+      ]
+    },
+    {
+      "name": "report expectation create + update + list + review + resolution (ADR 0071 J2)",
+      "_comment": "Pre-report expectations are keyed by (company, event_key) occurrence (ADR 0071). Seed-free: create a company, record a stance + one metric, edit it while unfrozen, list it, read the expectation-vs-actual review, then record the user's own verdict. No facts are seeded, so factsAvailable is false on both sides and the per-metric outcome is unknown. The freeze-on-facts behavior and per-metric met/missed/unknown correctness are pinned by the Rust storage tests; this corpus proves both dispatchers implement all five expectation commands and key by the scoped occurrence.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "EXPCT",
+              "displayName": "Expectations Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_report_expectation",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "eventKey": "evt-fy2025",
+              "fiscalYear": 2025,
+              "periodType": "FY",
+              "stanceMd": "Expect a strong full year.",
+              "metrics": [
+                { "metricKey": "net_profit", "comparator": "gte", "expectedValue": "1000", "unit": null }
+              ]
+            }
+          },
+          "capture": "xid",
+          "expectField": { "eventKey": "evt-fy2025", "frozenAt": null }
+        },
+        {
+          "command": "list_report_expectations",
+          "input": { "input": { "companyId": "$cid" } },
+          "expectContains": { "eventKey": "evt-fy2025" }
+        },
+        {
+          "command": "update_report_expectation",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "eventKey": "evt-fy2025",
+              "stanceMd": "Revised: expect a solid, not spectacular, year."
+            }
+          },
+          "expectField": { "stanceMd": "Revised: expect a solid, not spectacular, year." }
+        },
+        {
+          "command": "expectation_review",
+          "input": { "input": { "companyId": "$cid", "eventKey": "evt-fy2025" } },
+          "expectField": { "companyId": "company_gpw_expct", "eventKey": "evt-fy2025", "factsAvailable": false }
+        },
+        {
+          "command": "record_expectation_resolution",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "eventKey": "evt-fy2025",
+              "resolutionNoteMd": "Called the direction right, magnitude off."
+            }
+          },
+          "expectField": { "resolutionNoteMd": "Called the direction right, magnitude off." }
+        }
+      ]
+    },
+    {
+      "name": "mcp auth token status + regenerate + revoke lifecycle (ADR 0078 M1)",
+      "_comment": "The MCP bearer token lives in the OS keychain (ADR 0078 decision 4). Keychain persistence is platform-dependent: on CI/dev Linux the keyring mock backend is EntryOnly (a stored secret is not readable back through a fresh entry), so the corpus asserts only the platform-independent intersection: status/revoke report the token absent (providerId mcp, secretKind auth_token) and regenerate dispatches on both sides. The regenerate step's token is random on the Rust side and deterministic in the mock, so no field of its result is asserted. Token semantics (64 lowercase hex, unique per call, plaintext returned exactly once, never logged) are pinned by the Rust unit tests in commands/mcp.rs; the mock's plaintext-once mirror by the final revoke step, which proves a set token reads back as not configured after revocation. Both replayers scrub BRAWLER_MCP_TOKEN (dev env fallback) before this journey per the scrub-hermeticity rule (docs/testing.md).",
+      "steps": [
+        {
+          "command": "revoke_mcp_token",
+          "input": {},
+          "expectField": { "providerId": "mcp", "secretKind": "auth_token", "configured": false }
+        },
+        {
+          "command": "mcp_token_status",
+          "input": {},
+          "expectField": { "providerId": "mcp", "secretKind": "auth_token", "configured": false }
+        },
+        {
+          "command": "regenerate_mcp_token",
+          "input": {}
+        },
+        {
+          "command": "revoke_mcp_token",
+          "input": {},
+          "expectField": { "configured": false }
+        }
+      ]
+    },
+    {
+      "name": "mcp server lifecycle: disabled + enabled-without-token both report not running (ADR 0078 M3)",
+      "_comment": "The MCP server refuses to run without a keychain token and when the setting is off; both are clean refusals, never crashes (ADR 0078 decision 4). Both replayers scrub BRAWLER_MCP_TOKEN (dev env fallback) before this journey per the scrub-hermeticity rule (docs/testing.md), so no ambient dev token flips the assertion. Rust replayer: set_mcp_enabled drives the real McpLifecycle against an in-memory AppState + the TEST keychain descriptor; with the env scrubbed there is no token, so the enabled path refuses (running:false) and no socket is bound — this keeps the corpus deterministic AND portable across keychain backends (a real ephemeral listener would need a readable token, which the EntryOnly Linux mock backend cannot provide). Mock: running mirrors settings.mcp.enabled AND ctx.mcpToken (null here), so both paths yield running:false. The running-with-a-real-socket path is covered by the Rust nextest lifecycle tests (mcp/lifecycle.rs), which inject a token via the dev env fallback. Only running/port are asserted — error text differs across replayers by design.",
+      "steps": [
+        {
+          "command": "mcp_status",
+          "input": {},
+          "expectField": { "running": false, "port": 8317 }
+        },
+        {
+          "command": "set_mcp_enabled",
+          "input": { "enabled": true },
+          "expectField": { "running": false }
+        },
+        {
+          "command": "mcp_status",
+          "input": {},
+          "expectField": { "running": false }
+        },
+        {
+          "command": "set_mcp_enabled",
+          "input": { "enabled": false },
+          "expectField": { "running": false, "port": 8317 }
         }
       ]
     }

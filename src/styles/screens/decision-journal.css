@@ -1,0 +1,186 @@
+/* Decision journal (ADR 0071, J3) — the per-company section + the global
+   cross-company panel. Modeled on the notebook layout: every grid/flex ancestor
+   down to the content rows carries min-width: 0 (+ minmax(0, 1fr) tracks) so long
+   unbreakable rationale/evidence titles truncate instead of forcing a horizontal
+   scrollbar at narrow panes (ui-authoring.md styling rules, DoD §B). */
+
+.decision-journal-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.decision-journal-form {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  min-width: 0;
+}
+
+.decision-journal-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  align-items: end;
+  min-width: 0;
+}
+
+.decision-journal-submit-button {
+  align-self: end;
+}
+
+.decision-journal-workspace {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.72fr) minmax(0, 1.28fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.decision-journal-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.decision-journal-row {
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.decision-journal-row:hover {
+  border-color: var(--border);
+  background: color-mix(in srgb, var(--surface-raised) 60%, transparent);
+}
+
+.decision-journal-row-selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.decision-journal-row-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.decision-journal-row-date {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.decision-journal-detail {
+  display: grid;
+  gap: var(--space-3);
+  align-content: start;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  min-width: 0;
+}
+
+.decision-journal-entry-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.decision-journal-entry-header .eyebrow {
+  display: block;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.decision-journal-evidence {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Rationale is free Markdown prose — a pathological single long token (a pasted
+   filename/URL) must wrap, not blow the pane out (DoD §B). */
+.decision-journal-detail .notebook-read-body,
+.decision-journal-global-row .notebook-read-body {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Single-column collapse at the S/short tiers (ADR 0076 D6): list OR detail,
+   toggled by the data-detail-open flag the section sets on selection. */
+@container pane (max-width: 759px) {
+  .decision-journal-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .decision-journal-workspace:not([data-detail-open]) .decision-journal-detail {
+    display: none;
+  }
+
+  .decision-journal-workspace[data-detail-open] .decision-journal-list {
+    display: none;
+  }
+
+  .decision-journal-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Global cross-company panel. feed-panel provides the chrome; the body scrolls
+   internally and the rows contain their own content. */
+.decision-journal-global-panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.decision-journal-global-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  min-width: 0;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.decision-journal-global-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.decision-journal-global-row {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
+  min-width: 0;
+}
+
+.decision-journal-global-row-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}

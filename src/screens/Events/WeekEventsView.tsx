@@ -121,9 +121,18 @@ export function WeekEventsView({
     <>
       {/* The week calendar is DELIBERATE wide content (5 day columns, min
           920px): it scrolls inside this bounded wrapper; data-hscroll exempts
-          it from the panel-overflow layout gate (mirrors facts-matrix-scroll). */}
-      <div className="event-week-scroll" data-hscroll>
-      <div className="event-week-grid" aria-label={text("Working week events")}>
+          it from the panel-overflow layout gate (mirrors facts-matrix-scroll).
+          tabIndex + role/label make the horizontal scroller keyboard-reachable
+          (axe scrollable-region-focusable) even when a week has no event cards
+          to tab into. */}
+      <div
+        className="event-week-scroll"
+        data-hscroll
+        role="group"
+        aria-label={text("Working week events")}
+        tabIndex={0}
+      >
+      <div className="event-week-grid">
         {companyEventWorkingWeekDays.map((day) => {
           const dayEvents = companyEventsByDate[day.date] ?? [];
 

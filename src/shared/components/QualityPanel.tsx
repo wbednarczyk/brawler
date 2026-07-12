@@ -121,6 +121,20 @@ function formatMeasured(
   return `${value}${result.measuredUnit ? ` ${result.measuredUnit}` : ""}`;
 }
 
+/**
+ * A criterion's threshold, formatted through the SAME layer as the measured
+ * value (card 619c8d9): the engine normalizes a percent literal to a plain
+ * decimal ("0.15"), so a percent-threshold criterion must render "15%", never
+ * the raw normalized decimal. The percent intent comes from the expression.
+ */
+function formatThreshold(
+  result: Pick<CriterionResult, "threshold" | "expression">,
+  locale: LocaleCode,
+): string | null {
+  if (result.threshold == null) return null;
+  return formatCriterionMeasure(result.threshold, result.expression, locale);
+}
+
 /// The Quality tab (ADR 0046): manage user frameworks of DSL criteria and run a
 /// deterministic, immutable-snapshot scorecard against the company's confirmed
 /// The newest snapshot that carries the quantitative scorecard. Qualitative
@@ -537,6 +551,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
   function renderQuantitativeCriterion(criterion: QualityFramework["criteria"][number]) {
     const result = resultByCriterion.get(criterion.id);
     const measured = result ? formatMeasured(result, locale) : null;
+    const thresholdText = result ? formatThreshold(result, locale) : null;
     const expanded = expandedCriterionId === criterion.id;
     return (
       <li key={criterion.id} className="quality-quantitative-row">
@@ -544,19 +559,20 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           label={`${criterion.label}${result ? ` — ${verdictLabel(result.verdict)}` : ""}`}
           isExpanded={expanded}
           onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
+          actions={deleteCriterionButton(criterion.id)}
           detail={
             <div className="quality-quantitative-detail">
               <p className="quality-detail-line">
                 <span className="quality-detail-label">{text("Expression")}</span>{" "}
                 <code>{criterion.expression}</code>
               </p>
-              {measured || result?.threshold ? (
+              {measured || thresholdText ? (
                 <p className="quality-detail-line">
                   {measured ? (
                     <span className="quality-measured">{`${text("Measured")}: ${measured}`}</span>
                   ) : null}
-                  {result?.threshold ? (
-                    <span className="quality-measured">{`${text("Threshold")}: ${result.threshold}`}</span>
+                  {thresholdText ? (
+                    <span className="quality-measured">{`${text("Threshold")}: ${thresholdText}`}</span>
                   ) : null}
                 </p>
               ) : null}
@@ -574,7 +590,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
               {result ? (
                 <StatusChip tone={verdictTone(result.verdict)}>{verdictLabel(result.verdict)}</StatusChip>
               ) : null}
-              {deleteCriterionButton(criterion.id)}
             </span>
           </span>
         </ExpandableRow>
@@ -592,6 +607,10 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
     // Parse citations only when the row is expanded (collapsed rows never show
     // them), so a re-render of N criteria doesn't JSON.parse N blobs each time.
     const citations = expanded ? parseCitations(result?.citations ?? null) : [];
+    // Non-interactive trailing chips stay in the row's clickable body; the
+    // interactive controls (re-run / delete) move to the ExpandableRow `actions`
+    // slot so they are never nested inside the row's `role="button"` article
+    // (axe nested-interactive, WCAG 4.1.2).
     const trailing = (
       <span className="quality-criterion-trailing">
         {/* "Agent-assessed" is a STATE, not a kind label — showing it on a
@@ -607,6 +626,10 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
         {result?.confidence ? (
           <StatusChip tone="neutral">{`${text("Confidence")}: ${confidenceLabel(result.confidence)}`}</StatusChip>
         ) : null}
+      </span>
+    );
+    const rowActions = (
+      <>
         <Button
           icon={<RotateCcw size={12} />}
           variant="icon"
@@ -616,7 +639,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
           aria-label={result ? text("Re-run assessment") : text("Assess this criterion")}
         />
         {deleteCriterionButton(criterion.id)}
-      </span>
+      </>
     );
 
     // Not assessed yet → no verdict chip (distinct from an
@@ -630,6 +653,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
             label={`${criterion.label} — ${text("Not assessed yet")}`}
             isExpanded={expanded}
             onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
+            actions={rowActions}
             detail={
               <div className="quality-qualitative-detail">
                 <p className="quality-reasoning">
@@ -654,6 +678,7 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
         label={`${criterion.label} — ${verdictLabel(result.verdict)}`}
         isExpanded={expanded}
         onToggle={() => setExpandedCriterionId(expanded ? null : criterion.id)}
+        actions={rowActions}
         detail={
           <div className="quality-qualitative-detail">
             {result.reasoning ? <p className="quality-reasoning">{result.reasoning}</p> : null}
@@ -913,6 +938,16 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                       label={`${evaluation.createdAt} — ${evaluation.passCount}/${total} ${text("pass")}`}
                       isExpanded={expanded}
                       onToggle={() => setExpandedRunId(expanded ? null : evaluation.id)}
+                      actions={
+                        <Button
+                          icon={<Trash2 size={12} />}
+                          variant="icon"
+                          className="danger-button"
+                          disabled={busy}
+                          onClick={() => handleDeleteEvaluation(evaluation.id)}
+                          aria-label={text("Delete evaluation")}
+                        />
+                      }
                       detail={
                         <ul className="ui-list-rows quality-history-detail">
                           {evaluation.results.map((result) => {
@@ -943,17 +978,6 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
                         <span className="quality-history-when">{evaluation.createdAt}</span>
                         <span className="quality-criterion-trailing">
                           <span className="quality-measured">{`${evaluation.passCount}/${total} ${text("pass")}`}</span>
-                          <Button
-                            icon={<Trash2 size={12} />}
-                            variant="icon"
-                            className="danger-button"
-                            disabled={busy}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleDeleteEvaluation(evaluation.id);
-                            }}
-                            aria-label={text("Delete evaluation")}
-                          />
                         </span>
                       </span>
                     </ExpandableRow>

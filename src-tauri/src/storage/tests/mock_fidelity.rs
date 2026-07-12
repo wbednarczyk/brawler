@@ -13,9 +13,10 @@
 use serde_json::{json, Map, Value};
 
 use super::*;
+use crate::mcp::lifecycle::McpLifecycle;
 use crate::storage::{
     NewCockpitLayout, NewCompany, NewFrameworkCriterion, NewQualityFramework, NewWatchlist,
-    RenameCockpitLayoutInput, WatchlistUpdate,
+    WatchlistUpdate,
 };
 
 // Path resolved by build.rs into BRAWLER_FIDELITY_CORPUS: the normal relative
@@ -47,7 +48,7 @@ fn is_superset(actual: &Value, subset: &Value) -> bool {
 
 /// Run one corpus command through the real storage layer; return its serialized
 /// result (camelCase, matching the IPC contract the mock also returns).
-fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
+fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &Value) -> Value {
     let inner = input.get("input").cloned().unwrap_or(Value::Null);
     match command {
         "create_watchlist" => {
@@ -85,17 +86,6 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
                     .cockpit_layouts()
                     .save_cockpit_layout(new)
                     .expect("save_cockpit_layout"),
-            )
-            .unwrap()
-        }
-        "rename_cockpit_layout" => {
-            let rename: RenameCockpitLayoutInput =
-                serde_json::from_value(inner).expect("RenameCockpitLayoutInput");
-            serde_json::to_value(
-                state
-                    .cockpit_layouts()
-                    .rename_cockpit_layout(rename)
-                    .expect("rename_cockpit_layout"),
             )
             .unwrap()
         }
@@ -321,6 +311,131 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
             )
             .unwrap()
         }
+        // Decision journal (ADR 0071, J2). Immutable per-company judgments —
+        // the store methods the thin command wrappers delegate to.
+        "create_decision_entry" => {
+            let new: crate::storage::NewDecisionEntry =
+                serde_json::from_value(inner).expect("NewDecisionEntry");
+            serde_json::to_value(
+                state
+                    .decision_journal()
+                    .create_decision_entry(new)
+                    .expect("create_decision_entry"),
+            )
+            .unwrap()
+        }
+        "list_decision_entries" => {
+            let list_input: crate::storage::DecisionEntryListInput =
+                serde_json::from_value(inner).unwrap_or_default();
+            serde_json::to_value(
+                state
+                    .decision_journal()
+                    .list_decision_entries(list_input)
+                    .expect("list_decision_entries"),
+            )
+            .unwrap()
+        }
+        // Pre-report expectations (ADR 0071, J2), keyed by (company, event_key).
+        "create_report_expectation" => {
+            let new: crate::storage::NewReportExpectation =
+                serde_json::from_value(inner).expect("NewReportExpectation");
+            serde_json::to_value(
+                state
+                    .report_expectations()
+                    .create_report_expectation(new)
+                    .expect("create_report_expectation"),
+            )
+            .unwrap()
+        }
+        "update_report_expectation" => {
+            let upd: crate::storage::UpdateReportExpectation =
+                serde_json::from_value(inner).expect("UpdateReportExpectation");
+            serde_json::to_value(
+                state
+                    .report_expectations()
+                    .update_report_expectation(upd)
+                    .expect("update_report_expectation"),
+            )
+            .unwrap()
+        }
+        "list_report_expectations" => {
+            let list_input: crate::storage::ListReportExpectationsInput =
+                serde_json::from_value(inner).unwrap_or_default();
+            serde_json::to_value(
+                state
+                    .report_expectations()
+                    .list_report_expectations(list_input)
+                    .expect("list_report_expectations"),
+            )
+            .unwrap()
+        }
+        // Composed read model (ADR 0071): expectation vs confirmed facts. Same
+        // store method the command wrapper offloads, so the corpus can never
+        // diverge from real composition.
+        "expectation_review" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let event_key = inner["eventKey"].as_str().expect("eventKey");
+            serde_json::to_value(
+                state
+                    .report_expectations()
+                    .expectation_review(company_id, event_key)
+                    .expect("expectation_review"),
+            )
+            .unwrap()
+        }
+        "record_expectation_resolution" => {
+            let res: crate::storage::RecordExpectationResolutionInput =
+                serde_json::from_value(inner).expect("RecordExpectationResolutionInput");
+            serde_json::to_value(
+                state
+                    .report_expectations()
+                    .record_expectation_resolution(res)
+                    .expect("record_expectation_resolution"),
+            )
+            .unwrap()
+        }
+        // MCP token lifecycle (ADR 0078 M1). Same command helpers production
+        // uses, pointed at the TEST keychain slot so a run on a machine with a
+        // persistent keychain backend never touches the real
+        // `brawler/mcp/auth_token` entry.
+        "regenerate_mcp_token" => serde_json::to_value(
+            crate::commands::mcp::regenerate_mcp_token_impl(
+                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+            )
+            .expect("regenerate_mcp_token"),
+        )
+        .unwrap(),
+        "revoke_mcp_token" => serde_json::to_value(
+            crate::commands::mcp::revoke_mcp_token_impl(
+                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+            )
+            .expect("revoke_mcp_token"),
+        )
+        .unwrap(),
+        "mcp_token_status" => serde_json::to_value(
+            crate::commands::mcp::mcp_token_status_impl(
+                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+            )
+            .expect("mcp_token_status"),
+        )
+        .unwrap(),
+        // MCP server lifecycle (ADR 0078 M3). Drives the real `McpLifecycle`
+        // (persisting `mcp.enabled` + flipping the live server) against the same
+        // command impl production uses, pointed at the TEST keychain descriptor.
+        // With BRAWLER_MCP_TOKEN scrubbed (see the journey `_comment`) there is
+        // no token, so the enabled path refuses cleanly (`running:false`) and no
+        // socket is bound — deterministic and portable across keychain backends.
+        "set_mcp_enabled" => serde_json::to_value(
+            crate::commands::mcp::set_mcp_enabled_impl(
+                input["enabled"].as_bool().expect("enabled"),
+                state,
+                lifecycle,
+                &crate::providers::credentials::test_mcp_auth_token_descriptor(),
+            )
+            .expect("set_mcp_enabled"),
+        )
+        .unwrap(),
+        "mcp_status" => serde_json::to_value(lifecycle.status()).unwrap(),
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")
         }
@@ -329,6 +444,11 @@ fn dispatch(state: &AppState, command: &str, input: &Value) -> Value {
 
 #[test]
 fn rust_backend_satisfies_the_fidelity_corpus() {
+    // Scrub-hermeticity (docs/testing.md): the MCP journey asserts
+    // missing-token behavior, which a BRAWLER_MCP_TOKEN exported in the
+    // developer's shell would silently flip to configured.
+    crate::providers::credentials::scrub_provider_env_fallbacks();
+
     let corpus: Value = serde_json::from_str(CORPUS).expect("corpus json parses");
     let journeys = corpus["journeys"].as_array().expect("journeys array");
     assert!(!journeys.is_empty(), "corpus has no journeys");
@@ -337,12 +457,15 @@ fn rust_backend_satisfies_the_fidelity_corpus() {
         let name = journey["name"].as_str().unwrap_or("<unnamed>");
         // Fresh, isolated backend per journey.
         let state = AppState::new(open_in_memory_database().expect("in-memory db"));
+        // Per-journey MCP lifecycle so `set_mcp_enabled`/`mcp_status` share one
+        // controller across the journey's steps (ADR 0078 M3).
+        let lifecycle = McpLifecycle::new();
         let mut caps: Map<String, Value> = Map::new();
 
         for step in journey["steps"].as_array().expect("steps array") {
             let command = step["command"].as_str().expect("command");
             let input = substitute(step.get("input").unwrap_or(&json!({})), &caps);
-            let result = dispatch(&state, command, &input);
+            let result = dispatch(&state, &lifecycle, command, &input);
 
             if let Some(cap) = step.get("capture").and_then(Value::as_str) {
                 caps.insert(

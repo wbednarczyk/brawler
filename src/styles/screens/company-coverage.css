@@ -72,6 +72,27 @@
   color: var(--primary);
 }
 
+/* The period label is a real button so it is the row's keyboard/SR affordance for
+   "open documents" (the <tr> itself is not a button — see CompanyCoveragePanel).
+   It reads as the plain period text: transparent, inherited color/weight. */
+.coverage-period-button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  text-align: left;
+}
+
+.coverage-period-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 /* A stacked cell: a primary line plus an optional muted sub-line. */
 .coverage-cell {
   min-width: 0;

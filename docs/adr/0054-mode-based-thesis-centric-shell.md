@@ -2,6 +2,8 @@
 
 Status: Accepted (2026-06-23)
 
+> **Update (2026-07-11, v0.52.0 audit):** two reality notes. (1) **Drift recorded:** in the delivered shell, dockview is the *default* pane host of the cockpit (`DockLayout` renders unconditionally as the cockpit body) — not an "opt-in advanced layout"; no default-vs-advanced switch exists. The framing below is amended to match reality: dockview is the cockpit's pane engine, load-bearing by default. (2) The never-validated **OS-window pop-out** path (dockview `addPopoutGroup` via `window.open` + the `core:webview:allow-create-webview-window` capability) is **removed** in `v0.52.0` ([ADR 0080](0080-retire-embedding-model.md) decision 5); in-app floating groups stay. A future OS pop-out returns only with the Tauri `WebviewWindow` validation sub-spike ADR 0053 called for.
+
 Amends [ADR 0053](0053-dockview-layout-pilot.md) (dockview re-scoped from the app-wide grid to the workspace engine of two modes — see its Revision note) and continues the supersession of [ADR 0047](0047-top-navigation-bar.md). Relates to: [ADR 0044](0044-report-season-cockpit.md) (report season), [ADR 0040](0040-management-claims-tracker.md) (claims), [ADR 0043](0043-investment-thesis-and-decision-journal.md) (thesis + decision journal), [ADR 0042](0042-advisory-verdict-port-and-open-core-boundary.md) (decision-support boundary), the v0.48 command palette + `SemanticSearch`, and the v0.49 autonomous report pipeline (North Star). Roadmap: [roadmap.md](../roadmap.md).
 
 ## Context

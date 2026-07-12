@@ -1,11 +1,10 @@
 import { createContext, forwardRef, useContext, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ExternalLink, Maximize2, PictureInPicture2, Pin } from "lucide-react";
+import { Maximize2, PictureInPicture2, Pin } from "lucide-react";
 import { DockviewReact } from "dockview";
 import { useLocale } from "../../shared/locale";
 import type {
   DockviewApi,
-  DockviewGroupPanel,
   DockviewReadyEvent,
   IDockviewPanelProps,
   IDockviewPanelHeaderProps,
@@ -72,32 +71,10 @@ export type DockPanelSpec = {
   pin?: DockPanelPin;
 };
 
-/**
- * Pop a panel group out to a separate OS window, degrading gracefully to an
- * in-app floating group when an OS window cannot be opened (ADR 0053 decision 2A:
- * floating works regardless; OS-window pop-out is the gated capability).
- *
- * dockview's `addPopoutGroup` opens the window via `window.open` and resolves
- * `false` when that is blocked or unavailable — which is exactly the case in a
- * browser/jsdom and, until validated, inside Tauri (Tauri routes `window.open`
- * through its `WebviewWindow` bridge, requiring `core:webview:allow-create-webview-window`).
- * Either way the panel must not be lost: on a `false` result or a throw we fall
- * back to a floating group, so the action always does something useful. The
- * real OS-window path must still be VALIDATED on native Windows (Faza 5 sub-spike);
- * this code makes the bridge possible and safe, not verified.
- */
-export async function popOutOrFloat(
-  api: Pick<DockviewApi, "addPopoutGroup" | "addFloatingGroup">,
-  group: DockviewGroupPanel,
-): Promise<"popout" | "float"> {
-  try {
-    if (await api.addPopoutGroup(group)) return "popout";
-  } catch {
-    /* OS window blocked (browser/jsdom, or un-bridged Tauri) — float instead */
-  }
-  api.addFloatingGroup(group);
-  return "float";
-}
+// The OS-window pop-out path (`popOutOrFloat`/`addPopoutGroup`, ADR 0053
+// decision 2A's gated capability) was removed by ADR 0080 decision 5: it was
+// never validated on native Windows and silently degraded. In-app floating
+// groups (`addFloatingGroup`) are the kept multi-pane affordance.
 
 const PanelContentContext = createContext<Map<string, () => ReactNode>>(new Map());
 // Per-panel pin affordance keyed by panel id (U-Ra). Rebuilt each render so the
@@ -173,9 +150,7 @@ function AccessibleTab(props: IDockviewPanelHeaderProps) {
   );
 }
 
-// Per-group header actions — maximize, float, and pop out to a separate OS
-// window. The pop-out is the cockpit's answer to the ultrawide / FancyZones
-// use case (dockview opens a real window for the group). All accessible buttons.
+// Per-group header actions — maximize and float. All accessible buttons.
 function GroupActions(props: IDockviewHeaderActionsProps) {
   const { containerApi, group, activePanel } = props;
   const { text } = useLocale();
@@ -183,7 +158,6 @@ function GroupActions(props: IDockviewHeaderActionsProps) {
   // `aria-label` keeps the same text for screen readers.
   const maximizeLabel = text("Maximize panel group");
   const floatLabel = text("Float panel group");
-  const popoutLabel = text("Pop out panel group to a window");
   return (
     <div className="cockpit-group-actions">
       <button
@@ -204,14 +178,6 @@ function GroupActions(props: IDockviewHeaderActionsProps) {
         onClick={() => containerApi.addFloatingGroup(group)}
       >
         <PictureInPicture2 size={13} />
-      </button>
-      <button
-        type="button"
-        aria-label={popoutLabel}
-        title={popoutLabel}
-        onClick={() => void popOutOrFloat(containerApi, group)}
-      >
-        <ExternalLink size={13} />
       </button>
     </div>
   );
@@ -273,9 +239,7 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
   //   Alt+Left / Alt+Right  move focus to the previous / next panel
   //   Alt+W                 close the active panel
   //   Alt+M                 toggle maximize of the active group
-  //   Alt+P                 pop the active group out to a window (floats if the
-  //                         OS window is blocked — popOutOrFloat / decision 2A)
-  // W/M/P are suppressed while typing in a field so they never eat input or act
+  // W/M are suppressed while typing in a field so they never eat input or act
   // mid-edit; the navigation arrows stay live everywhere.
   useEffect(() => {
     const node = containerRef.current;
@@ -312,12 +276,6 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
           event.preventDefault();
           if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
           else if (api.activePanel) api.maximizeGroup(api.activePanel);
-          break;
-        case "p":
-        case "P":
-          if (isEditableTarget(event.target)) return;
-          event.preventDefault();
-          if (api.activeGroup) void popOutOrFloat(api, api.activeGroup);
           break;
       }
     }

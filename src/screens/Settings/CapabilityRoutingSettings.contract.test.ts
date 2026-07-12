@@ -14,7 +14,14 @@ import { CAPABILITY_DESCRIPTORS } from "./CapabilityRoutingSettings";
 // If a capability is ever made deliberately non-routable from the UI, add its
 // key to NON_ROUTABLE_CAPABILITY_KEYS below with a comment justifying it — do
 // not silently drop it from the assertion.
-const NON_ROUTABLE_CAPABILITY_KEYS: ReadonlyArray<string> = [];
+const NON_ROUTABLE_CAPABILITY_KEYS: ReadonlyArray<string> = [
+  // kpi_extraction: orphaned by the tier-4 rewire (F4/T4.5 — the manual KPI
+  // job and autopilot fallback both route VisionExtraction; nothing resolves
+  // KpiExtraction in production). Retired from the settings UI per ADR 0080
+  // (folded card db9a292); the Rust enum variant + settings key stay reserved
+  // (settings compat / G-5 roundtrip parity) for a future text-KPI path.
+  "kpi_extraction",
+];
 
 function backendCapabilityKeys(): string[] {
   const source = readFileSync(

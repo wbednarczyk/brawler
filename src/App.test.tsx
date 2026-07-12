@@ -52,6 +52,15 @@ describe("Sidebar IA spine (ADR 0054)", () => {
     const cells = await screen.findAllByRole("button", { name: "Pick a panel" });
     expect(cells.length).toBe(9);
 
+    // Since card 106f8a7 the add surface offers GENERIC company-scoped panel
+    // types bound to the view company — so the flow picks the view company
+    // first, then fills cells (the per-company palette entries are gone).
+    const viewCompany = screen.getByLabelText("View company");
+    const cdrOption = (
+      within(viewCompany).getAllByRole("option") as HTMLOptionElement[]
+    ).find((option) => option.textContent?.includes("GPW:CDR"));
+    await user.selectOptions(viewCompany, cdrOption?.value ?? "");
+
     // Picking a panel for a cell fills it in place (one fewer empty cell, a new
     // panel tab appears).
     await user.click(cells[0]);

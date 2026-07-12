@@ -6,6 +6,9 @@ authors = ["Brawler contributors"]
 license = "MPL-2.0"
 edition = "2021"
 publish = false
+# The crate ships two binaries (the Tauri app `brawler` + the `brawler-mcp-stdio`
+# MCP adapter, ADR 0078 dec. 6), so cargo/tauri need to know which is the app.
+default-run = "brawler"
 
 [lib]
 name = "brawler_lib"
@@ -15,43 +18,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [features]
-# On-device embedding model for the interpretative AI layer (ADR 0035, v0.45.0).
-# OFF by default so the standard `make check`/CI build stays fast and offline:
-# the candle inference engine and hf-hub downloader are heavy and only needed for
-# the opt-in embedding similarity strategy. Release/dev builds and the periodic
-# model eval enable this feature; with it off, the registry reports the embedding
-# strategy as unavailable and the static (lexical) baseline serves similarity.
-embedding-model = [
-    "dep:candle-core",
-    "dep:candle-nn",
-    "dep:candle-transformers",
-    "dep:tokenizers",
-]
-
 # Generate the TypeScript API types from the Rust DTOs (ADR 0048). OFF by
 # default so `ts-rs` stays out of the shipped binary; `make types` enables it to
 # emit src/api/generated/, and `make types-check` regenerates + fails on drift.
 ts-export = ["dep:ts-rs"]
 
 [dependencies]
-candle-core = { version = "0.10", optional = true }
-candle-nn = { version = "0.10", optional = true }
-candle-transformers = { version = "0.10", optional = true }
-# `fancy-regex` is the pure-Rust regex backend (vs the default `onig`/C oniguruma),
-# so the whole engine stays pure-Rust and cross-compiles to windows-msvc via
-# cargo-xwin. Weights are fetched with the existing `reqwest` (native-tls/SChannel),
-# not `hf-hub` (which pulls ureq+rustls+ring and fails the cross-build).
-tokenizers = { version = "0.21", optional = true, default-features = false, features = [
-    "fancy-regex",
-] }
 async-trait = "0.1"
 base64 = "0.22"
 ed25519-dalek = "2"
-# Pure-Rust HNSW approximate nearest-neighbour index (ADR 0050 decision 6) behind
-# the `VectorIndex` swap boundary. Pure Rust (no C/native deps) so it keeps the
-# cargo-xwin Linux->Windows cross-build working — `sqlite-vec` was rejected for
-# exactly that reason.
-instant-distance = "0.6"
+# OS-entropy RNG for the MCP bearer token (ADR 0078 decision 4). Pure Rust,
+# already in the tree transitively (same 0.3.x line) — promoted to a direct
+# dependency; no new version enters the lockfile.
+getrandom = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "native-tls"] }
 keyring = { version = "3", features = ["windows-native"] }
 log = "0.4"
@@ -75,6 +54,13 @@ tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-opener = "2"
 thiserror = "2"
+# In-app read-only MCP server transport (ADR 0078 dec. 2). Pure-Rust, three small
+# transitive deps, synchronous handlers call the blocking `AppState` directly (no
+# tokio feature changes) — cross-compiles to windows-msvc via cargo-xwin.
+tiny_http = "0.12"
+# Listener construction with SO_REUSEADDR for the MCP server (pure Rust; already
+# transitive in-tree). See mcp/server.rs.
+socket2 = "0.6"
 # Only the async `sync` primitives (Semaphore) for the per-provider concurrency
 # gate (ADR 0059). tokio is already in the tree via tauri; features are unified,
 # so this pins no new version — it just makes `tokio::sync` a direct import.
@@ -96,9 +82,16 @@ proptest = "1"
 # (ADR 0049). Reviewable, regenerated not hand-edited (`cargo insta` / INSTA_UPDATE).
 insta = "1"
 # Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049, T5):
-# similarity scan, RSS parse, formula parse. `make bench`; never a hard gate
+# RSS parse, formula parse. `make bench`; never a hard gate
 # (wall-clock is machine-dependent) — the bench-ratchet flags relative regressions.
 criterion = "0.5"
+
+# Thin stdio↔HTTP adapter for the read-only MCP server (ADR 0078 decision 6):
+# a dumb line→POST pipe with no protocol knowledge, over `reqwest::blocking`
+# (already in the tree). Shipped alongside the app for stdio-only MCP clients.
+[[bin]]
+name = "brawler-mcp-stdio"
+path = "src/bin/brawler-mcp-stdio.rs"
 
 [[bench]]
 name = "transforms"

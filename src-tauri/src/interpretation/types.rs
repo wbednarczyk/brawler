@@ -1,6 +1,6 @@
 //! Shared request/result types and the error type for the interpretative layer
 //! capability contracts (ADR 0035). These types are deliberately
-//! implementation-neutral: a static (rule/lexical) implementation and a future
+//! implementation-neutral: a static (rule-based) implementation and a future
 //! model-backed implementation of the same capability return the same shapes.
 
 use thiserror::Error;
@@ -19,25 +19,6 @@ pub enum InterpretationError {
     /// The backing implementation failed while producing a result.
     #[error("interpretation backend error: {0}")]
     Backend(String),
-}
-
-/// A piece of text addressed by a stable id, used as a candidate for similarity
-/// and matching capabilities. The `id` is opaque to the layer (a feed item id,
-/// a fact id, etc.) and is echoed back in [`ScoredItem`].
-#[derive(Debug, Clone)]
-pub struct TextItem {
-    pub id: String,
-    pub text: String,
-}
-
-/// A candidate scored by a capability, ordered by relevance by the implementation
-/// (highest `score` first). `score` is a relative, implementation-defined measure
-/// in `0.0..=1.0`; it is comparable within one capability call, not across
-/// implementations.
-#[derive(Debug, Clone)]
-pub struct ScoredItem {
-    pub id: String,
-    pub score: f32,
 }
 
 /// A request to classify a single piece of text into one category.
@@ -64,12 +45,4 @@ pub struct Classification {
     pub confidence: f32,
     /// Optional short, implementation-provided rationale (e.g. the matched rule).
     pub rationale: Option<String>,
-}
-
-/// The corpus scope for a semantic/hybrid search. `content_types` aligns with
-/// the unified search index content types (ADR 0032), e.g. `company`,
-/// `watchlist`, `feed_item`, `notebook_entry`. Empty means "all content types".
-#[derive(Debug, Clone, Default)]
-pub struct SearchScope {
-    pub content_types: Vec<String>,
 }

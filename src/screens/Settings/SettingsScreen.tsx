@@ -8,12 +8,12 @@ import {
   Keyboard,
   Logs,
   Palette,
+  Plug,
   RadioTower,
   type LucideIcon,
 } from "lucide-react";
 import { AiSettings } from "./AiSettings";
 import { CapabilityRoutingSettings } from "./CapabilityRoutingSettings";
-import { EmbeddingSettings } from "./EmbeddingSettings";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { CredentialSettings } from "./CredentialSettings";
 import { DatabaseSettings } from "./DatabaseSettings";
@@ -21,6 +21,7 @@ import { QueueSettings } from "./QueueSettings";
 import { ImportExportSettings } from "./ImportExportSettings";
 import { LicenseSettings } from "./LicenseSettings";
 import { LogSettings } from "./LogSettings";
+import { McpSettings } from "./McpSettings";
 import { ShortcutSettings } from "./ShortcutSettings";
 import { SourceSettings } from "./SourceSettings";
 import { makeTextTranslator, makeTranslator, type LocaleKey } from "../../shared/locale";
@@ -36,6 +37,7 @@ type SettingsTab =
   | "shortcuts"
   | "logs"
   | "database"
+  | "mcp"
   | "license";
 
 const settingsTabs = [
@@ -47,6 +49,7 @@ const settingsTabs = [
   { id: "shortcuts", icon: Keyboard, labelText: "Keyboard shortcuts" },
   { id: "logs", icon: Logs, labelText: "Logs" },
   { id: "database", icon: Database, labelText: "Data storage" },
+  { id: "mcp", icon: Plug, labelText: "MCP server" },
   { id: "license", icon: FileKey2, labelText: "License" },
 ] satisfies Array<{ id: SettingsTab; icon: LucideIcon; labelKey?: LocaleKey; labelText?: string }>;
 
@@ -74,6 +77,7 @@ export function SettingsScreen() {
   onLocaleChange,
   onPollIntervalChange,
   onBackfillYearsChange,
+  onMcpPortChange,
   onHistorySweepAiCallLimitChange,
   onShortcutBindingsChange,
   onYoutubeTranscriptionModelChange,
@@ -195,7 +199,6 @@ export function SettingsScreen() {
                 capabilityProviders={settings?.capabilityProviders ?? {}}
                 onCapabilityProvidersChange={onCapabilityProvidersChange}
               />
-              <EmbeddingSettings />
             </>
           ) : null}
           {activeSettingsTab === "credentials" ? (
@@ -249,6 +252,9 @@ export function SettingsScreen() {
                 onResetQueueSettings={onResetQueueSettings}
               />
             </>
+          ) : null}
+          {activeSettingsTab === "mcp" ? (
+            <McpSettings settings={settings} onMcpPortChange={onMcpPortChange} />
           ) : null}
           {activeSettingsTab === "license" ? (
             <LicenseSettings

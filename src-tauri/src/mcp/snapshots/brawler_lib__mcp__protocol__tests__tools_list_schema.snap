@@ -1,0 +1,88 @@
+---
+source: src/mcp/protocol.rs
+assertion_line: 320
+expression: "serde_json::to_string_pretty(&v).expect(\"serializable\")"
+---
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "result": {
+    "tools": [
+      {
+        "description": "One company's research dossier: identity, fundamentals coverage per fiscal period, confirmed financial facts, and quality-scorecard summaries. Sourced from the user's own research; decision support only.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_company_dossier"
+      },
+      {
+        "description": "Full-text search across the user's research workspace (notes, report documents, transcripts, claims, facts). Returns ranked matches with snippets.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Optional qualified ticker to scope the search to one company.",
+              "type": "string"
+            },
+            "limit": {
+              "description": "Maximum number of matches to return (default 50).",
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "query": {
+              "description": "Full-text query over the user's research: notes, reports, transcripts, claims, and facts.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "query"
+          ],
+          "type": "object"
+        },
+        "name": "search_research"
+      },
+      {
+        "description": "Management claims whose verification period has arrived (due), passed (overdue), or is approaching (upcoming), per company.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Optional qualified ticker; when omitted, every tracked company with open claims is included.",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "name": "list_claims_due"
+      },
+      {
+        "description": "Quality-framework state for one company: the latest scorecard evaluation per framework plus current agent-assessed qualitative criteria with reasoning and citations. Decision support only — never an investment recommendation.",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "company": {
+              "description": "Qualified ticker, e.g. \"GPW:CDR\". A bare ticker is accepted when unambiguous.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "company"
+          ],
+          "type": "object"
+        },
+        "name": "get_quality_assessment"
+      }
+    ]
+  }
+}

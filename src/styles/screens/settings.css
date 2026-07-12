@@ -377,3 +377,151 @@
     display: block;
   }
 }
+
+/* -------------------------------------------------------------------------- */
+/* MCP server section (M4, ADR 0078). Enable toggle + status pill, port field, */
+/* and copyable connection snippets (the widest content — bounded scrollers).  */
+/* -------------------------------------------------------------------------- */
+
+.mcp-enable-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.mcp-status {
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Toggle switch (shared idiom with the sources row): an invisible full-cover
+   input so a click anywhere on the label — user or test — lands on the input. */
+.settings-toggle {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  gap: var(--space-2);
+  min-height: 20px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.settings-toggle input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.settings-toggle:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.settings-toggle-track {
+  display: inline-flex;
+  align-items: center;
+  width: 32px;
+  height: 18px;
+  padding: var(--space-0);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 76%, var(--surface));
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.settings-toggle-track span {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 78%, var(--text));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.settings-toggle input:checked + .settings-toggle-track {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  background: color-mix(in srgb, var(--primary) 28%, var(--surface-raised));
+}
+
+.settings-toggle input:checked + .settings-toggle-track span {
+  transform: translateX(14px);
+  background: var(--primary);
+}
+
+.mcp-port-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+}
+
+.mcp-port-field .ui-text-field {
+  max-width: 160px;
+}
+
+.mcp-token-reveal {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 8%, var(--surface-raised));
+}
+
+.mcp-token-reveal .ui-text-field input {
+  overflow-wrap: anywhere;
+}
+
+.mcp-token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.mcp-snippet-block {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.mcp-snippet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mcp-snippet-label {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 700;
+}
+
+/* The snippet is unbreakable command text — the widest content in the section.
+   It scrolls inside its own bounded scroller (data-hscroll) with `contain:
+   inline-size`, so its min-content width never propagates up to force a global
+   or panel horizontal scrollbar (docs/ui-authoring.md styling rules). */
+.mcp-snippet {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--font-xs);
+  line-height: 1.5;
+  overflow-x: auto;
+  contain: inline-size;
+}
+
+.mcp-snippet code {
+  white-space: pre;
+}

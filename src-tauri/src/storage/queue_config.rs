@@ -12,7 +12,6 @@ use super::*;
 const DEFAULT_SOURCES_WORKERS: i64 = 2;
 const DEFAULT_AUTOPILOT_WORKERS: i64 = 3;
 const DEFAULT_AI_WORKERS: i64 = 2;
-const DEFAULT_INDEXING_WORKERS: i64 = 1;
 const DEFAULT_AI_PROVIDER_CONCURRENCY: i64 = 2;
 
 const MIN_WORKERS: i64 = 1;
@@ -32,7 +31,6 @@ pub struct QueueConfig {
     pub sources_workers: i64,
     pub autopilot_workers: i64,
     pub ai_workers: i64,
-    pub indexing_workers: i64,
     pub ai_provider_concurrency: i64,
 }
 
@@ -42,7 +40,6 @@ impl Default for QueueConfig {
             sources_workers: DEFAULT_SOURCES_WORKERS,
             autopilot_workers: DEFAULT_AUTOPILOT_WORKERS,
             ai_workers: DEFAULT_AI_WORKERS,
-            indexing_workers: DEFAULT_INDEXING_WORKERS,
             ai_provider_concurrency: DEFAULT_AI_PROVIDER_CONCURRENCY,
         }
     }
@@ -79,7 +76,6 @@ pub(super) fn read_queue_config(connection: &Connection) -> QueueConfig {
         ai_workers: read_setting_i64(connection, AI_WORKERS_KEY)
             .map(clamp_workers)
             .unwrap_or(defaults.ai_workers),
-        indexing_workers: defaults.indexing_workers,
         ai_provider_concurrency: read_setting_i64(connection, AI_PROVIDER_CONCURRENCY_KEY)
             .map(clamp_provider_concurrency)
             .unwrap_or(defaults.ai_provider_concurrency),

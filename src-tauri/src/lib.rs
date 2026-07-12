@@ -4,13 +4,13 @@ use tauri::Manager;
 pub mod app_state;
 pub mod data_directory;
 pub mod document_fetcher;
-pub mod entity_resolution;
 pub mod fundamentals;
 pub mod interpretation;
 pub mod ir_resolution;
 pub mod jobs;
 pub mod licensing;
 pub mod logging;
+pub mod mcp;
 pub mod observability;
 pub mod providers;
 pub mod report_diff;
@@ -76,31 +76,6 @@ pub fn run() {
             // keychain entries so no orphaned secrets linger. Best-effort, no fallback.
             providers::credentials::clear_legacy_credentials();
 
-            // Keep the disposable embedding index fresh: when the embedding
-            // similarity strategy is active and the model is available, refresh the
-            // embed/re-embed job at startup (ADR 0035). Now enqueued onto the
-            // durable job queue (ADR 0050) instead of fire-and-forget, so a crash
-            // mid-embed resumes; the work is idempotent (skips unchanged content).
-            // Uses the stable id `CONTENT_EMBEDDING_KIND` every startup, so
-            // `reschedule` (not plain `enqueue`) is required: after the first
-            // successful run this row is terminal (`succeeded`), and plain
-            // `INSERT OR IGNORE` would silently no-op on every later startup — the
-            // "keep it fresh" refresh would fire exactly once, ever (bug class
-            // dce9ce8). `reschedule` re-arms it and leaves an in-flight run alone.
-            if matches!(
-                state.get_similarity_strategy().as_deref(),
-                Ok(interpretation::EMBEDDING_STRATEGY)
-            ) {
-                if let Err(error) = state.jobs().reschedule(
-                    jobs::handlers::CONTENT_EMBEDDING_KIND,
-                    jobs::handlers::CONTENT_EMBEDDING_KIND,
-                    "{}",
-                    3,
-                ) {
-                    log::warn!("failed to enqueue startup content embedding job: {error}");
-                }
-            }
-
             // Repair report documents mis-associated onto the wrong company by
             // tag-listing ingestion (T-A3, card 45fcece). Idempotent and
             // self-healing: safe on every startup, records nothing when there is
@@ -129,6 +104,23 @@ pub fn run() {
             // hidden. Runs only while the app is open.
             jobs::scheduler::spawn(state.clone());
 
+            // Read-only MCP server (ADR 0078): app-open-only lifetime, off by
+            // default. Start only when Settings enable it AND a token exists; a
+            // missing token or a bind failure is captured in `mcp_status`, never
+            // a crash. Enable/disable later takes effect live via `set_mcp_enabled`.
+            let mcp_lifecycle = mcp::lifecycle::McpLifecycle::new();
+            if state
+                .get_settings()
+                .map(|settings| settings.mcp.enabled)
+                .unwrap_or(false)
+            {
+                let status = mcp_lifecycle.ensure_started(&state);
+                if let Some(error) = &status.error {
+                    log::warn!("MCP server did not start: {error}");
+                }
+            }
+            app.manage(mcp_lifecycle);
+
             app.manage(state);
 
             Ok(())
@@ -151,7 +143,6 @@ pub fn run() {
             commands::watchlists::remove_company_from_watchlist,
             commands::cockpit_layouts::list_cockpit_layouts,
             commands::cockpit_layouts::save_cockpit_layout,
-            commands::cockpit_layouts::rename_cockpit_layout,
             commands::cockpit_layouts::delete_cockpit_layout,
             commands::import_export::export_research_data,
             commands::import_export::preview_research_import,
@@ -206,6 +197,13 @@ pub fn run() {
             commands::report_season::get_pre_report_card,
             commands::report_season::mark_report_prepared,
             commands::report_season::mark_report_processed,
+            commands::decision_journal::create_decision_entry,
+            commands::decision_journal::list_decision_entries,
+            commands::report_expectations::create_report_expectation,
+            commands::report_expectations::update_report_expectation,
+            commands::report_expectations::list_report_expectations,
+            commands::report_expectations::expectation_review,
+            commands::report_expectations::record_expectation_resolution,
             commands::report_diff::extract_report_sections,
             commands::report_diff::fetch_report_document,
             commands::report_diff::list_report_diff_candidates,
@@ -295,11 +293,6 @@ pub fn run() {
             commands::diagnostics::list_diagnostic_events,
             commands::diagnostics::clear_diagnostic_events,
             commands::diagnostics::get_diagnostic_summary,
-            commands::interpretation::get_embedding_model_status,
-            commands::interpretation::download_embedding_model,
-            commands::interpretation::set_similarity_strategy,
-            commands::interpretation::rebuild_embedding_index,
-            commands::interpretation::find_similar_content,
             commands::logs::get_log_status,
             commands::logs::list_log_entries,
             commands::logs::open_logs_directory,
@@ -315,6 +308,11 @@ pub fn run() {
             commands::credentials::get_provider_credential_status,
             commands::credentials::set_provider_api_key,
             commands::credentials::clear_provider_api_key,
+            commands::mcp::regenerate_mcp_token,
+            commands::mcp::revoke_mcp_token,
+            commands::mcp::mcp_token_status,
+            commands::mcp::set_mcp_enabled,
+            commands::mcp::mcp_status,
             commands::autopilot::get_company_autopilot,
             commands::autopilot::set_company_autopilot,
             commands::autopilot::list_company_autopilot_modes,

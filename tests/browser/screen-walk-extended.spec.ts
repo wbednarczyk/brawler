@@ -7,13 +7,25 @@ import { test, expect, openApp, openCockpitPanel, expectNoPageOverflow } from ".
 // gate (harness fixture) additionally fails on a render error / unmocked command,
 // so this is the coverage that those screens still mount cleanly in their new home.
 //
-// `heading` is the panel's leading in-pane H1 text (may differ from the dock tab
-// label, e.g. tab "Notebook" vs heading "Notebooks"); `tab` is the dock tab label.
+// `heading` is the panel's leading in-pane heading text (may differ from the dock
+// tab label, e.g. tab "Notebook" vs heading "Notebooks"); `tab` is the dock tab
+// label; `level` is the heading level the panel renders (PanelHeader → h1;
+// SectionHeader-based global panels may lead with a lower level, e.g. the journal).
 const PANELS = [
-  { tab: "Research", heading: "Research" },
-  { tab: "Notebook", heading: "Notebooks" },
-  { tab: "Events", heading: "Events" },
-  { tab: "Report Season", heading: "Report Season" },
+  { tab: "Research", heading: "Research", level: 1 },
+  { tab: "Notebook", heading: "Notebooks", level: 1 },
+  { tab: "Events", heading: "Events", level: 1 },
+  { tab: "Report Season", heading: "Report Season", level: 1 },
+] as const;
+
+// The D6 compact-header rule (Decision 6) covers every cockpit-hosted panel whose
+// leading heading would otherwise duplicate its dock tab — including cockpit-native
+// globals like the cross-company decision journal (ADR 0071), whose tab already
+// reads "Journal (all companies)". Kept separate from the former-secondary-screen
+// overflow list above so the D6 sweep can grow without lengthening that loop.
+const COMPACT_HEADER_PANELS = [
+  ...PANELS,
+  { tab: "Journal (all companies)", heading: "Decision journal", level: 3 },
 ] as const;
 
 test.describe("cockpit-hosted screens lay out without overflow", () => {
@@ -34,15 +46,15 @@ test.describe("cockpit-hosted screens lay out without overflow", () => {
   // title. The dock TAB carries the name instead. (The same screens rendered
   // full-screen in `.workspace` keep their full headers — the rule is
   // `.cockpit-pane`-scoped — asserted by the sidebar screen-visible suites.)
-  for (const { tab, heading } of PANELS) {
+  for (const { tab, heading, level } of COMPACT_HEADER_PANELS) {
     test(`compacts the duplicate in-pane heading for the ${tab} panel`, async ({ page }) => {
       await openApp(page);
       await openCockpitPanel(page, tab);
 
       const pane = page.locator(".cockpit-pane", {
-        has: page.getByRole("heading", { level: 1, name: heading, exact: true }),
+        has: page.getByRole("heading", { level, name: heading, exact: true }),
       });
-      const h1 = pane.getByRole("heading", { level: 1, name: heading, exact: true });
+      const h1 = pane.getByRole("heading", { level, name: heading, exact: true });
 
       // Present in the accessible tree (heading role resolves)…
       await expect(h1).toBeAttached();

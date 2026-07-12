@@ -286,6 +286,7 @@ export const legacySettings: UserSettings = {
   database: { maxConnections: 4, busyTimeoutMs: 5000, acquireTimeoutMs: 10000 },
   queue: { sourcesWorkers: 2, autopilotWorkers: 3, aiWorkers: 2, aiProviderConcurrency: 2 },
   pinnedCompanyIds: [],
+  mcp: { enabled: false, port: 8317 },
 };
 
 export const legacyGeminiCredential: CredentialStatus = {

@@ -60,9 +60,10 @@ Rules:
 | A single-line text input | `TextField` | raw `<input>` (styled per-screen) |
 | A select | `SelectField` | raw `<select>` |
 | A multi-line input | `TextareaField` | raw `<textarea>` |
+| A date input | `DateField` (or the `NotebookDateField` domain wrapper) | raw `<input type="date">` (renders unstyled native chrome off the dark design system) |
 | A plain checkbox + label | `Checkbox` | `<label><input type="checkbox"/>text</label>` |
 | A labelled field row | `FieldRow` | ad-hoc `<label>` grids |
-| A search box | `SearchField` | input + clear button assembled by hand |
+| A search box | `SearchField` — **always pass a styling `className`** (base: `search-box`); the primitive carries structure, not skin, so a bare call site renders an unstyled native input (owner dogfooding, v0.52) — unless a container styles it contextually (e.g. inside `FilterToolbar`) | input + clear button assembled by hand; `<SearchField>` with no `className` outside `FilterToolbar` |
 | A clear/reset affordance | `ClearButton` | a bare `<button>×</button>` |
 | A button | `Button` (`variant`) | `<button className="compact-button">` |
 | A **low-emphasis** tone-carrying status/metadata label (quiet, sits inline) | `StatusChip` | `<span className="…-status">` |

@@ -1,4 +1,4 @@
-import { test, expect, openApp } from "./helpers/harness";
+import { test, expect, openApp, expectNoPageOverflow } from "./helpers/harness";
 import type { Page } from "@playwright/test";
 
 // Clickable Settings journey against the stateful browser mock runtime
@@ -60,16 +60,16 @@ test.describe("settings", { tag: "@clickable" }, () => {
 
     const kpiRow = settingsRegion
       .locator(".capability-routing-row")
-      .filter({ has: page.getByRole("heading", { name: "KPI extraction", level: 3 }) });
+      .filter({ has: page.getByRole("heading", { name: "Claim extraction", level: 3 }) });
 
     // Two-member failover pool: the catalog default (Gemini), then a
     // OpenAI-compatible provider with a typed custom model.
     await kpiRow.getByRole("button", { name: "Add provider" }).click();
-    await expect(page.getByLabel("Provider KPI extraction 1")).toHaveValue("provider_gemini");
+    await expect(page.getByLabel("Provider Claim extraction 1")).toHaveValue("provider_gemini");
 
     await kpiRow.getByRole("button", { name: "Add provider" }).click();
-    await page.getByLabel("Provider KPI extraction 2").selectOption("provider_openai_compatible");
-    await page.getByLabel("Model KPI extraction 2").fill("custom-model-x");
+    await page.getByLabel("Provider Claim extraction 2").selectOption("provider_openai_compatible");
+    await page.getByLabel("Model Claim extraction 2").fill("custom-model-x");
 
     await page.getByLabel("OpenAI-compatible base URL").fill("https://compat.example.com/v1");
 
@@ -78,9 +78,37 @@ test.describe("settings", { tag: "@clickable" }, () => {
     await settingsRegion.getByRole("button", { name: "Credentials" }).click();
     await settingsRegion.getByRole("button", { name: "AI", exact: true }).click();
 
-    await expect(page.getByLabel("Provider KPI extraction 1")).toHaveValue("provider_gemini");
-    await expect(page.getByLabel("Provider KPI extraction 2")).toHaveValue("provider_openai_compatible");
-    await expect(page.getByLabel("Model KPI extraction 2")).toHaveValue("custom-model-x");
+    await expect(page.getByLabel("Provider Claim extraction 1")).toHaveValue("provider_gemini");
+    await expect(page.getByLabel("Provider Claim extraction 2")).toHaveValue("provider_openai_compatible");
+    await expect(page.getByLabel("Model Claim extraction 2")).toHaveValue("custom-model-x");
     await expect(page.getByLabel("OpenAI-compatible base URL")).toHaveValue("https://compat.example.com/v1");
+  });
+
+  // M4 (ADR 0078): the MCP section's connection snippet is unbreakable command
+  // text — the widest content in Settings. It must scroll inside its own bounded
+  // `data-hscroll` scroller, never force a global/panel horizontal scrollbar,
+  // across the viewport matrix (incl. the narrow quarter-ultrawide projects).
+  test("MCP section keeps the connection snippet inside a bounded scroller", async ({ page }, testInfo) => {
+    await openApp(page);
+    await navTo(page, "Settings").click();
+
+    const settingsRegion = page.getByLabel("Application settings");
+    await settingsRegion.getByRole("button", { name: "MCP server" }).click();
+
+    // Reveal the widest content: the token field plus a token-bearing snippet.
+    await settingsRegion.getByRole("button", { name: "Generate token" }).click();
+    await expect(settingsRegion.getByLabel("Access token")).toBeVisible();
+
+    const snippet = settingsRegion.locator(".mcp-snippet").first();
+    await expect(snippet).toBeVisible();
+    await expect(snippet).toHaveAttribute("data-hscroll");
+
+    // No global or panel-internal horizontal scrollbar at this viewport.
+    await expectNoPageOverflow(page);
+
+    await testInfo.attach("mcp-settings", {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
   });
 });

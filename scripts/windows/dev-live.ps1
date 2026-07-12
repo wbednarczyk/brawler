@@ -50,7 +50,11 @@ name an exact file with -ExePath.
 "@
     }
 
-    $candidate = Get-ChildItem -Path $SearchDir -Filter "brawler-*.exe" -File -ErrorAction SilentlyContinue |
+    # The versioned portable APP artifact only. A bare "brawler-*.exe" filter
+    # also matches the brawler-mcp-stdio.exe adapter shipped beside it since
+    # v0.52 — which has no window and no CDP, so live-up hung on it
+    # (guardrail 2026-07-12).
+    $candidate = Get-ChildItem -Path $SearchDir -Filter "brawler-*-windows-x64-portable.exe" -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
 

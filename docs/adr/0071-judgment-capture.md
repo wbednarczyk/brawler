@@ -13,7 +13,7 @@ An investor's own judgment history cannot be backfilled: every decision made and
 
 1. **`decision_entries` (early slice of ADR 0043's journal, unchanged in design)**: company, decision kind (`buy` | `pass` | `keep_watching` | `sell_note` — recorded actions/judgments, not advice), Markdown rationale, evidence links (feed item / report document / note / claim / valuation-when-available), decided-at date. Immutable once saved (append corrections as follow-up entries). Surfaces: a per-company journal section + a global chronological list; entries join the research timeline. The v0.64 workbench builds on this table — no migration away, only extension (outcome review, thesis links).
 2. **`report_expectations`**: for an upcoming report occurrence (report-season cockpit integration): free-text stance plus optional per-metric expectations (metric key, comparator, value). After the report's facts are confirmed, a read model composes expectation-vs-actual for review — the user records their own verdict; the app never scores judgment automatically.
-3. Both entities are owner-durable: import/export coverage in the unified bundle (v0.52 scope), retention-exempt, and provenance-stamped like claims (ADR 0040 precedent).
+3. Both entities are owner-durable: import/export coverage in the unified bundle *(deferred with the whole bundle-v2 epic to `v0.67` at the 2026-07-11 planning pass — schema stability first; whole-DB rotating backups cover safety meanwhile)*, retention-exempt, and provenance-stamped like claims (ADR 0040 precedent).
 
 ## Consequences
 

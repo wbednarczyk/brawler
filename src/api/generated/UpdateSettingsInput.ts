@@ -27,4 +27,14 @@ capabilityProviders?: { [key in string]: Array<CapabilityProviderEntry> }, dbMax
  * Replace the full pinned-company list (ADR 0054). The frontend sends the
  * complete desired order, so this overwrites rather than merges.
  */
-pinnedCompanyIds?: Array<string>, };
+pinnedCompanyIds?: Array<string>, 
+/**
+ * Enable/disable persistence for the MCP server (ADR 0078). The live
+ * start/stop lifecycle command is separate (`set_mcp_enabled`, M3).
+ */
+mcpEnabled?: boolean, 
+/**
+ * Requested MCP listen port (ADR 0078); clamped to `[1024, 65535]` on
+ * write rather than rejected.
+ */
+mcpPort?: number, };

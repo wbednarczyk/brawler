@@ -93,10 +93,17 @@ pub fn run_ai_analysis_job(
             "attachmentCount": feed_item.attachments.len()
         }),
     );
+    // Prose output (summary, reasoning, tags) follows the app language; any
+    // directly quoted text stays in the source's original language.
+    let output_language = state
+        .get_settings()
+        .map_err(|error| error.to_string())?
+        .locale;
     let request = AnalysisRequest {
         feed_item,
         prompt_preset_id: job.prompt_preset_id.clone(),
         custom_question: job.custom_question.clone(),
+        output_language,
     };
 
     state

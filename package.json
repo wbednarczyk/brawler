@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.{ts,tsx}\" --max-warnings 0",
     "stylelint": "stylelint \"src/**/*.css\"",
-    "knip": "knip",
+    "knip": "knip && node scripts/check/api-surface-guard.mjs",
     "test": "vitest run src",
     "test:browser:install": "playwright install chromium",
     "test:browser": "playwright test",

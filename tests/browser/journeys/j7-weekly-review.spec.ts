@@ -45,6 +45,9 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
     await setPaneSize(page, { width: 900, height: 700, pane: eventsPane });
     await expect(eventsPane.locator(".event-week-grid")).toBeVisible();
     await expectNoPageOverflow(page);
+    // Gate the week grid's a11y (ADR 0045): keeps the horizontally scrollable
+    // week region keyboard-reachable (scrollable-region-focusable).
+    await expectNoA11yViolations(page, "Events week grid");
 
     // Watchlist overview — what's on the list this week.
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Watchlists" }));

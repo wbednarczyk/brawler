@@ -528,6 +528,10 @@ export function useAppViewModel({
       tone: "ok",
     };
   }, [sourceAdapters, sourceAdaptersError]);
+  // Keep this axis list in sync with `clearInboxFilters` (useFeedController)
+  // and the `filteredFeedItems` predicate above: a filter axis missing from
+  // the reset is exactly the class behind bug c80dabe (a stale filter left by
+  // cross-navigation silently hid the whole feed on "All").
   const hasActiveInboxFilters =
     searchQuery.trim().length > 0 ||
     inboxWatchlistFilter !== "all" ||

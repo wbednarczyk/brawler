@@ -3,6 +3,10 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-24.11";
+    # Unstable channel solely for fast-moving dev tools absent from 24.11
+    # (claude-code — the MCP real-client verification, ADR 0078). Not used for
+    # anything shipped.
+    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
@@ -10,6 +14,7 @@
   outputs =
     { self
     , nixpkgs
+    , nixpkgs-unstable
     , flake-utils
     , rust-overlay
     }:
@@ -18,6 +23,10 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ (import rust-overlay) ];
+        };
+        pkgsUnstable = import nixpkgs-unstable {
+          inherit system;
+          config.allowUnfree = true; # claude-code ships under an unfree license
         };
         rustToolchain = pkgs.rust-bin.stable.latest.default.override {
           extensions = [
@@ -65,6 +74,7 @@
             sqlite
             zip
             webkitgtk_4_1
+            pkgsUnstable.claude-code
           ];
 
           buildInputs = linuxNativeLibraries;

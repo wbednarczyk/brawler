@@ -13,7 +13,11 @@ The constraint is that the suite stays **lean and fast** — coverage of everyth
 1. **Test behavior and contracts, not implementation details.** One clear test per behavior; assert the observable result (the command's output, the rendered state, the stored row), not internal mechanics. **Delete tests that no longer protect behavior, and never add a redundant or brittle test "to be safe"** (especially screenshot-diff tests) — that bloat is exactly what makes a suite slow, flaky, and ignored. More tests is not the goal; covering every behavior *once, well* is.
 2. **Keep the bulk in the fast layers; every *deterministic* suite is on the one mandatory gate, and only the genuinely-slow/flaky/credentialed ones stay out.** `make check` is the single hard-fail gate ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — frontend + Rust + `knip` + the ts-rs drift guard + the **full Playwright browser suite** + `gate-integrity` + `docs-drift` (spec↔code enforcement — contracts/IA/data-model vs. the real commands/screens/settings, [ADR 0065](adr/0065-spec-code-drift-gates.md)) — and `.githooks/pre-commit` runs it before every commit. It must stay in the seconds-to-low-minutes range (the browser suite parallelizes to ~tens of seconds). Only suites disqualified from a per-commit hard gate stay periodic/manual, each for a stated reason: `coverage` (slow instrumented build), `mutants` (30 min–2 h), `bench` (machine-dependent), live provider / OS-keyring smokes (credentials/network/OS), packaging (OS/toolchain). This is the anti-rot contract: a deterministic suite that is *not* on the gate rots (the browser suite went 28-red for two sessions when it lived only in `check-epic` behind `-`-prefixed steps). Default CI/local checks stay deterministic and secret-free.
 
+**Hermetic tests must not read the developer's shell.** A test asserting missing-credential behavior (provider skipped, "configure Settings" error) MUST call `providers::credentials::scrub_provider_env_fallbacks()` first — an exported dev-fallback var (e.g. `GEMINI_API_KEY` from direnv) otherwise gives the provider a credential and the test passes on one machine and fails on another (guardrail 2026-07-11: three `jobs::` tests). Same rule for any future env-fallback: hermetic tests scrub it at the top; scrubbing after the action under test is cleanup, not hermeticity. Safe under nextest's process-per-test model. **Sibling class — shared fixed network resources:** a test that binds a socket must probe a free port (`TcpListener::bind("127.0.0.1:0")` → read → drop) — never a fixed port and never settings-clamped `0` (the MCP clamp maps `0` to the 1024 floor, so every "ephemeral" test raced for the same port under parallel nextest; reddened a commit gate intermittently, 2026-07-12). The probe→bind window itself still races between socket tests, so every socket-binding test also joins the serialized `loopback-sockets` nextest group (`.config/nextest.toml`).
+
 **Workflow tests near the timeout budget flake under gate load.** A Vitest test that walks multiple screens/sections through the full app render must carry an explicit `it(..., timeout)` budget with a rationale comment — under the gate's parallel transform load such tests exceed the 5s default while passing in isolation (three distinct tests flaked this way in one v0.50 closure day; card `b6b866f`). Give the *specific* test a deliberate budget; never absorb the class with global retries or a global timeout bump — a silently retried suite stops reporting real races.
+
+**Await the *specific* thing you assert, not a proxy.** A screen fed by several independent async effects (e.g. Today/Pulse: autopilot runs, claims-to-verify, report season each load on their own effect) must, before asserting a category/row is present, `await` a marker of *that* data — not just the first row that happens to render. Awaiting one effect's marker (`findByRole("Details")` = autopilot) and then asserting a *sibling* effect's rows (verify) races the slower load: green in isolation, intermittently drops the un-awaited category under full-suite scheduling pressure (card `a91d260`: to-verify dropped; reproduced deterministically by delaying only `list_claims_to_verify` by a macrotask). Fix = await the asserted category (`await findCategoryRow(container, "verify")`), never a retry or timeout bump. Sibling class: a relative-time assertion that reads wall-clock `new Date()` on both the input *and* inside the formatter (`companyEventDueLabel`/`Class`) can straddle midnight — pin the clock with `vi.setSystemTime(NOW)` (the harness idiom) rather than trusting the offset to hold.
 
 ### Expensive-gate economics
 
@@ -293,11 +297,13 @@ never flakes CI:
   `spawn_blocking`, per the CLAUDE.md UI-thread rule) and **algorithmically
   bounded** — it scans the persisted derived index, not the whole corpus, and is
   `O(rows)` not `O(rows²)`. Asserted via structure and via instrumented
-  counters / row-count invariants over a volume dataset, **not** wall-clock. This
-  is the mechanism that catches the `v0.45.0` `find_similar` regression class.
+  counters / row-count invariants over a volume dataset, **not** wall-clock. The
+  rule was harvested from the `v0.45.0` `find_similar` UI-freeze regression
+  (that feature is retired, [ADR 0080](adr/0080-retire-embedding-model.md); the
+  rule stands for every hot path).
 - **Periodic `criterion` benches with a relative ratchet (never a hard gate).**
-  `make bench` runs micro-benchmarks on the hot kernels (vector similarity,
-  expression eval, dedup); a relative ratchet (mirroring `coverage-ratchet.mjs`)
+  `make bench` runs micro-benchmarks on the hot kernels (feed parse,
+  expression eval); a relative ratchet (mirroring `coverage-ratchet.mjs`)
   flags a regression beyond tolerance against a committed baseline. Wall-clock is
   machine-dependent, so this is **periodic and informational** — it never fails
   `make check`, and absolute ms budgets as a hard gate are rejected.
@@ -366,14 +372,12 @@ isolated adapter-parse and storage tests. Deterministic, in-memory DB, part of
 `make check`.
 
 The shared ingestion spine (Architecture v2 / [ADR 0050](adr/0050-architecture-v2-domain-stores-source-pipeline-durable-jobs.md))
-is covered at two levels: the **stages** in `storage::ingestion` (the `story_key`
-derivation has its own unit tests + the golden snapshot in `entity_resolution`;
-the unified `upsert_feed_item` is exercised by every feed-item adapter's
-ingest test), and an integration test that ingests across two sources and asserts
-the persisted **cross-source `story_key`** clusters matched items while unmatched
-items get none. Adding an ingest path keeps it on the spine (`upsert_feed_item` +
-`record_source_outcome`); a new identity/clustering transform in
-`entity_resolution` ships with the ADR 0049 invariant + golden treatment.
+is covered by the unified `upsert_feed_item`, exercised by every feed-item
+adapter's ingest test. Adding an ingest path keeps it on the spine
+(`upsert_feed_item` + `record_source_outcome`); a new identity/matching
+transform in `storage::feed_matching` (the normalization SSOT) ships with the
+ADR 0049 invariant treatment. (The story-key stage and its golden/proptest
+suites were removed with the write-only story-key path, [ADR 0080](adr/0080-retire-embedding-model.md).)
 
 ### Mutation testing scope
 

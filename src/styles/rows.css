@@ -218,3 +218,24 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+
+/* When a row carries interactive controls, they sit BESIDE the clickable article
+   (never inside it — nested interactives are an axe violation). The line keeps the
+   article and its actions on one row; the article still fills the width. */
+.expandable-row-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.expandable-row-line > .expandable-row {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.expandable-row-actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

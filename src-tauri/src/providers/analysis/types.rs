@@ -9,6 +9,10 @@ pub struct AnalysisRequest {
     pub feed_item: FeedItem,
     pub prompt_preset_id: String,
     pub custom_question: Option<String>,
+    /// App locale code (`pl` | `en`) the prose output (summary, reasoning, tags,
+    /// source-reference labels) must be written in; any directly quoted text stays
+    /// in the source's original language. Unknown codes degrade to English.
+    pub output_language: String,
 }
 
 #[derive(Debug, Clone)]
@@ -32,6 +36,11 @@ pub struct ResearchBriefRequest {
     pub scope_type: String,
     pub scope_id: String,
     pub evidence_items: Vec<ResearchEvidenceItem>,
+    /// App locale code (`pl` | `en`) the prose output (title, summary, section
+    /// headings/bodies, citation labels) must be written in; verbatim citation
+    /// snippets stay in the evidence's source language. Unknown codes degrade to
+    /// English.
+    pub output_language: String,
 }
 
 #[derive(Debug, Clone)]
@@ -39,6 +48,11 @@ pub struct ResearchDigestRequest {
     pub scope_type: String,
     pub scope_id: String,
     pub evidence_items: Vec<ResearchEvidenceItem>,
+    /// App locale code (`pl` | `en`) the prose output (title, summary, section
+    /// headings/bodies, citation labels) must be written in; verbatim citation
+    /// snippets stay in the evidence's source language. Unknown codes degrade to
+    /// English.
+    pub output_language: String,
 }
 
 /// One agent qualitative-assessment request: a single quality-framework criterion

@@ -36,9 +36,6 @@ per feature.
 - **[DSL reference](dsl-reference.md)** — the small expression language used to
   write quality-framework criteria (e.g. `roic >= 15%`,
   `net_debt_to_ebitda < 2.5 AND fcf > 0`).
-- **[On-device semantic similarity](embedding-model.md)** — an optional, local,
-  no-API-key embedding model that finds feed items similar *in meaning*, not just
-  by keyword.
 - **[Report comparison](report-comparison.md)** — see what changed between a
   company's two most recent financial statements of the same kind, section by
   section — fully local, deterministic, no AI.
@@ -46,6 +43,14 @@ per feature.
   — route each AI capability to its own provider with a failover pool, and add
   free/self-hosted open-model hosts (Groq, OpenRouter, local Ollama, and more)
   alongside Gemini, Claude, and OpenAI.
+- **[The decision journal and pre-report expectations](decision-journal.md)**
+  — capture your buy/pass/keep-watching decisions in an append-only,
+  evidence-linked journal, and write down pre-report expectations that freeze
+  when the real numbers arrive — a factual mirror, never a grade.
+- **[The MCP server](mcp-server.md)** — let an AI assistant (Claude Code,
+  Claude Desktop, …) read your research through a small, read-only, localhost-
+  only connector: enable it, generate a token, and connect over HTTP or the
+  stdio adapter.
 
 ## A note on what Brawler is — and isn't
 

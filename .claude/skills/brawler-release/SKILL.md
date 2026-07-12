@@ -13,13 +13,14 @@ Use this workflow only from the Brawler repository root when the user explicitly
 
 Full closure order per [DoD §I](../../../docs/engineering-workflow.md#definition-of-done-the-handover-gate) and CLAUDE.md Working Rules:
 
-1. **Write the retrospective** for the user, before closure sign-off: both domains (app + development loop) × went-well / went-wrong (incl. unexpected gaps) / stop / improve — closed vs still-open marked honestly.
-2. **Spec-conformance audit** of the epic's ADR(s), decision by decision: for each, verify a **live-path invocation** exists (`repoctx callers` from the real job/command/UI entry, not only unit tests) and record a verdict (conforms / partial / deviates / not built).
-3. **`make check-epic`** (full gate + coverage ratchet) + **mutants via `gh workflow run mutants.yml`** — NEVER `make mutants` locally: the sweep OOM-freezes the owner's WSL (it has done so three times); the workflow runs it on a GitHub runner (`.github/workflows/mutants.yml`; engineering-workflow.md CI Posture). (+ **`make bench`** if a hot kernel changed.) Triage every failure: fix it or file a tracked Radicle issue.
-4. **`wiki/`** entries for every user-facing change delivered by the epic.
-5. **`docs/roadmap.md`** status line + **`docs/kanban-archive.md`** completed-card entry + `rad issue state --solved` for delivered tasks/epic (never `--closed` for delivered work).
-6. **Squash-merge to master** (default integration — see Release Boundary).
-7. **`make release-prepare`** → curate → **`make release`**.
+1. **Write the retrospective** for the user, before closure sign-off: both domains (app + development loop) × went-well / went-wrong (incl. unexpected gaps) / stop / improve — closed vs still-open marked honestly. **Present its content (and the harvested-guardrails list) to the owner INLINE in chat — a committed file the owner never saw does not count** (owner feedback, 2026-07-12).
+2. **Human-only docs refresh**: update `docs/for-the-author.md` (state line, layer/domain summaries, "gdzie co znaleźć") and republish the "Brawler — mapa systemu" Artifact if systems changed; give the owner a short **"co nowego po ludzku"** summary in chat alongside the technical changelog.
+3. **Spec-conformance audit** of the epic's ADR(s), decision by decision: for each, verify a **live-path invocation** exists (`repoctx callers` from the real job/command/UI entry, not only unit tests) and record a verdict (conforms / partial / deviates / not built).
+4. **`make check-epic`** (full gate + coverage ratchet) + **mutants via `gh workflow run mutants.yml`** — NEVER `make mutants` locally: the sweep OOM-freezes the owner's WSL (it has done so three times); the workflow runs it on a GitHub runner (`.github/workflows/mutants.yml`; engineering-workflow.md CI Posture). (+ **`make bench`** if a hot kernel changed.) Triage every failure: fix it or file a tracked Radicle issue.
+5. **`wiki/`** entries for every user-facing change delivered by the epic.
+6. **`docs/roadmap.md`** status line + **`docs/kanban-archive.md`** completed-card entry + `rad issue state --solved` for delivered tasks/epic (never `--closed` for delivered work).
+7. **Squash-merge to master** (default integration — see Release Boundary).
+8. **`make release-prepare`** → curate → **`make release`**.
 
 **The user must sign off between the (1)–(2) findings and executing (5)–(7)** — do not move to roadmap/archive/merge/release until that sign-off is given.
 

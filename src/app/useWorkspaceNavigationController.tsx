@@ -1,21 +1,18 @@
 import type { Dispatch, KeyboardEvent, SetStateAction } from "react";
 import { ExternalLink, Inbox } from "lucide-react";
 import type { Company, FeedItem, NotebookOrigin } from "../api/types";
-import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
 import type { Section } from "./navigation";
 
 type WorkspaceNavigationControllerInput = {
   companiesById: Record<string, Company>;
   feedState: FeedItem[];
+  // Cross-navigation must scope the Inbox through this single reset-then-scope
+  // helper — individual filter setters are deliberately not passed in, so a
+  // partial reset cannot strand a stale filter that hides the feed (c80dabe).
+  scopeInboxToCompany: (company: string) => void;
   selectedCompanyFeedItemId: string | null;
   selectedCompanyId: string | null;
   setActiveSection: Dispatch<SetStateAction<Section>>;
-  setInboxCompanyFilter: Dispatch<SetStateAction<string>>;
-  setInboxSourceFilter: Dispatch<SetStateAction<string>>;
-  setInboxStatusFilter: Dispatch<SetStateAction<InboxStatusFilter>>;
-  setInboxTypeFilter: Dispatch<SetStateAction<string>>;
-  setInboxWatchlistFilter: Dispatch<SetStateAction<string>>;
-  setSearchQuery: Dispatch<SetStateAction<string>>;
   setSelectedCompanyFeedItemId: Dispatch<SetStateAction<string | null>>;
   setSelectedCompanyId: Dispatch<SetStateAction<string | null>>;
   setSelectedFeedItemId: Dispatch<SetStateAction<string | null>>;
@@ -25,15 +22,10 @@ type WorkspaceNavigationControllerInput = {
 export function useWorkspaceNavigationController({
   companiesById,
   feedState,
+  scopeInboxToCompany,
   selectedCompanyFeedItemId,
   selectedCompanyId,
   setActiveSection,
-  setInboxCompanyFilter,
-  setInboxSourceFilter,
-  setInboxStatusFilter,
-  setInboxTypeFilter,
-  setInboxWatchlistFilter,
-  setSearchQuery,
   setSelectedCompanyFeedItemId,
   setSelectedCompanyId,
   setSelectedFeedItemId,
@@ -91,12 +83,7 @@ export function useWorkspaceNavigationController({
       ? feedState.find((item) => item.id === origin.sourceId)
       : null;
 
-    setSearchQuery("");
-    setInboxWatchlistFilter("all");
-    setInboxCompanyFilter(company?.qualifiedTicker ?? originFeedItem?.company ?? "all");
-    setInboxTypeFilter("all");
-    setInboxSourceFilter("all");
-    setInboxStatusFilter("all");
+    scopeInboxToCompany(company?.qualifiedTicker ?? originFeedItem?.company ?? "all");
 
     if (origin.sourceId) {
       setSelectedFeedItemId(origin.sourceId);
@@ -156,7 +143,7 @@ export function useWorkspaceNavigationController({
 
   function openCompanyInboxFilter(company: Company) {
     setSelectedFeedItemId(null);
-    setInboxCompanyFilter(company.qualifiedTicker);
+    scopeInboxToCompany(company.qualifiedTicker);
     setActiveSection("Inbox");
   }
 

@@ -13,6 +13,14 @@ Status: Accepted
 > retrieval for the AI milestones (`v0.47`/`v0.49`/`v0.50`). The reversible-to-static
 > property recorded below is the safety valve if no consumer lands.
 
+> **Update (2026-07-11, v0.52.0):** the safety valve was used. No re-pointed consumer
+> ever landed (`SemanticSearch` stayed deferred; report-diff shipped without a
+> similarity call), so the embedding model, the vector index, and the vector scaffold
+> are **retired** — [ADR 0080](0080-retire-embedding-model.md). The static layer's
+> surviving piece is the rule classifier (signals); the two-layer *generative* boundary
+> (ADR 0028) is untouched. Any future semantic-search/RAG capability re-enters through
+> a fresh eval-gated ADR at this ADR's bar (beat the static baseline per capability).
+
 This ADR captures the **design** for splitting Brawler's AI surface into two layers and introducing a local, on-device **interpretative layer** (semantic lookup) alongside the existing generative provider boundary. It records the abstraction constraints required for replaceability, upgradeability, and full reversibility. Sequencing is decided (static foundation `v0.39.0`, embedding model `v0.45.0`); the runtime/model/vector-store defaults were **confirmed at v0.45.0 planning** — see [Amendment (v0.45.0): confirmed runtime defaults](#amendment-v0450-confirmed-runtime-defaults) — and the per-capability eval validates the encoder choice. Extends [ADR 0028](0028-multi-provider-ai-boundary.md) (multi-provider generative boundary) and relates to [ADR 0032](0032-search-and-backup-boundaries.md) (FTS5 search) and [ADR 0034](0034-espi-event-classification.md) (first consumer).
 
 ## Context

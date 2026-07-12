@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Checkbox, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
 
 describe("ErrorText", () => {
   it("renders an alert with the error-text class", () => {
@@ -50,6 +50,27 @@ describe("ListRow", () => {
     );
     expect(screen.queryByRole("link")).toBeNull();
     expect(screen.getByText("plain row")).toHaveClass("ui-list-row-title");
+  });
+});
+
+describe("DateField", () => {
+  it("renders a styled native date input carrying the design-system box + date classes", () => {
+    render(<DateField label="Decided on" defaultValue="2026-06-01" />);
+    const input = screen.getByLabelText("Decided on");
+    expect(input).toHaveAttribute("type", "date");
+    expect(input).toHaveClass("ui-text-input");
+    expect(input).toHaveClass("ui-date-input");
+    expect(input).toHaveValue("2026-06-01");
+  });
+
+  it("emits changes and forwards a ref like the other field primitives", () => {
+    const onChange = vi.fn();
+    const ref = createRef<HTMLInputElement>();
+    render(<DateField ref={ref} aria-label="Decided on" value="" onChange={onChange} />);
+    const input = screen.getByLabelText("Decided on");
+    expect(ref.current).toBe(input);
+    fireEvent.change(input, { target: { value: "2026-06-02" } });
+    expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -201,6 +222,25 @@ describe("ExpandableRow", () => {
     fireEvent.keyDown(article, { key: "Enter" });
     fireEvent.keyDown(article, { key: " " });
     expect(onToggle).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders action controls OUTSIDE the clickable article (no nested interactive)", () => {
+    // A button nested inside the row's role="button" article is an axe
+    // nested-interactive (WCAG 4.1.2) violation — action controls must be
+    // siblings of the article, via the `actions` slot (card 02e991e #3).
+    render(
+      <ExpandableRow
+        label="Row with actions"
+        isExpanded={false}
+        onToggle={() => {}}
+        actions={<button type="button">Delete</button>}
+      >
+        <span>header</span>
+      </ExpandableRow>,
+    );
+    const article = screen.getByRole("button", { name: "Row with actions" });
+    const deleteButton = screen.getByRole("button", { name: "Delete" });
+    expect(article.contains(deleteButton)).toBe(false);
   });
 });
 

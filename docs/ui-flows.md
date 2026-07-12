@@ -167,22 +167,45 @@ Acceptance criteria:
 - Heavy extraction interaction happens in a modal, not crammed into the fixed-width detail rail.
 - A claim's follow-up period supports both a quarter (e.g. `2026-Q3`) and an exact date, with quarter selection the most visible control ([ADR 0064](adr/0064-resolved-v1-ux-decisions.md)).
 
+## Journey: Record A Decision In The Journal
+
+Intent: capture a judgment (and why) the moment it is made, so the decision record starts accumulating for later calibration ([ADR 0071](adr/0071-judgment-capture.md); north star NS2). The app records and mirrors the user's own judgments — it never scores them and never gives buy/sell/hold advice.
+
+Flow:
+
+1. From a company's cockpit dashboard, the user opens the **Decision journal** panel (via the panel palette / Add panel — it is not a default dashboard panel).
+2. The user records an entry: a decision kind (`buy` / `pass` / `keep_watching` / `sell_note`), a decided-on date, and a Markdown rationale.
+3. The entry appears in the company's chronological list (by decided_at) and joins the company research timeline.
+4. Selecting an entry, the user links supporting evidence — feed items, notes, claims, or events from the company timeline — to the decision.
+5. To correct or revise a past decision, the user records a **Supersede** follow-up (a new entry linked back to the superseded one); the original is never edited or deleted.
+6. Across companies, the user reviews the **global decision journal** ("Journal (all companies)") chronologically, filtered by decision kind and company.
+
+Acceptance criteria:
+
+- A recorded entry is immutable: there is no edit or delete affordance; the only correction is a Supersede follow-up linked by `supersededByEntryId`.
+- Entries order by their decided_at date, never by insertion order.
+- An entry can link typed evidence (feed item / note / claim / event) and surfaces in the company research timeline as a `decision_entry`.
+- The app records and reflects the user's judgments back; it produces no recommendation and no automatic score ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md) posture).
+
 ## Journey: Prepare For Report Season
 
-Intent: arrive at each tracked company's report date already knowing what to check, then close the loop when the report lands ([ADR 0044](adr/0044-report-season-cockpit.md)).
+Intent: arrive at each tracked company's report date already knowing what to check, record what you expect before it lands, then close the loop when the report lands ([ADR 0044](adr/0044-report-season-cockpit.md), [ADR 0071](adr/0071-judgment-capture.md)).
 
 Flow:
 
 1. The user opens **Report Season** (next to Inbox). The cockpit lists upcoming report dates across the watchlists, ordered by date; a stale-calendar indicator shows when the calendar is out of date.
 2. Each upcoming report shows a pre-report card composed from the company's open research questions, unresolved claims (due / overdue / upcoming), last-period confirmed KPIs, and recent evidence.
-3. The user reviews a card and marks the company **prepared**; from the card they can drill into the company workspace, its research questions, or its claims-review queue.
-4. When the report arrives, the user marks it **processed**; the card links to the arrived filing and to KPI extraction for the new report, and the resurfaced claims appear in the claims-review queue.
+3. From the card the user can **write expectations** for the occurrence (ADR 0071): a free-text stance plus optional per-metric expectations (a metric picked from the card's last-period KPIs, a comparator, and an expected value); the user picks the fiscal period the report covers. Expectations stay editable — and re-openable via **Edit expectations** — until the period's facts land, when they freeze.
+4. The user reviews a card and marks the company **prepared**; from the card they can drill into the company workspace, its research questions, or its claims-review queue.
+5. When the report arrives, the user marks it **processed**; the card links to the arrived filing and to KPI extraction for the new report, and the resurfaced claims appear in the claims-review queue. Autopilot's single "what changed" summary nudges the user to review recorded expectations vs actuals.
+6. Once facts land, the frozen expectation flips to an **expectation-vs-actual** review: each metric shows expected / actual / a factual outcome (Met / Missed / No data), and the user records their own **verdict**. The app never scores the user's judgment — it mirrors the comparison and stores the user's note ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md) posture).
 
 Acceptance criteria:
 
 - For a watchlist with upcoming reports, the cockpit shows dated cards whose contents match the company workspaces (the milestone exit criterion).
 - A company can be taken from upcoming → prepared → processed against a real report cycle.
-- The cockpit composes existing domains with no duplicated logic and adds no per-company data beyond the prepared/processed workflow state.
+- Expectations written before a report land as an editable draft, freeze once the period's facts are recorded (freeze checked inside the update transaction; an edit after facts land surfaces the `conflict` envelope as a read-only flip), and expose an expectation-vs-actual review with a user-recorded verdict.
+- The cockpit composes existing domains with no duplicated logic and adds no per-company data beyond the prepared/processed workflow state and the recorded expectations.
 - The cockpit never auto-fetches or auto-extracts; processing links to the manual KPI-extraction and claims-review entry points.
 
 ## Journey: YouTube Conference To Notes
@@ -260,6 +283,26 @@ Acceptance criteria:
 - The model field is a picklist for curated providers and a free-text field for the OpenAI-compatible provider.
 - Saving an OpenAI-compatible base URL that is non-empty and not `http://`/`https://` is rejected with a clear error.
 - The Credentials tab lists the OpenAI-compatible provider alongside Gemini/Claude/OpenAI, using the same generic save/replace/clear form.
+
+## Journey: Connect An AI Assistant (MCP Server)
+
+Intent: let a local AI assistant read the user's research through the read-only MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)); a journey-independent utility ([ux-journeys](ux-journeys.md)).
+
+Flow:
+
+1. User opens Settings → MCP server.
+2. User generates an access token; the plaintext shows **exactly once** in a copyable field with an explicit shown-once note. The user copies it.
+3. User turns on **Enable the server**; the status pill flips to Active — or the refusal reason (missing token, port in use) shows inline, never a crash.
+4. Optionally the user changes the listen port (committed on blur, clamped to 1024–65535); the new port applies on the next server start ([contracts](contracts.md#external-surface--mcp-server-read-only-mvp)).
+5. User copies a connection snippet — Claude Code (HTTP) or the stdio adapter — with the port interpolated live, and pastes the token where the placeholder appears.
+6. To cut off access, the user revokes the token behind an inline confirm; regenerating replaces it.
+
+Acceptance criteria:
+
+- The server is off by default and never starts without both the setting enabled and a configured token.
+- After the one-time reveal (navigating away or refreshing), the token can only be revoked/regenerated — never shown again; only its configured/storage status renders.
+- Enable/disable takes effect live and the returned status renders; failures surface as status text, not crashes.
+- The snippets are example wording, marked as such; a snippet embeds the token only during the one-time reveal, otherwise a `<token>` placeholder.
 
 ## Journey: Global Search
 

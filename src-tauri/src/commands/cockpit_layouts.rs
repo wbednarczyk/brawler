@@ -38,17 +38,6 @@ pub fn save_cockpit_layout(
 }
 
 #[tauri::command]
-pub fn rename_cockpit_layout(
-    input: storage::RenameCockpitLayoutInput,
-    state: tauri::State<'_, app_state::AppState>,
-) -> Result<storage::CockpitLayout, String> {
-    state
-        .cockpit_layouts()
-        .rename_cockpit_layout(input)
-        .map_err(cockpit_error_code)
-}
-
-#[tauri::command]
 pub fn delete_cockpit_layout(
     layout_id: String,
     state: tauri::State<'_, app_state::AppState>,

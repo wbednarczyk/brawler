@@ -26,6 +26,7 @@ export type SettingsScreenProps = {
   onLocaleChange: (locale: AppLocale) => void;
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onBackfillYearsChange: (backfillYears: number) => void;
+  onMcpPortChange: (port: number) => void;
   onHistorySweepAiCallLimitChange: (historySweepAiCallLimit: number) => void;
   onShortcutBindingsChange: (shortcutBindings: Record<string, ShortcutBindingSetting>) => void;
   onYoutubeTranscriptionModelChange: (model: string) => void;

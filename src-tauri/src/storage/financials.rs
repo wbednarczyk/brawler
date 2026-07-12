@@ -400,7 +400,7 @@ pub(super) fn list_financial_periods(
 /// (card f64cea2): 'annual' (any case) is the FY alias. Everything else is left
 /// untouched — this is a targeted guardrail, not a whitelist that could reject
 /// legitimate labels produced by the extraction pipeline.
-fn normalize_period_type_label(period_type: &str) -> String {
+pub(super) fn normalize_period_type_label(period_type: &str) -> String {
     if period_type.eq_ignore_ascii_case("annual") {
         "FY".to_owned()
     } else {
@@ -1535,7 +1535,7 @@ pub struct PeriodFactCoverage {
     pub flagged: i64,
 }
 
-fn facts_coverage_by_period(
+pub(super) fn facts_coverage_by_period(
     connection: &Connection,
     company_id: &str,
 ) -> StorageResult<Vec<PeriodFactCoverage>> {

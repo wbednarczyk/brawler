@@ -726,6 +726,52 @@ Rules:
 - The migration is idempotent and self-healing (`CREATE TABLE IF NOT EXISTS`).
 - Preparation state is owner durable state; its inclusion in the import/export bundle is a future per-feature coverage item ([roadmap](roadmap.md) `v0.52.0`), not part of `v0.43.0`.
 
+### Decision Journal Entries
+
+The user's own recorded judgments ([ADR 0071](adr/0071-judgment-capture.md), `v0.52.0`) — the early, forward-compatible slice of the ADR 0043 thesis-workbench journal (the `v0.64` workbench extends this table, never migrates away). Decision support only: the app records and mirrors judgments, it never grades them (ADR 0042). Migration `0067_decision_entries.sql`.
+
+`decision_entries`:
+
+- `id`, `company_id` → `companies(id)` (CASCADE).
+- `kind`: `buy` | `pass` | `keep_watching` | `sell_note` (SQL CHECK) — recorded actions/judgments, never advice.
+- `rationale_md`: Markdown rationale (required).
+- `decided_at`: domain date (`YYYY-MM-DD`) the decision was made — the journal's chronology; lists order by `decided_at DESC, id DESC`, never by `created_at`.
+- `superseded_by_entry_id` → `decision_entries(id)` self-reference, nullable. Set on a **follow-up** entry: the id of the entry superseded **by** this one. The link lives on the new row pointing back, so appending a correction never updates a prior row.
+- `created_at`.
+
+Rules:
+
+- **Immutable once saved**, enforced structurally: `BEFORE UPDATE` and `BEFORE DELETE` triggers `RAISE(ABORT)`; there is no update/delete API. Corrections are appended as follow-up entries.
+- The delete trigger carves out exactly one path — the FK cascade when the owning company is deleted (its `WHEN` clause only passes when the parent `companies` row is already gone).
+- Evidence links attach through the generic `evidence_links` boundary (`decision_entry` joins the research timeline in `v0.52.0` J2); no link columns live here.
+- Owner-durable and retention-exempt; unified-bundle export is a `v0.67` dependency.
+
+### Report Expectations
+
+What the user expected **before** a report landed ([ADR 0071](adr/0071-judgment-capture.md), `v0.52.0`), so hindsight bias has a check. Keyed by the same stable occurrence key as `report_preparations` and resolved at creation to the fiscal period the report covers. Expectation-vs-actual is a read model (`v0.52.0` J2) — no stored projection; the user records their own verdict, the app never scores judgment. Migration `0068_report_expectations.sql`.
+
+`report_expectations`:
+
+- `id`, `company_id` → `companies(id)` (CASCADE).
+- `event_key`: the report occurrence's stable `company_events.source_event_key` (same semantics as `report_preparations.event_key`). Unique on `(company_id, event_key)`.
+- `fiscal_year`, `period_type` (`financial_periods` vocabulary; `annual` folds to `FY` at the write boundary): the occurrence's resolved period — what the freeze rule joins against the facts coverage.
+- `stance_md`: free-text Markdown stance (required).
+- `frozen_at`: stamped **once**, on first observation that the resolved period has facts; nullable until then.
+- `resolution_note_md`, `resolved_at`: the user's own verdict at review time (recordable after the freeze; `resolved_at` set on first recording).
+- `created_at`, `updated_at`.
+
+`report_expectation_metrics` (optional per-metric expectations, replaced wholesale on update):
+
+- `id`, `expectation_id` → `report_expectations(id)` (CASCADE).
+- `metric_key`, `comparator` (`lt` | `lte` | `eq` | `gte` | `gt`, SQL CHECK), `expected_value` (decimal-exact text in base units, matching `financial_facts.value_numeric`), `unit` (nullable), `created_at`.
+
+Rules:
+
+- **Freeze**: every update runs in a transaction that first checks whether the resolved `(fiscal_year, period_type)` has facts via the `facts_coverage_by_period` read model; once facts exist the update is refused with the typed `ReportExpectationFrozen` error (command code `conflict`) and `frozen_at` is stamped. Reads also stamp it (freeze-on-read), idempotently.
+- Metric outcomes (`met`/`missed`/`unknown`) are computed by a pure, total evaluator (`evaluate_metric_expectation`); unparseable values or unknown comparators yield `unknown`, never a guess.
+- **Review read model** (`expectation_review`, `v0.52.0` J2): composed on read, never stored. `facts_available` is true once any facts exist for the resolved period; each metric's `actual_value` is the latest **confirmed** `financial_facts` row for that metric+period (joined via `kpi_definitions.metric_key`, exact `period_type` match), else null → `unknown`. The read stamps `frozen_at` like `list` does.
+- Owner-durable and retention-exempt; unified-bundle export is a `v0.67` dependency.
+
 ### Quality Frameworks
 
 User-owned quality checklists evaluated against the fundamentals facts by a deterministic rule engine, producing a versioned scorecard ([ADR 0046](adr/0046-quality-frameworks-quantitative.md), `v0.44.0`). A *framework* is a named set of criteria expressed in a free-text DSL over metric keys; the engine evaluates each criterion against confirmed `financial_facts` (latest period/TTM) and records the measured value. The quantitative engine uses no AI; decision-support only (criteria cannot encode buy/sell output). Migration `0048_quality_frameworks.sql`. A framework may also hold **qualitative**, agent-assessed criteria (`v0.50.0`, [ADR 0075](adr/0075-qualitative-assessment-frameworks.md)) — see the `kind`/`assessment_guidance` and agent-assessed `criterion_results` fields below.
@@ -770,7 +816,7 @@ Rules:
 - The framework-criteria **import path applies the same `kind`/`assessment_guidance` validation as the create path** (`normalize_kind` + guidance required for qualitative): an unrecognized `kind` or a guidance-less qualitative criterion fails the import with a typed error — never stored verbatim.
 - An evaluation run may be **deleted** from the history (pruning); deletion cascades to its `criterion_results`. Deletion removes a whole run — it never mutates a retained run's snapshotted values, so the immutability guarantee holds for what remains.
 - App-template seeds are **bilingual** ([ADR 0076](adr/0076-ui-design-system-and-density-contracts.md) Decision 8): the Rust template constant carries `{pl, en}` for every human-facing string (framework name/description, criterion label, `assessment_guidance`); seed, reset, and top-up resolve the language from the persisted `locale` setting once (fallback `pl`). Criterion keys — `expression`, `partial_band`, `kind` — stay locale-independent.
-- App-template updates never overwrite an edited framework. Seeding is idempotent and runs at startup: a template with no framework yet is inserted with localized name/description + all criteria; an **untouched** template framework (`origin = app_template`, `version == 1` — every edit bumps the version) is **topped up** — any template criteria it lacks are added additively, matched by the criterion's stable **index in the constant** (written as `ordinal`), never by label. Top-up never modifies or deletes existing rows, never bumps the version (so later template growth keeps topping up), and is idempotent across restarts; it closes the "new template criteria invisible without a destructive reset" gap for installs predating the criteria. Edited (`version > 1`) or user-created frameworks are left untouched. An `app_template`-origin framework also offers an explicit **Reset to template defaults** (`reset_framework_to_template`) that re-derives its criteria (in the current locale) from the shipped Rust template constant — the single source for seed, reset, and top-up.
+- App-template updates never overwrite an edited framework. Seeding is idempotent and runs at startup: a template with no framework yet is inserted with localized name/description + all criteria; an **untouched** template framework (`origin = app_template`, `version == 1` — every edit bumps the version) is **topped up** — any template criteria it lacks are added additively, matched by the criterion's stable **index in the constant** (written as `ordinal`), never by label. Top-up never modifies or deletes existing rows, never bumps the version (so later template growth keeps topping up), and is idempotent across restarts; it closes the "new template criteria invisible without a destructive reset" gap for installs predating the criteria. The same untouched framework is also **re-localized** on startup (baba638): its name/description and each criterion's label/`assessment_guidance` are rewritten to the current locale — but only for a field whose stored value still exactly matches the shipped template text in some locale (`IN (pl, en)`), so a framework seeded before the bilingual pass ([ADR 0076](adr/0076-ui-design-system-and-density-contracts.md) Decision 8) stops showing stale-locale strings after a locale switch. Re-localization matches criteria by `ordinal`, never modifies a user-authored value (the field-level match plus the `version == 1` gate both exclude edits), never bumps the version, and is idempotent. Edited (`version > 1`) or user-created frameworks are left untouched. An `app_template`-origin framework also offers an explicit **Reset to template defaults** (`reset_framework_to_template`) that re-derives its criteria (in the current locale) from the shipped Rust template constant — the single source for seed, reset, and top-up.
 - Frameworks + criteria (and any `user`-scope `kpi_definitions` a criterion references) are owner durable state, carried in the import/export bundle so an exported framework imports cleanly. Evaluations are reproducible snapshots; their export is optional.
 - The migration is append-only, idempotent, and self-healing; adding the `user` value to the `kpi_definitions.scope` CHECK is handled by a guarded table rebuild if the constraint is restrictive.
 
@@ -837,10 +883,10 @@ Rules:
 - **Claim is atomic.** The next runnable row (oldest `pending` with `available_at` passed) is moved to `running` and its `attempts` incremented in a single `UPDATE … RETURNING`, so two workers can never claim the same row. `claim_next_for_kinds(kinds)` scopes the claim to a lane's kinds ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md)).
 - **Retry with backoff.** A failed run with attempts left returns to `pending` with `available_at` pushed out (capped exponential); once `attempts == max_attempts` it becomes terminally `failed`.
 - **Crash resume + poison guard.** On startup the worker requeues every `running` row back to `pending` — **except** a row whose `attempts >= max_attempts`, which is **dead-lettered** (`failed`) rather than resurrected. A job that hangs (never reaching the retry path) would otherwise be reclaimed and re-run every restart, permanently starving the queue ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md); the bankier refresh with `attempts=15 > max=2`).
-- **Isolated worker lanes.** The worker runs as named pools by category (`sources` / `autopilot` / `ai` / `indexing`), each with its own threads claiming only its kinds, so a slow source refresh cannot starve latency-sensitive autopilot. Per-source serialization (exactly one refresh per source at a time) and a per-AI-provider concurrency limit are enforced as locks/semaphores shared across lanes; worker counts + provider limit are settings. See [ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).
+- **Isolated worker lanes.** The worker runs as named pools by category (`sources` / `autopilot` / `ai`), each with its own threads claiming only its kinds, so a slow source refresh cannot starve latency-sensitive autopilot. Per-source serialization (exactly one refresh per source at a time) and a per-AI-provider concurrency limit are enforced as locks/semaphores shared across lanes; worker counts + provider limit are settings. See [ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).
 - **Per-source serialization + defer.** A worker holds an exclusive in-memory lock for the job's source (its `adapterId`, exactly one at a time) across the run; a worker that cannot acquire it **defers** the job — requeued to `pending` after a short backoff **without** consuming an attempt (distinct from a retry-on-failure, so contention never exhausts `max_attempts`). ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).)
 - **Chunked company-scoped refresh.** A company-scoped scheduled refresh (bankier-company) is a **planner**: it enqueues one idempotent `source_company_refresh` job (stable id `source_company_refresh:{adapter}:{company}`, re-armed via `reschedule`) **per tracked company** instead of looping all companies in one job. The per-source lock serializes them (politeness preserved), other lanes run alongside, unfinished per-company jobs resume across restarts, and each job rides autopilot detection on its own ingest completion. This retires the monolith that monopolized the single worker for minutes. ([ADR 0059](adr/0059-worker-pools-and-queue-fairness.md).)
-- **`enqueue` vs `reschedule` for a reused id (guardrail, bug `dce9ce8`).** `enqueue` is `INSERT OR IGNORE` — safe only when `id` is genuinely fresh. Any producer that may enqueue again under the **same** `id` after that row already reached a terminal state (a recreated run, a `retry_*` command, a re-triggered one-shot job) must use `reschedule`, not `enqueue`: otherwise the later call is a silent no-op against the existing terminal row and the work never runs again. This broke the autopilot pipeline (a recreated `autopilot_run` stuck at `pending`/`fetch` forever behind an already-`succeeded` stage job — `create_run_if_absent` → `enqueue_stage`) and, mechanically identically, `jobs::handlers::enqueue_per_job` (backs `retry_kpi_extraction` / `retry_claim_extraction` / `retry_ai_analysis`, whose per-job handlers always terminal-succeed the queue row regardless of domain outcome) and the startup/strategy-change content-embedding kick (stable ids `content_embedding` / `strategy-selected`, re-triggered across app restarts or a re-selected strategy).
+- **`enqueue` vs `reschedule` for a reused id (guardrail, bug `dce9ce8`).** `enqueue` is `INSERT OR IGNORE` — safe only when `id` is genuinely fresh. Any producer that may enqueue again under the **same** `id` after that row already reached a terminal state (a recreated run, a `retry_*` command, a re-triggered one-shot job) must use `reschedule`, not `enqueue`: otherwise the later call is a silent no-op against the existing terminal row and the work never runs again. This broke the autopilot pipeline (a recreated `autopilot_run` stuck at `pending`/`fetch` forever behind an already-`succeeded` stage job — `create_run_if_absent` → `enqueue_stage`) and, mechanically identically, `jobs::handlers::enqueue_per_job` (backs `retry_kpi_extraction` / `retry_claim_extraction` / `retry_ai_analysis`, whose per-job handlers always terminal-succeed the queue row regardless of domain outcome).
 - Local-first: workers drain the queue only while the app is open. Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
 
 ### Autopilot Settings and Runs
@@ -910,31 +956,9 @@ Rules:
 - **Backfill truncation honesty.** The in-memory `BackfillProgress` (not persisted; ADR 0036) carries `truncated: bool` — `true` when the page cap (`MAX_BACKFILL_PAGES`) ended the fetch before the configured `backfill_years` cutoff was reached, so older filings may be missing. Surfaced as an explicit coverage-panel warning, never a silent gap.
 - Access path: latest sweep per company (`idx_history_sweeps_company_created`). Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`).
 
-### Content Embeddings
+### Content Embeddings (dropped)
 
-Supports the interpretative AI layer's embedding-model strategy ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)): an on-device vector index over canonical text content, used by the model-backed `SimilarityProvider` (and later model capabilities). Added in `v0.45.0`.
-
-This table is a **disposable, derived index**, never a source of truth. Every row is computed from canonical content (a feed item, note, report document, etc.). Dropping the table loses zero canonical data — it only forces a re-embed.
-
-Fields:
-
-- `content_type` — the canonical content kind being embedded (aligned with the unified search content types, [ADR 0032](adr/0032-search-and-backup-boundaries.md): `feed_item`, `company`, `notebook_entry`, …).
-- `content_id` — the opaque id of the canonical row.
-- `model_id` — the embedding model that produced this vector (e.g. `intfloat/multilingual-e5-small`).
-- `dim` — the vector dimensionality (e.g. `384`).
-- `vector` — the embedding as a little-endian f32 `BLOB`.
-- `content_hash` — hash of the embedded text, so re-embedding can skip unchanged content.
-- `created_at`
-
-Primary key: (`content_type`, `content_id`, `model_id`).
-
-Rules:
-
-- Vectors from different `model_id`s are **never mixed** in a similarity computation; changing the active model re-runs the embed job and rebuilds the index for the new `model_id`, and old-`model_id` rows are pruned.
-- Stored as a pure-Rust brute-force index: similarity is a cosine scan over the candidate `vector` blobs in Rust. No `sqlite-vec`/ANN extension in `v0.45.0` (corpus is single-user, thousands of vectors; brute-force is sub-millisecond). The vector-store boundary allows a later `sqlite-vec` swap without a data migration.
-- Co-located with the main SQLite database so it inherits the WAL pool and backup posture ([ADR 0032](adr/0032-search-and-backup-boundaries.md)); pre-migration snapshots and rotating backups still apply, but the index is rebuildable regardless.
-- Population is opt-in: rows are only written when the user enables the `embedding` strategy and the model weights are present. Until then the static (lexical) baseline serves `SimilarityProvider` and this table stays empty.
-- Embedding/re-embedding runs as an async background job (see [Jobs](#jobs) / [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)); reads of similarity tolerate a partially-populated index.
+The `content_embeddings` vector index (migration `0049`, [ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)) was a **disposable, derived index** for the embedding-model similarity strategy. The model was retired by [ADR 0080](adr/0080-retire-embedding-model.md): migration `0069` drops the table and purges queued `content_embedding` jobs (forward, idempotent — zero canonical data loss, exactly the disposability ADR 0035 designed). The `similarity_strategy` settings row may still hold the legacy `embedding` value on old databases; reads map it to `static` and there is no setter. Similarly, migration `0070` drops the write-only `feed_items.story_key` column + index (its consumer, story clustering, was dropped in [ADR 0051](adr/0051-story-clustering-across-sources.md)).
 
 ### Diagnostic Events
 
@@ -1002,6 +1026,8 @@ Initial keys:
 - `pinned_company_ids`
 - `capability_providers`
 - `openai_compatible_base_url`
+- `mcp_enabled`
+- `mcp_port`
 - `log_level`
 - `log_max_files`
 - `log_max_file_bytes`
@@ -1012,11 +1038,12 @@ Rules:
 
 - Default poll interval is `900`.
 - `backfill_years` (ADR 0077 §3) is the years of company history the on-track backfill covers. No seed row: tolerant read defaults to `3`, clamped to `[1, 10]` on both read and write (never rejected, like the pool settings). The backfill job reads it live; the const in `jobs/backfill.rs` is only the last-resort fallback if the settings read fails.
+- `mcp_enabled` / `mcp_port` (ADR 0078 decision 4): the MCP server toggle (default `false`) and port (default `8317`, clamped `[1024, 65535]` on read and write). No seed rows: tolerant reads fall back to the defaults; the bearer token itself lives in the OS keychain, never in settings.
 - `history_sweep_ai_call_limit` (ADR 0077 §6) is the per-history-sweep tier-4 AI call budget (one unit = one tier-4 invocation for one document; `0` = unlimited). No seed row: tolerant read defaults to `30`, clamped to `[0, 500]` on both read and write. `create_history_sweep` snapshots it onto the sweep row (`history_sweeps.ai_call_limit`), so a change only governs future sweeps.
 - Default YouTube transcription provider is `provider_gemini`.
 - Default shortcut bindings are defined in code. `shortcut_bindings` stores only user overrides, disabled states, and resettable action-ID keyed changes as JSON.
 - `pinned_company_ids` (ADR 0054) stores the companies the user has pinned to the sidebar IA spine as a JSON array of company IDs, in pin order. It is a simple local UI preference: default `[]` when the row is absent (tolerant read, no seed migration), de-duplicated and overwritten wholesale on update. Unknown IDs (deleted companies) are ignored at read time by the frontend.
-- `capability_providers` (ADR 0060 as amended, ADR 0061 decision 5) stores a JSON object mapping a capability key (`kpi_extraction`, `claim_extraction`, `feed_analysis`, `research_brief`, `research_digest`, `event_date`, `signal_classification`, `qualitative_assessment`) to an **ordered** JSON array of `{ "provider": "...", "model": "..." }` entries — the capability's failover pool, tried in array order. No seed row (introduced after the initial migration): tolerant read defaults to `{}`, overwritten wholesale on update like `shortcut_bindings`. An absent key or an empty array for a key means "fall back to `general_analysis_provider` / `general_analysis_model`".
+- `capability_providers` (ADR 0060 as amended, ADR 0061 decision 5) stores a JSON object mapping a capability key (`kpi_extraction`, `claim_extraction`, `feed_analysis`, `research_brief`, `research_digest`, `event_date`, `signal_classification`, `qualitative_assessment`) to an **ordered** JSON array of `{ "provider": "...", "model": "..." }` entries — the capability's failover pool, tried in array order. (`kpi_extraction` stays a valid stored key for settings compat, but is deliberately non-routable from the Settings UI — orphaned by the tier-4 rewire and retired per [ADR 0080](adr/0080-retire-embedding-model.md), card `db9a292`; the enum variant is reserved for a future text-KPI path.) No seed row (introduced after the initial migration): tolerant read defaults to `{}`, overwritten wholesale on update like `shortcut_bindings`. An absent key or an empty array for a key means "fall back to `general_analysis_provider` / `general_analysis_model`".
 - `openai_compatible_base_url` (ADR 0060) stores the base URL for the generic OpenAI-compatible provider as a plain string. No seed row: tolerant read defaults to `""` (unconfigured). Non-empty values must start with `http://` or `https://`.
 - General AI provider remains unset until the AI analysis framework milestone configures one. The first live implementation may use Gemini, but provider storage must remain extensible.
 - YAML import/export excludes secrets; implemented via the settings export/preview/apply commands (see [Contracts § User Settings](contracts.md)).
@@ -1179,7 +1206,7 @@ Rules:
 - Population is an async background job offloaded off the UI thread (extraction over a multi-page PDF is CPU work); reads of the diff tolerate a not-yet-extracted document (the diff read model reports `extraction_pending`).
 - Extraction handles **both source formats** found across the GPW + NewConnect market ([ADR 0052](adr/0052-report-over-report-diff.md)): **PDF** (`pdf-extract`, run inside `catch_unwind` — it panics on a small fraction of real PDFs) and **ESEF/iXBRL `.xhtml`** (HTML parse, stripping the inline-XBRL header / `display:none` facts; increasingly common under the EU ESEF mandate — some large issuers file xhtml-only with no PDF). Each document records an `extraction_state`: `extracted` | `no_text_layer` | `extraction_failed`. A `pdf-extract` panic is caught and recorded as `extraction_failed` (flagged, not-diffable), never crashing the job.
 - Only **financial-statement** report documents are extracted in `v0.47.0`; the narrative management report (MD&A) is out of scope (deferred — [ADR 0052](adr/0052-report-over-report-diff.md)). A scanned/image document with text density (chars/page) below threshold records `no_text_layer` and is not diffable (no OCR) — a real ~10% class across the market, concentrated in small NewConnect issuers.
-- The **diff itself is never stored** — it is an on-demand backend read model computed from two documents' sections (heading + lexical alignment, with the optional `content_embeddings` similarity enhancer when the embedding strategy is active). No AI summary is produced or cached this milestone.
+- The **diff itself is never stored** — it is an on-demand backend read model computed from two documents' sections (heading + positional alignment; no similarity call — verified during [ADR 0080](adr/0080-retire-embedding-model.md)). No AI summary is produced or cached this milestone.
 - Append-only, idempotent, self-healing migration (`CREATE TABLE IF NOT EXISTS`); rebuildable regardless of prior state.
 
 ## Search Index

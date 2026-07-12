@@ -1697,3 +1697,136 @@ fn reset_reseeds_criteria_in_current_locale() {
         "reset criteria should carry Polish text under the pl locale"
     );
 }
+
+// ---------------------------------------------------------------------------
+// baba638 — untouched template frameworks auto-relocalize on startup
+// ---------------------------------------------------------------------------
+
+fn framework_string(connection: &rusqlite::Connection, sql: &str) -> String {
+    connection
+        .query_row(sql, [KROEZE_FRAMEWORK_ID], |row| row.get(0))
+        .expect("query framework/criterion string")
+}
+
+const NAME_SQL: &str = "SELECT name FROM quality_frameworks WHERE id = ?1";
+const LABEL0_SQL: &str =
+    "SELECT label FROM framework_criteria WHERE framework_id = ?1 AND ordinal = 0";
+const GUIDANCE8_SQL: &str =
+    "SELECT assessment_guidance FROM framework_criteria WHERE framework_id = ?1 AND ordinal = 8";
+
+#[test]
+fn relocalizes_untouched_template_on_locale_switch() {
+    // A framework seeded before the bilingual pass keeps its seed-time locale's
+    // English strings. Switching the app locale must auto-relocalize the untouched
+    // (app_template, version == 1) template's name/description/label/guidance.
+    let connection = open_in_memory_database().expect("database should initialize");
+    // Seed under the default (en) locale — reproduces the pre-bilingual state.
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("initial en seed");
+    let en_name = framework_string(&connection, NAME_SQL);
+    let en_label = framework_string(&connection, LABEL0_SQL);
+    let en_guidance = framework_string(&connection, GUIDANCE8_SQL);
+
+    // The user switches the app locale to Polish.
+    connection
+        .execute("UPDATE settings SET value = 'pl' WHERE key = 'locale'", [])
+        .expect("switch locale to pl");
+
+    // Startup re-runs seeding: the untouched template auto-relocalizes.
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("relocalize seed");
+
+    let pl_name = framework_string(&connection, NAME_SQL);
+    let pl_label = framework_string(&connection, LABEL0_SQL);
+    let pl_guidance = framework_string(&connection, GUIDANCE8_SQL);
+
+    assert_ne!(
+        pl_name, en_name,
+        "the framework name should relocalize to pl"
+    );
+    assert_ne!(
+        pl_label, en_label,
+        "the criterion label should relocalize to pl"
+    );
+    assert_ne!(
+        pl_guidance, en_guidance,
+        "the criterion guidance should relocalize to pl"
+    );
+    assert!(
+        pl_name.chars().any(|c| POLISH_DIACRITICS.contains(c))
+            || pl_label.chars().any(|c| POLISH_DIACRITICS.contains(c))
+            || pl_guidance.chars().any(|c| POLISH_DIACRITICS.contains(c)),
+        "relocalized text should carry Polish characters"
+    );
+
+    // Relocalization is a self-heal, not a user edit: the version stays 1.
+    let version: i64 = connection
+        .query_row(
+            "SELECT version FROM quality_frameworks WHERE id = ?1",
+            [KROEZE_FRAMEWORK_ID],
+            |row| row.get(0),
+        )
+        .expect("framework version");
+    assert_eq!(
+        version, 1,
+        "relocalization must not bump the framework version"
+    );
+
+    // Idempotent: a second startup under the same locale rewrites the same text.
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("idempotent relocalize");
+    assert_eq!(framework_string(&connection, NAME_SQL), pl_name);
+    assert_eq!(framework_string(&connection, LABEL0_SQL), pl_label);
+}
+
+#[test]
+fn relocalize_skips_edited_framework() {
+    // A user-edited template (version > 1) must never be relocalized — that would
+    // destroy the user's own strings.
+    let connection = open_in_memory_database().expect("database should initialize");
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("initial en seed");
+    let en_label = framework_string(&connection, LABEL0_SQL);
+
+    connection
+        .execute(
+            "UPDATE quality_frameworks SET version = 2 WHERE id = ?1",
+            [KROEZE_FRAMEWORK_ID],
+        )
+        .expect("mark framework edited");
+    connection
+        .execute("UPDATE settings SET value = 'pl' WHERE key = 'locale'", [])
+        .expect("switch locale to pl");
+
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("re-seed");
+
+    assert_eq!(
+        framework_string(&connection, LABEL0_SQL),
+        en_label,
+        "an edited (version > 1) framework must not be relocalized"
+    );
+}
+
+#[test]
+fn relocalize_preserves_non_template_field_values() {
+    // Field-level guard: even on an untouched (version == 1) template, a field
+    // whose value is not a shipped template string in any locale is left alone —
+    // relocalization only rewrites recognisably-template text.
+    let connection = open_in_memory_database().expect("database should initialize");
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("initial en seed");
+
+    connection
+        .execute(
+            "UPDATE framework_criteria SET label = 'My custom label'
+             WHERE framework_id = ?1 AND ordinal = 0",
+            [KROEZE_FRAMEWORK_ID],
+        )
+        .expect("customize a criterion label");
+    connection
+        .execute("UPDATE settings SET value = 'pl' WHERE key = 'locale'", [])
+        .expect("switch locale to pl");
+
+    crate::storage::quality_frameworks::seed_templates(&connection).expect("relocalize seed");
+
+    assert_eq!(
+        framework_string(&connection, LABEL0_SQL),
+        "My custom label",
+        "a non-template field value must not be relocalized"
+    );
+}

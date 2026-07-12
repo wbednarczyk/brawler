@@ -8,6 +8,12 @@ export type ExpandableRowProps = {
   isExpanded: boolean;
   label: string;
   onToggle: () => void;
+  // Interactive controls for the row (e.g. delete / re-run buttons). They render
+  // as SIBLINGS of the clickable `role="button"` article, never inside it — a
+  // button nested in a button is an axe `nested-interactive` (WCAG 4.1.2)
+  // violation. Keep non-interactive trailing content (chips, measured values) in
+  // `children`; only real controls belong here.
+  actions?: ReactNode;
 };
 
 export function ExpandableRow({
@@ -17,6 +23,7 @@ export function ExpandableRow({
   isExpanded,
   label,
   onToggle,
+  actions,
 }: ExpandableRowProps) {
   function toggleFromKeyboard(event: KeyboardEvent<HTMLElement>) {
     if (event.key === "Enter" || event.key === " ") {
@@ -33,22 +40,33 @@ export function ExpandableRow({
     .filter(Boolean)
     .join(" ");
 
+  const rowArticle = (
+    <article
+      aria-expanded={isExpanded}
+      aria-label={label}
+      className={rowClassName}
+      onClick={onToggle}
+      onKeyDown={toggleFromKeyboard}
+      role="button"
+      tabIndex={0}
+    >
+      <span aria-hidden="true" className="expandable-row-chevron">
+        <ChevronRight size={15} />
+      </span>
+      <span className="expandable-row-content">{children}</span>
+    </article>
+  );
+
   return (
-    <div>
-      <article
-        aria-expanded={isExpanded}
-        aria-label={label}
-        className={rowClassName}
-        onClick={onToggle}
-        onKeyDown={toggleFromKeyboard}
-        role="button"
-        tabIndex={0}
-      >
-        <span aria-hidden="true" className="expandable-row-chevron">
-          <ChevronRight size={15} />
-        </span>
-        <span className="expandable-row-content">{children}</span>
-      </article>
+    <div className="expandable-row-shell">
+      {actions ? (
+        <div className="expandable-row-line">
+          {rowArticle}
+          <span className="expandable-row-actions">{actions}</span>
+        </div>
+      ) : (
+        rowArticle
+      )}
       {isExpanded ? detail : null}
     </div>
   );

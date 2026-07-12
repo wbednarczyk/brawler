@@ -25,6 +25,37 @@ const MISTRAL_TARGET: &str = "brawler/provider_mistral/api_key";
 const MISTRAL_ACCOUNT: &str = "provider_mistral:api_key";
 const MISTRAL_ENV_VAR: &str = "MISTRAL_API_KEY";
 
+// The MCP server bearer token (ADR 0078 decision 4) generalizes the credential
+// boundary beyond AI providers: same keychain service, same descriptor flow,
+// a non-provider identity. The dev env fallback keeps parity with API keys
+// (and feeds the stdio adapter, decision 6).
+const MCP_AUTH_TOKEN_TARGET: &str = "brawler/mcp/auth_token";
+const MCP_AUTH_TOKEN_ACCOUNT: &str = "mcp:auth_token";
+const MCP_AUTH_TOKEN_ENV_VAR: &str = "BRAWLER_MCP_TOKEN";
+
+/// Test support: remove every provider dev-fallback env var so hermetic tests
+/// asserting missing-credential behavior cannot inherit the developer's shell
+/// (guardrail 2026-07-11: an exported `GEMINI_API_KEY` turned three `jobs::`
+/// tests red on one machine and green on another). Call this at the top of any
+/// test whose assertions depend on a credential being absent. Safe under
+/// nextest (process per test); under plain `cargo test` it narrows, not widens,
+/// the environment.
+#[cfg(test)]
+pub(crate) fn scrub_provider_env_fallbacks() {
+    for var in [
+        GEMINI_ENV_VAR,
+        ANTHROPIC_ENV_VAR,
+        OPENAI_ENV_VAR,
+        OPENAI_COMPATIBLE_ENV_VAR,
+        MISTRAL_ENV_VAR,
+        // Not a provider key, but the same dev-fallback class: an exported
+        // MCP token would flip missing-token assertions (ADR 0078 M1).
+        MCP_AUTH_TOKEN_ENV_VAR,
+    ] {
+        std::env::remove_var(var);
+    }
+}
+
 // Legacy purpose-scoped entries removed in ADR 0028. They are best-effort
 // cleared once so no orphaned secrets linger; we never read or fall back to them.
 const LEGACY_GEMINI_PURPOSE_TARGET: &str = "brawler/gemini/youtube_transcription/api_key";
@@ -132,6 +163,67 @@ pub fn provider_credential_status(provider_id: &str) -> Option<CredentialStatus>
     provider_credential_descriptor(provider_id).map(|descriptor| credential_status(&descriptor))
 }
 
+/// The MCP server bearer-token descriptor (ADR 0078 decision 4) — the first
+/// non-AI-provider credential; the same store/read/clear/status flow applies.
+pub fn mcp_auth_token_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "mcp",
+        secret_kind: "auth_token",
+        label: "MCP server auth token",
+        target: MCP_AUTH_TOKEN_TARGET,
+        account: MCP_AUTH_TOKEN_ACCOUNT,
+        development_env_var: Some(MCP_AUTH_TOKEN_ENV_VAR),
+    }
+}
+
+/// Test support: an MCP descriptor pointing at a scratch keychain slot, so a
+/// test/corpus run on a machine with a persistent keychain backend (native
+/// Windows) never reads or clobbers the owner's real MCP token. Same identity
+/// (`provider_id`/`secret_kind`) and env fallback, different target/account.
+#[cfg(test)]
+pub(crate) fn test_mcp_auth_token_descriptor() -> CredentialDescriptor {
+    CredentialDescriptor {
+        provider_id: "mcp",
+        secret_kind: "auth_token",
+        label: "MCP server auth token",
+        target: "brawler/test/mcp/auth_token",
+        account: "test:mcp:auth_token",
+        development_env_var: Some(MCP_AUTH_TOKEN_ENV_VAR),
+    }
+}
+
+/// Store a secret under an arbitrary credential descriptor (the generalized,
+/// descriptor-first API — the provider-id functions above stay as the
+/// AI-provider convenience layer).
+pub fn store_credential(
+    descriptor: &CredentialDescriptor,
+    secret: &str,
+) -> Result<CredentialStatus, CredentialError> {
+    set_credential_secret(descriptor, secret)
+}
+
+/// Clear the stored secret for an arbitrary credential descriptor.
+pub fn clear_credential(
+    descriptor: &CredentialDescriptor,
+) -> Result<CredentialStatus, CredentialError> {
+    clear_credential_secret(descriptor)
+}
+
+/// Read the status for an arbitrary credential descriptor.
+pub fn credential_status_for(descriptor: &CredentialDescriptor) -> CredentialStatus {
+    credential_status(descriptor)
+}
+
+/// Read the stored secret for an arbitrary credential descriptor (OS keychain,
+/// then the dev env fallback). Returns `Ok(None)` when nothing is configured.
+/// The descriptor-first read path for non-AI-provider credentials (the MCP
+/// bearer token, ADR 0078 decision 4); mirrors [`read_provider_api_key`].
+pub fn read_credential(
+    descriptor: &CredentialDescriptor,
+) -> Result<Option<String>, CredentialError> {
+    read_credential_secret(descriptor)
+}
+
 /// Store the API key for a provider in the OS keychain.
 pub fn set_provider_api_key(
     provider_id: &str,
@@ -210,6 +302,17 @@ fn credential_status(descriptor: &CredentialDescriptor) -> CredentialStatus {
     }
 }
 
+/// Whether the active keyring backend persists a secret beyond the entry that
+/// stored it. On dev/CI Linux (no secret-service feature) keyring falls back
+/// to its mock backend with `EntryOnly` persistence: a fresh `Entry` can never
+/// read a stored secret back, so read-back verification would always fail.
+fn keychain_persists_across_entries() -> bool {
+    !matches!(
+        keyring::default::default_credential_builder().persistence(),
+        keyring::credential::CredentialPersistence::EntryOnly
+    )
+}
+
 fn set_credential_secret(
     descriptor: &CredentialDescriptor,
     secret: &str,
@@ -225,7 +328,17 @@ fn set_credential_secret(
                 .set_password(secret)
                 .map_err(|error| CredentialError::Backend(error.to_string()))
         })
-        .and_then(|()| verified_save_status(descriptor, read_os_keychain_secret(descriptor)?))
+        .and_then(|()| {
+            if keychain_persists_across_entries() {
+                verified_save_status(descriptor, read_os_keychain_secret(descriptor)?)
+            } else {
+                // EntryOnly backend (dev/CI): nothing persisted, and read-back
+                // verification cannot succeed by construction. Report the
+                // truthful status (not_configured / development_environment)
+                // instead of a spurious PersistenceVerificationFailed.
+                Ok(credential_status(descriptor))
+            }
+        })
 }
 
 fn verified_save_status(
@@ -376,6 +489,94 @@ mod tests {
         assert!(status.configured);
         assert_eq!(status.storage, "os_keychain");
         assert!(!status.dev_fallback_available);
+    }
+
+    #[test]
+    fn mcp_auth_token_descriptor_targets_the_mcp_keychain_slot() {
+        // ADR 0078 decision 4: the MCP bearer token generalizes the credential
+        // boundary beyond the AI-provider list — pinned constants are the wire
+        // contract between the commands, the server auth (M2), and the stdio
+        // adapter's env fallback (M5).
+        let descriptor = mcp_auth_token_descriptor();
+
+        assert_eq!(descriptor.provider_id, "mcp");
+        assert_eq!(descriptor.secret_kind, "auth_token");
+        assert_eq!(descriptor.target, "brawler/mcp/auth_token");
+        assert_eq!(descriptor.account, "mcp:auth_token");
+        assert_eq!(descriptor.development_env_var, Some("BRAWLER_MCP_TOKEN"));
+    }
+
+    #[test]
+    fn test_mcp_descriptor_uses_a_scratch_slot_but_the_same_identity() {
+        // The corpus/test descriptor must never collide with the real keychain
+        // slot (a native-Windows nextest run would otherwise clobber the
+        // owner's real MCP token) while keeping the same status identity.
+        let descriptor = test_mcp_auth_token_descriptor();
+
+        assert_eq!(descriptor.provider_id, "mcp");
+        assert_eq!(descriptor.secret_kind, "auth_token");
+        assert_ne!(descriptor.target, mcp_auth_token_descriptor().target);
+        assert_ne!(descriptor.account, mcp_auth_token_descriptor().account);
+    }
+
+    #[test]
+    fn scrub_provider_env_fallbacks_clears_the_mcp_token_var() {
+        // Scrub-hermeticity rule (docs/testing.md): a test asserting
+        // missing-token behavior must not inherit BRAWLER_MCP_TOKEN from the
+        // developer's shell, so the shared scrub helper covers it too.
+        std::env::set_var("BRAWLER_MCP_TOKEN", "shell-leaked-token");
+
+        scrub_provider_env_fallbacks();
+
+        assert!(std::env::var("BRAWLER_MCP_TOKEN").is_err());
+    }
+
+    #[test]
+    fn mcp_token_status_reports_dev_fallback_when_env_var_set() {
+        scrub_provider_env_fallbacks();
+        std::env::set_var("BRAWLER_MCP_TOKEN", "deadbeef");
+
+        let status = credential_status(&test_mcp_auth_token_descriptor());
+
+        std::env::remove_var("BRAWLER_MCP_TOKEN");
+        assert!(status.configured);
+        assert_eq!(status.storage, "development_environment");
+        assert!(status.dev_fallback_available);
+        assert_eq!(status.provider_id, "mcp");
+        assert_eq!(status.secret_kind, "auth_token");
+    }
+
+    #[test]
+    fn clearing_the_mcp_token_reports_not_configured() {
+        scrub_provider_env_fallbacks();
+
+        let status = clear_credential(&test_mcp_auth_token_descriptor())
+            .expect("clearing an absent token is idempotent");
+
+        assert!(!status.configured);
+        assert_eq!(status.storage, "not_configured");
+        assert!(!status.dev_fallback_available);
+    }
+
+    #[test]
+    fn storing_on_an_entry_only_backend_reports_truthful_status() {
+        // On the dev/CI mock keyring backend (EntryOnly persistence) a fresh
+        // entry cannot read a stored secret back, so the verified read-back
+        // must be skipped and the store must report the truthful status
+        // instead of failing with PersistenceVerificationFailed.
+        if keychain_persists_across_entries() {
+            return; // real OS keychain — covered by the #[ignore] live test
+        }
+        scrub_provider_env_fallbacks();
+
+        let status = store_credential(&test_mcp_auth_token_descriptor(), "scratch-token")
+            .expect("storing on the mock backend must not fail verification");
+
+        assert!(
+            !status.configured,
+            "EntryOnly backend persists nothing — status must say so"
+        );
+        assert_eq!(status.storage, "not_configured");
     }
 
     #[test]

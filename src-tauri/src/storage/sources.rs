@@ -26,15 +26,6 @@ pub(super) fn ingest_gpw_report_listings(
             .as_ref()
             .map(|company| company.qualified_ticker.clone())
             .unwrap_or_else(|| listing.company_name.clone());
-        let matched_tickers = matched_company
-            .as_ref()
-            .map(|company| vec![company.qualified_ticker.clone()])
-            .unwrap_or_default();
-        let story_key = super::ingestion::derive_story_key(
-            &listing.title,
-            &matched_tickers,
-            Some(&listing.published_at),
-        );
         let existed = feed_item_exists(&transaction, &feed_item_id)?;
 
         super::ingestion::upsert_feed_item(
@@ -55,7 +46,6 @@ pub(super) fn ingest_gpw_report_listings(
                 attribution: "GPW",
                 display_company: &display_company,
                 duplicate_signature: None,
-                story_key: story_key.as_deref(),
             },
         )?;
 
@@ -131,15 +121,6 @@ pub(super) fn ingest_bankier_rss_items(
     for item in items {
         let matched_companies = find_companies_for_media_item(&tracked_companies, item);
         let duplicate_signature = media_duplicate_signature(item, &matched_companies);
-        let matched_tickers = matched_companies
-            .iter()
-            .map(|company| company.qualified_ticker.clone())
-            .collect::<Vec<_>>();
-        let story_key = super::ingestion::derive_story_key(
-            &item.title,
-            &matched_tickers,
-            item.published_at.as_deref(),
-        );
         let existing_feed_item_id = find_bankier_feed_item_by_source_url(&transaction, &item.link)?;
         let existing_duplicate_feed_item_id = if existing_feed_item_id.is_none() {
             find_media_feed_item_by_duplicate_signature(
@@ -169,7 +150,6 @@ pub(super) fn ingest_bankier_rss_items(
                 item,
                 &display_company,
                 duplicate_signature.as_deref(),
-                story_key.as_deref(),
             )?;
         } else if existing_duplicate_feed_item_id.is_none() {
             insert_bankier_feed_item(
@@ -178,7 +158,6 @@ pub(super) fn ingest_bankier_rss_items(
                 item,
                 &display_company,
                 duplicate_signature.as_deref(),
-                story_key.as_deref(),
             )?;
         } else {
             record_media_duplicate_seen(&transaction, &feed_item_id, item)?;
@@ -459,7 +438,7 @@ fn load_tracked_issuers(connection: &Connection) -> StorageResult<Vec<TrackedIss
         for row in rows {
             let (id, ticker, display_name) = row?;
             let mut signals = Vec::new();
-            let name_signal = crate::entity_resolution::company_name_signal(&display_name);
+            let name_signal = super::feed_matching::normalized_company_name_signal(&display_name);
             if !name_signal.is_empty() {
                 signals.push(name_signal);
             }
@@ -482,7 +461,7 @@ fn load_tracked_issuers(connection: &Connection) -> StorageResult<Vec<TrackedIss
         for row in rows {
             let (company_id, alias) = row?;
             if let Some(issuer) = by_company.get_mut(&company_id) {
-                let signal = crate::entity_resolution::company_name_signal(&alias);
+                let signal = super::feed_matching::normalized_company_name_signal(&alias);
                 if !signal.is_empty() && !issuer.signals.contains(&signal) {
                     issuer.signals.push(signal);
                 }
@@ -507,7 +486,7 @@ fn issuer_named(issuer: &TrackedIssuer, tokens: &[&str], use_ticker: bool) -> bo
     issuer
         .signals
         .iter()
-        .any(|signal| crate::entity_resolution::text_contains_phrase(tokens, signal))
+        .any(|signal| super::feed_matching::normalized_text_contains_phrase(tokens, signal))
 }
 
 /// The shared mis-association predicate (T-A3, card 45fcece). Returns true only
@@ -544,15 +523,14 @@ fn names_foreign_issuer(
         return false;
     }
 
-    let owner_haystack = crate::entity_resolution::normalize_match_text(&format!(
-        "{article_title} {document_title} {url}"
-    ));
+    let owner_haystack =
+        normalize_media_match_text(&format!("{article_title} {document_title} {url}"));
     let owner_tokens = owner_haystack.split_whitespace().collect::<Vec<_>>();
     if issuer_named(owner, &owner_tokens, true) {
         return false;
     }
 
-    let label_haystack = crate::entity_resolution::normalize_match_text(document_title);
+    let label_haystack = normalize_media_match_text(document_title);
     let label_tokens = label_haystack.split_whitespace().collect::<Vec<_>>();
     all_issuers.iter().any(|issuer| {
         issuer.company_id != owner.company_id && issuer_named(issuer, &label_tokens, false)
@@ -910,11 +888,6 @@ pub(super) fn upsert_bankier_company_feed_item(
     item: &BankierCompanyItem,
 ) -> StorageResult<()> {
     let summary = empty_string_to_none(Some(format_bankier_company_summary(item)));
-    let story_key = super::ingestion::derive_story_key(
-        &item.title,
-        std::slice::from_ref(&item.qualified_ticker),
-        item.published_at.as_deref(),
-    );
     super::ingestion::upsert_feed_item(
         connection,
         &super::ingestion::NormalizedFeedItem {
@@ -933,7 +906,6 @@ pub(super) fn upsert_bankier_company_feed_item(
             attribution: BANKIER_COMPANY_ATTRIBUTION,
             display_company: &item.qualified_ticker,
             duplicate_signature: Some(&item.duplicate_signature),
-            story_key: story_key.as_deref(),
         },
     )?;
     if item.body_text.is_some() {
@@ -1081,7 +1053,6 @@ pub(super) fn insert_bankier_feed_item(
     item: &BankierRssItem,
     display_company: &str,
     duplicate_signature: Option<&str>,
-    story_key: Option<&str>,
 ) -> StorageResult<()> {
     let summary = empty_string_to_none(Some(item.summary.clone()));
     super::ingestion::upsert_feed_item(
@@ -1102,7 +1073,6 @@ pub(super) fn insert_bankier_feed_item(
             attribution: BANKIER_RSS_ATTRIBUTION,
             display_company,
             duplicate_signature,
-            story_key,
         },
     )
 }
@@ -1113,7 +1083,6 @@ pub(super) fn update_bankier_feed_item(
     item: &BankierRssItem,
     display_company: &str,
     duplicate_signature: Option<&str>,
-    story_key: Option<&str>,
 ) -> StorageResult<()> {
     connection.execute(
         "
@@ -1132,7 +1101,6 @@ pub(super) fn update_bankier_feed_item(
             attribution = ?11,
             display_company = ?12,
             duplicate_signature = ?13,
-            story_key = ?14,
             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         WHERE id = ?1
         ",
@@ -1150,7 +1118,6 @@ pub(super) fn update_bankier_feed_item(
             BANKIER_RSS_ATTRIBUTION,
             display_company,
             duplicate_signature,
-            story_key,
         ],
     )?;
 

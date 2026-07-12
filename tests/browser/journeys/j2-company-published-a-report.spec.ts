@@ -17,7 +17,7 @@ import {
 // journeys.spec.ts tests (extract→review→confirm, open-company-without-moving,
 // confirmed-KPI-in-matrix) into one measured journey; the old file is deleted.
 //
-// Future step (dated): v0.51 expectation-vs-actual review (ADR 0071 judgment
+// Future step (dated): v0.52 expectation-vs-actual review (ADR 0071 judgment
 // capture) inserts between "review KPIs" and "resolve claims"; it joins this
 // journey and its budget when it ships.
 

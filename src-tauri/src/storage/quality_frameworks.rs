@@ -1250,10 +1250,13 @@ fn load_period_facts(
 /// with localized name/description + all criteria. A template whose framework
 /// already exists is **topped up**, not re-inserted: an `app_template`-origin
 /// framework still at `version == 1` (never user-edited — every edit bumps the
-/// version) receives any template criteria it is missing, additively; edited
-/// (`version > 1`) or user-created frameworks are left untouched (ADR 0046
-/// no-overwrite rule). This closes the "new template criteria invisible without
-/// a destructive reset" gap for installs created before the criteria existed.
+/// version) receives any template criteria it is missing, additively, and has its
+/// human-facing strings **re-localized** to the current locale (baba638) — a
+/// framework seeded before the bilingual pass (ADR 0076 Decision 8) otherwise
+/// keeps its seed-time locale's text forever. Edited (`version > 1`) or
+/// user-created frameworks are left untouched (ADR 0046 no-overwrite rule). This
+/// closes the "new template criteria invisible without a destructive reset" gap
+/// for installs created before the criteria existed.
 pub(super) fn seed_templates(connection: &Connection) -> StorageResult<()> {
     let locale = super::settings::seed_locale(connection)?;
     for template in templates::TEMPLATES {
@@ -1285,6 +1288,7 @@ pub(super) fn seed_templates(connection: &Connection) -> StorageResult<()> {
             // idempotency comes from matching on the criterion's stable index.
             Some((id, origin, version)) if origin == "app_template" && version == 1 => {
                 top_up_template_criteria(connection, &id, template, &locale)?;
+                relocalize_template_framework(connection, &id, template, &locale)?;
             }
             Some(_) => {}
         }
@@ -1357,6 +1361,78 @@ fn top_up_template_criteria(
                 .as_ref()
                 .map(|g| g.get(locale)),
         )?;
+    }
+    Ok(())
+}
+
+/// Re-localize an untouched (`app_template`, `version == 1`) template framework's
+/// human-facing strings to the current locale (baba638). A framework seeded before
+/// the bilingual pass (ADR 0076 Decision 8) keeps its seed-time locale's text;
+/// top-up only *adds* missing criteria, never re-localizes existing rows, so a
+/// locale switch never reaches the stale strings.
+///
+/// A field is rewritten only when its current value **exactly matches the shipped
+/// template text in some locale** (`IN (pl, en)`) — proof it is untouched template
+/// text, never a user-authored string. Any user edit also bumps the version, which
+/// excludes the framework from this branch entirely; the field-level match is a
+/// belt-and-suspenders guard on top of that. Criteria are matched by the template
+/// criterion's stable index (written as `ordinal`), like top-up, so a re-localized
+/// label never mismatches. Re-localization is not a user edit, so it must NOT bump
+/// the version. Idempotent: once a field already reads the current locale it stays
+/// in the match set and is rewritten to the same value.
+fn relocalize_template_framework(
+    connection: &Connection,
+    framework_id: &str,
+    template: &templates::FrameworkTemplate,
+    locale: &str,
+) -> StorageResult<()> {
+    // Framework name + description.
+    connection.execute(
+        "UPDATE quality_frameworks SET name = ?1 WHERE id = ?2 AND name IN (?3, ?4)",
+        params![
+            template.name.get(locale),
+            framework_id,
+            template.name.pl,
+            template.name.en
+        ],
+    )?;
+    connection.execute(
+        "UPDATE quality_frameworks SET description = ?1 WHERE id = ?2 AND description IN (?3, ?4)",
+        params![
+            template.description.get(locale),
+            framework_id,
+            template.description.pl,
+            template.description.en
+        ],
+    )?;
+
+    // Criterion label + guidance, matched by the template's stable index.
+    for (index, criterion) in template.criteria.iter().enumerate() {
+        let ordinal = index as i64;
+        connection.execute(
+            "UPDATE framework_criteria SET label = ?1
+             WHERE framework_id = ?2 AND ordinal = ?3 AND label IN (?4, ?5)",
+            params![
+                criterion.label.get(locale),
+                framework_id,
+                ordinal,
+                criterion.label.pl,
+                criterion.label.en
+            ],
+        )?;
+        if let Some(guidance) = &criterion.assessment_guidance {
+            connection.execute(
+                "UPDATE framework_criteria SET assessment_guidance = ?1
+                 WHERE framework_id = ?2 AND ordinal = ?3 AND assessment_guidance IN (?4, ?5)",
+                params![
+                    guidance.get(locale),
+                    framework_id,
+                    ordinal,
+                    guidance.pl,
+                    guidance.en
+                ],
+            )?;
+        }
     }
     Ok(())
 }

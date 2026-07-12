@@ -52,6 +52,63 @@ fn lists_company_evidence_from_canonical_domains() {
 }
 
 #[test]
+fn timeline_includes_decision_entries_in_date_order() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    // Create the LATER-dated decision FIRST, so the row-insertion (created_at)
+    // order is the reverse of the decided_at order. The assertion only holds if
+    // the timeline sorts by the domain `decided_at`, not by insertion (DoD §C).
+    let later = state
+        .decision_journal()
+        .create_decision_entry(NewDecisionEntry {
+            company_id: company.id.clone(),
+            kind: "buy".to_owned(),
+            rationale_md: "Recent conviction after the guidance raise.".to_owned(),
+            decided_at: "2026-03-01".to_owned(),
+            superseded_by_entry_id: None,
+        })
+        .expect("later decision entry should create");
+    let earlier = state
+        .decision_journal()
+        .create_decision_entry(NewDecisionEntry {
+            company_id: company.id.clone(),
+            kind: "keep_watching".to_owned(),
+            rationale_md: "Older note before the report.".to_owned(),
+            decided_at: "2026-01-01".to_owned(),
+            superseded_by_entry_id: None,
+        })
+        .expect("earlier decision entry should create");
+
+    let timeline = state
+        .list_research_evidence(ResearchEvidenceInput {
+            company_id: Some(company.id.clone()),
+            watchlist_id: None,
+            evidence_types: Some(vec!["decision_entry".to_owned()]),
+            changed_since_review_only: None,
+            limit: None,
+        })
+        .expect("decision entry evidence should list");
+
+    let source_ids: Vec<&str> = timeline
+        .items
+        .iter()
+        .map(|item| item.source_id.as_str())
+        .collect();
+    assert_eq!(
+        source_ids,
+        vec![later.id.as_str(), earlier.id.as_str()],
+        "decision entries must surface newest-decided first, regardless of insertion order"
+    );
+    assert!(timeline.items.iter().all(|item| {
+        item.evidence_type == "decision_entry"
+            && item.company_id == company.id
+            && item.trust_category == "user_note"
+    }));
+}
+
+#[test]
 fn creates_company_research_question_and_lists_it_as_evidence() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
@@ -673,4 +730,44 @@ fn tracked_company(state: &AppState) -> Company {
             lei: None,
         })
         .expect("tracked company should create")
+}
+
+/// Structural guardrail (dogfooding v0.52, 2026-07-12): every evidence type the
+/// input validation ALLOWS must also have a reference-resolution arm in
+/// `validate_evidence_reference` — the two lists live apart, and a member added
+/// to one but not the other ships a linker that rejects its own type at save
+/// time ("invalid research value for evidence_type: decision_entry" hit the
+/// owner's first real journal entry; `company_signal` had the same latent gap).
+/// A missing arm surfaces here as the TYPE error; a present arm surfaces as the
+/// missing-ROW error for the dummy id, which is the accepted outcome.
+#[test]
+fn every_allowed_evidence_type_has_a_reference_resolution_arm() {
+    let state = AppState::new(open_in_memory_database().expect("database should initialize"));
+    let company = tracked_company(&state);
+    let question = state
+        .create_research_question(NewResearchQuestion {
+            scope_type: "company".to_owned(),
+            scope_id: company.id.clone(),
+            title: "Dispatch coverage probe".to_owned(),
+            body: None,
+        })
+        .expect("research question should create");
+
+    for evidence_type in crate::storage::research::EVIDENCE_TYPES {
+        let error = state
+            .create_evidence_link(NewEvidenceLink {
+                from_type: "research_question".to_owned(),
+                from_id: question.id.clone(),
+                to_type: (*evidence_type).to_owned(),
+                to_id: "missing_row_probe".to_owned(),
+                relation_type: "related".to_owned(),
+            })
+            .expect_err("a dangling id must not link");
+        let message = error.to_string();
+        assert!(
+            !message.contains("evidence_type"),
+            "evidence type '{evidence_type}' is allowed by input validation but has no \
+             reference-resolution arm (got: {message})"
+        );
+    }
 }

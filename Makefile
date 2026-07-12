@@ -4,14 +4,16 @@ SHELL := /usr/bin/env bash
 NIX := env -u LD_LIBRARY_PATH nix develop -c
 NIX_WINDOWS := env -u LD_LIBRARY_PATH nix develop .\#windows-cross -c
 WINDOWS_TARGET := x86_64-pc-windows-msvc
-# Cargo features compiled into shipped/packaged builds. The on-device embedding
-# model (ADR 0035) is off by default for fast/offline dev + `make check`, but the
-# packaged app enables it. Override with `make ... RELEASE_FEATURES=` to omit it.
-RELEASE_FEATURES ?= embedding-model
+# Cargo features compiled into shipped/packaged builds. Empty since ADR 0080
+# retired the embedding-model feature; the mechanism stays for a future opt-in
+# feature (`make ... RELEASE_FEATURES=<feature>`).
+RELEASE_FEATURES ?=
 RELEASE_FEATURE_FLAG := $(if $(RELEASE_FEATURES),--features $(RELEASE_FEATURES))
 RELEASE_OUT_DIR ?= release-artifacts
 WINDOWS_OUT_DIR ?= /mnt/d/Brawler/Builds/latest
 WINDOWS_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler.exe
+# Read-only MCP stdio adapter (ADR 0078 dec. 6), built alongside the app.
+WINDOWS_STDIO_EXE := src-tauri/target/$(WINDOWS_TARGET)/release/brawler-mcp-stdio.exe
 # Read the app version without depending on `node` being on the bare PATH. The
 # Makefile is evaluated by the host shell (outside `nix develop`), where node is
 # not available after the Node 18 removal; a node-based read silently returned
@@ -23,13 +25,15 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: commit help install dev frontend-preview build check check-fast coverage bench mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast disk-clean disk-clean-deep coverage bench mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
 	@printf "  make install             Install npm dependencies inside nix develop\n"
 	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
 	@printf "  make check-fast          Fast inner-loop check (parallel core, no browser) — iteration only, NOT proof of done\n"
+	@printf "  make disk-clean          Safe temp cleanup: caches, mutants artifacts, old nix generations, journal, fstrim\n"
+	@printf "  make disk-clean-deep     disk-clean + cargo target dir (full rebuild next time) + full nix GC\n"
 	@printf "  make check-epic          Closure suite: the full gate + heavy periodic suites (coverage ratchet)\n"
 	@printf "  make test                Run frontend tests inside nix develop\n"
 	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
@@ -104,6 +108,7 @@ build:
 # step) fails it if contracts.md/ui-information-architecture.md/data-model.md
 # drift from the code, or ADR hygiene (Status: lines, INDEX.md) rots.
 check:
+	@node scripts/check/disk-guard.mjs
 	$(NIX) npm run check
 	$(NIX) npm run knip
 	$(MAKE) types-check
@@ -118,15 +123,43 @@ check:
 # ts-rs drift guard, the browser suite, and gate-integrity, so it is NEVER proof
 # of done; `make check` is the gate.
 check-fast:
+	@node scripts/check/disk-guard.mjs
 	$(NIX) npm run check:parallel
+
+# Disk hygiene (guardrail 2026-07-11: a full host drive killed a session
+# mid-work; disk-guard above fails the gate before that point). `disk-clean` is
+# the safe routine cleanup; `disk-clean-deep` also drops the cargo target dir
+# (tens of GiB — next build recompiles everything) and runs a FULL nix GC.
+# Playwright browsers and the cargo registry are kept deliberately: every
+# `make check` needs them, so deleting them just re-downloads the same bytes.
+# WSL note: freeing space inside WSL does not shrink ext4.vhdx on the host —
+# from Windows PowerShell (admin): wsl --shutdown; wsl --manage <distro> --set-sparse true
+disk-clean:
+	rm -rf src-tauri/mutants.out src-tauri/mutants.out.old
+	rm -rf $(HOME)/.npm/_cacache $(HOME)/.cache/pnpm $(HOME)/.cache/pip $(HOME)/.cache/go-build $(HOME)/.cache/node-gyp $(HOME)/.cache/typescript $(HOME)/.cache/mesa_shader_cache
+	env -u LD_LIBRARY_PATH nix-collect-garbage --delete-older-than 14d
+	@sudo -n journalctl --vacuum-size=50M 2>/dev/null || printf "disk-clean: journal vacuum skipped (no passwordless sudo)\n"
+	@sudo -n fstrim -v / 2>/dev/null || printf "disk-clean: fstrim skipped (no passwordless sudo)\n"
+	@node scripts/check/disk-guard.mjs
+
+disk-clean-deep: disk-clean
+	rm -rf src-tauri/target
+	env -u LD_LIBRARY_PATH nix-collect-garbage -d
+	@sudo -n fstrim -v / 2>/dev/null || true
+	@node scripts/check/disk-guard.mjs
 
 # Coverage measurement + ratchet (ADR 0048): frontend (Vitest v8) + Rust
 # (cargo-llvm-cov) line coverage, then fail if either drops below the committed
 # floor in coverage-baseline.json. Periodic (slow instrumented Rust build), not
 # part of `make check`.
+# Rust coverage runs under NEXTEST (process-per-test), not plain `cargo test`
+# (threads-in-one-process): env-mutating hermetic tests (credential scrubs,
+# BRAWLER_MCP_TOKEN) and the loopback-socket test group rely on process
+# isolation + .config/nextest.toml — under threaded cargo-test they race each
+# other (5 tests reddened the v0.52 closure run exactly this way, 2026-07-12).
 coverage:
 	$(NIX) npm run test:coverage
-	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov --summary-only --json --output-path ../coverage/rust-summary.json'
+	$(NIX) bash -c 'cd src-tauri && cargo llvm-cov nextest --summary-only --json --output-path ../coverage/rust-summary.json'
 	$(NIX) npm run coverage:ratchet
 
 # Periodic micro-benchmarks of the hot data-transform kernels (ADR 0049): the
@@ -501,6 +534,8 @@ package-windows-from-linux:
 	@rm -f "$(WINDOWS_OUT_DIR)/brawler.exe"
 	@cp -f "$(WINDOWS_EXE)" "$(WINDOWS_ARTIFACT)"
 	@printf "Copied portable Windows executable to %s\n" "$(WINDOWS_ARTIFACT)"
+	@cp -f "$(WINDOWS_STDIO_EXE)" "$(WINDOWS_OUT_DIR)/brawler-mcp-stdio.exe"
+	@printf "Copied MCP stdio adapter to %s\n" "$(WINDOWS_OUT_DIR)/brawler-mcp-stdio.exe"
 
 package-windows-portable-zip:
 	$(NIX_WINDOWS) npm run tauri -- build --runner cargo-xwin --target $(WINDOWS_TARGET) --no-bundle $(RELEASE_FEATURE_FLAG)

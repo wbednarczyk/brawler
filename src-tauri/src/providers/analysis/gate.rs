@@ -127,6 +127,7 @@ mod tests {
             },
             prompt_preset_id: "default_summary".to_owned(),
             custom_question: None,
+            output_language: "en".to_owned(),
         }))
         .expect("gated provider forwards analyze to the inner provider");
         assert_eq!(output.source_references.len(), 1);

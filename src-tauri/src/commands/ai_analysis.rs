@@ -69,7 +69,7 @@ pub async fn start_ai_analysis(
             custom_question: input.custom_question,
             provider_id,
             model,
-            prompt_version: Some("m13.source_grounded.v1".to_owned()),
+            prompt_version: Some("m13.source_grounded.v2".to_owned()),
         })
         .map_err(|error| error.to_string())?;
     record_ai_analysis_diagnostic(

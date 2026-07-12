@@ -16,6 +16,8 @@ WSL2 Ubuntu 24.04 with Nix is the primary development layer; Windows 11 is the p
 
 Do not assume a Linux GUI inside WSL — a WSL Tauri build is a Linux application, not a Windows executable.
 
+**Disk hygiene (guardrail, 2026-07-11).** WSL2's grow-only `ext4.vhdx` means a full host C: kills sessions while `df` inside WSL still shows free — so `disk-guard` (first step of `check`/`check-fast`) watches both WSL root and `/mnt/c` (fail <10 GiB, warn <40) and names the remedy: `make disk-clean` / `disk-clean-deep` (details in the Makefile); vhdx shrink is host-side only (`wsl --shutdown`, then `wsl --manage <distro> --set-sparse true`).
+
 Recommended workflow:
 
 - `make check` in WSL before pushing/opening a PR; `make build` to validate frontend production output; `make frontend-preview` for a quick browser layout check from Windows (no Tauri APIs).
@@ -103,9 +105,9 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 - [ ] **A new data transform** (dedup / normalization / matching / merge) ships with its **invariants** (idempotence, order-independence, round-trip, stable identity, associativity, no-panic — the `proptest` helpers) and a **golden `insta` snapshot** of its output. A new **hot path** adds a **behavioral scale gate** (offloaded + algorithmically bounded over a volume dataset, not wall-clock). [ADR 0049](adr/0049-test-architecture-v2-data-transform-correctness.md), [Testing](testing.md#data-transform-correctness-property-golden-scale-fuzz-fidelity-pipeline).
 - [ ] **A new IPC command** adds a step to the **dual-execution mock-fidelity corpus** (replayed against both the TS mock runtime and the real Rust `AppState`/storage layer) so the mock cannot silently drift from backend behavior.
 
-### §D — If feature-gated code (e.g. `embedding-model`)
+### §D — If feature-gated code
 - [ ] Built **and tested with the feature on** — `cargo check/test --features <feature>` — because the default gate does not compile it. Compile-green is not "works".
-- [ ] A feature-gated runtime test exists, ran against the real resource where available (e.g. the cached model), and **skips cleanly** when absent. (Embedding model: also run the model-vs-lexical eval — [Testing](testing.md).)
+- [ ] A feature-gated runtime test exists, ran against the real resource where available, and **skips cleanly** when absent.
 
 ### §E — If a dependency was added/changed, or packaging touched
 - [ ] **Windows cross-build green** — `make package-windows-from-linux`. Host/Nix green is not cross-build evidence. Shipped engine deps stay pure-Rust (no transitive C/native: `ring`, `*-sys`, `onig`, openssl). Full packaging paths and the cross-build dependency constraint: the `packaging` skill (`.claude/skills/packaging/SKILL.md`).
@@ -172,6 +174,8 @@ Full parity when appropriate: `make check` (mandatory gate), Nix-wrapped command
 | `check` | `check`→`knip`→`types-check`→`test:browser`→`gate-integrity.mjs`→`docs-drift.mjs` | **Mandatory gate**, before every commit. |
 | `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
 | `check-fast` | `npm run check:parallel` | Inner-loop only, never proof of done. |
+| `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |
+| `disk-clean-deep` | + `src-tauri/target` + full nix GC | Space emergencies; full rebuild after. |
 | `check-epic` | `check` + `coverage` | Epic closure: full gate + coverage ratchet. |
 | `test` | `npm run test` | Frontend unit tests (Vitest, `src`). |
 | `build` | `npm run build` | Frontend production build. |

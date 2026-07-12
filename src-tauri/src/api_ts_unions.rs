@@ -38,6 +38,7 @@ ts_union!(ResearchEvidenceType {
     AiAnalysis,
     ResearchQuestion,
     CompanySignal,
+    DecisionEntry,
     Reminder,
     AiBrief,
     Digest,

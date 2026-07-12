@@ -1,5 +1,6 @@
 import { describe, it } from "vitest";
 import {
+  appTestState,
   expect,
   invoke,
   renderApp,
@@ -23,6 +24,66 @@ describe("Research screen workflows", () => {
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     expect(screen.getAllByText("Current report placeholder for watchlist company").length).toBeGreaterThan(0);
     expect(screen.getByLabelText("Inbox company")).toHaveValue("GPW:CDR");
+  });
+
+  // Regression for bug c80dabe: opening AI-analysis evidence set ONLY the Inbox
+  // company filter, leaving every other filter stale — a leftover status filter
+  // (or type/source/signal/search) silently hid the scoped feed (0 items on "All").
+  it("resets stale Inbox filters when opening AI-analysis evidence", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    // Leave a stale status filter behind in the Inbox: "Saved" hides the
+    // unsaved CDR sample report.
+    await screen.findByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    });
+    const statusFilter = screen.getByRole("group", { name: "Feed status filter" });
+    await user.click(within(statusFilter).getByRole("button", { name: "Saved" }));
+    const feedList = screen.getByLabelText("Feed items");
+    expect(
+      within(feedList).queryByText("Current report placeholder for watchlist company"),
+    ).not.toBeInTheDocument();
+
+    // Hop to the Research screen the way a user does: via global search.
+    appTestState.searchResponse = {
+      groups: [
+        {
+          contentType: "research_brief",
+          matches: [
+            {
+              contentType: "research_brief",
+              sourceId: "brief_cdr_sample",
+              companyId: "company_gpw_cdr",
+              title: "CDR research brief",
+              snippet: "CDR research brief",
+              score: 1.0,
+            },
+          ],
+        },
+      ],
+    };
+    await user.type(screen.getByLabelText("Global search"), "cdr");
+    await user.click(await screen.findByRole("option", { name: /CDR research brief/ }));
+
+    // Open the AI-analysis evidence for CDR from the Research timeline.
+    const researchRegion = await screen.findByLabelText("Evidence timeline");
+    const evidenceRows = await within(researchRegion).findAllByRole("article");
+    const aiRow = evidenceRows.find((row) =>
+      within(row).queryByText("AI-generated source-grounded summary."),
+    );
+    expect(aiRow).toBeDefined();
+    await user.click(within(aiRow as HTMLElement).getByTitle("Open evidence"));
+
+    // The Inbox is scoped to the company only; no stale filter hides its feed.
+    expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Inbox company")).toHaveValue("GPW:CDR");
+    expect(
+      await screen.findByRole("button", {
+        name: "Select feed item: Current report placeholder for watchlist company",
+      }),
+    ).toBeInTheDocument();
   });
 
   it("loads company evidence through backend-owned timeline filters", async () => {

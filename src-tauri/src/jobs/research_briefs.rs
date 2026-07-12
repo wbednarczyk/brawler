@@ -34,6 +34,13 @@ pub fn run_research_brief_job(
             .map_err(|error| error.to_string());
     }
 
+    // Prose output follows the app language; verbatim citation snippets stay in
+    // the evidence's source language.
+    let output_language = state
+        .get_settings()
+        .map_err(|error| error.to_string())?
+        .locale;
+
     state
         .mark_research_brief_job_running(job_id)
         .map_err(|error| error.to_string())?;
@@ -43,6 +50,7 @@ pub fn run_research_brief_job(
             scope_type: context.scope_type,
             scope_id: context.scope_id,
             evidence_items: context.evidence_items.clone(),
+            output_language,
         },
     )) {
         Ok(output) => output,

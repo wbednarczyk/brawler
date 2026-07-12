@@ -52,7 +52,6 @@ import {
   makeDatabaseStatus,
   makeDiagnosticEvent,
   makeDiagnosticSummary,
-  makeEmbeddingModelStatus,
   makeEvent,
   makeEvidenceLink,
   makeFeedItem,
@@ -114,7 +113,6 @@ import type {
 } from "../../api/types";
 import type { BackupStatus } from "../../api/backups";
 import type { ClaimExtractionJob } from "../../api/claimExtraction";
-import type { EmbeddingModelStatus } from "../../api/interpretation";
 import type { IrReportResolution } from "../../api/ir";
 import type { KpiExtractionJob } from "../../api/kpiExtraction";
 import type {
@@ -219,7 +217,6 @@ export interface ScenarioData {
   diagnosticSummary: ReturnType<typeof makeDiagnosticSummary>;
   logEntries: LogEntry[];
   logStatus: ReturnType<typeof makeLogStatus>;
-  embeddingModelStatus: EmbeddingModelStatus;
   databaseStatus: ReturnType<typeof makeDatabaseStatus>;
   backupStatus: BackupStatus;
 }
@@ -249,7 +246,6 @@ const EMPTY_SINGLETONS = (companies: number, adapters: number) => ({
   diagnosticSummary: makeDiagnosticSummary(),
   logEntries: [makeLogEntry()],
   logStatus: makeLogStatus(),
-  embeddingModelStatus: makeEmbeddingModelStatus(),
   databaseStatus: makeDatabaseStatus(companies, adapters),
   backupStatus: makeBackupStatus(),
 });

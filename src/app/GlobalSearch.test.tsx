@@ -68,6 +68,74 @@ describe("Global search", () => {
     });
   });
 
+  // Regression for bug c80dabe: cross-navigation into the Inbox promised to
+  // clear filters "so the selected item is not hidden by an active filter",
+  // but the signal filter was omitted from the reset — a stale signal filter
+  // silently hid the whole feed (0 items on "All") after navigation.
+  it("clears a stale signal filter so a searched feed item is visible", async () => {
+    const user = userEvent.setup();
+    appTestState.companySignalsResponse = [
+      {
+        id: "signal_feed_sample_cdr_report_insider_transaction",
+        companyId: "company_gpw_cdr",
+        company: "GPW:CDR",
+        companyName: "CD PROJEKT S.A.",
+        feedItemId: "feed_sample_cdr_report",
+        category: "insider_transaction",
+        categoryDisplayName: "Insider transaction",
+        confidence: 0.95,
+        classifiedBy: "rule",
+        status: "confirmed",
+        signalDate: "2026-05-28",
+        providerId: null,
+        modelId: null,
+        derivedEventId: null,
+        title: "Current report placeholder for watchlist company",
+        sourceUrl: "https://example.test/source",
+        createdAt: "2026-05-28T12:00:00Z",
+        updatedAt: "2026-05-28T12:00:00Z",
+      },
+    ];
+    appTestState.searchResponse = {
+      groups: [
+        {
+          contentType: "feed_item",
+          matches: [
+            {
+              contentType: "feed_item",
+              sourceId: "feed_sample_pzu_report",
+              companyId: null,
+              title: "PZU governance report placeholder",
+              snippet: "PZU governance report placeholder",
+              score: 1.0,
+            },
+          ],
+        },
+      ],
+    };
+
+    renderApp();
+
+    // Narrow the feed to one signal category; the PZU item carries no signals.
+    await screen.findByRole("button", {
+      name: "Select feed item: Current report placeholder for watchlist company",
+    });
+    await user.selectOptions(screen.getByLabelText("Inbox signal type"), "insider_transaction");
+    const feedList = screen.getByLabelText("Feed items");
+    expect(
+      within(feedList).queryByText("PZU governance report placeholder"),
+    ).not.toBeInTheDocument();
+
+    const input = screen.getByLabelText("Global search");
+    await user.type(input, "pzu");
+    await user.click(await screen.findByRole("option", { name: /PZU governance report placeholder/ }));
+
+    // The navigation contract: the target item is visible, no stale filter hides it.
+    expect(
+      await screen.findByRole("button", { name: "Select feed item: PZU governance report placeholder" }),
+    ).toBeInTheDocument();
+  });
+
   it("navigates a feed-item result to the Inbox and selects that item", async () => {
     const user = userEvent.setup();
     appTestState.searchResponse = {

@@ -580,10 +580,29 @@ fn stage_cross_reference(state: &AppState, run: &storage::AutopilotRun) -> Resul
         .map(|q| q.len())
         .unwrap_or(0);
 
+    // J4 (ADR 0071): a frozen, unresolved expectation for this occurrence means
+    // the user wrote down what they expected and can now review it vs actuals.
+    // Listing freezes-on-read (facts already landed in stage_extract), so a
+    // frozen+unresolved row is precisely the reviewable set. Decision-support
+    // only — a count to nudge review, never a score of the user's judgment.
+    let expectations_to_review = state
+        .report_expectations()
+        .list_report_expectations(storage::ListReportExpectationsInput {
+            company_id: Some(run.company_id.clone()),
+        })
+        .map(|expectations| {
+            expectations
+                .iter()
+                .filter(|e| e.frozen_at.is_some() && e.resolved_at.is_none())
+                .count()
+        })
+        .unwrap_or(0);
+
     let cross_refs = serde_json::json!({
         "claimsOverdue": claims.overdue.len(),
         "claimsDue": claims.due.len(),
         "openQuestions": open_questions,
+        "expectationsToReview": expectations_to_review,
     });
     let _ = state
         .autopilot()
@@ -707,6 +726,16 @@ fn compose_summary(run: &storage::AutopilotRun) -> String {
         }
         if questions > 0 {
             parts.push(format!("{questions} open research question(s)"));
+        }
+        // J4 (ADR 0071): the user recorded expectations for this occurrence —
+        // nudge them to review vs actuals (they record their own verdict).
+        if refs
+            .get("expectationsToReview")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+            > 0
+        {
+            parts.push("expectations recorded — review vs actuals".to_owned());
         }
     }
 
@@ -1923,6 +1952,124 @@ mod tests {
                 .expect("pending lookup")
                 .is_none(),
             "a framework with no prior assessment must not be re-enqueued"
+        );
+    }
+
+    /// Seed a financial period + one confirmed fact for `(company, 2026, H1)` so
+    /// the occurrence's facts exist — the moment expectations freeze (mirrors the
+    /// `storage::tests::report_expectations` helper).
+    fn seed_h1_2026_facts(state: &AppState, company_id: &str) {
+        let raw = state.checkout_for_tests().expect("raw connection");
+        raw.execute(
+            "INSERT INTO financial_periods (id, company_id, fiscal_year, period_type)
+             VALUES ('p_h1', ?1, 2026, 'H1')",
+            [company_id],
+        )
+        .expect("seed period");
+        raw.execute(
+            "INSERT INTO financial_facts (id, company_id, period_id, definition_id, value_numeric)
+             VALUES ('f_np', ?1, 'p_h1', 'kpidef_net_profit', '120')",
+            [company_id],
+        )
+        .expect("seed fact");
+    }
+
+    fn seed_expectation_company(state: &AppState) -> storage::Company {
+        state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "CDR".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company")
+    }
+
+    /// J4 (ADR 0071): a frozen, unresolved expectation for the run's occurrence
+    /// makes the cross-reference stage record an `expectationsToReview` count and
+    /// the summary nudge the user to review vs actuals — decision-support, no
+    /// scoring of the user's judgment (ADR 0042).
+    #[test]
+    fn cross_reference_links_expectation_review_when_expectations_exist() {
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::new(connection);
+        let company = seed_expectation_company(&state);
+
+        state
+            .report_expectations()
+            .create_report_expectation(storage::NewReportExpectation {
+                company_id: company.id.clone(),
+                event_key: "evt-h1-2026".to_owned(),
+                fiscal_year: 2026,
+                period_type: "H1".to_owned(),
+                stance_md: "Margin recovery on the launch.".to_owned(),
+                metrics: Vec::new(),
+            })
+            .expect("expectation");
+        // The report lands: facts arrive → the expectation freezes.
+        seed_h1_2026_facts(&state, &company.id);
+
+        let run_id = "run_xref_expect";
+        state
+            .autopilot()
+            .create_run_if_absent(run_id, &company.id, "doc1", "manual", MODE_AUTOPILOT, None)
+            .expect("create run")
+            .expect("run created");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        stage_cross_reference(&state, &run).expect("cross_reference stage");
+
+        let run = state.autopilot().get_run(run_id).expect("get run");
+        let refs: serde_json::Value =
+            serde_json::from_str(run.cross_refs_json.as_deref().expect("cross_refs written"))
+                .expect("cross_refs json");
+        assert_eq!(
+            refs.get("expectationsToReview").and_then(|v| v.as_u64()),
+            Some(1),
+            "a frozen, unresolved expectation for the occurrence is counted"
+        );
+
+        let summary = compose_summary(&run);
+        assert!(
+            summary.contains("expectations recorded — review vs actuals"),
+            "summary should nudge the review: {summary}"
+        );
+    }
+
+    /// Inverse: with no expectation for the occurrence, the cross-reference stage
+    /// records a zero count and the summary carries no expectations line.
+    #[test]
+    fn cross_reference_omits_expectation_link_when_none_exist() {
+        let connection = open_in_memory_database().expect("db");
+        let state = AppState::new(connection);
+        let company = seed_expectation_company(&state);
+
+        let run_id = "run_xref_no_expect";
+        state
+            .autopilot()
+            .create_run_if_absent(run_id, &company.id, "doc1", "manual", MODE_AUTOPILOT, None)
+            .expect("create run")
+            .expect("run created");
+        let run = state.autopilot().get_run(run_id).expect("get run");
+
+        stage_cross_reference(&state, &run).expect("cross_reference stage");
+
+        let run = state.autopilot().get_run(run_id).expect("get run");
+        let refs: serde_json::Value =
+            serde_json::from_str(run.cross_refs_json.as_deref().expect("cross_refs written"))
+                .expect("cross_refs json");
+        assert_eq!(
+            refs.get("expectationsToReview").and_then(|v| v.as_u64()),
+            Some(0),
+            "no expectation → zero count"
+        );
+
+        let summary = compose_summary(&run);
+        assert!(
+            !summary.contains("expectations recorded"),
+            "no expectations line when none exist: {summary}"
         );
     }
 

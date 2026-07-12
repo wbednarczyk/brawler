@@ -573,6 +573,7 @@ mod tests {
             prompt_preset_id: std::env::var("BRAWLER_GEMINI_ANALYSIS_SMOKE_PROMPT_PRESET")
                 .unwrap_or_else(|_| "default_summary".to_owned()),
             custom_question,
+            output_language: "en".to_owned(),
         };
         let output = block_on(provider.analyze(&request)).map_err(|error| {
             format!(
@@ -619,6 +620,7 @@ mod tests {
             },
             prompt_preset_id: "default_summary".to_owned(),
             custom_question: None,
+            output_language: "en".to_owned(),
         }
     }
 

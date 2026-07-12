@@ -47,7 +47,9 @@ function CapabilityMemberModelField({ label, value, onCommit }: CapabilityMember
 // provider fallback pool (ADR 0060 as amended). Keys match `AiCapability::key`
 // on the backend — do not rename without updating the Rust enum in lockstep.
 export const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: string }> = [
-  { key: "kpi_extraction", labelEn: "KPI extraction" },
+  // kpi_extraction is deliberately absent: orphaned by the tier-4 rewire
+  // (F4/T4.5 route VisionExtraction) and retired from the UI per ADR 0080
+  // (card db9a292) — the backend enum stays reserved for a future text-KPI path.
   { key: "claim_extraction", labelEn: "Claim extraction" },
   { key: "feed_analysis", labelEn: "Feed analysis" },
   { key: "research_brief", labelEn: "Research brief" },

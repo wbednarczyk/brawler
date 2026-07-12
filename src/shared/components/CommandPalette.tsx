@@ -48,6 +48,7 @@ export function CommandPalette({
       <div className="cockpit-palette">
         <SearchField
           ariaLabel={text("Search commands")}
+          className="search-box"
           placeholder={text("Type to filter commands…")}
           value={query}
           onChange={(value) => {

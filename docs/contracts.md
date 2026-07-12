@@ -9,8 +9,28 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Arc
 This file states the wire shapes, commands, and command-specific rules for every entity; **field-level storage rules (uniqueness, FKs, soft references, retention) are canonical in [Data Model](data-model.md)** — each section below points there instead of restating them. Conventions shared by every section, stated once:
 
 - **Structure.** A section shows the wire JSON shape(s) first, then allowed enum values, then `Rules:` (command-specific behavior), then the typed Tauri commands (`Commands:`/`Typed commands:`/"Initial local commands:").
-- **Errors.** Typed commands surface failures as a typed command error the frontend maps to a user-facing message; there is no bare-string/panic error path across the Tauri boundary. Async work (jobs, extraction, backfill) reports failure through job status fields (`status: "failed"`, `errorCode`, `error`) rather than a rejected command call.
+- **Errors.** Typed commands surface failures as a typed command error the frontend maps to a user-facing message; there is no bare-string/panic error path across the Tauri boundary. Machine-readable failure kinds: [Error codes](#error-codes). Async work (jobs, extraction, backfill) reports failure through job status fields (`status: "failed"`, `errorCode`, `error`) rather than a rejected command call.
 - **Scope.** Commands accept and return the **canonical id** (`companyId`, `watchlistId`, etc.), never a raw ticker or display string; canonical identity and uniqueness rules live in [Data Model](data-model.md). Company-scoped vs watchlist-scoped behavior is called out per section only where it differs from this default.
+
+## Error codes
+
+Commands adopting [ADR 0070](adr/0070-typed-command-error-envelope.md) reject with the `CommandError` envelope; pre-migration commands keep rejecting with bare strings until touched (strangler adoption — the frontend `callCommand` wrapper accepts both shapes). `From<StorageError>` assigns codes centrally in `src-tauri/src/commands/error.rs` with a wildcard-free match, so a new storage variant forces a deliberate code choice.
+
+```json
+{ "code": "missing_credential", "message": "no API key stored for provider_openai" }
+```
+
+The `code` field is a closed, **additive-only** enum (never removed or repurposed); `message` stays the human-readable detail:
+
+| Code | Meaning | Retry semantics |
+| --- | --- | --- |
+| `not_found` | A referenced entity does not exist (lookup miss, dangling soft reference). | Not retryable as-is; refresh the referencing view. |
+| `invalid_input` | Caller-supplied value failed validation. | Not retryable unchanged; fix the input. |
+| `missing_credential` | A required secret is absent from the OS keychain. | Not retryable until configured; UI links to Settings → AI. |
+| `network` | A network/HTTP call failed (timeout, DNS, reset). | Retryable; UI offers a retry affordance. |
+| `provider` | An upstream AI/source provider rejected or failed the request. | Sometimes retryable; surface the provider detail. |
+| `conflict` | The operation conflicts with current state (uniqueness/constraint violation, stale write). | Retryable after refreshing state; UI prompts a refresh. |
+| `internal` | Unexpected internal failure with no more specific code. | Not user-retryable; report/log. |
 
 ## Company Identity
 
@@ -534,6 +554,91 @@ Rules (missing-row default is canonical in [Data Model § Report Preparations](d
 
 Error codes: `company_not_found`, `watchlist_not_found`, `invalid_preparation_status`.
 
+## Decision Journal
+
+The decision journal ([ADR 0071](adr/0071-judgment-capture.md), `v0.52.0`): an early, forward-compatible slice of the [ADR 0043](adr/0043-investment-thesis-and-decision-journal.md) thesis-workbench journal that records the user's own judgments so the calibration record starts accumulating now. Entries are **immutable once saved** (DB `BEFORE UPDATE`/`BEFORE DELETE` triggers, no update/delete command); corrections are appended as follow-up entries. Decision support only — the app mirrors judgments back, never grades them ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)). Entries join the research timeline (evidence type `decision_entry`, `occurredAt = decidedAt`).
+
+`create_decision_entry(input)` records one judgment and returns the saved entry:
+
+```json
+{
+  "id": "decision_entry_company_gpw_cdr_1",
+  "companyId": "company_gpw_cdr",
+  "kind": "buy",
+  "rationaleMd": "Durable moat and improving cash generation.",
+  "decidedAt": "2026-01-15",
+  "supersededByEntryId": null,
+  "createdAt": "2026-01-15T09:00:00Z"
+}
+```
+
+The create `input` is `{ companyId, kind, rationaleMd, decidedAt, supersededByEntryId? }`. `list_decision_entries(input)` returns the journal newest-decided first; its `input` is `{ companyId?, kind? }` — omit `companyId` for the global chronological journal, `kind` to include all kinds.
+
+Allowed `kind`: `buy`, `pass`, `keep_watching`, `sell_note` (recorded actions/judgments, never advice).
+
+Rules (field-level storage rules canonical in [Data Model § Decision Journal Entries](data-model.md#decision-journal-entries)):
+
+- Immutable: there is no update or delete command. A correction sets the follow-up entry's `supersededByEntryId` to the id it supersedes (the superseded entry must exist for the same company).
+- `rationaleMd` and `decidedAt` are required; `decidedAt` is a `YYYY-MM-DD` domain date and drives timeline ordering (distinct from `createdAt`).
+
+Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `create_decision_entry`, `list_decision_entries`. Failure codes: `invalid_input` (bad `kind`/`decidedAt`, empty rationale), `not_found` (unknown company or superseded entry).
+
+## Report Expectations
+
+Pre-report expectations ([ADR 0071](adr/0071-judgment-capture.md), `v0.52.0`): the user's stance plus optional per-metric expectations written down **before** a report lands, keyed by the same `(companyId, eventKey)` occurrence as the report-season cockpit and resolved at creation to the `(fiscalYear, periodType)` the report covers. Editable until the period's facts are recorded, then **frozen** (hindsight-bias check). Expectation-vs-actual is a composed **read model**, never a stored projection — the app records the user's own verdict, it never scores judgment ([ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
+
+`create_report_expectation(input)` records the stance + metric rows and returns the expectation:
+
+```json
+{
+  "id": "report_expectation_company_gpw_cdr_evt-h1-2026",
+  "companyId": "company_gpw_cdr",
+  "eventKey": "evt-h1-2026",
+  "fiscalYear": 2026,
+  "periodType": "H1",
+  "stanceMd": "Expecting margin recovery on the game launch.",
+  "frozenAt": null,
+  "resolutionNoteMd": null,
+  "resolvedAt": null,
+  "createdAt": "2026-02-01T09:00:00Z",
+  "updatedAt": "2026-02-01T09:00:00Z",
+  "metrics": [
+    { "id": "report_expectation_..._metric_1", "expectationId": "report_expectation_...", "metricKey": "net_profit", "comparator": "gte", "expectedValue": "40000000", "unit": null, "createdAt": "2026-02-01T09:00:00Z" }
+  ]
+}
+```
+
+`expectation_review(input)` (`input` = `{ companyId, eventKey }`) returns the expectation composed against the occurrence's confirmed facts:
+
+```json
+{
+  "companyId": "company_gpw_cdr",
+  "eventKey": "evt-h1-2026",
+  "fiscalYear": 2026,
+  "periodType": "H1",
+  "stanceMd": "Expecting margin recovery on the game launch.",
+  "frozenAt": "2026-08-30T10:00:00Z",
+  "factsAvailable": true,
+  "resolutionNoteMd": null,
+  "resolvedAt": null,
+  "metrics": [
+    { "metricKey": "net_profit", "comparator": "gte", "expectedValue": "40000000", "unit": null, "actualValue": "52000000", "outcome": "met" }
+  ]
+}
+```
+
+Allowed `comparator`: `lt`, `lte`, `eq`, `gte`, `gt`. `outcome`: `met`, `missed`, `unknown` (unknown = no confirmed actual or an unparseable value — the evaluator mirrors, never guesses).
+
+Rules (field-level storage rules canonical in [Data Model § Report Expectations](data-model.md#report-expectations)):
+
+- One expectation per `(companyId, eventKey)` occurrence (unique).
+- `update_report_expectation(input)` (`{ companyId, eventKey, stanceMd?, metrics? }`) edits the stance and/or replaces the metric set wholesale — but only until the period's facts land. Once any facts exist the update is refused (`conflict`) and `frozenAt` is stamped; the freeze is checked **inside the update transaction**. Reads (`list_report_expectations`, `expectation_review`) also stamp `frozenAt` on first observation (freeze-on-read).
+- `factsAvailable` is true once any facts exist for the resolved period; a per-metric `actualValue` is the latest **confirmed** fact for that metric+period (joined via `kpi_definitions.metricKey`), else null with `outcome = "unknown"`.
+- `record_expectation_resolution(input)` (`{ companyId, eventKey, resolutionNoteMd }`) records the user's own verdict, stays allowed after the freeze, and stamps `resolvedAt` once.
+- `list_report_expectations(input)` (`{ companyId? }`) returns expectations newest-created first (omit `companyId` for all).
+
+Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `create_report_expectation`, `update_report_expectation`, `list_report_expectations`, `expectation_review`, `record_expectation_resolution`. Failure codes: `invalid_input` (bad comparator/value, empty stance, non-positive fiscal year), `not_found` (unknown company/occurrence), `conflict` (editing a frozen expectation, duplicate occurrence).
+
 ## Research Cockpit
 
 The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockview docking shell. The only persisted state is **named saved layouts** (`cockpit_layouts`); the panel arrangement itself is live UI state. Decision 3A: layouts live in SQLite (not `localStorage`), with versioned dockview geometry and a safe fallback.
@@ -556,7 +661,6 @@ The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockvi
 Workflow actions:
 
 - `save_cockpit_layout(input)`: `{ name, panelsJson, layoutJson, dockviewVersion }` → upserts a layout by `name`, returns the saved row. `name` must be non-empty.
-- `rename_cockpit_layout(input)`: `{ id, name }` → renames; `name` must be unique and non-empty.
 - `delete_cockpit_layout(layoutId)` → removes the layout by id (idempotent — deleting an absent id is a no-op).
 
 Restore/fallback behavior, source-of-truth split between `panelsJson`/`layoutJson`, and import/export durability are canonical in [Data Model § Research Cockpit Layouts](data-model.md#research-cockpit-layouts).
@@ -586,7 +690,7 @@ The report-over-report diff ([ADR 0052](adr/0052-report-over-report-diff.md), `v
 }
 ```
 
-`get_report_diff(input)` returns the on-demand section diff read model for a chosen pair. `input` is `{ olderReportDocumentId: string, newerReportDocumentId: string }`. Both documents must be the same company and statement type. Sections are aligned by heading + ordinal (positional consumption — duplicate headings never cross-match) with the optional `content_embeddings` similarity enhancer when the embedding strategy is active; each section is classified `unchanged` | `changed` | `only_older` | `only_newer`, and `changed` sections carry a line-level diff with citations (ordinal + offset) into both documents:
+`get_report_diff(input)` returns the on-demand section diff read model for a chosen pair. `input` is `{ olderReportDocumentId: string, newerReportDocumentId: string }`. Both documents must be the same company and statement type. Sections are aligned by heading + ordinal (positional consumption — duplicate headings never cross-match; no similarity call — verified during [ADR 0080](adr/0080-retire-embedding-model.md)); each section is classified `unchanged` | `changed` | `only_older` | `only_newer`, and `changed` sections carry a line-level diff with citations (ordinal + offset) into both documents:
 
 ```json
 {
@@ -749,9 +853,9 @@ List rules:
 
 ### Investor Week Calendar
 
-Status: planned (v0.59.0, ADR 0058)
+Status: planned (v0.66.0, ADR 0058)
 
-The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.59.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
+The investor week calendar ([ADR 0058](adr/0058-investor-week-calendar.md), `v0.66.0`) extends the Events view with composable, opt-in **layers** over a backend-owned read model — no stored weekly projection (the `list_report_season` pattern).
 
 `list_investor_week(input)` returns the week read model. `input` is `{ weekAnchor: "YYYY-MM-DD", scope: "watchlist" | "market", watchlistId?: string, layers: { macro: boolean, holidays: boolean } }`. It returns working-day columns (Mon–Fri; a weekend column only when populated); each column groups items by layer (`company`, `macro`, `holiday`) with per-layer freshness so a stale layer is visible rather than silently empty. The `company` layer unions tracked `company_events` with, when `scope = "market"`, untracked `market_calendar_events`, deduped by ticker.
 
@@ -1462,7 +1566,7 @@ Capability keys (`AiCapability::key`, fixed set of 9):
 
 | Key | Kind | Provider call |
 |---|---|---|
-| `kpi_extraction` | document | `complete_document` |
+| `kpi_extraction` | document | `complete_document` — reserved: valid stored key, non-routable from the UI ([ADR 0080](adr/0080-retire-embedding-model.md), card `db9a292`) |
 | `claim_extraction` | document | `complete_document` |
 | `feed_analysis` | text | `analyze` |
 | `research_brief` | text | `generate_research_brief` |
@@ -2322,7 +2426,7 @@ Commands:
 
 Citations are rejected when they do not reference an evidence id supplied to the request (the research-brief `rejects_unknown_citation_keys` precedent): uncited reasoning is never stored.
 
-**Output language** (owner decision 2026-07-07): AI prose output follows the persisted app `locale` — the qualitative-assessment prompt instructs the model to write `reasoning` and citation `label` in Polish/English accordingly (prompt version `qualitative-assessment.v2`), while citation `snippet` stays **verbatim in the evidence's original language** (attribution durability — a quote must remain exact). Unknown locale codes degrade to English. Existing stored assessments keep the language they were generated in; only new runs follow the setting. The same rule extends to the other prose-producing prompts (feed analysis summary, research brief/digest) as a carded follow-up.
+**Output language** (owner decision 2026-07-07): AI prose output follows the persisted app `locale` — the qualitative-assessment prompt instructs the model to write `reasoning` and citation `label` in Polish/English accordingly (prompt version `qualitative-assessment.v2`), while citation `snippet` stays **verbatim in the evidence's original language** (attribution durability — a quote must remain exact). Unknown locale codes degrade to English. Existing stored assessments keep the language they were generated in; only new runs follow the setting. The same rule now applies to every prose-producing prompt: feed analysis (`m13.source_grounded.v2` — `summary`/`reasoning`/`tags`/source-reference labels), research brief (`m30.research_brief.v2`), and research digest (`m31.research_digest.v2` — title/summary/section headings & bodies/citation labels; citation `snippet` stays verbatim). Each job reads the persisted `locale` and passes it as the request's `output_language`. **Structured-extraction prompts (KPI extraction, management-claim extraction) deliberately carry NO app-locale instruction**: their output is data traced to the source (verbatim `sourceSnippet` + a source-language `language` field), and the claim `statement` is a neutral paraphrase kept in the source language so a claim stays faithful and traceable to its report — the prose layers (brief/digest/assessment) render in the app locale on top of them.
 
 ### AI KPI Extraction
 
@@ -2590,73 +2694,27 @@ Initial `list_unmatched_source_items` behavior:
 
 Feed, job, transcript, and notebook changes should be emitted as Tauri events.
 
-## Interpretation — Embedding Model
+## External Surface — MCP Server (read-only MVP)
 
-Typed commands for the interpretative AI layer's embedding-model strategy ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)), added in `v0.45.0`. All are local-only: the model runs on-device, no content leaves the machine, no API key.
+A second **driving adapter** ([ADR 0039](adr/0039-ports-and-adapters-posture.md)) over the same domain read models: an in-app, localhost-only MCP server ([ADR 0078](adr/0078-mcp-external-surface.md)) — stateless MCP Streamable HTTP subset on `POST http://127.0.0.1:<port>/mcp`, bearer-token auth (token in the OS keychain, shown once at generation), off by default, app-open-only lifetime. A thin `brawler-mcp-stdio` binary forwards newline-delimited JSON-RPC from stdin to the HTTP endpoint for stdio-only clients.
 
-### Embedding Model Status
+**MCP tools (read-only; the `tools/list` insta snapshot is the frozen contract; adding a mutating tool requires a new ADR):**
 
-`get_embedding_model_status` read model — the local model + index state surfaced in Settings and Developer-mode diagnostics.
+- `get_company_dossier { company }` — identity + fundamentals coverage + confirmed facts slice + scorecard summary.
+- `search_research { query, company?, limit? }` — the unified FTS search read model.
+- `list_claims_due { company? }` — management claims to verify (the `list_claims_to_verify` read model).
+- `get_quality_assessment { company }` — qualitative assessment + framework evaluations (decision support; never a verdict, [ADR 0042](adr/0042-advisory-verdict-port-and-open-core-boundary.md)).
 
-```json
-{
-  "modelId": "intfloat/multilingual-e5-small",
-  "dim": 384,
-  "weightsState": "absent",
-  "downloadProgress": null,
-  "activeSimilarityStrategy": "static",
-  "embeddedCounts": { "feed_item": 0 },
-  "indexModelId": null
-}
-```
+Tool inputs are strict (`deny_unknown_fields`); tool failures map onto the [Error codes](#error-codes) set (ADR 0070).
 
-Rules:
+**Typed commands (UI management surface):**
 
-- `weightsState` is one of `absent`, `downloading`, `ready`, `error`.
-- `downloadProgress` is `null` unless `weightsState` is `downloading`; then it is a 0–100 integer percent.
-- `activeSimilarityStrategy` is `static` or `embedding`; it must never report `embedding` while `weightsState` is not `ready`.
-- `indexModelId` is the `model_id` the current vectors were built with, or `null` when the index is empty. A mismatch with `modelId` means a re-embed is pending.
-- The command must not return weight bytes, file paths to secrets, or any provider key.
+- `regenerate_mcp_token` — generates + stores the token (keychain slot `brawler/mcp/auth_token`), returns `McpTokenGenerated { token, status }` — the plaintext exactly once; the token never appears in logs or any status payload.
+- `revoke_mcp_token` — removes the token from the keychain; returns the post-clear `CredentialStatus`.
+- `mcp_token_status` — `CredentialStatus` for the token (`providerId: "mcp"`, `secretKind: "auth_token"`): configured?, storage, dev env fallback (`BRAWLER_MCP_TOKEN`) availability. Never carries the token.
+- `set_mcp_enabled { enabled }` — persists `mcp.enabled` **and** starts/stops the listener live (no app restart); returns the resulting `McpStatus`. Enabling without a token or on an occupied port is a clean refusal (`running: false` + `error`), never a crash.
+- `mcp_status` — `McpStatus { running, port, error }`; bind failure / missing token surface here, never as a crash. `port` is the **actually-bound** port while running, else the configured next-start port.
 
-### Download Embedding Model
+All token commands return `Result<T, CommandError>` (ADR 0070; keychain failures map via `From<CredentialError>` — caller-input problems → `invalid_input`, backend/persistence failures → `internal`).
 
-`download_embedding_model` — begin the optional one-time weights download into the app data directory; idempotent (a no-op when already `ready`).
-
-Rules:
-
-- Downloads `safetensors` + `tokenizer.json` for `modelId` and checksum-verifies before marking `ready`.
-- Runs async; progress is observed via `get_embedding_model_status` (or an emitted event), not by blocking.
-- A failed or interrupted download leaves `weightsState` at `error`/`absent` and never partially activates the model.
-- Default CI and tests must not invoke a live download; the model-backed eval uses the locally-cached model and skips when absent.
-
-### Select Similarity Strategy
-
-`set_similarity_strategy` — choose the active `SimilarityProvider` implementation.
-
-```json
-{ "strategy": "embedding" }
-```
-
-Rules:
-
-- `strategy` is `static` or `embedding`. Selecting `embedding` while weights are not `ready` is rejected with a recoverable error; it does not silently fall back.
-- The selection is persisted as a local setting (see [Settings](data-model.md#settings)); the default is `static`.
-- Switching to `embedding` enqueues the embed job to populate any missing vectors; switching to `static` leaves the index in place (it is disposable and may be reused later).
-
-### Rebuild Embedding Index
-
-`rebuild_embedding_index` — manually re-runs the embed/re-embed job (the same job `set_similarity_strategy` enqueues on switch to `embedding`) over any content missing a vector or embedded with a stale `modelId`, then returns the refreshed `get_embedding_model_status` shape. Offloaded (`spawn_blocking`); surfaces a job error (e.g. a model load/forward failure) rather than swallowing it.
-
-### Find Similar Content (diagnostics)
-
-`find_similar_content` — developer-mode/diagnostics command to exercise the active `SimilarityProvider` over real stored content; the `v0.45.0` demoable surface for the embedding model. (Its first intended product consumer, story clustering `v0.46`, was evaluated and dropped — see [ADR 0051](adr/0051-story-clustering-across-sources.md); the `SimilarityProvider` / embedding model is re-pointed at ranking/retrieval consumers — semantic search `v0.48` and RAG retrieval for the AI milestones — where the user or an LLM makes the final call.)
-
-```json
-{
-  "contentType": "feed_item",
-  "contentId": "feed_01",
-  "k": 10
-}
-```
-
-Returns ranked `{ contentType, contentId, score }` items, highest score first, plus the `strategyId` that produced them so the model-vs-static result is visible. Scores are relative within one call and not comparable across strategies.
+Settings: `mcp` group (`enabled` — default false; `port` — default 8317, clamped to `[1024, 65535]` on write and read) in `UserSettings` (`mcp: { enabled, port }`) / `UpdateSettingsInput` (`mcpEnabled?`, `mcpPort?`); tolerant reads (missing rows fall back to defaults), upsert writes (no seed-row migration). **Port-change semantics:** changing `mcp.port` via `update_settings` while the server is running takes effect on the **next start** (disable→enable, or the next app open) — no hot-rebind; `mcp_status.port` reports the port the listener is actually serving. Lifetime is app-open-only (started in the `lib.rs` setup closure when enabled, torn down with the process).

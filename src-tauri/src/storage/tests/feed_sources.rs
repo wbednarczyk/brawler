@@ -351,11 +351,11 @@ fn ingests_bankier_rss_items_and_matches_tracked_company_by_strong_signal() {
 }
 
 #[test]
-fn ingestion_persists_cross_source_story_key_for_matched_items() {
-    // The ingestion pipeline (ADR 0050) derives a canonical story key from the
-    // matched company + day + title and persists it, so items from different
-    // sources about the same event cluster together. Driven through the free
-    // ingest functions so the persisted column can be read back directly.
+fn ingestion_works_without_a_story_key_column() {
+    // ADR 0080 removed the write-only story-key path (its consumer, story
+    // clustering, was dropped in ADR 0051). Ingest must work against the
+    // post-0070 schema: items land with company matching and dedupe intact,
+    // and no story_key column exists to write to.
     let mut connection = open_in_memory_database().expect("database should initialize");
     crate::storage::companies::create_company(
         &connection,
@@ -370,29 +370,30 @@ fn ingestion_persists_cross_source_story_key_for_matched_items() {
     )
     .expect("company should create");
 
-    crate::storage::sources::ingest_bankier_rss_items(&mut connection, &sample_bankier_items())
-        .expect("RSS items should ingest");
+    let result =
+        crate::storage::sources::ingest_bankier_rss_items(&mut connection, &sample_bankier_items())
+            .expect("RSS items should ingest without a story_key column");
+    assert_eq!(result.items_matched, 1);
+    assert_eq!(result.items_unmatched, 1);
 
-    // The matched item is keyed by company + publication day + title slug.
-    let key: Option<String> = connection
+    let has_story_key: bool = connection
         .query_row(
-            "SELECT story_key FROM feed_items WHERE display_company = 'GPW:CDR'",
+            "SELECT EXISTS(SELECT 1 FROM pragma_table_info('feed_items')
+              WHERE name = 'story_key')",
             [],
             |row| row.get(0),
         )
-        .expect("matched feed item should exist");
-    let key = key.expect("a matched item gets a story key");
-    assert!(key.starts_with("story:GPW:CDR:2026-05-31:"), "{key}");
+        .expect("column existence check");
+    assert!(!has_story_key, "feed_items.story_key no longer exists");
 
-    // The unmatched item (no company) is not clustered.
-    let null_keys: i64 = connection
+    let matched: i64 = connection
         .query_row(
-            "SELECT COUNT(*) FROM feed_items WHERE story_key IS NULL",
+            "SELECT COUNT(*) FROM feed_items WHERE display_company = 'GPW:CDR'",
             [],
             |row| row.get(0),
         )
         .expect("count should run");
-    assert_eq!(null_keys, 1);
+    assert_eq!(matched, 1, "the matched item still lands");
 }
 
 #[test]

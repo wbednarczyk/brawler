@@ -27,6 +27,26 @@ interface RuntimeContext {
   nextId(prefix: string): string;
   /** Per-company IR report URLs (command-only state, not a seeded collection). */
   irReportUrls: Map<string, string>;
+  /** Immutable decision journal entries (ADR 0071); command-only, not seeded. */
+  decisionEntries: Record<string, unknown>[];
+  /** Pre-report expectations (ADR 0071); command-only, not seeded. */
+  reportExpectations: Record<string, unknown>[];
+  /**
+   * MCP bearer token (ADR 0078 M1); command-only, not seeded. Mirrors the
+   * keychain: the plaintext leaves the runtime exactly once, at generation —
+   * status payloads never carry it.
+   */
+  mcpToken: string | null;
+  /**
+   * MCP server live state (ADR 0078 M3). Command-only, not seeded. Mirrors the
+   * lifecycle: `set_mcp_enabled` starts/stops, `mcp_status` reports. Enabling
+   * without a token refuses (running:false + error), matching the real server.
+   * The shape is `McpStatus { running, port, error }`; the Rust replayer
+   * (mock_fidelity.rs) drives the real `McpLifecycle` for the same corpus, and
+   * only `running`/`port` are asserted (error text differs across replayers).
+   */
+  mcpRunning: boolean;
+  mcpError: string | null;
 }
 
 export interface MockRuntime {
@@ -50,6 +70,25 @@ function unwrap(args: Args): Record<string, unknown> {
 
 function str(value: unknown): string | null {
   return typeof value === "string" ? value : null;
+}
+
+/**
+ * CredentialStatus for the MCP bearer token (ADR 0078 M1), derived from the
+ * command-only ctx state. Never includes the token itself — the plaintext is
+ * returned exactly once by `regenerate_mcp_token` (mirror of the Rust
+ * one-time-reveal semantics).
+ */
+function mcpTokenStatus(ctx: RuntimeContext) {
+  const configured = ctx.mcpToken !== null;
+  return {
+    providerId: "mcp",
+    secretKind: "auth_token",
+    configured,
+    storage: configured ? "os_keychain" : "not_configured",
+    label: "MCP server auth token",
+    devFallbackAvailable: false,
+    error: null,
+  };
 }
 
 /**
@@ -199,6 +238,99 @@ function resolveCriterionKindFields(
   return { kind, expression, assessmentGuidance };
 }
 
+// --- Judgment capture helpers (ADR 0071) ---
+
+/** Build one expectation metric child row (mirrors the Rust insert scheme). */
+function buildExpectationMetric(
+  expectationId: string,
+  metric: Record<string, unknown>,
+  index: number,
+): Record<string, unknown> {
+  return {
+    id: `${expectationId}_metric_${index + 1}`,
+    expectationId,
+    metricKey: str(metric.metricKey) ?? "",
+    comparator: str(metric.comparator) ?? "",
+    expectedValue: str(metric.expectedValue) ?? "",
+    unit: str(metric.unit),
+    createdAt: SAMPLE_NOW,
+  };
+}
+
+/** Do any facts exist for the occurrence's period? The mock's freeze condition. */
+function periodHasFacts(
+  d: ScenarioData,
+  companyId: string,
+  fiscalYear: number,
+  periodType: string,
+): boolean {
+  const periodIds = new Set(
+    d.financialPeriods
+      .filter((p) => p.companyId === companyId && p.fiscalYear === fiscalYear && p.periodType === periodType)
+      .map((p) => p.id),
+  );
+  return d.financialFacts.some((f) => f.companyId === companyId && periodIds.has(f.periodId));
+}
+
+/** The latest confirmed actual for a metric in the period, or null. */
+function confirmedActual(
+  d: ScenarioData,
+  companyId: string,
+  fiscalYear: number,
+  periodType: string,
+  metricKey: string,
+): string | null {
+  const definitionId = d.kpiDefinitions.find((k) => k.metricKey === metricKey)?.id;
+  if (!definitionId) return null;
+  const periodIds = new Set(
+    d.financialPeriods
+      .filter((p) => p.companyId === companyId && p.fiscalYear === fiscalYear && p.periodType === periodType)
+      .map((p) => p.id),
+  );
+  const fact = d.financialFacts.find(
+    (f) =>
+      f.companyId === companyId &&
+      periodIds.has(f.periodId) &&
+      f.definitionId === definitionId &&
+      (f.confirmationState ?? "confirmed") === "confirmed",
+  );
+  return fact ? (str(fact.valueNumeric) ?? null) : null;
+}
+
+/** Mirror of the Rust comparator evaluator (report_expectations.rs). */
+function evaluateExpectationOutcome(
+  comparator: string,
+  expected: string,
+  actual: string,
+): "met" | "missed" | "unknown" {
+  const e = Number(expected.trim());
+  const a = Number(actual.trim());
+  if (expected.trim() === "" || actual.trim() === "" || !Number.isFinite(e) || !Number.isFinite(a)) {
+    return "unknown";
+  }
+  let met: boolean;
+  switch (comparator) {
+    case "lt":
+      met = a < e;
+      break;
+    case "lte":
+      met = a <= e;
+      break;
+    case "eq":
+      met = a === e;
+      break;
+    case "gte":
+      met = a >= e;
+      break;
+    case "gt":
+      met = a > e;
+      break;
+    default:
+      return "unknown";
+  }
+  return met ? "met" : "missed";
+}
+
 // ---------------------------------------------------------------------------
 // Handler table
 // ---------------------------------------------------------------------------
@@ -218,7 +350,6 @@ function buildHandlers(): Record<string, Handler> {
     list_diagnostic_events: (d) => d.diagnosticEvents,
     get_log_status: (d) => d.logStatus,
     list_log_entries: (d) => d.logEntries,
-    get_embedding_model_status: (d) => d.embeddingModelStatus,
     list_ai_provider_catalog: (d) => d.providerCatalog,
     get_provider_credential_status: (d, a) => {
       const providerId = str(unwrap(a).providerId);
@@ -336,16 +467,6 @@ function buildHandlers(): Record<string, Handler> {
       };
       d.cockpitLayouts = [...d.cockpitLayouts, layout];
       return layout;
-    },
-    rename_cockpit_layout: (d, a) => {
-      const input = unwrap(a);
-      const { next, updated } = mapReplace(
-        d.cockpitLayouts,
-        (l) => l.id === str(input.id),
-        (l) => ({ ...l, name: str(input.name) ?? l.name, updatedAt: SAMPLE_NOW }),
-      );
-      d.cockpitLayouts = next;
-      return updated ?? d.cockpitLayouts[0];
     },
     delete_cockpit_layout: (d, a) => {
       const layoutId = str(unwrap(a).layoutId);
@@ -1716,6 +1837,186 @@ function buildHandlers(): Record<string, Handler> {
       d.reportPreparations = next;
       return updated ?? d.reportPreparations[0];
     },
+
+    // --- Decision journal (ADR 0071). Immutable, command-only state in ctx. ---
+    create_decision_entry: (d, a, ctx) => {
+      const input = unwrap(a);
+      const entry = {
+        id: ctx.nextId("decision_entry"),
+        companyId: str(input.companyId) ?? "",
+        kind: str(input.kind) ?? "",
+        rationaleMd: str(input.rationaleMd) ?? "",
+        decidedAt: str(input.decidedAt) ?? "",
+        supersededByEntryId: str(input.supersededByEntryId),
+        createdAt: SAMPLE_NOW,
+      };
+      ctx.decisionEntries = [...ctx.decisionEntries, entry];
+      // Surface the entry on the research timeline (J2 wired the Rust UNION arm;
+      // the mock must mirror it so timeline-driven UI/tests see it). occurredAt is
+      // the decision's own date so it slots into chronology by decided_at.
+      d.researchEvidence = [
+        ...d.researchEvidence,
+        {
+          id: `evidence_decision_entry_${entry.id}`,
+          evidenceType: "decision_entry",
+          sourceDomain: "research",
+          sourceId: entry.id,
+          companyId: entry.companyId,
+          occurredAt: entry.decidedAt || SAMPLE_NOW,
+          title: entry.rationaleMd.split("\n")[0] || entry.kind,
+          summary: null,
+          sourceUrl: null,
+          attribution: null,
+          trustCategory: "user_note",
+          reviewState: { changedSinceCompanyReview: true, changedSinceWatchlistReview: true },
+        },
+      ];
+      return entry;
+    },
+    list_decision_entries: (_d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const kind = str(input.kind);
+      // Chronology of DECISIONS: decided_at DESC, id DESC (never insertion).
+      return ctx.decisionEntries
+        .filter((e) => (!companyId || e.companyId === companyId) && (!kind || e.kind === kind))
+        .sort((x, y) => {
+          const dx = String(x.decidedAt);
+          const dy = String(y.decidedAt);
+          if (dx !== dy) return dx < dy ? 1 : -1;
+          return String(x.id) < String(y.id) ? 1 : -1;
+        });
+    },
+
+    // --- Pre-report expectations (ADR 0071). Command-only state in ctx. ---
+    create_report_expectation: (_d, a, ctx) => {
+      const input = unwrap(a);
+      const id = ctx.nextId("report_expectation");
+      const metricsIn = Array.isArray(input.metrics) ? (input.metrics as Record<string, unknown>[]) : [];
+      const expectation = {
+        id,
+        companyId: str(input.companyId) ?? "",
+        eventKey: str(input.eventKey) ?? "",
+        fiscalYear: typeof input.fiscalYear === "number" ? input.fiscalYear : 0,
+        periodType: str(input.periodType) ?? "",
+        stanceMd: str(input.stanceMd) ?? "",
+        frozenAt: null as string | null,
+        resolutionNoteMd: null as string | null,
+        resolvedAt: null as string | null,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+        metrics: metricsIn.map((m, i) => buildExpectationMetric(id, m, i)),
+      };
+      ctx.reportExpectations = [...ctx.reportExpectations, expectation];
+      return expectation;
+    },
+    update_report_expectation: (d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const eventKey = str(input.eventKey);
+      const found = ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey);
+      if (!found) throw new Error("report expectation not found");
+      // Freeze check shares the read: once the period's facts land, the edit is
+      // refused and frozenAt stamped (mirror of the Rust in-transaction check).
+      if (periodHasFacts(d, String(found.companyId), Number(found.fiscalYear), String(found.periodType))) {
+        ctx.reportExpectations = ctx.reportExpectations.map((e) =>
+          e === found ? { ...e, frozenAt: (e.frozenAt as string | null) ?? SAMPLE_NOW } : e,
+        );
+        throw new Error("report expectation is frozen");
+      }
+      const nextMetrics = Array.isArray(input.metrics)
+        ? (input.metrics as Record<string, unknown>[]).map((m, i) =>
+            buildExpectationMetric(String(found.id), m, i),
+          )
+        : (found.metrics as unknown[]);
+      const updated = {
+        ...found,
+        stanceMd: typeof input.stanceMd === "string" ? input.stanceMd : found.stanceMd,
+        metrics: nextMetrics,
+        updatedAt: SAMPLE_NOW,
+      };
+      ctx.reportExpectations = ctx.reportExpectations.map((e) => (e === found ? updated : e));
+      return updated;
+    },
+    list_report_expectations: (d, a, ctx) => {
+      const companyId = str(unwrap(a).companyId);
+      // Freeze-on-read: stamp frozenAt for any expectation whose facts arrived.
+      ctx.reportExpectations = ctx.reportExpectations.map((e) => {
+        if (e.frozenAt) return e;
+        const frozen = periodHasFacts(d, String(e.companyId), Number(e.fiscalYear), String(e.periodType));
+        return frozen ? { ...e, frozenAt: SAMPLE_NOW } : e;
+      });
+      return ctx.reportExpectations.filter((e) => !companyId || e.companyId === companyId);
+    },
+    expectation_review: (d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const eventKey = str(input.eventKey);
+      const found = ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey);
+      if (!found) throw new Error("report expectation not found");
+      const factsAvailable = periodHasFacts(
+        d,
+        String(found.companyId),
+        Number(found.fiscalYear),
+        String(found.periodType),
+      );
+      if (factsAvailable && !found.frozenAt) {
+        ctx.reportExpectations = ctx.reportExpectations.map((e) =>
+          e === found ? { ...e, frozenAt: SAMPLE_NOW } : e,
+        );
+      }
+      const current =
+        ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey) ?? found;
+      const metrics = (current.metrics as Record<string, unknown>[]).map((m) => {
+        const actual = confirmedActual(
+          d,
+          String(current.companyId),
+          Number(current.fiscalYear),
+          String(current.periodType),
+          String(m.metricKey),
+        );
+        const outcome =
+          actual == null
+            ? "unknown"
+            : evaluateExpectationOutcome(String(m.comparator), String(m.expectedValue), actual);
+        return {
+          metricKey: m.metricKey,
+          comparator: m.comparator,
+          expectedValue: m.expectedValue,
+          unit: m.unit ?? null,
+          actualValue: actual,
+          outcome,
+        };
+      });
+      return {
+        companyId: current.companyId,
+        eventKey: current.eventKey,
+        fiscalYear: current.fiscalYear,
+        periodType: current.periodType,
+        stanceMd: current.stanceMd,
+        frozenAt: (current.frozenAt as string | null) ?? null,
+        factsAvailable,
+        resolutionNoteMd: (current.resolutionNoteMd as string | null) ?? null,
+        resolvedAt: (current.resolvedAt as string | null) ?? null,
+        metrics,
+      };
+    },
+    record_expectation_resolution: (_d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const eventKey = str(input.eventKey);
+      const found = ctx.reportExpectations.find((e) => e.companyId === companyId && e.eventKey === eventKey);
+      if (!found) throw new Error("report expectation not found");
+      const updated = {
+        ...found,
+        resolutionNoteMd: str(input.resolutionNoteMd) ?? "",
+        resolvedAt: (found.resolvedAt as string | null) ?? SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+      ctx.reportExpectations = ctx.reportExpectations.map((e) => (e === found ? updated : e));
+      return updated;
+    },
+
     get_company_ir_reports_url: (d, a, ctx) => {
       const companyId = str(unwrap(a).companyId) ?? "";
       return ctx.irReportUrls.get(companyId) ?? null;
@@ -2117,29 +2418,6 @@ function buildHandlers(): Record<string, Handler> {
       return { sweep, runsTotal: 0, runsDone: 0, runsFailed: 0 };
     },
 
-    // --- Embedding / similarity ---
-    find_similar_content: (d, a) => {
-      const input = unwrap(a);
-      const sourceId = str(input.contentId) ?? str(input.sourceId);
-      return {
-        strategyId: d.embeddingModelStatus.activeSimilarityStrategy,
-        items: d.feedItems
-          .filter((f) => f.id !== sourceId)
-          .slice(0, 5)
-          .map((f, index) => ({ contentType: "feed_item", contentId: f.id, score: 1 - index * 0.1 })),
-      };
-    },
-    download_embedding_model: (d) => {
-      d.embeddingModelStatus.weightsState = "ready";
-      return d.embeddingModelStatus;
-    },
-    rebuild_embedding_index: (d) => d.embeddingModelStatus,
-    set_similarity_strategy: (d, a) => {
-      const strategy = str(unwrap(a).strategy);
-      if (strategy === "static" || strategy === "embedding") d.embeddingModelStatus.activeSimilarityStrategy = strategy;
-      return d.embeddingModelStatus;
-    },
-
     // --- Settings / developer mode / diagnostics ---
     update_settings: (d, a) => {
       // The frontend sends a FLAT partial update; the backend maps the
@@ -2161,6 +2439,11 @@ function buildHandlers(): Record<string, Handler> {
         shortcutBindings: pick("shortcutBindings", d.settings.shortcutBindings),
         capabilityProviders: pick("capabilityProviders", d.settings.capabilityProviders),
         pinnedCompanyIds: pick("pinnedCompanyIds", d.settings.pinnedCompanyIds),
+        mcp: {
+          enabled: pick("mcpEnabled", d.settings.mcp.enabled),
+          // Mirror of the backend clamp ([1024, 65535], ADR 0078).
+          port: Math.min(65_535, Math.max(1024, pick("mcpPort", d.settings.mcp.port))),
+        },
         aiProviders: {
           ...ai,
           youtubeTranscriptionProvider: pick("youtubeTranscriptionProvider", ai.youtubeTranscriptionProvider),
@@ -2201,6 +2484,44 @@ function buildHandlers(): Record<string, Handler> {
       d.licenseStatus = { ...legacyMissingLicenseStatus };
       return d.licenseStatus;
     },
+    // --- MCP server token (ADR 0078 M1). Mirrors the Rust commands: the
+    // plaintext token is returned exactly once (regenerate); status/revoke
+    // report only configuration state. Deterministic pseudo-token: the shared
+    // id counter hex-padded to the real 64-char width, unique per call.
+    regenerate_mcp_token: (_d, _a, ctx) => {
+      const seq = ctx.nextId("mcp_token").replace(/\D/g, "") || "0";
+      const token = Number(seq).toString(16).padStart(64, "0");
+      ctx.mcpToken = token;
+      return { token, status: mcpTokenStatus(ctx) };
+    },
+    revoke_mcp_token: (_d, _a, ctx) => {
+      ctx.mcpToken = null;
+      return mcpTokenStatus(ctx);
+    },
+    mcp_token_status: (_d, _a, ctx) => mcpTokenStatus(ctx),
+
+    // --- MCP server lifecycle (ADR 0078 M3). Mirrors `set_mcp_enabled_impl`:
+    // persists `mcp.enabled` AND flips the live listener; enabling without a
+    // token refuses (running:false + the real backend's error wording), never
+    // throws. `mcp_status` reports the live state.
+    set_mcp_enabled: (d, a, ctx) => {
+      const enabled = Boolean(unwrap(a).enabled);
+      d.settings = { ...d.settings, mcp: { ...d.settings.mcp, enabled } };
+      if (enabled && ctx.mcpToken === null) {
+        ctx.mcpRunning = false;
+        ctx.mcpError = "MCP server auth token is not configured";
+      } else {
+        ctx.mcpRunning = enabled;
+        ctx.mcpError = null;
+      }
+      return { running: ctx.mcpRunning, port: d.settings.mcp.port, error: ctx.mcpError };
+    },
+    mcp_status: (d, _a, ctx) => ({
+      running: ctx.mcpRunning,
+      port: d.settings.mcp.port,
+      error: ctx.mcpError,
+    }),
+
     set_provider_api_key: (d, a) => {
       const providerId = str(unwrap(a).providerId);
       const credential = d.credentialStatuses.find((c) => c.providerId === providerId);
@@ -2318,9 +2639,10 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_diagnostic_events",
   "get_log_status",
   "list_log_entries",
-  "get_embedding_model_status",
   "list_ai_provider_catalog",
   "get_provider_credential_status",
+  "mcp_token_status",
+  "mcp_status",
   "list_available_metric_keys",
   "backup_status",
   "list_companies",
@@ -2360,6 +2682,11 @@ export function createMockRuntime(scenario: ScenarioName = "minimal"): MockRunti
       return `${prefix}_sample_new_${counter}`;
     },
     irReportUrls: new Map<string, string>(),
+    decisionEntries: [],
+    reportExpectations: [],
+    mcpToken: null,
+    mcpRunning: false,
+    mcpError: null,
   };
 
   const runtime: MockRuntime = {
@@ -2386,6 +2713,12 @@ export function createMockRuntime(scenario: ScenarioName = "minimal"): MockRunti
       if (nextScenario) runtime.scenario = nextScenario;
       counter = 0;
       ctx.irReportUrls.clear();
+      ctx.decisionEntries = [];
+      ctx.reportExpectations = [];
+      // MCP token + lifecycle state (ADR 0078 M1/M3).
+      ctx.mcpToken = null;
+      ctx.mcpRunning = false;
+      ctx.mcpError = null;
     },
   };
   return runtime;
