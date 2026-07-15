@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.55.0 - 2026-07-15
+
+Source reliability & disclosure signals: the feed is now **harder to fool and
+harder to starve**. The official GPW ESPI/EBI channel runs as a **witness**
+auditing what the primary source delivers — if it misses an official report on
+one of your companies, you get a toast and a morning-briefing line. Two new
+high-signal disclosure categories land in the feed and alert rules: **short
+positions from the KNF register** (with a dedicated dashboard panel) and
+**auditor red flags** (qualified opinion / disclaimer / going-concern). Under
+the hood, every source now plugs into one `Fetcher` socket — adding a future
+source is one self-contained file. Decision support only, all local. Guide:
+[Source reliability & disclosure signals](wiki/source-reliability-and-disclosure-signals.md).
+
+### Added
+
+- **ESPI/EBI second witness** — the official GPW channel is re-enabled in a
+  *witness* role (a "Świadek" badge in Sources): after each refresh it
+  reconciles the official disclosure list against Bankier-sourced reports
+  (exact ESPI report number first, company+date fallback) and persists a pair
+  ledger (`matched | bankier_only | espi_only`). A report the primary channel
+  missed on a tracked company raises a **system attention event** — persistent
+  toast + Today row + morning-briefing line, no rule setup needed, deduplicated
+  in the database. The witness never ingests feed items (no duplicates, by
+  construction and by test). Full ledger: Diagnostics → "Uzgadnianie źródeł".
+  First measured completeness run on real data: 15 witness items, 5 matched,
+  0 missed by Bankier.
+- **KNF short-selling register** — a new disclosure source over the register's
+  stable public JSON endpoint (no scraping). Net short positions ≥ 0.5% are
+  mirrored per company with an append-only change history; every change
+  (entered / increased / decreased / exited) becomes a feed item plus a
+  **"Short position" signal** that participates in alert rules. New cockpit
+  panel **"Krótka sprzedaż (KNF)"** (palette): current holders, 30-day change,
+  full history, register-refresh timestamp, and a calm empty state.
+- **Auditor-opinion signal** — filings whose titles carry auditor red flags
+  ("opinia z zastrzeżeniem", "odmowa wyrażenia opinii", "kontynuacja
+  działalności" emphasis…) classify into a dedicated danger-badged category,
+  alert-rule-capable; validated against the maintainer's real database with
+  zero false positives. Feeds the v0.57 red-flags panel.
+
+### Changed
+
+- **SourceAdapter port gains behavior** (ADR 0069, amended): a `Fetcher` trait
+  at the refresh level; all seven active adapters migrated strangler-style,
+  per-source dispatch branching retired (`Fetcher | Disabled` only), full-
+  refresh sweep membership pinned by test. New sources implement one trait in
+  one file. Last Twelve Data residue removed.
+- Sources screen: adapter rows expose the new `role` (primary / witness).
+
+### Fixed
+
+- A refresh path that succeeded without recording its run outcome showed a
+  source as "never refreshed" forever (caught live on the witness) — outcome
+  recording is now mandatory-by-checklist with a regression test.
+- Negative-zero percent values ("-0,00%") normalized in fixed-precision
+  formatting.
+- Reconciliation no longer flags Bankier reports on the witness listing's
+  boundary date (latest-N truncation artifact), and both new sources reject an
+  empty upstream snapshot instead of misreading it as a mass exit.
+
 ## v0.54.0 - 2026-07-15
 
 Attention routing: the app now **tells you what deserves a look** instead of
