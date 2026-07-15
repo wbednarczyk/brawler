@@ -409,9 +409,11 @@ release:
 	git add $(RELEASE_FILES)
 	git commit -m "chore(release): bump version to $(VERSION)"
 	git tag -a "v$(VERSION)" -m "v$(VERSION)"
-	git push origin master
+	@# The `make check` above already gated this exact tree; tell the pre-push
+	@# hook not to re-run the full gate on these master pushes (ADR 0062 2026-07-15).
+	BRAWLER_GATE_ALREADY_GREEN=1 git push origin master
 	git push origin "v$(VERSION)"
-	git push rad master
+	BRAWLER_GATE_ALREADY_GREEN=1 git push rad master
 	git push rad "v$(VERSION)"
 
 license-keygen-author:

@@ -1,17 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pre-commit gate (ADR 0062). A commit is a checkpoint, and it must be proof that
-# the single mandatory gate is green — "be sure at commit time, not at push time"
-# (the owner's decision: at push it is too late). This runs the WHOLE `make check`
-# (all deterministic suites, hard-fail, under Nix) before the commit is created; a
-# red gate blocks the commit.
+# Pre-commit gate (ADR 0062, amended 2026-07-15). The gate is split by git phase
+# so every commit stays cheap while master still never receives un-gated code:
+#   - pre-commit (here): the FAST core — `make check-fast` (typecheck, lint,
+#     stylelint, Rust nextest, frontend vitest, build; parallel, NO browser
+#     matrix). ~2-4 min. Catches the overwhelming majority of breaks at commit
+#     time without the ~15-min Playwright viewport matrix on every checkpoint.
+#   - pre-push (.githooks/pre-push): the FULL `make check` (incl. the browser
+#     matrix) fires ONLY when the push targets `master` — the boundary where
+#     code becomes shared. There is no CI mirror of `make check`, so this local
+#     pre-push gate is the hard guarantee that master is always fully green.
+# Owner decision 2026-07-15: "gate tylko przy mergu do mastera" — per-commit
+# full runs were too costly. A docs-only changeset still runs only check-docs.
 #
-# Fail-not-skip: unlike the pre-push smoke gate (which skips if Playwright is
-# absent), a missing tool here is a FAILURE with a fix instruction — a silent skip
-# is exactly the hole that lets a suite rot. `make check` installs Chromium itself
-# (idempotent `test:browser:install` step), so the usual missing tool self-heals;
-# anything else stops the commit with a clear message.
+# Fail-not-skip: a missing tool here is a FAILURE with a fix instruction — a
+# silent skip is exactly the hole that lets a suite rot.
 #
 # `git commit --no-verify` exists for genuine WIP/emergency commits, but per
 # AGENTS.md a hand-back or "done" claim is never valid on a --no-verify commit.
@@ -55,7 +59,7 @@ if [ "$docs_only" -eq 1 ]; then
   make check-docs
   printf '✓ pre-commit: doc meta-guards green — creating the commit.\n'
 else
-  printf '▶ pre-commit: running the full mandatory gate (make check) under Nix…\n'
-  make check
-  printf '✓ pre-commit: mandatory gate green — creating the commit.\n'
+  printf '▶ pre-commit: running the fast core gate (make check-fast) under Nix — the full browser matrix runs at push-to-master…\n'
+  make check-fast
+  printf '✓ pre-commit: fast core gate green — creating the commit.\n'
 fi

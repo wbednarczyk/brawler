@@ -41,17 +41,17 @@ Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop
 
 The Makefile is the preferred local command surface from WSL; targets stay thin wrappers around documented project commands.
 
-**Pre-commit gate ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)).** `make install-git-hooks` installs `.githooks/pre-commit`, running the **whole `make check`** (hard-fail, under Nix) before every commit — *be sure at commit time; at push it is too late*. **Fail-not-skip:** a missing tool fails with a fix instruction, not a silent skip. `--no-verify` exists for WIP/emergency commits, but a "done"/handback claim is **never** valid on one.
+**Gate split by git phase ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md), 2026-07-15).** **pre-commit → `make check-fast`** (parallel core, no browser, ~2–4 min) per code commit; docs-only → `make check-docs`. **The full `make check` (~15-min browser matrix) runs at pre-push to `master` only** — the shared-code boundary; no CI mirror, so this is the guarantee master never advances past a red gate. A missing tool fails (not skips); `--no-verify` is WIP-only, never valid under "done".
 
 **Commit-message hook runs AFTER the gate** — a rejected message wastes a full `make check` run. Rules: Conventional Commits, single `[a-z0-9._-]+` scope (no commas), subject after the colon ≤ 72 chars. Pre-validate every non-trivial message first: `scripts/release/validate-commit-message.sh --message "<subject line>"` (guardrail, 2026-07-03).
 
-**Pre-push hook (ADR 0045).** `make install-git-hooks` also installs `.githooks/pre-push`: a cheap re-check running the **data-driven `smoke-walk`** Playwright spec (sidebar destinations × viewport matrix) on every `git push` (~10-20s). Auto-skips with a notice if Playwright isn't installed. Do not `--no-verify` past it.
+**Pre-push hook ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md) / [ADR 0045](adr/0045-guardrail-harvest-loop.md)).** A **non-master** push runs only the cheap `smoke-walk` spec (~10-20s, auto-skips if Playwright is absent); a **`master`** push runs the full `make check` (above). Don't `--no-verify` past it.
 
 ## Test-Driven Development Loop
 
 Brawler is **spec-driven for intent** (docs/ADRs define behavior before code) and **test-driven for the loop** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)) — tests are the guardrails of a data-heavy app, so the loop is organized around them.
 
-**The loop for every behavior change:** 1) **write/extend the test first**, at the cheapest layer that proves the behavior (map below) — a feature isn't "done" until a test **reddens when it breaks**; 2) **iterate against a targeted, fast subset** (seconds; see "Targeted run" below, or `make check-fast`); 3) **before commit, run the full `make check`** — the pre-commit hook enforces it; this is the floor, not the ceiling.
+**The loop for every behavior change:** 1) **write/extend the test first**, at the cheapest layer that proves the behavior (map below) — a feature isn't "done" until a test **reddens when it breaks**; 2) **iterate against a targeted, fast subset** (seconds; see "Targeted run" below, or `make check-fast`); 3) the **full `make check` runs at push-to-master** — run it yourself before "done" (the floor, not the ceiling).
 
 **Anti-rot rule (`gate-integrity`).** Every deterministic/hermetic suite is a hard-fail step of `make check`; no step may be `-`-prefixed (silent red is what rotted the browser suite). Exclusions and rationale: [Testing](testing.md). **Anti-drift rule (`docs-drift`, [ADR 0065](adr/0065-spec-code-drift-gates.md)).** The same gate fails if contracts.md/ui-information-architecture.md/data-model.md diverge from the code, or ADR `Status:`/INDEX.md hygiene rots — a spec-ahead-of-code section is tagged `Status: planned (vX.Y.Z, ADR NNNN)`, never left silently wrong.
 
@@ -82,7 +82,7 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §A — Always
 - [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../CLAUDE.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
-- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt · clippy `-D warnings` · nextest · doc, then typecheck · ESLint · stylelint · Vitest · build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; `.githooks/pre-commit` runs this whole gate before each commit, so a green commit *is* the proof. `make check-fast` is inner-loop iteration only, **never** proof of done. A host pass is a hint, not a verdict (the toolchain can be split). **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
+- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt · clippy `-D warnings` · nextest · doc, then typecheck · ESLint · stylelint · Vitest · build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; the **full gate runs at pre-push to `master`** (§ gate split, no CI mirror) — run it yourself before "done". A host pass is a hint, not a verdict (the toolchain can be split). **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
 - [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
 - [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
@@ -171,7 +171,7 @@ Full parity when appropriate: `make check` (mandatory gate), Nix-wrapped command
 | `make` target | Underlying command | When |
 | --- | --- | --- |
 | `install` | `npm ci` | Set up deps. |
-| `check` | `check`→`knip`→`types-check`→`test:browser`→`gate-integrity.mjs`→`docs-drift.mjs` | **Mandatory gate**, before every commit. |
+| `check` | `check`→`knip`→`types-check`→`test:browser`→`gate-integrity.mjs`→`docs-drift.mjs` | **Mandatory gate**; runs at **push-to-master** (pre-push). `check-fast` (no browser) is the per-commit gate. |
 | `docs-drift` | `node scripts/check/docs-drift.mjs` | Spec↔code drift gate standalone (also a `check` step); `--write-adr-index` regenerates `docs/adr/INDEX.md`. |
 | `check-fast` | `npm run check:parallel` | Inner-loop only, never proof of done. |
 | `disk-clean` | caches, mutants artifacts, old nix generations, fstrim | Run when `disk-guard` warns. |
