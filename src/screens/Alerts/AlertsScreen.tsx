@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { BarChart3, Bot, Coins, TrendingDown, Trash2, Users, X, type LucideIcon } from "lucide-react";
+import { BarChart3, Bot, Coins, FileWarning, TrendingDown, Trash2, Users, X, type LucideIcon } from "lucide-react";
 
 import {
   createAlertRule,
@@ -57,6 +57,8 @@ type Preset = {
 const PRESETS: readonly Preset[] = [
   { key: "profit_warning", label: "Profit warning", triggerType: "signal_category", signalCategory: "profit_warning", icon: TrendingDown },
   { key: "insider", label: "Insider transactions", triggerType: "signal_category", signalCategory: "insider_transaction", icon: Users },
+  { key: "auditor_opinion", label: "Auditor opinion", triggerType: "signal_category", signalCategory: "auditor_opinion", icon: FileWarning },
+  { key: "short_position", label: "Short position", triggerType: "signal_category", signalCategory: "short_position_change", icon: TrendingDown },
   { key: "week52_low", label: "52-week low", triggerType: "price_week52_low", signalCategory: null, icon: BarChart3 },
   { key: "price_range", label: "Price range", triggerType: "price_enters_range", signalCategory: null, icon: Coins },
   { key: "autopilot", label: "Autopilot finished", triggerType: "autopilot_run_completed", signalCategory: null, icon: Bot },
@@ -79,7 +81,11 @@ function priceText(value: number | null): string {
 function triggerIcon(triggerType: TriggerType, signalCategory: string | null): IconComponent {
   switch (triggerType) {
     case "signal_category":
-      return signalCategory === "insider_transaction" ? Users : TrendingDown;
+      return signalCategory === "insider_transaction"
+        ? Users
+        : signalCategory === "auditor_opinion"
+          ? FileWarning
+          : TrendingDown; // profit_warning + short_position_change share the glyph
     case "price_enters_range":
       return Coins;
     case "price_week52_low":
@@ -271,7 +277,11 @@ export function AlertsScreen() {
           ? text("Insider transactions")
           : rule.signalCategory === "profit_warning"
             ? text("Profit warning")
-            : `${text("Signal")}: ${rule.signalCategory ?? ""}`;
+            : rule.signalCategory === "auditor_opinion"
+              ? text("Auditor opinion")
+              : rule.signalCategory === "short_position_change"
+                ? text("Short position")
+                : `${text("Signal")}: ${rule.signalCategory ?? ""}`;
       case "autopilot_run_completed":
         return text("Autopilot finished");
       case "price_enters_range":
@@ -359,7 +369,11 @@ export function AlertsScreen() {
       case "signal_category":
         return preset.signalCategory === "insider_transaction"
           ? text("insider transactions")
-          : text("a profit warning");
+          : preset.signalCategory === "auditor_opinion"
+            ? text("an auditor opinion")
+            : preset.signalCategory === "short_position_change"
+              ? text("a short position change")
+              : text("a profit warning");
       case "price_week52_low":
         return text("a 52-week low");
       case "autopilot_run_completed":

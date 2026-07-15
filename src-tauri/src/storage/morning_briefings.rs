@@ -658,7 +658,7 @@ mod tests {
     fn attention(id: &str, company: &str, fired: &str, dismissed: bool) -> AttentionEvent {
         AttentionEvent {
             id: id.to_owned(),
-            rule_id: "rule_1".to_owned(),
+            rule_id: Some("rule_1".to_owned()),
             trigger_type: "signal_category".to_owned(),
             company_id: company.to_owned(),
             evidence_type: "company_signal".to_owned(),

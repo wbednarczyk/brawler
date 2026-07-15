@@ -1,0 +1,24 @@
+---
+source: src/source_adapters/newconnect_company_directory.rs
+expression: entries
+---
+[
+    CompanyDirectoryEntry {
+        exchange: "NC",
+        ticker: "4MB",
+        qualified_ticker: "NC:4MB",
+        display_name: "4MOBILITY SPÓŁKA AKCYJNA",
+        isin: "PLESLTN00010",
+        source_url: "https://newconnect.pl/spolka?isin=PLESLTN00010",
+        sector: None,
+    },
+    CompanyDirectoryEntry {
+        exchange: "NC",
+        ticker: "7FT",
+        qualified_ticker: "NC:7FT",
+        display_name: "7FIT SPÓŁKA AKCYJNA",
+        isin: "PL7LVLS00017",
+        source_url: "https://newconnect.pl/spolka?isin=PL7LVLS00017",
+        sector: None,
+    },
+]

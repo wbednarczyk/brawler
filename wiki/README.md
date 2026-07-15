@@ -55,6 +55,10 @@ per feature.
   set up alert rules over signals, autopilot runs, and price conditions; read
   the daily "what changed + what needs doing" briefing at the top of Today; and
   find fired alerts as pop-ups and in the Today attention list.
+- **[Source reliability & disclosure signals](source-reliability-and-disclosure-signals.md)** —
+  the ESPI witness that audits your official-report feed and warns when the
+  primary source missed a disclosure; the KNF short-selling register as a
+  signal + dashboard panel; and the auditor-opinion red-flag signal.
 - **[The MCP server](mcp-server.md)** — let an AI assistant (Claude Code,
   Claude Desktop, …) read your research through a small, read-only, localhost-
   only connector: enable it, generate a token, and connect over HTTP or the

@@ -54,6 +54,37 @@ pub fn list_diagnostic_events(
         .map_err(|error| error.to_string())
 }
 
+#[derive(Debug, Deserialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/", optional_fields)
+)]
+#[serde(rename_all = "camelCase")]
+pub struct ListSourceReconciliationInput {
+    limit: Option<i64>,
+}
+
+/// Developer diagnostics: the recent source-reconciliation ledger (ADR 0069 D2,
+/// plan v0.55 T3), newest disclosure first. The witness/primary agreement per
+/// disclosure — `matched | espi_only | bankier_only`.
+#[tauri::command]
+pub fn list_source_reconciliation(
+    input: Option<ListSourceReconciliationInput>,
+    state: tauri::State<'_, app_state::AppState>,
+) -> Result<Vec<storage::ReconciliationResult>, String> {
+    ensure_developer_mode_enabled(&state)?;
+
+    let limit = input
+        .and_then(|input| input.limit)
+        .unwrap_or(DEFAULT_DIAGNOSTIC_EVENT_LIMIT);
+
+    state
+        .reconciliation()
+        .list_source_reconciliation(limit)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command]
 pub fn clear_diagnostic_events(
     state: tauri::State<'_, app_state::AppState>,

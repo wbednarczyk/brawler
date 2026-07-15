@@ -2,7 +2,7 @@ import { CheckCircle2, ChevronDown, ExternalLink, Plus, RefreshCw } from "lucide
 import type { CompanyRegistryEntry, SourceAdapter, SourceRefreshTrigger, UnmatchedSourceItem } from "../../api/types";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { useLocale } from "../../shared/locale";
-import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, SearchField, StatusPill } from "../../ui";
+import { ActionRow, Button, ChipList, DenseRow, ErrorText, InfoGrid, SearchField, StatusChip, StatusPill } from "../../ui";
 import {
   formatSourceHealth,
   formatSourceLastResult,
@@ -94,6 +94,11 @@ export function SourceAdapterRow({
               title={adapter.enabled ? text("Enabled") : text("Disabled")}
             />
             <h2>{adapter.displayName}</h2>
+            {/* Witness role (ADR 0069 D2, plan v0.55 T3): a health mechanism, not a
+                feed — it reconciles its listings against the primary source. */}
+            {adapter.role === "witness" ? (
+              <StatusChip tone="accent">{text("Witness")}</StatusChip>
+            ) : null}
           </div>
           <p>{text(formatSourceSubtitle(adapter))}</p>
           <ChipList ariaLabel={`${text("Markets for")} ${adapter.displayName}`}>

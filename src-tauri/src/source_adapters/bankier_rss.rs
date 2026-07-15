@@ -82,6 +82,35 @@ pub fn fetch_rss_items(
     fetch_channel_rss_items(MARKET_CHANNEL, fetcher)
 }
 
+/// Refresh-level [`Fetcher`](crate::jobs::source_refresh::Fetcher) impl for the
+/// Bankier market RSS adapter (ADR 0069, plan v0.55 T1). Behavior-preserving lift
+/// of the former `refresh_bankier_rss_for_trigger` fn-pointer arm — the internal
+/// [`BankierRssFetcher`] HTTP trait is unchanged.
+pub struct BankierRssRefresh;
+
+impl crate::jobs::source_refresh::Fetcher for BankierRssRefresh {
+    fn refresh(
+        &self,
+        state: &crate::app_state::AppState,
+        ctx: &crate::jobs::source_refresh::RefreshContext,
+    ) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+        let _ = state.record_source_adapter_attempt(ADAPTER_ID, ctx.trigger);
+        let bankier_items = match fetch_rss_items(&HttpBankierRssFetcher) {
+            Ok(items) => items,
+            Err(error) => {
+                let message = error.to_string();
+                let _ = state.record_source_adapter_error(ADAPTER_ID, &message);
+                return Err(message);
+            }
+        };
+
+        state
+            .ingest_bankier_rss_items(&bankier_items)
+            .map(crate::jobs::source_refresh::RefreshOutcome::Ingestion)
+            .map_err(|error| error.to_string())
+    }
+}
+
 pub fn fetch_channel_rss_items(
     channel: BankierRssChannel,
     fetcher: &impl BankierRssFetcher,

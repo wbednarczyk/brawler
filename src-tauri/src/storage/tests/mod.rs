@@ -39,6 +39,7 @@ mod research_reminders;
 mod schema;
 mod search;
 mod settings;
+mod short_positions;
 mod signals;
 mod source_registry;
 mod t7_cbf_corpus;

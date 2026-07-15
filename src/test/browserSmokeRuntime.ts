@@ -211,6 +211,69 @@ const companyEvents: CompanyEvent[] = companies.slice(0, 4).map((entry, index) =
   updatedAt: "2026-06-05T09:00:00Z",
 }));
 
+// KNF short-selling register (v0.55 T4b). CD PROJEKT carries active positions +
+// change history (populated panel); ORLEN carries only a remembered exit (the
+// common empty state). Dates sit inside the mock's 30-day window (SAMPLE_NOW =
+// 2026-06-08) so the "changed" chip + non-zero delta render.
+const shortPositions = [
+  {
+    companyId: "company_gpw_cdr",
+    holderName: "Qube Research & Technologies Ltd",
+    netPositionPct: 1.81,
+    positionDate: "2026-06-01",
+    exitedAt: null as string | null,
+  },
+  {
+    companyId: "company_gpw_cdr",
+    holderName: "Marshall Wace LLP",
+    netPositionPct: 0.59,
+    positionDate: "2026-04-15",
+    exitedAt: null as string | null,
+  },
+  {
+    companyId: "company_gpw_pkn",
+    holderName: "Point72 Asset Management",
+    netPositionPct: 0.62,
+    positionDate: "2024-11-03",
+    exitedAt: "2024-11-03T06:30:00Z" as string | null,
+  },
+];
+
+const shortPositionEvents = [
+  {
+    companyId: "company_gpw_cdr",
+    kind: "increased" as const,
+    holderName: "Qube Research & Technologies Ltd",
+    fromPct: 1.49,
+    toPct: 1.81,
+    positionDate: "2026-06-01",
+  },
+  {
+    companyId: "company_gpw_cdr",
+    kind: "entered" as const,
+    holderName: "Qube Research & Technologies Ltd",
+    fromPct: null as number | null,
+    toPct: 1.49,
+    positionDate: "2026-05-20",
+  },
+  {
+    companyId: "company_gpw_cdr",
+    kind: "exited" as const,
+    holderName: "AQR Capital Management",
+    fromPct: 0.55,
+    toPct: null as number | null,
+    positionDate: "2026-05-12",
+  },
+  {
+    companyId: "company_gpw_cdr",
+    kind: "entered" as const,
+    holderName: "Marshall Wace LLP",
+    fromPct: null as number | null,
+    toPct: 0.59,
+    positionDate: "2026-04-15",
+  },
+];
+
 const settings: UserSettings = {
   theme: "dark",
   locale: "en",
@@ -480,6 +543,7 @@ function sourceAdapter(
     sourceType,
     fetchMode: "public_page",
     visibility,
+    role: "primary",
     userConfigurable: visibility === "optional",
     healthStatus: enabled ? "healthy" : "off",
     enabled,
@@ -719,6 +783,8 @@ function seedBrowserStore(data: ScenarioData) {
   data.reportDocuments = structuredClone(reportDocuments);
   data.autopilotRuns = structuredClone(autopilotRuns);
   data.kpiExtractionJobs = [structuredClone(seedExtractionJob("doc_cdr_q3_2025"))];
+  data.shortPositions = structuredClone(shortPositions);
+  data.shortPositionEvents = structuredClone(shortPositionEvents);
   data.irResolutions = [
     {
       document: null,

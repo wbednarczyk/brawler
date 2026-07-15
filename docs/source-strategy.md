@@ -26,7 +26,7 @@ V1 source priority:
 
 ## GPW ESPI/EBI Adapter
 
-> **Update (2026-07-03, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)):** this adapter — disabled since migration 0011 in favor of the Bankier per-company path — returns as a **reconciliation second witness**: items are matched to Bankier-sourced reports by (company, disclosure date, report type/number); mismatches surface in diagnostics and a source-health signal. Bankier stays the primary ingestion path; promotion to co-primary is a later, evidence-gated decision. This closes the Bankier single-point-of-failure and the long-open reconciliation question.
+> **Live as witness (`v0.55.0`, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) D2 as amended 2026-07-15):** this adapter — disabled since migration 0011 in favor of the Bankier per-company path — runs as a **reconciliation second witness** (`role: witness`, visibility `optional`, re-enabled by migration 0081): listings are matched to Bankier-sourced reports by exact ESPI report number first, then (company, disclosure date) fallback; pair results (`matched | bankier_only | espi_only`) persist in `source_reconciliation_results`. It **never ingests feed items** (no dual ingestion — guarded by test). An `espi_only` result on a tracked company raises a system attention event (toast + Today + morning briefing); the full ledger lives in Diagnostics ("Uzgadnianie źródeł"). Bankier stays the primary ingestion path; promotion to co-primary is a later, evidence-gated decision. This closes the Bankier single-point-of-failure and the long-open reconciliation question — and yields the first measured completeness data (first live run: 15 witness items, 5 matched, 0 espi_only).
 
 Adapter ID: `gpw-espi-ebi`
 
@@ -445,7 +445,7 @@ Authenticated sources must never become a generic "log in and scrape any website
 
 ## KNF Short-Selling Registry
 
-Planned (`v0.55.0`, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)): the KNF public register of net short positions becomes a `disclosure`-type adapter — per-company short-position entries (holder, size, date) with history, surfaced as a `short_position_change` typed signal and a company-workspace readout. Official public source; conservative daily polling; standard attribution rules.
+**Live (`v0.55.0`, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)).** Adapter ID: `knf-short-selling`, `disclosure`-type, visibility `optional`, daily polling. Data path: the register's stable public JSON endpoint (`POST /rss_pub/JSON`, current-register method) — no HTML scraping; holder names HTML-entity-decoded. Per-company net-short entries (holder, size %, dates) are mirrored in `short_positions` with an append-only `short_position_events` history (entered / increased / decreased / exited); each change for a tracked company (ISIN-matched) emits one feed item plus a `short_position_change` typed signal that participates in alert rules. An empty register response is rejected at the refresh seam (a transient fault must not read as a mass exit). Register threshold: positions ≥ 0.5%. Dashboard panel: cockpit `shortPositions` (palette). Standard attribution ("KNF — Rejestr krótkiej sprzedaży").
 
 ## Ownership Structure Sources
 

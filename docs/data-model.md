@@ -87,6 +87,7 @@ Fields:
 - `fetch_mode`
 - `enabled`
 - UI-facing visibility tier derived from source metadata: `required`, `optional`, or `developer`
+- `role` derived from source metadata: `primary` (ingests into the feed) or `witness` (reconciles against the primary, never ingests — [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) decision 2). `gpw-espi-ebi` is the sole `witness` (v0.55 T3).
 - user-configurable flag derived from visibility and implementation status
 - `default_poll_interval_seconds`
 - `last_attempt_at` via `source_adapter_state`
@@ -328,10 +329,58 @@ Fields:
 
 Rules:
 
-- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `own_shares` (own-share/treasury transactions, purchases and sales; generalized from `buyback` in migration 0044), `guidance_change`, `general_meeting`, `other`.
+- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `own_shares` (own-share/treasury transactions, purchases and sales; generalized from `buyback` in migration 0044), `guidance_change`, `general_meeting`, `auditor_opinion` (auditor red flags — qualified opinion / disclaimer / negative opinion / going-concern emphasis; migration 0079, ADR 0069), `short_position_change` (KNF short-selling register changes; migration 0080, ADR 0069 — emitted directly by the KNF adapter, empty patterns), `other`.
 - `rule_definition_json` is consumed by the interpretation-layer `RuleClassifier` ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)). Shape: `{ "patterns": [..], "confidence": 0.0..1.0 }`, where any case-insensitive substring match against the filing text selects the category. An empty `patterns` list never rule-matches — `other` carries no patterns and is reachable only via the AI fallback.
 - `derives_event = 1` marks categories that materialize a derived `company_events` row when the filing carries a future date. Only `dividend` and `general_meeting` derive events (ADR 0034); all other seed categories are `derives_event = 0`.
 - The registry is source-neutral so a future GPW re-enable feeds the same classifier.
+
+### Short Positions (KNF)
+
+Mirrors the KNF public national register of net short positions for tracked GPW companies and keeps an append-only change history. Fed by the `knf-short-selling` disclosure adapter (migration 0080, [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) decision 3). The adapter is wired into the registry (`SourceAdapterDescriptor`, visibility `optional`) and the refresh dispatch (`Fetcher` trait); an empty register snapshot is rejected at the refresh seam rather than diffed (it would read as a mass exit).
+
+`short_positions` (current-state mirror, one row per holder-in-issuer):
+
+- `id`
+- `company_id` (canonical company; matched by ISIN)
+- `holder_name` (HTML entities decoded)
+- `isin`
+- `net_position_pct`
+- `position_date`
+- `modify_date`
+- `exited_at` (NULL = currently in the register at ≥ 0.5%; non-NULL = dropped below the register threshold)
+- `created_at` / `updated_at`
+- `UNIQUE(company_id, holder_name)`
+
+`short_position_events` (append-only history, one row per detected change):
+
+- `id`
+- `company_id`
+- `holder_name`
+- `kind` — `entered` | `increased` | `decreased` | `exited`
+- `from_pct` / `to_pct` (nullable; `from_pct` null on entry, `to_pct` null on exit)
+- `position_date`
+- `created_at`
+
+Rules:
+
+- Entries are matched to companies by ISIN; unmatched issuers are **skipped**, never auto-created.
+- Diffing is idempotent: re-ingesting the same register snapshot detects zero changes and produces no new events, feed items, or signals.
+- Each detected change writes one `feed_items` row (`Official report` type, `knf-short-selling` adapter) and one `confirmed` `short_position_change` `company_signals` row, firing matching `signal_category` alert rules ([ADR 0068](adr/0068-attention-routing.md)) on the same path as the ESPI classifier.
+- Exit detection treats the current register as complete for positions ≥ 0.5%: a stored live position whose holder is absent from a fresh snapshot is marked `exited`.
+
+**Read model** (`v0.55` T4b): `short_positions_view(company_id)` composes the cockpit panel view (contract in [Contracts § Short Positions (KNF)](contracts.md#short-positions-knf)) — never a stored projection. Active positions (aggregate = sum of active `net_position_pct`), the change history newest-first by `position_date`, the most recent remembered exit, and `delta_30d_pp` = the **signed sum of in-window event deltas** (entered `+to`, increased/decreased `to−from`, exited `−from`). The signed-delta sum is used because a clean "aggregate 30 days ago" is not reconstructable from the current mirror alone (only the latest per-holder value is stored); it equals `aggregate_now − aggregate_30d_ago` since the ingester writes exactly one event per detected change. The 30-day window is anchored to the read's UTC date.
+
+### Source Reconciliation (ESPI/EBI witness)
+
+The persisted GPW ESPI/EBI witness ↔ Bankier agreement ledger ([ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) decision 2, plan v0.55 T3). Migration `0081_espi_witness_reconciliation.sql`. The `gpw-espi-ebi` adapter runs as a **witness** (`role = witness`): it fetches the official ESPI/EBI listing and reconciles it against Bankier-sourced reports **without ever ingesting feed items** (no dual ingestion).
+
+`source_reconciliation_results` — `(id, witness_adapter_id, company_id?, report_number?, report_type?, disclosure_date, witness_title, witness_url?, status, primary_feed_item_id?, created_at, updated_at)`.
+
+- `status` ∈ `matched` | `espi_only` | `bankier_only` (CHECK). `matched` — a witness item a Bankier report also carries (`primary_feed_item_id` links it); `espi_only` — a witness item the primary channel missed; `bankier_only` — a Bankier report inside the window with no witness match.
+- `company_id` is nullable and resolved by ISIN; untracked issuers are skipped.
+- `id` is a **deterministic, status-independent** key (from witness_adapter + company + disclosure_date + report identity), so a re-reconciled pair UPSERTs in place — idempotent, and its status can flip (`espi_only → matched`) once the primary catches up.
+- Matching is tolerant: exact ESPI report-number match (`N/YYYY`, e.g. Bankier "RB 15/2026") first, then a `(company, disclosure date)` fallback. Window = `[earliest witness disclosure date, now]` (default 7-day lookback when the listing is empty).
+- An `espi_only` result for a tracked company raises a **system** `attention_events` row (`trigger_type = source_reconciliation`, `evidence_ref = result id`), surfaced through the v0.54 attention routing (Today stream + toast + morning briefing). The full ledger is developer-diagnostics only (`list_source_reconciliation`).
 
 ### Transcript Jobs
 
@@ -685,10 +734,11 @@ User-owned alert rules and the attention events their evaluation emits ([ADR 006
 - `enabled = 0` rules never fire.
 - **Rule ids are content-derived** (`alert_<trigger>_<scope>…`, count-suffixed on base collision — the repo's collision-safe id convention), never row-count-based (a deleted rule must not free an id a survivor still holds — live regression 2026-07-15). Creating a rule identical to an existing one (same trigger + scope + prices) is rejected with the typed `DuplicateAlertRule` error, never inserted as a twin.
 
-`attention_events` — `(id, rule_id, company_id, evidence_type, evidence_ref, fired_at, seen, dismissed, created_at)`, `UNIQUE(rule_id, evidence_type, evidence_ref)`.
+`attention_events` — `(id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at, seen, dismissed, created_at)`, `UNIQUE(rule_id, evidence_type, evidence_ref)`. Migration `0081_espi_witness_reconciliation.sql` made `rule_id` **nullable** and added `trigger_type` to support **system** events (no owning rule).
 
-- `evidence_type` is `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote `date`). Every event links back to the evidence that raised it.
-- **Dedup**: at most one event per `(rule, evidence_type, evidence_ref)` — re-running evaluation over the same evidence is a no-op (`INSERT … ON CONFLICT DO NOTHING`), so no re-fire on re-ingest.
+- `rule_id` is `NULL` for a **system** event; then `trigger_type` on the row carries the trigger directly. For a rule-backed event `trigger_type` is `NULL` and the read model derives it from the joined rule (`COALESCE`). System trigger: `source_reconciliation` (an `espi_only` reconciliation result — [ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) D2, not user-creatable).
+- `evidence_type` is `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote `date`) | `source_reconciliation` (ref = `source_reconciliation_results.id`). Every event links back to the evidence that raised it.
+- **Dedup**: rule events — at most one per `(rule, evidence_type, evidence_ref)` (`ON CONFLICT DO NOTHING`). System events (`rule_id IS NULL`) — a partial `UNIQUE(trigger_type, evidence_type, evidence_ref) WHERE rule_id IS NULL` index dedups them (the reconciliation-record id is a stable `evidence_ref`, so a re-run never re-fires). System events carry **no** per-rule daily throttle.
 - **Per-rule daily throttle**: at most **1 event per rule per domain day**. `fired_at` carries the evidence's **domain** date (signal/quote date; `now()` for autopilot), never wall-clock ingestion time, so dedup and throttle are deterministic.
 - Evaluation is **inline** in the evidence-producing job stages (signal classification, autopilot `finalize_notify`, post-daily-pull price check) — no new worker lane; a handful of indexed reads. `price_week52_low` fires only on a **strict new low** vs the trailing 52-week window (by `date`); `enters_range` fires when the latest close is inside `[min, max]`.
 - Rows CASCADE-delete with their rule and company; reads of an absent event tolerate it (nothing to show).

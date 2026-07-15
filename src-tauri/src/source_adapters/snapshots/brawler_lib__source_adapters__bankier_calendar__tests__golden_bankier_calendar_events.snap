@@ -1,0 +1,28 @@
+---
+source: src/source_adapters/bankier_calendar.rs
+expression: events
+---
+[
+    BankierCalendarEventItem {
+        ticker: "DIAG",
+        event_type: "dividend",
+        title: "DIAG: Dzień ustalenia prawa do dywidendy 4,40 zł na akcję.",
+        description: "Dzień ustalenia prawa do dywidendy 4,40 zł na akcję.",
+        category: "Dywidendy",
+        link: "https://www.bankier.pl/gielda/notowania/akcje/DIAG/kalendarium",
+        event_date: "2026-06-01",
+        fetched_at: "2026-06-01T10:00:00Z",
+        source_event_key: "bankier-kalendarium-html:diag:dywidendy:dzien-ustalenia-prawa-do-dywidendy-4-40-zl-na-akcje",
+    },
+    BankierCalendarEventItem {
+        ticker: "HILANDER",
+        event_type: "shareholder_meeting",
+        title: "HILANDER: Zwyczajne walne zgromadzenie akcjonariuszy.",
+        description: "Zwyczajne walne zgromadzenie akcjonariuszy.",
+        category: "WZA",
+        link: "https://www.bankier.pl/gielda/notowania/akcje/HILANDER/kalendarium",
+        event_date: "2026-06-01",
+        fetched_at: "2026-06-01T10:00:00Z",
+        source_event_key: "bankier-kalendarium-html:hilander:wza:zwyczajne-walne-zgromadzenie-akcjonariuszy",
+    },
+]

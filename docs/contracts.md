@@ -148,8 +148,9 @@ Each source adapter must expose metadata and a fetch operation.
 
 Commands:
 
-- `list_source_adapters(input?)`: returns adapter metadata/status rows above. `input` is `{ includeDeveloperOnly? }`; normal callers omit it and get only `required`/`optional` adapters, per the `visibility` rule below.
+- `list_source_adapters(input?)`: returns adapter metadata/status rows above. `input` is `{ includeDeveloperOnly? }`; normal callers omit it and get only `required`/`optional` adapters, per the `visibility` rule below. Each row carries a `role` (`primary` | `witness`) — a `witness` source reconciles against the primary instead of ingesting into the feed (ADR 0069 D2).
 - `set_source_adapter_enabled(input)`: `{ adapterId, enabled }` → toggles a `userConfigurable` adapter and returns its updated metadata row.
+- `list_source_reconciliation(input?)` (developer-mode only): recent GPW ESPI/EBI witness ↔ Bankier reconciliation results, newest disclosure first. `input` is `{ limit? }` (default 200). Each `ReconciliationResult` row is `{ id, witnessAdapterId, companyId?, qualifiedTicker?, reportNumber?, reportType?, disclosureDate, witnessTitle, witnessUrl?, status, primaryFeedItemId?, createdAt, updatedAt }` where `status` ∈ `matched | espi_only | bankier_only` (ADR 0069 D2, plan v0.55 T3). An `espi_only` result for a tracked company also raises a system attention event (`triggerType: "source_reconciliation"`); the witness never ingests feed items.
 
 Fetch input:
 
@@ -659,6 +660,35 @@ Rules (field-level storage rules canonical in [Data Model § Report Expectations
 
 Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `create_report_expectation`, `update_report_expectation`, `list_report_expectations`, `expectation_review`, `record_expectation_resolution`. Failure codes: `invalid_input` (bad comparator/value, empty stance, non-positive fiscal year), `not_found` (unknown company/occurrence), `conflict` (editing a frozen expectation, duplicate occurrence).
 
+## Short Positions (KNF)
+
+Per-company read model for the KNF short-selling register ([ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md) decision 3, `v0.55`). Read-only: the register is populated by the daily `knf-short-selling` adapter; storage rules are canonical in [Data Model § Short Positions (KNF)](data-model.md#short-positions-knf).
+
+`list_short_positions(input)` (`input` = `{ companyId }`) returns the cockpit view:
+
+```json
+{
+  "positions": [
+    { "holderName": "Qube Research & Technologies Ltd", "netPositionPct": 1.81, "positionDate": "2026-07-10", "recentlyChanged": true }
+  ],
+  "events": [
+    { "kind": "increased", "holderName": "Qube Research & Technologies Ltd", "fromPct": 1.49, "toPct": 1.81, "positionDate": "2026-07-10" }
+  ],
+  "lastExit": { "holderName": "Point72 Asset Management", "exitedOn": "2024-11-03" },
+  "aggregatePct": 2.40,
+  "delta30dPp": 0.32,
+  "registerUpdatedAt": "2026-07-15T06:30:00Z"
+}
+```
+
+- `positions` are the active mirror rows (`exited_at IS NULL`), largest first; `recentlyChanged` flags a holder with a register change dated within the last 30 days (the "changed" chip).
+- `events` is the change history, newest-first by the **domain** `positionDate` (never `createdAt`), capped at 50; `kind` ∈ `entered | increased | decreased | exited`.
+- `registerUpdatedAt` mirrors `source_adapters.last_success_at` for `knf-short-selling` (the attribution line's "aktualizacja"); `null` until the first successful pull.
+- `lastExit` is the most recent remembered exit (empty-state "Ostatnia obecność"), or null.
+- `aggregatePct` is the sum of active `netPositionPct`. `delta30dPp` is the 30-day change in percentage points, defined as the signed sum of in-window event deltas (entered `+to`, increased/decreased `to−from`, exited `−from`) — equal to `aggregate_now − aggregate_30d_ago` because the ingester writes one event per detected change (a clean "aggregate 30 days ago" is not derivable from the current mirror alone).
+
+Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `list_short_positions`. A company with no register presence reads back the empty view (`positions: []`, `lastExit: null`, zero aggregate/delta). Surfaced by the palette-only `shortPositions` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+
 ## Research Cockpit
 
 The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockview docking shell. The only persisted state is **named saved layouts** (`cockpit_layouts`); the panel arrangement itself is live UI state. Decision 3A: layouts live in SQLite (not `localStorage`), with versioned dockview geometry and a safe fallback.
@@ -952,6 +982,7 @@ Signal categories (seeded registry, extensible as data):
 - `own_shares`
 - `guidance_change`
 - `general_meeting` (carries a meeting date)
+- `auditor_opinion` (auditor red flags: qualified opinion / disclaimer / negative opinion / going-concern emphasis)
 - `other`
 
 Statuses:

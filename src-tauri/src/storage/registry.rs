@@ -151,6 +151,9 @@ pub(super) fn list_source_adapters(
             source_type: row.get(2)?,
             fetch_mode: row.get(3)?,
             visibility: visibility.as_str().to_owned(),
+            role: descriptor
+                .map(|adapter| adapter.role.as_str().to_owned())
+                .unwrap_or_else(|| "primary".to_owned()),
             user_configurable: visibility.user_configurable(),
             health_status: source_health_status(
                 enabled,

@@ -23,6 +23,10 @@ export function attentionEventBadgeText(event: AttentionEvent, text: Translate):
       return text("Price range");
     case "price_week52_low":
       return text("52-week low");
+    case "source_reconciliation":
+      // System event (no user rule): the primary channel missed an official
+      // report the ESPI/EBI witness saw (ADR 0069 D2).
+      return text("Reconciliation");
     default:
       return event.triggerType;
   }
@@ -45,6 +49,8 @@ export function attentionEventTitleText(
         : text("Price range");
     case "price_week52_low":
       return text("52-week low");
+    case "source_reconciliation":
+      return text("Official report missed by the primary source");
     default:
       return event.triggerType;
   }

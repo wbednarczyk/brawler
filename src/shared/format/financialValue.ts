@@ -46,8 +46,33 @@ export function groupFormat(value: number, locale: LocaleCode, maximumFractionDi
     .format(value)
     // Normalize non-breaking / narrow-no-break grouping spaces to plain spaces
     // so display and tests are consistent across ICU versions.
-    // eslint-disable-next-line no-irregular-whitespace -- the U+00A0/U+202F chars in this class are the intentional normalization targets
-    .replace(/[  ]/g, " ");
+    .replace(/[\u00a0\u202f]/g, " ");
+}
+
+/**
+ * Locale-aware decimal with a FIXED number of fraction digits (comma in pl, dot
+ * in en). Unlike `groupFormat` (min 0 digits) this keeps trailing zeros, so
+ * `2.4 → "2,40"` — needed where the second decimal is meaningful (KNF net short
+ * positions, e.g. `0.53%` vs a rounded `0.5%`).
+ */
+export function formatFixedDecimal(value: number, locale: LocaleCode, digits = 2): string {
+  if (!Number.isFinite(value)) return String(value);
+  // Normalize negative zero (and values rounding to it, e.g. -0.001 at 2 digits)
+  // so the UI never shows "-0,00" (surfaced live on the shortPositions panel).
+  const rounded = Number(value.toFixed(digits));
+  const normalized = Object.is(rounded, -0) || rounded === 0 ? 0 : value;
+  return new Intl.NumberFormat(localeTag(locale), {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  })
+    .format(normalized)
+    // Normalize NBSP / narrow-NBSP grouping separators to plain spaces.
+    .replace(/[\u00a0\u202f]/g, " ");
+}
+
+/** Fixed-precision percent (default 2 places), no space before `%` (KNF style). */
+export function formatFixedPercent(value: number, locale: LocaleCode, digits = 2): string {
+  return `${formatFixedDecimal(value, locale, digits)}%`;
 }
 
 // Suffix that applies to the as-reported figure: currency for monetary/per-share,

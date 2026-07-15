@@ -125,6 +125,60 @@ pub fn fetch_report_listings(
     Ok(parse_report_listings(&html, &fetched_at)?)
 }
 
+/// Refresh-level [`Fetcher`](crate::jobs::source_refresh::Fetcher) impl for the
+/// GPW ESPI/EBI **witness** (ADR 0069 decision 2, plan v0.55 T3). It fetches the
+/// official ESPI/EBI listing and RECONCILES it against Bankier-sourced reports —
+/// it NEVER ingests into the feed (no dual ingestion). The persisted pair ledger
+/// and the `espi_only` attention event live in `storage::reconciliation`.
+pub struct GpwEspiEbiWitness;
+
+impl crate::jobs::source_refresh::Fetcher for GpwEspiEbiWitness {
+    fn refresh(
+        &self,
+        state: &crate::app_state::AppState,
+        ctx: &crate::jobs::source_refresh::RefreshContext,
+    ) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+        refresh_witness_with(&HttpGpwPageFetcher, state, ctx)
+    }
+}
+
+/// The witness refresh body with an injectable listing fetcher (testable seam).
+/// Reconciliation matches by listing metadata only (company/date/report number),
+/// so no per-report detail fetch is needed here.
+pub(crate) fn refresh_witness_with(
+    fetcher: &impl GpwPageFetcher,
+    state: &crate::app_state::AppState,
+    ctx: &crate::jobs::source_refresh::RefreshContext,
+) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+    let _ = state.record_source_adapter_attempt(ADAPTER_ID, ctx.trigger);
+    let listings = match fetch_report_listings(fetcher) {
+        Ok(listings) => listings,
+        Err(error) => {
+            let message = error.to_string();
+            let _ = state.record_source_adapter_error(ADAPTER_ID, &message);
+            return Err(message);
+        }
+    };
+
+    // Guard: an empty official listing is a transient fault or a page-structure
+    // change, never a real state — reconciling against it would fall back to a
+    // synthetic window and flag every Bankier report `bankier_only` (same class
+    // as the KNF empty-register guard).
+    if listings.is_empty() {
+        let message =
+            "GPW ESPI/EBI listing returned zero items; refusing to reconcile against an empty witness"
+                .to_owned();
+        let _ = state.record_source_adapter_error(ADAPTER_ID, &message);
+        return Err(message);
+    }
+
+    state
+        .reconciliation()
+        .reconcile_gpw_espi_witness(&listings)
+        .map(crate::jobs::source_refresh::RefreshOutcome::Ingestion)
+        .map_err(|error| error.to_string())
+}
+
 pub fn fetch_report_detail(
     fetcher: &impl GpwDetailPageFetcher,
     detail_url: &str,

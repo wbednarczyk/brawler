@@ -37,6 +37,7 @@ The taxonomy is a typed registry of categories with associated rule definitions,
 - `own_shares` — own-share / treasury-share transactions (purchases **and** sales; generalized from the original `buyback` category, which mis-typed own-share sales — migration 0044)
 - `guidance_change` — forecast/guidance changes
 - `general_meeting` — general-meeting convocations carrying a meeting date
+- `auditor_opinion` — auditor red flags: qualified opinion, disclaimer of opinion, negative opinion, going-concern emphasis (added in v0.55.0, migration 0079, [ADR 0069](0069-source-reliability-and-disclosure-signals.md))
 - `other` — official filing that classified to no specific category
 
 Each category records its matching rules and whether it derives a calendar event (see §4).

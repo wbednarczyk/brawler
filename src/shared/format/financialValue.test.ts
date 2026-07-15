@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatFinancialValue } from "./financialValue";
+import { formatFinancialValue, formatFixedDecimal, formatFixedPercent } from "./financialValue";
 
 describe("formatFinancialValue", () => {
   it("renders the as-reported figure with its scale word and currency", () => {
@@ -123,5 +123,17 @@ describe("formatFinancialValue", () => {
 
   it("falls back to the raw string when the base value is not numeric", () => {
     expect(formatFinancialValue({ valueNumeric: "n/a", valueKind: "monetary" })).toBe("n/a");
+  });
+});
+
+describe("formatFixedDecimal / formatFixedPercent", () => {
+  it("never renders negative zero (live harvest 2026-07-15, shortPositions panel)", () => {
+    expect(formatFixedPercent(-0, "pl")).toBe("0,00%");
+    expect(formatFixedPercent(-0.0004, "pl")).toBe("0,00%");
+    expect(formatFixedDecimal(-0, "en")).toBe("0.00");
+  });
+
+  it("keeps real negatives negative", () => {
+    expect(formatFixedPercent(-0.53, "pl")).toBe("-0,53%");
   });
 });

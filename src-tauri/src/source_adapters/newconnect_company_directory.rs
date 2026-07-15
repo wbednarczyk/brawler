@@ -83,6 +83,49 @@ pub fn parse_company_directory_page_html(
     parse_company_directory_html(html, EXCHANGE_CODE, BASE_URL).map_err(Into::into)
 }
 
+/// NewConnect company-directory adapter refresh (ADR 0069, plan v0.55 T2).
+/// Behavior-preserving lift of the former `RefreshBehavior::Directory` arm — a
+/// company-directory source, so it produces a `RefreshOutcome::Directory` and stays
+/// OUT of the full-refresh sweep (`joins_full_refresh` = false).
+pub struct NewConnectCompanyDirectoryRefresh;
+
+impl crate::jobs::source_refresh::Fetcher for NewConnectCompanyDirectoryRefresh {
+    fn refresh(
+        &self,
+        state: &crate::app_state::AppState,
+        ctx: &crate::jobs::source_refresh::RefreshContext,
+    ) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+        refresh_newconnect_company_directory_for_trigger(state, ctx.trigger)
+            .map(crate::jobs::source_refresh::RefreshOutcome::Directory)
+    }
+
+    fn joins_full_refresh(&self) -> bool {
+        false
+    }
+}
+
+pub fn refresh_newconnect_company_directory_for_trigger(
+    state: &crate::app_state::AppState,
+    trigger: &str,
+) -> Result<crate::storage::CompanyRegistryRefreshResult, String> {
+    let _ = state.record_source_adapter_attempt(ADAPTER_ID, trigger);
+
+    let fetcher = HttpNewConnectCompanyDirectoryFetcher;
+    let (entries, fetched_at) = match fetch_company_directory_entries(&fetcher) {
+        Ok(result) => result,
+        Err(error) => {
+            let message = error.to_string();
+            let _ = state.record_source_adapter_error(ADAPTER_ID, &message);
+
+            return Err(message);
+        }
+    };
+
+    state
+        .refresh_newconnect_company_directory(&entries, &fetched_at)
+        .map_err(|error| error.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,5 +146,16 @@ mod tests {
             "https://newconnect.pl/spolka?isin=PLESLTN00010"
         );
         assert_eq!(entries[1].qualified_ticker, "NC:7FT");
+    }
+
+    #[test]
+    fn golden_parsed_directory_entries() {
+        // Golden ingestion pin (ADR 0069 / plan v0.55 T2): the sample directory HTML
+        // must parse into a byte-stable set of entries across the Fetcher migration.
+        let entries = parse_company_directory_page_html(include_str!(
+            "../../samples/newconnect_company_directory.html"
+        ))
+        .expect("fixture should parse");
+        insta::assert_debug_snapshot!("golden_newconnect_company_directory_entries", entries);
     }
 }

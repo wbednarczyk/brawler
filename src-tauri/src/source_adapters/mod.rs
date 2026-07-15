@@ -5,6 +5,7 @@ pub mod company_directory;
 pub mod gpw_company_registry;
 pub mod gpw_espi_ebi;
 pub mod gpw_market_events;
+pub mod knf_short_selling;
 pub mod market_data_fetch;
 pub mod newconnect_company_directory;
 pub(crate) mod parsing;

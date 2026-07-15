@@ -762,6 +762,71 @@ fn extract_between<'a>(value: &'a str, prefix: &str, suffix: &str) -> Option<&'a
     Some(&value[start..end])
 }
 
+/// Bankier per-company adapter refresh (ADR 0069, plan v0.55 T2). Behavior-preserving
+/// lift of the former `RefreshBehavior::Feed(refresh_bankier_company_for_trigger)`
+/// arm — it is a *planner* (ADR 0059) that enqueues one per-company job, not an
+/// ingest itself, so its outcome is an empty ingestion result.
+pub struct BankierCompanyRefresh;
+
+impl crate::jobs::source_refresh::Fetcher for BankierCompanyRefresh {
+    fn refresh(
+        &self,
+        state: &crate::app_state::AppState,
+        ctx: &crate::jobs::source_refresh::RefreshContext,
+    ) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+        refresh_bankier_company_for_trigger(state, ctx.trigger)
+            .map(crate::jobs::source_refresh::RefreshOutcome::Ingestion)
+    }
+}
+
+/// Plan a bankier-company refresh: enqueue one idempotent `source_company_refresh`
+/// job per tracked company instead of looping every company in a single monolith
+/// job (ADR 0059). The former monolith (a ~100-company loop with a 1 s sleep each)
+/// monopolized the worker for minutes and starved autopilot; the per-company jobs
+/// are serialized by the per-source lock (politeness preserved), run alongside other
+/// lanes, and resume across restarts. Returns quickly with a summary — the per-company
+/// jobs do the actual fetch/ingest and each rides detection on its own completion.
+pub fn refresh_bankier_company_for_trigger(
+    state: &crate::app_state::AppState,
+    trigger: &str,
+) -> Result<crate::storage::SourceIngestionResult, String> {
+    use crate::jobs::source_refresh::{empty_source_result, SOURCE_COMPANY_REFRESH_KIND};
+
+    let adapter_id = ADAPTER_ID;
+    let _ = state.record_source_adapter_attempt(adapter_id, trigger);
+    let targets = state
+        .list_bankier_company_targets()
+        .map_err(|error| error.to_string())?;
+
+    let mut planned = 0usize;
+    for target in &targets {
+        let job_id = format!(
+            "{SOURCE_COMPANY_REFRESH_KIND}:{adapter_id}:{}",
+            target.company_id
+        );
+        let payload =
+            serde_json::json!({ "adapterId": adapter_id, "companyId": target.company_id })
+                .to_string();
+        // `reschedule` re-arms a stable per-company id: pending/terminal rows reset,
+        // an in-flight row is left alone — so a re-plan never disturbs a running job
+        // and never accumulates duplicate rows.
+        match state
+            .jobs()
+            .reschedule(&job_id, SOURCE_COMPANY_REFRESH_KIND, &payload, 3)
+        {
+            Ok(_) => planned += 1,
+            Err(error) => log::warn!(
+                "module=sources stage=plan_failed adapterId={adapter_id} companyId={} error={error}",
+                target.company_id
+            ),
+        }
+    }
+    log::info!(
+        "module=sources stage=planned adapterId={adapter_id} trigger={trigger} companiesPlanned={planned}"
+    );
+    Ok(empty_source_result(adapter_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -897,6 +962,15 @@ mod tests {
         assert_eq!(items[0].summary, "Komunikat ESPI/EBI");
         assert_eq!(items[0].body_text, None);
         assert!(!items[0].detail_fetch_attempted);
+    }
+
+    #[test]
+    fn golden_parsed_company_listing_items() {
+        // Golden ingestion pin (ADR 0069 / plan v0.55 T2): the sample listing JSON
+        // must parse into a byte-stable set of items across the Fetcher migration.
+        let items =
+            parse_company_listing_json(&target(), JSON, "2026-05-31T10:00:00Z").expect("JSON");
+        insta::assert_debug_snapshot!("golden_bankier_company_listing_items", items);
     }
 
     #[test]

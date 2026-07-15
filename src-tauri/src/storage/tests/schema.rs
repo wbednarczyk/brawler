@@ -183,7 +183,9 @@ fn seeds_default_settings_and_source_adapters() {
     assert_eq!(general_analysis_model, "gemini-3.5-flash");
     assert_eq!(developer_mode, "false");
     assert_eq!(log_level, "info");
-    assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), false));
+    // v0.55 T3 (ADR 0069 D2): migration 0081 re-enabled gpw-espi-ebi as the
+    // reconciliation witness (enabled = 1), reversing the 0011 disable.
+    assert_eq!(gpw_adapter, ("GPW ESPI/EBI".to_owned(), true));
     assert_eq!(registry_adapter_name, "GPW Company Registry");
     assert_eq!(
         newconnect_directory_adapter,
@@ -210,8 +212,9 @@ fn reports_database_status() {
     assert_eq!(status.applied_migrations, super::expected_migration_count());
     assert_eq!(status.companies, 0);
     // +2 market_data adapters seeded by 0071, -1 (twelvedata-eod) removed by
-    // 0076 (ADR 0082 amendment 2026-07-14: GPW is paid-plan-only there).
-    assert_eq!(status.source_adapters, 13);
+    // 0076 (ADR 0082 amendment 2026-07-14: GPW is paid-plan-only there),
+    // +1 knf-short-selling seeded by 0080 (v0.55 T4, ADR 0069 decision 3).
+    assert_eq!(status.source_adapters, 14);
     // +4 queue worker/concurrency settings seeded by migration 0056 (ADR 0059).
     assert_eq!(status.settings, 26);
 }

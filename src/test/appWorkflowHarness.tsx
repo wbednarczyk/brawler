@@ -88,6 +88,7 @@ export interface AppTestState {
   claimsToVerifyResponse: Data["claimsToVerify"];
   reportSeasonUpcomingResponse: Data["reportSeasonUpcoming"];
   attentionEventsResponse: Data["attentionEvents"];
+  reconciliationResultsResponse: Data["reconciliationResults"];
   alertRulesResponse: Data["alertRules"];
   morningBriefingResponse: Data["morningBriefing"];
   researchReviewCheckpointResponse: Data["researchReviewCheckpoints"][number] | null;
@@ -128,6 +129,7 @@ export const appTestState = Object.defineProperties(
     claimsToVerifyResponse: field("claimsToVerify"),
     reportSeasonUpcomingResponse: field("reportSeasonUpcoming"),
     attentionEventsResponse: field("attentionEvents"),
+    reconciliationResultsResponse: field("reconciliationResults"),
     alertRulesResponse: field("alertRules"),
     morningBriefingResponse: field("morningBriefing"),
     // Single-row views over collection stores.

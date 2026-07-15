@@ -25,11 +25,25 @@ fn lists_seeded_source_adapters() {
         .list_source_adapters()
         .expect("source adapters should list");
 
-    assert_eq!(adapters.len(), 7);
+    // 8 user-visible + gpw-espi-ebi, which v0.55 T3 (ADR 0069 D2) promoted from
+    // Developer to Optional so the reconciliation witness shows as a health
+    // mechanism on the normal-user Sources screen.
+    assert_eq!(adapters.len(), 9);
 
     assert!(adapters
         .iter()
         .all(|adapter| adapter.visibility != "developer"));
+
+    // The reconciliation witness: user-visible, enabled, and carries the witness
+    // role so the Sources UI renders it as a health mechanism, not a feed.
+    let witness = adapters
+        .iter()
+        .find(|adapter| adapter.id == "gpw-espi-ebi")
+        .expect("gpw-espi-ebi witness should be user-visible");
+    assert_eq!(witness.visibility, "optional");
+    assert_eq!(witness.role, "witness");
+    assert!(witness.enabled);
+    assert!(witness.user_configurable);
 
     // market_data EOD quote source (v0.53, ADR 0082 as amended 2026-07-14:
     // the twelvedata-eod fallback was removed — GPW is paid-plan-only there).
@@ -44,11 +58,23 @@ fn lists_seeded_source_adapters() {
     assert!(yahoo_eod.enabled);
     assert_eq!(yahoo_eod.visibility, "optional");
 
+    // disclosure source: KNF short-selling register (v0.55, ADR 0069 decision 3).
+    let knf_shorts = adapters
+        .iter()
+        .find(|adapter| adapter.id == "knf-short-selling")
+        .expect("knf-short-selling adapter should exist");
+    assert_eq!(knf_shorts.display_name, "KNF Short Selling Register");
+    assert_eq!(knf_shorts.source_type, "disclosure");
+    assert_eq!(knf_shorts.fetch_mode, "public_json");
+    assert_eq!(knf_shorts.markets, vec!["GPW".to_owned()]);
+    assert!(knf_shorts.enabled);
+    assert_eq!(knf_shorts.visibility, "optional");
+
     let developer_adapters = state
         .list_source_adapters_with_developer(true)
         .expect("developer source adapters should list");
 
-    assert_eq!(developer_adapters.len(), 13);
+    assert_eq!(developer_adapters.len(), 14);
 
     let report_adapter = developer_adapters
         .iter()
@@ -56,9 +82,10 @@ fn lists_seeded_source_adapters() {
         .expect("GPW report adapter should exist");
     assert_eq!(report_adapter.display_name, "GPW ESPI/EBI");
     assert_eq!(report_adapter.markets, vec!["GPW".to_owned()]);
-    assert!(!report_adapter.enabled);
-    assert_eq!(report_adapter.visibility, "developer");
-    assert!(!report_adapter.user_configurable);
+    // v0.55 T3: re-enabled reconciliation witness, promoted to Optional.
+    assert!(report_adapter.enabled);
+    assert_eq!(report_adapter.visibility, "optional");
+    assert!(report_adapter.user_configurable);
 
     let registry_adapter = adapters
         .iter()
@@ -289,7 +316,9 @@ fn updates_optional_source_enabled_state_and_protects_other_tiers() {
         state.set_source_adapter_enabled(NEWCONNECT_DIRECTORY_ADAPTER_ID, false);
     assert!(newconnect_required_result.is_err());
 
-    let developer_result = state.set_source_adapter_enabled(ADAPTER_ID, true);
+    // gpw-espi-ebi is now Optional (witness role, v0.55 T3); use a still-Developer
+    // source to assert Developer-tier toggles stay protected.
+    let developer_result = state.set_source_adapter_enabled("portal-analiz", true);
     assert!(developer_result.is_err());
 }
 

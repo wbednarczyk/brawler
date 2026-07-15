@@ -14,6 +14,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 - **Budget:** ≤15 interactions at 10 new items.
 - **Done well:** no unhandled high-signal item; under 10 minutes; the user knows *what changed and whether anything needs action*.
 - **Redesign note (v0.50 phase 2):** the Today screen is being redesigned **to this journey** (task U-Rb, [plans/v0.50-ux-overhaul.md](plans/v0.50-ux-overhaul.md)) — J1's budget is the acceptance bar for that mockup.
+- **v0.55 ([ADR 0069](adr/0069-source-reliability-and-disclosure-signals.md)):** the triage stream gains two signal categories — `auditor_opinion` (auditor red flags, danger badge) and `short_position_change` (KNF register moves) — both alert-rule-capable, plus the system `source_reconciliation` attention event ("the primary source missed an official report", toast + briefing line). Journey shape and budget unchanged: they arrive as ordinary attention/triage items. The `shortPositions` cockpit panel (palette) and the Diagnostics reconciliation ledger are journey-independent readouts.
 
 ## J2 — A company published a report
 

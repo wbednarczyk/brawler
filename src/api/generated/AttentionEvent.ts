@@ -4,4 +4,9 @@
  * A fired attention event (persisted `attention_events` row), joined to its
  * rule's trigger type for the surfaces.
  */
-export type AttentionEvent = { id: string, ruleId: string, triggerType: "signal_category" | "autopilot_run_completed" | "price_enters_range" | "price_week52_low", companyId: string, evidenceType: "company_signal" | "autopilot_run" | "daily_quote", evidenceRef: string, firedAt: string, seen: boolean, dismissed: boolean, };
+export type AttentionEvent = { id: string, 
+/**
+ * The owning alert rule, or `None` for a SYSTEM event (e.g. a reconciliation
+ * `source_reconciliation` event, raised without a user rule — ADR 0069 D2).
+ */
+ruleId: string | null, triggerType: "signal_category" | "autopilot_run_completed" | "price_enters_range" | "price_week52_low" | "source_reconciliation", companyId: string, evidenceType: "company_signal" | "autopilot_run" | "daily_quote" | "source_reconciliation", evidenceRef: string, firedAt: string, seen: boolean, dismissed: boolean, };

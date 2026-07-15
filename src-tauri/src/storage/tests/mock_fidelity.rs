@@ -356,6 +356,20 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // KNF short-selling read model (v0.55 T4b). A normal company-scoped user
+        // read — joins the corpus; the register is adapter-populated, so an
+        // untouched company reads back the empty view (no active positions).
+        "list_short_positions" => {
+            let list_input: crate::storage::ShortPositionsInput =
+                serde_json::from_value(inner).expect("ShortPositionsInput");
+            serde_json::to_value(
+                state
+                    .short_positions()
+                    .short_positions_view(&list_input.company_id)
+                    .expect("list_short_positions"),
+            )
+            .unwrap()
+        }
         // Pre-report expectations (ADR 0071, J2), keyed by (company, event_key).
         "create_report_expectation" => {
             let new: crate::storage::NewReportExpectation =

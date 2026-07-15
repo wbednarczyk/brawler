@@ -42,6 +42,27 @@ impl SourceVisibility {
     }
 }
 
+/// The role a source plays in the feed pipeline (ADR 0069 decision 2, plan v0.55
+/// T3). Most sources are `Primary` — they ingest items into the feed/Inbox. A
+/// `Witness` source never ingests; it reconciles its listings against the primary
+/// source to close a single-point-of-failure (GPW ESPI/EBI witnesses the Bankier
+/// official-report channel). The Sources UI surfaces the role so a witness reads
+/// as a health mechanism, not a feed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceRole {
+    Primary,
+    Witness,
+}
+
+impl SourceRole {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Witness => "witness",
+        }
+    }
+}
+
 /// The realized source-adapter port: the static identity + capability surface of
 /// one source. Implemented by [`SourceAdapterDescriptor`]; the refresh path and
 /// the catalog depend on this trait, not on per-adapter constants.
@@ -53,6 +74,7 @@ pub trait SourceAdapter {
     fn fetch_mode(&self) -> &'static str;
     fn markets(&self) -> &'static [&'static str];
     fn visibility(&self) -> SourceVisibility;
+    fn role(&self) -> SourceRole;
     fn default_poll_interval_seconds(&self) -> i64;
     fn rate_limit_policy(&self) -> &'static str;
     fn policy_note(&self) -> &'static str;
@@ -70,6 +92,7 @@ pub struct SourceAdapterDescriptor {
     pub fetch_mode: &'static str,
     pub markets: &'static [&'static str],
     pub visibility: SourceVisibility,
+    pub role: SourceRole,
     pub default_poll_interval_seconds: i64,
     pub rate_limit_policy: &'static str,
     pub policy_note: &'static str,
@@ -97,6 +120,9 @@ impl SourceAdapter for SourceAdapterDescriptor {
     fn visibility(&self) -> SourceVisibility {
         self.visibility
     }
+    fn role(&self) -> SourceRole {
+        self.role
+    }
     fn default_poll_interval_seconds(&self) -> i64 {
         self.default_poll_interval_seconds
     }
@@ -116,6 +142,7 @@ const NEWCONNECT: &[&str] = &["NEWCONNECT"];
 pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     SourceAdapterDescriptor {
         id: crate::source_adapters::gpw_company_registry::ADAPTER_ID,
+        role: SourceRole::Primary,
         display_name: "GPW Company Directory",
         source_url: crate::source_adapters::gpw_company_registry::SOURCE_URL,
         source_type: "company_registry",
@@ -128,6 +155,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: crate::source_adapters::newconnect_company_directory::ADAPTER_ID,
+        role: SourceRole::Primary,
         display_name: "NewConnect Company Directory",
         source_url: crate::source_adapters::newconnect_company_directory::SOURCE_URL,
         source_type: "company_registry",
@@ -140,6 +168,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: "yahoo-eod",
+        role: SourceRole::Primary,
         display_name: "Yahoo Finance EOD Quotes",
         source_url: "https://query1.finance.yahoo.com/v8/finance/chart/",
         source_type: "market_data",
@@ -148,11 +177,11 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         visibility: SourceVisibility::Optional,
         default_poll_interval_seconds: 86_400,
         rate_limit_policy: "Watchlist-only; throttle + jitter; 429/999 backoff; aggressive cache; one full-history backfill on add plus one post-session daily pull per company",
-        // migrates to Fetcher (ADR 0069)
         policy_note: "Primary EOD price source (ADR 0082). Yahoo v8 chart API by exchange-qualified <ticker>.WA; keyless, PLN. ToS-gray, accepted narrowly for local-first personal EOD/watchlist use, no redistribution. A pull failure raises source-health and skips the day; self-heal backfill catches history up (no free fallback provider — ADR 0082 amendment 2026-07-14, card ee81afe).",
     },
     SourceAdapterDescriptor {
         id: crate::source_adapters::bankier_rss::ADAPTER_ID,
+        role: SourceRole::Primary,
         display_name: crate::source_adapters::bankier_rss::DISPLAY_NAME,
         source_url: crate::source_adapters::bankier_rss::SOURCE_URL,
         source_type: "public_media",
@@ -165,6 +194,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: crate::source_adapters::bankier_company::ADAPTER_ID,
+        role: SourceRole::Primary,
         display_name: crate::source_adapters::bankier_company::DISPLAY_NAME,
         source_url: crate::source_adapters::bankier_company::SOURCE_URL,
         source_type: "official_report",
@@ -177,6 +207,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: crate::source_adapters::gpw_market_events::ADAPTER_ID,
+        role: SourceRole::Primary,
         display_name: crate::source_adapters::gpw_market_events::DISPLAY_NAME,
         source_url: crate::source_adapters::gpw_market_events::SOURCE_URL,
         source_type: "official_calendar",
@@ -189,6 +220,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: crate::source_adapters::bankier_calendar::ADAPTER_ID,
+        role: SourceRole::Primary,
         display_name: crate::source_adapters::bankier_calendar::DISPLAY_NAME,
         source_url: crate::source_adapters::bankier_calendar::SOURCE_URL,
         source_type: "public_calendar",
@@ -200,19 +232,34 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         policy_note: "Active M9 public calendar source for broader GPW event coverage. Creates company events only for tracked companies matched by exact ticker, while preserving Bankier attribution and source URLs.",
     },
     SourceAdapterDescriptor {
+        id: crate::source_adapters::knf_short_selling::ADAPTER_ID,
+        role: SourceRole::Primary,
+        display_name: crate::source_adapters::knf_short_selling::DISPLAY_NAME,
+        source_url: crate::source_adapters::knf_short_selling::SOURCE_URL,
+        source_type: "disclosure",
+        fetch_mode: "public_json",
+        markets: GPW,
+        visibility: SourceVisibility::Optional,
+        default_poll_interval_seconds: 86_400,
+        rate_limit_policy: "Manual refresh plus daily scheduled refresh; single POST to the official public KNF register JSON endpoint; current-register method only",
+        policy_note: "KNF public national short-selling register (net short positions >= 0.5%) as a disclosure source for tracked GPW companies matched by ISIN (ADR 0069). Stable public JSON endpoint, no HTML scraping. Register changes emit short_position_change signals.",
+    },
+    SourceAdapterDescriptor {
         id: crate::source_adapters::gpw_espi_ebi::ADAPTER_ID,
+        role: SourceRole::Witness,
         display_name: crate::source_adapters::gpw_espi_ebi::DISPLAY_NAME,
         source_url: "https://www.gpw.pl/komunikaty",
         source_type: "official_report",
         fetch_mode: "public_page",
         markets: GPW,
-        visibility: SourceVisibility::Developer,
+        visibility: SourceVisibility::Optional,
         default_poll_interval_seconds: 900,
-        rate_limit_policy: "Disabled while Bankier Company Komunikaty is the active official-report source",
-        policy_note: "Registered for later revisit, but disabled because the global GPW listing slice missed tracked-company reports found by Bankier per-company komunikaty pages.",
+        rate_limit_policy: "Manual refresh plus normal in-app source scheduler; witness role only — the official GPW ESPI/EBI listing is reconciled against Bankier-sourced reports, never ingested into the feed",
+        policy_note: "Reconciliation second witness for the Bankier official-report channel (ADR 0069 decision 2, plan v0.55 T3). Its ESPI/EBI listings are matched against Bankier-sourced reports for tracked GPW companies; disagreements are recorded and an official report the primary missed (espi_only) raises an attention event. Witness items never enter the feed/Inbox (no dual ingestion).",
     },
     SourceAdapterDescriptor {
         id: "portal-analiz",
+        role: SourceRole::Primary,
         display_name: "Portal Analiz",
         source_url: "https://portalanaliz.pl/",
         source_type: "authenticated_research",
@@ -225,6 +272,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: "bankier-firma-rss",
+        role: SourceRole::Primary,
         display_name: "Bankier Firma RSS",
         source_url: "https://www.bankier.pl/rss/firma.xml",
         source_type: "public_media",
@@ -237,6 +285,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: "bankier-wiadomosci-rss",
+        role: SourceRole::Primary,
         display_name: "Bankier Wiadomosci RSS",
         source_url: "https://www.bankier.pl/rss/wiadomosci.xml",
         source_type: "public_media",
@@ -249,6 +298,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: "strefa-report-calendar",
+        role: SourceRole::Primary,
         display_name: "Strefa Report Calendar",
         source_url: "https://strefainwestorow.pl/dane/raporty",
         source_type: "public_calendar",
@@ -261,6 +311,7 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
     },
     SourceAdapterDescriptor {
         id: "money-calendar",
+        role: SourceRole::Primary,
         display_name: "Money Calendar",
         source_url: "https://www.money.pl/gielda/raporty/",
         source_type: "public_calendar",

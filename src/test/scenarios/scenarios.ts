@@ -20,6 +20,7 @@ import type { CockpitLayout } from "../../api/generated/CockpitLayout";
 import type { FactProvenance } from "../../api/generated/FactProvenance";
 import type { AlertRule } from "../../api/generated/AlertRule";
 import type { AttentionEvent } from "../../api/generated/AttentionEvent";
+import type { ReconciliationResult } from "../../api/generated/ReconciliationResult";
 import type { MorningBriefing } from "../../api/generated/MorningBriefing";
 import type { AutopilotRun, CompanyAutopilot } from "../../api/autopilot";
 import {
@@ -57,6 +58,7 @@ import {
   makeCredentialStatuses,
   makeDatabaseStatus,
   makeDiagnosticEvent,
+  makeReconciliationResult,
   makeDiagnosticSummary,
   makeEvent,
   makeEvidenceLink,
@@ -211,6 +213,10 @@ export interface ScenarioData {
   // "structure changed" diff).
   factProvenance?: FactProvenance[];
   reportPreparations: ReportPreparation[];
+  // KNF short-selling register (v0.55 T4b). Raw seed rows; `list_short_positions`
+  // derives the per-company view (aggregate/delta/history) from these.
+  shortPositions: ScenarioShortPosition[];
+  shortPositionEvents: ScenarioShortPositionEvent[];
   reportSeasonUpcoming: ReportSeasonEntry[];
   reportSeasonPast: ReportSeasonEntry[];
   preReportCards: PreReportCard[];
@@ -239,11 +245,32 @@ export interface ScenarioData {
   credentialStatuses: CredentialStatus[];
   metricsSnapshot: LocalMetricsSnapshot;
   diagnosticEvents: DiagnosticEvent[];
+  reconciliationResults: ReconciliationResult[];
   diagnosticSummary: ReturnType<typeof makeDiagnosticSummary>;
   logEntries: LogEntry[];
   logStatus: ReturnType<typeof makeLogStatus>;
   databaseStatus: ReturnType<typeof makeDatabaseStatus>;
   backupStatus: BackupStatus;
+}
+
+/** A seeded KNF short-position mirror row (v0.55 T4b). `exitedAt` non-null =
+ * dropped out of the register (below the 0.5% threshold). */
+export interface ScenarioShortPosition {
+  companyId: string;
+  holderName: string;
+  netPositionPct: number;
+  positionDate: string;
+  exitedAt: string | null;
+}
+
+/** A seeded KNF register change event (v0.55 T4b). */
+export interface ScenarioShortPositionEvent {
+  companyId: string;
+  kind: "entered" | "increased" | "decreased" | "exited";
+  holderName: string;
+  fromPct: number | null;
+  toPct: number | null;
+  positionDate: string;
 }
 
 /** How densely a roster is populated. */
@@ -268,6 +295,7 @@ const EMPTY_SINGLETONS = (companies: number, adapters: number) => ({
   credentialStatuses: makeCredentialStatuses(),
   metricsSnapshot: makeLocalMetricsSnapshot(),
   diagnosticEvents: [makeDiagnosticEvent()],
+  reconciliationResults: [makeReconciliationResult()],
   diagnosticSummary: makeDiagnosticSummary(),
   logEntries: [makeLogEntry()],
   logStatus: makeLogStatus(),
@@ -349,6 +377,8 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     kpiExtractionJobs: deep.map(makeKpiExtractionJob),
     reportDocuments: deep.map(makeReportDocument),
     reportPreparations: deep.map(makeReportPreparation),
+    shortPositions: [],
+    shortPositionEvents: [],
     reportSeasonUpcoming: deep.map((spec) => makeReportSeasonEntry(spec, true)),
     reportSeasonPast: deep.map((spec) => makeReportSeasonEntry(spec, false)),
     preReportCards: deep.map(makePreReportCard),
@@ -436,6 +466,8 @@ function buildEmpty(): ScenarioData {
     kpiExtractionJobs: [],
     reportDocuments: [],
     reportPreparations: [],
+    shortPositions: [],
+    shortPositionEvents: [],
     reportSeasonUpcoming: [],
     reportSeasonPast: [],
     preReportCards: [],

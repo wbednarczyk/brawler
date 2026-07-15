@@ -32,6 +32,11 @@ pub const TRIGGER_SIGNAL_CATEGORY: &str = "signal_category";
 pub const TRIGGER_AUTOPILOT_RUN_COMPLETED: &str = "autopilot_run_completed";
 pub const TRIGGER_PRICE_ENTERS_RANGE: &str = "price_enters_range";
 pub const TRIGGER_PRICE_WEEK52_LOW: &str = "price_week52_low";
+/// System trigger (no user rule) for a reconciliation `espi_only` result — the
+/// primary channel missed an official report the witness saw (ADR 0069 D2
+/// amendment, plan v0.55 T3). Not user-creatable, so it is deliberately absent
+/// from [`TRIGGER_TYPES`] (which validates user-owned alert rules).
+pub const TRIGGER_SOURCE_RECONCILIATION: &str = "source_reconciliation";
 
 const TRIGGER_TYPES: &[&str] = &[
     TRIGGER_SIGNAL_CATEGORY,
@@ -48,6 +53,10 @@ const SCOPE_TYPES: &[&str] = &[SCOPE_COMPANY, SCOPE_WATCHLIST];
 pub const EVIDENCE_COMPANY_SIGNAL: &str = "company_signal";
 pub const EVIDENCE_AUTOPILOT_RUN: &str = "autopilot_run";
 pub const EVIDENCE_DAILY_QUOTE: &str = "daily_quote";
+/// Evidence tag for a reconciliation `espi_only` event — `evidence_ref` is the
+/// `source_reconciliation_results.id`, so Today click-through / the diagnostics
+/// ledger resolve the missed report (witness title + GPW URL).
+pub const EVIDENCE_SOURCE_RECONCILIATION: &str = "source_reconciliation";
 
 /// 52 weeks expressed in days — the trailing window for the `price_week52_low`
 /// trigger. Bars are scanned by domain `date`, never `fetched_at`/`created_at`.
@@ -147,18 +156,23 @@ pub struct AlertRuleUpdate {
 #[serde(rename_all = "camelCase")]
 pub struct AttentionEvent {
     pub id: String,
-    pub rule_id: String,
+    /// The owning alert rule, or `None` for a SYSTEM event (e.g. a reconciliation
+    /// `source_reconciliation` event, raised without a user rule — ADR 0069 D2).
+    #[cfg_attr(feature = "ts-export", ts(type = "string | null"))]
+    pub rule_id: Option<String>,
     #[cfg_attr(
         feature = "ts-export",
         ts(
-            type = "\"signal_category\" | \"autopilot_run_completed\" | \"price_enters_range\" | \"price_week52_low\""
+            type = "\"signal_category\" | \"autopilot_run_completed\" | \"price_enters_range\" | \"price_week52_low\" | \"source_reconciliation\""
         )
     )]
     pub trigger_type: String,
     pub company_id: String,
     #[cfg_attr(
         feature = "ts-export",
-        ts(type = "\"company_signal\" | \"autopilot_run\" | \"daily_quote\"")
+        ts(
+            type = "\"company_signal\" | \"autopilot_run\" | \"daily_quote\" | \"source_reconciliation\""
+        )
     )]
     pub evidence_type: String,
     pub evidence_ref: String,
@@ -449,7 +463,7 @@ pub(super) fn list_attention_events(
         SELECT
             attention_events.id,
             attention_events.rule_id,
-            alert_rules.trigger_type,
+            COALESCE(attention_events.trigger_type, alert_rules.trigger_type) AS trigger_type,
             attention_events.company_id,
             attention_events.evidence_type,
             attention_events.evidence_ref,
@@ -457,7 +471,7 @@ pub(super) fn list_attention_events(
             attention_events.seen,
             attention_events.dismissed
         FROM attention_events
-        JOIN alert_rules ON alert_rules.id = attention_events.rule_id
+        LEFT JOIN alert_rules ON alert_rules.id = attention_events.rule_id
         WHERE (?1 IS NULL OR attention_events.company_id = ?1)
           AND (?2 = 1 OR attention_events.dismissed = 0)
         ORDER BY attention_events.fired_at DESC, attention_events.id DESC
@@ -487,7 +501,7 @@ pub(super) fn dismiss_attention_event(connection: &Connection, id: &str) -> Stor
 fn attention_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AttentionEvent> {
     Ok(AttentionEvent {
         id: row.get(0)?,
-        rule_id: row.get(1)?,
+        rule_id: row.get::<_, Option<String>>(1)?,
         trigger_type: row.get(2)?,
         company_id: row.get(3)?,
         evidence_type: row.get(4)?,
@@ -553,6 +567,47 @@ pub(super) fn insert_attention_event(
         ON CONFLICT(rule_id, evidence_type, evidence_ref) DO NOTHING
         ",
         params![id, rule_id, company_id, evidence_type, evidence_ref, fired_at],
+    )?;
+    Ok(affected > 0)
+}
+
+/// Persist one SYSTEM attention event (no owning rule) — e.g. a reconciliation
+/// `source_reconciliation` event (ADR 0069 D2 amendment, plan v0.55 T3). Dedup is
+/// by the partial unique index on `(trigger_type, evidence_type, evidence_ref)`
+/// WHERE `rule_id IS NULL`: the reconciliation-record id (a stable `evidence_ref`)
+/// yields at most one event per record, so a re-run never re-fires. No per-rule
+/// daily throttle applies (there is no rule); each distinct missed report is its
+/// own event. Returns `true` only when a new row was created. Intended to run in
+/// the caller's transaction so the event lands atomically with its evidence row.
+pub(super) fn insert_system_attention_event(
+    connection: &Connection,
+    trigger_type: &str,
+    company_id: &str,
+    evidence_type: &str,
+    evidence_ref: &str,
+    fire_date: &str,
+) -> StorageResult<bool> {
+    let id = format!(
+        "attn_sys_{}_{}_{}",
+        slug_part(trigger_type),
+        slug_part(evidence_type),
+        slug_part(evidence_ref)
+    );
+    let fired_at = format!("{fire_date}T00:00:00Z");
+    let affected = connection.execute(
+        "
+        INSERT OR IGNORE INTO attention_events
+            (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+        VALUES (?1, NULL, ?2, ?3, ?4, ?5, ?6)
+        ",
+        params![
+            id,
+            trigger_type,
+            company_id,
+            evidence_type,
+            evidence_ref,
+            fired_at
+        ],
     )?;
     Ok(affected > 0)
 }

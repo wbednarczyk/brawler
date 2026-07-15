@@ -398,6 +398,21 @@ const MIGRATIONS: &[Migration] = &[
         name: "morning_briefings",
         sql: include_str!("../../migrations/0078_morning_briefings.sql"),
     },
+    Migration {
+        version: 79,
+        name: "auditor_opinion_signal",
+        sql: include_str!("../../migrations/0079_auditor_opinion_signal.sql"),
+    },
+    Migration {
+        version: 80,
+        name: "knf_short_positions",
+        sql: include_str!("../../migrations/0080_knf_short_positions.sql"),
+    },
+    Migration {
+        version: 81,
+        name: "espi_witness_reconciliation",
+        sql: include_str!("../../migrations/0081_espi_witness_reconciliation.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

@@ -221,6 +221,7 @@ export const legacySourceAdapters: SourceAdapter[] = rawSourceAdapters.map((adap
   return {
     ...adapter,
     visibility,
+    role: "primary" as const,
     userConfigurable: visibility === "optional",
     healthStatus: adapter.enabled ? "notRefreshed" : "off",
     lastAttemptAt: null,

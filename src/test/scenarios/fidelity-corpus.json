@@ -618,6 +618,37 @@
       ]
     },
     {
+      "name": "short positions read: empty register view (v0.55 T4b, ADR 0069 dec 3)",
+      "_comment": "The KNF short-selling register is populated by the daily adapter, not a user command, so there is no seed command in the corpus. A tracked company with no register presence reads back the empty view identically on both dispatchers (no active positions, no remembered exit). lastExit:null is the shape-agreeing scalar assertion (serde_json/JS both compare null cleanly; numeric 0.0-vs-0 would diverge). Populated aggregate/delta/ordering math is pinned by the Rust storage tests + the Vitest panel test.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "SHORT",
+              "displayName": "Short Register Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "list_short_positions",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectField": {
+            "lastExit": null
+          }
+        }
+      ]
+    },
+    {
       "name": "report expectation create + update + list + review + resolution (ADR 0071 J2)",
       "_comment": "Pre-report expectations are keyed by (company, event_key) occurrence (ADR 0071). Seed-free: create a company, record a stance + one metric, edit it while unfrozen, list it, read the expectation-vs-actual review, then record the user's own verdict. No facts are seeded, so factsAvailable is false on both sides and the per-metric outcome is unknown. The freeze-on-facts behavior and per-metric met/missed/unknown correctness are pinned by the Rust storage tests; this corpus proves both dispatchers implement all five expectation commands and key by the scoped occurrence.",
       "steps": [

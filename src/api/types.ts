@@ -28,6 +28,8 @@ export type CompanySignalCategory =
   | "own_shares"
   | "guidance_change"
   | "general_meeting"
+  | "auditor_opinion"
+  | "short_position_change"
   | "other";
 
 export type CompanyForm = {
@@ -70,6 +72,7 @@ export type { DiagnosticScope } from "./generated/DiagnosticScope";
 export type { DiagnosticEvent } from "./generated/DiagnosticEvent";
 export type { DiagnosticSummary } from "./generated/DiagnosticSummary";
 export type { ClearDiagnosticEventsResult } from "./generated/ClearDiagnosticEventsResult";
+export type { ReconciliationResult } from "./generated/ReconciliationResult";
 
 export type { LogStatus } from "./generated/LogStatus";
 export type { LogEntry } from "./generated/LogEntry";

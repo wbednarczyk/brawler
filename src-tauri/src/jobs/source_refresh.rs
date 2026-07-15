@@ -165,25 +165,55 @@ pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {
     );
 }
 
+/// The parameters a refresh runs against — the trigger name plus an optional
+/// specific date (only calendars use the date; other adapters ignore it). Carried
+/// as one context so the [`Fetcher`] signature covers every arm kind (ADR 0069
+/// amendment 2026-07-15) without per-arm fn-pointer shapes.
+pub(crate) struct RefreshContext<'a> {
+    pub trigger: &'a str,
+    pub date: Option<&'a str>,
+}
+
+/// What a [`Fetcher::refresh`] produced: either a unified feed/calendar ingestion
+/// result, or a company-directory refresh result. The dispatch half maps a
+/// `Directory` outcome onto the ingestion shape (see [`directory_ingestion_result`]).
+pub(crate) enum RefreshOutcome {
+    Ingestion(storage::SourceIngestionResult),
+    Directory(storage::CompanyRegistryRefreshResult),
+}
+
+/// The refresh-level behavior of a source adapter (ADR 0069, amended 2026-07-15):
+/// the `SourceAdapter` port gains a behavioral contract. Every adapter implements
+/// this once beside its item types instead of being wired imperatively into a
+/// per-kind fn-pointer arm here. The strangler migration is complete (plan v0.55
+/// T1/T2): feed, calendar, and directory adapters all live behind this trait; only
+/// the disabled sources keep a non-trait arm (they have no fetch behavior yet).
+pub(crate) trait Fetcher: Sync {
+    /// Perform this adapter's refresh for the given context, returning the outcome
+    /// the dispatch half unifies into a [`storage::SourceIngestionResult`].
+    fn refresh(
+        &self,
+        state: &app_state::AppState,
+        ctx: &RefreshContext,
+    ) -> Result<RefreshOutcome, String>;
+
+    /// Whether this source participates in the "refresh all runtime sources" sweep.
+    /// Feed/calendar sources join (default); company-directory sources refresh on
+    /// their own cadence and override to `false`. This models the exact
+    /// pre-migration membership (Feed + Calendar joined; Directory did not).
+    fn joins_full_refresh(&self) -> bool {
+        true
+    }
+}
+
 /// How a registered source adapter is refreshed at runtime — the dispatch half
 /// of the `SourceAdapter` port (Architecture v2 / ADR 0050). Adding a runtime
 /// source means adding a [`RuntimeAdapter`] entry to [`runtime_adapters`], not
 /// editing a hardcoded dispatch match or sweep list.
 enum RefreshBehavior {
-    /// A feed/media/calendar source that joins the "refresh all" sweep and ingests items.
-    Feed(fn(&app_state::AppState, &str) -> Result<storage::SourceIngestionResult, String>),
-    /// A calendar source refreshable for an optional specific date; also joins the sweep.
-    Calendar(
-        fn(
-            &app_state::AppState,
-            &str,
-            Option<&str>,
-        ) -> Result<storage::SourceIngestionResult, String>,
-    ),
-    /// A company-directory source, refreshed on its own cadence (not in the sweep).
-    Directory(
-        fn(&app_state::AppState, &str) -> Result<storage::CompanyRegistryRefreshResult, String>,
-    ),
+    /// A source that implements the ADR 0069 [`Fetcher`] trait and dispatches
+    /// polymorphically — the sole active arm now the strangler migration is done.
+    Fetcher(&'static dyn Fetcher),
     /// A registered-but-disabled source; refreshing it returns this reason.
     Disabled(&'static str),
 }
@@ -197,10 +227,10 @@ struct RuntimeAdapter {
 impl RuntimeAdapter {
     /// Whether this source participates in the "refresh all runtime sources" sweep.
     fn in_full_refresh(&self) -> bool {
-        matches!(
-            self.behavior,
-            RefreshBehavior::Feed(_) | RefreshBehavior::Calendar(_)
-        )
+        match self.behavior {
+            RefreshBehavior::Fetcher(fetcher) => fetcher.joins_full_refresh(),
+            RefreshBehavior::Disabled(_) => false,
+        }
     }
 
     fn refresh(
@@ -210,10 +240,11 @@ impl RuntimeAdapter {
         date: Option<&str>,
     ) -> Result<storage::SourceIngestionResult, String> {
         match self.behavior {
-            RefreshBehavior::Feed(refresh) => refresh(state, trigger),
-            RefreshBehavior::Calendar(refresh) => refresh(state, trigger, date),
-            RefreshBehavior::Directory(refresh) => {
-                Ok(directory_ingestion_result(refresh(state, trigger)?))
+            RefreshBehavior::Fetcher(fetcher) => {
+                match fetcher.refresh(state, &RefreshContext { trigger, date })? {
+                    RefreshOutcome::Ingestion(result) => Ok(result),
+                    RefreshOutcome::Directory(result) => Ok(directory_ingestion_result(result)),
+                }
             }
             RefreshBehavior::Disabled(reason) => Err(reason.to_owned()),
         }
@@ -242,40 +273,50 @@ fn directory_ingestion_result(
 /// market-events > rss. Sources not listed here are unknown to the refresh path.
 fn runtime_adapters() -> Vec<RuntimeAdapter> {
     use source_adapters as sa;
+    // Strangler migration complete (plan v0.55 T1/T2, ADR 0069): every fetching
+    // adapter dispatches polymorphically through the `Fetcher` trait-object arm;
+    // each impl lives beside its item types in its own module. Only the disabled
+    // sources keep the non-trait `Disabled` arm — they have no fetch behavior yet.
+    // `gpw_espi_ebi` runs as a reconciliation WITNESS (plan v0.55 T3): it fetches
+    // the official listing but reconciles against Bankier instead of ingesting.
     vec![
         RuntimeAdapter {
             id: sa::bankier_company::ADAPTER_ID,
-            behavior: RefreshBehavior::Feed(refresh_bankier_company_for_trigger),
+            behavior: RefreshBehavior::Fetcher(&sa::bankier_company::BankierCompanyRefresh),
         },
         RuntimeAdapter {
             id: sa::bankier_calendar::ADAPTER_ID,
-            behavior: RefreshBehavior::Calendar(refresh_bankier_calendar_for_trigger_and_date),
+            behavior: RefreshBehavior::Fetcher(&sa::bankier_calendar::BankierCalendarRefresh),
         },
         RuntimeAdapter {
             id: sa::gpw_market_events::ADAPTER_ID,
-            behavior: RefreshBehavior::Feed(refresh_gpw_market_events_for_trigger),
+            behavior: RefreshBehavior::Fetcher(&sa::gpw_market_events::GpwMarketEventsRefresh),
         },
         RuntimeAdapter {
             id: sa::bankier_rss::ADAPTER_ID,
-            behavior: RefreshBehavior::Feed(refresh_bankier_rss_for_trigger),
+            behavior: RefreshBehavior::Fetcher(&sa::bankier_rss::BankierRssRefresh),
+        },
+        RuntimeAdapter {
+            id: sa::knf_short_selling::ADAPTER_ID,
+            behavior: RefreshBehavior::Fetcher(&sa::knf_short_selling::KnfShortSellingRefresh),
         },
         RuntimeAdapter {
             id: sa::gpw_company_registry::ADAPTER_ID,
-            behavior: RefreshBehavior::Directory(refresh_gpw_company_registry_for_trigger),
+            behavior: RefreshBehavior::Fetcher(&sa::gpw_company_registry::GpwCompanyRegistryRefresh),
         },
         RuntimeAdapter {
             id: sa::newconnect_company_directory::ADAPTER_ID,
-            behavior: RefreshBehavior::Directory(refresh_newconnect_company_directory_for_trigger),
+            behavior: RefreshBehavior::Fetcher(
+                &sa::newconnect_company_directory::NewConnectCompanyDirectoryRefresh,
+            ),
         },
         RuntimeAdapter {
             id: crate::jobs::quote_daily_pull::YAHOO_ADAPTER_ID,
-            behavior: RefreshBehavior::Feed(refresh_yahoo_eod_for_trigger),
+            behavior: RefreshBehavior::Fetcher(&crate::jobs::quote_daily_pull::YahooEodRefresh),
         },
         RuntimeAdapter {
             id: sa::gpw_espi_ebi::ADAPTER_ID,
-            behavior: RefreshBehavior::Disabled(
-                "GPW ESPI/EBI is disabled while Bankier Company Komunikaty is the active official-report source",
-            ),
+            behavior: RefreshBehavior::Fetcher(&sa::gpw_espi_ebi::GpwEspiEbiWitness),
         },
         RuntimeAdapter {
             id: "portal-analiz",
@@ -356,7 +397,7 @@ fn refresh_optional_source(
     adapter.refresh(state, trigger, None)
 }
 
-fn empty_source_result(adapter_id: &str) -> storage::SourceIngestionResult {
+pub(crate) fn empty_source_result(adapter_id: &str) -> storage::SourceIngestionResult {
     storage::SourceIngestionResult {
         adapter_id: adapter_id.to_owned(),
         items_fetched: 0,
@@ -425,179 +466,6 @@ fn record_source_refresh_metrics(
         &[("adapter_id", adapter_id), ("status", status)],
         started_at.elapsed().as_secs_f64(),
     );
-}
-
-#[allow(dead_code)]
-fn refresh_gpw_espi_ebi_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::SourceIngestionResult, String> {
-    let _ = state.record_source_adapter_attempt(source_adapters::gpw_espi_ebi::ADAPTER_ID, trigger);
-
-    let fetcher = source_adapters::gpw_espi_ebi::HttpGpwPageFetcher;
-    let mut listings = match source_adapters::gpw_espi_ebi::fetch_report_listings(&fetcher) {
-        Ok(listings) => listings,
-        Err(error) => {
-            let message = error.to_string();
-            let _ = state
-                .record_source_adapter_error(source_adapters::gpw_espi_ebi::ADAPTER_ID, &message);
-
-            return Err(message);
-        }
-    };
-    let detail_policy = source_adapters::gpw_espi_ebi::detail_fetch_policy();
-    let mut details_fetched = 0usize;
-    let mut details_stored = 0usize;
-    let mut details_failed = 0usize;
-    let mut last_detail_warning: Option<String> = None;
-
-    if detail_policy.enabled_by_default {
-        for listing in &mut listings {
-            if details_fetched >= detail_policy.max_details_per_refresh {
-                break;
-            }
-
-            if detail_policy.matched_items_only
-                && !state
-                    .tracks_gpw_listing_company(&listing.company_ticker, &listing.isin)
-                    .map_err(|error| error.to_string())?
-            {
-                continue;
-            }
-
-            if details_fetched > 0 {
-                std::thread::sleep(std::time::Duration::from_secs(
-                    detail_policy.min_delay_between_requests_seconds,
-                ));
-            }
-
-            match source_adapters::gpw_espi_ebi::fetch_report_detail(&fetcher, &listing.detail_url)
-            {
-                Ok(detail) => {
-                    let evaluation = source_adapters::gpw_espi_ebi::evaluate_report_detail(&detail);
-                    if evaluation.usable_for_ingestion {
-                        listing.body_text = Some(detail.body_text);
-                        listing.attachments = detail.attachments;
-                        details_stored += 1;
-                    } else {
-                        last_detail_warning = Some(format!(
-                            "{}: {}",
-                            listing.title,
-                            evaluation.warnings.join(", ")
-                        ));
-                        details_failed += 1;
-                    }
-                }
-                Err(error) => {
-                    last_detail_warning = Some(format!("{}: {}", listing.title, error));
-                    let _ = state.record_source_adapter_error(
-                        source_adapters::gpw_espi_ebi::ADAPTER_ID,
-                        &error.to_string(),
-                    );
-                    details_failed += 1;
-                }
-            }
-
-            details_fetched += 1;
-        }
-    }
-
-    let _ = state.record_source_adapter_state(
-        source_adapters::gpw_espi_ebi::ADAPTER_ID,
-        "last_detail_items_attempted",
-        &details_fetched.to_string(),
-    );
-    let _ = state.record_source_adapter_state(
-        source_adapters::gpw_espi_ebi::ADAPTER_ID,
-        "last_detail_items_stored",
-        &details_stored.to_string(),
-    );
-    let _ = state.record_source_adapter_state(
-        source_adapters::gpw_espi_ebi::ADAPTER_ID,
-        "last_detail_items_failed",
-        &details_failed.to_string(),
-    );
-    let _ = state.record_source_adapter_state(
-        source_adapters::gpw_espi_ebi::ADAPTER_ID,
-        "last_detail_warning",
-        last_detail_warning.as_deref().unwrap_or(""),
-    );
-
-    let mut result = state
-        .ingest_gpw_report_listings(&listings)
-        .map_err(|error| error.to_string())?;
-    result.detail_items_attempted = details_fetched;
-    result.detail_items_stored = details_stored;
-    result.detail_items_failed = details_failed;
-
-    Ok(result)
-}
-
-fn refresh_bankier_rss_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::SourceIngestionResult, String> {
-    let _ = state.record_source_adapter_attempt(source_adapters::bankier_rss::ADAPTER_ID, trigger);
-    let bankier_fetcher = source_adapters::bankier_rss::HttpBankierRssFetcher;
-    let bankier_items = match source_adapters::bankier_rss::fetch_rss_items(&bankier_fetcher) {
-        Ok(items) => items,
-        Err(error) => {
-            let message = error.to_string();
-            let _ = state
-                .record_source_adapter_error(source_adapters::bankier_rss::ADAPTER_ID, &message);
-
-            return Err(message);
-        }
-    };
-
-    state
-        .ingest_bankier_rss_items(&bankier_items)
-        .map_err(|error| error.to_string())
-}
-
-/// Plan a bankier-company refresh: enqueue one idempotent `source_company_refresh`
-/// job per tracked company instead of looping every company in a single monolith
-/// job (ADR 0059). The former monolith (a ~100-company loop with a 1 s sleep each)
-/// monopolized the worker for minutes and starved autopilot; the per-company jobs
-/// are serialized by the per-source lock (politeness preserved), run alongside other
-/// lanes, and resume across restarts. Returns quickly with a summary — the per-company
-/// jobs do the actual fetch/ingest and each rides detection on its own completion.
-fn refresh_bankier_company_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::SourceIngestionResult, String> {
-    let adapter_id = source_adapters::bankier_company::ADAPTER_ID;
-    let _ = state.record_source_adapter_attempt(adapter_id, trigger);
-    let targets = state
-        .list_bankier_company_targets()
-        .map_err(|error| error.to_string())?;
-
-    let mut planned = 0usize;
-    for target in &targets {
-        let job_id = format!(
-            "{SOURCE_COMPANY_REFRESH_KIND}:{adapter_id}:{}",
-            target.company_id
-        );
-        let payload =
-            json!({ "adapterId": adapter_id, "companyId": target.company_id }).to_string();
-        // `reschedule` re-arms a stable per-company id: pending/terminal rows reset,
-        // an in-flight row is left alone — so a re-plan never disturbs a running job
-        // and never accumulates duplicate rows.
-        match state
-            .jobs()
-            .reschedule(&job_id, SOURCE_COMPANY_REFRESH_KIND, &payload, 3)
-        {
-            Ok(_) => planned += 1,
-            Err(error) => log::warn!(
-                "module=sources stage=plan_failed adapterId={adapter_id} companyId={} error={error}",
-                target.company_id
-            ),
-        }
-    }
-    log::info!(
-        "module=sources stage=planned adapterId={adapter_id} trigger={trigger} companiesPlanned={planned}"
-    );
-    Ok(empty_source_result(adapter_id))
 }
 
 /// Refresh **one** company for the bankier-company source (ADR 0059) — the extracted
@@ -689,82 +557,6 @@ pub fn run_source_company_refresh(
     Ok(())
 }
 
-/// Post-session daily quote pull for the primary market-data source (ADR
-/// 0082, v0.53 T2). Wired here so the existing Rust-side scheduler drives it
-/// exactly like every other enabled source: `compute_schedule` re-arms a
-/// `scheduled_source_refresh` job on the `yahoo-eod` poll interval, and this
-/// arm is what that job dispatches to. Per-company failures inside the pull
-/// are swallowed into `items_unmatched` (best-effort — one company never
-/// aborts the sweep); only a whole-run failure (e.g. reading the company
-/// list) propagates here.
-fn refresh_yahoo_eod_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::SourceIngestionResult, String> {
-    let adapter_id = crate::jobs::quote_daily_pull::YAHOO_ADAPTER_ID;
-    let _ = state.record_source_adapter_attempt(adapter_id, trigger);
-
-    match crate::jobs::quote_daily_pull::run_daily_pull_for_trigger(state, trigger) {
-        Ok(result) => Ok(result),
-        Err(error) => {
-            let _ = state.record_source_adapter_error(adapter_id, &error);
-            Err(error)
-        }
-    }
-}
-
-fn refresh_gpw_market_events_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::SourceIngestionResult, String> {
-    let _ = state
-        .record_source_adapter_attempt(source_adapters::gpw_market_events::ADAPTER_ID, trigger);
-    let fetcher = source_adapters::gpw_market_events::HttpGpwMarketEventsFetcher;
-    let event_items = match source_adapters::gpw_market_events::fetch_market_events(&fetcher) {
-        Ok(items) => items,
-        Err(error) => {
-            let message = error.to_string();
-            let _ = state.record_source_adapter_error(
-                source_adapters::gpw_market_events::ADAPTER_ID,
-                &message,
-            );
-
-            return Err(message);
-        }
-    };
-
-    state
-        .ingest_gpw_market_event_items(&event_items)
-        .map_err(|error| error.to_string())
-}
-
-fn refresh_bankier_calendar_for_trigger_and_date(
-    state: &app_state::AppState,
-    trigger: &str,
-    date: Option<&str>,
-) -> Result<storage::SourceIngestionResult, String> {
-    let _ =
-        state.record_source_adapter_attempt(source_adapters::bankier_calendar::ADAPTER_ID, trigger);
-    let fetcher = source_adapters::bankier_calendar::HttpBankierCalendarFetcher;
-    let event_items =
-        match source_adapters::bankier_calendar::fetch_calendar_events_for_date(&fetcher, date) {
-            Ok(items) => items,
-            Err(error) => {
-                let message = error.to_string();
-                let _ = state.record_source_adapter_error(
-                    source_adapters::bankier_calendar::ADAPTER_ID,
-                    &message,
-                );
-
-                return Err(message);
-            }
-        };
-
-    state
-        .ingest_bankier_calendar_event_items(&event_items)
-        .map_err(|error| error.to_string())
-}
-
 pub fn should_bootstrap_company_directories(
     input: &storage::CompanyLookupInput,
     state: &app_state::AppState,
@@ -791,71 +583,18 @@ pub fn should_bootstrap_company_directories(
         .map_err(|error| error.to_string())
 }
 
-pub fn refresh_gpw_company_registry_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::CompanyRegistryRefreshResult, String> {
-    let _ = state
-        .record_source_adapter_attempt(source_adapters::gpw_company_registry::ADAPTER_ID, trigger);
-
-    let fetcher = source_adapters::gpw_company_registry::HttpGpwCompanyRegistryFetcher;
-    let (entries, fetched_at) =
-        match source_adapters::gpw_company_registry::fetch_company_registry_entries(&fetcher) {
-            Ok(result) => result,
-            Err(error) => {
-                let message = error.to_string();
-                let _ = state.record_source_adapter_error(
-                    source_adapters::gpw_company_registry::ADAPTER_ID,
-                    &message,
-                );
-
-                return Err(message);
-            }
-        };
-
-    state
-        .refresh_gpw_company_registry(&entries, &fetched_at)
-        .map_err(|error| error.to_string())
-}
-
-pub fn refresh_newconnect_company_directory_for_trigger(
-    state: &app_state::AppState,
-    trigger: &str,
-) -> Result<storage::CompanyRegistryRefreshResult, String> {
-    let _ = state.record_source_adapter_attempt(
-        source_adapters::newconnect_company_directory::ADAPTER_ID,
-        trigger,
-    );
-
-    let fetcher =
-        source_adapters::newconnect_company_directory::HttpNewConnectCompanyDirectoryFetcher;
-    let (entries, fetched_at) =
-        match source_adapters::newconnect_company_directory::fetch_company_directory_entries(
-            &fetcher,
-        ) {
-            Ok(result) => result,
-            Err(error) => {
-                let message = error.to_string();
-                let _ = state.record_source_adapter_error(
-                    source_adapters::newconnect_company_directory::ADAPTER_ID,
-                    &message,
-                );
-
-                return Err(message);
-            }
-        };
-
-    state
-        .refresh_newconnect_company_directory(&entries, &fetched_at)
-        .map_err(|error| error.to_string())
-}
-
 pub fn refresh_company_directories_for_trigger(
     state: &app_state::AppState,
     trigger: &str,
 ) -> Result<storage::CompanyRegistryRefreshResult, String> {
-    let gpw_result = refresh_gpw_company_registry_for_trigger(state, trigger)?;
-    let newconnect_result = refresh_newconnect_company_directory_for_trigger(state, trigger)?;
+    let gpw_result =
+        source_adapters::gpw_company_registry::refresh_gpw_company_registry_for_trigger(
+            state, trigger,
+        )?;
+    let newconnect_result =
+        source_adapters::newconnect_company_directory::refresh_newconnect_company_directory_for_trigger(
+            state, trigger,
+        )?;
 
     Ok(storage::CompanyRegistryRefreshResult {
         adapter_id: "company-directories".to_owned(),
@@ -869,10 +608,204 @@ pub fn refresh_company_directories_for_trigger(
 #[cfg(test)]
 mod tests {
     use super::{
-        refresh_bankier_company_for_trigger, refresh_source_for_trigger,
-        should_bootstrap_company_directories, SOURCE_COMPANY_REFRESH_KIND,
+        refresh_source_for_trigger, should_bootstrap_company_directories,
+        SOURCE_COMPANY_REFRESH_KIND,
     };
+    use crate::source_adapters::bankier_company::refresh_bankier_company_for_trigger;
     use crate::storage::{open_in_memory_database, AppState, CompanyLookupInput, NewCompany};
+
+    #[test]
+    fn fetcher_trait_impl_is_dispatched_for_its_adapter() {
+        // ADR 0069 (amended 2026-07-15): the refresh-level `Fetcher` trait must be
+        // dispatched polymorphically for adapters registered on the trait-object arm.
+        // Register a scripted `Fetcher` and assert `RuntimeAdapter::refresh` invokes it.
+        use super::{
+            empty_source_result, Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome,
+            RuntimeAdapter,
+        };
+        use crate::app_state::AppState;
+        use crate::storage::open_in_memory_database;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct ScriptedFetcher {
+            calls: AtomicUsize,
+        }
+
+        impl Fetcher for ScriptedFetcher {
+            fn refresh(
+                &self,
+                _state: &AppState,
+                _ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                let mut result = empty_source_result("scripted");
+                result.items_fetched = 4242;
+                Ok(RefreshOutcome::Ingestion(result))
+            }
+        }
+
+        let fetcher: &'static ScriptedFetcher = Box::leak(Box::new(ScriptedFetcher {
+            calls: AtomicUsize::new(0),
+        }));
+        let adapter = RuntimeAdapter {
+            id: "scripted",
+            behavior: RefreshBehavior::Fetcher(fetcher),
+        };
+        let state = AppState::new(open_in_memory_database().expect("db"));
+
+        let result = adapter
+            .refresh(&state, "manual", None)
+            .expect("trait dispatch should succeed");
+
+        assert_eq!(
+            fetcher.calls.load(Ordering::SeqCst),
+            1,
+            "the registered Fetcher impl must be invoked exactly once"
+        );
+        assert_eq!(
+            result.items_fetched, 4242,
+            "the trait impl's result must flow back through the dispatch path"
+        );
+        assert!(
+            adapter.in_full_refresh(),
+            "a Fetcher (feed-style) adapter joins the full-refresh sweep by default"
+        );
+    }
+
+    #[test]
+    fn directory_outcome_fetcher_maps_through_dispatch_and_skips_sweep() {
+        // ADR 0069 T2: a directory-style adapter returns `RefreshOutcome::Directory`,
+        // which the dispatch half maps onto the unified `SourceIngestionResult` shape
+        // (entries_fetched -> items_fetched, etc.) exactly as the retired `Directory`
+        // arm did — and it stays OUT of the full-refresh sweep (`joins_full_refresh`
+        // = false), matching the pre-migration membership.
+        use super::{Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome, RuntimeAdapter};
+        use crate::app_state::AppState;
+        use crate::storage::{open_in_memory_database, CompanyRegistryRefreshResult};
+
+        struct ScriptedDirectory;
+
+        impl Fetcher for ScriptedDirectory {
+            fn refresh(
+                &self,
+                _state: &AppState,
+                _ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                Ok(RefreshOutcome::Directory(CompanyRegistryRefreshResult {
+                    adapter_id: "scripted-directory".to_owned(),
+                    entries_fetched: 7,
+                    entries_upserted: 5,
+                    entries_deactivated: 2,
+                    fetched_at: "2026-07-15T00:00:00Z".to_owned(),
+                }))
+            }
+
+            fn joins_full_refresh(&self) -> bool {
+                false
+            }
+        }
+
+        let adapter = RuntimeAdapter {
+            id: "scripted-directory",
+            behavior: RefreshBehavior::Fetcher(&ScriptedDirectory),
+        };
+        let state = AppState::new(open_in_memory_database().expect("db"));
+
+        let result = adapter
+            .refresh(&state, "manual", None)
+            .expect("directory dispatch should succeed");
+
+        assert_eq!(result.items_fetched, 7, "entries_fetched -> items_fetched");
+        assert_eq!(result.items_created, 5, "entries_upserted -> items_created");
+        assert_eq!(
+            result.items_unmatched, 2,
+            "entries_deactivated -> items_unmatched"
+        );
+        assert!(result.fetched_at.is_some());
+        assert!(
+            !adapter.in_full_refresh(),
+            "a directory-style adapter is excluded from the full-refresh sweep"
+        );
+    }
+
+    #[test]
+    fn calendar_style_fetcher_receives_ctx_date() {
+        // ADR 0069 T2: the calendar adapter needs the optional date; the trait carries
+        // it through `RefreshContext`, replacing the retired `Calendar` fn-pointer arm.
+        use super::{
+            empty_source_result, Fetcher, RefreshBehavior, RefreshContext, RefreshOutcome,
+            RuntimeAdapter,
+        };
+        use crate::app_state::AppState;
+        use crate::storage::open_in_memory_database;
+        use std::sync::Mutex;
+
+        struct DateRecordingFetcher {
+            seen: Mutex<Option<String>>,
+        }
+
+        impl Fetcher for DateRecordingFetcher {
+            fn refresh(
+                &self,
+                _state: &AppState,
+                ctx: &RefreshContext,
+            ) -> Result<RefreshOutcome, String> {
+                *self.seen.lock().expect("lock") = ctx.date.map(|d| d.to_owned());
+                Ok(RefreshOutcome::Ingestion(empty_source_result("calendar")))
+            }
+        }
+
+        let fetcher: &'static DateRecordingFetcher = Box::leak(Box::new(DateRecordingFetcher {
+            seen: Mutex::new(None),
+        }));
+        let adapter = RuntimeAdapter {
+            id: "calendar",
+            behavior: RefreshBehavior::Fetcher(fetcher),
+        };
+        let state = AppState::new(open_in_memory_database().expect("db"));
+
+        adapter
+            .refresh(&state, "manual", Some("2026-06-01"))
+            .expect("calendar dispatch should succeed");
+
+        assert_eq!(
+            fetcher.seen.lock().expect("lock").as_deref(),
+            Some("2026-06-01"),
+            "the trait impl must receive the dispatch date via RefreshContext"
+        );
+    }
+
+    #[test]
+    fn full_refresh_sweep_membership_is_pinned() {
+        // ADR 0069 T2 tripwire: the strangler migration must not change which sources
+        // join the "refresh all" sweep (feed/calendar-style join; directory and
+        // disabled do not). Deliberate post-migration additions extend the pin on
+        // purpose — update this list only with a reviewed reason. Additions:
+        //   T4: knf-short-selling.
+        //   T3: gpw-espi-ebi — the reconciliation witness now runs a Fetcher and
+        //       joins the sweep (it reconciles against Bankier; it does NOT ingest).
+        use super::runtime_adapters;
+
+        let members: Vec<&str> = runtime_adapters()
+            .iter()
+            .filter(|a| a.in_full_refresh())
+            .map(|a| a.id)
+            .collect();
+
+        assert_eq!(
+            members,
+            vec![
+                "bankier-company-komunikaty",
+                "bankier-kalendarium-html",
+                "gpw-market-events-rss",
+                "bankier-market-rss",
+                "knf-short-selling",
+                "yahoo-eod",
+                "gpw-espi-ebi",
+            ],
+            "the full-refresh sweep membership must match the pinned set exactly"
+        );
+    }
 
     #[test]
     fn bankier_company_refresh_plans_one_job_per_tracked_company() {

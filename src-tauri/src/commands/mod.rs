@@ -34,6 +34,7 @@ pub mod report_season;
 pub mod research;
 pub mod search;
 pub mod settings;
+pub mod short_positions;
 pub mod signals;
 pub mod sources;
 pub mod transcripts;

@@ -37,6 +37,7 @@ import type {
 } from "../../api/types";
 import type { AlertRule } from "../../api/generated/AlertRule";
 import type { AttentionEvent } from "../../api/generated/AttentionEvent";
+import type { ReconciliationResult } from "../../api/generated/ReconciliationResult";
 import type { BackupStatus } from "../../api/backups";
 import type { ClaimExtractionJob } from "../../api/claimExtraction";
 import type { IrReportResolution } from "../../api/ir";
@@ -904,6 +905,7 @@ export function makeSourceAdapter(spec: SourceAdapterSpec): SourceAdapter {
     sourceType: spec.sourceType,
     fetchMode: spec.fetchMode,
     visibility: spec.visibility,
+    role: "primary",
     userConfigurable: spec.userConfigurable,
     healthStatus: spec.healthStatus,
     enabled: spec.enabled,
@@ -1122,6 +1124,24 @@ export function makeDiagnosticEvent(): DiagnosticEvent {
 
 export function makeDiagnosticSummary(): DiagnosticSummary {
   return { summary: "1 diagnostic event recorded.", eventCount: 1 };
+}
+
+export function makeReconciliationResult(): ReconciliationResult {
+  return {
+    id: "recon_sample_0001",
+    witnessAdapterId: "gpw-espi-ebi",
+    companyId: "company_sample",
+    qualifiedTicker: "GPW:CDR",
+    reportNumber: "15/2026",
+    reportType: "Bieżący",
+    disclosureDate: "2026-07-14",
+    witnessTitle: "Sample reconciled ESPI report.",
+    witnessUrl: "https://www.gpw.pl/komunikaty?id=15",
+    status: "matched",
+    primaryFeedItemId: "feed_sample",
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
 }
 
 export function makeLogEntry(): LogEntry {

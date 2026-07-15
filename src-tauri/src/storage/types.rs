@@ -689,6 +689,10 @@ pub struct SourceAdapter {
         ts(type = "\"required\" | \"optional\" | \"developer\"")
     )]
     pub visibility: String,
+    /// Feed-pipeline role (ADR 0069 D2, plan v0.55 T3). `witness` sources
+    /// reconcile against the primary instead of ingesting into the feed.
+    #[cfg_attr(feature = "ts-export", ts(type = "\"primary\" | \"witness\""))]
+    pub role: String,
     pub user_configurable: bool,
     #[cfg_attr(
         feature = "ts-export",
@@ -852,7 +856,7 @@ pub struct CompanySignal {
     #[cfg_attr(
         feature = "ts-export",
         ts(
-            type = "\"insider_transaction\" | \"dividend\" | \"profit_warning\" | \"significant_contract\" | \"own_shares\" | \"guidance_change\" | \"general_meeting\" | \"other\""
+            type = "\"insider_transaction\" | \"dividend\" | \"profit_warning\" | \"significant_contract\" | \"own_shares\" | \"guidance_change\" | \"general_meeting\" | \"auditor_opinion\" | \"short_position_change\" | \"other\""
         )
     )]
     pub category: String,

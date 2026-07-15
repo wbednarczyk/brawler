@@ -1,0 +1,34 @@
+---
+source: src/source_adapters/knf_short_selling.rs
+expression: entries
+---
+[
+    KnfShortEntry {
+        holder_name: "AKO Capital LLP",
+        issuer_name: "CD PROJEKT SA",
+        isin: "PLOPTTC00011",
+        net_position_pct: 0.53,
+        position_date: "2026-07-14",
+        modify_date: Some(
+            "2026-07-15",
+        ),
+    },
+    KnfShortEntry {
+        holder_name: "Marshall Wace & Co",
+        issuer_name: "CD PROJEKT SA",
+        isin: "PLOPTTC00011",
+        net_position_pct: 1.2,
+        position_date: "2026-07-13",
+        modify_date: None,
+    },
+    KnfShortEntry {
+        holder_name: "BlackRock Investment Management",
+        issuer_name: "ALLEGRO.EU SA",
+        isin: "LU2237380790",
+        net_position_pct: 0.75,
+        position_date: "2026-07-12",
+        modify_date: Some(
+            "2026-07-12",
+        ),
+    },
+]

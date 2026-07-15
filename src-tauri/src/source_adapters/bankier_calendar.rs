@@ -285,13 +285,40 @@ fn classify_event_type(category: &str) -> String {
     .to_owned()
 }
 
+/// Bankier calendar adapter refresh (ADR 0069, plan v0.55 T2). Behavior-preserving
+/// lift of the former `RefreshBehavior::Calendar` arm — the only adapter that uses
+/// `RefreshContext::date` (an optional specific week to fetch).
+pub struct BankierCalendarRefresh;
+
+impl crate::jobs::source_refresh::Fetcher for BankierCalendarRefresh {
+    fn refresh(
+        &self,
+        state: &crate::app_state::AppState,
+        ctx: &crate::jobs::source_refresh::RefreshContext,
+    ) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+        let _ = state.record_source_adapter_attempt(ADAPTER_ID, ctx.trigger);
+        let event_items =
+            match fetch_calendar_events_for_date(&HttpBankierCalendarFetcher, ctx.date) {
+                Ok(items) => items,
+                Err(error) => {
+                    let message = error.to_string();
+                    let _ = state.record_source_adapter_error(ADAPTER_ID, &message);
+                    return Err(message);
+                }
+            };
+
+        state
+            .ingest_bankier_calendar_event_items(&event_items)
+            .map(crate::jobs::source_refresh::RefreshOutcome::Ingestion)
+            .map_err(|error| error.to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn parses_bankier_calendar_events() {
-        let html = r#"
+    const SAMPLE_CALENDAR_HTML: &str = r#"
             <section class="m-quotes-calendar-list__item" data-timestamp="1780264800">
                 <h3 class="m-quotes-calendar-list__date">1 Czerwca 2026 ● Poniedziałek</h3>
                 <div class="m-quotes-calendar-list__event">
@@ -307,7 +334,18 @@ mod tests {
             </section>
         "#;
 
-        let events = parse_calendar_events(html, "2026-06-01T10:00:00Z")
+    #[test]
+    fn golden_parsed_calendar_events() {
+        // Golden ingestion pin (ADR 0069 / plan v0.55 T2): the sample calendar HTML
+        // must parse into a byte-stable set of events across the Fetcher migration.
+        let events = parse_calendar_events(SAMPLE_CALENDAR_HTML, "2026-06-01T10:00:00Z")
+            .expect("calendar events should parse");
+        insta::assert_debug_snapshot!("golden_bankier_calendar_events", events);
+    }
+
+    #[test]
+    fn parses_bankier_calendar_events() {
+        let events = parse_calendar_events(SAMPLE_CALENDAR_HTML, "2026-06-01T10:00:00Z")
             .expect("calendar events should parse");
 
         assert_eq!(events.len(), 2);

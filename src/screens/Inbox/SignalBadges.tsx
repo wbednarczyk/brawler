@@ -15,6 +15,8 @@ const CATEGORY_TONE: Record<CompanySignalCategory, StatusChipTone> = {
   own_shares: "accent",
   guidance_change: "warn",
   general_meeting: "neutral",
+  auditor_opinion: "danger",
+  short_position_change: "warn",
   other: "neutral",
 };
 

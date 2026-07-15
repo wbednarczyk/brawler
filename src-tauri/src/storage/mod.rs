@@ -61,6 +61,7 @@ mod notebooks;
 mod pool;
 mod quality_frameworks;
 mod queue_config;
+mod reconciliation;
 mod registry;
 mod report_documents;
 mod report_expectations;
@@ -72,6 +73,7 @@ mod research_digests;
 mod research_reminders;
 mod search;
 mod settings;
+mod short_positions;
 mod signals;
 mod sources;
 mod transcripts;
@@ -96,6 +98,7 @@ pub use claim_extraction::{
     ConfirmClaimProposalInput, NewClaimExtractionJob, NewClaimProposal,
 };
 pub use diagnostics::{DiagnosticEvent, DiagnosticScope, NewDiagnosticEvent};
+pub use reconciliation::{ReconciliationResult, ReconciliationStore};
 // `AppState` is defined in this module.
 pub use ai_analysis::AiAnalysisStore;
 pub use claim_extraction::ClaimExtractionStore;
@@ -197,6 +200,10 @@ pub(crate) use settings::MCP_PORT_DEFAULT;
 pub use settings::{
     AiProviderSettings, CapabilityProviderEntry, LogSettings, SettingsUpdate,
     ShortcutBindingSetting, UserSettings,
+};
+pub use short_positions::{
+    ShortPositionEventRow, ShortPositionExit, ShortPositionRow, ShortPositionsInput,
+    ShortPositionsView,
 };
 pub use signals::SignalNeedingDate;
 pub use signals::SignalStore;
@@ -605,6 +612,16 @@ impl AppState {
     /// signals domain store (Architecture v2 / ADR 0050).
     pub fn signals(&self) -> signals::SignalStore {
         signals::SignalStore::new(self.db.clone())
+    }
+
+    /// KNF short-selling domain store (ADR 0069 decision 3).
+    pub fn short_positions(&self) -> short_positions::ShortPositionStore {
+        short_positions::ShortPositionStore::new(self.db.clone())
+    }
+
+    /// Source-reconciliation domain store (ADR 0069 decision 2, plan v0.55 T3).
+    pub fn reconciliation(&self) -> reconciliation::ReconciliationStore {
+        reconciliation::ReconciliationStore::new(self.db.clone())
     }
 
     /// Attention (alert rules + attention events) domain store (ADR 0068).

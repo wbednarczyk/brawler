@@ -1,0 +1,187 @@
+/* KNF short-selling cockpit panel (v0.55 T4b, ADR 0069 decision 3). Composes the
+   design system for the mockup at docs/mockups/short-positions-panel.html. Every
+   grid/flex ancestor carries min-width: 0 so long holder names truncate/wrap
+   instead of forcing a page-level horizontal scrollbar; the positions table gets
+   its own bounded scroller (data-hscroll) at narrow panes (ui-authoring.md
+   styling rules, DoD §B). */
+
+.short-positions-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.short-positions-attr {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Summary tiles: a row that wraps to a column at narrow panes. */
+.short-positions-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.short-positions-summary > div {
+  flex: 1 1 140px;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-0);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
+}
+
+.short-positions-summary > div > strong {
+  font-size: var(--font-lg);
+  font-variant-numeric: tabular-nums;
+}
+
+.short-positions-summary > div > span {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.short-positions-stat-danger {
+  color: var(--danger);
+}
+
+.short-positions-stat-ok {
+  color: var(--success);
+}
+
+/* Positions table: bounded horizontal scroller so wide holder names never blow
+   out the pane (contain: inline-size stops the min-content width propagating up
+   the column flex chain). */
+.short-positions-table-scroll {
+  overflow-x: auto;
+  contain: inline-size;
+  min-width: 0;
+}
+
+.short-positions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-sm);
+}
+
+.short-positions-table th {
+  text-align: left;
+  padding: var(--space-1) var(--space-2) var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.short-positions-table td {
+  padding: var(--space-2) var(--space-2) var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  vertical-align: baseline;
+}
+
+.short-positions-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.short-positions-table th.num,
+.short-positions-table td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.short-positions-holder {
+  overflow-wrap: anywhere;
+}
+
+/* Recently-changed marker sits inline after the holder name (first column). */
+.short-positions-change-chip {
+  margin-left: var(--space-2);
+}
+
+/* Change history: holder + from→to on the left, a fixed kind-chip slot, then a
+   fixed date slot so chips/dates stay column-aligned down the list (trailing
+   chips in fixed slots, ui-authoring.md). */
+.short-positions-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.short-positions-history li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.short-positions-history li:last-child {
+  border-bottom: 0;
+}
+
+.short-positions-history-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.short-positions-history-change {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+.short-positions-history-kind {
+  justify-self: start;
+}
+
+.short-positions-history-date {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  justify-self: end;
+}
+
+/* Empty state (the most common case): stacked lines, centered. */
+.short-positions-empty {
+  display: grid;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.short-positions-empty-title {
+  font-size: var(--font-md);
+  color: var(--text);
+}
+
+.short-positions-empty-exit {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.short-positions-foot {
+  padding-top: var(--space-2);
+  border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+/* Narrow pane: stat tiles collapse to a single column (ADR 0076 D6). */
+@container pane (max-width: 419px) {
+  .short-positions-summary > div {
+    flex-basis: 100%;
+  }
+}

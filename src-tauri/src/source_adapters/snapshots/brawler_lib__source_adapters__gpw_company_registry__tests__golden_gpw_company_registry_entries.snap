@@ -1,0 +1,28 @@
+---
+source: src/source_adapters/gpw_company_registry.rs
+expression: entries
+---
+[
+    CompanyDirectoryEntry {
+        exchange: "GPW",
+        ticker: "11B",
+        qualified_ticker: "GPW:11B",
+        display_name: "11 BIT STUDIOS SPÓŁKA AKCYJNA",
+        isin: "PL11BTS00015",
+        source_url: "https://www.gpw.pl/spolka?isin=PL11BTS00015",
+        sector: Some(
+            "Gry",
+        ),
+    },
+    CompanyDirectoryEntry {
+        exchange: "GPW",
+        ticker: "CDR",
+        qualified_ticker: "GPW:CDR",
+        display_name: "CD PROJEKT SPÓŁKA AKCYJNA",
+        isin: "PLOPTTC00011",
+        source_url: "https://www.gpw.pl/spolka?isin=PLOPTTC00011",
+        sector: Some(
+            "Gry",
+        ),
+    },
+]

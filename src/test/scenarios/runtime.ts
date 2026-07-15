@@ -99,6 +99,30 @@ function str(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+/** `day` (YYYY-MM-DD) minus `days`, same format. Mirrors the Rust read fn's
+ * 30-day window so the dual-execution fidelity corpus agrees on the empty shape. */
+function dateMinusDays(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Signed contribution of a KNF register-change event to the aggregate net short
+ * % — mirrors `signed_event_delta` in `storage/short_positions.rs`. */
+function signedEventDelta(kind: string, fromPct: number | null, toPct: number | null): number {
+  switch (kind) {
+    case "entered":
+      return toPct ?? 0;
+    case "increased":
+    case "decreased":
+      return (toPct ?? 0) - (fromPct ?? 0);
+    case "exited":
+      return -(fromPct ?? 0);
+    default:
+      return 0;
+  }
+}
+
 /** Registry-sourced sector per company id (mirrors the Rust registry auto-populate, ADR 0067 Decision 3). */
 const REGISTRY_SECTORS = new Map<string, string>(
   COMPANY_SPECS.map((spec) => [companyIdFor(spec), spec.sector]),
@@ -380,6 +404,7 @@ function buildHandlers(): Record<string, Handler> {
     get_local_metrics_snapshot: (d) => d.metricsSnapshot,
     get_diagnostic_summary: (d) => d.diagnosticSummary,
     list_diagnostic_events: (d) => d.diagnosticEvents,
+    list_source_reconciliation: (d) => d.reconciliationResults,
     get_log_status: (d) => d.logStatus,
     list_log_entries: (d) => d.logEntries,
     list_ai_provider_catalog: (d) => d.providerCatalog,
@@ -2148,6 +2173,64 @@ function buildHandlers(): Record<string, Handler> {
         });
     },
 
+    // --- KNF short selling (v0.55 T4b, ADR 0069 decision 3). Read model derived
+    // from the seeded register rows/events; mirrors storage/short_positions.rs. ---
+    list_short_positions: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const today = SAMPLE_NOW.slice(0, 10);
+      const cutoff = dateMinusDays(today, 30);
+
+      const active = d.shortPositions
+        .filter((p) => p.companyId === companyId && p.exitedAt === null)
+        .sort(
+          (x, y) =>
+            y.netPositionPct - x.netPositionPct || (x.holderName < y.holderName ? -1 : 1),
+        );
+      const changedHolders = new Set(
+        d.shortPositionEvents
+          .filter((e) => e.companyId === companyId && e.positionDate >= cutoff)
+          .map((e) => e.holderName),
+      );
+      const events = d.shortPositionEvents
+        .filter((e) => e.companyId === companyId)
+        .sort((x, y) => (x.positionDate < y.positionDate ? 1 : x.positionDate > y.positionDate ? -1 : 0))
+        .slice(0, 50)
+        .map((e) => ({
+          kind: e.kind,
+          holderName: e.holderName,
+          fromPct: e.fromPct,
+          toPct: e.toPct,
+          positionDate: e.positionDate,
+        }));
+      const exits = d.shortPositions
+        .filter((p) => p.companyId === companyId && p.exitedAt !== null)
+        .sort((x, y) => (String(x.exitedAt) < String(y.exitedAt) ? 1 : -1));
+      const lastExit = exits.length
+        ? { holderName: exits[0].holderName, exitedOn: String(exits[0].exitedAt).slice(0, 10) }
+        : null;
+
+      return {
+        positions: active.map((p) => ({
+          holderName: p.holderName,
+          netPositionPct: p.netPositionPct,
+          positionDate: p.positionDate,
+          recentlyChanged: changedHolders.has(p.holderName),
+        })),
+        events,
+        lastExit,
+        aggregatePct: active.reduce((sum, p) => sum + p.netPositionPct, 0),
+        delta30dPp: d.shortPositionEvents
+          .filter((e) => e.companyId === companyId && e.positionDate >= cutoff)
+          .reduce((sum, e) => sum + signedEventDelta(e.kind, e.fromPct, e.toPct), 0),
+        // Mirrors source_adapters.last_success_at for knf-short-selling; the
+        // sample world has no adapter-run state, so expose the sample clock when
+        // any register data exists, null otherwise (matches a never-pulled DB).
+        registerUpdatedAt:
+          d.shortPositions.length > 0 || d.shortPositionEvents.length > 0 ? SAMPLE_NOW : null,
+      };
+    },
+
     // --- Pre-report expectations (ADR 0071). Command-only state in ctx. ---
     create_report_expectation: (_d, a, ctx) => {
       const input = unwrap(a);
@@ -3003,6 +3086,7 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "get_local_metrics_snapshot",
   "get_diagnostic_summary",
   "list_diagnostic_events",
+  "list_source_reconciliation",
   "get_log_status",
   "list_log_entries",
   "list_ai_provider_catalog",

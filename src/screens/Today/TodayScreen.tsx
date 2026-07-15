@@ -182,6 +182,12 @@ export function TodayScreen({
       case "company_signal":
         openCompanyWorkspace(company.id, "Feed");
         return;
+      case "source_reconciliation":
+        // The primary channel missed an official report the witness saw — land on
+        // the company's report Feed where the reconciliation ledger points (the
+        // full witness title + GPW URL live in Diagnostics). ADR 0069 D2.
+        openCompanyWorkspace(company.id, "Feed");
+        return;
       case "autopilot_run":
       case "daily_quote":
         openCompanyWorkspace(company.id, "Fundamentals");
@@ -245,7 +251,7 @@ export function TodayScreen({
       if (event.seen || event.dismissed) continue;
       if (toastedAttentionEventIds.has(event.id)) continue;
       toastedAttentionEventIds.add(event.id);
-      const rule = attentionRulesById.get(event.ruleId);
+      const rule = event.ruleId ? attentionRulesById.get(event.ruleId) : undefined;
       const ticker = companyById.get(event.companyId)?.qualifiedTicker ?? event.companyId;
       const detail = attentionEventTitleText(event, rule, text);
       toast.show({
@@ -505,7 +511,7 @@ export function TodayScreen({
   // click-through to evidence) · an explicit Dismiss (no expandable detail —
   // an event carries no further state to disclose, unlike an autopilot run).
   function attentionRow(event: AttentionEvent) {
-    const rule = attentionRulesById.get(event.ruleId);
+    const rule = event.ruleId ? attentionRulesById.get(event.ruleId) : undefined;
     const company = companyById.get(event.companyId);
     return (
       <li key={event.id} className="today-stream-row" data-category="attention">

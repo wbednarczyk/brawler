@@ -1,8 +1,10 @@
 import { callCommand } from "./tauri";
-import type { ClearDiagnosticEventsResult, DiagnosticEvent, DiagnosticSummary } from "./types";
+import type { ClearDiagnosticEventsResult, DiagnosticEvent, DiagnosticSummary, ReconciliationResult } from "./types";
 import type { ListDiagnosticEventsInput } from "./generated/ListDiagnosticEventsInput";
+import type { ListSourceReconciliationInput } from "./generated/ListSourceReconciliationInput";
 
 export type { ListDiagnosticEventsInput } from "./generated/ListDiagnosticEventsInput";
+export type { ListSourceReconciliationInput } from "./generated/ListSourceReconciliationInput";
 
 export function listDiagnosticEvents(input?: ListDiagnosticEventsInput) {
   if (input === undefined) {
@@ -10,6 +12,15 @@ export function listDiagnosticEvents(input?: ListDiagnosticEventsInput) {
   }
 
   return callCommand<DiagnosticEvent[]>("list_diagnostic_events", { input });
+}
+
+/** Recent source-reconciliation ledger (ADR 0069 D2, developer diagnostics). */
+export function listSourceReconciliation(input?: ListSourceReconciliationInput) {
+  if (input === undefined) {
+    return callCommand<ReconciliationResult[]>("list_source_reconciliation");
+  }
+
+  return callCommand<ReconciliationResult[]>("list_source_reconciliation", { input });
 }
 
 export function clearDiagnosticEvents() {

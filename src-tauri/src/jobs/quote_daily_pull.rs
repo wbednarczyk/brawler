@@ -4,7 +4,7 @@
 //!
 //! Not a standalone job kind: driven by the existing Rust-side scheduler
 //! through the normal `scheduled_source_refresh` dispatch for the `yahoo-eod`
-//! runtime adapter (mirrors the `RefreshBehavior::Feed` arms in
+//! runtime adapter (the [`YahooEodRefresh`] `Fetcher` impl registered in
 //! `jobs::source_refresh::runtime_adapters`), so enabling `yahoo-eod` alone is
 //! what wires the cadence — no separate scheduler entry needed.
 //!
@@ -18,7 +18,6 @@
 //! unmapped ticker is recorded as a source-health diagnostic and that company
 //! is skipped for the run (best-effort — one company's failure never aborts
 //! the sweep; the self-heal backfill catches history up after an outage).
-//! `// migrates to Fetcher (ADR 0069)`.
 
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -31,6 +30,35 @@ pub const YAHOO_ADAPTER_ID: &str = "yahoo-eod";
 /// Default witness-divergence tolerance (ADR 0082): a percent difference from
 /// the stored close beyond this raises a source-health diagnostic.
 pub const DEFAULT_WITNESS_TOLERANCE_PCT: f64 = 1.0;
+
+/// Post-session daily quote pull for the primary market-data source (ADR 0082,
+/// v0.53 T2; migrated to the `Fetcher` trait in plan v0.55 T2 / ADR 0069).
+/// Behavior-preserving lift of the former `RefreshBehavior::Feed` arm: wired so
+/// the existing Rust-side scheduler drives it exactly like every other enabled
+/// source. Per-company failures inside the pull are swallowed into
+/// `items_unmatched` (best-effort — one company never aborts the sweep); only a
+/// whole-run failure (e.g. reading the company list) propagates.
+pub struct YahooEodRefresh;
+
+impl crate::jobs::source_refresh::Fetcher for YahooEodRefresh {
+    fn refresh(
+        &self,
+        state: &AppState,
+        ctx: &crate::jobs::source_refresh::RefreshContext,
+    ) -> Result<crate::jobs::source_refresh::RefreshOutcome, String> {
+        let _ = state.record_source_adapter_attempt(YAHOO_ADAPTER_ID, ctx.trigger);
+
+        match run_daily_pull_for_trigger(state, ctx.trigger) {
+            Ok(result) => Ok(crate::jobs::source_refresh::RefreshOutcome::Ingestion(
+                result,
+            )),
+            Err(error) => {
+                let _ = state.record_source_adapter_error(YAHOO_ADAPTER_ID, &error);
+                Err(error)
+            }
+        }
+    }
+}
 
 /// Queue entry point (via `jobs::source_refresh`'s `yahoo-eod` dispatch arm):
 /// pull the latest session bar for every tracked GPW company using the live

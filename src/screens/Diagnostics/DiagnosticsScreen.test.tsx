@@ -52,3 +52,42 @@ describe("Diagnostics density contract (U7-E2)", () => {
     expect(screen.getByLabelText("Severity")).toBeInTheDocument();
   });
 });
+
+// Source reconciliation ledger (ADR 0069 D2, plan v0.55 T3): the developer
+// Diagnostics screen surfaces the GPW ESPI/EBI witness ↔ Bankier pair results
+// with a per-status chip.
+describe("Diagnostics source reconciliation section", () => {
+  it("renders reconciliation results with their status chips", async () => {
+    const user = userEvent.setup();
+    appTestState.settingsResponse = {
+      ...appTestState.settingsResponse,
+      developerMode: true,
+    };
+    appTestState.reconciliationResultsResponse = [
+      {
+        id: "recon_espi",
+        witnessAdapterId: "gpw-espi-ebi",
+        companyId: "company_1",
+        qualifiedTicker: "GPW:CDR",
+        reportNumber: "15/2026",
+        reportType: "Bieżący",
+        disclosureDate: "2026-07-14",
+        witnessTitle: "Zawarcie istotnej umowy",
+        witnessUrl: "https://www.gpw.pl/komunikaty?id=15",
+        status: "espi_only",
+        primaryFeedItemId: null,
+        createdAt: "2026-07-14T10:00:00Z",
+        updatedAt: "2026-07-14T10:00:00Z",
+      },
+    ];
+    renderApp();
+    await user.click(await screen.findByRole("button", { name: "Diagnostics" }));
+    await screen.findByRole("heading", { name: "Diagnostic events" });
+
+    // Expand the reconciliation section, then assert its ledger row + status chip.
+    await user.click(await screen.findByRole("button", { name: /Source reconciliation/ }));
+    expect(await screen.findByText("Zawarcie istotnej umowy")).toBeInTheDocument();
+    expect(screen.getByText("Missed by primary")).toBeInTheDocument();
+    expect(screen.getByText("GPW:CDR")).toBeInTheDocument();
+  });
+});

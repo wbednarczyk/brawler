@@ -11,9 +11,10 @@ import type {
   LogEntry,
   LogStatus,
   MetricSample,
+  ReconciliationResult,
   SourceAdapter,
 } from "../../api/types";
-import { ActionRow, Button, EmptyState, ErrorText, FilterToolbar, InfoGrid, PanelHeader, SelectField } from "../../ui";
+import { ActionRow, Button, EmptyState, ErrorText, FilterToolbar, InfoGrid, PanelHeader, SelectField, StatusChip } from "../../ui";
 import { useLocale } from "../../shared/locale";
 import { useDeveloperMode } from "../../app/state/SettingsContext";
 import { BackupsSection } from "./BackupsSection";
@@ -47,6 +48,8 @@ export function DiagnosticsScreen({
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const [metricsSnapshot, setMetricsSnapshot] = useState<LocalMetricsSnapshot | null>(null);
   const [developerSources, setDeveloperSources] = useState<SourceAdapter[]>([]);
+  const [reconciliation, setReconciliation] = useState<ReconciliationResult[]>([]);
+  const [reconciliationSectionOpen, setReconciliationSectionOpen] = useState(false);
   const [inFlight, setInFlight] = useState(false);
   const [logsInFlight, setLogsInFlight] = useState(false);
   const [metricsInFlight, setMetricsInFlight] = useState(false);
@@ -136,11 +139,28 @@ export function DiagnosticsScreen({
       });
   }
 
+  function refreshReconciliation() {
+    if (!developerMode) {
+      setReconciliation([]);
+      return;
+    }
+
+    diagnosticsApi.listSourceReconciliation({ limit: 100 })
+      .then((results) => {
+        setReconciliation(results);
+        setDiagnosticsError(null);
+      })
+      .catch((error) => {
+        setDiagnosticsError(String(error));
+      });
+  }
+
   useEffect(() => {
     refreshDiagnostics();
     refreshMetrics();
     refreshLogs();
     refreshDeveloperSources();
+    refreshReconciliation();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load diagnostics when developer mode toggles; the non-memoized refresh callbacks are intentionally excluded to avoid re-fetching every render
   }, [developerMode]);
 
@@ -417,6 +437,54 @@ export function DiagnosticsScreen({
           ) : null}
         </section>
 
+        <section className="diagnostics-section" aria-labelledby="diagnostics-reconciliation-title">
+          <button
+            aria-expanded={reconciliationSectionOpen}
+            className="diagnostics-section-header"
+            onClick={() => setReconciliationSectionOpen((open) => !open)}
+            type="button"
+          >
+            <span>
+              <h2 id="diagnostics-reconciliation-title">{text("Source reconciliation")}</h2>
+              <small>{text("GPW ESPI/EBI witness vs Bankier — official reports the primary source may have missed.")}</small>
+            </span>
+            <span className="diagnostics-section-meta">
+              {reconciliation.length}
+              <ChevronDown className={reconciliationSectionOpen ? "section-chevron section-chevron-open" : "section-chevron"} size={16} />
+            </span>
+          </button>
+          {reconciliationSectionOpen ? (
+            <div className="diagnostics-section-body">
+              <div className="diagnostics-section-toolbar">
+                <ActionRow className="diagnostics-actions">
+                  <Button className="compact-button" onClick={refreshReconciliation}>
+                    <RefreshCw size={15} />
+                    {text("Refresh")}
+                  </Button>
+                </ActionRow>
+              </div>
+              <div className="diagnostics-list" aria-label={text("Source reconciliation")}>
+                {reconciliation.map((result) => (
+                  <article className="diagnostic-event" key={result.id}>
+                    <div className="diagnostic-event-main">
+                      <StatusChip tone={reconciliationStatusTone(result.status)}>
+                        {text(reconciliationStatusLabel(result.status))}
+                      </StatusChip>
+                      <span className="diagnostic-event-stage">
+                        <strong>{result.qualifiedTicker ?? result.companyId ?? text("Untracked")}</strong>
+                        <span>{result.reportNumber ?? result.reportType ?? ""}</span>
+                      </span>
+                      <span className="diagnostic-event-message">{result.witnessTitle}</span>
+                      <time dateTime={result.disclosureDate}>{result.disclosureDate}</time>
+                    </div>
+                  </article>
+                ))}
+                {reconciliation.length === 0 ? <EmptyState>{text("No reconciliation results recorded.")}</EmptyState> : null}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
         <section className="diagnostics-section" aria-labelledby="diagnostics-metrics-title">
           <button
             aria-expanded={metricsSectionOpen}
@@ -636,6 +704,28 @@ function formatBytes(value: number) {
   }
 
   return `${value} B`;
+}
+
+function reconciliationStatusTone(status: ReconciliationResult["status"]): "ok" | "warn" | "neutral" {
+  switch (status) {
+    case "matched":
+      return "ok";
+    case "espi_only":
+      return "warn";
+    default:
+      return "neutral";
+  }
+}
+
+function reconciliationStatusLabel(status: ReconciliationResult["status"]): string {
+  switch (status) {
+    case "matched":
+      return "Matched";
+    case "espi_only":
+      return "Missed by primary";
+    default:
+      return "Bankier only";
+  }
 }
 
 function formatScope(event: DiagnosticEvent) {

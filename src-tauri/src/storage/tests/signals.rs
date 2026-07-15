@@ -223,6 +223,72 @@ fn rule_classifier_produces_confirmed_typed_signals_for_real_filings() {
 }
 
 #[test]
+fn auditor_opinion_signal_classifies_qualified_and_going_concern_filings() {
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    let items = vec![
+        espi_item(
+            &company,
+            "9100001",
+            "Raport niezależnego biegłego rewidenta z zastrzeżeniem",
+        ),
+        espi_item(
+            &company,
+            "9100002",
+            "Odmowa wyrażenia opinii przez biegłego rewidenta",
+        ),
+        espi_item(
+            &company,
+            "9100003",
+            "Istotna niepewność co do kontynuacji działalności Spółki",
+        ),
+        // A plain dividend recommendation must NOT be typed as an auditor opinion.
+        espi_item(
+            &company,
+            "9100004",
+            "Rekomendacja Zarządu w sprawie wypłaty dywidendy za rok 2025",
+        ),
+    ];
+    state
+        .ingest_bankier_company_items(&items)
+        .expect("ingestion should classify");
+
+    let signals = state
+        .list_company_signals(CompanySignalListInput {
+            company_id: Some(company.id.clone()),
+            ..Default::default()
+        })
+        .expect("signals should list");
+
+    let auditor: Vec<_> = signals
+        .iter()
+        .filter(|s| s.category == "auditor_opinion")
+        .collect();
+    assert_eq!(
+        auditor.len(),
+        3,
+        "the three auditor red-flag filings classify to auditor_opinion"
+    );
+    assert!(auditor
+        .iter()
+        .all(|s| s.classified_by == "rule" && s.status == "confirmed" && s.confidence > 0.0));
+
+    // The dividend filing keeps its own category, never auditor_opinion.
+    assert!(
+        signals.iter().any(|s| s.category == "dividend"),
+        "the dividend filing still classifies to dividend"
+    );
+    assert!(
+        !signals
+            .iter()
+            .any(|s| s.category == "auditor_opinion" && s.title.contains("dywidend")),
+        "a dividend filing must not be typed as an auditor opinion"
+    );
+}
+
+#[test]
 fn unmatched_filing_produces_no_signal_under_conservative_posture() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);

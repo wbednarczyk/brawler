@@ -18,17 +18,10 @@ pub enum MarketDataFetchError {
     #[error("market data HTTP request failed: {0}")]
     Request(#[from] reqwest::Error),
     /// Non-2xx HTTP status. Callers distinguish 429/999 (Yahoo rate-limit /
-    /// undocumented block, ADR 0082) to trigger the Twelve Data fallback.
+    /// undocumented block, ADR 0082) to record source-health and skip the day —
+    /// there is no fallback provider (ADR 0082 amendment 2026-07-14, card ee81afe).
     #[error("market data provider returned HTTP {0}")]
     Status(u16),
-}
-
-impl MarketDataFetchError {
-    /// Whether this error should trigger the Yahoo -> Twelve Data fallback
-    /// (ADR 0082: 429 rate-limit or 999 Yahoo's undocumented block code).
-    pub fn is_fallback_trigger(&self) -> bool {
-        matches!(self, Self::Status(429) | Self::Status(999))
-    }
 }
 
 /// Fetches raw provider JSON bodies. Implementors never parse — parsing stays
