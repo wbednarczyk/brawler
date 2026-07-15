@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.54.0 - 2026-07-15
+
+Attention routing: the app now **tells you what deserves a look** instead of
+waiting to be scanned. You set **alert rules** ("notify me when…"), fired
+alerts surface as **persistent in-app toasts** and a Today attention list, and
+a **morning briefing** opens the day with "what changed in my companies + what
+needs doing" — every item linked back to its evidence. Decision support only:
+facts and links, never buy/sell advice, all local. Guide:
+[Attention & briefing](wiki/attention-and-briefing.md).
+
+### Added
+
+- **Alerts** — a new Library screen (left sidebar, `Ctrl+9`, also in the `⌘K`
+  palette). Build a rule from preset chips: a **signal category** (profit
+  warning, insider transactions), **autopilot finished a report**, the price
+  **entering your range**, or a **52-week low** — scoped to one company or a
+  whole watchlist. A live plain-language preview restates the rule before you
+  add it ("Notify me when a company on My GPW publishes a profit warning.");
+  rules toggle on/off and delete with undo.
+- **Attention events** — rules are evaluated automatically as data arrives
+  (signal classification, autopilot completion, the post-session price pull).
+  Each fired alert is stored once per piece of evidence (no re-fires on
+  re-ingest, per-rule daily throttle) and links straight to what raised it.
+- **Persistent alert toasts** — fired alerts pop up as toasts that stay until
+  dismissed, with a click-through to the evidence (the signal, the run, the
+  quote). The toast primitive gained this persistent variant alongside the
+  existing auto-dismissing one; alert toasts can't be pushed out by ordinary
+  feedback toasts and announce assertively to screen readers.
+- **Today attention list** — open (undismissed) alerts appear as a fifth
+  category in the Today stream, grouped by company, with mark-seen on review
+  and dismiss.
+- **Morning briefing** — a Today card composing "what changed since the last
+  briefing": new signals, autopilot results, claims due for verification,
+  upcoming report dates, fired alerts — deterministically ordered by the
+  domain date. With an AI provider configured (the briefing has its **own
+  provider routing** in Settings), a short cited narrative is added — a
+  narrative citing anything outside the composed list is rejected, never
+  stored. **Without any provider the briefing still renders as a structured
+  list** — never blocked. Generate on demand or let the once-a-day auto
+  refresh do it.
+
+### Changed
+
+- **Consistent action feedback** — manual source refresh, research import, and
+  digest/brief generation now confirm with a transient toast instead of
+  inline-only status; form validation and persistent statuses stay inline by
+  design (the boundary is now a documented authoring rule).
+- The J1 "morning review" journey starts with reading the briefing at the top
+  of Today.
+
+### Fixed
+
+- Creating an alert rule after deleting another could crash with a database
+  UNIQUE-constraint error (caught live on the owner's data): rule ids are now
+  content-derived, and creating a rule identical to an existing one is a clear
+  "already exists" message instead of a crash or a silent duplicate.
+- WCAG AA color contrast for accent-colored small text (toast actions, active
+  chips, preview highlights) in both light palettes.
+
 ## v0.53.0 - 2026-07-15
 
 Market data foundation: track a company and Brawler now pulls its **daily
