@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.53.0 - 2026-07-15
+
+Market data foundation: track a company and Brawler now pulls its **daily
+prices** automatically, turns them into a **price context** beside the reported
+fundamentals — where the price sits in its year, what it's worth, the level-0
+valuation ratios — and classifies its **sector** on its own. Everything is
+automatic (no manual import), local, and decision support only. This release
+also lands the **dashboard redesign**: one company-scoped Dashboard with saved
+presets. Guide: [Price context](wiki/price-context.md).
+
+### Added
+
+- **Automatic daily prices.** Tracking a GPW company backfills its full
+  end-of-day price history from its market debut, and a post-session daily pull
+  appends each new session's bar — zero clicks, zero import. Prices come from
+  Yahoo Finance (`<ticker>.WA`, PLN); a brief outage records a source-health
+  note and self-heals on the next pull.
+- **Price context** (leads the Fundamentals panel): latest close and day
+  change, the **52-week range** with your distance from each end, **market cap**,
+  and a **candlestick chart** of the session history with a readable
+  round-number price scale and the covered date range.
+- **Level-0 valuation ratios**, computed from the latest close × your confirmed
+  facts: **P/E, P/BV, EV/EBITDA, dividend yield, FCF yield**, and **price vs
+  52-week range (percentile)** (shown once there are ≥20 sessions, so it's
+  context not noise). Ratios compute from **whichever inputs exist** — P/E, for
+  example, tries market cap ÷ net profit, then price ÷ diluted EPS, then ÷ basic
+  EPS — and only stay empty (`—`) when nothing resolves, never a guess.
+- **Sector classification.** Companies are classified automatically from the
+  GPW/NewConnect directory, with a **manual override** that a directory refresh
+  never overwrites. The override field suggests matching sectors as you type
+  (not a wall of every value).
+- **Basic info panel.** A read-only company card — name, ticker, ISIN, sector
+  (with a provenance chip), and the latest recorded shares outstanding with its
+  period. Editable fields (sector, IR reports URL) are hidden behind a single
+  **Edit** toggle instead of a button on every field.
+- **Dashboard redesign.** Opening a company lands one **company-scoped
+  Dashboard** with follow presets (panels track the view company); the
+  Companies screen became the **Library**. Plus a UX-quality-loop pilot:
+  interaction contracts, visual contact sheets, and live UX checkpoints.
+
+### Changed
+
+- The Fundamentals panel is reordered: **price context first, financial facts
+  next, everything else after**. Sector and the IR reports URL moved out of it
+  into the new Basic info panel.
+
+### Fixed
+
+- Price-history writes no longer race concurrent readers into a "database is
+  locked" failure: all write transactions now begin immediately (guarded by a
+  lint so it can't regress).
+
+### Removed
+
+- The Twelve Data secondary quote provider was implemented and then removed the
+  same day: a live check proved GPW prices need a paid plan there, so the
+  free-tier fallback premise was false. A free degraded fallback is planned for
+  a later release; Yahoo covers all of GPW today.
+
 ## v0.52.0 - 2026-07-12
 
 Judgment capture: start recording your own investment judgment — decisions and
