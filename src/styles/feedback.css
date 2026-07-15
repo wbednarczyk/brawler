@@ -35,6 +35,12 @@
   pointer-events: auto;
 }
 
+/* Visually transparent live-region wrapper (see Toast.tsx ToastItem comment):
+   carries role="status"/"alert" without breaking the li's own flex layout. */
+.ui-toast-live {
+  display: contents;
+}
+
 .ui-toast-positive {
   border-left-color: var(--tone-positive);
 }
@@ -64,6 +70,15 @@
   font-weight: 650;
 }
 
+/* WCAG AA (axe color-contrast): small action text on the raised toast surface
+   needs >=4.5:1. In BOTH light palettes --primary lands under the threshold
+   (#006ee6 on #eef3ff = 4.32; #147aa6 on #e9f2ff = 4.27), so light themes use
+   --primary-strong (6.1+ / 6.2+). Dark themes keep --primary — there the
+   lighter tint is the higher-contrast one. */
+:root[data-theme="light"] .ui-toast-action {
+  color: var(--primary-strong);
+}
+
 .ui-toast-action:hover {
   background: color-mix(in srgb, var(--primary) 14%, transparent);
 }
@@ -71,6 +86,16 @@
 .ui-toast-action:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 1px;
+}
+
+/* Persistent attention toast (ADR 0068): explicit dismiss control (ClearButton)
+   sits trailing, same fixed slot every time regardless of an action button. */
+.ui-toast-persistent {
+  align-items: flex-start;
+}
+
+.ui-toast-persistent .field-clear-button {
+  flex: 0 0 auto;
 }
 
 /* -------------------------------------------------------------------------- */

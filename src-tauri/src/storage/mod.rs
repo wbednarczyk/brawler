@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use self::database::{Database, DbGuard};
 
 mod ai_analysis;
+mod attention;
 mod autopilot;
 mod backup;
 mod claim_extraction;
@@ -55,6 +56,7 @@ mod management_claims;
 mod market_data;
 mod metrics;
 mod migrations;
+mod morning_briefings;
 mod notebooks;
 mod pool;
 mod quality_frameworks;
@@ -79,6 +81,10 @@ mod watchlists;
 pub use ai_analysis::{
     AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
     NewAiAnalysisJob, NewAiAnalysisSourceReference,
+};
+pub use attention::{
+    AlertRule, AlertRuleUpdate, AttentionEvent, AttentionEventListInput, AttentionStore,
+    NewAlertRule,
 };
 pub use autopilot::{
     is_valid_mode as is_valid_autopilot_mode, AutopilotRun, AutopilotStore, CompanyAutopilot,
@@ -131,6 +137,11 @@ pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
 pub use migrations::{open_database, open_in_memory_database};
+pub use morning_briefings::{
+    briefing_evidence_items, build_briefing_narrative, compose_briefing, BriefingSources,
+    CompletedNarrative, ComposedBriefing, ComposedBriefingItem, MorningBriefing,
+    MorningBriefingItem, MorningBriefingStore,
+};
 pub use notebooks::NotebookStore;
 pub use pool::open_pool;
 pub use quality_frameworks::QualityFrameworkStore;
@@ -594,6 +605,16 @@ impl AppState {
     /// signals domain store (Architecture v2 / ADR 0050).
     pub fn signals(&self) -> signals::SignalStore {
         signals::SignalStore::new(self.db.clone())
+    }
+
+    /// Attention (alert rules + attention events) domain store (ADR 0068).
+    pub fn attention(&self) -> attention::AttentionStore {
+        attention::AttentionStore::new(self.db.clone())
+    }
+
+    /// Morning-briefing domain store (ADR 0068 decision 4).
+    pub fn morning_briefings(&self) -> morning_briefings::MorningBriefingStore {
+        morning_briefings::MorningBriefingStore::new(self.db.clone())
     }
 
     /// sources domain store (Architecture v2 / ADR 0050).

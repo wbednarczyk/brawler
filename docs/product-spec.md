@@ -169,6 +169,18 @@ Behavior:
 
 Typed signals are decision support, not recommendations: a signal states what kind of disclosure occurred, with a link back to the official filing, and never implies a buy/sell/hold action.
 
+## Attention Routing And Alerts
+
+The app tells the investor what deserves a look rather than making them re-scan everything. The investor owns **alert rules**: each rule says what to be alerted about — a **signal category** (e.g. insider activity, a profit warning), an **autopilot run completing**, or a **price condition** (the price *enters a range I set*, or reaches a *52-week low*) — scoped to a **single company** or a whole **watchlist**, and can be enabled or disabled. Price conditions evaluate against the daily quotes on each daily pull. Rules are managed in Settings (a visual **alerts manager**: preset rule chips, a scope picker, and price-range inputs), where fired alerts can also be reviewed.
+
+When a rule fires it records an **attention event** tied to the exact evidence that triggered it — the signal item, the autopilot run card, or the quote context — so every alert traces back to a fact. Events are **deduplicated** (re-ingesting the same filing never re-fires) and each rule is throttled to at most once per day. Fired events surface two ways: a **persistent toast** the investor can click through to the evidence, and a **Today attention list** grouped by company where events are marked seen or dismissed. Attention routing is **in-app only** in v1 (the boundary is shaped for later OS-notification adapters) and stays strictly factual — an alert states what happened with a link, and never phrases it as advice.
+
+## Morning Briefing
+
+At the top of Today the investor sees a **morning briefing** answering "what changed in my companies and what needs doing" — a deterministically composed list of **new signals since the last briefing, autopilot runs, claims due, upcoming report dates, and fired alerts**, ordered by when each thing happened. It refreshes **once a day automatically** while the app is open and can be regenerated **on demand**.
+
+When an AI provider is configured the briefing is additionally phrased as a short **narrative with citations** that link each statement back to an item in the composed list. With **no provider configured** — or if a narrative can't cite cleanly against the list — the briefing still renders as the **structured item list**, never blocked and never an error. Like every AI surface it is decision support: facts and citations, never a buy/sell/hold call.
+
 ## Report Documents
 
 The company workspace lists the stored report documents for a company, each shown with its **document kind** — consolidated report, standalone report, audit report, presentation, governance, or other — so the investor can tell a periodic report from supporting material at a glance. By default the list is **grouped by reporting period** (newest first), with the period's **canonical report starred**, its audit reports beside it, and the signature/data companion files folded out of the way; filings that belong to no period (announcements, general-meeting materials, and the like) collect in a separate collapsed group. A **Group by period** toggle returns to a flat chronological list. The list can be **searched** by title and **filtered by kind** (including unclassified), and a **Refresh classification** action re-derives the kind of every stored document at once, for documents captured before the classification existed. Kinds and grouping are decision-support presentation only; the classification is deterministic and never alters the stored document or its source attribution.

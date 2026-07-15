@@ -1,4 +1,71 @@
 export const plText: Record<string, string> = {
+  // Alerts settings — rules manager + fired-event review (ADR 0068 T3)
+  "Alerts": "Alerty",
+  "Alerts tell you when something you care about happens — a signal category, an autopilot run, or a price condition — on a company or a whole watchlist. They surface in the app only; nothing leaves your machine.":
+    "Alerty informują, gdy dzieje się coś ważnego — kategoria sygnału, przebieg autopilota lub warunek cenowy — dla spółki lub całej listy obserwowanych. Pojawiają się tylko w aplikacji; nic nie opuszcza Twojego komputera.",
+  "Alert presets": "Gotowe alerty",
+  "What to watch for": "Na co zwracać uwagę",
+  "Profit warning": "Ostrzeżenie o wynikach",
+  "Insider transactions": "Transakcje insiderów",
+  "52-week low": "Minimum 52-tygodniowe",
+  "Price range": "Zakres ceny",
+  "Autopilot finished": "Autopilot zakończony",
+  "Alert scope": "Zakres alertu",
+  "Where it applies": "Gdzie obowiązuje",
+  "Alert scope target": "Cel zakresu alertu",
+  "Target": "Cel",
+  "None available": "Brak dostępnych",
+  "Minimum price": "Cena minimalna",
+  "Maximum price": "Cena maksymalna",
+  "Enter a minimum and maximum price, with the minimum no higher than the maximum.":
+    "Podaj cenę minimalną i maksymalną, przy czym minimalna nie może być wyższa od maksymalnej.",
+  "Add alert": "Dodaj alert",
+  "Your alerts": "Twoje alerty",
+  "No alerts yet — pick what to watch for above.":
+    "Brak alertów — wybierz powyżej, na co zwracać uwagę.",
+  "Alert rules": "Reguły alertów",
+  "Alert rule": "Reguła alertu",
+  "Fired alerts": "Uruchomione alerty",
+  "Nothing has fired yet.": "Nic jeszcze się nie uruchomiło.",
+  "Fired alert": "Uruchomiony alert",
+  "Mark seen": "Oznacz jako przeczytane",
+  "Alert command failed": "Polecenie alertu nie powiodło się",
+  "An identical alert rule already exists.": "Taka reguła alertu już istnieje.",
+  "Alert rule deleted": "Reguła alertu usunięta",
+  // Alerts library redesign v0.54 (docs/mockups/alerts-library-view.html)
+  "New alert": "Nowy alert",
+  "Alert preview": "Podgląd alertu",
+  "1 · What to watch for": "1 · Na co zwracać uwagę",
+  "2 · Where it applies": "2 · Gdzie obowiązuje",
+  "Rule": "Reguła",
+  "All quiet — nothing has fired. That's the point.":
+    "Cisza — nic się nie uruchomiło. Tak ma być.",
+  "your watchlist": "Twojej listy",
+  "this company": "tej spółki",
+  "a profit warning": "ostrzeżenie o wynikach",
+  "insider transactions": "transakcje insiderów",
+  "a 52-week low": "minimum 52-tygodniowe",
+  "an autopilot analysis": "analizę Autopilota",
+  "I'll tell you when a company on the {target} list publishes {trigger}.":
+    "Powiadomię Cię, gdy spółka z listy {target} opublikuje {trigger}.",
+  "I'll tell you when {target} publishes {trigger}.":
+    "Powiadomię Cię, gdy {target} opublikuje {trigger}.",
+  "I'll tell you when a company on the {target} list reports {trigger}.":
+    "Powiadomię Cię, gdy spółka z listy {target} zgłosi {trigger}.",
+  "I'll tell you when {target} reports {trigger}.":
+    "Powiadomię Cię, gdy {target} zgłosi {trigger}.",
+  "I'll tell you when a company on the {target} list hits {trigger}.":
+    "Powiadomię Cię, gdy spółka z listy {target} osiągnie {trigger}.",
+  "I'll tell you when {target} hits {trigger}.":
+    "Powiadomię Cię, gdy {target} osiągnie {trigger}.",
+  "I'll tell you when a company on the {target} list completes {trigger}.":
+    "Powiadomię Cię, gdy spółka z listy {target} zakończy {trigger}.",
+  "I'll tell you when {target} completes {trigger}.":
+    "Powiadomię Cię, gdy {target} zakończy {trigger}.",
+  "I'll tell you when a company on the {target} list enters the {trigger} price range.":
+    "Powiadomię Cię, gdy kurs spółki z listy {target} wejdzie w przedział {trigger}.",
+  "I'll tell you when {target}'s price enters the {trigger} range.":
+    "Powiadomię Cię, gdy kurs {target} wejdzie w przedział {trigger}.",
   // Mode-based shell — sidebar spine + pinned companies (ADR 0054)
   "Cross-company comparison is coming with the valuation arc.":
     "Porównanie spółek pojawi się wraz z etapem wyceny.",
@@ -11,6 +78,14 @@ export const plText: Record<string, string> = {
   "Filter the stream": "Filtruj strumień",
   "Nothing needs your attention.": "Nic nie wymaga Twojej uwagi.",
   "Checking what needs your attention…": "Sprawdzanie, co wymaga uwagi…",
+  // Morning briefing Today card (ADR 0068 decision 4, v0.54 §T5)
+  "Morning briefing": "Poranny przegląd",
+  "Generate briefing": "Wygeneruj przegląd",
+  "Generating…": "Generowanie…",
+  "Loading the morning briefing…": "Wczytywanie porannego przeglądu…",
+  "No briefing yet. Generate one to see what's changed.": "Brak jeszcze przeglądu. Wygeneruj go, aby zobaczyć, co się zmieniło.",
+  "Nothing to report since your last briefing.": "Brak nowości od ostatniego przeglądu.",
+  "Briefing narrative": "Treść przeglądu",
   "Report": "Raport",
   "Show all in Inbox": "Pokaż wszystko w Inbox",
   "Show all in Claims": "Pokaż wszystko w Obietnicach",
@@ -447,6 +522,8 @@ export const plText: Record<string, string> = {
   "Generate brief": "Generuj brief",
   "Generate digest": "Generuj digest",
   "Generating": "Generowanie",
+  "Generating digest…": "Generowanie digestu…",
+  "Generating brief…": "Generowanie briefu…",
   "Investor research brief": "Brief inwestorski",
   "Citations": "Cytowania",
   "Generated": "Wygenerowano",
@@ -955,6 +1032,7 @@ export const plText: Record<string, string> = {
   "Open Inbox": "Otwórz Inbox",
   "Open Companies": "Otwórz Spółki",
   "Open Watchlists": "Otwórz Listy",
+  "Open Alerts": "Otwórz Alerty",
   "Open Notebooks": "Otwórz Notatniki",
   "Open Events": "Otwórz Wydarzenia",
   "Open Transcripts": "Otwórz Transkrypcje",
@@ -1015,6 +1093,8 @@ export const plText: Record<string, string> = {
   "Import result": "Wynik importu",
   "Ready to import": "Gotowe do importu",
   "Import complete": "Import ukończony",
+  "Import applied": "Import zastosowany",
+  "Sources refreshed": "Źródła odświeżone",
   "Export failed": "Eksport nie powiódł się",
   "Import failed": "Import nie powiódł się",
   "Choose a file to preview import.": "Wybierz plik, aby zobaczyć podgląd importu.",

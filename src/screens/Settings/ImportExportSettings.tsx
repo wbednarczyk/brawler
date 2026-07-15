@@ -13,7 +13,7 @@ import {
   type ImportApplySummary,
   type ImportPreview,
 } from "../../api/importExport";
-import { ActionRow, Button, ErrorText, InfoGrid } from "../../ui";
+import { ActionRow, Button, ErrorText, InfoGrid, useToast } from "../../ui";
 import { useLocale } from "../../shared/locale";
 
 type ImportKind = "research" | "settings";
@@ -40,6 +40,7 @@ const emptyImportState: ImportState = {
 
 export function ImportExportSettings({ onImportApplied }: ImportExportSettingsProps) {
   const { text } = useLocale();
+  const toast = useToast();
   const [researchState, setResearchState] = useState<ImportState>(emptyImportState);
   const [settingsState, setSettingsState] = useState<ImportState>(emptyImportState);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -101,6 +102,9 @@ export function ImportExportSettings({ onImportApplied }: ImportExportSettingsPr
         ? await applyResearchImport(current.contents)
         : await applySettingsImport(current.contents);
       setStateFor(kind, { ...current, result, error: null, inFlight: false });
+      // v0.54 T6: transient success confirmation on the shared Toast surface;
+      // the detailed result summary grid below stays as the persistent record.
+      toast.show({ message: text("Import applied"), tone: "positive" });
       onImportApplied();
     } catch (error) {
       setStateFor(kind, { ...current, result: null, error: String(error), inFlight: false });

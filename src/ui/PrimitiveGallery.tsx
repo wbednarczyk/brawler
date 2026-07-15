@@ -1,4 +1,5 @@
 import { Plus } from "lucide-react";
+import { useEffect } from "react";
 
 import { ActionRow } from "./ActionRow";
 import { Button, type ButtonVariant } from "./Button";
@@ -23,8 +24,38 @@ import { StatusPill } from "./StatusPill";
 import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import { TextareaField } from "./TextareaField";
+import { ToastProvider, useToast } from "./Toast";
 
 const noop = () => {};
+
+// Toast (ADR 0068) has no static "closed" markup like InlineConfirm — it only
+// renders once queued via `useToast().show()`. The gallery is a standalone
+// dev-only preview root (src/gallery.tsx), not part of the app shell, so it
+// mounts its own ToastProvider here purely to demonstrate the transient and
+// persistent variants; this is not a second app-wide mount (see App.tsx).
+function ToastGalleryDemo() {
+  return (
+    <ToastProvider>
+      <ToastGalleryTriggers />
+    </ToastProvider>
+  );
+}
+
+function ToastGalleryTriggers() {
+  const { show } = useToast();
+  useEffect(() => {
+    show({ message: "Sources refreshed", tone: "positive" });
+    show({
+      message: "Profit warning: quarterly guidance cut 12%",
+      persistent: true,
+      actionLabel: "View evidence",
+      onAction: noop,
+    });
+    // `show` is a stable useCallback identity, so this fires once on mount —
+    // the gallery/a11y snapshot always shows both variants.
+  }, [show]);
+  return null;
+}
 
 const BUTTON_VARIANTS: ButtonVariant[] = [
   "primary",
@@ -135,6 +166,16 @@ export function PrimitiveGallery() {
         </p>
         <Hint>Muted helper / hint text.</Hint>
         <EmptyState>Nothing here yet.</EmptyState>
+      </section>
+
+      <section aria-labelledby="g-toast">
+        <SectionHeader
+          title="Toast (transient / persistent, ADR 0068)"
+          titleId="g-toast"
+          level="h3"
+          description="Bottom-left queue. Transient: role=status, auto-dismisses. Persistent: role=alert, explicit dismiss + click-through action, exempt from stack eviction."
+        />
+        <ToastGalleryDemo />
       </section>
 
       <section aria-labelledby="g-data">

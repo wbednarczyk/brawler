@@ -1,5 +1,6 @@
 import {
   Activity,
+  BellRing,
   Bug,
   Building2,
   FlaskConical,
@@ -31,6 +32,7 @@ export type Section =
   | "ReportSeason"
   | "Companies"
   | "Watchlists"
+  | "Alerts"
   | "Research"
   | "Notebooks"
   | "Events"
@@ -89,6 +91,10 @@ export const navGroups: NavGroup[] = [
       { label: "Companies", icon: Building2, localeKey: "nav.companies" },
       { label: "Inbox", icon: Inbox, localeKey: "nav.inbox" },
       { label: "Watchlists", icon: ListChecks, localeKey: "nav.watchlists" },
+      // Alerts (ADR 0068 T3): relocated from a Settings section into its own
+      // Library destination (owner decision 2026-07-15, v0.54) — the alert-rule
+      // manager + fired-alerts review are a reference surface, not a preference.
+      { label: "Alerts", icon: BellRing, localeKey: "nav.alerts" },
       { label: "Transcripts", icon: Video, localeKey: "nav.transcripts" },
       { label: "Sources", icon: Activity, localeKey: "nav.sources" },
     ],

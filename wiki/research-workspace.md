@@ -29,8 +29,10 @@ The sidebar is grouped so you always know where you are:
 
 ## Today — what needs your attention
 
-**Today** answers one question: *what should I look at?* It is a single
-**attention stream**, ordered by priority — not a wall of feed items:
+**Today** answers one question: *what should I look at?* At the top, a
+**morning briefing** sums up what changed in your companies and what needs
+doing; below it, a single **attention stream**, ordered by priority — not a wall
+of feed items:
 
 1. **Autopilot** — one row per automated run for a company you've opted into
    **assist** or **autopilot** mode, with a summary, a **Structure changed**
@@ -42,6 +44,11 @@ The sidebar is grouped so you always know where you are:
 3. **Fresh disclosures** — the newest report publications, with **Review** to
    jump to that company.
 4. **Upcoming reports** — the next report dates on the calendar.
+5. **Fired alerts** — the alert rules you set up that just triggered, grouped by
+   company, each with **Review** (jump to the evidence) and **Dismiss**.
+
+The morning briefing and alert rules have their own guide:
+[Attention alerts and the morning briefing](attention-and-briefing.md).
 
 The **counter tiles** above the stream (Autopilot / To verify / Upcoming
 reports) show how much of each is waiting — and clicking a tile **filters the

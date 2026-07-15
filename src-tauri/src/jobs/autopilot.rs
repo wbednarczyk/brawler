@@ -661,6 +661,19 @@ fn finalize_notify(state: &AppState, run: &storage::AutopilotRun) -> Result<(), 
         .autopilot()
         .finalize_run(&run.id, "succeeded", STAGE_NOTIFY, Some(&summary), None)
         .map_err(|e| e.to_string())?;
+
+    // Inline attention-rule evaluation (ADR 0068 / plan §T2): a completed run
+    // fires any `autopilot_run_completed` alert rule scoped to the company. No
+    // new worker lane; best-effort — a failure never fails the run finalize.
+    if let Err(error) = state
+        .attention()
+        .evaluate_autopilot_completion(&run.company_id, &run.id)
+    {
+        log::warn!(
+            "module=attention stage=autopilot_eval runId={} error={error}",
+            run.id
+        );
+    }
     Ok(())
 }
 

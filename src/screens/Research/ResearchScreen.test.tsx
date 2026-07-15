@@ -380,6 +380,10 @@ describe("Research screen workflows", () => {
 
     await user.click(screen.getByRole("button", { name: "Generate digest" }));
 
+    // v0.54 T6: kicking off a digest raises a transient start toast — the result
+    // lands in the output section below, which can be scrolled out of view.
+    expect(await screen.findByText("Generating digest…")).toBeInTheDocument();
+
     await waitFor(() => {
       expect(invoke).toHaveBeenCalledWith("start_research_digest", {
         input: {

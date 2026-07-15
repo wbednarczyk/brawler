@@ -23,6 +23,11 @@ pub enum AiCapability {
     ResearchBrief,
     /// Research-digest generation across multiple briefs/sources.
     ResearchDigest,
+    /// Morning-briefing narrative phrasing (ADR 0068 decision 4): reuses the
+    /// research-digest provider contract to phrase a deterministically composed
+    /// item list. Text-kind; the briefing completes as a structured list with no
+    /// provider configured.
+    MorningBriefing,
     /// ESPI event-date extraction.
     EventDate,
     /// ESPI signal/category classification.
@@ -46,12 +51,13 @@ pub enum CapabilityKind {
 }
 
 impl AiCapability {
-    pub const ALL: [AiCapability; 9] = [
+    pub const ALL: [AiCapability; 10] = [
         AiCapability::KpiExtraction,
         AiCapability::ClaimExtraction,
         AiCapability::FeedAnalysis,
         AiCapability::ResearchBrief,
         AiCapability::ResearchDigest,
+        AiCapability::MorningBriefing,
         AiCapability::EventDate,
         AiCapability::SignalClassification,
         AiCapability::QualitativeAssessment,
@@ -67,6 +73,7 @@ impl AiCapability {
             AiCapability::FeedAnalysis => "feed_analysis",
             AiCapability::ResearchBrief => "research_brief",
             AiCapability::ResearchDigest => "research_digest",
+            AiCapability::MorningBriefing => "morning_briefing",
             AiCapability::EventDate => "event_date",
             AiCapability::SignalClassification => "signal_classification",
             AiCapability::QualitativeAssessment => "qualitative_assessment",
@@ -83,6 +90,7 @@ impl AiCapability {
             AiCapability::FeedAnalysis
             | AiCapability::ResearchBrief
             | AiCapability::ResearchDigest
+            | AiCapability::MorningBriefing
             | AiCapability::EventDate
             | AiCapability::SignalClassification
             | AiCapability::QualitativeAssessment => CapabilityKind::Text,
@@ -163,6 +171,7 @@ mod tests {
             AiCapability::FeedAnalysis,
             AiCapability::ResearchBrief,
             AiCapability::ResearchDigest,
+            AiCapability::MorningBriefing,
             AiCapability::EventDate,
             AiCapability::SignalClassification,
             AiCapability::QualitativeAssessment,

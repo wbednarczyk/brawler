@@ -32,6 +32,15 @@ function themeFor(): "dark" | "light" {
 
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
+  // Hide the global toast overlay for per-screen baselines (analogous to the
+  // disabled CSS animations): a persistent attention toast (ADR 0068) raised by
+  // seeded scenario events floats over EVERY screen's shot, coupling all
+  // baselines to seed timing/content. Toast look/behavior has its own coverage
+  // (Toast.test.tsx, primitives a11y, J1 journey); screen baselines assert the
+  // screen. Injected per-shot, idempotent.
+  await page
+    .addStyleTag({ content: ".ui-toast-viewport { display: none !important; }" })
+    .catch(() => {});
 }
 
 type ShootOptions = { mask?: Locator[]; state?: string };

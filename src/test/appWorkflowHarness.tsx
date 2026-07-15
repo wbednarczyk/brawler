@@ -87,6 +87,9 @@ export interface AppTestState {
   financialFactsResponse: Data["financialFacts"];
   claimsToVerifyResponse: Data["claimsToVerify"];
   reportSeasonUpcomingResponse: Data["reportSeasonUpcoming"];
+  attentionEventsResponse: Data["attentionEvents"];
+  alertRulesResponse: Data["alertRules"];
+  morningBriefingResponse: Data["morningBriefing"];
   researchReviewCheckpointResponse: Data["researchReviewCheckpoints"][number] | null;
   geminiCredentialStatusResponse: Data["credentialStatuses"][number] | null;
   searchResponse: unknown | null;
@@ -124,6 +127,9 @@ export const appTestState = Object.defineProperties(
     financialFactsResponse: field("financialFacts"),
     claimsToVerifyResponse: field("claimsToVerify"),
     reportSeasonUpcomingResponse: field("reportSeasonUpcoming"),
+    attentionEventsResponse: field("attentionEvents"),
+    alertRulesResponse: field("alertRules"),
+    morningBriefingResponse: field("morningBriefing"),
     // Single-row views over collection stores.
     researchReviewCheckpointResponse: {
       get: () => runtime.data.researchReviewCheckpoints[0] ?? null,

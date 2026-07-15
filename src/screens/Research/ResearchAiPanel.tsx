@@ -8,7 +8,7 @@ import type {
 } from "../../api/researchTypes";
 import type { ResearchMode } from "../../app/useResearchController";
 import { formatAiProvider } from "../../shared/formatting/labels";
-import { Button, EmptyState, ErrorText, SectionHeader } from "../../ui";
+import { Button, EmptyState, ErrorText, SectionHeader, useToast } from "../../ui";
 
 type ResearchAiPanelProps = {
   briefJobs: ResearchBriefJob[];
@@ -41,6 +41,17 @@ export function ResearchAiPanel({
   formatTimestamp,
   text,
 }: ResearchAiPanelProps) {
+  const toast = useToast();
+  // v0.54 T6: an AI generation starts async and renders its result far down the
+  // output section — a transient start toast confirms the kick-off globally.
+  function beginDigest() {
+    toast.show({ message: text("Generating digest…") });
+    startDigest();
+  }
+  function beginBrief() {
+    toast.show({ message: text("Generating brief…") });
+    startBrief();
+  }
   const latestBriefJob = briefJobs[0] ?? null;
   const latestBrief = latestBriefJob?.brief ?? null;
   const latestDigestJob = digestJobs[0] ?? null;
@@ -90,7 +101,7 @@ export function ResearchAiPanel({
           <Button
             className="compact-button"
             disabled={digestInFlight || digestRunning || aiPanelDisabled}
-            onClick={startDigest}
+            onClick={beginDigest}
             title={text("Summarizes open reminders and changed evidence for this research scope.")}
           >
             <Sparkles size={15} />
@@ -106,7 +117,7 @@ export function ResearchAiPanel({
           <Button
             className="compact-button"
             disabled={briefInFlight || briefRunning || aiPanelDisabled}
-            onClick={startBrief}
+            onClick={beginBrief}
             title={text("Creates a cited research snapshot from the selected evidence.")}
           >
             <Sparkles size={15} />

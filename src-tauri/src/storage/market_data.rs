@@ -126,6 +126,15 @@ fn upsert_quotes(
     Ok(quotes.len())
 }
 
+/// The most recent stored bar for a company, callable with a borrowed
+/// connection (used by inline attention-rule price evaluation, `storage::attention`).
+pub(super) fn latest_quote_for(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Option<QuoteBar>> {
+    latest_quote(connection, company_id)
+}
+
 fn latest_quote(connection: &Connection, company_id: &str) -> StorageResult<Option<QuoteBar>> {
     let bar = connection
         .query_row(

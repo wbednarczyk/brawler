@@ -7,6 +7,14 @@ import {
   undoAutopilotRun as undoAutopilotRunCommand,
   type AutopilotRun,
 } from "../../api/autopilot";
+import {
+  dismissAttentionEvent,
+  listAlertRules,
+  listAttentionEvents,
+  markAttentionEventSeen,
+  type AlertRule,
+  type AttentionEvent,
+} from "../../api/attention";
 import type { Company } from "../../api/types";
 import { useReportSeason } from "../ReportSeason/useReportSeason";
 
@@ -37,6 +45,15 @@ export type TodayPulse = {
   undoAutopilotRun: (runId: string) => Promise<void>;
   /** `runId -> facts reverted` for runs undone this session (the "Undone" badge). */
   undoneAutopilotRuns: Record<string, number>;
+  /** Open (non-dismissed) fired alerts (ADR 0068), newest-fired-first per company. */
+  attentionEvents: AttentionEvent[];
+  attentionLoading: boolean;
+  /** `ruleId -> rule`, so a row can show its trigger's category/price context. */
+  attentionRulesById: Map<string, AlertRule>;
+  /** Optimistically drop the row, then persist the dismissal. */
+  dismissAttentionEventRow: (id: string) => void;
+  /** Optimistically flip `seen`, then persist it. Idempotent — safe to call on every open. */
+  markAttentionEventSeenRow: (id: string) => void;
 };
 
 /**
@@ -109,6 +126,62 @@ export function useTodayPulse(pinnedCompanyIds: string[], companies: Company[]):
       setUndoneAutopilotRuns((prior) => ({ ...prior, [runId]: result.revertedFactIds.length }));
     });
   }, []);
+  // Fired alerts (ADR 0068): app-wide, independent of the pinned set — like
+  // autopilot runs, a fired alert is a notification, not scoped to the spine.
+  // Loaded alongside its rules so a row/toast can render "what fired" (the
+  // rule's category/price context), not just the bare event.
+  const [attentionEvents, setAttentionEvents] = useState<AttentionEvent[]>([]);
+  const [attentionRules, setAttentionRules] = useState<AlertRule[]>([]);
+  const [attentionLoading, setAttentionLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAttentionLoading(true);
+    Promise.all([listAttentionEvents(), listAlertRules()])
+      .then(([events, rules]) => {
+        if (!cancelled) {
+          setAttentionEvents(events);
+          setAttentionRules(rules);
+        }
+      })
+      .catch(() => {
+        // A backend without attention data yet is not an error for the home.
+        if (!cancelled) {
+          setAttentionEvents([]);
+          setAttentionRules([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAttentionLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const attentionRulesById = useMemo(
+    () => new Map(attentionRules.map((rule) => [rule.id, rule])),
+    [attentionRules],
+  );
+
+  const dismissAttentionEventRow = useCallback((id: string) => {
+    setAttentionEvents((events) => events.filter((event) => event.id !== id));
+    void dismissAttentionEvent(id).catch(() => {
+      // Best-effort: a failed dismissal just reappears on next load.
+    });
+  }, []);
+
+  const markAttentionEventSeenRow = useCallback((id: string) => {
+    setAttentionEvents((events) =>
+      events.map((event) => (event.id === id ? { ...event, seen: true } : event)),
+    );
+    void markAttentionEventSeen(id).catch(() => {
+      // Best-effort: a failed mark-seen just re-fires on next observation.
+    });
+  }, []);
+
   // Key on the joined id list so the effect re-runs when the pin set changes,
   // not on every render (settings hands us a fresh array each time).
   const pinnedKey = pinnedCompanyIds.join(",");
@@ -174,5 +247,10 @@ export function useTodayPulse(pinnedCompanyIds: string[], companies: Company[]):
     dismissAutopilotRun,
     undoAutopilotRun,
     undoneAutopilotRuns,
+    attentionEvents,
+    attentionLoading,
+    attentionRulesById,
+    dismissAttentionEventRow,
+    markAttentionEventSeenRow,
   };
 }

@@ -8,6 +8,41 @@
   min-height: 0;
 }
 
+/* Morning-briefing card (ADR 0068 decision 4, v0.54 §T5): sits above the
+   attention stream, its own bordered card so it reads as a distinct
+   "what the app composed for you" surface rather than another stream row. */
+.today-briefing-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: var(--space-1) var(--space-1) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-raised);
+}
+
+.today-briefing-narrative {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.today-briefing-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.today-briefing-items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
 .today-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 240px;

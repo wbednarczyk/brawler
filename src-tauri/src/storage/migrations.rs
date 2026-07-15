@@ -388,6 +388,16 @@ const MIGRATIONS: &[Migration] = &[
         name: "remove_twelvedata_adapter",
         sql: include_str!("../../migrations/0076_remove_twelvedata_adapter.sql"),
     },
+    Migration {
+        version: 77,
+        name: "alert_rules_attention_events",
+        sql: include_str!("../../migrations/0077_alert_rules_attention_events.sql"),
+    },
+    Migration {
+        version: 78,
+        name: "morning_briefings",
+        sql: include_str!("../../migrations/0078_morning_briefings.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

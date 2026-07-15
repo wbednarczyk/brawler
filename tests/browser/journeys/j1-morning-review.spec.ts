@@ -42,13 +42,16 @@ async function primeMockScenario(page: Page, spec: ScenarioSpec): Promise<void> 
 }
 
 // J1 — Morning review (docs/ux-journeys.md, ADR 0074). Trigger: opening the app
-// at the start of the day. The cross-screen path: land on Today/Pulse → triage
-// the attention stream (filter by a counter tile) → open the 1–2 items that
-// matter into their company workspace → back to Today. Interactions are driven
-// through the journey() wrapper so the step count is measured against the budget.
+// at the start of the day. The cross-screen path: land on Today/Pulse → read the
+// morning briefing (v0.54) → triage the attention stream (filter by a counter
+// tile) → open the 1–2 items that matter into their company workspace → back to
+// Today. Interactions are driven through the journey() wrapper so the step count
+// is measured against the budget.
 //
-// Future step (dated): v0.54 morning briefing — read at the top of Today before
-// triage — is not built yet; when it ships it joins this journey and its budget.
+// The morning-briefing read (v0.54, ADR 0068 T5) is a PASSIVE scan at the top of
+// Today — the card renders unconditionally, so it is asserted as a screen fixture
+// (visible, above the attention stream) rather than a counted interaction; the
+// interactions floor is unchanged by it.
 
 test.describe("J1 — morning review", { tag: "@journey" }, () => {
   test("triage the attention stream and open what matters", async ({ page }) => {
@@ -61,6 +64,20 @@ test.describe("J1 — morning review", { tag: "@journey" }, () => {
     // overflow before any interaction.
     await expectNoA11yViolations(page, "Today (morning review)");
     await expectNoPageOverflow(page);
+
+    // Step 1 (v0.54): read the morning briefing at the TOP of Today, before
+    // triaging. It is the entry summary of "what changed" — asserted as a
+    // fixture (renders unconditionally, positioned above the attention stream),
+    // never a counted interaction.
+    const briefingHeading = page.getByRole("heading", { name: "Morning briefing" });
+    const streamRegion = page.getByLabel("Attention stream");
+    await expect(briefingHeading).toBeVisible();
+    const briefingBox = await briefingHeading.boundingBox();
+    const streamBox = await streamRegion.boundingBox();
+    expect(briefingBox).not.toBeNull();
+    expect(streamBox).not.toBeNull();
+    // The briefing sits above the stream — the read precedes the triage.
+    expect(briefingBox!.y).toBeLessThan(streamBox!.y);
 
     const autopilotRows = page.locator('li[data-category="autopilot"]');
     const changedRows = page.locator('li[data-category="changed"]');

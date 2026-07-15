@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
+  BellRing,
   CalendarClock,
   CheckCircle2,
   ChevronRight,
@@ -11,23 +12,37 @@ import {
 import type { CompanyWorkspaceTab } from "../Companies/companyTypes";
 import type { Company, FeedItem } from "../../api/types";
 import type { ReportSeasonEntry } from "../../api/generated/ReportSeasonEntry";
+import type { AttentionEvent } from "../../api/attention";
+import type { MorningBriefingItem } from "../../api/generated/MorningBriefingItem";
 import { useLocale } from "../../shared/locale";
 import { FACT_FORMS, pluralNoun } from "../../shared/locale/plural";
 import { formatListTimestamp } from "../../shared/format/datetime";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { DriftDiff, parseDrift, type ParsedDrift } from "../../shared/components/DriftDiff";
 import { composeAutopilotRunSummary } from "./autopilotRunSummary";
+import { attentionEventBadgeText, attentionEventTitleText } from "./attentionEventLabels";
 import {
   Button,
+  ClearButton,
   EmptyState,
   ErrorText,
   InlineConfirm,
   PanelHeader,
   Skeleton,
   StatusChip,
+  useToast,
 } from "../../ui";
 import { useTodayPulse, type PulseClaim } from "./useTodayPulse";
+import { useMorningBriefing } from "./useMorningBriefing";
+import { MorningBriefingCard } from "./MorningBriefingCard";
 import type { AutopilotRun } from "../../api/autopilot";
+
+// Fired-alert ids already raised as a persistent toast this app session
+// (ADR 0068 T4). Module scope, not component state: Today unmounts whenever
+// the user leaves the section (`activeSection === "Today" ? <TodayScreen /> :
+// null` in AppStateRoot), so a per-render Set would re-toast every re-entry.
+// Resets only on a full app reload — "session" per the T4 contract.
+const toastedAttentionEventIds = new Set<string>();
 
 export type TodayScreenProps = {
   companies: Company[];
@@ -88,7 +103,14 @@ export function TodayScreen({
     dismissAutopilotRun,
     undoAutopilotRun,
     undoneAutopilotRuns,
+    attentionEvents,
+    attentionLoading,
+    attentionRulesById,
+    dismissAttentionEventRow,
+    markAttentionEventSeenRow,
   } = useTodayPulse(pinnedCompanyIds, companies);
+  const morningBriefing = useMorningBriefing();
+  const toast = useToast();
   // The Undo two-step (ADR 0055 §4): which run, if any, is mid-confirm.
   const [confirmingUndoRunId, setConfirmingUndoRunId] = useState<string | null>(null);
   // Autopilot rows whose in-place detail (undo/dismiss/drift) is expanded.
@@ -124,10 +146,120 @@ export function TodayScreen({
   );
   const upcomingAll = season.season?.upcoming ?? [];
 
+  // Fired alerts (ADR 0068 T4): grouped by company (contiguous by ticker, like
+  // every other category's data-category grouping), newest fired first within
+  // a company. Uncapped, like the autopilot queue it sits beside — both are
+  // "already happened" notifications, not an unbounded feed.
+  const attentionRows = useMemo(() => {
+    const tickerOf = (companyId: string) => companyById.get(companyId)?.qualifiedTicker ?? companyId;
+    return [...attentionEvents].sort((a, b) => {
+      const tickerCompare = tickerOf(a.companyId).localeCompare(tickerOf(b.companyId));
+      return tickerCompare !== 0 ? tickerCompare : b.firedAt.localeCompare(a.firedAt);
+    });
+  }, [attentionEvents, companyById]);
+
   const autopilotRows = autopilotRuns;
   const verifyRows = verifyClaims.slice(0, VERIFY_CAP);
   const changedRows = whatChanged.slice(0, CHANGED_CAP);
   const upcomingRows = upcomingAll.slice(0, UPCOMING_CAP);
+
+  // Evidence click-through (ADR 0068 T4): the row's/toast's one Review action
+  // marks the event seen, then jumps to its evidence — reusing the same
+  // company-workspace tabs the other Today rows already navigate to. No
+  // dedicated "signal" or "quote" view exists yet, so a signal opens the
+  // company's Feed (where its source disclosure lives) and both an
+  // autopilot-run and a daily-quote event open Fundamentals (the run's drift
+  // and the price-context section both live there). Falls back to Inbox for
+  // an evidence company outside the registry, mirroring `changedRow`/`autopilotRow`.
+  function openAttentionEvidence(event: AttentionEvent) {
+    markAttentionEventSeenRow(event.id);
+    const company = companyById.get(event.companyId);
+    if (!company) {
+      openInbox();
+      return;
+    }
+    switch (event.evidenceType) {
+      case "company_signal":
+        openCompanyWorkspace(company.id, "Feed");
+        return;
+      case "autopilot_run":
+      case "daily_quote":
+        openCompanyWorkspace(company.id, "Fundamentals");
+        return;
+      default:
+        openInbox();
+    }
+  }
+
+  // Briefing-item evidence click-through (ADR 0068 T5). An `attention_event`
+  // item's `evidenceRef` is the fired event's own id, so it resolves through
+  // the exact same `openAttentionEvidence` this section already uses for the
+  // attention stream rows/toasts. Every other item type has no dedicated
+  // evidence view yet, so it mirrors `openAttentionEvidence`'s per-type
+  // fallback mapping: a signal opens Feed, an autopilot run opens
+  // Fundamentals, a due claim opens Claims, an upcoming report date opens Feed
+  // (matching `changedRow`'s report items) — an evidence company outside the
+  // registry falls back to Inbox, same as every other Today row.
+  function openBriefingItemEvidence(item: MorningBriefingItem) {
+    if (item.itemType === "attention_event") {
+      const event = attentionEvents.find((candidate) => candidate.id === item.evidenceRef);
+      if (event) {
+        openAttentionEvidence(event);
+        return;
+      }
+      openInbox();
+      return;
+    }
+    const company = companyById.get(item.companyId);
+    if (!company) {
+      openInbox();
+      return;
+    }
+    switch (item.itemType) {
+      case "signal":
+        openCompanyWorkspace(company.id, "Feed");
+        return;
+      case "autopilot_run":
+        openCompanyWorkspace(company.id, "Fundamentals");
+        return;
+      case "claim_due":
+        openCompanyWorkspace(company.id, "Claims");
+        return;
+      case "report_date":
+        openCompanyWorkspace(company.id, "Feed");
+        return;
+      default:
+        openInbox();
+    }
+  }
+
+  // Persistent-toast wiring (ADR 0068 T4). Least-invasive refresh point: this
+  // reuses `useTodayPulse`'s own attention-events fetch (the effect that
+  // already loads the list this section needs) rather than adding a new
+  // background poller — Today has no interval refresh anywhere today, so the
+  // only "observation" of fresh data is a mount/remount of this screen. A
+  // module-level id set (not component state) keeps a fired event from
+  // re-toasting on every re-render or re-entry into Today within the session.
+  useEffect(() => {
+    for (const event of attentionRows) {
+      if (event.seen || event.dismissed) continue;
+      if (toastedAttentionEventIds.has(event.id)) continue;
+      toastedAttentionEventIds.add(event.id);
+      const rule = attentionRulesById.get(event.ruleId);
+      const ticker = companyById.get(event.companyId)?.qualifiedTicker ?? event.companyId;
+      const detail = attentionEventTitleText(event, rule, text);
+      toast.show({
+        message: `${ticker} — ${detail}`,
+        tone: "caution",
+        persistent: true,
+        dismissLabel: text("Dismiss"),
+        actionLabel: text("Review"),
+        onAction: () => openAttentionEvidence(event),
+        onDismiss: () => dismissAttentionEventRow(event.id),
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attentionRows]);
 
   // Counter tiles show the full live counts (pre-cap), ADR 0076 U-Rb D5.
   const counts = {
@@ -137,6 +269,9 @@ export function TodayScreen({
   };
 
   const showAutopilot = filter === null || filter === "autopilot";
+  // No dedicated counter/filter tile for fired alerts (unlike autopilot/verify/
+  // upcoming) — like "changed", it shows only in the unfiltered full stream.
+  const showAttention = filter === null;
   const showVerify = filter === null || filter === "verify";
   const showChanged = filter === null;
   const showUpcoming = filter === null || filter === "upcoming";
@@ -365,6 +500,33 @@ export function TodayScreen({
     );
   }
 
+  // Fired alert row (ADR 0068 T4): "what fired" (the rule's category/price
+  // context via `attentionEventLabels`) · when it fired · Review (mark seen +
+  // click-through to evidence) · an explicit Dismiss (no expandable detail —
+  // an event carries no further state to disclose, unlike an autopilot run).
+  function attentionRow(event: AttentionEvent) {
+    const rule = attentionRulesById.get(event.ruleId);
+    const company = companyById.get(event.companyId);
+    return (
+      <li key={event.id} className="today-stream-row" data-category="attention">
+        {rowLine({
+          icon: <BellRing size={15} aria-hidden="true" />,
+          ticker: company?.qualifiedTicker ?? event.companyId,
+          badge: <StatusChip tone="warn">{attentionEventBadgeText(event, text)}</StatusChip>,
+          date: event.firedAt,
+          title: attentionEventTitleText(event, rule, text),
+          action: <RowAction onClick={() => openAttentionEvidence(event)} />,
+          disclosure: (
+            <ClearButton
+              label={text("Dismiss")}
+              onClick={() => dismissAttentionEventRow(event.id)}
+            />
+          ),
+        })}
+      </li>
+    );
+  }
+
   function upcomingRow(entry: ReportSeasonEntry) {
     return (
       <li key={`${entry.companyId}::${entry.eventKey}`} className="today-stream-row" data-category="upcoming">
@@ -398,8 +560,11 @@ export function TodayScreen({
   }
 
   const hasAttention =
-    autopilotRows.length > 0 || verifyRows.length > 0 || changedRows.length > 0;
-  const anyLoading = autopilotLoading || claimsLoading || season.loading;
+    autopilotRows.length > 0 ||
+    attentionRows.length > 0 ||
+    verifyRows.length > 0 ||
+    changedRows.length > 0;
+  const anyLoading = autopilotLoading || attentionLoading || claimsLoading || season.loading;
   // A failed category is explicit, never false quiet (J1 contract, ADR 0081 Q9):
   // an errored read must not let the stream read as "nothing needs attention".
   const anyCategoryError = Boolean(claimsError || season.error);
@@ -438,6 +603,15 @@ export function TodayScreen({
         }
       />
 
+      <MorningBriefingCard
+        briefing={morningBriefing.briefing}
+        companyById={companyById}
+        generating={morningBriefing.generating}
+        loading={morningBriefing.loading}
+        onGenerate={morningBriefing.generate}
+        onOpenItem={openBriefingItemEvidence}
+      />
+
       <div className="today-body">
         <div className="today-counters" role="group" aria-label={text("Filter the stream")}>
           {counterTile("autopilot", text("Autopilot"), counts.autopilot)}
@@ -459,6 +633,8 @@ export function TodayScreen({
               ) : null}
 
               {showAutopilot ? autopilotRows.map((run) => autopilotRow(run)) : null}
+
+              {showAttention ? attentionRows.map((event) => attentionRow(event)) : null}
 
               {showVerify ? verifyRows.map((item) => verifyRow(item)) : null}
               {showVerify && verifyClaims.length > VERIFY_CAP

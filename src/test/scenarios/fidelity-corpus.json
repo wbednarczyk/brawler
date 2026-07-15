@@ -900,6 +900,232 @@
           }
         }
       ]
+    },
+    {
+      "name": "alert rule create + list + update + disable + delete lifecycle (ADR 0068 T3)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "ALRT",
+              "displayName": "Alert Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_alert_rule",
+          "input": {
+            "input": {
+              "triggerType": "signal_category",
+              "signalCategory": "profit_warning",
+              "priceMin": null,
+              "priceMax": null,
+              "scopeType": "company",
+              "scopeRef": "$cid"
+            }
+          },
+          "capture": "rid",
+          "expectField": {
+            "triggerType": "signal_category",
+            "signalCategory": "profit_warning",
+            "scopeType": "company",
+            "enabled": true
+          }
+        },
+        {
+          "command": "list_alert_rules",
+          "input": {},
+          "expectContains": {
+            "signalCategory": "profit_warning",
+            "triggerType": "signal_category"
+          }
+        },
+        {
+          "command": "update_alert_rule",
+          "input": {
+            "input": {
+              "id": "$rid",
+              "signalCategory": "insider_transaction"
+            }
+          },
+          "expectField": {
+            "signalCategory": "insider_transaction"
+          }
+        },
+        {
+          "command": "set_alert_rule_enabled",
+          "input": {
+            "input": {
+              "id": "$rid",
+              "enabled": false
+            }
+          },
+          "expectField": {
+            "enabled": false,
+            "signalCategory": "insider_transaction"
+          }
+        },
+        {
+          "command": "list_alert_rules",
+          "input": {},
+          "expectContains": {
+            "signalCategory": "insider_transaction",
+            "enabled": false
+          }
+        },
+        {
+          "command": "delete_alert_rule",
+          "input": {
+            "input": {
+              "id": "$rid"
+            }
+          }
+        },
+        {
+          "command": "list_alert_rules",
+          "input": {},
+          "expectAbsent": {
+            "signalCategory": "insider_transaction"
+          }
+        }
+      ]
+    },
+    {
+      "name": "attention event fire + list + seen + dismiss lifecycle (ADR 0068 T3)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "ATTN",
+              "displayName": "Attention Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_alert_rule",
+          "input": {
+            "input": {
+              "triggerType": "autopilot_run_completed",
+              "signalCategory": null,
+              "priceMin": null,
+              "priceMax": null,
+              "scopeType": "company",
+              "scopeRef": "$cid"
+            }
+          },
+          "capture": "rid"
+        },
+        {
+          "command": "evaluate_autopilot_completion",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "runId": "run_fidelity"
+            }
+          },
+          "capture": "eid",
+          "expectField": {
+            "evidenceType": "autopilot_run",
+            "evidenceRef": "run_fidelity",
+            "seen": false,
+            "dismissed": false
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectContains": {
+            "evidenceRef": "run_fidelity",
+            "seen": false
+          }
+        },
+        {
+          "command": "mark_attention_event_seen",
+          "input": {
+            "input": {
+              "id": "$eid"
+            }
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectContains": {
+            "evidenceRef": "run_fidelity",
+            "seen": true,
+            "dismissed": false
+          }
+        },
+        {
+          "command": "dismiss_attention_event",
+          "input": {
+            "input": {
+              "id": "$eid"
+            }
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectAbsent": {
+            "evidenceRef": "run_fidelity"
+          }
+        },
+        {
+          "command": "list_attention_events",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "includeDismissed": true
+            }
+          },
+          "expectContains": {
+            "evidenceRef": "run_fidelity",
+            "dismissed": true
+          }
+        }
+      ]
+    },
+    {
+      "name": "morning briefing latest is empty until composed (ADR 0068 T5)",
+      "steps": [
+        {
+          "command": "get_latest_morning_briefing",
+          "input": {}
+        },
+        {
+          "command": "generate_morning_briefing",
+          "input": {}
+        },
+        {
+          "command": "get_latest_morning_briefing",
+          "input": {}
+        }
+      ]
     }
   ]
 }

@@ -63,3 +63,6 @@ Thumbs.db
 
 # repoctx
 .repoctx
+# planning/design working artifacts — local-only (owner decision 2026-07-15)
+docs/plans/
+docs/mockups/

@@ -986,6 +986,103 @@ Rules:
 - Confirmation must persist provider provenance and create at most one derived event, idempotently.
 - Derived-event date extraction (`v0.41.0`, dividend/general-meeting only) is **deterministic-first** over the fetched filing body, with the **opt-in async AI fallback** when the deterministic parse is not confident. The derived event is created `proposed` and requires `confirm_derived_event` before it appears on the calendar — a guessed-date event is never created. See [ADR 0036](adr/0036-report-document-storage-and-backfill.md).
 
+## Attention Routing (Alert Rules + Events)
+
+User-owned alert rules and the attention events their evaluation fires ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md), `v0.54.0`). Rule evaluation is inline in the evidence-producing jobs (T2); these commands are the CRUD + review surface (T3). Field/storage rules (trigger columns, scope resolution, dedup, per-rule daily throttle) are canonical in [Data Model § Attention Routing](data-model.md#attention-routing-alert-rules--events).
+
+Alert rule (`AlertRule`, returned by the rule commands):
+
+```json
+{
+  "id": "alert_rule_0001",
+  "triggerType": "signal_category",
+  "signalCategory": "profit_warning",
+  "priceMin": null,
+  "priceMax": null,
+  "scopeType": "watchlist",
+  "scopeRef": "watchlist_core",
+  "enabled": true,
+  "createdAt": "2026-07-15T10:00:00Z",
+  "updatedAt": "2026-07-15T10:00:00Z"
+}
+```
+
+Trigger types: `signal_category` (needs `signalCategory`, a signal-category key) · `autopilot_run_completed` · `price_enters_range` (needs `priceMin ≤ priceMax`, inclusive close band) · `price_week52_low`. Scope types: `company` (`scopeRef` = `companyId`) · `watchlist` (`scopeRef` = `watchlistId`, fires for every member).
+
+Attention event (`AttentionEvent`, returned by the event commands):
+
+```json
+{
+  "id": "attn_alert_rule_0001_autopilot_run_run_42",
+  "ruleId": "alert_rule_0001",
+  "triggerType": "autopilot_run_completed",
+  "companyId": "company_gpw_cdr",
+  "evidenceType": "autopilot_run",
+  "evidenceRef": "run_42",
+  "firedAt": "2026-07-15T00:00:00Z",
+  "seen": false,
+  "dismissed": false
+}
+```
+
+`evidenceType` ∈ `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote date).
+
+Rule commands:
+
+- `create_alert_rule(input)`: creates a rule from `NewAlertRule` (`{ triggerType, signalCategory, priceMin, priceMax, scopeType, scopeRef }`; `enabled` defaults true). Validates trigger invariants (`signalCategory` present for `signal_category`; `priceMin ≤ priceMax` for `price_enters_range`; known scope; non-empty `scopeRef`) → `InvalidInput` otherwise.
+- `list_alert_rules()`: all rules, oldest first (`createdAt, id`).
+- `update_alert_rule(input)`: patches an existing rule from `AlertRuleUpdate` (`{ id, enabled?, signalCategory?, priceMin?, priceMax?, scopeType?, scopeRef? }`); `null` fields are left unchanged, and the merged rule is re-validated. `NotFound` for an unknown id.
+- `set_alert_rule_enabled(input)`: `{ id, enabled }` → toggles the rule (disabled rules never fire) and returns the updated row. `NotFound` for an unknown id.
+- `delete_alert_rule(input)`: `{ id }` → deletes the rule; its attention events CASCADE. Idempotent.
+
+Event commands:
+
+- `list_attention_events(input?)`: fired events newest-first, filtered by the optional `AttentionEventListInput` (`{ companyId?, includeDismissed }`; default excludes dismissed).
+- `mark_attention_event_seen(input)`: `{ id }` → marks an event seen (read, not dismissed). Idempotent.
+- `dismiss_attention_event(input)`: `{ id }` → dismisses an event (also marks it seen); it drops out of the default list. Idempotent.
+
+## Morning Briefing
+
+A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) decision 4, `v0.54.0`): a **deterministically composed item list** ("what changed in my companies + what needs doing") plus an **optional** AI narrative with citations, phrased via the research-digest provider contract (capability `morning_briefing`, [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)). With no provider configured — or if the narrative fails citation integrity — the briefing still returns as the structured item list (`narrativeMarkdown` = `null`), never blocked, never an error. Field/storage rules (composer inputs, ordering, `since` boundary, citation integrity) are canonical in [Data Model § Morning Briefing](data-model.md#morning-briefing).
+
+`MorningBriefing` (returned by `get_latest_morning_briefing`):
+
+```json
+{
+  "id": "morning_briefing_0001",
+  "composedAt": "2026-07-15T06:00:00.000Z",
+  "since": "2026-07-14",
+  "narrativeMarkdown": "## Signals\n\nA profit warning landed. [b1]",
+  "narrativeProviderId": "provider_gemini",
+  "narrativeModel": "gemini-3.5-flash",
+  "language": "en",
+  "createdAt": "2026-07-15T06:00:00.000Z",
+  "items": [
+    {
+      "id": "morning_briefing_0001_b1",
+      "briefingId": "morning_briefing_0001",
+      "position": 0,
+      "itemType": "signal",
+      "companyId": "company_gpw_cdr",
+      "domainDate": "2026-07-14",
+      "citationKey": "b1",
+      "evidenceType": "company_signal",
+      "evidenceRef": "signal_42",
+      "title": "Profit warning",
+      "detail": "Profit warning"
+    }
+  ]
+}
+```
+
+- `itemType` ∈ `signal` (ref = signal id) | `autopilot_run` (ref = run id) | `claim_due` (ref = claim id) | `report_date` (ref = `companyId:eventKey`) | `attention_event` (ref = attention-event id). Items are ordered by `domainDate` (never `createdAt`); `citationKey` (`b1`, `b2`, …) is what a narrative citation references and resolves against `(evidenceType, evidenceRef)`.
+- The narrative is **decision-support only** (facts + links, never advice); it is stored only when every citation it references resolves to a composed item.
+
+Commands:
+
+- `generate_morning_briefing()`: enqueues an on-demand compose (forces a fresh compose even if today's briefing exists) on the durable queue (the `morning_briefing` ai-lane job). Returns once queued; poll `get_latest_morning_briefing` for the result. A once-per-day auto compose is enqueued by the Rust scheduler while the app is open.
+- `get_latest_morning_briefing()`: the most recently composed briefing (`MorningBriefing`), or `null` when none has been composed yet.
+
 ## AI Analysis Result
 
 ```json
@@ -1611,7 +1708,7 @@ to `{}`. An absent key or an empty list for a key means "use
 `generalAnalysisProvider` / `generalAnalysisModel`" — every capability is
 backward-compatible with a single global provider.
 
-Capability keys (`AiCapability::key`, fixed set of 9):
+Capability keys (`AiCapability::key`, fixed set of 10):
 
 | Key | Kind | Provider call |
 |---|---|---|
@@ -1620,6 +1717,7 @@ Capability keys (`AiCapability::key`, fixed set of 9):
 | `feed_analysis` | text | `analyze` |
 | `research_brief` | text | `generate_research_brief` |
 | `research_digest` | text | `generate_research_digest` |
+| `morning_briefing` | text | `generate_research_digest` (ADR 0068 decision 4 — narrative phrasing over the deterministically composed briefing item list; UI-routable as of v0.54) |
 | `event_date` | text | `complete_document` (extracted text) |
 | `signal_classification` | text | text |
 | `qualitative_assessment` | text | `complete_document` (self-contained prompt) |
@@ -1627,7 +1725,7 @@ Capability keys (`AiCapability::key`, fixed set of 9):
 
 Validation rules for `capabilityProviders`:
 
-- Every map key must be one of the 8 capability keys above; an unknown key is rejected.
+- Every map key must be one of the 10 capability keys above; an unknown key is rejected.
 - Every entry's `provider` must be a currently selectable analysis provider id (the AI Provider Catalog below); an entry's `model` must be non-empty.
 - `model` must belong to the provider's curated model list, except for `provider_openai_compatible`, which has no curated list and accepts any non-empty freeform model id (same exemption as `generalAnalysisModel`).
 - An empty entry list for a key is valid — it is the explicit "use the global fallback" state.

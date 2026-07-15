@@ -3,6 +3,7 @@ import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
 import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { PrimitiveGallery } from "./PrimitiveGallery";
 
 // ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
 // interaction-contract helpers (tests/browser/helpers/interactionContracts.ts)
@@ -317,5 +318,20 @@ describe("FilterToolbar", () => {
     fireEvent.click(disclosure);
     expect(disclosure).toHaveAttribute("aria-expanded", "false");
     expect(controls).toHaveAttribute("data-collapsed", "true");
+  });
+});
+
+describe("Toast gallery entry", () => {
+  it("renders both the transient (status) and persistent (alert) variants", () => {
+    render(<PrimitiveGallery />);
+    expect(screen.getByText("Sources refreshed")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Sources refreshed");
+
+    const persistent = screen
+      .getAllByRole("alert")
+      .find((node) => node.textContent?.includes("Profit warning"));
+    expect(persistent).toBeDefined();
+    expect(screen.getByRole("button", { name: "View evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
   });
 });

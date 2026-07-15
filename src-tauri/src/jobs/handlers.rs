@@ -30,6 +30,11 @@ pub use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
 /// the handler enqueues a full autopilot run for every canonical periodic report
 /// whose period lacks accepted facts, through the shared `enqueue_extraction_run`.
 pub use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
+/// Job kind: compose a morning briefing (ADR 0068 decision 4, v0.54.0). The
+/// payload carries `{force}`; the handler runs the deterministic composer + an
+/// optional narrative and persists the briefing. Assigned to the **ai** lane
+/// (the narrative is a provider call). Defined with the job.
+pub use crate::jobs::morning_briefing::MORNING_BRIEFING_KIND;
 /// Job kind: assess qualitative quality-framework criteria (ADR 0075, v0.50.0).
 /// The payload carries `{companyId, frameworkId, criterionIds?}`; the handler
 /// gathers evidence, assesses each criterion through the capability pool, and
@@ -131,6 +136,22 @@ impl JobHandler for QualitativeAssessmentHandler {
 
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::qualitative_assessment::run_qualitative_assessment_job(state, payload)
+    }
+}
+
+/// A morning briefing (ADR 0068 decision 4). Runs the composer + optional
+/// narrative and returns its Result: a storage-level failure returns `Err` (the
+/// queue may retry), while a missing/failed narrative provider is NOT an error
+/// (the briefing completes as a structured list) and returns `Ok`.
+struct MorningBriefingHandler;
+
+impl JobHandler for MorningBriefingHandler {
+    fn kind(&self) -> &'static str {
+        MORNING_BRIEFING_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::morning_briefing::run_morning_briefing_job(state, payload)
     }
 }
 
@@ -285,6 +306,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(ResearchBriefHandler));
     worker.register(Arc::new(ResearchDigestHandler));
     worker.register(Arc::new(QualitativeAssessmentHandler));
+    worker.register(Arc::new(MorningBriefingHandler));
     worker.register(Arc::new(HistorySweepHandler));
     worker.register(Arc::new(AutopilotStageHandler));
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
@@ -328,6 +350,7 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 RESEARCH_BRIEF_KIND,
                 RESEARCH_DIGEST_KIND,
                 QUALITATIVE_ASSESSMENT_KIND,
+                MORNING_BRIEFING_KIND,
             ],
             workers: config.ai_workers.max(1) as usize,
         },
@@ -409,6 +432,40 @@ mod tests {
         assert!(
             worker.process_one().expect("process one"),
             "the re-armed job is actually dispatched again"
+        );
+    }
+
+    #[test]
+    fn every_registered_kind_is_in_exactly_one_lane() {
+        // Guardrail (ADR 0059 invariant, made executable for T5): every job kind
+        // registered in `build_worker` must be drained by exactly one lane in
+        // `pool_layout`, and no lane may list a kind with no handler. Without this,
+        // a new kind (like `morning_briefing`) could be registered but never
+        // assigned to a lane — enqueued jobs would sit pending forever.
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let worker = build_worker(state.clone());
+        let registered: std::collections::BTreeSet<&str> =
+            worker.registered_kinds().into_iter().collect();
+
+        let mut lane_kinds: Vec<&str> = Vec::new();
+        for pool in pool_layout(state.queue_config()) {
+            lane_kinds.extend(pool.kinds);
+        }
+        let unique_lane_kinds: std::collections::BTreeSet<&str> =
+            lane_kinds.iter().copied().collect();
+
+        assert_eq!(
+            lane_kinds.len(),
+            unique_lane_kinds.len(),
+            "a job kind is assigned to more than one lane"
+        );
+        assert_eq!(
+            registered, unique_lane_kinds,
+            "every registered kind must appear in exactly one lane (and vice versa)"
+        );
+        assert!(
+            unique_lane_kinds.contains(MORNING_BRIEFING_KIND),
+            "morning_briefing must be assigned to a lane"
         );
     }
 

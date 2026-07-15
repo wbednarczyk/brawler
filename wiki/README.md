@@ -51,6 +51,10 @@ per feature.
   — capture your buy/pass/keep-watching decisions in an append-only,
   evidence-linked journal, and write down pre-report expectations that freeze
   when the real numbers arrive — a factual mirror, never a grade.
+- **[Attention alerts and the morning briefing](attention-and-briefing.md)** —
+  set up alert rules over signals, autopilot runs, and price conditions; read
+  the daily "what changed + what needs doing" briefing at the top of Today; and
+  find fired alerts as pop-ups and in the Today attention list.
 - **[The MCP server](mcp-server.md)** — let an AI assistant (Claude Code,
   Claude Desktop, …) read your research through a small, read-only, localhost-
   only connector: enable it, generate a token, and connect over HTTP or the

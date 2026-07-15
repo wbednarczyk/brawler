@@ -54,6 +54,32 @@ describe("Sources screen workflows", () => {
     expect(screen.queryByLabelText("Unmatched source item diagnostics")).not.toBeInTheDocument();
   });
 
+  it("confirms a manual source refresh with a transient toast (v0.54 T6)", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Refresh sources" }));
+
+    // The completion feedback is a transient toast (role="status"), not just the
+    // momentary check-icon on the button — the sweep converts async-success
+    // feedback to the shared Toast surface (ADR 0068 T6).
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveTextContent("Sources refreshed");
+  });
+
+  it("does not toast when a manual source refresh fails (inline error stays)", async () => {
+    const user = userEvent.setup();
+    appTestState.refreshSourcesError = "GPW HTTP request failed";
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Refresh sources" }));
+    await screen.findByRole("button", { name: "Source refresh failed" });
+
+    expect(screen.queryByText("Sources refreshed")).not.toBeInTheDocument();
+  });
+
   it("shows source refresh failures in the topbar refresh control", async () => {
     const user = userEvent.setup();
     appTestState.refreshSourcesError = "GPW HTTP request failed";

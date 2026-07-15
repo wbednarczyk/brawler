@@ -21,6 +21,13 @@ type RefreshCallbacks = {
 };
 
 type SourceRefreshControllerInput = RefreshCallbacks & {
+  /**
+   * Fired once a MANUAL all-sources refresh (`refreshSources("manual")`, from
+   * the topbar control or the Sources panel) completes successfully — the
+   * caller raises a transient success toast (ADR 0068 T6 adoption sweep).
+   * Scheduler-triggered refreshes and per-adapter/events refreshes stay silent.
+   */
+  onManualRefreshSuccess?: () => void;
   scheduledSourceAdapters: SourceAdapter[];
   settings: UserSettings | null;
   sourceAdapterRefreshInFlight: string | null;
@@ -91,6 +98,7 @@ export function useSourceRefreshController({
   refreshSignals,
   refreshSourceAdapters,
   refreshUnmatchedSourceItems,
+  onManualRefreshSuccess,
   scheduledSourceAdapters,
   settings,
   sourceAdapterRefreshInFlight,
@@ -163,7 +171,12 @@ export function useSourceRefreshController({
         setSelectedSourceAdapterId(response.adapterId);
         return refreshViewsAfterSourceRefresh(response.adapterId, true);
       })
-      .then(finishSourceRefresh)
+      .then(() => {
+        finishSourceRefresh();
+        if (trigger === "manual") {
+          onManualRefreshSuccess?.();
+        }
+      })
       .catch(failSourceRefresh)
       .finally(() => {
         sourceRefreshInFlightRef.current = false;

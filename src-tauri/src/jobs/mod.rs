@@ -7,6 +7,7 @@ pub mod feed_cleanup;
 pub mod handlers;
 pub mod history_sweep;
 pub mod kpi_extraction;
+pub mod morning_briefing;
 pub mod qualitative_assessment;
 pub mod queue;
 pub mod quote_backfill;

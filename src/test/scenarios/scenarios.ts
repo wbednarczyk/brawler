@@ -18,6 +18,9 @@ import { applyScenarioOverlays, type ScenarioOverlayName } from "./overlays";
 import type { Company } from "../../api/types";
 import type { CockpitLayout } from "../../api/generated/CockpitLayout";
 import type { FactProvenance } from "../../api/generated/FactProvenance";
+import type { AlertRule } from "../../api/generated/AlertRule";
+import type { AttentionEvent } from "../../api/generated/AttentionEvent";
+import type { MorningBriefing } from "../../api/generated/MorningBriefing";
 import type { AutopilotRun, CompanyAutopilot } from "../../api/autopilot";
 import {
   legacyCompanies,
@@ -45,6 +48,8 @@ import {
   type CompanySpec,
   makeAiAnalysisJob,
   makeBackfillProgress,
+  makeAlertRule,
+  makeAttentionEvent,
   makeBackupStatus,
   makeClaimExtractionJob,
   makeClaimsToVerify,
@@ -213,6 +218,14 @@ export interface ScenarioData {
   qualityFrameworks: QualityFramework[];
   frameworkEvaluations: FrameworkEvaluation[];
   metricKeys: MetricKeyInfo[];
+  // Attention routing — alert rules + fired events (ADR 0068)
+  alertRules: AlertRule[];
+  attentionEvents: AttentionEvent[];
+  // Morning briefing (ADR 0068 decision 4, §T5): the real compose job runs on
+  // the worker, not the mock, so every scenario starts with none composed —
+  // `generate_morning_briefing` in `runtime.ts` populates this for the Today
+  // card's on-demand generate → refetch flow.
+  morningBriefing: MorningBriefing | null;
   // Sources
   sourceAdapters: SourceAdapter[];
   unmatchedSourceItems: UnmatchedSourceItem[];
@@ -290,8 +303,19 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     makeMembership("watchlist_sample_core", "Core holdings", spec),
   );
 
+  const companies = specs.map(makeCompany);
+  // Attention routing seed (ADR 0068): one watchlist-scoped rule + one fired
+  // event referencing the first company, so every attention list command
+  // returns non-trivial data and the rules manager renders a populated state.
+  const alertRules: AlertRule[] = [
+    makeAlertRule("alert_rule_sample_1", "signal_category", "watchlist_sample_core"),
+  ];
+  const attentionEvents: AttentionEvent[] = companies[0]
+    ? [makeAttentionEvent("attn_sample_1", "alert_rule_sample_1", companies[0].id)]
+    : [];
+
   return {
-    companies: specs.map(makeCompany),
+    companies,
     registry: COMPANY_SPECS.map((spec) => makeRegistryEntry(spec, specs.some((s) => s.key === spec.key))),
     feedItems,
     signals,
@@ -332,6 +356,11 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     qualityFrameworks: [makeQualityFramework()],
     frameworkEvaluations: deep.map(makeFrameworkEvaluation),
     metricKeys: AVAILABLE_METRIC_KEYS.map((entry) => ({ ...entry })),
+    // Attention routing
+    alertRules,
+    attentionEvents,
+    // Morning briefing
+    morningBriefing: null,
     // Sources
     sourceAdapters: adapters,
     unmatchedSourceItems: deep.map(makeUnmatchedSourceItem),
@@ -413,6 +442,9 @@ function buildEmpty(): ScenarioData {
     qualityFrameworks: [],
     frameworkEvaluations: [],
     metricKeys: AVAILABLE_METRIC_KEYS.map((entry) => ({ ...entry })),
+    alertRules: [],
+    attentionEvents: [],
+    morningBriefing: null,
     sourceAdapters: adapters,
     unmatchedSourceItems: [],
     lastIngestionResults: [],

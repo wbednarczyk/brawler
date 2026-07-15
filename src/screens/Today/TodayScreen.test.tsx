@@ -1,14 +1,19 @@
 import { describe, it } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   expect,
   initialCompanies,
+  invoke,
   renderApp,
   screen,
   userEvent,
   waitFor,
   within,
 } from "../../test/appWorkflowHarness";
+import type { AttentionEvent } from "../../api/attention";
+import type { MorningBriefing } from "../../api/briefing";
+import type { MorningBriefingItem } from "../../api/generated/MorningBriefingItem";
 import type { FeedItem } from "../../api/types";
 
 // The pinned company (minimal scenario pins companies[0]); autopilot runs scoped
@@ -59,6 +64,57 @@ const baseFinancialFact = {
   updatedAt: "2026-01-01T00:00:00Z",
 };
 
+/** A minimal composed briefing item (ADR 0068 T5), overridable per test. */
+function morningBriefingItem(overrides: Partial<MorningBriefingItem> = {}): MorningBriefingItem {
+  return {
+    id: "briefing_item_1",
+    briefingId: "briefing_1",
+    position: 0,
+    itemType: "signal",
+    companyId: pinnedCompanyId,
+    domainDate: "2026-07-10",
+    citationKey: "b1",
+    evidenceType: "company_signal",
+    evidenceRef: "sig_briefing_1",
+    title: "Profit warning issued",
+    detail: "Profit warning",
+    createdAt: "2026-07-10T09:00:00Z",
+    ...overrides,
+  };
+}
+
+/** A minimal composed morning briefing (ADR 0068 T5), overridable per test. */
+function morningBriefing(overrides: Partial<MorningBriefing> = {}): MorningBriefing {
+  return {
+    id: "briefing_1",
+    composedAt: "2026-07-10T09:00:00Z",
+    since: "2026-07-01",
+    narrativeMarkdown: null,
+    narrativeProviderId: null,
+    narrativeModel: null,
+    language: null,
+    createdAt: "2026-07-10T09:00:00Z",
+    items: [morningBriefingItem()],
+    ...overrides,
+  };
+}
+
+/** A minimal fired attention event (ADR 0068 T4), overridable per test. */
+function attentionEvent(overrides: Partial<AttentionEvent> = {}): AttentionEvent {
+  return {
+    id: "attn_1",
+    ruleId: "alert_rule_1",
+    triggerType: "signal_category",
+    companyId: pinnedCompanyId,
+    evidenceType: "company_signal",
+    evidenceRef: "signal_1",
+    firedAt: "2026-06-10T09:00:00Z",
+    seen: false,
+    dismissed: false,
+    ...overrides,
+  };
+}
+
 /** A minimal report-type feed item (matches the "what changed" filter). */
 function reportFeedItem(id: string, index: number): FeedItem {
   const ts = `2026-06-${String(10 + index).padStart(2, "0")}T09:00:00Z`;
@@ -102,11 +158,20 @@ async function findCategoryRow(container: HTMLElement, category: string): Promis
   );
 }
 
-const PRIORITY: Record<string, number> = { autopilot: 0, verify: 1, changed: 2, upcoming: 3 };
+const PRIORITY: Record<string, number> = {
+  autopilot: 0,
+  attention: 1,
+  verify: 2,
+  changed: 3,
+  upcoming: 4,
+};
 
 describe("Today/Pulse — prioritized attention stream (J1, ADR 0076 U-Rb)", () => {
   it("merges all four categories into one stream in the fixed priority order", async () => {
     appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
+    // Fired alerts (ADR 0068 T4) are their own describe block below; keep this
+    // test to the four legacy categories it names.
+    appTestState.attentionEventsResponse = [];
     const { container } = renderApp({ section: "Today" });
 
     // Wait for the async claim/feed loads to settle into stream rows. Each
@@ -190,6 +255,7 @@ describe("Today counters column (ADR 0076 U-Rb D5)", () => {
 describe("Today quiet state (ADR 0076 U-Rb D6)", () => {
   it("renders a single calm empty state when nothing needs attention", async () => {
     appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [];
     appTestState.feedItemsResponse = [];
     appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
     appTestState.reportSeasonUpcomingResponse = [];
@@ -201,6 +267,7 @@ describe("Today quiet state (ADR 0076 U-Rb D6)", () => {
 
   it("still lists upcoming reports under the quiet state", async () => {
     appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [];
     appTestState.feedItemsResponse = [];
     appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
     appTestState.reportSeasonUpcomingResponse = [
@@ -221,6 +288,140 @@ describe("Today quiet state (ADR 0076 U-Rb D6)", () => {
     expect(await screen.findByText("Nothing needs your attention.")).toBeInTheDocument();
     await screen.findByText("CD PROJEKT");
     expect(streamCategories(container as HTMLElement)).toEqual(["upcoming"]);
+  });
+});
+
+/** The single `AlertRule` the attention-list tests join `attentionEvent`s against. */
+const signalRule = {
+  id: "alert_rule_1",
+  triggerType: "signal_category" as const,
+  signalCategory: "profit_warning",
+  priceMin: null,
+  priceMax: null,
+  scopeType: "company" as const,
+  scopeRef: pinnedCompanyId,
+  enabled: true,
+  createdAt: "2026-01-01T00:00:00Z",
+  updatedAt: "2026-01-01T00:00:00Z",
+};
+
+/** Reads the qualified-ticker `aria-label` off a stream row's `TickerLabel`. */
+function rowTicker(row: HTMLElement): string | null {
+  return row.querySelector(".ticker-label")?.getAttribute("aria-label") ?? null;
+}
+
+describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
+  const otherCompanyId = initialCompanies[1].id;
+  const pinnedTicker = initialCompanies[0].qualifiedTicker;
+  const otherTicker = initialCompanies[1].qualifiedTicker;
+
+  function seedOnlyAttention(events: ReturnType<typeof attentionEvent>[]) {
+    appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = events;
+    appTestState.alertRulesResponse = [signalRule];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+  }
+
+  it("renders open attention events grouped by company with their rule's trigger context", async () => {
+    seedOnlyAttention([
+      attentionEvent({ id: "attn_other", companyId: otherCompanyId, evidenceRef: "signal_other" }),
+      attentionEvent({ id: "attn_pinned_1", firedAt: "2026-06-09T09:00:00Z" }),
+      attentionEvent({ id: "attn_pinned_2", firedAt: "2026-06-10T09:00:00Z" }),
+    ]);
+
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    const rows = [...container.querySelectorAll('li[data-category="attention"]')] as HTMLElement[];
+    expect(rows).toHaveLength(3);
+    // Grouped by company: the two `pinnedTicker` rows sit together, not split
+    // by the `otherTicker` row landing between them.
+    const tickers = rows.map(rowTicker);
+    const pinnedIndexes = tickers.flatMap((ticker, i) => (ticker === pinnedTicker ? [i] : []));
+    expect(pinnedIndexes).toEqual([pinnedIndexes[0], pinnedIndexes[0] + 1]);
+    expect(tickers).toContain(otherTicker);
+    // The rule's category (profit_warning) is the "what fired" context, not
+    // just a bare trigger-type label.
+    expect(within(rows[0]).getByText(/profit_warning/)).toBeInTheDocument();
+  });
+
+  it("dismisses a fired event: the row disappears and the domain command fires", async () => {
+    const user = userEvent.setup();
+    // A distinct id per test (module-level toast dedup, see below, spans the
+    // whole file — a shared id would be silently pre-toasted by an earlier test).
+    seedOnlyAttention([attentionEvent({ id: "attn_dismiss_1" })]);
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    // Scoped to the row itself — the same event also raised a persistent
+    // toast with its own "Dismiss" control by now.
+    const row = container.querySelector('li[data-category="attention"]') as HTMLElement;
+    await user.click(within(row).getByRole("button", { name: "Dismiss" }));
+
+    expect(container.querySelector('li[data-category="attention"]')).toBeNull();
+    expect(invoke).toHaveBeenCalledWith(
+      "dismiss_attention_event",
+      expect.objectContaining({ input: expect.objectContaining({ id: "attn_dismiss_1" }) }),
+    );
+  });
+
+  it("marks the event seen and opens its evidence on Review (company_signal → the company workspace)", async () => {
+    seedOnlyAttention([attentionEvent({ id: "attn_seen_1" })]);
+    const { container } = renderApp({ section: "Today" });
+    await findCategoryRow(container as HTMLElement, "attention");
+
+    // Scoped to the row itself — a persistent toast for this same event is
+    // also on screen by now, carrying the same "profit_warning" text.
+    const row = container.querySelector('li[data-category="attention"]') as HTMLElement;
+    const reviewButton = within(row).getByRole("button", { name: "Review" });
+    // `fireEvent`, not `userEvent`: no Today "Review" row action was ever
+    // mouse-clicked in this suite before (only Enter-triggered via the roving
+    // -focus keyboard tests) — userEvent's synthetic pointer sequence doesn't
+    // reach this handler in jsdom even though the native click event does
+    // (confirmed with a manual listener), a pre-existing gap unrelated to this
+    // feature. `fireEvent.click` exercises the exact same onClick handler.
+    fireEvent.click(reviewButton);
+
+    expect(invoke).toHaveBeenCalledWith(
+      "mark_attention_event_seen",
+      expect.objectContaining({ input: expect.objectContaining({ id: "attn_seen_1" }) }),
+    );
+    // company_signal evidence opens the company's workspace (the cockpit
+    // scoped to it) — the navigation target this Review actually invoked.
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+  });
+
+  it("raises a persistent toast for a new unseen event, once per session (no duplicate on Today re-entry)", async () => {
+    const user = userEvent.setup();
+    seedOnlyAttention([attentionEvent({ id: "attn_toast_1" })]);
+    renderApp({ section: "Today" });
+    await screen.findByRole("alert");
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+    expect(screen.getByText(/profit_warning/, { selector: ".ui-toast-message" })).toBeInTheDocument();
+
+    // Today unmounts on navigating away (`AppStateRoot` only renders it while
+    // `activeSection === "Today"`) and remounts on return — the real "refresh"
+    // this list has today. The already-shown event must not re-toast.
+    await user.click(screen.getByRole("button", { name: "Inbox" }));
+    await screen.findByRole("heading", { name: "Inbox" });
+    await user.click(screen.getByRole("button", { name: "Today" }));
+    await screen.findByRole("heading", { name: "Today" });
+
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+
+  it("renders no attention rows when there are nothing fired (same stream, no special sub-state)", async () => {
+    appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
+    appTestState.attentionEventsResponse = [];
+
+    const { container } = renderApp({ section: "Today" });
+    await screen.findByRole("button", { name: "Details" });
+
+    expect(container.querySelector('li[data-category="attention"]')).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
 
@@ -385,5 +586,58 @@ describe("Today autopilot detail — undo / dismiss / drift behind the expandabl
 
       expect(screen.queryByRole("button", { name: "Undo" })).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("Today morning-briefing card (ADR 0068 decision 4, v0.54 §T5)", () => {
+  it("shows an empty state with no briefing yet, and Generate enqueues + refetches the result", async () => {
+    const user = userEvent.setup();
+    appTestState.morningBriefingResponse = null;
+    const { container } = renderApp({ section: "Today" });
+
+    expect(
+      await screen.findByText("No briefing yet. Generate one to see what's changed."),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Generate briefing" }));
+
+    expect(invoke).toHaveBeenCalledWith("generate_morning_briefing");
+    await waitFor(() => {
+      expect(container.querySelector(".today-briefing-items")).not.toBeNull();
+    });
+    expect(
+      screen.queryByText("No briefing yet. Generate one to see what's changed."),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the structured item list when no narrative was phrased, and Review opens the item's evidence", async () => {
+    appTestState.morningBriefingResponse = morningBriefing({
+      narrativeMarkdown: null,
+      items: [morningBriefingItem({ title: "Profit warning issued", detail: "Profit warning" })],
+    });
+    renderApp({ section: "Today" });
+
+    const row = (await screen.findByText("Profit warning issued — Profit warning")).closest("li");
+    expect(row).not.toBeNull();
+
+    fireEvent.click(within(row as HTMLElement).getByRole("button", { name: "Review" }));
+
+    // `signal` items open the evidence company's Feed (the company workspace).
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
+  });
+
+  it("renders the narrative variant with a citation source that click-throughs to its evidence", async () => {
+    appTestState.morningBriefingResponse = morningBriefing({
+      narrativeMarkdown: "## Signals\n\nCD PROJEKT reported a profit warning [b1]",
+      items: [morningBriefingItem({ title: "Profit warning issued", citationKey: "b1" })],
+    });
+    renderApp({ section: "Today" });
+
+    expect(await screen.findByText(/CD PROJEKT reported a profit warning/)).toBeInTheDocument();
+    const sourceButton = await screen.findByRole("button", { name: "Profit warning issued" });
+
+    fireEvent.click(sourceButton);
+
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
   });
 });

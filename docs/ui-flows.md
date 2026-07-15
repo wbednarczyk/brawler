@@ -59,6 +59,27 @@ Acceptance criteria:
   ~3 years of official-source report documents without duplicating data on
   repeated runs ([ADR 0036](adr/0036-report-document-storage-and-backfill.md)).
 
+## Journey: Morning Review And Attention Alerts
+
+Intent: open the app at the start of the day and learn what changed and whether anything needs action, without re-scanning everything (journey **J1**, [ux-journeys.md](ux-journeys.md); ADR 0068, `v0.54.0`).
+
+Flow:
+
+1. User lands on Today.
+2. At the top, the **morning briefing** summarizes what changed in the user's companies and what needs doing — new signals, autopilot runs, claims due, upcoming report dates, and fired alerts — as a structured list, or an AI narrative with citation links when a provider is configured. A **Generate briefing** action recomposes it on demand; it also auto-refreshes once per day while the app is open.
+3. Below it, the user triages the **attention stream** (autopilot runs, changed reports, claims to verify, upcoming reports, and fired alerts), optionally filtered by a counter tile.
+4. **Fired alerts** also raise a **persistent toast** the user can click through to the evidence; the **Today attention list** groups fired events by company, where each is marked seen or dismissed.
+5. User opens the 0–2 items that matter into the company workspace, then returns to Today.
+
+Setup (Library → Alerts): the user creates **alert rules** from preset chips — a signal category, an autopilot run completing, or a price condition (*price enters my range* / *52-week low*) — scoped to a company or a watchlist, each enable/disable-able. Fired alerts are reviewable there too.
+
+Acceptance criteria:
+
+- The briefing renders even with no AI provider configured (structured list, never blocked); a narrative only appears when it can cite the composed items.
+- A fired alert always traces back to its evidence (signal, run, or quote) via both the toast click-through and the attention list.
+- An alert never re-fires for the same evidence, and never phrases a fact as advice.
+- The journey stays within its interaction budget ([budgets.json](../tests/browser/journeys/budgets.json)); reading the briefing is a passive scan, not a counted interaction.
+
 ## Journey: Daily Inbox Review
 
 Intent: review new company-specific reports and news with minimal friction.

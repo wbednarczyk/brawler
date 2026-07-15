@@ -9,7 +9,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J1 — Morning review
 
 - **Trigger:** opening the app at the start of the day.
-- **Steps:** land on Today/Pulse → (v0.54: read the morning briefing) → triage new attention items → open the 0–2 that matter → back to Today.
+- **Steps:** land on Today/Pulse → read the morning briefing (v0.54, top of Today, a passive scan — not a counted interaction) → triage new attention items → open the 0–2 that matter → back to Today.
 - **Screens:** Today, Inbox detail, (Company workspace).
 - **Budget:** ≤15 interactions at 10 new items.
 - **Done well:** no unhandled high-signal item; under 10 minutes; the user knows *what changed and whether anything needs action*.

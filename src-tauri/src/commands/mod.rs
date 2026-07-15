@@ -1,4 +1,5 @@
 pub mod ai_analysis;
+pub mod attention;
 pub mod autopilot;
 pub mod backups;
 pub mod claim_extraction;
@@ -23,6 +24,7 @@ pub mod management_claims;
 pub mod market_data;
 pub mod mcp;
 pub mod metrics;
+pub mod morning_briefing;
 pub mod notebooks;
 pub mod quality_frameworks;
 pub mod report_diff;

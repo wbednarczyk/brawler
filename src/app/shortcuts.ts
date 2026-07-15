@@ -6,6 +6,7 @@ export type AppShortcutId =
   | "app.openInbox"
   | "app.openCompanies"
   | "app.openWatchlists"
+  | "app.openAlerts"
   | "app.openNotebooks"
   | "app.openEvents"
   | "app.openTranscripts"
@@ -46,6 +47,7 @@ const navigationShortcuts = [
   ["app.openTranscripts", "Open Transcripts", "6", "Transcripts"],
   ["app.openSources", "Open Sources", "7", "Sources"],
   ["app.openSettings", "Open Settings", "8", "Settings"],
+  ["app.openAlerts", "Open Alerts", "9", "Alerts"],
 ] satisfies Array<[AppShortcutId, string, string, Section]>;
 
 export const appShortcutReferenceItems: AppShortcutReferenceItem[] = [

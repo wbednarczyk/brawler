@@ -1,0 +1,70 @@
+---
+source: src/storage/morning_briefings.rs
+assertion_line: 736
+expression: composed
+---
+ComposedBriefing {
+    since: "2026-07-10",
+    items: [
+        ComposedBriefingItem {
+            item_type: "claim_due",
+            company_id: "beta",
+            domain_date: "2026-06-01",
+            citation_key: "b1",
+            evidence_type: "claim",
+            evidence_ref: "claim_1",
+            title: "Claim claim_1",
+            detail: Some(
+                "Due Q2 2026",
+            ),
+        },
+        ComposedBriefingItem {
+            item_type: "attention_event",
+            company_id: "acme",
+            domain_date: "2026-07-12",
+            citation_key: "b2",
+            evidence_type: "attention_event",
+            evidence_ref: "attn_new",
+            title: "Alert fired: signal_category",
+            detail: Some(
+                "signal_category · company_signal",
+            ),
+        },
+        ComposedBriefingItem {
+            item_type: "autopilot_run",
+            company_id: "acme",
+            domain_date: "2026-07-13",
+            citation_key: "b3",
+            evidence_type: "autopilot_run",
+            evidence_ref: "run_ok",
+            title: "Run run_ok summary",
+            detail: Some(
+                "succeeded",
+            ),
+        },
+        ComposedBriefingItem {
+            item_type: "signal",
+            company_id: "acme",
+            domain_date: "2026-07-14",
+            citation_key: "b4",
+            evidence_type: "company_signal",
+            evidence_ref: "sig_new",
+            title: "Signal sig_new",
+            detail: Some(
+                "Profit warning",
+            ),
+        },
+        ComposedBriefingItem {
+            item_type: "report_date",
+            company_id: "beta",
+            domain_date: "2026-07-20",
+            citation_key: "b5",
+            evidence_type: "report_date",
+            evidence_ref: "beta:q2_2026",
+            title: "q2_2026 report",
+            detail: Some(
+                "GPW:beta",
+            ),
+        },
+    ],
+}

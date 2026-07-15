@@ -35,6 +35,8 @@ import type {
   Watchlist,
   WatchlistMembership,
 } from "../../api/types";
+import type { AlertRule } from "../../api/generated/AlertRule";
+import type { AttentionEvent } from "../../api/generated/AttentionEvent";
 import type { BackupStatus } from "../../api/backups";
 import type { ClaimExtractionJob } from "../../api/claimExtraction";
 import type { IrReportResolution } from "../../api/ir";
@@ -323,6 +325,43 @@ export function makeWatchlist(id: string, name: string, companyCount: number): W
 
 export function makeMembership(watchlistId: string, watchlistName: string, spec: CompanySpec): WatchlistMembership {
   return { watchlistId, watchlistName, companyId: companyId(spec) };
+}
+
+// ============================================================================
+// Attention routing — alert rules + fired events (ADR 0068)
+// ============================================================================
+
+export function makeAlertRule(
+  id: string,
+  triggerType: AlertRule["triggerType"],
+  scopeRef: string,
+): AlertRule {
+  return {
+    id,
+    triggerType,
+    signalCategory: triggerType === "signal_category" ? "profit_warning" : null,
+    priceMin: triggerType === "price_enters_range" ? 20 : null,
+    priceMax: triggerType === "price_enters_range" ? 30 : null,
+    scopeType: scopeRef.startsWith("watchlist") ? "watchlist" : "company",
+    scopeRef,
+    enabled: true,
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
+  };
+}
+
+export function makeAttentionEvent(id: string, ruleId: string, companyId: string): AttentionEvent {
+  return {
+    id,
+    ruleId,
+    triggerType: "signal_category",
+    companyId,
+    evidenceType: "company_signal",
+    evidenceRef: `signal_sample_${companyId}`,
+    firedAt: SAMPLE_NOW,
+    seen: false,
+    dismissed: false,
+  };
 }
 
 // ============================================================================

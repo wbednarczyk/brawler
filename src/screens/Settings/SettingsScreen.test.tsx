@@ -549,6 +549,9 @@ describe("Settings screen workflows", () => {
       });
     });
     expect(within(researchPanel).getByLabelText("Import result")).toBeInTheDocument();
+    // v0.54 T6: applying an import raises a transient success toast in addition
+    // to the (persistent) result summary grid.
+    expect(await screen.findByRole("status")).toHaveTextContent("Import applied");
 
     await user.click(within(settingsPanel).getByRole("button", { name: "Export" }));
 

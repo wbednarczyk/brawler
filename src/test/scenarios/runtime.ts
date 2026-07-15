@@ -785,6 +785,194 @@ function buildHandlers(): Record<string, Handler> {
     run_ai_signal_classification: () => ({ enabled: true, examined: 2, proposed: 1, skipped: 0 }),
     run_ai_event_derivation: () => ({ enabled: true, examined: 2, derived: 1, skipped: 0 }),
 
+    // --- Attention routing: alert rules + fired events (ADR 0068) ---
+    list_alert_rules: (d) => d.alertRules,
+    create_alert_rule: (d, a, ctx) => {
+      const input = unwrap(a);
+      const triggerType = str(input.triggerType) ?? "signal_category";
+      const num = (value: unknown): number | null =>
+        typeof value === "number" && Number.isFinite(value) ? value : null;
+      const rule: ScenarioData["alertRules"][number] = {
+        id: ctx.nextId("alert_rule"),
+        triggerType: triggerType as ScenarioData["alertRules"][number]["triggerType"],
+        signalCategory: str(input.signalCategory),
+        priceMin: num(input.priceMin),
+        priceMax: num(input.priceMax),
+        scopeType: (str(input.scopeType) ?? "company") as ScenarioData["alertRules"][number]["scopeType"],
+        scopeRef: str(input.scopeRef) ?? "",
+        enabled: true,
+        createdAt: SAMPLE_NOW,
+        updatedAt: SAMPLE_NOW,
+      };
+      // Mirrors the backend's typed DuplicateAlertRule rejection: an identical
+      // trigger+scope(+prices) rule never inserts a twin (storage/attention.rs).
+      const identical = d.alertRules.find(
+        (existing) =>
+          existing.triggerType === rule.triggerType &&
+          existing.signalCategory === rule.signalCategory &&
+          existing.priceMin === rule.priceMin &&
+          existing.priceMax === rule.priceMax &&
+          existing.scopeType === rule.scopeType &&
+          existing.scopeRef === rule.scopeRef,
+      );
+      if (identical) {
+        throw new Error(`an identical alert rule already exists: ${identical.id}`);
+      }
+      d.alertRules = [...d.alertRules, rule];
+      return rule;
+    },
+    update_alert_rule: (d, a) => {
+      const input = unwrap(a);
+      const id = str(input.id);
+      const num = (value: unknown, current: number | null): number | null =>
+        typeof value === "number" && Number.isFinite(value) ? value : current;
+      const { next, updated } = mapReplace(
+        d.alertRules,
+        (r) => r.id === id,
+        (r) => ({
+          ...r,
+          signalCategory: input.signalCategory != null ? str(input.signalCategory) : r.signalCategory,
+          priceMin: num(input.priceMin, r.priceMin),
+          priceMax: num(input.priceMax, r.priceMax),
+          scopeType: input.scopeType != null ? (str(input.scopeType) as typeof r.scopeType) : r.scopeType,
+          scopeRef: input.scopeRef != null ? (str(input.scopeRef) ?? r.scopeRef) : r.scopeRef,
+          enabled: typeof input.enabled === "boolean" ? input.enabled : r.enabled,
+          updatedAt: SAMPLE_NOW,
+        }),
+      );
+      d.alertRules = next;
+      return updated ?? d.alertRules[0];
+    },
+    set_alert_rule_enabled: (d, a) => {
+      const input = unwrap(a);
+      const id = str(input.id);
+      const enabled = input.enabled === true;
+      const { next, updated } = mapReplace(
+        d.alertRules,
+        (r) => r.id === id,
+        (r) => ({ ...r, enabled, updatedAt: SAMPLE_NOW }),
+      );
+      d.alertRules = next;
+      return updated ?? d.alertRules[0];
+    },
+    delete_alert_rule: (d, a) => {
+      const id = str(unwrap(a).id);
+      d.alertRules = d.alertRules.filter((r) => r.id !== id);
+      // Attention events CASCADE with their rule (ADR 0068 / data-model).
+      d.attentionEvents = d.attentionEvents.filter((e) => e.ruleId !== id);
+      return undefined;
+    },
+    list_attention_events: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId);
+      const includeDismissed = input.includeDismissed === true;
+      return d.attentionEvents
+        .filter((e) => (!companyId || e.companyId === companyId) && (includeDismissed || !e.dismissed))
+        .sort((left, right) => (left.firedAt < right.firedAt ? 1 : left.firedAt > right.firedAt ? -1 : 0));
+    },
+    mark_attention_event_seen: (d, a) => {
+      const id = str(unwrap(a).id);
+      const { next } = mapReplace(d.attentionEvents, (e) => e.id === id, (e) => ({ ...e, seen: true }));
+      d.attentionEvents = next;
+      return undefined;
+    },
+    dismiss_attention_event: (d, a) => {
+      const id = str(unwrap(a).id);
+      const { next } = mapReplace(
+        d.attentionEvents,
+        (e) => e.id === id,
+        (e) => ({ ...e, dismissed: true, seen: true }),
+      );
+      d.attentionEvents = next;
+      return undefined;
+    },
+    // Corpus-only setup bridge (mock_fidelity.rs dispatch calls the real store
+    // hook). Fires enabled autopilot-completion rules for a company and returns
+    // the resulting event, mirroring the inline evaluation the autopilot job runs
+    // (ADR 0068 §T2). Not a registered tauri command — a fidelity seed step only.
+    evaluate_autopilot_completion: (d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const runId = str(input.runId) ?? "run_fidelity";
+      const inWatchlist = (watchlistId: string) =>
+        d.watchlistMemberships.some((m) => m.watchlistId === watchlistId && m.companyId === companyId);
+      const matching = d.alertRules.filter(
+        (r) =>
+          r.enabled &&
+          r.triggerType === "autopilot_run_completed" &&
+          (r.scopeType === "company" ? r.scopeRef === companyId : inWatchlist(r.scopeRef)),
+      );
+      let firstEvent: ScenarioData["attentionEvents"][number] | undefined;
+      for (const rule of matching) {
+        const existing = d.attentionEvents.find(
+          (e) => e.ruleId === rule.id && e.evidenceType === "autopilot_run" && e.evidenceRef === runId,
+        );
+        if (existing) {
+          firstEvent ??= existing;
+          continue;
+        }
+        const event: ScenarioData["attentionEvents"][number] = {
+          id: ctx.nextId("attn"),
+          ruleId: rule.id,
+          triggerType: "autopilot_run_completed",
+          companyId,
+          evidenceType: "autopilot_run",
+          evidenceRef: runId,
+          firedAt: SAMPLE_NOW,
+          seen: false,
+          dismissed: false,
+        };
+        d.attentionEvents = [...d.attentionEvents, event];
+        firstEvent ??= event;
+      }
+      return firstEvent ?? null;
+    },
+
+    // --- Morning briefing (ADR 0068 decision 4, §T5) ---
+    // `generate` enqueues an async compose job on the durable queue; the real
+    // backend job runs on the worker, not the mock. So the Today card's
+    // generate -> refetch flow is deterministically testable without
+    // simulating the worker/queue, the mock composes a minimal briefing
+    // eagerly (one item citing the first watched company's newest signal, when
+    // one exists) and stores it as the latest — mirroring the "immediate first
+    // tick" poll idiom (`CompanyCoveragePanel`) the card's hook reuses.
+    generate_morning_briefing: (d, _a, ctx) => {
+      const company = d.companies[0];
+      const signal = company ? d.signals.find((s) => s.companyId === company.id) : undefined;
+      const briefingId = ctx.nextId("briefing");
+      const items = company
+        ? [
+            {
+              id: ctx.nextId("briefing_item"),
+              briefingId,
+              position: 0,
+              itemType: "signal" as const,
+              companyId: company.id,
+              domainDate: SAMPLE_NOW.slice(0, 10),
+              citationKey: "b1",
+              evidenceType: "company_signal",
+              evidenceRef: signal?.id ?? "sig_mock",
+              title: signal?.title ?? "New signal since your last briefing",
+              detail: signal?.categoryDisplayName ?? null,
+              createdAt: SAMPLE_NOW,
+            },
+          ]
+        : [];
+      d.morningBriefing = {
+        id: briefingId,
+        composedAt: SAMPLE_NOW,
+        since: d.morningBriefing?.composedAt ?? "",
+        narrativeMarkdown: null,
+        narrativeProviderId: null,
+        narrativeModel: null,
+        language: null,
+        createdAt: SAMPLE_NOW,
+        items,
+      };
+      return undefined;
+    },
+    get_latest_morning_briefing: (d) => d.morningBriefing ?? null,
+
     // --- AI analysis ---
     list_ai_analysis: (d, a) => {
       const feedItemId = str(unwrap(a).feedItemId);
@@ -2849,6 +3037,8 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_quality_frameworks",
   "list_framework_evaluations",
   "list_source_adapters",
+  "list_alert_rules",
+  "list_attention_events",
 ]);
 
 export function createMockRuntime(spec: ScenarioName | ScenarioSpec = "minimal"): MockRuntime {

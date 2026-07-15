@@ -38,6 +38,7 @@ test.describe("browser UI regression smoke", () => {
       "Companies",
       "Inbox",
       "Watchlists",
+      "Alerts",
       "Transcripts",
       "Sources",
       "Settings",
@@ -179,6 +180,25 @@ test.describe("browser UI regression smoke", () => {
     const pickerList = selectedWatchlist.locator(".watchlist-picker-list");
     await expect(pickerList).toBeVisible();
     await expectScrollContainer(pickerList);
+  });
+
+  test("keeps Alerts rule and fired-alert rows readable at a narrow desktop package window", async ({ page }) => {
+    // Rule/event row text (trigger + scope, or ticker + evidence type) is
+    // variable-length — it must wrap rather than push the row past its
+    // container at the ~1008px narrow package-window width (ADR 0054/D6).
+    await page.setViewportSize({ width: 1008, height: 796 });
+    await openApp(page);
+    await navButton(page, "Alerts").click();
+
+    const alertsRegion = page.getByRole("region", { name: "Alerts" });
+    await expect(alertsRegion).toBeVisible();
+    await expectNoHorizontalOverflow(alertsRegion);
+
+    const rows = page.locator(".alerts-row");
+    const rowCount = await rows.count();
+    for (let index = 0; index < rowCount; index += 1) {
+      await expectNoHorizontalOverflow(rows.nth(index));
+    }
   });
 });
 

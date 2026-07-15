@@ -54,6 +54,11 @@ export const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: strin
   { key: "feed_analysis", labelEn: "Feed analysis" },
   { key: "research_brief", labelEn: "Research brief" },
   { key: "research_digest", labelEn: "Research digest" },
+  // Morning-briefing narrative phrasing (ADR 0068 decision 4, v0.54 §T5):
+  // reuses the research-digest provider contract over the deterministically
+  // composed item list. Promoted from non-routable (a v0.54 backend-slice
+  // placeholder) once the Today briefing card landed.
+  { key: "morning_briefing", labelEn: "Morning briefing" },
   { key: "event_date", labelEn: "Event date" },
   { key: "signal_classification", labelEn: "Signal classification" },
   { key: "qualitative_assessment", labelEn: "Qualitative assessment" }, // T7-C

@@ -57,6 +57,7 @@ pub fn run_daily_pull_with(
     let mut items_fetched = 0usize;
     let mut items_created = 0usize;
     let mut items_unmatched = 0usize;
+    let mut companies_with_new_bar: Vec<String> = Vec::new();
 
     for company in companies
         .into_iter()
@@ -64,9 +65,22 @@ pub fn run_daily_pull_with(
     {
         items_fetched += 1;
         match pull_one_company(state, &company.id, &company.ticker, fetcher) {
-            Ok(true) => items_created += 1,
+            Ok(true) => {
+                items_created += 1;
+                companies_with_new_bar.push(company.id);
+            }
             Ok(false) => {}
             Err(_) => items_unmatched += 1,
+        }
+    }
+
+    // Inline attention-rule evaluation (ADR 0068 / plan §T2): each company that
+    // got a fresh bar has its price rules evaluated against the latest close and
+    // its trailing-52-week window. No new worker lane; best-effort per company —
+    // one evaluation failure never aborts the sweep.
+    for company_id in &companies_with_new_bar {
+        if let Err(error) = state.attention().evaluate_price_rules(company_id) {
+            log::warn!("module=attention stage=price_eval companyId={company_id} error={error}");
         }
     }
 

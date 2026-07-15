@@ -45,7 +45,7 @@ import { CompaniesScreen } from "../screens/Companies/CompaniesScreen";
 import { CockpitScreen } from "../screens/Cockpit/CockpitScreen";
 import { CreateViewModal, type CreateViewSpec } from "../screens/Cockpit/CreateViewModal";
 import { deleteCockpitLayout, listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../api/cockpit";
-import { useUndoableDelete } from "../ui";
+import { useToast, useUndoableDelete } from "../ui";
 import { TodayScreen } from "../screens/Today/TodayScreen";
 import { CompareScreen } from "../screens/Compare/CompareScreen";
 import type { CompanyWorkspaceTab } from "../screens/Companies/companyTypes";
@@ -57,6 +57,7 @@ import type { EventsScreenProps } from "../screens/Events/eventTypes";
 import { InboxScreen } from "../screens/Inbox/InboxScreen";
 import { ReportSeasonScreen } from "../screens/ReportSeason/ReportSeasonScreen";
 import type { InboxStatusFilter } from "../screens/Inbox/inboxTypes";
+import { AlertsScreen } from "../screens/Alerts/AlertsScreen";
 import { NotebooksScreen } from "../screens/Notebooks/NotebooksScreen";
 import type { NotebooksScreenProps } from "../screens/Notebooks/notebookTypes";
 import { ResearchScreen, type ResearchScreenProps } from "../screens/Research/ResearchScreen";
@@ -468,6 +469,8 @@ export function AppStateRoot({
   const text = makeTextTranslator(locale);
   // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
   const runUndoableDelete = useUndoableDelete();
+  // ADR 0068 T6: transient async-success feedback on the shared Toast surface.
+  const toast = useToast();
   // ADR 0076 D4: threaded date formatters. Detail/audit rows (provenance,
   // diagnostics) show the full `YYYY-MM-DD HH:MM`; the week label is locale-bound.
   // List rows (feed streams) format at the leaf via formatListTimestamp.
@@ -649,6 +652,7 @@ export function AppStateRoot({
     refreshSignals,
     refreshSourceAdapters,
     refreshUnmatchedSourceItems,
+    onManualRefreshSuccess: () => toast.show({ message: text("Sources refreshed"), tone: "positive" }),
     scheduledSourceAdapters,
     settings,
     sourceAdapterRefreshInFlight,
@@ -1297,6 +1301,7 @@ export function AppStateRoot({
     "app.openTranscripts": () => undefined,
     "app.openSources": () => undefined,
     "app.openSettings": () => undefined,
+    "app.openAlerts": () => undefined,
     "app.commandPalette": () => undefined,
     "app.focusSearch": () => undefined,
     "app.refreshSources": () => undefined,
@@ -1836,6 +1841,7 @@ export function AppStateRoot({
               <WatchlistsScreen />
             </WatchlistsProvider>
           ) : null}
+          {activeSection === "Alerts" ? <AlertsScreen /> : null}
           {/* The standalone Research screen is retired as a *nav destination*
               (epic c793ca1): no sidebar entry, and user-facing callers
               (openResearchEvidence, brief/digest search) redirect into the

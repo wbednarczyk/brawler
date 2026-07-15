@@ -131,6 +131,22 @@ pub(super) fn classify_and_store_signal(
         ],
     )?;
 
+    // Inline attention-rule evaluation (ADR 0068 / plan §T2): a newly created
+    // confirmed signal fires any matching `signal_category` alert rule. Runs in
+    // the same classification pass — no new worker lane. Best-effort: an
+    // evaluation failure is logged and never rolls back the signal.
+    if affected > 0 {
+        if let Err(error) = super::attention::evaluate_signal_rules(
+            connection,
+            company_id,
+            &category,
+            &id,
+            normalized_date.as_deref(),
+        ) {
+            log::warn!("module=attention stage=signal_eval signalId={id} error={error}");
+        }
+    }
+
     Ok(affected > 0)
 }
 

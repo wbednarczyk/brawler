@@ -30,11 +30,43 @@ function ToastHarness() {
       <button type="button" onClick={() => show({ message: "toast-four" })}>
         four
       </button>
+      <button
+        type="button"
+        onClick={() => show({ message: "Attention item", persistent: true })}
+      >
+        persistent
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          show({
+            message: "Signal fired",
+            persistent: true,
+            actionLabel: "View evidence",
+            onAction: () => onActionSpy(),
+          })
+        }
+      >
+        persistent-with-action
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          show({
+            message: "Attention item with sync",
+            persistent: true,
+            onDismiss: () => onDismissSpy(),
+          })
+        }
+      >
+        persistent-with-dismiss-sync
+      </button>
     </div>
   );
 }
 
 const onActionSpy = vi.fn();
+const onDismissSpy = vi.fn();
 
 function renderHarness() {
   return render(
@@ -47,6 +79,7 @@ function renderHarness() {
 beforeEach(() => {
   vi.useFakeTimers();
   onActionSpy.mockReset();
+  onDismissSpy.mockReset();
 });
 
 afterEach(() => {
@@ -108,5 +141,69 @@ describe("Toast", () => {
     expect(screen.getByText("toast-three")).toBeInTheDocument();
     expect(screen.getByText("toast-four")).toBeInTheDocument();
     expect(screen.getAllByRole("status")).toHaveLength(3);
+  });
+
+  it("persistent toast does not auto-dismiss after the timer", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent" }));
+    expect(screen.getByText("Attention item")).toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(screen.getByText("Attention item")).toBeInTheDocument();
+  });
+
+  it("renders a persistent toast as an assertive role=alert region", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent" }));
+    const toast = screen.getByRole("alert");
+    expect(toast).toHaveTextContent("Attention item");
+  });
+
+  it("dismiss button removes a persistent toast", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent" }));
+    expect(screen.getByText("Attention item")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("Attention item")).toBeNull();
+  });
+
+  it("invokes the click-through action on a persistent toast without discarding it silently", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent-with-action" }));
+    fireEvent.click(screen.getByRole("button", { name: "View evidence" }));
+    expect(onActionSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Signal fired")).toBeNull();
+  });
+
+  it("calls onDismiss (domain sync) when the explicit dismiss control is clicked (ADR 0068 T4)", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent-with-dismiss-sync" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(onDismissSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Attention item with sync")).toBeNull();
+  });
+
+  it("does not call onDismiss when the toast is removed via its click-through action", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent-with-action" }));
+    fireEvent.click(screen.getByRole("button", { name: "View evidence" }));
+    expect(onDismissSpy).not.toHaveBeenCalled();
+  });
+
+  it("spares persistent toasts from MAX_STACK eviction when transient toasts overflow", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "persistent" }));
+    fireEvent.click(screen.getByRole("button", { name: "one" }));
+    fireEvent.click(screen.getByRole("button", { name: "two" }));
+    fireEvent.click(screen.getByRole("button", { name: "three" }));
+    fireEvent.click(screen.getByRole("button", { name: "four" }));
+    // Persistent toast survives even though 4 transient toasts were queued.
+    expect(screen.getByText("Attention item")).toBeInTheDocument();
+    // Transient queue is still capped at MAX_STACK (3): oldest transient dropped.
+    expect(screen.queryByText("toast-one")).toBeNull();
+    expect(screen.getByText("toast-two")).toBeInTheDocument();
+    expect(screen.getByText("toast-three")).toBeInTheDocument();
+    expect(screen.getByText("toast-four")).toBeInTheDocument();
   });
 });

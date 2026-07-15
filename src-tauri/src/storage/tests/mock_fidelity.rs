@@ -456,6 +456,119 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             .expect("set_mcp_enabled"),
         )
         .unwrap(),
+        // Attention routing: alert rules + fired events (ADR 0068 T3). Thin
+        // command wrappers delegate to these `AttentionStore` methods, so the
+        // corpus exercises the same CRUD/list/mutate behavior the mock replays.
+        "create_alert_rule" => {
+            let new: crate::storage::NewAlertRule =
+                serde_json::from_value(inner).expect("NewAlertRule");
+            serde_json::to_value(
+                state
+                    .attention()
+                    .create_alert_rule(new)
+                    .expect("create_alert_rule"),
+            )
+            .unwrap()
+        }
+        "list_alert_rules" => serde_json::to_value(
+            state
+                .attention()
+                .list_alert_rules()
+                .expect("list_alert_rules"),
+        )
+        .unwrap(),
+        "update_alert_rule" => {
+            let update: crate::storage::AlertRuleUpdate =
+                serde_json::from_value(inner).expect("AlertRuleUpdate");
+            serde_json::to_value(
+                state
+                    .attention()
+                    .update_alert_rule(update)
+                    .expect("update_alert_rule"),
+            )
+            .unwrap()
+        }
+        "set_alert_rule_enabled" => {
+            let id = inner["id"].as_str().expect("id");
+            let enabled = inner["enabled"].as_bool().expect("enabled");
+            serde_json::to_value(
+                state
+                    .attention()
+                    .set_alert_rule_enabled(id, enabled)
+                    .expect("set_alert_rule_enabled"),
+            )
+            .unwrap()
+        }
+        "delete_alert_rule" => {
+            let id = inner["id"].as_str().expect("id");
+            state
+                .attention()
+                .delete_alert_rule(id)
+                .expect("delete_alert_rule");
+            Value::Null
+        }
+        "list_attention_events" => {
+            let list_input: crate::storage::AttentionEventListInput =
+                serde_json::from_value(inner).unwrap_or_default();
+            serde_json::to_value(
+                state
+                    .attention()
+                    .list_attention_events(list_input)
+                    .expect("list_attention_events"),
+            )
+            .unwrap()
+        }
+        "mark_attention_event_seen" => {
+            let id = inner["id"].as_str().expect("id");
+            state
+                .attention()
+                .mark_attention_event_seen(id)
+                .expect("mark_attention_event_seen");
+            Value::Null
+        }
+        "dismiss_attention_event" => {
+            let id = inner["id"].as_str().expect("id");
+            state
+                .attention()
+                .dismiss_attention_event(id)
+                .expect("dismiss_attention_event");
+            Value::Null
+        }
+        // Corpus-only setup bridge: the real inline autopilot-completion hook
+        // (ADR 0068 §T2) fires events; there is no user command to mint one. Fire
+        // it, then return the resulting event so the seen/dismiss steps have a
+        // real id (the mock runtime seeds an equivalent event in its handler).
+        "evaluate_autopilot_completion" => {
+            let company_id = inner["companyId"].as_str().expect("companyId");
+            let run_id = inner["runId"].as_str().expect("runId");
+            state
+                .attention()
+                .evaluate_autopilot_completion(company_id, run_id)
+                .expect("evaluate_autopilot_completion");
+            let events = state
+                .attention()
+                .list_attention_events(crate::storage::AttentionEventListInput {
+                    company_id: Some(company_id.to_owned()),
+                    include_dismissed: true,
+                })
+                .expect("list_attention_events");
+            serde_json::to_value(events.into_iter().next()).unwrap()
+        }
+        // Morning briefing (ADR 0068 decision 4, §T5). `generate` enqueues an
+        // async compose job (no synchronous result); `get_latest` returns the most
+        // recent briefing or null. The replayer does not drain the worker, so no
+        // briefing exists mid-corpus — both sides agree on `null`.
+        "generate_morning_briefing" => {
+            crate::jobs::morning_briefing::enqueue_on_demand_briefing(state);
+            Value::Null
+        }
+        "get_latest_morning_briefing" => serde_json::to_value(
+            state
+                .morning_briefings()
+                .latest_morning_briefing()
+                .expect("get_latest_morning_briefing"),
+        )
+        .unwrap(),
         "mcp_status" => serde_json::to_value(lifecycle.status()).unwrap(),
         other => {
             panic!("fidelity corpus uses '{other}', which the Rust replayer does not dispatch")

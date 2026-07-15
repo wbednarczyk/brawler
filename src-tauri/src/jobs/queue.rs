@@ -77,6 +77,13 @@ impl JobWorker {
         );
     }
 
+    /// Every job `kind` a handler is registered for. Used by the lane-coverage
+    /// guardrail (every registered kind must appear in exactly one worker lane,
+    /// [`crate::jobs::pool_layout`]).
+    pub fn registered_kinds(&self) -> Vec<&'static str> {
+        self.handlers.keys().copied().collect()
+    }
+
     /// Dispatch one already-claimed job to its handler and record the outcome
     /// (success or retry-with-backoff). Shared by the all-kinds and kind-scoped
     /// claim paths.

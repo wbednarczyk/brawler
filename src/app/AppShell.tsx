@@ -132,6 +132,7 @@ export function AppShell({
     "app.openTranscripts": () => setActiveSection("Transcripts"),
     "app.openSources": () => setActiveSection("Sources"),
     "app.openSettings": () => setActiveSection("Settings"),
+    "app.openAlerts": () => setActiveSection("Alerts"),
     "app.commandPalette": () => {
       openPaletteRef.current();
     },

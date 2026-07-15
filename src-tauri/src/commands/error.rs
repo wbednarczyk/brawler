@@ -99,6 +99,9 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::InvalidFrameworkValue { .. } => InvalidInput,
         StorageError::InvalidCriterionExpression { .. } => InvalidInput,
         StorageError::InvalidCockpitLayoutName { .. } => InvalidInput,
+        StorageError::InvalidAlertRuleValue { .. } => InvalidInput,
+        // Creating a rule identical to an existing one is caller input, not a bug.
+        StorageError::DuplicateAlertRule { .. } => InvalidInput,
         // A reset request against a non-template framework is an invalid
         // operation on caller-named input (not a concurrency conflict).
         StorageError::NotATemplate { .. } => InvalidInput,
@@ -112,6 +115,7 @@ fn code_for(error: &StorageError) -> CommandErrorCode {
         StorageError::ReportExpectationFrozen { .. } => Conflict,
         StorageError::MissingFrameworkReference { .. } => NotFound,
         StorageError::CockpitLayoutNotFound { .. } => NotFound,
+        StorageError::AlertRuleNotFound { .. } => NotFound,
         // Internal ML/derivation step failure — no more specific code.
         StorageError::Classification(_) => Internal,
     }

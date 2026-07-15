@@ -28,7 +28,7 @@ Recommended workflow:
 
 ## Nix Development Environment
 
-Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop` the explicit entrypoint (optional `direnv`/`nix-direnv`). Nix provides toolchains/libraries, not a command hiding place — build/test commands stay runnable inside `nix develop`. `.env`/envdir secrets stay outside the Nix store (never in `flake.nix`/`flake.lock`/`.envrc`); commit `flake.lock`. Flake provides: Rust + fmt/lint, Node.js/npm, Linux Tauri prerequisites, SQLite dev libs, `pkg-config`, plus `devShells.windows-cross` (`packaging` skill). GitHub Actions runs the same commands inside `nix develop` or equivalent; avoid heavy Nix packaging in default CI.
+Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop` the explicit entrypoint (optional `direnv`/`nix-direnv`). Nix provides toolchains/libraries, not a command hiding place — build/test commands stay runnable inside `nix develop`. `.env`/envdir secrets stay outside the Nix store (never in `flake.nix`/`flake.lock`/`.envrc`); commit `flake.lock`. Flake provides: Rust + fmt/lint, Node.js/npm, Linux Tauri prerequisites, SQLite dev libs, `pkg-config`, plus `devShells.windows-cross` (`packaging` skill). GitHub Actions runs the same commands inside `nix develop`; avoid heavy Nix packaging in default CI.
 
 ## CI Posture
 
@@ -41,7 +41,7 @@ Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop
 
 The Makefile is the preferred local command surface from WSL; targets stay thin wrappers around documented project commands.
 
-**Gate split by git phase ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md), 2026-07-15).** **pre-commit → `make check-fast`** (parallel core, no browser, ~2–4 min) per code commit; docs-only → `make check-docs`. **The full `make check` (~15-min browser matrix) runs at pre-push to `master` only** — the shared-code boundary; no CI mirror, so this is the guarantee master never advances past a red gate. A missing tool fails (not skips); `--no-verify` is WIP-only, never valid under "done".
+**Gate split by git phase ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md), 2026-07-15).** **pre-commit → `make check-fast`** (parallel core, no browser, ~2–4 min) per code commit; docs-only → `make check-docs`. **The full `make check` (~15-min browser matrix) runs at pre-push to `master` only** — the shared-code boundary with no CI mirror: the guarantee master never advances past a red gate. A missing tool fails (not skips); `--no-verify` is WIP-only, never valid under "done". **Multi-phase epics:** phases gate on `make check-fast`; the browser matrix runs once, at epic completion.
 
 **Commit-message hook runs AFTER the gate** — a rejected message wastes a full `make check` run. Rules: Conventional Commits, single `[a-z0-9._-]+` scope (no commas), subject after the colon ≤ 72 chars. Pre-validate every non-trivial message first: `scripts/release/validate-commit-message.sh --message "<subject line>"` (guardrail, 2026-07-03).
 
@@ -73,7 +73,7 @@ Brawler is **spec-driven for intent** (docs/ADRs define behavior before code) an
 
 ## Definition of Done (the handover gate)
 
-**This is the single stop gate before you report "done" or hand changes back.** "Done" is a claim that the *whole thing* is working and verified — not that the slice you touched compiles. The recurring failure is handing over on a *subset* of checks ("it compiles", "host is green", "tests pass" but not the periodic ones / not under Nix / never actually looked at the UI / never ran the real feature). **Do not hand over until every box that applies is checked, and your handoff message states what you verified and how (and what you did not).**
+**This is the single stop gate before you report "done" or hand changes back.** "Done" is a claim that the *whole thing* is working and verified — not that the slice you touched compiles. The recurring failure is handing over on a *subset* of checks ("it compiles", "tests pass" but not under Nix / never looked at the UI / never ran the real feature). **Do not hand over until every applicable box is checked; the handoff states what you verified and how (and what you did not).**
 
 It is **scope-aware** (do the sections your change touches; always do §A, §H, §K) and a **living checklist** — when the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)) produces a lesson that can't be a clean automated gate, add a line here. Command reference: [Agent Day-To-Day Check Loop](#agent-day-to-day-check-loop) and [Testing](testing.md). When unsure whether something is testable a given way, assume it is and check [Testing](testing.md) — "I didn't know I could test that" is not an acceptable handoff.
 
@@ -82,18 +82,19 @@ Frontend/UI · Rust/backend · dependency or packaging · migration · feature-g
 
 ### §A — Always
 - [ ] Implemented to spec: read the canonical doc(s) for the area (the [Required Reading](../CLAUDE.md) map) — don't infer architecture/field/command names from code alone. ADR added/confirmed if durable architecture or policy changed.
-- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt · clippy `-D warnings` · nextest · doc, then typecheck · ESLint · stylelint · Vitest · build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; the **full gate runs at pre-push to `master`** (§ gate split, no CI mirror) — run it yourself before "done". A host pass is a hint, not a verdict (the toolchain can be split). **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
+- [ ] **`make check` passes under Nix** (not host) — the **single mandatory gate** ([ADR 0062](adr/0062-mandatory-test-gate-and-test-driven-loop.md)): `npm run check` (Rust fmt/clippy/nextest/doc + typecheck/lint/Vitest/build) → `knip` → `make types-check` (ts-rs drift) → the **full Playwright browser suite** → `gate-integrity`. Every step hard-fails; the **full gate runs at pre-push to `master`** (§ gate split, no CI mirror) — run it yourself before "done". A host pass is a hint, not a verdict. **Re-run the full gate after the last fix; never hand over on a stale or partial run.**
 - [ ] Canonical doc(s) whose behavior changed are updated **in this change** (contracts / data-model / product-spec / ui-flows / ui-information-architecture / architecture / roadmap).
 - [ ] Nothing committed or pushed unless the user asked, or via the release workflow.
 
 ### §B — If frontend/UI changed
 - [ ] Matched the **destination** screen's scaffold (`feed-panel` shell + `PanelHeader` + padded scrollable body) **and its control idioms** (which `Button` variant, status pattern). **On a relocation, re-check against the new screen's siblings — old-screen conventions don't travel** (Diagnostics uses `compact-button`; Settings uses the `Button` primitive / `secondary-button`). See [ui-authoring.md](ui-authoring.md).
 - [ ] Pre-write self-check: primitive for the shape (`src/ui`), domain component for the data shape (`src/shared/components` — e.g. `TickerLabel` for any qualified ticker), no raw `<input>/<select>/<textarea>`, no inline `style={{…}}`.
+- [ ] **New panel/screen or redesign: approved mockup in `docs/mockups/` first** (ui-authoring); goes in every UI subagent brief.
 - [ ] Every user-visible string via `text("…")` with **both** `en.ts`/`pl.ts` (or `plText`) entries — translation guard green; counts use `pluralNoun`.
 - [ ] New UI workflow/behavior has a Vitest component/workflow test. Added/changed a primitive → added to `PrimitiveGallery.tsx` **and** `primitives.test.tsx` (clean under the a11y suite).
 - [ ] **You rendered the changed screen and looked at it** — don't defer the visual check to the user. "No GUI in WSL" is not a reason: the browser harness renders any screen headlessly in Chromium ([Testing → Browser UI regression smoke](testing.md#browser-ui-regression-smoke-playwright)). Drive a throwaway Playwright spec to the screen, `await page.screenshot(...)`, read the PNG; add any command it calls to `src/test/browserSmokeRuntime.ts`.
 - [ ] **`make ui-smoke` (Playwright) green**, including the narrow tall-window viewport matrix in `playwright.config.ts`. Triage every failure — fix or file a tracked issue.
-- [ ] **A panel rendering variable/unbreakable content (filenames, headings) has a narrow-window overflow assertion against the inner scroll container, not just the document.** `document.scrollWidth` reads 0 when the scroll lives in an inner `overflow:auto` element; assert `scrollWidth ≤ clientWidth+1` on that container + the panel. The grid chain feeding it uses `min-width:0` + `grid-template-columns: minmax(0,1fr)` ([ui-authoring.md](ui-authoring.md) styling rules). A new IPC command driving the panel is added to `src/test/scenarios/runtime.ts` so the assertion can render it.
+- [ ] **A panel rendering variable/unbreakable content (filenames, headings) has a narrow-window overflow assertion against the inner scroll container, not just the document** (`document.scrollWidth` reads 0 when the scroll lives in an inner `overflow:auto` element): assert `scrollWidth ≤ clientWidth+1` on that container + the panel; grid chain uses `min-width:0` + `minmax(0,1fr)` ([ui-authoring.md](ui-authoring.md)). A new IPC command driving the panel joins `src/test/scenarios/runtime.ts` so the assertion can render it.
 
 ### §C — If Rust/backend changed
 - [ ] Rust gate validated **under Nix** specifically (host clippy/fmt can differ — this is where lints like `is_multiple_of` / `zip(into_iter())` hide).

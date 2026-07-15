@@ -674,6 +674,41 @@ Rules:
 - The PK serves the 52-week / percentile range scans (indexed reads, never a corpus recompute).
 - Migrations are append-only (0071); reads of quote-derived ratios tolerate missing facts (ratio resolves to `null`, never a crash).
 
+### Attention Routing (Alert Rules + Events)
+
+User-owned alert rules and the attention events their evaluation emits ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md), `v0.54.0`). Migration `0077_alert_rules_attention_events.sql`.
+
+`alert_rules` — `(id, trigger_type, signal_category, price_min, price_max, scope_type, scope_ref, enabled, created_at, updated_at)`.
+
+- `trigger_type` ∈ `signal_category` | `autopilot_run_completed` | `price_enters_range` | `price_week52_low` (CHECK). Trigger-specific columns stay NULL for triggers that do not use them: `signal_category` (a `signal_categories.key`) for `signal_category`; `price_min`/`price_max` (inclusive close band, `min ≤ max`) for `price_enters_range`.
+- `scope_type` ∈ `company` | `watchlist` (CHECK); `scope_ref` is a `company_id` (company scope) or `watchlist_id` (watchlist scope). A watchlist-scoped rule fires for every member company.
+- `enabled = 0` rules never fire.
+- **Rule ids are content-derived** (`alert_<trigger>_<scope>…`, count-suffixed on base collision — the repo's collision-safe id convention), never row-count-based (a deleted rule must not free an id a survivor still holds — live regression 2026-07-15). Creating a rule identical to an existing one (same trigger + scope + prices) is rejected with the typed `DuplicateAlertRule` error, never inserted as a twin.
+
+`attention_events` — `(id, rule_id, company_id, evidence_type, evidence_ref, fired_at, seen, dismissed, created_at)`, `UNIQUE(rule_id, evidence_type, evidence_ref)`.
+
+- `evidence_type` is `company_signal` (ref = signal id) | `autopilot_run` (ref = run id) | `daily_quote` (ref = quote `date`). Every event links back to the evidence that raised it.
+- **Dedup**: at most one event per `(rule, evidence_type, evidence_ref)` — re-running evaluation over the same evidence is a no-op (`INSERT … ON CONFLICT DO NOTHING`), so no re-fire on re-ingest.
+- **Per-rule daily throttle**: at most **1 event per rule per domain day**. `fired_at` carries the evidence's **domain** date (signal/quote date; `now()` for autopilot), never wall-clock ingestion time, so dedup and throttle are deterministic.
+- Evaluation is **inline** in the evidence-producing job stages (signal classification, autopilot `finalize_notify`, post-daily-pull price check) — no new worker lane; a handful of indexed reads. `price_week52_low` fires only on a **strict new low** vs the trailing 52-week window (by `date`); `enters_range` fires when the latest close is inside `[min, max]`.
+- Rows CASCADE-delete with their rule and company; reads of an absent event tolerate it (nothing to show).
+
+### Morning Briefing
+
+A daily/on-demand briefing ([ADR 0068](adr/0068-attention-routing-and-morning-briefing.md) decision 4, `v0.54.0`): a deterministically composed item list plus an optional AI narrative. Migration `0078_morning_briefings.sql`.
+
+`morning_briefings` — `(id, composed_at, since, narrative_markdown, narrative_provider_id, narrative_model, language, created_at)`.
+
+- `since` is the domain-date lower bound the composer used (`YYYY-MM-DD`; `''` on the first-ever briefing = include everything). The next compose's `since` = the latest briefing's `composed_at` date.
+- `narrative_markdown` is `NULL` when no provider is configured **or** the narrative was rejected on citation integrity — the briefing still persists as the structured item list. A narrative is **decision-support only** (facts + citations, never advice), phrased via the research-digest provider contract (capability `morning_briefing`, [ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)).
+
+`morning_briefing_items` — `(id, briefing_id, position, item_type, company_id, domain_date, citation_key, evidence_type, evidence_ref, title, detail, created_at)`, `UNIQUE(briefing_id, citation_key)`. This table is BOTH the structured list the Today card renders AND the citeable evidence set the narrative resolves against (mirrors `ai_research_digest_citations`).
+
+- `item_type` ∈ `signal` | `autopilot_run` | `claim_due` | `report_date` | `attention_event`. `evidence_ref` is the source id (signal id | run id | claim id | attention-event id | `company:event_key`); a narrative citation resolves against `(evidence_type, evidence_ref)` via `research::supplied_evidence_refs` — an unresolved citation rejects the whole narrative (never store an uncited narrative).
+- **Composition** is a pure, deterministic function over gathered reads (`storage::compose_briefing`), so it is snapshot-stable. Inputs: new **confirmed** signals (domain date = `signal_date`), completed autopilot runs (`succeeded`/`partial`, domain date = `updated_at`), and fired non-dismissed attention events (domain date = `fired_at`) whose date is **strictly after** `since`; plus the current claims-due (due + overdue) and upcoming-report snapshot (not `since`-bounded). Items are ordered by `domain_date`, then a stable (type, company, evidence-ref) tiebreak — **never `created_at`**; `citation_key` = `b{position+1}`.
+- `company_id` is denormalized TEXT (not an FK): a briefing is a historical snapshot, so deleting a company must not rewrite past briefings. Items CASCADE-delete with their briefing.
+- The compose runs as the `morning_briefing` durable-queue job (**ai** lane). On-demand (`generate_morning_briefing`, `force`) recomposes even if today's briefing exists; the daily auto-trigger (Rust scheduler, app-open only) is idempotent per day (`briefing_exists_on`).
+
 ### Management Claims
 
 First-class management claims ([ADR 0040](adr/0040-management-claims-tracker.md), `v0.42.0`): a tracked management promise from a report or transcript, with a normalized due period and a user-set verdict. Replaces the legacy `notebook_entries(kind='claim')` model. Migration `0045_management_claims.sql`.

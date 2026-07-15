@@ -26,6 +26,11 @@ const BASE_TICK: Duration = Duration::from_secs(10);
 /// start jitter); derived deterministically per adapter id.
 const MAX_START_JITTER_SECONDS: i64 = 30;
 
+/// Daily cadence for the morning-briefing auto-trigger (ADR 0068 §T5): while the
+/// app is open, enqueue at most one briefing compose per day. The handler is
+/// idempotent per day, so this only governs enqueue churn, not correctness.
+const BRIEFING_INTERVAL_MS: i64 = 86_400_000;
+
 /// Job kind: one scheduled source-adapter refresh. Payload `{adapterId}`.
 pub const SOURCE_REFRESH_KIND: &str = "scheduled_source_refresh";
 /// Job kind: a scheduled company-registry refresh-if-stale check.
@@ -46,11 +51,24 @@ pub fn spawn(state: AppState) {
     tauri::async_runtime::spawn_blocking(move || {
         let mut source_due: HashMap<String, i64> = HashMap::new();
         let mut registry_due: Option<i64> = None;
+        let mut briefing_due: Option<i64> = None;
         loop {
             std::thread::sleep(BASE_TICK);
             let (next_source, next_registry) = run_tick(&state, source_due, registry_due);
             source_due = next_source;
             registry_due = next_registry;
+
+            // Daily morning-briefing auto-trigger (ADR 0068 §T5). App-open only,
+            // license-gated like the refresh cadence; the handler stays idempotent
+            // per day so an app restart (which resets `briefing_due`) re-composes at
+            // most once per day.
+            if crate::commands::licensing::current_license_can_use_app(&state) {
+                let (fire, next) = compute_briefing_due(now_ms(), briefing_due);
+                if fire {
+                    crate::jobs::morning_briefing::enqueue_daily_briefing(&state);
+                }
+                briefing_due = Some(next);
+            }
         }
     });
 }
@@ -209,6 +227,16 @@ fn apply_tick(
     (decision.next_source, decision.next_registry)
 }
 
+/// Pure daily-cadence decision for the morning briefing: fire when there is no
+/// prior due time (first tick after app open) or the prior due time has elapsed;
+/// the next due time is always `now + BRIEFING_INTERVAL_MS`. Testable offline.
+fn compute_briefing_due(now: i64, prior_due: Option<i64>) -> (bool, i64) {
+    match prior_due {
+        Some(due) if now < due => (false, due),
+        _ => (true, now + BRIEFING_INTERVAL_MS),
+    }
+}
+
 fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -228,6 +256,25 @@ fn start_jitter_ms(adapter_id: &str) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compute_briefing_due_fires_on_first_tick_then_daily() {
+        // First tick after app open (no prior due) fires immediately and schedules
+        // the next one a day out; a tick before the next due is a no-op; a tick at
+        // or after it fires again. Idempotency of same-day composes is the handler's
+        // job (this only governs enqueue cadence).
+        let (fire, next) = compute_briefing_due(NOW, None);
+        assert!(fire, "first tick fires");
+        assert_eq!(next, NOW + BRIEFING_INTERVAL_MS);
+
+        let (fire, next_again) = compute_briefing_due(NOW + 1_000, Some(next));
+        assert!(!fire, "not due yet");
+        assert_eq!(next_again, next, "keeps the pending due time");
+
+        let (fire, next_day) = compute_briefing_due(next, Some(next));
+        assert!(fire, "fires again once the day elapsed");
+        assert_eq!(next_day, next + BRIEFING_INTERVAL_MS);
+    }
 
     #[test]
     fn start_jitter_is_deterministic_and_bounded() {

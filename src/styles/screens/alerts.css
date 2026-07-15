@@ -1,0 +1,325 @@
+/* Alerts (Library sidebar screen, ADR 0068 T3; relocated from Settings
+   2026-07-15; visual redesign v0.54 to docs/mockups/alerts-library-view.html).
+   Three surface cards — create / your rules / fired alerts — with a live
+   plain-language preview of the draft rule. Uses design tokens only. */
+
+.alerts-layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  align-content: start;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: auto;
+  padding: var(--space-4);
+  max-width: 860px;
+}
+
+/* Card = surface background, border, radius, padding. */
+.alerts-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+/* Uppercase, muted section heading with a right-aligned count/meta. */
+.alerts-card-header h2 {
+  font-size: var(--font-base);
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.alerts-card-header .ui-section-header-meta {
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Creation flow. */
+.alerts-step {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.alerts-trigger-chips {
+  margin-top: var(--space-1);
+}
+
+.alerts-trigger-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--font-base);
+  cursor: pointer;
+  transition: border-color 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.alerts-trigger-chip:hover {
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+}
+
+.alerts-trigger-chip-active {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent);
+}
+
+.alerts-trigger-chip svg {
+  flex: 0 0 auto;
+}
+
+/* WCAG AA (axe color-contrast, same class as feedback.css .ui-toast-action):
+   small --primary text on a light primary-tinted surface lands under 4.5:1 in
+   BOTH light palettes; light themes use --primary-strong. Dark themes keep
+   --primary — there the lighter tint is the higher-contrast one. */
+:root[data-theme="light"] .alerts-trigger-chip-active,
+:root[data-theme="light"] .alerts-preview-text strong {
+  color: var(--primary-strong);
+}
+
+/* Scope row: segmented control + target select (+ price fields), wrapping. */
+.alerts-where-row {
+  align-items: end;
+  gap: var(--space-3);
+}
+
+.alerts-field-group {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.alerts-field-group-label {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Live preview box: dashed highlight, sentence + primary action. */
+.alerts-preview {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed color-mix(in srgb, var(--primary) 40%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--primary) 6%, transparent);
+}
+
+.alerts-preview-text {
+  margin: 0;
+  min-width: 0;
+  color: var(--text);
+  font-size: var(--font-base);
+  line-height: 1.5;
+}
+
+.alerts-preview-text strong {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.alerts-preview-add {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Rule + fired rows (shared card-row idiom). */
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.alerts-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-1);
+  border-top: 1px solid var(--border);
+}
+
+.alerts-row:first-child {
+  border-top: 0;
+}
+
+.alerts-row-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.alerts-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.alerts-row-title {
+  color: var(--text);
+  font-size: var(--font-md);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alerts-row-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-0);
+  color: var(--muted);
+  font-size: var(--font-sm);
+  min-width: 0;
+}
+
+.alerts-row-prices {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.alerts-row-prices input {
+  width: 84px;
+}
+
+/* Trailing fixed slots (toggle + action) — same alignment down the list. */
+.alerts-row-slots {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 0 0 auto;
+}
+
+/* Toggle switch (mirrors .source-enable-control): the real checkbox is an
+   invisible overlay covering the whole control so a point-dispatched click —
+   user or test — always lands on the input. */
+.alerts-enable-control {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+  min-height: 20px;
+  cursor: pointer;
+}
+
+.alerts-enable-control input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.alerts-enable-control:focus-within {
+  outline: 2px solid color-mix(in srgb, var(--primary) 72%, transparent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.alerts-enable-track {
+  display: inline-flex;
+  align-items: center;
+  width: 32px;
+  height: 18px;
+  padding: var(--space-0);
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised) 76%, var(--surface));
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.alerts-enable-track span {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 78%, var(--text));
+  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
+  transition: transform 120ms ease, background 120ms ease;
+}
+
+.alerts-enable-control input:checked + .alerts-enable-track {
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  background: color-mix(in srgb, var(--primary) 28%, var(--surface-raised));
+}
+
+.alerts-enable-control input:checked + .alerts-enable-track span {
+  transform: translateX(14px);
+  background: var(--primary);
+}
+
+/* Fired-alert row specifics: status dot + bold ticker. */
+.alerts-fired-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone-caution, var(--warning));
+}
+
+.alerts-fired-dot-seen {
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+
+.alerts-fired-ticker {
+  flex: 0 0 auto;
+  font-weight: 700;
+}
+
+.alerts-fired-meta {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+/* Narrow pane (~480px, quarter ultrawide): rows and preview stack, action
+   goes full-width, nothing scrolls horizontally. Scoped to the workspace pane
+   size container (density contract, ADR 0076 D6). */
+@container pane (max-width: 640px) {
+  .alerts-where-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .alerts-preview {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .alerts-preview-add {
+    width: 100%;
+  }
+
+  .alerts-row {
+    flex-wrap: wrap;
+  }
+
+  .alerts-row-slots {
+    margin-left: auto;
+  }
+}
