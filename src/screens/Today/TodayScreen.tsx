@@ -162,6 +162,9 @@ export function TodayScreen({
       <Button
         className="today-row-review"
         data-today-row="true"
+        // ADR 0081 Q4: the explicit experience-contract primary action for
+        // this row's decision surface (open the item that matters).
+        data-ux-primary-action="true"
         onClick={onClick}
         onKeyDown={onRowKeyDown}
         type="button"
@@ -397,7 +400,10 @@ export function TodayScreen({
   const hasAttention =
     autopilotRows.length > 0 || verifyRows.length > 0 || changedRows.length > 0;
   const anyLoading = autopilotLoading || claimsLoading || season.loading;
-  const showQuietState = filter === null && !hasAttention;
+  // A failed category is explicit, never false quiet (J1 contract, ADR 0081 Q9):
+  // an errored read must not let the stream read as "nothing needs attention".
+  const anyCategoryError = Boolean(claimsError || season.error);
+  const showQuietState = filter === null && !hasAttention && !anyCategoryError;
 
   function counterTile(category: StreamCategory, label: string, count: number) {
     const active = filter === category;
@@ -441,6 +447,7 @@ export function TodayScreen({
 
         <section className="today-stream-region" aria-label={text("Attention stream")}>
           {claimsError ? <ErrorText>{claimsError}</ErrorText> : null}
+          {season.error ? <ErrorText>{season.error}</ErrorText> : null}
           {showQuietState && anyLoading ? (
             <Skeleton variant="list-row" count={3} label={text("Checking what needs your attention…")} />
           ) : (

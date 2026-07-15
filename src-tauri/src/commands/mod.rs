@@ -20,6 +20,7 @@ pub mod kpi_extraction;
 pub mod licensing;
 pub mod logs;
 pub mod management_claims;
+pub mod market_data;
 pub mod mcp;
 pub mod metrics;
 pub mod notebooks;

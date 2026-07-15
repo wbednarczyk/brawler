@@ -343,6 +343,13 @@
 
 .cockpit-tab-activate[aria-pressed="true"] {
   box-shadow: inset 0 -2px 0 var(--primary);
+  /* Explicit contrasting pair (design-system invariant: --text always meets
+   * WCAG AA on --surface-raised in both themes). The transparent tab inherited
+   * the dockview tab-strip background, which does not track the page theme, so
+   * the active tab's --text went invisible in the light theme (axe 1.11).
+   * Surfaced 2026-07-13 when the Research nav entry made the cockpit reachable
+   * from the a11y smoke-walk. */
+  background: var(--surface-raised);
   color: var(--text);
 }
 

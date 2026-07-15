@@ -1,4 +1,8 @@
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { expect, resetPaneSize, setPaneSize, test, type Locator, type Page } from "../helpers/harness";
+import { assertCataloged, type Tier } from "./catalog";
 
 // Shared shooting helpers for the all-panels visual baseline (ADR 0076 D7 / U11).
 //
@@ -12,7 +16,7 @@ import { expect, resetPaneSize, setPaneSize, test, type Locator, type Page } fro
 // regions (spinner / live clock) — SAMPLE_NOW is fixed so timestamps are stable,
 // and no masks are currently needed.
 
-export type Tier = "S" | "M" | "L";
+export type { Tier };
 
 const TIER_WIDTH: Record<Tier, number> = { S: 380, M: 600, L: 900 };
 const TIER_HEIGHT = 700;
@@ -22,14 +26,67 @@ function lightPass(): boolean {
   return test.info().project.name.endsWith("light");
 }
 
+function themeFor(): "dark" | "light" {
+  return lightPass() ? "light" : "dark";
+}
+
 async function settle(page: Page): Promise<void> {
   await page.evaluate(() => document.fonts.ready);
 }
 
-type ShootOptions = { mask?: Locator[] };
+type ShootOptions = { mask?: Locator[]; state?: string };
 
 function screenshotOptions(opts: ShootOptions): { mask?: Locator[] } {
   return opts.mask ? { mask: opts.mask } : {};
+}
+
+// Contact-sheet evidence (ADR 0081 plan Q5). When BRAWLER_CONTACT_SHEET_DIR is
+// set, capture the same settled locator as a current PNG plus a JSON metadata
+// sidecar BEFORE the toHaveScreenshot assertion below runs, so evidence exists
+// for the contact-sheet orchestrator to assemble even if that assertion then
+// fails (the orchestrator still returns Playwright's original non-zero exit).
+// Filenames are unique per worker (workerIndex + a per-worker counter) so
+// `fullyParallel` workers never race on the same path.
+let sidecarCounter = 0;
+
+async function writeContactSheetEvidence(
+  page: Page,
+  locator: Locator,
+  params: { screen: string; state: string; tier: Tier },
+): Promise<void> {
+  const dir = process.env.BRAWLER_CONTACT_SHEET_DIR;
+  if (!dir) return;
+  assertCataloged(params.screen, params.state);
+  mkdirSync(dir, { recursive: true });
+
+  const info = test.info();
+  const theme = themeFor();
+  const buildStamp =
+    (await page.evaluate(
+      () => (window as unknown as { __BRAWLER_BUILD_STAMP__?: string }).__BRAWLER_BUILD_STAMP__,
+    )) ??
+    process.env.BRAWLER_EXPECTED_BUILD_STAMP ??
+    "unknown";
+
+  const base = `${params.screen}__${params.state}__${params.tier}__${theme}__${info.project.name}--w${info.workerIndex}-${sidecarCounter++}`;
+  const png = await locator.screenshot();
+  writeFileSync(join(dir, `${base}.png`), png);
+  writeFileSync(
+    join(dir, `${base}.json`),
+    JSON.stringify(
+      {
+        screen: params.screen,
+        state: params.state,
+        tier: params.tier,
+        theme,
+        project: info.project.name,
+        buildStamp,
+        image: `${base}.png`,
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 // A cockpit panel: force the hosting `.cockpit-pane` to each width tier and
@@ -52,10 +109,12 @@ export async function shootPanel(
     .first();
   const canMaximize = (await maximize.count()) > 0;
   if (canMaximize) await maximize.click();
+  const state = opts.state ?? "default";
   const tiers: Tier[] = lightPass() ? ["M"] : ["S", "M", "L"];
   for (const tier of tiers) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane });
     await settle(page);
+    await writeContactSheetEvidence(page, pane, { screen: name, state, tier });
     await expect(pane).toHaveScreenshot(`${name}-${tier}.png`, screenshotOptions(opts));
     await resetPaneSize(page, pane);
   }
@@ -74,14 +133,17 @@ export async function shootScreen(
 ): Promise<void> {
   const workspace = page.locator(".workspace");
   const shot = screenshotOptions(opts);
+  const state = opts.state ?? "default";
 
   await settle(page);
+  await writeContactSheetEvidence(page, workspace, { screen: name, state, tier: "M" });
   await expect(workspace).toHaveScreenshot(`${name}-M.png`, shot);
   if (lightPass()) return;
 
   for (const tier of opts.forced ?? []) {
     await setPaneSize(page, { width: TIER_WIDTH[tier], height: TIER_HEIGHT, pane: workspace });
     await settle(page);
+    await writeContactSheetEvidence(page, workspace, { screen: name, state, tier });
     await expect(workspace).toHaveScreenshot(`${name}-${tier}.png`, shot);
     await resetPaneSize(page, workspace);
   }

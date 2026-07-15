@@ -38,7 +38,7 @@ pub(crate) fn replace_extraction(
     extraction: &StoredExtraction,
     sections: &[StoredSection],
 ) -> StorageResult<()> {
-    let tx = connection.transaction()?;
+    let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     tx.execute(
         "DELETE FROM report_document_sections WHERE report_document_id = ?1",
         params![extraction.report_document_id],

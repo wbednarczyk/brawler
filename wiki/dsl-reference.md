@@ -103,6 +103,7 @@ company's period history:
 | `ttm(metric)`     | trailing-twelve-months value (sums the last four quarters, or uses the latest annual figure) |
 | `avg(metric, n)`  | average of `metric` over the last `n` periods |
 | `trend(metric, n)`| average change per period of `metric` over the last `n` periods (positive = rising) |
+| `coalesce(a, b, …)` | the first expression whose inputs are available — a fallback chain, e.g. `coalesce(market_cap / net_profit_ttm, close / eps_diluted_ttm)`; empty only when every recipe fails |
 
 ```
 cagr(revenue, 5) > 10%

@@ -10,6 +10,7 @@ expression: entries
         display_name: "4MOBILITY SPÓŁKA AKCYJNA",
         isin: "PLESLTN00010",
         source_url: "https://newconnect.pl/spolka?isin=PLESLTN00010",
+        sector: None,
     },
     CompanyDirectoryEntry {
         exchange: "NC",
@@ -18,5 +19,6 @@ expression: entries
         display_name: "7FIT SPÓŁKA AKCYJNA",
         isin: "PL7LVLS00017",
         source_url: "https://newconnect.pl/spolka?isin=PL7LVLS00017",
+        sector: None,
     },
 ]

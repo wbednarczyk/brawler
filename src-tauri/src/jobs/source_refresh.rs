@@ -268,6 +268,10 @@ fn runtime_adapters() -> Vec<RuntimeAdapter> {
             behavior: RefreshBehavior::Directory(refresh_newconnect_company_directory_for_trigger),
         },
         RuntimeAdapter {
+            id: crate::jobs::quote_daily_pull::YAHOO_ADAPTER_ID,
+            behavior: RefreshBehavior::Feed(refresh_yahoo_eod_for_trigger),
+        },
+        RuntimeAdapter {
             id: sa::gpw_espi_ebi::ADAPTER_ID,
             behavior: RefreshBehavior::Disabled(
                 "GPW ESPI/EBI is disabled while Bankier Company Komunikaty is the active official-report source",
@@ -683,6 +687,30 @@ pub fn run_source_company_refresh(
     refresh_one_bankier_company(state, &target)?;
     after_successful_refresh(state);
     Ok(())
+}
+
+/// Post-session daily quote pull for the primary market-data source (ADR
+/// 0082, v0.53 T2). Wired here so the existing Rust-side scheduler drives it
+/// exactly like every other enabled source: `compute_schedule` re-arms a
+/// `scheduled_source_refresh` job on the `yahoo-eod` poll interval, and this
+/// arm is what that job dispatches to. Per-company failures inside the pull
+/// are swallowed into `items_unmatched` (best-effort — one company never
+/// aborts the sweep); only a whole-run failure (e.g. reading the company
+/// list) propagates here.
+fn refresh_yahoo_eod_for_trigger(
+    state: &app_state::AppState,
+    trigger: &str,
+) -> Result<storage::SourceIngestionResult, String> {
+    let adapter_id = crate::jobs::quote_daily_pull::YAHOO_ADAPTER_ID;
+    let _ = state.record_source_adapter_attempt(adapter_id, trigger);
+
+    match crate::jobs::quote_daily_pull::run_daily_pull_for_trigger(state, trigger) {
+        Ok(result) => Ok(result),
+        Err(error) => {
+            let _ = state.record_source_adapter_error(adapter_id, &error);
+            Err(error)
+        }
+    }
 }
 
 fn refresh_gpw_market_events_for_trigger(

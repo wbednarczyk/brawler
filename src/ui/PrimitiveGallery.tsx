@@ -55,7 +55,14 @@ export function PrimitiveGallery() {
           level="h4"
           variant="accent"
           meta={<StatusChip tone="ok">3</StatusChip>}
-          actions={<Button variant="primary" icon={<Plus size={14} />}>Add</Button>}
+          actions={
+            // ADR 0081 Q4 reference usage: the explicit experience-contract
+            // primary action for this section is marked by the CALLER, not
+            // inferred from the "primary" variant.
+            <Button data-ux-primary-action="true" variant="primary" icon={<Plus size={14} />}>
+              Add
+            </Button>
+          }
         />
       </section>
 

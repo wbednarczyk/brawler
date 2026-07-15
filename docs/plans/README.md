@@ -29,6 +29,22 @@ Zasady tej sesji:
 
 Operating model: the owner orchestrates (card → session → review), the implementing model works solo (subagents only for read-only exploration and post-task `/code-review`), the strongest model handles gating decisions, spike verdicts, and milestone closure (DoD §I). Don't paste plan content into the prompt — the file is the single copy.
 
+## Experience contracts (ADR 0081)
+
+Non-mechanical UI work — a new panel/screen, functional redesign, changed
+cross-screen journey, or new primary user decision — gets an **experience contract**
+before component work: copy [`EXPERIENCE-CONTRACT-TEMPLATE.md`](EXPERIENCE-CONTRACT-TEMPLATE.md)'s
+11 sections into the task's plan section and fill every field (any `N/A` needs a
+written reason). Pair it with a copy of
+[`docs/mockups/STORYBOARD-TEMPLATE.html`](../mockups/STORYBOARD-TEMPLATE.html) for the
+visual storyboard. Copy/token-only fixes, primitive-preserving mechanical migrations,
+and exact regression repairs are exempt unless they change a journey. The textual
+contract lives in the plan file (this directory); the storyboard lives under
+`docs/mockups/` — never only in a session scratchpad or `test-results/`. Both need
+explicit owner approval before they are normative. Full trigger/exemption/approval
+flow: [ui-authoring.md](../ui-authoring.md) § Experience contracts, storyboards &
+discoverability.
+
 ## Files
 
 - Cross-cutting, ready to implement after the active `v0.52` worktree closes:

@@ -23,6 +23,10 @@ per feature.
   the Coverage map (what has data, what's missing, per period), one-click
   history backfill + extraction, deterministic and OCR reading, the review
   queue, and the AI spend budget.
+- **[Price context, sectors, and company basics](price-context.md)** —
+  automatic daily prices, the 52-week range, market cap and level-0 valuation
+  ratios, the candlestick chart, sector classification with manual override,
+  and the read-only Basic info panel.
 - **[Composable cockpit views](cockpit-views.md)** — build your own
   multi-panel dashboards from a grid and a panel picker, save them by name,
   and switch between them from the sidebar.

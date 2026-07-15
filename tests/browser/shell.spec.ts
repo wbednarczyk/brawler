@@ -55,19 +55,19 @@ test.describe("mode-based shell (ADR 0054)", () => {
     page,
   }, testInfo) => {
     await openApp(page);
-    // There is no standalone blank "Cockpit" nav entry (ADR 0057 decision 5): the
-    // entry point is the "+ New view" creator. Apply the "Daily triage" preset
-    // (feed + inspector + claims) to reach the same feed/inspector panels this
-    // test exercises.
-    const nav = page.getByLabel("Primary navigation");
-    await nav.getByRole("button", { name: "New view" }).click();
-    const createModal = page.getByRole("dialog", { name: "New view" });
-    await createModal.getByLabel("View name").fill("Daily triage test view");
-    await createModal.getByRole("button", { name: "Create view" }).click();
-
+    // Dashboard redesign (epic c793ca1): the cockpit is one company-scoped
+    // Dashboard; the linked Feed + Inspector panels (the feed-selection model) are
+    // no longer a preset, but stay reachable via the command palette. Open a
+    // company Dashboard from the Companies list, then show the Feed panel.
+    await page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }).click();
+    await page.locator('[data-company-id="company_gpw_cdr"] .company-row-main').click();
     const cockpit = page.getByLabel("Research cockpit");
     await expect(cockpit).toBeVisible();
-    await cockpit.getByLabel("Preset").selectOption({ label: "Daily triage" });
+
+    await page.keyboard.press("Control+K");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await palette.getByLabel("Search commands").fill("Show panel: Feed");
+    await palette.getByRole("button", { name: "Show panel: Feed", exact: true }).click();
     await expect(page.locator(".cockpit-feed-item").first()).toBeVisible();
 
     // Read vs unread weight must differ (real-feed behavior): not every row is bold.
@@ -79,8 +79,13 @@ test.describe("mode-based shell (ADR 0054)", () => {
       expect(distinct.size, `feed title weights should differ for read/unread, got ${[...distinct].join(",")}`).toBeGreaterThan(1);
     }
 
-    // Inspect a feed item; the inspector header carries the ticker + title.
+    // Inspect a feed item; the inspector header carries the ticker + title. Open
+    // the Inspector panel from the palette (also closed by default on a Dashboard).
     await page.locator(".cockpit-feed-item").first().click();
+    await page.keyboard.press("Control+K");
+    const palette2 = page.getByRole("dialog", { name: "Command palette" });
+    await palette2.getByLabel("Search commands").fill("Show panel: Inspector");
+    await palette2.getByRole("button", { name: "Show panel: Inspector", exact: true }).click();
     const inspector = page.getByLabel("Feed item inspector");
     await expect(inspector).toBeVisible();
     await expectNoHorizontalOverflow(inspector);

@@ -358,6 +358,36 @@ const MIGRATIONS: &[Migration] = &[
         name: "drop_feed_item_story_key",
         sql: include_str!("../../migrations/0070_drop_feed_item_story_key.sql"),
     },
+    Migration {
+        version: 71,
+        name: "daily_quotes_and_sector",
+        sql: include_str!("../../migrations/0071_daily_quotes_and_sector.sql"),
+    },
+    Migration {
+        version: 72,
+        name: "level0_market_ratios",
+        sql: include_str!("../../migrations/0072_level0_market_ratios.sql"),
+    },
+    Migration {
+        version: 73,
+        name: "registry_entry_sector",
+        sql: include_str!("../../migrations/0073_registry_entry_sector.sql"),
+    },
+    Migration {
+        version: 74,
+        name: "pe_ratio_from_net_profit",
+        sql: include_str!("../../migrations/0074_pe_ratio_from_net_profit.sql"),
+    },
+    Migration {
+        version: 75,
+        name: "ratio_fallback_recipes",
+        sql: include_str!("../../migrations/0075_ratio_fallback_recipes.sql"),
+    },
+    Migration {
+        version: 76,
+        name: "remove_twelvedata_adapter",
+        sql: include_str!("../../migrations/0076_remove_twelvedata_adapter.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {
@@ -418,7 +448,8 @@ pub(super) fn apply_migrations(connection: &mut Connection) -> StorageResult<()>
         ",
     )?;
 
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
     for migration in MIGRATIONS {
         let already_applied: bool = transaction.query_row(
@@ -469,7 +500,8 @@ pub(super) fn apply_migrations_up_to(
         ",
     )?;
 
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
     for migration in MIGRATIONS {
         if migration.version > max_version {

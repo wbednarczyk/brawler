@@ -24,8 +24,10 @@ import type { KpiExtractionJob, KpiExtractionProposal } from "../api/kpiExtracti
 import type { FactProvenance } from "../api/generated/FactProvenance";
 import type { ReportDocument } from "../api/reportDocumentsTypes";
 import type { AutopilotRun } from "../api/autopilot";
-import { createMockRuntime } from "./scenarios/runtime";
-import type { ScenarioData, ScenarioName } from "./scenarios/scenarios";
+import { createMockRuntime, type InvocationMatch, type PendingInvocation } from "./scenarios/runtime";
+import type { ScenarioData, ScenarioName, ScenarioSpec } from "./scenarios/scenarios";
+import { applyScenarioOverlays, type ScenarioOverlayName } from "./scenarios/overlays";
+import type { CommandError } from "../api/generated/CommandError";
 
 type InvokeArgs = Record<string, unknown> | undefined;
 
@@ -681,9 +683,16 @@ function proposal(
 // The browser-smoke layer no longer carries its own command router: it builds
 // the ONE canonical `createMockRuntime`, injects the browser-specific seed above
 // into its store, and routes every IPC call through `runtime.invoke`. Only the
-// Tauri plugin commands (path/dialog/fs/opener) are handled locally. A
-// `window.__brawlerMockReset(scenario)` hook lets a Playwright test re-seed
-// between interactions.
+// Tauri plugin commands (path/dialog/fs/opener) are handled locally. A typed
+// `window.__brawlerMock` bridge (ADR 0081 Q2, Radicle a9992e2) lets a
+// Playwright test re-seed (optionally with overlays) and drive controlled
+// async between interactions.
+//
+// Setup order is ALWAYS base scenario -> `seedBrowserStore` (this file's
+// browser-specific projection) -> Q2 overlays. Overlays run last on both
+// initial install AND every `reset()` so `seedBrowserStore` can never
+// silently clobber hostile/dense/partial/stale/conflicting/mixed-locale data
+// applied by an overlay.
 // ---------------------------------------------------------------------------
 
 let activeRuntime: ReturnType<typeof createMockRuntime> | null = null;
@@ -736,6 +745,40 @@ function seedIrReportUrls(runtime: ReturnType<typeof createMockRuntime>) {
   }
 }
 
+/** base scenario -> browser projection -> overlays (fixed order, see above). */
+function seedAndOverlay(
+  runtime: ReturnType<typeof createMockRuntime>,
+  overlays: readonly ScenarioOverlayName[],
+) {
+  seedBrowserStore(runtime.data);
+  seedIrReportUrls(runtime);
+  if (overlays.length > 0) {
+    runtime.data = applyScenarioOverlays(runtime.data, overlays);
+  }
+}
+
+/**
+ * Typed test-only bridge (ADR 0081 Q2, Radicle a9992e2) a Playwright test
+ * drives via `page.evaluate`. See `tests/browser/helpers/mockRuntime.ts` for
+ * the typed wrapper.
+ */
+export interface BrawlerMockBridge {
+  reset(spec?: ScenarioName | ScenarioSpec): void;
+  hold(match: InvocationMatch): string;
+  pending(): readonly PendingInvocation[];
+  release(id: string): void;
+  /** Playwright arguments are JSON-serialized, so only the plain ADR 0070
+   * envelope crosses the bridge — never an `Error` instance. */
+  reject(id: string, error: CommandError): void;
+  releaseAll(): void;
+}
+
+declare global {
+  interface Window {
+    __brawlerMock?: BrawlerMockBridge;
+  }
+}
+
 // Reads a smoke-appearance override from localStorage, tolerating environments
 // where storage access throws (never a reason to fail app boot).
 function readSmokeOverride(key: string): string | null {
@@ -768,13 +811,21 @@ export function installBrowserSmokeRuntime() {
     settings.accentPalette = requestedPalette;
   }
   const runtime = createMockRuntime("rich");
-  seedBrowserStore(runtime.data);
-  seedIrReportUrls(runtime);
+  seedAndOverlay(runtime, []);
   activeRuntime = runtime;
-  (window as unknown as { __brawlerMockReset?: (scenario?: ScenarioName) => void }).__brawlerMockReset = (scenario) => {
-    runtime.reset(scenario ?? "rich");
-    seedBrowserStore(runtime.data);
-    seedIrReportUrls(runtime);
+  window.__brawlerMock = {
+    reset(spec) {
+      const base: ScenarioName = spec === undefined ? "rich" : typeof spec === "string" ? spec : spec.base;
+      const overlays: readonly ScenarioOverlayName[] =
+        spec === undefined || typeof spec === "string" ? [] : spec.overlays ?? [];
+      runtime.reset(base);
+      seedAndOverlay(runtime, overlays);
+    },
+    hold: (match) => runtime.controls.hold(match),
+    pending: () => runtime.controls.pending(),
+    release: (id) => runtime.controls.release(id),
+    reject: (id, error) => runtime.controls.reject(id, error),
+    releaseAll: () => runtime.controls.releaseAll(),
   };
   mockIPC((command, args) => dispatch(command, args as InvokeArgs), { shouldMockEvents: true });
 }

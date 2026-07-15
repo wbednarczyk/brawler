@@ -25,6 +25,7 @@ export const pl: LocaleResources = {
   "app.sources.failed": "Odświeżanie źródeł nie powiodło się",
   "nav.inbox": "Inbox",
   "nav.cockpit": "Kokpit",
+  "nav.dashboard": "Dashboard",
   "nav.reportSeason": "Sezon raportów",
   "nav.companies": "Spółki",
   "nav.watchlists": "Listy",

@@ -136,6 +136,7 @@ fn refreshes_gpw_company_registry_cache() {
         display_name: "TEST COMPANY S.A.".to_owned(),
         isin: "PLTEST000001".to_owned(),
         source_url: "https://www.gpw.pl/spolka?isin=PLTEST000001".to_owned(),
+        sector: None,
     }];
 
     let result = state
@@ -171,6 +172,7 @@ fn refreshes_newconnect_company_directory_cache() {
         display_name: "4MOBILITY SPÓŁKA AKCYJNA".to_owned(),
         isin: "PLESLTN00010".to_owned(),
         source_url: "https://newconnect.pl/spolka?isin=PLESLTN00010".to_owned(),
+        sector: None,
     }];
 
     let result = state
@@ -230,6 +232,7 @@ fn lookup_searches_all_company_directories_and_returns_newconnect_from_default_e
         display_name: "4MOBILITY SPÓŁKA AKCYJNA".to_owned(),
         isin: "PLESLTN00010".to_owned(),
         source_url: "https://newconnect.pl/spolka?isin=PLESLTN00010".to_owned(),
+        sector: None,
     }];
 
     state
@@ -264,6 +267,7 @@ fn lookup_prefers_selected_exchange_when_directory_tickers_collide() {
                 display_name: "ABC MAIN MARKET S.A.".to_owned(),
                 isin: "PLABC000001".to_owned(),
                 source_url: "https://www.gpw.pl/spolka?isin=PLABC000001".to_owned(),
+                sector: None,
             }],
             "2026-05-31T12:00:00Z",
         )
@@ -277,6 +281,7 @@ fn lookup_prefers_selected_exchange_when_directory_tickers_collide() {
                 display_name: "ABC NEWCONNECT S.A.".to_owned(),
                 isin: "PLABC000002".to_owned(),
                 source_url: "https://newconnect.pl/spolka?isin=PLABC000002".to_owned(),
+                sector: None,
             }],
             "2026-05-31T12:00:00Z",
         )

@@ -183,3 +183,7 @@ tests per pattern + primitives contract test for the chevron.
   type badge + full date + one action per row, j/k navigation) plus a narrow counters column
   (autopilot / to-verify / upcoming reports); the quiet state is the goal. J1's interaction budget
   is the acceptance bar. Task U-Rb.
+
+## Related (2026-07-12)
+
+[ADR 0081](0081-ux-quality-loop-v2.md) adds experience-contract, storyboard/state-matrix, and discoverability-authoring rules for non-mechanical UI work, plus a contact-sheet review over the existing visual scenarios. It reuses this design system, the density contracts, and the visual project matrix; it does not change this ADR's decisions.

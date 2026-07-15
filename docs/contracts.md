@@ -60,6 +60,26 @@ Rules (uniqueness of `qualifiedTicker`/`ticker` and optional identifier fields a
 
 `delete_company(companyId)` deletes a company by its canonical id. Owned rows (watchlist memberships, feed item links, notebook entries, claims, events, and other company-scoped data) are removed through local referential integrity.
 
+**Sector** ([ADR 0067](adr/0067-market-data-foundation.md) Decision 3, `v0.53.0`): a company carries a `sector` classification auto-populated from the GPW/NewConnect directory (`sector_source='registry'`), with a manual override that a registry refresh never clobbers. `get_company_sector(companyId)` returns the current sector (or `null`); `set_company_sector(companyId, sector)` sets a manual override (`sector_source='manual'`) and returns the stored value — an empty/null `sector` clears the manual override, letting the next registry refresh fill it. `list_company_sectors()` returns the distinct registry-sourced taxonomy (active directory entries), the preset values the override picker offers so manual entries stay on the same taxonomy the KPI `sector` scope keys off. Field-level storage rules are canonical in [Data Model § Companies](data-model.md#companies). The taxonomy folds case variants (the GPW and NewConnect taxonomies spell shared sectors differently) into one entry, most frequent spelling first; the UI offers it as type-to-filter suggestions, never a full preset wall ([ui-authoring § visual-first](ui-authoring.md)).
+
+**Basic info** (owner request 2026-07-14): `get_company_basic_info(companyId)` returns the read model behind the "Basic info" cockpit panel — identity facts plus sector provenance and the latest recorded shares fact:
+
+```json
+{
+  "displayName": "CD PROJEKT S.A.",
+  "exchange": "GPW",
+  "ticker": "CDR",
+  "qualifiedTicker": "GPW:CDR",
+  "isin": "PLOPTTC00011",
+  "sector": "Gry",
+  "sectorSource": "registry",
+  "sharesOutstanding": "99895500",
+  "sharesOutstandingPeriod": "2025 FY"
+}
+```
+
+`sectorSource` is `"registry"` | `"manual"` | `null`. `sharesOutstanding` is the latest non-superseded `shares_outstanding` fact's stored numeric string (most recent period wins) with its period label; both are `null` when no fact exists — absent values render `—`, never invented. Errors: unknown `companyId` fails with a message.
+
 ## Watchlist Membership
 
 Watchlists group canonical company identities for filtering and later ingestion scope.
@@ -872,6 +892,35 @@ The active scope and enabled layers persist via `update_settings` (the pinned-co
 - Manual events use `sourceType: "manual"` and `manual: true`.
 - Manual events are for missing or user-known dates, not corrections to normal source updates.
 
+## Market Data
+
+EOD price context ([ADR 0067](adr/0067-market-data-foundation.md), source selection [ADR 0082](adr/0082-market-data-source-selection.md), `v0.53.0`): the company workspace's price section beside fundamentals. Quotes come from the `market_data` adapter (`yahoo-eod`; the `twelvedata-eod` fallback was removed 2026-07-14 — GPW is paid-plan-only there, ADR 0082 amendment; free degraded fallback: card `ee81afe`) into `daily_quotes`; level-0 ratios are canonical derived metrics ([ADR 0046](adr/0046-quality-frameworks-quantitative.md)) evaluated over the latest close × confirmed facts. Decision support only — no cheap/expensive or buy/sell language.
+
+`get_price_context(companyId)` returns the read model (heavy work off the UI thread via `spawn_blocking`):
+
+```json
+{
+  "lastClose": 231.0,
+  "lastDate": "2026-07-13",
+  "changeAbs": -2.0,
+  "changePct": -0.86,
+  "currency": "PLN",
+  "week52High": 260.0,
+  "week52Low": 180.0,
+  "week52HighDistPct": -11.15,
+  "week52LowDistPct": 28.33,
+  "marketCap": 23100000000.0,
+  "ratios": { "pe": 23.1, "pbv": 3.2, "evEbitda": 11.8, "divYield": 0.17, "fcfYield": 3.03, "ownHistPercentile": 0.62 },
+  "history": [{ "date": "2026-07-10", "open": 231.0, "high": 235.0, "low": 230.0, "close": 233.0 }],
+  "fetchedAt": "2026-07-13T18:00:00Z",
+  "emptyReason": null
+}
+```
+
+Percent fields are scaled to points (`changePct`, `week52*DistPct`, `divYield`, `fcfYield`); `ownHistPercentile` stays a raw `[0,1]` fraction and is `null` until the trailing window has ≥20 sessions of history (a percentile over a handful of bars is noise, not context). Any ratio is `null` when its input facts are absent (renders `—`, never a crash). `emptyReason` is `"no_quotes"` (mapped ticker, no bars yet) or `"unmapped_ticker"` (no `market_data` mapping — non-GPW in v1); when set, price fields are omitted and the UI shows an empty state linking to source health. `history` carries the full OHLC per session (`daily_quotes` stores all four NOT NULL) — the UI renders it as candlesticks. History backfills automatically on company add (`quote_backfill` job); the post-session `quote_daily_pull` appends one bar per session day with a witness cross-check.
+
+Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_price_context`. Failure codes: `not_found` (unknown company).
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).
@@ -1666,7 +1715,7 @@ Rules:
 - One API key per provider (ADR 0028): the same provider key serves all of that provider's usages (analysis and, for Gemini, transcription). Purpose is not part of the credential identity.
 - Development/test fallback may use environment variables (`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`), but this must be reported as `storage = "development_environment"` and must not count as exported settings.
 - Supported `secretKind` values begin with `api_key`; future supported kinds may include `username_password`, `session_token`, or `oauth_token` after source-specific design.
-- Credential commands are generic and keyed by `providerId` (`provider_gemini`, `provider_anthropic`, `provider_openai`, `provider_openai_compatible`, `provider_mistral`):
+- Credential commands are generic and keyed by `providerId` (`provider_gemini`, `provider_anthropic`, `provider_openai`, `provider_openai_compatible`, `provider_mistral`). **Every credential-bearing provider must be enterable from Settings** (owner rule 2026-07-14): the canonical id list is `CREDENTIAL_PROVIDER_IDS` (`providers/credentials.rs`), pinned to `src/test/scenarios/credentialProviders.json`, which the frontend contract test checks against the Settings form list — a descriptor without a form reddens the gate.
   - `get_provider_credential_status({ providerId })` returns the non-secret status for one provider.
   - `set_provider_api_key({ providerId, apiKey })` stores or replaces only that provider's API key.
   - `clear_provider_api_key({ providerId })` removes only that provider's OS-keychain key and must not mutate `.env` or process environment values.

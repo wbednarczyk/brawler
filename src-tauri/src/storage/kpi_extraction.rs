@@ -264,7 +264,8 @@ pub(crate) fn complete_kpi_extraction_job(
     input: CompletedKpiExtraction,
 ) -> StorageResult<KpiExtractionJob> {
     let job_id = input.job_id.clone();
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
     // Refresh pending/rejected proposals; never disturb confirmed ones (they own facts).
     transaction.execute(
@@ -1155,7 +1156,7 @@ impl KpiExtractionStore {
         input: StructuredFactInput<'_>,
     ) -> StorageResult<StructuredFactCommit> {
         let mut connection = self.db.checkout()?;
-        let tx = connection.transaction()?;
+        let tx = connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
         let result = record_structured_fact(&tx, input)?;
         tx.commit()?;
         Ok(result)

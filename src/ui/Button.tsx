@@ -28,6 +28,12 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={[variantClassName[variant], className].filter(Boolean).join(" ")}
+      // ADR 0081 Q4: stable, semantic hook for scoped interaction-contract
+      // helpers (tests/browser/helpers/interactionContracts.ts) — e.g.
+      // locating primitive icon buttons for the accessible-name check
+      // without falling back to a CSS class selector. Never inferred as
+      // "primary action" — callers add data-ux-primary-action explicitly.
+      data-ui-button-variant={variant}
       type="button"
       {...props}
     >

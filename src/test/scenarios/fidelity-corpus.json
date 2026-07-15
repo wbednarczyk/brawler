@@ -6,34 +6,59 @@
       "steps": [
         {
           "command": "create_watchlist",
-          "input": { "input": { "name": "Fidelity Watch", "description": null } },
+          "input": {
+            "input": {
+              "name": "Fidelity Watch",
+              "description": null
+            }
+          },
           "capture": "wid",
-          "expectField": { "name": "Fidelity Watch" }
+          "expectField": {
+            "name": "Fidelity Watch"
+          }
         },
         {
           "command": "list_watchlists",
           "input": {},
-          "expectContains": { "name": "Fidelity Watch" }
+          "expectContains": {
+            "name": "Fidelity Watch"
+          }
         },
         {
           "command": "rename_watchlist",
-          "input": { "input": { "id": "$wid", "name": "Fidelity Renamed", "description": null } },
-          "expectField": { "name": "Fidelity Renamed" }
+          "input": {
+            "input": {
+              "id": "$wid",
+              "name": "Fidelity Renamed",
+              "description": null
+            }
+          },
+          "expectField": {
+            "name": "Fidelity Renamed"
+          }
         },
         {
           "command": "list_watchlists",
           "input": {},
-          "expectContains": { "name": "Fidelity Renamed" },
-          "expectAbsent": { "name": "Fidelity Watch" }
+          "expectContains": {
+            "name": "Fidelity Renamed"
+          },
+          "expectAbsent": {
+            "name": "Fidelity Watch"
+          }
         },
         {
           "command": "delete_watchlist",
-          "input": { "watchlistId": "$wid" }
+          "input": {
+            "watchlistId": "$wid"
+          }
         },
         {
           "command": "list_watchlists",
           "input": {},
-          "expectAbsent": { "name": "Fidelity Renamed" }
+          "expectAbsent": {
+            "name": "Fidelity Renamed"
+          }
         }
       ]
     },
@@ -53,21 +78,82 @@
             }
           },
           "capture": "cid",
-          "expectField": { "ticker": "FDLTY", "qualifiedTicker": "GPW:FDLTY" }
+          "expectField": {
+            "ticker": "FDLTY",
+            "qualifiedTicker": "GPW:FDLTY"
+          }
         },
         {
           "command": "list_companies",
           "input": {},
-          "expectContains": { "ticker": "FDLTY", "qualifiedTicker": "GPW:FDLTY" }
+          "expectContains": {
+            "ticker": "FDLTY",
+            "qualifiedTicker": "GPW:FDLTY"
+          }
         },
         {
           "command": "delete_company",
-          "input": { "companyId": "$cid" }
+          "input": {
+            "companyId": "$cid"
+          }
         },
         {
           "command": "list_companies",
           "input": {},
-          "expectAbsent": { "ticker": "FDLTY" }
+          "expectAbsent": {
+            "ticker": "FDLTY"
+          }
+        }
+      ]
+    },
+    {
+      "name": "price context empty states by market mapping (v0.53 T5)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "FDLPX",
+              "displayName": "Fidelity Price S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "gpw_cid"
+        },
+        {
+          "command": "get_price_context",
+          "input": {
+            "companyId": "$gpw_cid"
+          },
+          "expectField": {
+            "emptyReason": "no_quotes"
+          }
+        },
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "NASDAQ",
+              "ticker": "FDLPX2",
+              "displayName": "Fidelity Price Unmapped Inc.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "unmapped_cid"
+        },
+        {
+          "command": "get_price_context",
+          "input": {
+            "companyId": "$unmapped_cid"
+          },
+          "expectField": {
+            "emptyReason": "unmapped_ticker"
+          }
         }
       ]
     },
@@ -85,21 +171,30 @@
             }
           },
           "capture": "lid",
-          "expectField": { "name": "Fidelity Cockpit", "ordinal": 0 }
+          "expectField": {
+            "name": "Fidelity Cockpit",
+            "ordinal": 0
+          }
         },
         {
           "command": "list_cockpit_layouts",
           "input": {},
-          "expectContains": { "name": "Fidelity Cockpit" }
+          "expectContains": {
+            "name": "Fidelity Cockpit"
+          }
         },
         {
           "command": "delete_cockpit_layout",
-          "input": { "layoutId": "$lid" }
+          "input": {
+            "layoutId": "$lid"
+          }
         },
         {
           "command": "list_cockpit_layouts",
           "input": {},
-          "expectAbsent": { "name": "Fidelity Cockpit" }
+          "expectAbsent": {
+            "name": "Fidelity Cockpit"
+          }
         }
       ]
     },
@@ -122,37 +217,78 @@
         },
         {
           "command": "set_company_autopilot",
-          "input": { "input": { "companyId": "$cid", "mode": "assist" } },
-          "expectField": { "mode": "assist" }
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "mode": "assist"
+            }
+          },
+          "expectField": {
+            "mode": "assist"
+          }
         },
         {
           "command": "get_company_autopilot",
-          "input": { "input": { "companyId": "$cid" } },
-          "expectField": { "mode": "assist" }
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectField": {
+            "mode": "assist"
+          }
         },
         {
           "command": "set_company_autopilot",
-          "input": { "input": { "companyId": "$cid", "mode": "autopilot" } },
-          "expectField": { "mode": "autopilot" }
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "mode": "autopilot"
+            }
+          },
+          "expectField": {
+            "mode": "autopilot"
+          }
         },
         {
           "command": "get_company_autopilot",
-          "input": { "input": { "companyId": "$cid" } },
-          "expectField": { "mode": "autopilot" }
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectField": {
+            "mode": "autopilot"
+          }
         },
         {
           "command": "list_autopilot_runs",
-          "input": { "input": { "companyId": "$cid" } },
-          "expectAbsent": { "status": "succeeded" }
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectAbsent": {
+            "status": "succeeded"
+          }
         },
         {
           "command": "set_companies_autopilot",
-          "input": { "input": { "companyIds": ["$cid"], "mode": "off" } }
+          "input": {
+            "input": {
+              "companyIds": [
+                "$cid"
+              ],
+              "mode": "off"
+            }
+          }
         },
         {
           "command": "list_company_autopilot_modes",
           "input": {},
-          "expectContains": { "mode": "off" }
+          "expectContains": {
+            "mode": "off"
+          }
         }
       ]
     },
@@ -161,9 +297,16 @@
       "steps": [
         {
           "command": "create_quality_framework",
-          "input": { "input": { "name": "Qual Fidelity", "description": null } },
+          "input": {
+            "input": {
+              "name": "Qual Fidelity",
+              "description": null
+            }
+          },
           "capture": "fid",
-          "expectField": { "name": "Qual Fidelity" }
+          "expectField": {
+            "name": "Qual Fidelity"
+          }
         },
         {
           "command": "create_framework_criterion",
@@ -187,26 +330,58 @@
         },
         {
           "command": "get_qualitative_assessment",
-          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } },
-          "expectAbsent": { "source": "agent" }
+          "input": {
+            "input": {
+              "companyId": "co_fidelity_qual",
+              "frameworkId": "$fid"
+            }
+          },
+          "expectAbsent": {
+            "source": "agent"
+          }
         },
         {
           "command": "get_qualitative_assessment_status",
-          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } },
-          "expectField": { "status": "idle" }
+          "input": {
+            "input": {
+              "companyId": "co_fidelity_qual",
+              "frameworkId": "$fid"
+            }
+          },
+          "expectField": {
+            "status": "idle"
+          }
         },
         {
           "command": "run_qualitative_assessment",
-          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } }
+          "input": {
+            "input": {
+              "companyId": "co_fidelity_qual",
+              "frameworkId": "$fid"
+            }
+          }
         },
         {
           "command": "rerun_qualitative_criterion",
-          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid", "criterionId": "$crit" } }
+          "input": {
+            "input": {
+              "companyId": "co_fidelity_qual",
+              "frameworkId": "$fid",
+              "criterionId": "$crit"
+            }
+          }
         },
         {
           "command": "get_qualitative_assessment",
-          "input": { "input": { "companyId": "co_fidelity_qual", "frameworkId": "$fid" } },
-          "expectAbsent": { "source": "agent" }
+          "input": {
+            "input": {
+              "companyId": "co_fidelity_qual",
+              "frameworkId": "$fid"
+            }
+          },
+          "expectAbsent": {
+            "source": "agent"
+          }
         }
       ]
     },
@@ -216,7 +391,9 @@
         {
           "command": "reclassify_report_documents",
           "input": {},
-          "expectField": { "updated": 0 }
+          "expectField": {
+            "updated": 0
+          }
         }
       ]
     },
@@ -264,8 +441,12 @@
         },
         {
           "command": "get_fundamentals_coverage",
-          "input": { "companyId": "$cid" },
-          "expectField": { "companyId": "company_gpw_covrg" }
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_covrg"
+          }
         }
       ]
     },
@@ -289,8 +470,12 @@
         },
         {
           "command": "get_report_documents_view",
-          "input": { "companyId": "$cid" },
-          "expectField": { "companyId": "company_gpw_docvw" }
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_docvw"
+          }
         }
       ]
     },
@@ -314,17 +499,33 @@
         },
         {
           "command": "set_company_autopilot",
-          "input": { "input": { "companyId": "$cid", "mode": "assist" } }
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "mode": "assist"
+            }
+          }
         },
         {
           "command": "run_history_sweep",
-          "input": { "companyId": "$cid" },
-          "expectField": { "trigger": "manual", "companyId": "company_gpw_sweep" }
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "trigger": "manual",
+            "companyId": "company_gpw_sweep"
+          }
         },
         {
           "command": "get_history_sweep_progress",
-          "input": { "companyId": "$cid" },
-          "expectField": { "runsTotal": 0, "runsDone": 0, "runsFailed": 0 }
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "runsTotal": 0,
+            "runsDone": 0,
+            "runsFailed": 0
+          }
         }
       ]
     },
@@ -348,8 +549,12 @@
         },
         {
           "command": "list_pending_kpi_proposals",
-          "input": { "companyId": "$cid" },
-          "expectAbsent": { "status": "pending" }
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectAbsent": {
+            "status": "pending"
+          }
         }
       ]
     },
@@ -382,17 +587,33 @@
             }
           },
           "capture": "eid",
-          "expectField": { "kind": "buy", "companyId": "company_gpw_djrnl" }
+          "expectField": {
+            "kind": "buy",
+            "companyId": "company_gpw_djrnl"
+          }
         },
         {
           "command": "list_decision_entries",
-          "input": { "input": { "companyId": "$cid" } },
-          "expectContains": { "kind": "buy" }
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectContains": {
+            "kind": "buy"
+          }
         },
         {
           "command": "list_decision_entries",
-          "input": { "input": { "companyId": "$cid", "kind": "pass" } },
-          "expectAbsent": { "kind": "buy" }
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "kind": "pass"
+            }
+          },
+          "expectAbsent": {
+            "kind": "buy"
+          }
         }
       ]
     },
@@ -424,17 +645,31 @@
               "periodType": "FY",
               "stanceMd": "Expect a strong full year.",
               "metrics": [
-                { "metricKey": "net_profit", "comparator": "gte", "expectedValue": "1000", "unit": null }
+                {
+                  "metricKey": "net_profit",
+                  "comparator": "gte",
+                  "expectedValue": "1000",
+                  "unit": null
+                }
               ]
             }
           },
           "capture": "xid",
-          "expectField": { "eventKey": "evt-fy2025", "frozenAt": null }
+          "expectField": {
+            "eventKey": "evt-fy2025",
+            "frozenAt": null
+          }
         },
         {
           "command": "list_report_expectations",
-          "input": { "input": { "companyId": "$cid" } },
-          "expectContains": { "eventKey": "evt-fy2025" }
+          "input": {
+            "input": {
+              "companyId": "$cid"
+            }
+          },
+          "expectContains": {
+            "eventKey": "evt-fy2025"
+          }
         },
         {
           "command": "update_report_expectation",
@@ -445,12 +680,23 @@
               "stanceMd": "Revised: expect a solid, not spectacular, year."
             }
           },
-          "expectField": { "stanceMd": "Revised: expect a solid, not spectacular, year." }
+          "expectField": {
+            "stanceMd": "Revised: expect a solid, not spectacular, year."
+          }
         },
         {
           "command": "expectation_review",
-          "input": { "input": { "companyId": "$cid", "eventKey": "evt-fy2025" } },
-          "expectField": { "companyId": "company_gpw_expct", "eventKey": "evt-fy2025", "factsAvailable": false }
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "eventKey": "evt-fy2025"
+            }
+          },
+          "expectField": {
+            "companyId": "company_gpw_expct",
+            "eventKey": "evt-fy2025",
+            "factsAvailable": false
+          }
         },
         {
           "command": "record_expectation_resolution",
@@ -461,7 +707,9 @@
               "resolutionNoteMd": "Called the direction right, magnitude off."
             }
           },
-          "expectField": { "resolutionNoteMd": "Called the direction right, magnitude off." }
+          "expectField": {
+            "resolutionNoteMd": "Called the direction right, magnitude off."
+          }
         }
       ]
     },
@@ -472,12 +720,20 @@
         {
           "command": "revoke_mcp_token",
           "input": {},
-          "expectField": { "providerId": "mcp", "secretKind": "auth_token", "configured": false }
+          "expectField": {
+            "providerId": "mcp",
+            "secretKind": "auth_token",
+            "configured": false
+          }
         },
         {
           "command": "mcp_token_status",
           "input": {},
-          "expectField": { "providerId": "mcp", "secretKind": "auth_token", "configured": false }
+          "expectField": {
+            "providerId": "mcp",
+            "secretKind": "auth_token",
+            "configured": false
+          }
         },
         {
           "command": "regenerate_mcp_token",
@@ -486,7 +742,9 @@
         {
           "command": "revoke_mcp_token",
           "input": {},
-          "expectField": { "configured": false }
+          "expectField": {
+            "configured": false
+          }
         }
       ]
     },
@@ -497,22 +755,149 @@
         {
           "command": "mcp_status",
           "input": {},
-          "expectField": { "running": false, "port": 8317 }
+          "expectField": {
+            "running": false,
+            "port": 8317
+          }
         },
         {
           "command": "set_mcp_enabled",
-          "input": { "enabled": true },
-          "expectField": { "running": false }
+          "input": {
+            "enabled": true
+          },
+          "expectField": {
+            "running": false
+          }
         },
         {
           "command": "mcp_status",
           "input": {},
-          "expectField": { "running": false }
+          "expectField": {
+            "running": false
+          }
         },
         {
           "command": "set_mcp_enabled",
-          "input": { "enabled": false },
-          "expectField": { "running": false, "port": 8317 }
+          "input": {
+            "enabled": false
+          },
+          "expectField": {
+            "running": false,
+            "port": 8317
+          }
+        }
+      ]
+    },
+    {
+      "name": "basic info assembles identity, sector and shares facts (v0.53 follow-up)",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "BINF",
+              "displayName": "Basic Info S.A.",
+              "isin": "PLBINF000018",
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "binf_cid"
+        },
+        {
+          "command": "get_company_basic_info",
+          "input": {
+            "companyId": "$binf_cid"
+          },
+          "expectField": {
+            "displayName": "Basic Info S.A.",
+            "qualifiedTicker": "GPW:BINF",
+            "isin": "PLBINF000018",
+            "sector": null,
+            "sectorSource": null,
+            "sharesOutstanding": null,
+            "sharesOutstandingPeriod": null
+          }
+        }
+      ]
+    },
+    {
+      "name": "basic info picks the latest-period shares fact across years (v0.53 follow-up)",
+      "_comment": "Populated-path coverage for get_company_basic_info's shares selection (review 2026-07-14): two shares facts across fiscal years must resolve to the LATEST period on BOTH dispatchers — the mock previously sorted differently. fiscalYear 2025 > 2024 decides it (no createdAt tiebreak reliance). expectField is a superset, asserted as deterministic literals.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "BSHR",
+              "displayName": "Basic Shares S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "create_financial_period",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "fiscalYear": 2024,
+              "periodType": "FY",
+              "periodEndDate": null,
+              "reportEvidenceRef": null
+            }
+          },
+          "capture": "p2024"
+        },
+        {
+          "command": "create_financial_fact",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "periodId": "$p2024",
+              "definitionId": "kpidef_shares_outstanding",
+              "valueNumeric": "100"
+            }
+          }
+        },
+        {
+          "command": "create_financial_period",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "fiscalYear": 2025,
+              "periodType": "FY",
+              "periodEndDate": null,
+              "reportEvidenceRef": null
+            }
+          },
+          "capture": "p2025"
+        },
+        {
+          "command": "create_financial_fact",
+          "input": {
+            "input": {
+              "companyId": "$cid",
+              "periodId": "$p2025",
+              "definitionId": "kpidef_shares_outstanding",
+              "valueNumeric": "200"
+            }
+          }
+        },
+        {
+          "command": "get_company_basic_info",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "qualifiedTicker": "GPW:BSHR",
+            "sharesOutstanding": "200",
+            "sharesOutstandingPeriod": "2025 FY"
+          }
         }
       ]
     }

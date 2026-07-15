@@ -287,7 +287,9 @@ describe("layout scroll contracts", () => {
     // palette anchors — accent maps to --tone-agent.
     expect(accentChipRule).toContain("color: var(--tone-agent)");
     expect(pillRule).toContain("font-weight: 700");
-    expect(dangerPillRule).toContain("color: var(--danger)");
+    // WCAG AA contrast fix (a11y, Radicle 9416da8 and its warn/danger follow-up):
+    // pill text mixes 72% toward --text rather than using the raw tone token.
+    expect(dangerPillRule).toContain("color: color-mix(in srgb, var(--danger) 72%, var(--text))");
     expect(chipListRule).toContain("flex-wrap: wrap");
     expect(denseRowRule).toContain("min-width: 0");
     expect(interactiveDenseRowRule).toContain("cursor: pointer");

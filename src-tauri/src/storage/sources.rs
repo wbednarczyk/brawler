@@ -8,7 +8,8 @@ pub(super) fn ingest_gpw_report_listings(
     connection: &mut Connection,
     listings: &[GpwReportListing],
 ) -> StorageResult<SourceIngestionResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let mut items_created = 0;
     let mut items_matched = 0;
     let mut items_unmatched = 0;
@@ -108,7 +109,8 @@ pub(super) fn ingest_bankier_rss_items(
     connection: &mut Connection,
     items: &[BankierRssItem],
 ) -> StorageResult<SourceIngestionResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let tracked_companies = list_media_match_companies(&transaction)?;
     let mut items_created = 0;
     let mut items_matched = 0;
@@ -696,7 +698,8 @@ pub(super) fn ingest_bankier_company_items(
     connection: &mut Connection,
     items: &[BankierCompanyItem],
 ) -> StorageResult<SourceIngestionResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let mut items_created = 0;
     let mut items_matched = 0;
     let mut items_unmatched = 0;
@@ -1298,5 +1301,23 @@ impl SourcesStore {
         let connection = self.db.checkout()?;
 
         set_source_adapter_state(&connection, adapter_id, key, value)
+    }
+
+    /// Read one adapter-state value, or `None` when the key was never recorded.
+    pub fn get_source_adapter_state(
+        &self,
+        adapter_id: &str,
+        key: &str,
+    ) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+        let value = connection
+            .query_row(
+                "SELECT state_value FROM source_adapter_state
+                 WHERE source_adapter_id = ?1 AND state_key = ?2",
+                rusqlite::params![adapter_id, key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        Ok(value)
     }
 }

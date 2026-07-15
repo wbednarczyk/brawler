@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Stray compiler default output (e.g. `cc foo.c` → a.out) — never a repo artifact
+a.out
+
 # Frontend build output
 dist/
 release-artifacts/
@@ -8,6 +11,9 @@ test-results/
 playwright-report/
 tests/browser/__screens__/
 tests/browser/__*-evidence__/
+
+# UX contact-sheet output (ADR 0081 Q5): generated evidence + HTML grid, never committed.
+.artifacts/
 
 # Rust build output
 target/
@@ -34,7 +40,10 @@ data/
 
 # Retrospectives are local working artifacts for the maintainer to review, not
 # canonical public docs. Durable outcomes get harvested into AGENTS.md/ADRs/docs.
-docs/retros/
+# The canonical retro template is the one tracked exception (ADR 0081): it carries
+# the escape taxonomy + per-retro record shape; individual retros stay local.
+docs/retros/*
+!docs/retros/TEMPLATE.md
 
 # Logs
 *.log

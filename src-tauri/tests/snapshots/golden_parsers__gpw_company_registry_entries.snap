@@ -10,6 +10,9 @@ expression: entries
         display_name: "11 BIT STUDIOS SPÓŁKA AKCYJNA",
         isin: "PL11BTS00015",
         source_url: "https://www.gpw.pl/spolka?isin=PL11BTS00015",
+        sector: Some(
+            "Gry",
+        ),
     },
     CompanyDirectoryEntry {
         exchange: "GPW",
@@ -18,5 +21,8 @@ expression: entries
         display_name: "CD PROJEKT SPÓŁKA AKCYJNA",
         isin: "PLOPTTC00011",
         source_url: "https://www.gpw.pl/spolka?isin=PLOPTTC00011",
+        sector: Some(
+            "Gry",
+        ),
     },
 ]

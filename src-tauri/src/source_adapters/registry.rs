@@ -139,6 +139,19 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         policy_note: "Fetches the complete public NewConnect company list and caches ticker and ISIN metadata for lookup, autocomplete, and ticker-first matching.",
     },
     SourceAdapterDescriptor {
+        id: "yahoo-eod",
+        display_name: "Yahoo Finance EOD Quotes",
+        source_url: "https://query1.finance.yahoo.com/v8/finance/chart/",
+        source_type: "market_data",
+        fetch_mode: "public_json",
+        markets: GPW,
+        visibility: SourceVisibility::Optional,
+        default_poll_interval_seconds: 86_400,
+        rate_limit_policy: "Watchlist-only; throttle + jitter; 429/999 backoff; aggressive cache; one full-history backfill on add plus one post-session daily pull per company",
+        // migrates to Fetcher (ADR 0069)
+        policy_note: "Primary EOD price source (ADR 0082). Yahoo v8 chart API by exchange-qualified <ticker>.WA; keyless, PLN. ToS-gray, accepted narrowly for local-first personal EOD/watchlist use, no redistribution. A pull failure raises source-health and skips the day; self-heal backfill catches history up (no free fallback provider — ADR 0082 amendment 2026-07-14, card ee81afe).",
+    },
+    SourceAdapterDescriptor {
         id: crate::source_adapters::bankier_rss::ADAPTER_ID,
         display_name: crate::source_adapters::bankier_rss::DISPLAY_NAME,
         source_url: crate::source_adapters::bankier_rss::SOURCE_URL,

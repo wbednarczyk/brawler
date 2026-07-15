@@ -42,6 +42,41 @@ impl CompanyStore {
         set_company_ir_reports_url(&connection, company_id, url)
     }
 
+    pub fn get_company_sector(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<(Option<String>, Option<String>)> {
+        let connection = self.db.checkout()?;
+        get_company_sector(&connection, company_id)
+    }
+
+    pub fn set_company_sector(
+        &self,
+        company_id: &str,
+        sector: Option<&str>,
+    ) -> StorageResult<Option<String>> {
+        let connection = self.db.checkout()?;
+        set_company_sector(&connection, company_id, sector)
+    }
+
+    /// The distinct directory-sourced sector taxonomy (active entries only) —
+    /// the preset list a manual override picks from (ADR 0067 Decision 3).
+    pub fn list_company_sectors(&self) -> StorageResult<Vec<String>> {
+        let connection = self.db.checkout()?;
+        list_company_sectors(&connection)
+    }
+
+    /// The latest recorded non-superseded `shares_outstanding` fact and the
+    /// period it was reported for (e.g. `("41636000", "2025 FY")`) — the Basic
+    /// info panel's read model input.
+    pub fn latest_shares_outstanding(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Option<(String, String)>> {
+        let connection = self.db.checkout()?;
+        latest_shares_outstanding(&connection, company_id)
+    }
+
     pub fn lookup_company(
         &self,
         input: CompanyLookupInput,
@@ -153,6 +188,26 @@ pub(super) fn create_company(connection: &Connection, input: NewCompany) -> Stor
         ],
     )?;
 
+    // Seed the sector from the directory cache if the registry already knows it
+    // (ADR 0067 Decision 3); `sector_source='registry'`, overridable later.
+    connection.execute(
+        "
+        UPDATE companies
+        SET sector = (
+                SELECT cre.sector FROM company_registry_entries cre
+                WHERE cre.qualified_ticker = ?2 AND cre.active = 1 AND cre.sector IS NOT NULL
+                LIMIT 1
+            ),
+            sector_source = 'registry'
+        WHERE id = ?1
+          AND EXISTS (
+                SELECT 1 FROM company_registry_entries cre
+                WHERE cre.qualified_ticker = ?2 AND cre.active = 1 AND cre.sector IS NOT NULL
+          )
+        ",
+        params![id, qualified_ticker],
+    )?;
+
     connection
         .query_row(
             "
@@ -183,7 +238,8 @@ pub(super) fn refresh_company_directory(
     entries: &[GpwCompanyRegistryEntry],
     fetched_at: &str,
 ) -> StorageResult<CompanyRegistryRefreshResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let mut entries_upserted = 0usize;
 
     transaction.execute(
@@ -209,8 +265,9 @@ pub(super) fn refresh_company_directory(
                 source_adapter_id,
                 source_url,
                 fetched_at,
+                sector,
                 active
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, 1)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 1)
             ON CONFLICT(exchange, ticker) DO UPDATE SET
                 qualified_ticker = excluded.qualified_ticker,
                 display_name = excluded.display_name,
@@ -218,6 +275,7 @@ pub(super) fn refresh_company_directory(
                 source_adapter_id = excluded.source_adapter_id,
                 source_url = excluded.source_url,
                 fetched_at = excluded.fetched_at,
+                sector = excluded.sector,
                 active = 1,
                 updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
             ",
@@ -231,10 +289,46 @@ pub(super) fn refresh_company_directory(
                 source_adapter_id,
                 entry.source_url,
                 fetched_at,
+                empty_string_to_none(entry.sector.clone()),
             ],
         )?;
         entries_upserted += 1;
     }
+
+    // Propagate the directory-sourced sector onto tracked companies (ADR 0067
+    // Decision 3): a registry value fills `companies.sector` unless a manual
+    // override is set — `sector_source='manual'` always wins and is never clobbered.
+    transaction.execute(
+        "
+        UPDATE companies
+        SET sector = (
+                SELECT cre.sector FROM company_registry_entries cre
+                WHERE cre.qualified_ticker = companies.qualified_ticker
+                  AND cre.active = 1 AND cre.sector IS NOT NULL
+                LIMIT 1
+            ),
+            sector_source = 'registry',
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+        WHERE (sector_source IS NULL OR sector_source <> 'manual')
+          AND EXISTS (
+                SELECT 1 FROM company_registry_entries cre
+                WHERE cre.qualified_ticker = companies.qualified_ticker
+                  AND cre.active = 1 AND cre.sector IS NOT NULL
+            )
+          -- Touch a row only when the propagation actually changes it, so a
+          -- routine refresh does not churn every company's updated_at.
+          AND (
+                companies.sector IS NOT (
+                    SELECT cre.sector FROM company_registry_entries cre
+                    WHERE cre.qualified_ticker = companies.qualified_ticker
+                      AND cre.active = 1 AND cre.sector IS NOT NULL
+                    LIMIT 1
+                )
+                OR IFNULL(companies.sector_source, '') <> 'registry'
+            )
+        ",
+        [],
+    )?;
 
     let entries_deactivated = transaction.execute(
         "
@@ -476,6 +570,247 @@ pub(super) fn set_company_ir_reports_url(
         });
     }
     Ok(url.map(str::to_owned))
+}
+
+/// The company's current sector and its source (`registry` | `manual`), or `(None, None)`.
+pub(super) fn get_company_sector(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<(Option<String>, Option<String>)> {
+    let row = connection.query_row(
+        "SELECT sector, sector_source FROM companies WHERE id = ?1",
+        [company_id],
+        |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        },
+    )?;
+    Ok(row)
+}
+
+/// Set a manual sector override (`sector_source='manual'`), which a later registry
+/// refresh never clobbers (ADR 0067 Decision 3). An empty value clears back to no
+/// manual override (leaving the field for the next registry refresh to fill).
+pub(super) fn set_company_sector(
+    connection: &Connection,
+    company_id: &str,
+    sector: Option<&str>,
+) -> StorageResult<Option<String>> {
+    let sector = sector.map(str::trim).filter(|value| !value.is_empty());
+    let source = sector.map(|_| "manual");
+    let updated = connection.execute(
+        "UPDATE companies SET sector = ?2, sector_source = ?3,
+             updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') WHERE id = ?1",
+        rusqlite::params![company_id, sector, source],
+    )?;
+    if updated == 0 {
+        return Err(StorageError::MissingFinancialsReference {
+            table: "companies".to_owned(),
+            id: company_id.to_owned(),
+        });
+    }
+    Ok(sector.map(str::to_owned))
+}
+
+/// Distinct non-empty sectors across active directory entries, case-insensitive
+/// sort — the registry-sourced taxonomy for manual-override suggestions.
+/// The GPW and NewConnect taxonomies spell shared sectors with different
+/// casing, so case variants fold into one entry (most frequent spelling wins;
+/// SQLite bare-column-with-MAX picks that row deterministically).
+pub(super) fn list_company_sectors(connection: &Connection) -> StorageResult<Vec<String>> {
+    let mut statement = connection.prepare(
+        "SELECT sector, MAX(n) FROM (
+             SELECT sector, COUNT(*) AS n FROM company_registry_entries
+             WHERE active = 1 AND sector IS NOT NULL AND TRIM(sector) <> ''
+             GROUP BY sector
+         )
+         GROUP BY sector COLLATE NOCASE
+         ORDER BY sector COLLATE NOCASE",
+    )?;
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Latest non-superseded `shares_outstanding` fact for a company: the value
+/// string plus a human period label, most recent period first (fiscal year,
+/// then period end date, then recency of the row itself).
+pub(super) fn latest_shares_outstanding(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Option<(String, String)>> {
+    let mut statement = connection.prepare(
+        "SELECT f.value_numeric, p.fiscal_year, p.period_type
+         FROM financial_facts f
+         JOIN financial_periods p ON p.id = f.period_id
+         WHERE f.company_id = ?1
+           AND f.definition_id = 'kpidef_shares_outstanding'
+           AND NOT EXISTS (SELECT 1 FROM financial_facts s WHERE s.supersedes_id = f.id)
+         ORDER BY p.fiscal_year DESC, IFNULL(p.period_end_date, '') DESC, f.created_at DESC
+         LIMIT 1",
+    )?;
+    let row = statement
+        .query_row([company_id], |row| {
+            let value: String = row.get(0)?;
+            let fiscal_year: i64 = row.get(1)?;
+            let period_type: String = row.get(2)?;
+            Ok((
+                value,
+                format!("{fiscal_year} {}", period_type.to_uppercase()),
+            ))
+        })
+        .optional()?;
+    Ok(row)
+}
+
+#[cfg(test)]
+mod sector_tests {
+    use crate::source_adapters::gpw_company_registry::GpwCompanyRegistryEntry;
+    use crate::storage::{open_in_memory_database, AppState, NewCompany};
+
+    fn cdr_entry(sector: Option<&str>) -> GpwCompanyRegistryEntry {
+        GpwCompanyRegistryEntry {
+            exchange: "GPW".to_owned(),
+            ticker: "CDR".to_owned(),
+            qualified_ticker: "GPW:CDR".to_owned(),
+            display_name: "CD PROJEKT S.A.".to_owned(),
+            isin: "PLOPTTC00011".to_owned(),
+            source_url: "https://www.gpw.pl/spolka?isin=PLOPTTC00011".to_owned(),
+            sector: sector.map(str::to_owned),
+        }
+    }
+
+    fn cdr(state: &AppState) -> String {
+        state
+            .create_company(NewCompany {
+                exchange: "gpw".to_owned(),
+                ticker: "cdr".to_owned(),
+                display_name: "CD PROJEKT S.A.".to_owned(),
+                isin: Some("PLOPTTC00011".to_owned()),
+                cik: None,
+                lei: None,
+            })
+            .expect("company")
+            .id
+    }
+
+    #[test]
+    fn refresh_populates_sector_and_manual_override_is_never_clobbered() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let cid = cdr(&state);
+
+        // A registry refresh carrying a sector propagates onto the tracked company.
+        state
+            .refresh_gpw_company_registry(&[cdr_entry(Some("Gry"))], "2026-05-31T12:00:00Z")
+            .expect("refresh");
+        assert_eq!(
+            state.get_company_sector(&cid).expect("get"),
+            (Some("Gry".to_owned()), Some("registry".to_owned()))
+        );
+
+        // A manual override wins...
+        state
+            .set_company_sector(&cid, Some("Rozrywka"))
+            .expect("set");
+        assert_eq!(
+            state.get_company_sector(&cid).expect("get"),
+            (Some("Rozrywka".to_owned()), Some("manual".to_owned()))
+        );
+
+        // ...and a later refresh must not clobber it.
+        state
+            .refresh_gpw_company_registry(&[cdr_entry(Some("Gry"))], "2026-06-30T12:00:00Z")
+            .expect("refresh 2");
+        assert_eq!(
+            state.get_company_sector(&cid).expect("get"),
+            (Some("Rozrywka".to_owned()), Some("manual".to_owned()))
+        );
+    }
+
+    #[test]
+    fn lists_the_distinct_registry_sector_taxonomy() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let mut bank = cdr_entry(Some("Banki"));
+        bank.ticker = "PKO".to_owned();
+        bank.qualified_ticker = "GPW:PKO".to_owned();
+        bank.isin = "PLPKO0000016".to_owned();
+        state
+            .refresh_gpw_company_registry(&[cdr_entry(Some("Gry")), bank], "2026-05-31T12:00:00Z")
+            .expect("refresh");
+
+        let sectors = state
+            .companies()
+            .list_company_sectors()
+            .expect("sectors should list");
+        assert_eq!(sectors, vec!["Banki".to_owned(), "Gry".to_owned()]);
+    }
+
+    // The GPW and NewConnect taxonomies spell the same sector with different
+    // casing ("usługi dla przedsiębiorstw" vs "Usługi dla Przedsiębiorstw");
+    // the taxonomy command folds those into one entry, keeping the most
+    // frequent spelling — a wall of near-duplicate suggestions is a UX defect
+    // (owner report, 2026-07-14).
+    #[test]
+    fn sector_taxonomy_folds_case_variants_to_the_most_frequent_spelling() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let mut entries = Vec::new();
+        for (i, sector) in ["usługi", "Usługi", "usługi", "Gry"].iter().enumerate() {
+            let mut entry = cdr_entry(Some(sector));
+            entry.ticker = format!("T{i:02}");
+            entry.qualified_ticker = format!("GPW:T{i:02}");
+            entry.isin = format!("PLTEST00{i:03}");
+            entries.push(entry);
+        }
+        state
+            .refresh_gpw_company_registry(&entries, "2026-05-31T12:00:00Z")
+            .expect("refresh");
+
+        let sectors = state
+            .companies()
+            .list_company_sectors()
+            .expect("sectors should list");
+        assert_eq!(sectors, vec!["Gry".to_owned(), "usługi".to_owned()]);
+    }
+
+    #[test]
+    fn identical_refresh_does_not_churn_company_updated_at() {
+        let state = AppState::new(open_in_memory_database().expect("db"));
+        let cid = cdr(&state);
+        state
+            .refresh_gpw_company_registry(&[cdr_entry(Some("Gry"))], "2026-05-31T12:00:00Z")
+            .expect("refresh 1");
+
+        // Plant a sentinel updated_at; a byte-identical re-propagation must not touch it.
+        let sentinel = "2020-01-01T00:00:00.000Z";
+        {
+            let raw = state.checkout_for_tests().expect("raw connection");
+            raw.execute(
+                "UPDATE companies SET updated_at = ?2 WHERE id = ?1",
+                rusqlite::params![cid, sentinel],
+            )
+            .expect("plant sentinel");
+        }
+
+        state
+            .refresh_gpw_company_registry(&[cdr_entry(Some("Gry"))], "2026-06-30T12:00:00Z")
+            .expect("refresh 2");
+
+        let raw = state.checkout_for_tests().expect("raw connection");
+        let updated_at: String = raw
+            .query_row(
+                "SELECT updated_at FROM companies WHERE id = ?1",
+                [&cid],
+                |row| row.get(0),
+            )
+            .expect("read updated_at");
+        assert_eq!(
+            updated_at, sentinel,
+            "an identical sector propagation must not bump updated_at"
+        );
+    }
 }
 
 #[cfg(test)]

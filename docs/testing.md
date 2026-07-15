@@ -447,7 +447,7 @@ How it's wired (assertion-driven, not screenshot-only):
 
 - a shared harness (`tests/browser/helpers/harness.ts`) gives an auto console-error gate (any `console.error`/uncaught error fails the test) and reusable invariants (`expectNoPageOverflow`, a deep `expectNoHorizontalOverflow` scan, `expectInternalScroll`);
 - `tests/browser/journeys.spec.ts` asserts full flows end to end; `tests/browser/smoke-walk.spec.ts` walks every primary screen asserting no page-level horizontal overflow and deep-scans the detail rail where `overflow:hidden` hides the symptom;
-- mock data comes from the canonical factory (`src/test/scenarios/`): `browserSmokeRuntime.ts` builds `createMockRuntime("rich")`, injects the browser-specific seed into its store, and routes Tauri `invoke` through the one runtime (only Tauri plugin commands are handled locally). The runtime **rejects** an unknown command (the "add a case to `runtime.ts`" signal); a new screen command is added once, in the shared router, not per layer. `?locale=pl` previews the app in Polish for screenshot specs; `window.__brawlerMockReset(scenario)` re-seeds between interactions.
+- mock data comes from the canonical factory (`src/test/scenarios/`): `browserSmokeRuntime.ts` builds `createMockRuntime("rich")`, injects the browser-specific seed into its store, and routes Tauri `invoke` through the one runtime (only Tauri plugin commands are handled locally). The runtime **rejects** an unknown command (the "add a case to `runtime.ts`" signal); a new screen command is added once, in the shared router, not per layer. `?locale=pl` previews the app in Polish for screenshot specs; the typed `window.__brawlerMock` bridge (ADR 0081 Q2, below) re-seeds — optionally with overlays — and drives controlled async between interactions.
 
 Two harvested rules (ADR 0045), both from the `v0.47.0` report-diff panel:
 
@@ -460,13 +460,119 @@ Evidence policy: DOM/layout assertions are the pass/fail signal; screenshots and
 
 Do **not** use this layer for: live external source/API testing; real Tauri file dialogs/keychain/taskbar/packaging/WebView2; broad end-to-end coverage of every workflow; or screenshot comparison as pass/fail evidence — those are the live/packaging smoke and native Windows paths.
 
+## Frontend test responsibilities
+
+Every behavior lives at the **cheapest authoritative layer** — the layer that can actually observe it, run fastest, and fail loudly ([ADR 0081](adr/0081-ux-quality-loop-v2.md) Q8). The current audit ledger is [ux-quality-loop-v2-test-inventory.md](plans/ux-quality-loop-v2-test-inventory.md).
+
+| Responsibility | Layer | Why here |
+| --- | --- | --- |
+| Controlled component state, forms, validation, error branches, async transitions within one screen | **Vitest** (`src/**/*.test.tsx`) | jsdom is fastest; the assertion is local to the component |
+| Pure logic (parsers, descriptor round-trips, preference resolvers) | **Vitest** unit | no render needed |
+| Integration seams — last-intent-wins, response ordering, stale-response suppression | **Vitest `renderHook`** on the controller | the seam has no cheaper surface than the hook; the full app cannot hold two async responses cleanly |
+| Structural a11y (axe) per screen | **Vitest** (`screens.a11y.test.tsx`) | unique fast structural layer; real-browser contrast is a deferred `axe-playwright` follow-up |
+| Cross-screen journeys — act in screen A, land in screen B | **Playwright** (`tests/browser/journeys/`, `smoke-walk.spec.ts`) | only a real browser exercises navigation + layout faithfully; jsdom cannot mount Dockview panel bodies after a rebuild |
+| Real layout / overflow / density / Dockview panel-body render | **Playwright** viewport matrix | jsdom has no layout engine |
+| Real Tauri backend / real DB / WebView2 / native desktop | **live drive** (`tests/live/`) + native Windows | only the real runtime is authoritative |
+
+**Rules.** (1) A cross-screen case is **moved** to Playwright only when the browser is genuinely the cheaper authoritative layer *and* churn is justified by **measured flake**, never speculatively (Q8 STOP-AND-ASK). (2) Playwright coverage does **not** count toward Vitest V8 line coverage — retain/extract equivalent component coverage before deleting any Vitest assertion, and **never lower `coverage-baseline.json`**. (3) A multi-slice task names its layer split in planning via the [experience-contract template](plans/EXPERIENCE-CONTRACT-TEMPLATE.md) § 12, not at the gate.
+
 ## User-journey E2E and step budgets (ADR 0074)
 
 Journeys — the cross-screen tasks a user actually comes to do — are specced in [ux-journeys.md](ux-journeys.md) and enforced by dedicated Playwright specs (one per journey, `tests/browser/journeys/j1…j7-*.spec.ts`, tagged `@journey`, on the same mock runtime):
 
 - **One spec per journey**, asserting the full cross-screen path (trigger → steps → done-well criteria), not per-screen features, keeping `expectNoPageOverflow` + `expectNoA11yViolations` at key screens. The v0.44–0.49 E2E backfill (autopilot trust ladder, report season, quality frameworks, claims, transcripts/research) lands in this form — the coverage gap and the journey net are the same work.
-- **Interaction step budgets as assertions**: each spec drives its path through the explicit `journey(page, id)` wrapper (`helpers/harness.ts`) — one wrapper call (`click`/`fill`/`press`/`selectOption`) = one counted user interaction, navigation included. `assertBudget()` reads `tests/browser/journeys/budgets.json` and reddens when the count exceeds the floor; the floor is the first measured count +1 (never above the `ux-journeys.md` ceiling), ratcheted **down** — like coverage — when a journey gets measurably shorter, so a UX regression reddens the gate.
+- **Interaction step budgets as assertions**: each spec drives its path through the explicit `journey(page, id)` wrapper (`helpers/harness.ts`, implemented in `helpers/journey.ts`) — one wrapper call (`click`/`fill`/`press`/`selectOption`) = one counted user interaction, navigation included. `assertBudget()` reads `tests/browser/journeys/budgets.json` and reddens when a metric exceeds its floor; each floor is the first measured count +1 (interactions never above the `ux-journeys.md` ceiling), ratcheted **down** — like coverage — when a journey gets measurably shorter, so a UX regression reddens the gate. The budget is now **schema v2** with four friction metrics per journey — see the journey-metrics subsection below.
 - Closure hook: [Definition of Done §I](engineering-workflow.md#definition-of-done-the-handover-gate) requires every user-facing capability to name its journey (or be declared a utility) and `budgets.json` to be green.
+
+## UX quality loop v2 — overlays, journey metrics, contact sheet (ADR 0081, pilot)
+
+Canonical home for the loop's test mechanics ([ADR 0081](adr/0081-ux-quality-loop-v2.md)): composable hostile/dense/partial/stale/conflicting/mixed-locale **scenario overlays** and **controlled-async** controls on the one mock runtime (plan Q2); **journey metrics** beyond click counts — interactions, screen transitions, modal opens, context loss (plan Q3); the frontend **test-layer ownership** audit (plan Q8); and a local **contact-sheet** review over the existing visual scenarios (plan Q5). Everything stays off `make check` except the deterministic behavior/layout/affordance contracts; contact sheets and timing reports are review evidence, and clarity/usefulness/trust remain human verdicts. Mechanics land with each pilot task; this section is the home they attach to.
+
+### Minimal failure-injection seam (epic `0db7a7a`, Radicle `5be14c9`)
+
+`src/test/scenarios/runtime.ts`'s `MockRuntime.failNext(command, error)` queues a **one-shot** rejection for the NEXT invocation of `command`: instead of running its handler, `invoke` settles with `error` (a plain `{code, message}` object, the ADR 0070 envelope) UNCHANGED — the same shape a real typed backend rejection uses, so `isCommandError`/`CommandInvocationError` on the frontend fire identically to a real failure. `reset()` clears every queued failure. This is the ONLY scope of the seam — no chaos flag, no poor-state seeds, no real-DB evaluator (those stay in epic `0db7a7a`). Q2's `controls.reject(id, error)` (below) delegates to this seam for a `before-handler` hold rather than reproducing the envelope mapping.
+
+### Scenario overlays and controlled async (plan Q2, Radicle `a9992e2`)
+
+Composable, deterministic adversarial data and async-ordering controls on the ONE mock runtime — no second router, no per-combination mega-scenario.
+
+**Overlays** (`src/test/scenarios/overlays.ts`) layer onto a base scenario (`empty | minimal | rich`) via `buildScenario({ base, overlays })`, still accepting the bare `ScenarioName` for pre-Q2 callers:
+
+| Overlay | Adds |
+| --- | --- |
+| `hostile-content` | unbreakable long URL/filename, long issuer/title/body, Polish diacritics |
+| `dense-history` | ~250 feed rows — ONLY when explicitly selected |
+| `partial-data` | a financial period with NO matching financial fact (the missing-relevant-read state) |
+| `stale-processing` | an old visible research-evidence result plus a `running` brief job for the same scope |
+| `conflicting-statuses` | a source adapter reporting `attention` while its latest ingestion result shows a clean run — two independent reads deliberately disagree |
+| `mixed-locale` | realistic Polish + English feed items — real source content, never a planted UI-translation literal |
+
+Each overlay reassigns the collections it touches (never mutates an entity in place — the same store-mutation contract handlers follow) and uses a fixed, overlay-dedicated `CompanySpec` so simultaneous overlays never collide. Application order is fixed internally, independent of the order the caller lists overlay names, and a repeated name is idempotent. `applyScenarioOverlays` is pure.
+
+**Controlled async** (`src/test/scenarios/controlledAsync.ts`) wraps `MockRuntime.invoke` exactly ONCE (never inside individual handlers) with `hold`/`pending`/`release`/`reject`/`releaseAll`:
+
+- `hold({command, args?, phase?})` registers interest in the NEXT matching invocation and returns the id it will be held under.
+- `before-handler` (the default) holds an invocation BEFORE its handler runs — legal for reads AND mutations, since nothing has happened yet.
+- `after-handler` holds delivery of an ALREADY-computed response — legal ONLY for read handlers (a mutating handler has already changed the store by then).
+- `reject(id, error)`: a `CommandError` on a `before-handler` hold delegates through `failNext` (above); a bare `Error`, or any `after-handler` reject, settles directly — nothing to delegate to since the handler already ran or the caller opted out of the typed envelope.
+- `reset()`/`releaseAll()` clear every held invocation so no promise leaks across tests.
+
+The typed test-only `window.__brawlerMock` bridge (`src/test/browserSmokeRuntime.ts`) exposes `reset(spec)`, `hold`, `pending`, `release`, `reject`, `releaseAll` to Playwright via `tests/browser/helpers/mockRuntime.ts`. **Setup order is always base scenario → `seedBrowserStore` (this file's browser-specific projection) → overlays**, on both initial install and every `reset()` — overlays run LAST so the projection can never silently clobber hostile/dense/partial/stale/conflicting/mixed-locale data.
+
+`tests/browser/research-controlled-async.spec.ts` is the canonical controlled-async proof: it holds two `list_research_evidence` responses for different company intents, releases newest-then-oldest, and asserts the OLDER response cannot replace the newer state — `useResearchController`'s `requestVersionRef` "last-intent-wins" seam.
+
+**Which UI changes need an adversarial pass:** any screen/panel reading a collection that can legitimately be long, foreign-scripted, partially available, or asynchronously superseded (feed/evidence lists, KPI/claim labels, source-health cards, cross-panel status) should be exercised with the relevant overlay(s) and/or a controlled-async race in its browser spec — not just the happy-path `rich` scenario. A purely mechanical/internal change (styling, refactor with no new read/async path) does not.
+
+### Journey metrics beyond clicks (plan Q3)
+
+The flat click counter is upgraded to deterministic friction metrics. The pure accounting core is `src/test/journeyMetrics.ts` (Playwright-free, unit-tested by `journeyMetrics.test.ts`); the Playwright adapter is `tests/browser/helpers/journey.ts` (re-exported from `helpers/harness.ts`). One accounting implementation — the browser wrapper delegates all counting/evaluation to the core, so there is nothing to drift.
+
+- **Four hard/ratcheted metrics** per journey in `budgets.json` **schema v2** (`schemaVersion: 2`, `journeys.{J1…J7}.{interactions, screenTransitions, modalOpens, contextLosses, byProject}`): `interactions` (one per wrapper call), `screenTransitions` (a `markScreen(name)` whose name differs from the last — the first mark and repeats are free), `modalOpens` (a `markModal(name)`, ignoring a dialog already open at the prior marker; a screen transition closes the modal so the same name can legitimately reopen), and `contextLosses` (a `preserveContext(key)` whose non-null key changes unexpectedly; `preserveContext(null)` is a deliberate reset that never counts). Every floor is first-measured +1 (interactions also bounded by the `ux-journeys.md` ceiling); a breach names journey, metric, actual, limit, project, viewport, and the event trace.
+- **`byProject`** overrides a metric floor for a named Playwright project **only where a real narrow-pane flow genuinely needs MORE actions** on that project (with a recorded reason); it must not hide a common regression. A project that needs FEWER actions (e.g. a taller pane skipping a density-tier disclosure) is simply absorbed by the shared floor — no entry needed.
+- **Advisory, never a hard gate** (ADR 0081 "no wall-clock UX hard gate"): `clickPrimary(surface, action)` records whether the primary action was inside its surface's scrollport before Playwright auto-scroll, and `expectFeedback(locator)` records feedback-visible elapsed time — both attached to the Playwright result as annotations, not asserted on milliseconds.
+- **Semantic observation points** (not test-only business state): `data-app-section` on the main workspace (`AppShell`), `data-company-id` on the cockpit root (`CockpitScreen`), and `aria-current="page"` on the active nav button. A user journey takes the **real disclosure path** at the current project viewport — density tests may force a pane, journeys may not.
+
+### UX contact sheet (plan Q5, Radicle `81313f0`)
+
+A local, self-contained HTML grid assembled from the **existing** visual scenarios
+(`tests/browser/visual/*.spec.ts`, `chromium-visual`/`chromium-visual-light` projects) so a human
+can review a batch of screens cheaply. It adds no second screenshot framework and no
+Sharp/ImageMagick/native image dependency — PNGs are inlined as base64. **Committed Playwright
+baselines remain the regression mechanism**; the contact sheet is review evidence only.
+
+- **Catalog** (`tests/browser/visual/catalog.ts`): the single source of truth mapping every
+  stable screen id to its owning spec file, supported states, and dark-project tiers (S/M/L, or
+  M-only for a bare `shootScreen` with no forced tiers). `shootPanel`/`shootScreen`
+  (`tests/browser/visual/helpers.ts`) validate every call against it — an uncataloged screen/state
+  throws immediately instead of shooting unreviewed evidence.
+- **Evidence capture**: with `BRAWLER_CONTACT_SHEET_DIR` set, the shoot helpers write a PNG +
+  JSON metadata sidecar (screen, state, tier, theme, project, build stamp) for the settled locator
+  **before** the existing `toHaveScreenshot` assertion — the assertion still runs and still gates.
+  Sidecar filenames are unique per worker (`workerIndex` + a per-worker counter), so
+  `fullyParallel` workers never race on the same path.
+- **CLI** (`rtk node scripts/ux/contact-sheet.mjs`, or `make ux-contact-sheet`): accepts
+  `--screens=<a,b,c>` or `--changed` (maps a **read-only** `git diff` through the catalog — an
+  unmapped/unknown changed file is an error, never a silent empty selection, unless `--screens` is
+  also given), plus optional `--state` and `--theme=dark|light`. Runs only the two visual
+  projects for the owning spec files, merges the sidecars, and emits
+  `.artifacts/ux-contact-sheets/<build>/index.html` (gitignored). A missing expected cell is
+  reported as a failure. If the underlying Playwright run itself fails, the sheet is still built
+  from whatever evidence was written, then the script exits with Playwright's **original**
+  non-zero exit code.
+
+```bash
+rtk make ux-contact-sheet SCREENS="today,fundamentals"
+rtk make ux-contact-sheet CHANGED=1
+```
+
+- **Baseline updates** (`make visual-update SCREEN=<name> REASON="why"`, wrapping
+  `npm run visual-update` → `scripts/ux/visual-update-guard.mjs`): refuses to run unless both
+  `SCREEN` and a non-empty `REASON` are given, and prints both into the run log. Never run this
+  during ordinary implementation — only for a deliberate, reviewed visual change.
+
+### Escaped-defect interpretation (plan Q7)
+
+`docs/retros/TEMPLATE.md` carries a marked escaped-defect table (`Ref | Origin class | Detected at | Earliest prevention point | Disposition | Status`) against the canonical origin-class/detection-stage/disposition enums it documents inline. `rtk npm run report:escaped-defects` (`scripts/ux/escaped-defects-report.mjs`, also `make report-escaped-defects`) parses only explicitly marked tables, validates the enums/required cells/unique refs, and prints counts by origin/stage plus repeated classes (count ≥ 2) — it is advisory, stays off `make check`, and never fails because counts increased (only a malformed opted-in row does). **Not every escape needs a new automated test:** a repeated class becomes a precise automated guardrail when cleanly detectable, otherwise a documented human-checklist line (`disposition: human-checklist`) — see the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)). A single occurrence with a known fix stays `fixed-instance-only`; a tracked-but-unfixed gap uses `tracked:<hex7>`; a deliberate non-fix is `accepted-limitation`. Historical retros without a marked table remain valid and are silently skipped, never backfilled without owner direction.
 
 ## Manual desktop smoke
 
@@ -541,6 +647,8 @@ Or the pieces separately:
 - Manual launch (a human at the Windows machine, e.g. against an already-built exe): `powershell -ExecutionPolicy Bypass -File scripts/windows/dev-live.ps1`, then `make live-drive` from WSL.
 
 `BRAWLER_CDP_URL` overrides the connection target (default `http://localhost:9222`); the helper (`tests/live/helpers/liveConnect.ts`) applies the same localhost → nameserver-IP fallback order when it is unset. Dev-only; **never** part of `make check`/`make check-epic` — no default/CI environment has a live GUI app with an open debug port.
+
+**Scoped runs + UX checkpoints (Q6, [ADR 0081](adr/0081-ux-quality-loop-v2.md)).** `make live-drive`/`live-cycle` default to the **full** historical live suite; set `LIVE_SPEC=<path>` to drive **one** spec (empty preserves the full-suite default), e.g. `make live-cycle LIVE_SPEC=tests/live/ux-checkpoint.live.spec.ts`. The generic UX checkpoint (`tests/live/ux-checkpoint.live.spec.ts`) drives the **mechanical** J1 path and records evidence for a human charter — it never judges clarity/usefulness ("UX good" is never emitted). It reads `BRAWLER_UX_JOURNEY`, `BRAWLER_UX_CARD`, `BRAWLER_UX_STAGE=vertical|mid|release` (`requireCheckpointMeta` **refuses** to run without them) and `BRAWLER_UX_DATASET` (optional non-sensitive label). Evidence (`manifest.json` + screenshots) is written under gitignored `test-results/live/checkpoints/<stage>-<card>/`; the manifest records build/version, Windows-native confirmation, viewport/DPR, locale/theme, and a **dataset LABEL only** — **never** the database path or contents. Outside a checkpoint run (no metadata) the spec skips, so an ordinary full live sweep is unaffected. Cadences + human charter: [dogfooding.md](dogfooding.md).
 
 **Live-probe honesty rules (harvested 2026-07-10, ADR 0045).** Two classes that green-washed real defects on the owner's app:
 - **A punchline probe asserts the OUTCOME, not just settlement.** A probe whose purpose is "the flow produced X" must require a nonzero/expected result (`Wydobyto [1-9]`, a row count delta, a DB assertion) — "it settled" with a zero result is a probe FAILURE. A settle-only assert once passed while the feature under test silently did nothing.

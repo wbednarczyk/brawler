@@ -1753,6 +1753,16 @@ impl QualityFrameworkStore {
         evaluate_framework(&connection, input)
     }
 
+    /// Build the derived-metrics context for a company (definitions +
+    /// confirmed period facts), for callers outside the rule engine — e.g.
+    /// the v0.53 price-context read model, which attaches a `QuoteFacts`
+    /// snapshot on top via `MetricsContext::with_quotes` and resolves the
+    /// level-0 market ratios seeded by migration 0072.
+    pub fn metrics_context(&self, company_id: &str) -> StorageResult<MetricsContext> {
+        let connection = self.db.checkout()?;
+        load_metrics_context(&connection, company_id)
+    }
+
     pub fn persist_qualitative_assessment(
         &self,
         input: PersistQualitativeAssessmentInput,

@@ -581,19 +581,30 @@
 
 .ui-status-pill-ok {
   border-color: color-mix(in srgb, var(--success) 48%, var(--border));
-  color: var(--success);
+  /* Theme-adaptive text so the pill meets WCAG AA (4.5:1) on its own tinted
+     background in BOTH light and dark palettes (Radicle 9416da8): mixing toward
+     --text darkens the green on light grounds and lightens it on dark grounds. */
+  color: color-mix(in srgb, var(--success) 72%, var(--text));
   background: color-mix(in srgb, var(--success) 10%, var(--surface-raised));
 }
 
 .ui-status-pill-warn {
   border-color: color-mix(in srgb, var(--warning) 48%, var(--border));
-  color: var(--warning);
+  /* Theme-adaptive text so the pill meets WCAG AA (4.5:1) on its own tinted
+     background in BOTH light and dark palettes (same fix as -ok, Radicle
+     9416da8): mixing toward --text darkens/lightens the warning color to
+     retain contrast in each palette. */
+  color: color-mix(in srgb, var(--warning) 72%, var(--text));
   background: color-mix(in srgb, var(--warning) 10%, var(--surface-raised));
 }
 
 .ui-status-pill-danger {
   border-color: color-mix(in srgb, var(--danger) 48%, var(--border));
-  color: var(--danger);
+  /* Theme-adaptive text so the pill meets WCAG AA (4.5:1) on its own tinted
+     background in BOTH light and dark palettes (same fix as -ok, Radicle
+     9416da8): mixing toward --text darkens/lightens the danger color to
+     retain contrast in each palette. */
+  color: color-mix(in srgb, var(--danger) 72%, var(--text));
   background: color-mix(in srgb, var(--danger) 10%, var(--surface-raised));
 }
 
@@ -678,6 +689,127 @@
   width: 84px;
   height: 22px;
   vertical-align: middle;
+}
+
+.ui-line-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+  color: var(--tone-agent);
+}
+
+.ui-line-chart-up {
+  color: var(--tone-positive);
+}
+
+.ui-line-chart-down {
+  color: var(--tone-negative);
+}
+
+.ui-line-chart svg {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-line-chart-ylabels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-line-chart-xlabels {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-line-chart-gridline {
+  stroke: color-mix(in srgb, var(--border) 70%, transparent);
+  stroke-width: 1;
+}
+
+.ui-candlestick-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+}
+
+.ui-candlestick-chart svg {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.ui-candlestick-chart-ylabels {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  text-align: right;
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-candlestick-chart-xlabels {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: var(--font-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.ui-candlestick-gridline {
+  stroke: color-mix(in srgb, var(--border) 70%, transparent);
+  stroke-width: 1;
+}
+
+.ui-candlestick-up .ui-candlestick-wick {
+  stroke: var(--tone-positive);
+}
+
+.ui-candlestick-up .ui-candlestick-body {
+  fill: var(--tone-positive);
+}
+
+.ui-candlestick-down .ui-candlestick-wick {
+  stroke: var(--tone-negative);
+}
+
+.ui-candlestick-down .ui-candlestick-body {
+  fill: var(--tone-negative);
+}
+
+.ui-candlestick-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-base);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.ui-line-chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-base);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
 }
 
 .ui-trend-chart {

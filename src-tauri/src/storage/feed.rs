@@ -205,7 +205,8 @@ pub(super) fn prune_old_feed_items(
 ) -> StorageResult<FeedPruneResult> {
     let retention_days = retention_days.max(1);
     let retention_modifier = format!("-{retention_days} days");
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let pruned_at = sources::current_timestamp(&transaction)?;
 
     let candidate_ids = old_unsaved_feed_item_ids(&transaction, &retention_modifier)?;
@@ -224,7 +225,8 @@ pub(super) fn prune_old_feed_items(
 pub(super) fn delete_unsaved_feed_items(
     connection: &mut Connection,
 ) -> StorageResult<FeedDeleteResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let deleted_at = sources::current_timestamp(&transaction)?;
     let candidate_ids = unsaved_feed_item_ids(&transaction)?;
 

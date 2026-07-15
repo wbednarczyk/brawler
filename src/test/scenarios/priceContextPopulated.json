@@ -1,0 +1,27 @@
+{
+  "changeAbs": 2.0,
+  "changePct": 0.8658008658008658,
+  "currency": "PLN",
+  "fetchedAt": "2026-07-14T18:00:00Z",
+  "history": [
+    { "close": 200.0, "date": "2026-01-02", "high": 202.0, "low": 198.0, "open": 199.0 },
+    { "close": 250.0, "date": "2026-06-01", "high": 252.0, "low": 248.0, "open": 249.0 },
+    { "close": 231.0, "date": "2026-07-13", "high": 233.0, "low": 229.0, "open": 230.0 },
+    { "close": 233.0, "date": "2026-07-14", "high": 235.0, "low": 231.0, "open": 232.0 }
+  ],
+  "lastClose": 233.0,
+  "lastDate": "2026-07-14",
+  "marketCap": 23300.0,
+  "ratios": {
+    "divYield": null,
+    "evEbitda": null,
+    "fcfYield": null,
+    "ownHistPercentile": null,
+    "pbv": null,
+    "pe": null
+  },
+  "week52High": 250.0,
+  "week52HighDistPct": -6.800000000000001,
+  "week52Low": 200.0,
+  "week52LowDistPct": 16.5
+}

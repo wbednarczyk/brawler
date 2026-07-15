@@ -23,12 +23,14 @@ async function openCockpitPanelViaJourney(j: Journey, page: Page, label: string)
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
   await j.click(nav.getByRole("button", { name: "New view" }));
   const createModal = page.getByRole("dialog", { name: "New view" });
+  await j.markModal("New view");
   await j.fill(createModal.getByLabel("View name"), `${label} test view`);
   await j.click(createModal.getByRole("button", { name: "Create view" }));
   await expect(page.getByLabel("Research cockpit")).toBeVisible();
   await expect(page.getByText("Pick a panel").first()).toBeVisible();
   await j.click(page.getByRole("button", { name: "Add panel" }));
   const palette = page.getByRole("dialog", { name: "Command palette" });
+  await j.markModal("Command palette");
   await j.fill(palette.getByLabel("Search commands"), `Open panel: ${label}`);
   await j.click(palette.getByRole("button", { name: `Open panel: ${label}`, exact: true }).first());
 }
@@ -37,11 +39,13 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
   test("scan the week calendar and the watchlist overview", async ({ page }) => {
     const j = journey(page, "J7");
     await openApp(page);
+    await j.markScreen("Today");
 
     // The week calendar — Events at the L tier renders the week grid.
     await openCockpitPanelViaJourney(j, page, "Events");
     const eventsPane: Locator = page.locator(".cockpit-pane", { has: page.locator(".events-layout") });
     await expect(eventsPane).toBeVisible();
+    await j.markScreen("Events");
     await setPaneSize(page, { width: 900, height: 700, pane: eventsPane });
     await expect(eventsPane.locator(".event-week-grid")).toBeVisible();
     await expectNoPageOverflow(page);
@@ -51,6 +55,7 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
 
     // Watchlist overview — what's on the list this week.
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Watchlists" }));
+    await j.markScreen("Watchlists");
     const watchlistRow = page
       .getByLabel("Watchlists", { exact: true })
       .getByRole("button")
@@ -62,6 +67,6 @@ test.describe("J7 — weekly review", { tag: "@journey" }, () => {
     await expectNoA11yViolations(page, "Weekly review — watchlist overview");
     await expectNoPageOverflow(page);
 
-    j.assertBudget();
+    await j.assertBudget();
   });
 });

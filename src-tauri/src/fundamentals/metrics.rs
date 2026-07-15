@@ -8,6 +8,20 @@
 //! with no code change. Reused by quality frameworks now and by cross-company
 //! comparison (v0.53) and the valuation engine (v0.54).
 //!
+//! Quote-derived inputs (ADR 0067 Decision 4, v0.53 T4): level-0 market
+//! ratios (market cap, P/E, P/BV, EV/EBITDA, dividend yield, FCF yield,
+//! 52-week distance, own-history percentile) are seeded as ordinary canonical
+//! `kpi_definitions` formulas (migration `0072`) referencing quote-derived
+//! variables -- `close`, `week52_high`, `week52_low`,
+//! `valuation_percentile_52w` -- the same way any formula references a
+//! reported fact. Those four variables are not `financial_facts`; the caller
+//! computes them once from bounded, indexed reads
+//! (`MarketDataStore::latest_quote` / `quotes_since` -- an as-of close plus a
+//! trailing-52-week range scan, never a corpus recompute) into a
+//! `QuoteFacts` snapshot and attaches it via `MetricsContext::with_quotes`.
+//! The resolver treats it as one period-independent as-of-date fact set,
+//! resolved before period-bound reported facts.
+//!
 //! Pure: it takes loaded data, not a live connection, so it is unit-testable.
 //! A missing or uncomputable input yields `None` (→ `Unavailable` at the engine
 //! boundary); the service never invents a value.
@@ -43,12 +57,89 @@ pub struct PeriodFacts {
     pub reported: HashMap<String, Decimal>,
 }
 
+/// Quote-derived scalars for one company as of a given date (ADR 0067
+/// Decision 4). Computed by the caller from bounded/indexed range reads
+/// (`MarketDataStore::latest_quote` / `quotes_since`) -- never a corpus scan
+/// -- and injected into the resolver as one period-independent as-of-date
+/// fact set (available uniformly across every period index, since a daily
+/// quote does not line up 1:1 with a fiscal period). A field left `None`
+/// (e.g. no quote history yet) simply drops out; any formula referencing it
+/// resolves to `None` per the engine's existing missing-input contract --
+/// never a panic.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct QuoteFacts {
+    /// Latest close on or before the as-of date.
+    pub close: Option<Decimal>,
+    /// High of the trailing 52-week close-price range (including `close`).
+    pub week52_high: Option<Decimal>,
+    /// Low of the trailing 52-week close-price range (including `close`).
+    pub week52_low: Option<Decimal>,
+    /// `close`'s percentile within its own trailing-52-week close-price
+    /// range, in `[0, 1]` (0 = at/below the 52w low, 1 = at/above the 52w
+    /// high). An own-history *price* percentile, not a full historical
+    /// ratio recompute: point-in-time fundamentals are not stored at daily
+    /// granularity, so a true ratio percentile has no data substrate yet;
+    /// price is the dominant driver of ratio movement over a 52-week window,
+    /// so this is the closest computable proxy for "where does today's
+    /// valuation sit vs its own history" (flagged assumption -- see T4
+    /// report).
+    pub valuation_percentile_52w: Option<Decimal>,
+}
+
+impl QuoteFacts {
+    /// Look up one of the four quote-derived variable names. Unknown keys
+    /// (i.e. any key that is not a quote variable) return `None`, deferring
+    /// to the period-fact/derived-formula resolution path.
+    fn get(&self, key: &str) -> Option<Decimal> {
+        match key {
+            "close" => self.close,
+            "week52_high" => self.week52_high,
+            "week52_low" => self.week52_low,
+            "valuation_percentile_52w" => self.valuation_percentile_52w,
+            _ => None,
+        }
+    }
+
+    /// Build a snapshot from an as-of close plus a bounded trailing-52-week
+    /// close-price series (the caller's `quotes_since(company_id, from_date)`
+    /// range read, one indexed scan -- this function does no I/O and no
+    /// corpus recompute). `history` may or may not include the as-of bar
+    /// itself; both are folded into the high/low/percentile range.
+    pub fn from_close_history(as_of_close: Decimal, history: &[Decimal]) -> Self {
+        let mut high = as_of_close;
+        let mut low = as_of_close;
+        for &c in history {
+            if c > high {
+                high = c;
+            }
+            if c < low {
+                low = c;
+            }
+        }
+        let percentile = if high > low {
+            ((as_of_close - low) / (high - low)).clamp(Decimal::ZERO, Decimal::ONE)
+        } else {
+            // A flat or single-point range: the as-of close sits at the top
+            // of its own (degenerate) range.
+            Decimal::ONE
+        };
+        Self {
+            close: Some(as_of_close),
+            week52_high: Some(high),
+            week52_low: Some(low),
+            valuation_percentile_52w: Some(percentile),
+        }
+    }
+}
+
 /// The loaded, immutable view the metrics service computes over.
 #[derive(Debug, Clone)]
 pub struct MetricsContext {
     definitions: HashMap<String, MetricDef>,
     /// Periods newest-first.
     periods: Vec<PeriodFacts>,
+    /// One as-of-date quote snapshot, if attached via [`Self::with_quotes`].
+    quotes: Option<QuoteFacts>,
 }
 
 impl MetricsContext {
@@ -56,7 +147,18 @@ impl MetricsContext {
         Self {
             definitions,
             periods,
+            quotes: None,
         }
+    }
+
+    /// Attach a quote snapshot (ADR 0067 Decision 4) so formulas referencing
+    /// `close` / `week52_high` / `week52_low` / `valuation_percentile_52w`
+    /// resolve. Additive: existing callers that never call this keep
+    /// resolving those keys to `None`, exactly as before this variant
+    /// existed (no behavior change for the quality-frameworks engine).
+    pub fn with_quotes(mut self, quotes: QuoteFacts) -> Self {
+        self.quotes = Some(quotes);
+        self
     }
 
     pub fn latest_period_id(&self) -> Option<&str> {
@@ -108,6 +210,14 @@ impl MetricsContext {
             Suffix::Ttm => return self.ttm_at(base, idx, visiting),
             Suffix::Avg => return self.avg2_at(base, idx, visiting),
             Suffix::None => {}
+        }
+
+        // Quote-derived scalars (ADR 0067 Decision 4): one as-of-date
+        // snapshot, resolved ahead of period facts and available uniformly
+        // at every period index -- a daily quote has no fiscal-period index
+        // of its own.
+        if let Some(v) = self.quotes.as_ref().and_then(|q| q.get(base)) {
+            return Some(v);
         }
 
         let period = self.periods.get(idx)?;
@@ -174,6 +284,9 @@ impl MetricsContext {
                 Some((newest - oldest) / Decimal::from((n - 1) as i64))
             }
             Func::Cagr => self.cagr_at(key, n, idx, visiting),
+            // coalesce never reaches the window path: the evaluator resolves
+            // it over full expressions before dispatching window functions.
+            Func::Coalesce => None,
         }
     }
 
@@ -428,5 +541,412 @@ mod tests {
         // cagr(revenue, 5): (1610/1000)^(1/5) - 1 ≈ 0.0999 → > 9%
         let v = ctx.resolver().window(Func::Cagr, "revenue", 5).unwrap();
         assert!(v > dec(9, 2) && v < dec(11, 2));
+    }
+
+    /// v0.53 T4 (ADR 0067 Decision 4): level-0 market ratios + market cap,
+    /// mirroring the canonical formulas seeded by migration `0072`.
+    mod market_ratios {
+        use super::*;
+
+        /// A catalog matching the canonical rows seeded by
+        /// `migrations/0072_level0_market_ratios.sql` -- kept in this test
+        /// module (not loaded from SQL) per the existing `ctx_with` style;
+        /// `every_canonical_derived_metric_is_computable_from_a_representative_fact_set`
+        /// (`storage/tests/quality_frameworks.rs`) is the DB-driven drift
+        /// guard that the real seeded rows stay computable.
+        fn market_ratio_defs() -> HashMap<String, MetricDef> {
+            let mut defs = HashMap::new();
+            // Quote-derived (reported-shaped; resolved via `QuoteFacts`, not
+            // `financial_facts`).
+            defs.insert("close".to_owned(), def_reported("monetary"));
+            defs.insert("week52_high".to_owned(), def_reported("monetary"));
+            defs.insert("week52_low".to_owned(), def_reported("monetary"));
+            defs.insert("valuation_percentile_52w".to_owned(), def_reported("ratio"));
+            // Reported facts the ratios depend on.
+            defs.insert("shares_outstanding".to_owned(), def_reported("count"));
+            defs.insert("eps_diluted".to_owned(), def_reported("monetary"));
+            defs.insert("eps_basic".to_owned(), def_reported("monetary"));
+            defs.insert("total_equity".to_owned(), def_reported("monetary"));
+            defs.insert("net_debt".to_owned(), def_reported("monetary"));
+            defs.insert("net_profit".to_owned(), def_reported("monetary"));
+            defs.insert("ebitda".to_owned(), def_reported("monetary"));
+            defs.insert("dividend_per_share".to_owned(), def_reported("monetary"));
+            defs.insert("operating_cash_flow".to_owned(), def_reported("monetary"));
+            defs.insert("capex".to_owned(), def_reported("monetary"));
+            defs.insert(
+                "free_cash_flow".to_owned(),
+                def_derived("monetary", "operating_cash_flow - capex"),
+            );
+            // Level-0 market ratios (migration 0072).
+            defs.insert(
+                "market_cap".to_owned(),
+                def_derived("monetary", "close * shares_outstanding"),
+            );
+            defs.insert(
+                "pe_ratio".to_owned(),
+                // Migration 0075: fallback chain — whichever inputs exist.
+                def_derived(
+                    "ratio",
+                    "coalesce(market_cap / net_profit_ttm, close / eps_diluted_ttm, close / eps_basic_ttm)",
+                ),
+            );
+            defs.insert(
+                "pbv_ratio".to_owned(),
+                def_derived("ratio", "market_cap / total_equity"),
+            );
+            defs.insert(
+                "ev_ebitda".to_owned(),
+                def_derived("ratio", "(market_cap + net_debt) / ebitda_ttm"),
+            );
+            defs.insert(
+                "dividend_yield".to_owned(),
+                def_derived("percentage", "dividend_per_share / close"),
+            );
+            defs.insert(
+                "fcf_yield".to_owned(),
+                def_derived("percentage", "free_cash_flow_ttm / market_cap"),
+            );
+            defs.insert(
+                "distance_from_52w_high".to_owned(),
+                def_derived("percentage", "(close - week52_high) / week52_high"),
+            );
+            defs.insert(
+                "distance_from_52w_low".to_owned(),
+                def_derived("percentage", "(close - week52_low) / week52_low"),
+            );
+            defs
+        }
+
+        fn period_with(year: i64, facts: &[(&str, Decimal)]) -> PeriodFacts {
+            PeriodFacts {
+                period_id: format!("p{year}"),
+                fiscal_year: year,
+                is_annual: true,
+                reported: facts.iter().map(|(k, v)| (k.to_string(), *v)).collect(),
+            }
+        }
+
+        fn ctx_with_quotes(facts: &[(&str, Decimal)], quotes: QuoteFacts) -> MetricsContext {
+            MetricsContext::new(market_ratio_defs(), vec![period_with(2025, facts)])
+                .with_quotes(quotes)
+        }
+
+        fn quotes(close: Decimal) -> QuoteFacts {
+            QuoteFacts {
+                close: Some(close),
+                week52_high: None,
+                week52_low: None,
+                valuation_percentile_52w: None,
+            }
+        }
+
+        // ---- (a) formula unit tests with known fixtures ----------------------
+
+        #[test]
+        fn market_cap_from_close_and_shares_outstanding() {
+            let ctx = ctx_with_quotes(&[("shares_outstanding", dec(100, 0))], quotes(dec(231, 0)));
+            assert_eq!(ctx.resolver().value("market_cap"), Some(dec(23100, 0)));
+        }
+
+        #[test]
+        fn pe_ratio_falls_back_to_eps_when_market_cap_inputs_are_missing() {
+            // No shares_outstanding (no market_cap) — the chain falls through
+            // to close / eps_diluted_ttm.
+            let ctx = ctx_with_quotes(&[("eps_diluted", dec(10, 0))], quotes(dec(231, 0)));
+            assert_eq!(ctx.resolver().value("pe_ratio"), Some(dec(231, 1))); // 23.1
+        }
+
+        #[test]
+        fn pe_ratio_is_none_only_when_every_recipe_fails() {
+            let ctx = ctx_with_quotes(&[], quotes(dec(231, 0)));
+            assert_eq!(ctx.resolver().value("pe_ratio"), None);
+        }
+
+        #[test]
+        fn pe_ratio_from_market_cap_and_net_profit() {
+            // P/E over the best-covered inputs (migration 0074): market_cap /
+            // net_profit_ttm == (close x shares) / profit; 231*100 / 1000 = 23.1.
+            let ctx = ctx_with_quotes(
+                &[
+                    ("shares_outstanding", dec(100, 0)),
+                    ("net_profit", dec(1000, 0)),
+                ],
+                quotes(dec(231, 0)),
+            );
+            assert_eq!(ctx.resolver().value("pe_ratio"), Some(dec(231, 1))); // 23.1
+        }
+
+        #[test]
+        fn pbv_ratio_from_market_cap_and_equity() {
+            let ctx = ctx_with_quotes(
+                &[
+                    ("shares_outstanding", dec(100, 0)),
+                    ("total_equity", dec(11550, 0)),
+                ],
+                quotes(dec(231, 0)),
+            );
+            // market_cap = 23100; pbv = 23100 / 11550 = 2
+            assert_eq!(ctx.resolver().value("pbv_ratio"), Some(dec(2, 0)));
+        }
+
+        #[test]
+        fn ev_ebitda_from_market_cap_net_debt_and_ebitda() {
+            let ctx = ctx_with_quotes(
+                &[
+                    ("shares_outstanding", dec(100, 0)),
+                    ("net_debt", dec(900, 0)),
+                    ("ebitda", dec(2000, 0)),
+                ],
+                quotes(dec(231, 0)),
+            );
+            // ev = 23100 + 900 = 24000; ev_ebitda = 24000 / 2000 = 12
+            assert_eq!(ctx.resolver().value("ev_ebitda"), Some(dec(12, 0)));
+        }
+
+        #[test]
+        fn dividend_yield_from_dividend_per_share_and_close() {
+            let ctx = ctx_with_quotes(
+                &[("dividend_per_share", dec(462, 2))], // 4.62
+                quotes(dec(231, 0)),
+            );
+            // 4.62 / 231 = 0.02
+            assert_eq!(ctx.resolver().value("dividend_yield"), Some(dec(2, 2)));
+        }
+
+        #[test]
+        fn fcf_yield_from_free_cash_flow_and_market_cap() {
+            let ctx = ctx_with_quotes(
+                &[
+                    ("shares_outstanding", dec(100, 0)),
+                    ("operating_cash_flow", dec(1155, 0)),
+                    ("capex", dec(0, 0)),
+                ],
+                quotes(dec(231, 0)),
+            );
+            // fcf = 1155; market_cap = 23100; fcf_yield = 0.05
+            assert_eq!(ctx.resolver().value("fcf_yield"), Some(dec(5, 2)));
+        }
+
+        #[test]
+        fn distance_from_52w_high_and_low() {
+            let mut q = quotes(dec(90, 0));
+            q.week52_high = Some(dec(100, 0));
+            q.week52_low = Some(dec(60, 0));
+            let ctx = ctx_with_quotes(&[], q);
+            // (90 - 100) / 100 = -0.1
+            assert_eq!(
+                ctx.resolver().value("distance_from_52w_high"),
+                Some(dec(-1, 1))
+            );
+            // (90 - 60) / 60 = 0.5
+            assert_eq!(
+                ctx.resolver().value("distance_from_52w_low"),
+                Some(dec(5, 1))
+            );
+        }
+
+        #[test]
+        fn valuation_percentile_from_close_history() {
+            let history = [dec(60, 0), dec(75, 0), dec(100, 0), dec(90, 0)];
+            let q = QuoteFacts::from_close_history(dec(90, 0), &history);
+            assert_eq!(q.week52_high, Some(dec(100, 0)));
+            assert_eq!(q.week52_low, Some(dec(60, 0)));
+            // (90 - 60) / (100 - 60) = 0.75
+            assert_eq!(q.valuation_percentile_52w, Some(dec(75, 2)));
+        }
+
+        // ---- missing-fact-never-panics (part of the (c) contract, unit form) --
+
+        #[test]
+        fn market_cap_missing_shares_outstanding_is_none_not_panic() {
+            let ctx = ctx_with_quotes(&[], quotes(dec(231, 0)));
+            assert_eq!(ctx.resolver().value("market_cap"), None);
+        }
+
+        #[test]
+        fn ratios_without_any_quotes_attached_are_none_not_panic() {
+            let ctx = MetricsContext::new(
+                market_ratio_defs(),
+                vec![period_with(
+                    2025,
+                    &[
+                        ("shares_outstanding", dec(100, 0)),
+                        ("total_equity", dec(11550, 0)),
+                    ],
+                )],
+            ); // no `.with_quotes(..)`
+            for key in [
+                "market_cap",
+                "pe_ratio",
+                "pbv_ratio",
+                "ev_ebitda",
+                "dividend_yield",
+                "fcf_yield",
+                "distance_from_52w_high",
+                "distance_from_52w_low",
+            ] {
+                assert_eq!(ctx.resolver().value(key), None, "{key} without quotes");
+            }
+        }
+
+        // ---- (b) golden snapshot of the full seeded canonical ratio set -------
+
+        #[test]
+        fn seeded_canonical_ratio_set_is_stable() {
+            let q = QuoteFacts::from_close_history(
+                dec(231, 0),
+                &[dec(180, 0), dec(200, 0), dec(260, 0), dec(231, 0)],
+            );
+            // valuation_percentile_52w already set by from_close_history.
+            let ctx = ctx_with_quotes(
+                &[
+                    ("shares_outstanding", dec(1_000_000, 0)),
+                    ("eps_diluted", dec(3, 1)), // 0.3
+                    ("total_equity", dec(50_000_000, 0)),
+                    ("net_debt", dec(5_000_000, 0)),
+                    ("ebitda", dec(20_000_000, 0)),
+                    ("dividend_per_share", dec(4, 1)), // 0.4
+                    ("operating_cash_flow", dec(9_000_000, 0)),
+                    ("capex", dec(2_000_000, 0)),
+                ],
+                q,
+            );
+            let resolver = ctx.resolver();
+            let mut values: Vec<(&str, Option<Decimal>)> = vec![
+                "market_cap",
+                "pe_ratio",
+                "pbv_ratio",
+                "ev_ebitda",
+                "dividend_yield",
+                "fcf_yield",
+                "distance_from_52w_high",
+                "distance_from_52w_low",
+                "valuation_percentile_52w",
+                "close",
+                "week52_high",
+                "week52_low",
+            ]
+            .into_iter()
+            .map(|key| (key, resolver.value(key)))
+            .collect();
+            // Deterministic order regardless of the list literal above.
+            values.sort_by_key(|(k, _)| *k);
+            insta::assert_debug_snapshot!("seeded_canonical_ratio_set", values);
+        }
+
+        // ---- (c) proptest invariants -------------------------------------------
+
+        mod properties {
+            use super::*;
+            use proptest::prelude::*;
+
+            fn cents(v: i64) -> Decimal {
+                Decimal::new(v, 2)
+            }
+
+            proptest! {
+                /// `valuation_percentile_52w` is always in `[0, 1]`, for any
+                /// as-of close and any bounded close-price history.
+                #[test]
+                fn percentile_is_always_in_unit_range(
+                    as_of in 1i64..10_000_000,
+                    history in prop::collection::vec(1i64..10_000_000, 0..64),
+                ) {
+                    let q = QuoteFacts::from_close_history(
+                        cents(as_of),
+                        &history.iter().map(|v| cents(*v)).collect::<Vec<_>>(),
+                    );
+                    let p = q.valuation_percentile_52w.expect("always computed");
+                    prop_assert!(p >= Decimal::ZERO && p <= Decimal::ONE);
+                }
+
+                /// `market_cap = close * shares_outstanding` is never negative
+                /// for non-negative inputs (both facts are physically
+                /// non-negative quantities).
+                #[test]
+                fn market_cap_is_never_negative(
+                    close in 0i64..10_000_000,
+                    shares in 0i64..10_000_000_000i64,
+                ) {
+                    let ctx = ctx_with_quotes(
+                        &[("shares_outstanding", Decimal::from(shares))],
+                        quotes(cents(close)),
+                    );
+                    let v = ctx.resolver().value("market_cap");
+                    prop_assert!(v.is_some());
+                    prop_assert!(v.unwrap() >= Decimal::ZERO);
+                }
+
+                /// No ratio ever panics when an arbitrary subset of its
+                /// inputs is missing -- it resolves to `None` (`Unavailable`
+                /// at the engine boundary), matching the derived-metrics
+                /// contract for every other formula in the catalog.
+                #[test]
+                fn no_panic_on_arbitrary_missing_inputs(
+                    include_shares in any::<bool>(),
+                    include_equity in any::<bool>(),
+                    include_net_debt in any::<bool>(),
+                    include_ebitda in any::<bool>(),
+                    include_dividend in any::<bool>(),
+                    include_ocf in any::<bool>(),
+                    include_capex in any::<bool>(),
+                    include_eps in any::<bool>(),
+                    include_quotes in any::<bool>(),
+                ) {
+                    let mut facts: Vec<(&str, Decimal)> = Vec::new();
+                    if include_shares { facts.push(("shares_outstanding", dec(100, 0))); }
+                    if include_equity { facts.push(("total_equity", dec(1000, 0))); }
+                    if include_net_debt { facts.push(("net_debt", dec(100, 0))); }
+                    if include_ebitda { facts.push(("ebitda", dec(500, 0))); }
+                    if include_dividend { facts.push(("dividend_per_share", dec(1, 0))); }
+                    if include_ocf { facts.push(("operating_cash_flow", dec(200, 0))); }
+                    if include_capex { facts.push(("capex", dec(50, 0))); }
+                    if include_eps { facts.push(("eps_diluted", dec(2, 0))); }
+
+                    let ctx = if include_quotes {
+                        ctx_with_quotes(&facts, quotes(dec(100, 0)))
+                    } else {
+                        MetricsContext::new(market_ratio_defs(), vec![period_with(2025, &facts)])
+                    };
+                    let resolver = ctx.resolver();
+                    for key in [
+                        "market_cap", "pe_ratio", "pbv_ratio", "ev_ebitda",
+                        "dividend_yield", "fcf_yield",
+                        "distance_from_52w_high", "distance_from_52w_low",
+                    ] {
+                        // Must not panic; Some/None both acceptable.
+                        let _ = resolver.value(key);
+                    }
+                }
+            }
+        }
+
+        // ---- (d) behavioral: bounded-range 52w/percentile computation at scale --
+
+        #[test]
+        fn week52_stats_computed_over_a_full_trading_year_of_bars() {
+            // Mirrors what `MarketDataStore::quotes_since(company_id, from_date)`
+            // returns for a 52-week window: one bounded, indexed range read
+            // (PK-scoped, `docs/engineering-workflow.md` DoD §C) -- never a
+            // corpus scan. This proves the Rust-side aggregation over that
+            // bounded result (~252 trading days) is correct and O(n), not a
+            // recompute over the whole quote corpus.
+            let mut history = Vec::with_capacity(252);
+            for i in 0..252i64 {
+                // A gentle oscillation so min/max are not at the boundary.
+                let cents = 20000 + ((i * 37) % 5000);
+                history.push(Decimal::new(cents, 2));
+            }
+            // Plant a known min and max inside the window.
+            history[10] = Decimal::new(15000, 2); // 150.00 (low)
+            history[200] = Decimal::new(30000, 2); // 300.00 (high)
+            let as_of = Decimal::new(25000, 2); // 250.00
+
+            let q = QuoteFacts::from_close_history(as_of, &history);
+            assert_eq!(q.week52_low, Some(Decimal::new(15000, 2)));
+            assert_eq!(q.week52_high, Some(Decimal::new(30000, 2)));
+            let p = q.valuation_percentile_52w.expect("computed");
+            assert!(p > Decimal::ZERO && p < Decimal::ONE);
+        }
     }
 }

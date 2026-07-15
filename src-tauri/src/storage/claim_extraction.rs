@@ -230,7 +230,8 @@ pub(crate) fn complete_claim_extraction_job(
     input: CompletedClaimExtraction,
 ) -> StorageResult<ClaimExtractionJob> {
     let job_id = input.job_id.clone();
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
 
     // Refresh pending/rejected proposals; never disturb confirmed ones (they own claims).
     transaction.execute(

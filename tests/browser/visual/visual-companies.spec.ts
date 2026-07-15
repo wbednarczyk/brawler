@@ -29,6 +29,13 @@ test.describe("visual — company dashboard panels", () => {
     await shootPanel(page, pane, "fundamentals");
   });
 
+  test("Basic info across pane tiers", async ({ page }) => {
+    await openApp(page);
+    const pane = await openCompanyDashboard(page, "Basic info", "Basic info");
+    await expect(pane.getByText("ISIN")).toBeVisible();
+    await shootPanel(page, pane, "basic-info");
+  });
+
   test("Feed (company) across pane tiers", async ({ page }) => {
     await openApp(page);
     const pane = await openCompanyDashboard(page, "Feed", "Company feed");

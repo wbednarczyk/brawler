@@ -9,6 +9,10 @@ pub struct CompanyDirectoryEntry {
     pub display_name: String,
     pub isin: String,
     pub source_url: String,
+    /// Sector/industry classification read from the registry's market-segment
+    /// line (`Główny Rynek | <indices> | <sector>`), if the page exposes one
+    /// for this row. `None` when the row has no such line.
+    pub sector: Option<String>,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -28,6 +32,7 @@ pub fn parse_company_directory_html(
     let row_selector = selector("#search-result tr")?;
     let anchor_selector = selector("a[href*='spolka?isin=']")?;
     let name_selector = selector("strong.name")?;
+    let segment_selector = selector("small.grey")?;
     let exchange = exchange.trim().to_uppercase();
 
     let entries = document
@@ -44,6 +49,11 @@ pub fn parse_company_directory_html(
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| normalized_text(anchor.text()));
             let (display_name, ticker) = split_company_name_and_ticker(&name_text)?;
+            let sector = row
+                .select(&segment_selector)
+                .next()
+                .map(|segment| normalized_text(segment.text()))
+                .and_then(|value| extract_sector_from_segment_line(&value));
 
             Some(CompanyDirectoryEntry {
                 qualified_ticker: format!("{exchange}:{ticker}"),
@@ -52,6 +62,7 @@ pub fn parse_company_directory_html(
                 display_name,
                 isin,
                 source_url,
+                sector,
             })
         })
         .collect::<Vec<_>>();
@@ -92,6 +103,22 @@ fn split_company_name_and_ticker(value: &str) -> Option<(String, String)> {
     } else {
         Some((display_name, ticker))
     }
+}
+
+/// Extracts the sector from the market-segment line, e.g.
+/// `"Główny Rynek | WIG140, WIG-gry | Gry"` -> `Some("Gry")`. The sector is
+/// the last `|`-separated segment; a line with no `|` (no sector reported)
+/// yields `None`.
+fn extract_sector_from_segment_line(value: &str) -> Option<String> {
+    if !value.contains('|') {
+        return None;
+    }
+    value
+        .rsplit('|')
+        .next()
+        .map(str::trim)
+        .filter(|sector| !sector.is_empty())
+        .map(str::to_owned)
 }
 
 fn normalized_text<'a>(text: impl Iterator<Item = &'a str>) -> String {
@@ -141,5 +168,37 @@ mod tests {
             entries[0].source_url,
             "https://newconnect.pl/spolka?isin=PLESLTN00010"
         );
+        assert_eq!(entries[0].sector, None);
+    }
+
+    #[test]
+    fn extracts_sector_from_trailing_segment_of_market_segment_line() {
+        let html = r#"
+            <table id="search-result">
+                <tr>
+                    <td>
+                        <a href="/spolka?isin=PL11BTS00015">
+                            <strong class="name">11 BIT STUDIOS SPÓŁKA AKCYJNA (11B)</strong>
+                        </a>
+                        <small class="grey">Główny Rynek | WIG140, WIG-gry | Gry</small>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <a href="/spolka?isin=PLPEKAO00016">
+                            <strong class="name">ALIOR BANK SPÓŁKA AKCYJNA (ALR)</strong>
+                        </a>
+                        <small class="grey">Główny Rynek | WIG30, WIG20 | banki komercyjne</small>
+                    </td>
+                </tr>
+            </table>
+        "#;
+
+        let entries =
+            parse_company_directory_html(html, "GPW", "https://www.gpw.pl").expect("should parse");
+
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].sector.as_deref(), Some("Gry"));
+        assert_eq!(entries[1].sector.as_deref(), Some("banki komercyjne"));
     }
 }

@@ -25,16 +25,23 @@ WINDOWS_ARTIFACT := $(WINDOWS_OUT_DIR)/$(WINDOWS_ARTIFACT_NAME)
 WINDOWS_PORTABLE_ZIP := $(RELEASE_OUT_DIR)/brawler-$(APP_VERSION)-windows-x64-portable.zip
 RELEASE_FILES := CHANGELOG.md docs/kanban-archive.md docs/kanban.md docs/roadmap.md package-lock.json package.json src-tauri/Cargo.lock src-tauri/Cargo.toml src-tauri/src/lib.rs src-tauri/tauri.conf.json
 
-.PHONY: commit help install dev frontend-preview build check check-fast disk-clean disk-clean-deep coverage bench mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
+.PHONY: commit help install dev frontend-preview build check check-fast check-docs disk-clean disk-clean-deep coverage bench report-escaped-defects ux-contact-sheet visual-update mutants types types-check check-epic test ui-smoke ui-smoke-install typecheck frontend-check rust-check install-git-hooks commit-msg-check version-check changelog changelog-check release-notes release-check release-prepare release license-keygen-author license-author license-friend smoke-gemini-transcript smoke-gemini-analysis smoke-keyring live-drive live-up live-cycle flake-check tauri-build package-linux-amd64 package-windows-from-linux package-windows-portable-zip package-windows-smoke-run package-release-artifacts windows-package windows-package-no-run windows-test-help open-project-windows open-dist-windows
 
 help:
 	@printf "Brawler developer commands\n\n"
 	@printf "  make install             Install npm dependencies inside nix develop\n"
 	@printf "  make check               The single mandatory gate: all deterministic suites, hard-fail (pre-commit runs this)\n"
 	@printf "  make check-fast          Fast inner-loop check (parallel core, no browser) — iteration only, NOT proof of done\n"
+	@printf "  make check-docs          Docs-only gate: mandatory-read budgets + docs drift, no code suites (pre-commit uses this for docs-only commits)\n"
 	@printf "  make disk-clean          Safe temp cleanup: caches, mutants artifacts, old nix generations, journal, fstrim\n"
 	@printf "  make disk-clean-deep     disk-clean + cargo target dir (full rebuild next time) + full nix GC\n"
 	@printf "  make check-epic          Closure suite: the full gate + heavy periodic suites (coverage ratchet)\n"
+	@printf "  make report-escaped-defects\n"
+	@printf "                            Advisory escaped-defect taxonomy trend report (ADR 0081 Q7), never part of check\n"
+	@printf "  make ux-contact-sheet SCREENS=\"a,b\" (or CHANGED=1)\n"
+	@printf "                            Assemble a local HTML contact sheet from the existing visual scenarios (ADR 0081 Q5)\n"
+	@printf "  make visual-update SCREEN=<name> REASON=\"why\"\n"
+	@printf "                            Deliberate Playwright baseline update — refuses without both\n"
 	@printf "  make test                Run frontend tests inside nix develop\n"
 	@printf "  make ui-smoke-install    Download Chromium for opt-in Playwright smoke tests\n"
 	@printf "  make ui-smoke            Run opt-in Playwright browser UI smoke tests\n"
@@ -117,6 +124,17 @@ check:
 	$(NIX) node scripts/check/gate-integrity.mjs
 	$(NIX) node scripts/check/docs-drift.mjs
 
+# Docs-only pre-commit gate (ADR 0062): the meta-guards a *documentation* change
+# can actually break — the mandatory-read byte budgets + parity (gate-integrity,
+# ADR 0063) and cross-doc drift — WITHOUT the code suites (types/lint/test/build/
+# browser/knip/ts-rs) that a docs-only change cannot affect. The pre-commit hook
+# runs this instead of the full `make check` when the staged changeset is
+# docs-only; any code/config change still runs the full gate. Seconds, not minutes.
+check-docs:
+	@node scripts/check/disk-guard.mjs
+	$(NIX) node scripts/check/gate-integrity.mjs
+	$(NIX) node scripts/check/docs-drift.mjs
+
 # Staged concurrent check (ADR 0048): fast-fail static stage, then the heavy
 # suites (Rust clippy+nextest+doc, Vitest, build) concurrently — overlaps the
 # Rust compile with the JS suites. Inner-loop iteration ONLY — it omits knip, the
@@ -170,6 +188,34 @@ coverage:
 bench:
 	$(NIX) bash -c 'cd src-tauri && cargo bench --bench transforms'
 	$(NIX) npm run bench:ratchet
+
+# Escaped-defect taxonomy trend report (ADR 0081, plan Q7). Advisory only,
+# never part of `make check`: counts escaped frontend/UX defects by origin
+# class and detection stage from docs/retros/*.md's marked tables, prints
+# repeated classes (count >= 2) as guardrail-harvest candidates. Never fails
+# because counts increased — only a malformed opted-in row exits non-zero.
+report-escaped-defects:
+	$(NIX) npm run report:escaped-defects
+
+# UX contact sheet (ADR 0081 plan Q5): assemble a local HTML grid of the
+# EXISTING visual scenarios (tests/browser/visual/*.spec.ts) for cheap human
+# review — committed Playwright baselines remain the regression mechanism.
+# SCREENS is a comma list; CHANGED=1 maps a read-only git diff through
+# tests/browser/visual/catalog.ts instead. STATE/THEME are optional
+# passthroughs. Output: .artifacts/ux-contact-sheets/<build>/index.html
+# (gitignored).
+ux-contact-sheet:
+	@test -n "$(SCREENS)$(CHANGED)" || { printf "Usage: make ux-contact-sheet SCREENS=\"a,b\" (or CHANGED=1)\n" >&2; exit 1; }
+	$(NIX) node scripts/ux/contact-sheet.mjs $(if $(SCREENS),--screens=$(SCREENS)) $(if $(CHANGED),--changed) $(if $(STATE),--state=$(STATE)) $(if $(THEME),--theme=$(THEME))
+
+# Deliberate Playwright baseline update. STOP-AND-ASK elsewhere in this repo
+# guards against silent baseline drift, so this refuses to run without a named
+# SCREEN and a non-empty REASON, and prints both into the run log for the
+# change description to cite (docs/testing.md § UX contact sheet).
+visual-update:
+	@test -n "$(SCREEN)" || { printf "Usage: make visual-update SCREEN=<name> REASON=\"why\"\n" >&2; exit 1; }
+	@test -n "$(REASON)" || { printf "Usage: make visual-update SCREEN=<name> REASON=\"why\"\n" >&2; exit 1; }
+	SCREEN="$(SCREEN)" REASON="$(REASON)" $(NIX) npm run visual-update
 
 # Mutation testing of the deterministic cores (ADR 0048, scope per ADR 0049):
 # verifies tests catch behavior changes, not just execute code — the strong
@@ -457,13 +503,19 @@ LIVE_CDP_PORT ?= 9222
 # already set. /tmp, not the repo tree, so it never pollutes git status.
 LIVE_CDP_URL_FILE := /tmp/brawler-live-cdp-url
 
+# Optional scoped live spec (Q6, ADR 0081). Empty = the full historical live
+# suite (unchanged default). Set to one spec path to drive a single UX
+# checkpoint against the real app, e.g.
+#   make live-cycle LIVE_SPEC=tests/live/ux-checkpoint.live.spec.ts
+LIVE_SPEC ?=
+
 live-drive:
 	@url="$${BRAWLER_CDP_URL:-$$(cat $(LIVE_CDP_URL_FILE) 2>/dev/null || true)}"; \
 	if [ -n "$$url" ]; then \
 		printf "live-drive: connecting to %s\n" "$$url"; \
-		BRAWLER_CDP_URL="$$url" $(NIX) npx playwright test --config playwright.live.config.ts; \
+		BRAWLER_CDP_URL="$$url" $(NIX) npx playwright test --config playwright.live.config.ts $(LIVE_SPEC); \
 	else \
-		$(NIX) npx playwright test --config playwright.live.config.ts; \
+		$(NIX) npx playwright test --config playwright.live.config.ts $(LIVE_SPEC); \
 	fi
 
 # One command from WSL: rebuild the portable exe, launch it on Windows with the

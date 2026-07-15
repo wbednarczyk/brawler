@@ -35,12 +35,14 @@ async function openCockpitPanelViaJourney(j: Journey, page: Page, label: string)
   const nav = page.getByLabel(/Primary navigation|Nawigacja główna/);
   await j.click(nav.getByRole("button", { name: "New view" }));
   const createModal = page.getByRole("dialog", { name: "New view" });
+  await j.markModal("New view");
   await j.fill(createModal.getByLabel("View name"), `${label} test view`);
   await j.click(createModal.getByRole("button", { name: "Create view" }));
   await expect(page.getByLabel("Research cockpit")).toBeVisible();
   await expect(page.getByText("Pick a panel").first()).toBeVisible();
   await j.click(page.getByRole("button", { name: "Add panel" }));
   const palette = page.getByRole("dialog", { name: "Command palette" });
+  await j.markModal("Command palette");
   await j.fill(palette.getByLabel("Search commands"), `Open panel: ${label}`);
   await j.click(palette.getByRole("button", { name: `Open panel: ${label}`, exact: true }).first());
 }
@@ -49,10 +51,12 @@ test.describe("J4 — report-season preparation", { tag: "@journey" }, () => {
   test("review a pre-report card, write expectations, and mark it prepared", async ({ page }) => {
     const j = journey(page, "J4");
     await openApp(page);
+    await j.markScreen("Today");
 
     await openCockpitPanelViaJourney(j, page, "Report Season");
     const pane: Locator = page.locator(".cockpit-pane", { has: page.locator(".report-season-layout") });
     await expect(pane).toBeVisible();
+    await j.markScreen("Report season");
 
     // Force the L tier so the full pre-report card mounts regardless of the
     // default (small) cockpit cell and the project viewport.
@@ -90,6 +94,6 @@ test.describe("J4 — report-season preparation", { tag: "@journey" }, () => {
     await expect(pane.getByText("Prepared", { exact: true }).first()).toBeVisible();
     await expectNoPageOverflow(page);
 
-    j.assertBudget();
+    await j.assertBudget();
   });
 });

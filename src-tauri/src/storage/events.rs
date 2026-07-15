@@ -246,7 +246,8 @@ pub(super) fn ingest_gpw_market_event_items(
     connection: &mut Connection,
     items: &[GpwMarketEventItem],
 ) -> StorageResult<SourceIngestionResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let tracked_companies = companies::list_companies(&transaction)?;
     let fetched_at = items
         .first()
@@ -356,7 +357,8 @@ pub(super) fn ingest_bankier_calendar_event_items(
     connection: &mut Connection,
     items: &[BankierCalendarEventItem],
 ) -> StorageResult<SourceIngestionResult> {
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let tracked_companies = companies::list_companies(&transaction)?;
     let fetched_at = items
         .first()

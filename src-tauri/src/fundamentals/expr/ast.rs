@@ -42,6 +42,11 @@ pub enum Func {
     Avg,
     /// `trend(metric, n)` — signed slope over the last `n` periods (per period).
     Trend,
+    /// `coalesce(a, b, ...)` — the first argument that evaluates to an
+    /// available value; unavailable only when every argument is. Encodes
+    /// ratio fallback recipes ("compute from whichever inputs exist") in a
+    /// single formula (owner decision 2026-07-14).
+    Coalesce,
 }
 
 impl Func {
@@ -51,12 +56,14 @@ impl Func {
             "ttm" => Some(Func::Ttm),
             "avg" => Some(Func::Avg),
             "trend" => Some(Func::Trend),
+            "coalesce" => Some(Func::Coalesce),
             _ => None,
         }
     }
 
     pub fn name(self) -> &'static str {
         match self {
+            Func::Coalesce => "coalesce",
             Func::Cagr => "cagr",
             Func::Ttm => "ttm",
             Func::Avg => "avg",

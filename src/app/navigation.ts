@@ -2,6 +2,7 @@ import {
   Activity,
   Bug,
   Building2,
+  FlaskConical,
   Home,
   Inbox,
   ListChecks,
@@ -14,11 +15,14 @@ import type { LocaleKey } from "../shared/locale";
 // Notebooks, Events) are no longer top-level nav destinations — they are hosted
 // as panels inside the Cockpit / Company workspace (ADR 0053/0054) — but remain
 // valid `activeSection` values because deep links / programmatic navigation
-// still use them and AppStateRoot still renders them. "Cockpit" is the same
-// kind of deep-link-only value now (ADR 0057 decision 5): there is no
-// standalone blank-canvas nav destination — the cockpit is reached only via a
-// saved named view (rendered as its own nav item, see AppShell), the "+ New
-// view" creator, or opening a company's curated dashboard.
+// still use them and AppStateRoot still renders them. ADR 0057 decision 5
+// removed the standalone *blank-canvas* "Cockpit" nav item; it is otherwise
+// reached via a saved named view (rendered as its own nav item, see AppShell),
+// the "+ New view" creator, or a company's curated dashboard. Amended
+// 2026-07-13 (owner, card 47d5fbb): a single "Research" cockpit entry is
+// restored in Modes — but it is never blank (the cockpit seeds a first
+// company/feed item and resumes the last layout), so ADR 0057's "no empty
+// mode" rationale is preserved rather than reversed.
 export type Section =
   | "Today"
   | "Inbox"
@@ -64,7 +68,12 @@ export const navGroups: NavGroup[] = [
     localeKey: "nav.group.modes",
     items: [
       { label: "Today", icon: Home, localeKey: "nav.today" },
-      { label: "Companies", icon: Building2, localeKey: "nav.companies" },
+      // Dashboard — the one company-scoped cockpit, entered ONLY from here (owner
+      // redesign 2026-07-13, epic c793ca1). Two selectors inside: company (scope) +
+      // preset (panel arrangement); every preset follows the view company. The
+      // standalone Research screen is retired into a Dashboard preset. Amends ADR
+      // 0057 decision 5: never a blank canvas (seeds a company / resumes layout).
+      { label: "Cockpit", icon: FlaskConical, localeKey: "nav.dashboard" },
       // Compare is hidden from the spine until v0.53 market data gives the mode
       // content (U-Rc, ADR 0076 Resolved) — an empty mode in nav is trust debt.
       // The Section value and CompareScreen stay; restore the entry with:
@@ -75,6 +84,9 @@ export const navGroups: NavGroup[] = [
     id: "library",
     localeKey: "nav.group.library",
     items: [
+      // Companies dropped from Modes into Library (owner 2026-07-13, epic c793ca1):
+      // the Dashboard is the company workspace; the list is a reference surface.
+      { label: "Companies", icon: Building2, localeKey: "nav.companies" },
       { label: "Inbox", icon: Inbox, localeKey: "nav.inbox" },
       { label: "Watchlists", icon: ListChecks, localeKey: "nav.watchlists" },
       { label: "Transcripts", icon: Video, localeKey: "nav.transcripts" },

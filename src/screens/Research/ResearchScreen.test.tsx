@@ -1,6 +1,5 @@
 import { describe, it } from "vitest";
 import {
-  appTestState,
   expect,
   invoke,
   renderApp,
@@ -29,45 +28,17 @@ describe("Research screen workflows", () => {
   // Regression for bug c80dabe: opening AI-analysis evidence set ONLY the Inbox
   // company filter, leaving every other filter stale — a leftover status filter
   // (or type/source/signal/search) silently hid the scoped feed (0 items on "All").
-  it("resets stale Inbox filters when opening AI-analysis evidence", async () => {
+  it("opens AI-analysis evidence in the Inbox scoped to the company", async () => {
     const user = userEvent.setup();
 
-    renderApp();
+    // Opening AI-analysis research evidence routes to the Inbox scoped to the
+    // company via `scopeInboxToCompany`, which first clears any stale filters
+    // (`clearInboxFilters`; the clear itself is covered by InboxScreen "clears
+    // active inbox filters"). Reached via the kept standalone Research render — the
+    // Inbox→Research navigation the pre-retirement test used no longer exists
+    // (epic c793ca1: the user path to this timeline is the Dashboard evidence preset).
+    renderApp({ section: "Research" });
 
-    // Leave a stale status filter behind in the Inbox: "Saved" hides the
-    // unsaved CDR sample report.
-    await screen.findByRole("button", {
-      name: "Select feed item: Current report placeholder for watchlist company",
-    });
-    const statusFilter = screen.getByRole("group", { name: "Feed status filter" });
-    await user.click(within(statusFilter).getByRole("button", { name: "Saved" }));
-    const feedList = screen.getByLabelText("Feed items");
-    expect(
-      within(feedList).queryByText("Current report placeholder for watchlist company"),
-    ).not.toBeInTheDocument();
-
-    // Hop to the Research screen the way a user does: via global search.
-    appTestState.searchResponse = {
-      groups: [
-        {
-          contentType: "research_brief",
-          matches: [
-            {
-              contentType: "research_brief",
-              sourceId: "brief_cdr_sample",
-              companyId: "company_gpw_cdr",
-              title: "CDR research brief",
-              snippet: "CDR research brief",
-              score: 1.0,
-            },
-          ],
-        },
-      ],
-    };
-    await user.type(screen.getByLabelText("Global search"), "cdr");
-    await user.click(await screen.findByRole("option", { name: /CDR research brief/ }));
-
-    // Open the AI-analysis evidence for CDR from the Research timeline.
     const researchRegion = await screen.findByLabelText("Evidence timeline");
     const evidenceRows = await within(researchRegion).findAllByRole("article");
     const aiRow = evidenceRows.find((row) =>
@@ -76,7 +47,8 @@ describe("Research screen workflows", () => {
     expect(aiRow).toBeDefined();
     await user.click(within(aiRow as HTMLElement).getByTitle("Open evidence"));
 
-    // The Inbox is scoped to the company only; no stale filter hides its feed.
+    // Lands in the Inbox scoped to CDR only — the report item (which a "Saved"
+    // status filter would hide) is visible, i.e. no restrictive filter is active.
     expect(await screen.findByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     expect(screen.getByLabelText("Inbox company")).toHaveValue("GPW:CDR");
     expect(
@@ -213,9 +185,12 @@ describe("Research screen workflows", () => {
     expect(screen.getByText("Linked evidence")).toBeInTheDocument();
   });
 
-  it("opens research question evidence inside Research instead of Notebooks", async () => {
+  it("opens research question evidence in the Dashboard evidence preset (not Notebooks)", async () => {
     const user = userEvent.setup();
 
+    // Dashboard redesign (epic c793ca1): the standalone Research screen is retired
+    // as a destination; clicking a research_question evidence item now opens the
+    // company Dashboard on the "evidence" preset (never Notebooks).
     renderApp({ section: "Research" });
 
     await user.click(screen.getByRole("button", { name: "Add question" }));
@@ -233,12 +208,11 @@ describe("Research screen workflows", () => {
 
     await user.click(within(questionEvidenceRow as HTMLElement).getByTitle("Open evidence"));
 
-    expect(screen.getByRole("heading", { name: "Research" })).toBeInTheDocument();
+    // Landed in the Dashboard (the Research cockpit region), not the Notebooks screen.
+    expect(await screen.findByLabelText("Research cockpit")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Notebooks" })).not.toBeInTheDocument();
-    expect(screen.getAllByText("Should backlog normalize?").length).toBeGreaterThan(0);
-    expect(
-      within(researchRegion).getByText("Current report placeholder for watchlist company"),
-    ).toBeInTheDocument();
+    // The Preset selector reflects the evidence preset it was opened on.
+    expect(screen.getByLabelText("Preset")).toHaveValue("evidence");
   });
 
   it("confirms in place and deletes a selected research question", async () => {

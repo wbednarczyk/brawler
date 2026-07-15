@@ -363,9 +363,14 @@ Report-file persistence and history backfill ([ADR 0036](adr/0036-report-documen
 
 Price/fundamentals enrichment is useful for later context around reports and news, but it is not the same as official-report ingestion.
 
-**Decided price source (2026-07-03, [ADR 0067](adr/0067-market-data-foundation.md), milestone `v0.53.0`):**
+**Decided price source (2026-07-03 [ADR 0067](adr/0067-market-data-foundation.md); source selection amended 2026-07-14 [ADR 0082](adr/0082-market-data-source-selection.md), milestone `v0.53.0`):**
 
-- **Stooq EOD quotes** become a `market_data`-type adapter: historical daily data under `https://stooq.pl/q/d/l/?s={ticker}.PL&i=d` (full-history backfill on company add, throttled) plus one post-session daily pull per company. Conservative polling, durable attribution, EOD-only (decision support, not a trading feed). If Stooq terms prove constraining, the adapter boundary allows replacement without touching consumers. This resolves the former "potential price source" status and the roadmap's open Stooq question; the fundamentals-aggregator role for Stooq remains declined per [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md).
+- **EOD quotes** are a `market_data`-type adapter: full-history backfill on company add (throttled) + one post-session daily pull per company; EOD-only (decision support, not a trading feed), durable attribution, source-neutral boundary.
+  - **Primary `yahoo-eod`** — Yahoo Finance v8 chart API (`.../v8/finance/chart/<ticker>.WA`), keyless, PLN, full history to each ticker's GPW debut. Accepted **ToS-gray** for local-first personal EOD/watchlist-only use, no redistribution (ADR 0082).
+  - **No secondary provider today.** Twelve Data was selected as the official free fallback and then **removed 2026-07-14**: the live smoke proved GPW `time_series` is paid-plan-only (free tier covers metadata, not quotes) — ADR 0082 amendment. A Yahoo failure raises source-health and skips the day; the self-heal backfill catches history up on recovery. Free degraded fallback (Bankier/StockWatch current close, GPW-archive real-browser probe): card `ee81afe`, v0.55.
+  - **Witnesses (compare-only):** BiznesRadar `/notowania`, Bankier, StockWatch — robots-allowed current-quote pages cross-check the close; divergence → source-health, never a silent overwrite.
+  - **Rejected for automation** (probe evidence in ADR 0082): Stooq (proof-of-work gate), BiznesRadar `/notowania-historyczne` + `/profile-history` (robots-disallowed), Google Finance (dead history + consent wall), investing.com/Bloomberg/MarketWatch/FT (locked/paid/anti-bot), CNBC (no GPW).
+- This resolves the former "potential price source" status and the roadmap's open Stooq question. BiznesRadar's other robots-allowed data is accepted as a source for later milestones (v0.55 fundamentals witness — HTML, not the Premium CSV; v0.58 recommendations; v0.56 ownership; v0.57/v0.66 ratios/dividends), each behind its own policy note. The fundamentals-aggregator role for Stooq remains declined per [ADR 0061](adr/0061-deterministic-fundamentals-data-gathering.md).
 
 Potential fundamentals sources:
 

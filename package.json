@@ -32,7 +32,10 @@
     "check:parallel": "node scripts/check/parallel-check.mjs",
     "test:coverage": "vitest run src --coverage",
     "coverage:ratchet": "node scripts/check/coverage-ratchet.mjs",
-    "bench:ratchet": "node scripts/check/bench-ratchet.mjs"
+    "bench:ratchet": "node scripts/check/bench-ratchet.mjs",
+    "report:escaped-defects": "node scripts/ux/escaped-defects-report.mjs",
+    "ux-contact-sheet": "node scripts/ux/contact-sheet.mjs",
+    "visual-update": "node scripts/ux/visual-update-guard.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

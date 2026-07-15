@@ -52,6 +52,7 @@ mod jobs;
 mod kpi_extraction;
 mod licensing;
 mod management_claims;
+mod market_data;
 mod metrics;
 mod migrations;
 mod notebooks;
@@ -666,6 +667,11 @@ impl AppState {
         companies::CompanyStore::new(self.db.clone())
     }
 
+    /// Market-data (`daily_quotes`) domain store (ADR 0067 / ADR 0082).
+    pub fn market_data(&self) -> market_data::MarketDataStore {
+        market_data::MarketDataStore::new(self.db.clone())
+    }
+
     pub fn list_companies(&self) -> StorageResult<Vec<Company>> {
         self.companies().list_companies()
     }
@@ -696,6 +702,32 @@ impl AppState {
         url: Option<&str>,
     ) -> StorageResult<Option<String>> {
         self.companies().set_company_ir_reports_url(company_id, url)
+    }
+
+    pub fn get_company_sector(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<(Option<String>, Option<String>)> {
+        self.companies().get_company_sector(company_id)
+    }
+
+    pub fn set_company_sector(
+        &self,
+        company_id: &str,
+        sector: Option<&str>,
+    ) -> StorageResult<Option<String>> {
+        self.companies().set_company_sector(company_id, sector)
+    }
+
+    pub fn list_company_sectors(&self) -> StorageResult<Vec<String>> {
+        self.companies().list_company_sectors()
+    }
+
+    pub fn latest_shares_outstanding(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Option<(String, String)>> {
+        self.companies().latest_shares_outstanding(company_id)
     }
 
     pub fn lookup_company(
@@ -1521,6 +1553,14 @@ impl AppState {
     ) -> StorageResult<()> {
         self.sources()
             .record_source_adapter_state(adapter_id, key, value)
+    }
+
+    pub fn get_source_adapter_state(
+        &self,
+        adapter_id: &str,
+        key: &str,
+    ) -> StorageResult<Option<String>> {
+        self.sources().get_source_adapter_state(adapter_id, key)
     }
 
     pub fn get_settings(&self) -> StorageResult<UserSettings> {

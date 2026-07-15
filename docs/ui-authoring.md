@@ -17,6 +17,31 @@ Two process rules for anything beyond a mechanical change:
 - **Mockup-first.** A new panel/screen or a functional redesign starts as an HTML mockup the owner approves BEFORE code, and the approved mockup is **committed under `docs/mockups/`** — never left in a session scratchpad (the v0.50 U0 mockups were approved but lost with the scratchpad; the ADR prose had to stand in for them).
 - **No design decision without a spec.** Implementers (human or agent) execute normative specs — ADR tables, density-contract rows, approved mockups. If a spec is missing, ambiguous, or two rules conflict, STOP and escalate with the conflict spelled out; do not pick a design silently. Harvested from v0.50: every fan-out defect traced back to a gap or contradiction in the task spec, not to implementer judgment being too weak.
 
+## Experience contracts, storyboards & discoverability (ADR 0081, pilot-gated)
+
+Canonical home for the UX decision-validation loop's authoring rules ([ADR 0081](adr/0081-ux-quality-loop-v2.md)). Non-mechanical UI work — a new panel/screen, functional redesign, changed cross-screen journey, or new primary user decision — is specified with an **experience contract** (trigger, outcome, decision, evidence, hierarchy, one primary action, entry/exit/recovery, done-well, storyboard, state matrix, journey mapping, first red journey test) **before** component work. The textual contract lives in the feature plan; the approved storyboard under `docs/mockups/`. Copy/token-only fixes, primitive-preserving migrations, and exact regression repairs are exempt unless they change a journey. Reusable templates + a worked example land with the pilot (plan Q1); enforcement is pilot-gated and becomes universal only after the J1/J2 verdict.
+
+**Templates.** Copy [`docs/plans/EXPERIENCE-CONTRACT-TEMPLATE.md`](plans/EXPERIENCE-CONTRACT-TEMPLATE.md)'s 11 sections into the task's plan section for the textual contract, and [`docs/mockups/STORYBOARD-TEMPLATE.html`](mockups/STORYBOARD-TEMPLATE.html)'s 7 frames (entry, before action, loading/in-flight, success, error, undo/recovery, narrow pane) for the visual storyboard — no runtime dependency, opens standalone. Both are reusable sources, not approvals: a copied template is a draft.
+
+**Trigger.** Any non-mechanical UI change per the definition above; see [ADR 0081](adr/0081-ux-quality-loop-v2.md) decision 1 for the exact boundary.
+
+**Exemption.** Copy/token-only fixes, primitive-preserving mechanical migrations, and exact regression repairs — unless the change alters a journey, in which case the contract applies.
+
+**Storage.** The filled-in textual contract lives in the feature plan (`docs/plans/`); the filled-in storyboard is committed under `docs/mockups/`. Neither is ever left only in a session scratchpad or `test-results/` — that is how the v0.50 U0 mockups were lost (§ Mockup-first above).
+
+**Approval flow.** Draft both from the templates → owner reviews the completed contract + storyboard together → owner approval makes them normative for the task; component work does not start on an unapproved copy. The worked J1 current-state example in [`docs/plans/ux-quality-loop-v2.md`](plans/ux-quality-loop-v2.md) § Pilot appendix shows every field filled — it documents current intent, not redesign approval.
+
+### Discoverability & interaction-hierarchy contracts (ADR 0081 Q4)
+
+Scoped, explicit contracts for a decision surface — never a whole-page CTA scan and never a heuristic guess at which information "looks important" on a multi-pane workspace.
+
+- **`Button` emits `data-ui-button-variant={variant}`** on the rendered element — a stable hook for scoped test helpers (e.g. finding primitive icon buttons), never a styling hook.
+- **The primary action is explicit, not inferred.** A surface's experience-contract primary action (§ 6 of the template) is marked by the *caller* with `data-ux-primary-action="true"` on the `Button`. It is never derived from `variant="primary"` or any CSS class — a screen can use the primary variant for emphasis without it being *the* contracted primary action, and vice versa.
+- **Icon-only buttons** keep the existing accessible-name requirement (axe is the general authority, `expectNoA11yViolations`). A **non-obvious** icon action additionally needs a visible explanation or a `title` — a human call at review time, not something a helper infers.
+- **Helpers** (`tests/browser/helpers/interactionContracts.ts`): `expectPrimaryActionCount(surface, { max, reason? })`, `expectActionBeforeScroll(action, scrollOwner)`, `expectFocusOrder(page, locators)`, `expectNamedIconActions(surface)`, `expectNextStepVisible(locator)`. Every helper takes an explicit surface/action locator supplied by the caller — never scans the whole page.
+- **Multi-primary exemption.** `expectPrimaryActionCount` with `max > 1` requires a non-empty `reason`, which must pair with a matching entry in that surface's experience contract (template § 6). Without a `reason`, the surface's primary-action count must match `max` exactly (so a dropped marker reddens as loudly as a doubled one).
+- **Pilot adoption:** J1 (`tests/browser/journeys/j1-morning-review.spec.ts`) and J2 (`j2-company-published-a-report.spec.ts`) mark their real primary actions (Today row "Review", the KPI-extraction launcher) and assert the contract against them.
+
 ## Pre-write self-check (do this every time)
 
 Before writing JSX for a piece of UI, ask:
@@ -82,7 +107,7 @@ Rules:
 | Sub-navigation | `Subnav` | bespoke nav rows |
 | A filter bar | `FilterToolbar` | bespoke filter rows |
 | A row of actions | `ActionRow` | a flex div of buttons |
-| Sparkline / trend chart | `Sparkline` / `TrendChart` | a charting dependency or hand-drawn SVG |
+| Sparkline / trend chart / scaled line chart / candlesticks | `Sparkline` (axis-less inline) / `TrendChart` (per-period bars) / `LineChart` (dense close-only series) / `CandlestickChart` (dense OHLC series) — the scaled charts carry a y-scale + date span; a value the reader must gauge is never plotted scale-less | a charting dependency or hand-drawn SVG |
 
 ## Domain components (`src/shared/components`)
 
@@ -110,6 +135,8 @@ When the user configures a value, dimension, or layout, **prefer direct manipula
 3. **Live preview** — reflect the change as it happens (the grid redraws, the value updates), not only on commit.
 
 A bare numeric/text field alone is the **fallback**, for values with no meaningful range or visual. The grid-size picker in the composable-views creator ([ADR 0057](adr/0057-composable-views-and-curated-dashboard.md)) is the reference implementation: presets + linked slider/input + live preview.
+
+**Presets are for small option sets (≤ ~12).** A large taxonomy (dozens of values) rendered as an always-on chip wall is a UX defect, not visual-first: render **type-to-filter suggestions** instead — chips appear only once the typed value narrows the set, capped (~12), case-insensitive substring, nothing suggested on an exact match. The sector field (`CompanySectorField`) is the reference. Harvested 2026-07-14 from the ~90-chip sector-taxonomy wall.
 
 **A free-text settings field must edit a local draft and commit on blur/submit — never call `update_settings` per keystroke.** A controlled `TextField` bound directly to the round-tripped settings object cannot be typed into: the async save means React reverts each keystroke to the last-persisted value, and backend validation rejects every partial value on the way (e.g. a base URL fails the `http(s)://` check at `"h"`, `"ht"`, … — an error per keystroke). Keep a `useState` draft seeded from settings, commit on blur or an explicit save, and only then surface a validation error (the credential-key forms' draft pattern is the reference). Harvested 2026-07-02 from the S6 base-URL/freeform-model fields, which shipped unusable-by-typing.
 

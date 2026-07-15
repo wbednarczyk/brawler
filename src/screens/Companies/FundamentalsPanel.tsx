@@ -7,11 +7,13 @@ import { FACT_FORMS, pluralNoun, type PluralForms } from "../../shared/locale/pl
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { buildFactMatrix } from "./factMatrix";
 import { CompanyAutopilotField } from "../../shared/components/CompanyAutopilotField";
-import { CompanyIrReportsUrlField } from "../../shared/components/CompanyIrReportsUrlField";
 import { CustomKpiManager } from "../../shared/components/CustomKpiManager";
 import { DriftDiff, parseDrift } from "../../shared/components/DriftDiff";
 import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, SectionHeader, SelectField, Sparkline, StatusChip, TextField, TrendChart } from "../../ui";
 import { listFactProvenance, type FactProvenance } from "../../api/fundamentalsExtraction";
+import { getPriceContext } from "../../api/marketData";
+import type { PriceContext } from "../../api/marketData";
+import { PriceContextSection } from "./PriceContextSection";
 import type { FactMatrixRow } from "./factMatrix";
 import type {
   FinancialFactForm,
@@ -143,6 +145,29 @@ export function FundamentalsPanel({
     };
   }, [factIdsKey]);
 
+  // Price context (v0.53 T5, ADR 0067/0082): latest close/change, 52-week
+  // range, and level-0 market ratios, fundamentals-adjacent. A load failure
+  // (or a company whose price context is still loading) surfaces an inline
+  // error in place of the section rather than silently vanishing — the rest
+  // of the panel stays usable either way.
+  const [priceContext, setPriceContext] = useState<PriceContext | null>(null);
+  const [priceContextError, setPriceContextError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setPriceContext(null);
+    setPriceContextError(null);
+    getPriceContext(companyId)
+      .then((context) => {
+        if (!cancelled) setPriceContext(context);
+      })
+      .catch((cause) => {
+        if (!cancelled) setPriceContextError(String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
   // Reset the delete confirmation whenever the selected fact changes.
   useEffect(() => setConfirmDeleteFact(false), [selectedFinancialFactId]);
   const allDefinitions = useMemo(() => {
@@ -258,46 +283,17 @@ export function FundamentalsPanel({
         <ErrorText>{text("Failed to load fundamentals data")}: {fundamentalsLoadError}</ErrorText>
       ) : null}
 
-      {/* Autopilot section (U7-A): folds to a summary row + expand at the S tier
-          (container query), inline field at M/L. */}
-      <div className={`fundamentals-autopilot${autopilotExpanded ? " is-expanded" : ""}`}>
-        <button
-          type="button"
-          className="fundamentals-autopilot-toggle"
-          aria-expanded={autopilotExpanded}
-          onClick={() => setAutopilotExpanded((value) => !value)}
-        >
-          <span aria-hidden="true" className="fundamentals-autopilot-chevron">
-            <ChevronRight size={15} />
-          </span>
-          {text("Autopilot")}
-        </button>
-        <div className="fundamentals-autopilot-body">
-          <CompanyAutopilotField companyId={companyId} />
-        </div>
-      </div>
-
-      <CompanyIrReportsUrlField companyId={companyId} />
-
-      <CustomKpiManager companyId={companyId} onDefinitionsChange={setCompanyDefinitions} />
-
-      {/* Financial Periods List */}
-      <section className="fundamentals-section" aria-label={text("Reporting periods")}>
-        <SectionHeader level="h4" title={text("Reporting periods")} />
-        {financialPeriods.length > 0 ? (
-          <div className="periods-list">
-            {financialPeriods.map((period) => (
-              <div key={period.id} className="period-item">
-                <span className="period-label">
-                  {period.fiscalYear} {period.periodType.toUpperCase()}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <EmptyState>{text("No reporting periods yet.")}</EmptyState>
-        )}
-      </section>
+      {/* Section order (owner request 2026-07-14): price context first, the
+          financial-facts matrix second, everything else (periods, autopilot,
+          custom KPIs, forms) after. Sector and the IR reports URL live in the
+          Basic info panel, not here. */}
+      {priceContext ? (
+        <PriceContextSection data={priceContext} className="fundamentals-section" />
+      ) : priceContextError ? (
+        <ErrorText>
+          {text("Failed to load price context")}: {priceContextError}
+        </ErrorText>
+      ) : null}
 
       {/* Financial Facts List and Detail */}
       <section className="fundamentals-section" aria-label={text("Financial facts")}>
@@ -592,6 +588,45 @@ export function FundamentalsPanel({
           )}
         </div>
       </section>
+
+      {/* Financial Periods List */}
+      <section className="fundamentals-section" aria-label={text("Reporting periods")}>
+        <SectionHeader level="h4" title={text("Reporting periods")} />
+        {financialPeriods.length > 0 ? (
+          <div className="periods-list">
+            {financialPeriods.map((period) => (
+              <div key={period.id} className="period-item">
+                <span className="period-label">
+                  {period.fiscalYear} {period.periodType.toUpperCase()}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState>{text("No reporting periods yet.")}</EmptyState>
+        )}
+      </section>
+
+      {/* Autopilot section (U7-A): folds to a summary row + expand at the S tier
+          (container query), inline field at M/L. */}
+      <div className={`fundamentals-autopilot${autopilotExpanded ? " is-expanded" : ""}`}>
+        <button
+          type="button"
+          className="fundamentals-autopilot-toggle"
+          aria-expanded={autopilotExpanded}
+          onClick={() => setAutopilotExpanded((value) => !value)}
+        >
+          <span aria-hidden="true" className="fundamentals-autopilot-chevron">
+            <ChevronRight size={15} />
+          </span>
+          {text("Autopilot")}
+        </button>
+        <div className="fundamentals-autopilot-body">
+          <CompanyAutopilotField companyId={companyId} />
+        </div>
+      </div>
+
+      <CustomKpiManager companyId={companyId} onDefinitionsChange={setCompanyDefinitions} />
 
       {/* Reporting forms (U7-A density row): create-period + add-fact side-by-side
           at L, one column at M/S, folded behind a disclosure when the pane is

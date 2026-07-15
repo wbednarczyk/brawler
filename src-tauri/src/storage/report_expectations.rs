@@ -261,7 +261,8 @@ pub(super) fn create_report_expectation(
     }
 
     let id = report_expectation_id(&input.company_id, &event_key);
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     transaction.execute(
         "
         INSERT INTO report_expectations
@@ -299,7 +300,8 @@ pub(super) fn update_report_expectation(
 
     // The freeze check and the write share ONE transaction: facts confirmed
     // between the check and the write cannot slip an edit through.
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let header = load_header(&transaction, &input.company_id, &input.event_key)?;
     if facts_recorded_for_period(
         &transaction,

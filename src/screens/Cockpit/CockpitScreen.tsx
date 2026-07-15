@@ -12,6 +12,7 @@ import {
 } from "../../ui";
 import { TickerLabel } from "../../shared/components/TickerLabel";
 import { formatListTimestamp } from "../../shared/format/datetime";
+import { CompanyBasicInfoPanel } from "../../shared/components/CompanyBasicInfoPanel";
 import { CompanyClaimsPanel } from "../../shared/components/CompanyClaimsPanel";
 import { CompanyReportDocumentsPanel } from "../../shared/components/CompanyReportDocumentsPanel";
 import { CompanyCoveragePanel } from "../../shared/components/CompanyCoveragePanel";
@@ -27,6 +28,7 @@ import { MarkdownNoteBody } from "../../shared/components/MarkdownNoteBody";
 import { formatDetailTimestamp as formatTimestamp } from "../../shared/format/datetime";
 import { WatchlistsScreen } from "../Watchlists/WatchlistsScreen";
 import { ResearchScreen } from "../Research/ResearchScreen";
+import { useResearchViewModel } from "../../app/state/screenViewModels";
 import { NotebooksScreen } from "../Notebooks/NotebooksScreen";
 import { EventsScreen } from "../Events/EventsScreen";
 import { ReportSeasonScreen } from "../ReportSeason/ReportSeasonScreen";
@@ -56,6 +58,7 @@ import { listCockpitLayouts, saveCockpitLayout, type CockpitLayout } from "../..
 
 type LinkedKind = "feed" | "inspector" | "claims-sel" | "diff-sel";
 type PinnedKind =
+  | "basicInfo"
   | "fundamentals"
   | "coverage"
   | "review"
@@ -75,6 +78,7 @@ const LINKED: { id: string; kind: LinkedKind }[] = [
 ];
 
 const PINNED_KINDS: PinnedKind[] = [
+  "basicInfo",
   "fundamentals",
   "coverage",
   "review",
@@ -153,6 +157,9 @@ const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = [
   "fundamentals",
   "coverage",
   "companyFeed",
+  // 4th anchor slot (DockLayout places specs 0–3 as visible groups, the rest
+  // tab into the previous group): Basic info anchors the bottom-right group.
+  "basicInfo",
   "claims",
   "quality",
   "documents",
@@ -182,6 +189,8 @@ function isDashboardFollowSeeded(pinned: Pinned[]): boolean {
 
 function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string {
   switch (kind) {
+    case "basicInfo":
+      return text("Basic info");
     case "fundamentals":
       return text("Fundamentals");
     case "coverage":
@@ -230,18 +239,31 @@ type PresetSpec = {
   globals: GlobalKind[];
 };
 
+// Dashboard redesign (epic c793ca1): the cockpit is ONE company-scoped Dashboard;
+// presets are panel arrangements that ALL follow the currently-selected view
+// company (their company-scoped panels seed as FOLLOW, no frozen companyId —
+// see applyPreset). Default preset = "Company overview" (the curated dashboard
+// follow set). The retired standalone Research screen becomes the "Evidence /
+// Research" preset. Kept under the ≤6 visible-panel ceiling.
 const PRESETS: PresetSpec[] = [
   {
-    id: "daily-triage",
-    labelKey: "Daily triage",
-    linked: ["feed", "inspector", "claims-sel"],
-    pinned: [],
+    id: "company-overview",
+    labelKey: "Company overview",
+    linked: [],
+    pinned: DASHBOARD_DEFAULT_KINDS,
     globals: [],
+  },
+  {
+    id: "evidence",
+    labelKey: "Evidence / Research",
+    linked: [],
+    pinned: [],
+    globals: ["research"],
   },
   {
     id: "earnings-season",
     labelKey: "Earnings season",
-    linked: ["feed"],
+    linked: [],
     pinned: ["reportDiff", "fundamentals", "claims"],
     globals: ["reportSeason"],
   },
@@ -343,6 +365,9 @@ export type CockpitScreenProps = {
   initialCompanyId?: string | null;
   /** When set, the cockpit opens with this saved layout activated (ADR 0057). */
   initialLayoutId?: string | null;
+  /** When set, the Dashboard opens on this built-in preset (epic c793ca1) — e.g.
+   * the retired Research screen redirects here with the "evidence" preset. */
+  initialPresetId?: string | null;
   /** Notifies the host when saved layouts change (create/save/delete) so the
    * sidebar named-views list (ADR 0057 decision 5) stays in sync. */
   onLayoutsChanged?: () => void;
@@ -353,6 +378,7 @@ export function CockpitScreen({
   feedItems,
   initialCompanyId = null,
   initialLayoutId = null,
+  initialPresetId = null,
   onLayoutsChanged,
 }: CockpitScreenProps) {
   return (
@@ -365,6 +391,7 @@ export function CockpitScreen({
         companies={companies}
         feedItems={feedItems}
         initialLayoutId={initialLayoutId}
+        initialPresetId={initialPresetId}
         dashboardCompanyId={initialCompanyId}
         onLayoutsChanged={onLayoutsChanged}
       />
@@ -376,12 +403,17 @@ function CockpitWorkspace({
   companies,
   feedItems,
   initialLayoutId = null,
+  initialPresetId = null,
   dashboardCompanyId = null,
   onLayoutsChanged,
 }: Omit<CockpitScreenProps, "initialCompanyId"> & { dashboardCompanyId?: string | null }) {
   const { text } = useLocale();
   // Shared selection lives in the cockpit store (decision 6A), not local state.
   const { selection, selectedFeedItem, selectedCompany, selectFeedItem } = useCockpitSelection();
+  // The research/evidence panel (Dowody preset) reads from the shared research
+  // read model; keep a handle to retarget it to the view company below.
+  const { setMode: setResearchMode, setSelectedCompanyId: setResearchCompanyId } =
+    useResearchViewModel();
   // Seed the dashboard panels synchronously when opening scoped to a company so
   // the very first paint is already the curated dashboard — not the default
   // linked triad that then rebuilds into it (the "flash" on opening a company).
@@ -392,6 +424,13 @@ function CockpitWorkspace({
   // the ⌘K "switch view company" action set it. Seeded from the opening company;
   // a saved view's persisted value overrides it on apply.
   const [viewCompanyId, setViewCompanyId] = useState<string | null>(dashboardCompanyId ?? null);
+  // The active preset (Dashboard redesign, epic c793ca1): the Preset selector
+  // reflects it so the user always sees which arrangement is showing. A company
+  // dashboard opens on the "Company overview" preset (its seeded follow set);
+  // applying another preset or a saved/grid layout updates or clears it.
+  const [activePresetId, setActivePresetId] = useState<string | null>(
+    initialPresetId ?? (dashboardCompanyId ? "company-overview" : null),
+  );
   const [openGlobals, setOpenGlobals] = useState<GlobalKind[]>([]);
   const [closedLinked, setClosedLinked] = useState<Set<string>>(
     () => new Set(dashboardCompanyId ? DASHBOARD_CLOSED_LINKED : []),
@@ -470,7 +509,7 @@ function CockpitWorkspace({
   // the curated default. Applied once per company after layouts have loaded.
   const appliedDashboardRef = useRef<string | null>(null);
   useEffect(() => {
-    if (!dashboardCompanyId || initialLayoutId || !layoutsLoaded) return;
+    if (!dashboardCompanyId || initialLayoutId || initialPresetId || !layoutsLoaded) return;
     if (appliedDashboardRef.current === dashboardCompanyId) return;
     appliedDashboardRef.current = dashboardCompanyId;
     const saved = savedLayouts.find(
@@ -489,6 +528,33 @@ function CockpitWorkspace({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per company after layouts load; non-memoized fns intentionally excluded
   }, [dashboardCompanyId, layoutsLoaded, savedLayouts, initialLayoutId]);
 
+  // Open on a requested preset (epic c793ca1): the retired Research screen
+  // redirects into the Dashboard with the "evidence" preset. Applied once per
+  // mount after the view company is seeded, so the preset's panels (e.g. the
+  // research evidence timeline) render for that company.
+  const appliedPresetRef = useRef(false);
+  useEffect(() => {
+    if (appliedPresetRef.current || !initialPresetId) return;
+    const preset = PRESETS.find((item) => item.id === initialPresetId);
+    if (preset) {
+      appliedPresetRef.current = true;
+      applyPreset(preset);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- apply once per mount; applyPreset is a non-memoized component fn intentionally excluded
+  }, [initialPresetId]);
+
+  // The research/evidence cockpit panel (Dowody preset) follows the view company
+  // (epic c793ca1): when the view company changes, retarget the research read
+  // model to it so the evidence timeline tracks the Dashboard's company like every
+  // other follow panel. Guarded on a set view company (null ⇒ leave research state
+  // untouched). The setters are stable useState dispatchers, so this only fires on
+  // an actual view-company change.
+  useEffect(() => {
+    if (!viewCompanyId) return;
+    setResearchMode("company");
+    setResearchCompanyId(viewCompanyId);
+  }, [viewCompanyId, setResearchMode, setResearchCompanyId]);
+
   function seedCompanyDashboard(companyId: string) {
     setGridDims(null);
     setGridCells([]);
@@ -496,6 +562,7 @@ function CockpitWorkspace({
     setViewCompanyId(companyId);
     setOpenGlobals([]);
     setClosedLinked(new Set(DASHBOARD_CLOSED_LINKED));
+    setActivePresetId("company-overview");
     setResetNonce((nonce) => nonce + 1);
   }
 
@@ -549,6 +616,8 @@ function CockpitWorkspace({
 
   function renderPinned(kind: PinnedKind, companyId: string) {
     switch (kind) {
+      case "basicInfo":
+        return <CompanyBasicInfoPanel key={companyId} companyId={companyId} />;
       case "fundamentals":
         return <CockpitFundamentalsPanel companyId={companyId} revision={fundamentalsRevision} />;
       case "coverage":
@@ -867,27 +936,21 @@ function CockpitWorkspace({
     setResetNonce((nonce) => nonce + 1);
   }
 
-  // Built-in presets (phase 4d) compose the panel kinds for a task. Company-scoped
-  // panels open for the active company (the linked selection, else the first one);
-  // the nonce rebuilds the dock to the preset's default arrangement.
+  // Built-in presets compose the panel kinds for a task. Company-scoped panels
+  // seed as FOLLOW (Dashboard redesign, epic c793ca1): they track the view company
+  // and retarget in place when it changes, so every preset follows the currently
+  // selected company. The nonce rebuilds the dock to the preset's arrangement.
   function applyPreset(preset: PresetSpec) {
-    const companyId = selectedCompanyId ?? companies[0]?.id ?? null;
     setGridDims(null);
     setGridCells([]);
     setClosedLinked(
       new Set(LINKED.filter((linked) => !preset.linked.includes(linked.kind)).map((l) => l.id)),
     );
     setPinned(
-      companyId
-        ? preset.pinned.map((kind) => ({
-            id: pinnedId(companyId, kind),
-            kind,
-            mode: "pinned" as const,
-            companyId,
-          }))
-        : [],
+      preset.pinned.map((kind) => ({ id: followId(kind), kind, mode: "follow" as const })),
     );
     setOpenGlobals(preset.globals);
+    setActivePresetId(preset.id);
     if (selection.feedItemId == null) {
       selectFeedItem(feedItems[0]?.id ?? null);
     }
@@ -897,6 +960,9 @@ function CockpitWorkspace({
   function applyLayout(layout: CockpitLayout) {
     const panels = parsePanels(layout.panelsJson);
     if (!panels) return;
+    // A saved/grid layout is a custom arrangement, not a built-in preset — clear
+    // the active-preset reflection so the selector shows no preset selected.
+    setActivePresetId(null);
     // A saved view carries its view company (U-Ra); the persisted value wins.
     setViewCompanyId(panels.viewCompanyId);
     if (panels.grid) {
@@ -977,7 +1043,10 @@ function CockpitWorkspace({
   useCommandPaletteCommands("cockpit", commands);
 
   return (
-    <section className="cockpit-screen" aria-label={text("Research cockpit")}>
+    // Journey-metrics observation point (ADR 0074 pt 3 / ADR 0081 Q3):
+    // semantic marker for the company currently shown in the cockpit (null
+    // when the view isn't scoped to one), not test-only business state.
+    <section className="cockpit-screen" aria-label={text("Research cockpit")} data-company-id={viewCompanyId ?? undefined}>
       <div className="cockpit-toolbar">
         <SectionHeader
           level="h3"
@@ -1023,7 +1092,7 @@ function CockpitWorkspace({
           </SelectField>
           <SelectField
             label={text("Preset")}
-            value=""
+            value={activePresetId ?? ""}
             onChange={(event) => {
               const preset = PRESETS.find((item) => item.id === event.target.value);
               if (preset) applyPreset(preset);

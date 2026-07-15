@@ -314,6 +314,9 @@ export function FeedKpiExtractionPanel({ feedItem, providerConfigured }: FeedKpi
           </span>
           <Button
             className="compact-button"
+            // ADR 0081 Q4: the explicit experience-contract primary action
+            // for this "AI KPI extraction" surface — open the extractor.
+            data-ux-primary-action="true"
             disabled={busy}
             onClick={() => setFlowOpen(true)}
             variant="primary"

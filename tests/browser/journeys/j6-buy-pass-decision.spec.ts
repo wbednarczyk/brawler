@@ -24,13 +24,16 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
   test("review the synthesis then record the decision in the journal", async ({ page }) => {
     const j = journey(page, "J6");
     await openApp(page);
+    await j.markScreen("Today");
 
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
     await expect(page.getByLabel("Companies list")).toBeVisible();
+    await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list (buy/pass decision)");
     await j.click(page.getByRole("button", { name: "Open GPW:CDR dashboard" }));
     const cockpit = page.getByLabel("Research cockpit");
     await expect(cockpit).toBeVisible();
+    await j.markScreen("Company workspace");
 
     // Synthesis part 1: the fundamentals matrix (facts) renders directly.
     await expect(page.getByLabel("Financial facts matrix")).toBeVisible();
@@ -55,6 +58,7 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
     // the cockpit exposes everywhere.
     await j.click(cockpit.getByRole("button", { name: "Add panel" }));
     const palette = page.getByRole("dialog", { name: "Command palette" });
+    await j.markModal("Command palette");
     await j.fill(palette.getByLabel("Search commands"), "Open panel: Decision journal");
     await j.click(
       palette.getByRole("button", { name: "Open panel: Decision journal", exact: true }).first(),
@@ -91,6 +95,6 @@ test.describe("J6 — buy / pass decision", { tag: "@journey" }, () => {
     await expect(linkButtons).toHaveCount(linkCountBefore - 1);
     await expectNoPageOverflow(page);
 
-    j.assertBudget();
+    await j.assertBudget();
   });
 });

@@ -9,6 +9,8 @@ pub mod history_sweep;
 pub mod kpi_extraction;
 pub mod qualitative_assessment;
 pub mod queue;
+pub mod quote_backfill;
+pub mod quote_daily_pull;
 pub mod report_extraction;
 pub mod research_briefs;
 pub mod research_digests;

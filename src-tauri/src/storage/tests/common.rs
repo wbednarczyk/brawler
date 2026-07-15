@@ -12,6 +12,7 @@ pub(super) fn registry_entry(
         display_name: display_name.to_owned(),
         isin: isin.to_owned(),
         source_url: format!("https://www.gpw.pl/spolka?isin={isin}"),
+        sector: None,
     }
 }
 

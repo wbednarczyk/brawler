@@ -113,13 +113,15 @@ describe("Research cockpit shell", () => {
     expect(within(cockpit).getByRole("button", { name: "Feed" })).toBeInTheDocument();
   });
 
-  it("applies a built-in preset that composes the right panels (phase 4d)", async () => {
+  it("applies a preset composing FOLLOW panels for the view company (Dashboard redesign)", async () => {
     const user = userEvent.setup();
     renderApp({ section: "Cockpit" });
     const cockpit = await screen.findByLabelText("Research cockpit");
 
-    // The Earnings season preset opens the Report Season global panel plus
-    // company-scoped Report comparison / Fundamentals / Claims.
+    // Presets follow the view company (epic c793ca1): pick a view company first,
+    // then the Sezon raportów preset opens the Report Season global plus
+    // company-scoped Report comparison / Fundamentals / Claims — as FOLLOW panels.
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
     await user.selectOptions(within(cockpit).getByLabelText("Preset"), "earnings-season");
 
     await waitFor(async () => {
@@ -129,6 +131,32 @@ describe("Research cockpit shell", () => {
     expect(
       (await within(cockpit).findAllByRole("button", { name: /Fundamentals/ })).length,
     ).toBeGreaterThan(0);
+    // Follow panels are kind-only (no ticker prefix) — they track the view company,
+    // they do not freeze it. A "GPW:CDR · …" pinned tab must NOT appear.
+    expect(within(cockpit).queryByRole("button", { name: /GPW:CDR ·/ })).not.toBeInTheDocument();
+    // The Preset selector reflects the active preset (visual-first UX): the user
+    // sees which arrangement is showing, not a reset-to-placeholder select.
+    expect(within(cockpit).getByLabelText("Preset")).toHaveValue("earnings-season");
+  });
+
+  it("Dowody / Research preset composes the research evidence panel", async () => {
+    const user = userEvent.setup();
+    renderApp({ section: "Cockpit" });
+    const cockpit = await screen.findByLabelText("Research cockpit");
+
+    // The retired standalone Research screen becomes a Dashboard preset (epic
+    // c793ca1). Selecting the "evidence" preset composes the research evidence
+    // panel as the sole global — proven here by its tab title. The panel's
+    // real evidence render (following the view company) is proven in the browser
+    // spec cockpit-view-company.spec.ts (jsdom dockview does not mount panel
+    // bodies after a layout rebuild).
+    await user.selectOptions(within(cockpit).getByLabelText("View company"), "company_gpw_cdr");
+    await user.selectOptions(within(cockpit).getByLabelText("Preset"), "evidence");
+
+    await waitFor(async () => {
+      const tabs = await within(cockpit).findAllByRole("button", { name: /Research/ });
+      expect(tabs.length).toBeGreaterThan(0);
+    });
   });
 
   it("opens a global app screen as a cockpit panel (phase 4c)", async () => {

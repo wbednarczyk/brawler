@@ -53,6 +53,18 @@ pub fn eval(expr: &Expr, resolver: &dyn MetricResolver) -> Value {
 }
 
 fn eval_call(func: Func, args: &[Expr], resolver: &dyn MetricResolver) -> Value {
+    // coalesce takes full expressions: the first one that evaluates to an
+    // available value wins; every-unavailable stays Unavailable (never 0).
+    if func == Func::Coalesce {
+        for arg in args {
+            match eval(arg, resolver) {
+                Value::Unavailable => continue,
+                available => return available,
+            }
+        }
+        return Value::Unavailable;
+    }
+
     // First arg is always a metric key; cagr/avg/trend take a second arg `n`.
     let Some(Expr::Metric { key }) = args.first() else {
         return Value::Unavailable;

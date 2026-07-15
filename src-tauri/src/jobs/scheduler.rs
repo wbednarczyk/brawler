@@ -92,10 +92,14 @@ fn compute_schedule(
 ) -> ScheduleDecision {
     let mut decision = ScheduleDecision::default();
 
-    // Feed/source adapters share the global poll interval (matching the frontend).
+    // Feed/source adapters share the global poll interval (matching the
+    // frontend) — unless an adapter declares a LONGER default interval (e.g.
+    // the daily market_data pulls, ADR 0082): the effective interval is
+    // max(global, adapter default) so a 900s global poll never hammers a
+    // once-a-day source.
     if poll_seconds > 0 {
-        let interval_ms = poll_seconds * 1000;
         for adapter in adapters.iter().filter(|a| a.enabled && !a.is_registry) {
+            let interval_ms = poll_seconds.max(adapter.default_poll_interval_seconds) * 1000;
             let due = prior_source_due
                 .remove(&adapter.id)
                 .unwrap_or_else(|| now + interval_ms + start_jitter_ms(&adapter.id));
@@ -278,6 +282,29 @@ mod tests {
         assert!(!decision.next_source.contains_key("off"));
         assert_eq!(decision.registry_to_refresh, None);
         assert_eq!(decision.next_registry, None);
+    }
+
+    #[test]
+    fn compute_schedule_honors_a_longer_per_adapter_interval() {
+        // A market_data adapter declares a daily cadence; the global feed poll
+        // (e.g. 900s) must not hammer it — the effective interval is
+        // max(global, adapter default) (ADR 0082 rate-limit policy).
+        let daily = TickAdapter {
+            id: "yahoo-eod".to_owned(),
+            enabled: true,
+            is_registry: false,
+            default_poll_interval_seconds: 86_400,
+        };
+        let prior = HashMap::from([("yahoo-eod".to_owned(), NOW - 1)]);
+
+        let decision = compute_schedule(NOW, 900, &[daily], prior, None);
+
+        assert_eq!(decision.source_to_refresh, vec!["yahoo-eod".to_owned()]);
+        assert_eq!(
+            decision.next_source.get("yahoo-eod"),
+            Some(&(NOW + 86_400_000)),
+            "re-armed on its own daily interval, not the 900s global poll"
+        );
     }
 
     #[test]

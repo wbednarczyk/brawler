@@ -80,3 +80,5 @@
 - [0077](0077-trusted-extraction-foundations.md) — Trusted Extraction Foundations — Document Taxonomy, Coverage Map, History Sweep, Free-Tier Vision Fallback — Accepted (2026-07-08)
 - [0078](0078-mcp-external-surface.md) — External Surface — Read-Only MCP Server MVP (NS1 Slice 1) — Accepted (2026-07-11, owner sign-off)
 - [0080](0080-retire-embedding-model.md) — Retire the Local Embedding Model and Dead Subsystems — Accepted (2026-07-11, owner sign-off)
+- [0081](0081-ux-quality-loop-v2.md) — UX Quality Loop v2 — Experience Contracts, Adversarial Validation, Continuous Dogfooding — Accepted (owner sign-off 2026-07-12)
+- [0082](0082-market-data-source-selection.md) — Market-Data Source Selection — Yahoo primary, robots-allowed witnesses (Twelve Data secondary removed by amendment) — Accepted

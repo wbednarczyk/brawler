@@ -23,3 +23,7 @@ The app has grown to 14 sections whose *micro*-consistency is machine-enforced (
 - New-feature planning starts from a journey (which one does this serve?) rather than a screen.
 - `ui-flows.md` remains the per-feature behavior spec; journeys reference it, no duplication.
 - Budgets are honest numbers, not aspirations: first measurement sets them; improvements tighten them deliberately.
+
+## Related (2026-07-12)
+
+[ADR 0081](0081-ux-quality-loop-v2.md) builds a UX decision-validation loop on top of this journey substrate (experience contracts, adversarial scenarios, richer journey metrics, contact-sheet review, early live checkpoints). It reuses these journeys and step budgets; it does not change this ADR's decisions.

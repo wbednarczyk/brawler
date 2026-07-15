@@ -2,7 +2,34 @@ import { describe, it, expect, vi } from "vitest";
 import { createRef } from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 
-import { Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+import { Button, Checkbox, DateField, ErrorText, ExpandableRow, FilterToolbar, Hint, ListRow, PanelHeader, SectionHeader, StatusChip, StatusPill, TextareaField } from "./index";
+
+// ADR 0081 Q4: Button emits stable data-ui-button-variant metadata so scoped
+// interaction-contract helpers (tests/browser/helpers/interactionContracts.ts)
+// can find primitive icon buttons without falling back to a CSS class selector.
+describe("Button", () => {
+  it("emits a stable data-ui-button-variant attribute matching the variant prop", () => {
+    render(<Button variant="primary">Save</Button>);
+    expect(screen.getByRole("button", { name: "Save" })).toHaveAttribute("data-ui-button-variant", "primary");
+  });
+
+  it("emits the attribute for every variant, including the default", () => {
+    const { rerender } = render(<Button>Default</Button>);
+    expect(screen.getByRole("button", { name: "Default" })).toHaveAttribute("data-ui-button-variant", "secondary");
+
+    rerender(
+      <Button variant="icon" aria-label="icon action">
+        x
+      </Button>,
+    );
+    expect(screen.getByRole("button", { name: "icon action" })).toHaveAttribute("data-ui-button-variant", "icon");
+  });
+
+  it("forwards an explicit experience-contract primary-action marker without inferring it", () => {
+    render(<Button data-ux-primary-action="true">Continue</Button>);
+    expect(screen.getByRole("button", { name: "Continue" })).toHaveAttribute("data-ux-primary-action", "true");
+  });
+});
 
 describe("ErrorText", () => {
   it("renders an alert with the error-text class", () => {

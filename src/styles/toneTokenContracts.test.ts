@@ -69,6 +69,33 @@ describe("StatusChip tone CSS contract", () => {
   });
 });
 
+describe("StatusPill contrast contract", () => {
+  // WCAG AA regression (a11y fix, Radicle 9416da8): -ok originally used the raw
+  // --success token as text color on a 10%-tinted background and failed 4.5:1
+  // contrast in the light theme. The fix mixes the tone 72% toward --text so
+  // the pill darkens/lightens with the active palette. -warn and -danger use
+  // the identical construction (raw tokens are otherwise indistinguishable
+  // from an accidental revert of the same class of bug).
+  it("mixes ok/warn/danger pill text 72% toward --text, never a raw tone token", () => {
+    const pillTones = ["ok", "warn", "danger"] as const;
+    const tokenFor: Record<(typeof pillTones)[number], string> = {
+      ok: "success",
+      warn: "warning",
+      danger: "danger",
+    };
+    for (const tone of pillTones) {
+      const rule = uiCss.match(new RegExp(`\\.ui-status-pill-${tone}\\s*\\{[^}]*\\}`));
+      expect(rule, `expected a .ui-status-pill-${tone} rule`).not.toBeNull();
+      const body = rule![0];
+      const token = tokenFor[tone];
+      expect(
+        body,
+        `.ui-status-pill-${tone} must mix --${token} 72% toward --text for AA contrast:\n${body}`,
+      ).toMatch(new RegExp(`color:\\s*color-mix\\(in srgb,\\s*var\\(--${token}\\)\\s*72%,\\s*var\\(--text\\)\\)`));
+    }
+  });
+});
+
 describe("Semantic tone token contract", () => {
   it("defines all --tone-* tokens in all four palette × mode theme blocks", () => {
     const blocks = themeBlocks();

@@ -934,7 +934,7 @@ record; the charter records how it is restored or why it is intentionally durabl
 rtk npm test -- journeyMetrics runtime overlays primitives
 rtk npx playwright test tests/browser/journeys/j1-morning-review.spec.ts tests/browser/journeys/j2-company-published-a-report.spec.ts
 rtk npx playwright test --project=chromium-visual --project=chromium-visual-light
-rtk make ux-contact-sheet SCREENS="today,inbox,fundamentals,claims,notebook"
+rtk make ux-contact-sheet SCREENS="today,inbox,fundamentals,claims,notebook-company"
 rtk make live-cycle LIVE_SPEC=tests/live/ux-quality-pilot.live.spec.ts
 rtk make check
 rtk make check-epic
@@ -976,6 +976,102 @@ approval to redesign the screens. Q9 copies/completes them only after v0.52 land
 
 State rows required at Q9: quiet/empty, progressive loading, partial category failure,
 success stream, full error, stale processing, dense hostile stream.
+
+#### J1 worked experience contract (Q1 example)
+
+**NOT redesign approval — current-state description only.** This applies
+[`EXPERIENCE-CONTRACT-TEMPLATE.md`](EXPERIENCE-CONTRACT-TEMPLATE.md)'s 11 sections to
+the condensed table above, to prove an implementer can fill the template from a real
+screen without re-deriving its shape. Q9 owns the final owner-approved version (a
+real, owner-reviewed `docs/mockups/j1-morning-review-storyboard.html` and live pilot
+evidence); until then, no field here authorizes a Today-screen redesign.
+
+**1. Card, plan section, owner, status, served journey, first red journey test**
+
+| Field | Value |
+| --- | --- |
+| Radicle card | `b899ec1` (Q1 template task); the full pilot is `31a0fd5` (Q9) |
+| Plan section | `docs/plans/ux-quality-loop-v2.md` § Pilot appendix — current-state experience contracts |
+| Owner | wbednarczyk |
+| Status | worked example — current-state description, not owner-approved for redesign |
+| Served journey | J1 — Morning review (`docs/ux-journeys.md`) |
+| First red journey test | `tests/browser/journeys/j1-morning-review.spec.ts` hostile/partial case |
+
+**2. User / context and trigger**
+
+User opens Brawler at the start of a review session.
+
+**3. Desired outcome and the decision being made**
+
+Outcome: the user knows what changed and which 0–2 items deserve attention. Decision:
+open an item now, leave it for later, or conclude the state is quiet.
+
+**4. Evidence required before that decision**
+
+source/company/type/date, why the item is surfaced, one clear review action, explicit
+partial/error state.
+
+**5. Information hierarchy**
+
+| Tier | Content |
+| --- | --- |
+| Must-see | prioritized stream, identity, timestamp, reason/action |
+| Secondary | counters and supporting summary |
+| Hidden until needed | run detail and deep company panels |
+
+**6. Primary action**
+
+Review the selected attention item; a quiet state has no artificial CTA.
+
+**7. Entry path, exit/next step, and recovery/undo path**
+
+| Path | Description |
+| --- | --- |
+| Entry | app start → Today |
+| Exit / next step | Review → company cockpit; return → preserved Today context |
+| Recovery / undo | failed category is explicit and retryable; it cannot masquerade as quiet |
+
+**8. Done-well criteria**
+
+High-signal state is handled in under ten minutes and no important item is silently
+absent — distinct from merely "an item was reviewed".
+
+**9. Assumptions and explicitly excluded redesign scope**
+
+| | |
+| --- | --- |
+| Assumptions | today's attention-stream data shape and navigation stay as-is; this describes the current screen, not a future one |
+| Excluded scope | this contract does not authorize any Today-screen redesign; a visual change needs its own owner-approved contract |
+
+**10. Storyboard frame table**
+
+Illustrative only — no visual storyboard file exists yet for J1; Q9 adds an
+owner-approved `docs/mockups/j1-morning-review-storyboard.html` and this row then
+links to it.
+
+| Frame | State named | Primary action | Feedback | Intended focus |
+| --- | --- | --- | --- | --- |
+| Entry | quiet or populated attention stream on app start | Review (if any item present) | stream renders prioritized items, or the quiet message | first attention item, or the quiet-state message |
+| Before action | item selected in the stream, not yet opened | Review the selected item | selected row is highlighted | selected row |
+| Loading / in-flight | attention categories still resolving | none (wait) | per-category progressive loading indicator | the still-loading category |
+| Success | item reviewed, stream reflects it | next item, or return to Today | reviewed item is marked/removed from the pending stream | next unresolved item, or the quiet message if none remain |
+| Error | one or more attention categories failed to load | Retry the failed category | explicit failed-category message, distinct from quiet | the failed-category message and its retry action |
+| Undo / recovery | user retries a failed category | Retry | category re-attempts and either succeeds or fails explicitly again | the retried category |
+| Narrow pane | same stream at ~960–1280px tall-narrow width | Review (if any item present) | stream stacks single-column, scrolls internally, no global horizontal scrollbar | first attention item |
+
+Storyboard: `docs/mockups/j1-morning-review-storyboard.html` (Q9, owner-approved)
+
+**11. State matrix**
+
+| State | User sees | Primary action | Feedback/recovery | Automated proof | Human review |
+| --- | --- | --- | --- | --- | --- |
+| Empty | quiet-state message, no artificial CTA | none | N/A — nothing to recover from | `tests/browser/journeys/j1-morning-review.spec.ts` quiet case | Q9 contact sheet |
+| Loading | per-category progressive loading indicator | none (wait) | indicator resolves per category as data arrives | `tests/browser/journeys/j1-morning-review.spec.ts` progressive-loading case | Q9 contact sheet |
+| Partial | some categories loaded, one still pending or failed | Review available items; retry the pending/failed category | pending/failed category is explicit, never merged into "quiet" | Q2 `partial-data` overlay case | Q9 contact sheet |
+| Success | prioritized attention stream with identity/timestamp/reason | Review the selected item | reviewed item is marked/removed | `tests/browser/journeys/j1-morning-review.spec.ts` happy case | Q9 contact sheet |
+| Error | explicit failed-category message | Retry the failed category | retry re-attempts; failure cannot masquerade as quiet | `tests/browser/journeys/j1-morning-review.spec.ts` hostile/partial case | Q9 contact sheet |
+| Stale | previously loaded stream with an in-flight refresh | Review existing items; wait for refresh | stale content is never silently replaced by an out-of-order response | Q2 controlled-async held/released `list_*` case | Q9 contact sheet |
+| Dense | hundreds of attention items, long/mixed-language titles and URLs | Review the selected item | list scrolls internally, no overflow, no truncated-to-empty rows | Q2 `dense-history` + `hostile-content` overlay case | Q9 contact sheet |
 
 ### J2 — company published a report
 

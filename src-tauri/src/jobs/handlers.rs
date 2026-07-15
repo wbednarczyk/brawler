@@ -226,6 +226,28 @@ impl JobHandler for SourceCompanyRefreshHandler {
     }
 }
 
+/// A full-history quote backfill for one company (ADR 0082, v0.53 T2). Runs
+/// on company add / on `yahoo-eod` being enabled (planned via
+/// `jobs::quote_backfill::enqueue_backfill_for_company`). Serializes on the
+/// `yahoo-eod` source lock (ADR 0059) so it never races the scheduled daily
+/// pull for the same source. Returns `Err` on failure so the queue retries
+/// with backoff.
+struct QuoteBackfillHandler;
+
+impl JobHandler for QuoteBackfillHandler {
+    fn kind(&self) -> &'static str {
+        crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND
+    }
+
+    fn serialization_key(&self, _payload: &str) -> Option<String> {
+        Some(crate::jobs::quote_backfill::YAHOO_ADAPTER_ID.to_owned())
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::quote_backfill::run_quote_backfill_job(state, payload)
+    }
+}
+
 /// A scheduled company-registry refresh-if-stale check (Rust-side scheduler).
 struct ScheduledRegistryRefreshHandler;
 
@@ -268,6 +290,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
     worker.register(Arc::new(SourceCompanyRefreshHandler));
     worker.register(Arc::new(ScheduledRegistryRefreshHandler));
+    worker.register(Arc::new(QuoteBackfillHandler));
     worker
 }
 
@@ -287,6 +310,7 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 SOURCE_REFRESH_KIND,
                 SOURCE_COMPANY_REFRESH_KIND,
                 REGISTRY_REFRESH_KIND,
+                crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND,
             ],
             workers: config.sources_workers.max(1) as usize,
         },

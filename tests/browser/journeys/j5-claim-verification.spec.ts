@@ -18,12 +18,15 @@ test.describe("J5 — claim verification", { tag: "@journey" }, () => {
   test("resolve a due claim against its evidence", async ({ page }) => {
     const j = journey(page, "J5");
     await openApp(page);
+    await j.markScreen("Today");
 
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
     await expect(page.getByLabel("Companies list")).toBeVisible();
+    await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list (claim verification)");
     await j.click(page.getByRole("button", { name: "Open GPW:CDR dashboard" }));
     await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    await j.markScreen("Company workspace");
 
     // Open the Claims tab; force the pane to L so the review queue (with the
     // Delivered/Missed actions) renders regardless of the project's viewport.
@@ -42,6 +45,6 @@ test.describe("J5 — claim verification", { tag: "@journey" }, () => {
     await expect(claimsPane.getByLabel("Claim verdict").first()).toHaveValue("delivered");
     await expectNoPageOverflow(page);
 
-    j.assertBudget();
+    await j.assertBudget();
   });
 });

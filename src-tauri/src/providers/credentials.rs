@@ -111,6 +111,21 @@ pub fn credentialed_provider_ids() -> &'static [&'static str] {
     ]
 }
 
+/// Every provider id `provider_credential_descriptor` resolves — the canonical
+/// enumeration behind the "every credential is enterable in Settings" guardrail
+/// (owner report 2026-07-14: the twelvedata-eod key had no Settings field, so
+/// it was physically un-enterable). Adding a descriptor arm below REQUIRES
+/// adding the id here: a test pins this list to the shared fixture
+/// `src/test/scenarios/credentialProviders.json`, and the frontend test checks
+/// every fixture id has a Settings form entry.
+pub const CREDENTIAL_PROVIDER_IDS: &[&str] = &[
+    "provider_gemini",
+    "provider_anthropic",
+    "provider_openai",
+    "provider_openai_compatible",
+    "provider_mistral",
+];
+
 /// Resolve the credential descriptor for a provider id, if it uses a credential.
 pub fn provider_credential_descriptor(provider_id: &str) -> Option<CredentialDescriptor> {
     match provider_id {
@@ -424,6 +439,31 @@ fn status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Guardrail (owner report 2026-07-14, twelvedata-eod was un-enterable):
+    // every credential-bearing provider id is enumerated, resolvable, and
+    // pinned byte-for-byte in the shared fixture the frontend test reads to
+    // assert each one has a Settings form. Adding a descriptor without
+    // updating the fixture (and then the Settings list) reddens here or there.
+    #[test]
+    fn every_credential_provider_id_resolves_and_matches_the_shared_fixture() {
+        for provider_id in CREDENTIAL_PROVIDER_IDS {
+            assert!(
+                provider_credential_descriptor(provider_id).is_some(),
+                "{provider_id} is enumerated but resolves no descriptor"
+            );
+        }
+        let fixture: Vec<String> = serde_json::from_str(include_str!(
+            "../../../src/test/scenarios/credentialProviders.json"
+        ))
+        .expect("credentialProviders.json parses");
+        assert_eq!(
+            fixture, CREDENTIAL_PROVIDER_IDS,
+            "src/test/scenarios/credentialProviders.json drifted from \
+             CREDENTIAL_PROVIDER_IDS — update BOTH deliberately (and give any \
+             new provider a Settings credential form)"
+        );
+    }
 
     #[test]
     fn empty_secret_is_rejected_before_keychain_access() {

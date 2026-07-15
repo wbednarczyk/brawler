@@ -79,6 +79,27 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
         "list_companies" => {
             serde_json::to_value(state.list_companies().expect("list_companies")).unwrap()
         }
+        // Price context read model (v0.53 T5, ADR 0067/0082). Same computed-model
+        // helper the command wrapper offloads, so the corpus can never diverge
+        // from real assembly.
+        "get_price_context" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::market_data::compute_price_context(state, company_id)
+                    .expect("get_price_context"),
+            )
+            .unwrap()
+        }
+        // Basic info read model (v0.53 follow-up): same computed-model helper
+        // the command wrapper uses.
+        "get_company_basic_info" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::companies::compute_company_basic_info(state, company_id)
+                    .expect("get_company_basic_info"),
+            )
+            .unwrap()
+        }
         "save_cockpit_layout" => {
             let new: NewCockpitLayout = serde_json::from_value(inner).expect("NewCockpitLayout");
             serde_json::to_value(

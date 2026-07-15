@@ -160,6 +160,9 @@ export function AppStateRoot({
   // The company a workspace "Advanced layout" toggle scopes the dockview cockpit
   // to (ADR 0054); null = the cockpit opened directly, unscoped.
   const [cockpitInitialCompanyId, setCockpitInitialCompanyId] = useState<string | null>(null);
+  // The built-in preset the Dashboard opens on (epic c793ca1); null = its default
+  // (company overview). The retired Research screen redirects here with "evidence".
+  const [cockpitInitialPresetId, setCockpitInitialPresetId] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>("dark");
   const [accentPalette, setAccentPalette] = useState<UserSettings["accentPalette"]>("night-neon");
   const [locale, setLocale] = useState<UserSettings["locale"]>("en");
@@ -288,6 +291,7 @@ export function AppStateRoot({
   // clear any company scope so it renders as the pure view.
   function openCockpitView(layoutId: string) {
     setCockpitInitialCompanyId(null);
+    setCockpitInitialPresetId(null);
     setActiveCockpitLayoutId(layoutId);
     setActiveSection("Cockpit");
   }
@@ -338,6 +342,7 @@ export function AppStateRoot({
       .then((layout) => {
         setCreateViewOpen(false);
         setCockpitInitialCompanyId(null);
+        setCockpitInitialPresetId(null);
         setActiveCockpitLayoutId(layout.id);
         setActiveSection("Cockpit");
         refreshCockpitLayouts();
@@ -1138,6 +1143,9 @@ export function AppStateRoot({
         setActiveSection("Notebooks");
         break;
       case "research":
+        // The standalone Research screen is retired (epic c793ca1): open the
+        // company Dashboard on the "evidence" preset, which hosts the research
+        // evidence timeline following the view company.
         if (item.evidenceType === "research_question") {
           if (researchMode !== "company") {
             setResearchMode("company");
@@ -1147,7 +1155,7 @@ export function AppStateRoot({
           }
           setSelectedResearchQuestionId(item.sourceId);
         }
-        setActiveSection("Research");
+        openAdvancedLayout(item.companyId, "evidence");
         break;
       case "events":
         setCompanyEventCompanyFilter(item.companyId);
@@ -1193,13 +1201,17 @@ export function AppStateRoot({
         break;
       case "research_brief":
       case "digest":
+        // Retired Research screen (epic c793ca1): a brief/digest search result opens
+        // the company Dashboard on the "evidence" preset (the research timeline).
         if (match.companyId) {
           if (researchMode !== "company") {
             setResearchMode("company");
           }
           setSelectedResearchCompanyId(match.companyId);
+          openAdvancedLayout(match.companyId, "evidence");
+        } else {
+          openDashboard();
         }
-        setActiveSection("Research");
         break;
       case "event":
         if (match.companyId) {
@@ -1612,11 +1624,28 @@ export function AppStateRoot({
 
   // Open the cockpit dashboard scoped to a company. Kept named `openAdvancedLayout`
   // for its existing callers; it is now the single company deep-dive entry point.
-  function openAdvancedLayout(companyId: string) {
+  function openAdvancedLayout(companyId: string, presetId: string | null = null) {
     setSelectedCompanyId(companyId);
     setActiveCockpitLayoutId(null);
     setCockpitInitialCompanyId(companyId);
+    setCockpitInitialPresetId(presetId);
     setActiveSection("Cockpit");
+  }
+
+  // The left-nav "Dashboard" entry (epic c793ca1): open the one company-scoped
+  // Dashboard, never blank. Seed the default company from the last-viewed one,
+  // else a pinned company, else the first tracked company. With no companies at
+  // all, fall back to the (empty-state) cockpit so the entry still resolves.
+  function openDashboard() {
+    const target = cockpitInitialCompanyId ?? pinnedCompanyIds[0] ?? companies[0]?.id ?? null;
+    if (target) {
+      openAdvancedLayout(target);
+    } else {
+      setActiveCockpitLayoutId(null);
+      setCockpitInitialCompanyId(null);
+      setCockpitInitialPresetId(null);
+      setActiveSection("Cockpit");
+    }
   }
 
   return (
@@ -1631,6 +1660,7 @@ export function AppStateRoot({
         refreshDatabaseBackedViews={refreshDatabaseBackedViews}
         refreshSources={refreshSources}
         setActiveSection={setActiveSection}
+        onOpenDashboard={openDashboard}
         onCreateView={() => setCreateViewOpen(true)}
         cockpitViews={cockpitViews}
         activeCockpitViewId={cockpitInitialCompanyId ? null : activeCockpitLayoutId}
@@ -1750,6 +1780,7 @@ export function AppStateRoot({
                         feedItems={feedState}
                         initialCompanyId={cockpitInitialCompanyId}
                         initialLayoutId={activeCockpitLayoutId}
+                        initialPresetId={cockpitInitialPresetId}
                         onLayoutsChanged={refreshCockpitLayouts}
                       />
                     </EventsProvider>
@@ -1805,6 +1836,12 @@ export function AppStateRoot({
               <WatchlistsScreen />
             </WatchlistsProvider>
           ) : null}
+          {/* The standalone Research screen is retired as a *nav destination*
+              (epic c793ca1): no sidebar entry, and user-facing callers
+              (openResearchEvidence, brief/digest search) redirect into the
+              Dashboard "evidence" preset. The `activeSection === "Research"`
+              render is kept for programmatic/deep-link navigation, consistent
+              with the sibling panel-hosted sections (Notebooks/Events/ReportSeason). */}
           {activeSection === "Research" ? (
             <ResearchProvider value={researchViewModel}>
               <ResearchScreen />

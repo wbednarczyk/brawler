@@ -414,6 +414,43 @@
   gap: var(--space-3);
 }
 
+/* Sector presets (v0.53 M2 T3, ADR 0067 Decision 3): visual-first taxonomy
+   chips above the free-entry field (docs/ui-authoring.md § Configuration is
+   visual-first). A "filter chip" picker cell — raw <button>, intentionally
+   not lint-banned (docs/ui-authoring.md § When a native element is
+   acceptable) — since neither StatusChip (non-interactive) nor
+   SegmentedControl (fixed small tab set, no wrap) fit an open, wrapping
+   taxonomy list. */
+.sector-preset-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin: var(--space-1) 0;
+}
+
+.sector-preset-chip {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--surface-raised);
+  font-size: var(--font-sm);
+  cursor: pointer;
+}
+
+.sector-preset-chip:hover {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary) 40%, var(--border));
+}
+
+.sector-preset-chip-active {
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
+  background: color-mix(in srgb, var(--primary) 18%, var(--surface-raised));
+  font-weight: 700;
+}
+
 .fundamentals-form label,
 .fact-form-grid label {
   display: flex;
@@ -657,6 +694,111 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Price context section (v0.53 T5, ADR 0067) — fundamentals-adjacent, same
+   card idiom as the fact-detail blocks above. */
+.price-context-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.price-context-history-chart {
+  width: 100%;
+}
+
+.price-context-staleness {
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+.price-context-headline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.price-context-close {
+  font-size: var(--font-lg);
+  font-weight: 700;
+}
+
+.price-context-close-date {
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+/* Basic info panel (owner request 2026-07-14): read-only identity facts in the
+   shared key/value row idiom; edit fields fold behind the panel-level toggle. */
+.basic-info-grid dd > .ui-status-chip {
+  margin-left: var(--space-2);
+}
+
+.basic-info-edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px dashed var(--border);
+}
+
+.basic-info-grid,
+.price-context-range-grid,
+.price-context-ratio-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: var(--space-5);
+  margin: 0;
+}
+
+.basic-info-grid > div,
+.price-context-range-grid > div,
+.price-context-ratio-grid > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-2) var(--space-0);
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.basic-info-grid > div:last-child,
+.price-context-range-grid > div:last-child,
+.price-context-ratio-grid > div:last-child {
+  border-bottom: none;
+}
+
+.basic-info-grid dt,
+.price-context-range-grid dt,
+.price-context-ratio-grid dt {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.basic-info-grid dd,
+.price-context-range-grid dd,
+.price-context-ratio-grid dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-size: var(--font-md);
+  font-variant-numeric: tabular-nums;
+}
+
+.price-context-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+
 /* Management claims tracker styles moved to src/styles/claims.css (ADR 0076 D6
    density-contract prep) so companies.css and the claims panel stay disjoint. */
 
@@ -812,6 +954,17 @@
 @container pane (min-width: 760px) {
   .fundamentals-forms-grid {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  /* Price context: ratios/range flow into columns instead of one
+     full-width row per metric (owner report 2026-07-14: the section
+     stretched apart in wide panes). */
+  .price-context-range-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .price-context-ratio-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
 }
 

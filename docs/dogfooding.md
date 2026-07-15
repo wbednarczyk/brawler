@@ -28,3 +28,24 @@ anything that felt slow, confusing, or wrong. A feeling counts as a finding.
 - UX friction that is not a bug → the milestone retro's **UX section** (journeys shorter/longer)
   and, when it names a defect class, the [guardrail-harvest](../.claude/skills/guardrail-harvest/SKILL.md) loop.
 - The run itself is a release-prep step: note date + build + verdict in the release notes draft.
+
+## Earlier exploratory checkpoints (ADR 0081)
+
+Three cadences move real-app validation earlier than release closure. In every one, **automation collects mechanics + evidence; a human answers whether the journey is clear, useful, and trustworthy** — automation never prints a quality verdict. Windows-native behavior is the desktop authority.
+
+| Cadence | When | Budget | Charter |
+| --- | --- | --- | --- |
+| **First vertical slice** | Before the slice expands | ~3–5 min | One exploratory question tied to the served journey |
+| **Mid-milestone** | Once integration seams exist | ~10 min | Do the seams hang together for a real user? |
+| **Release dogfood** | Release prep (the walk above) | ~15 min | The full journey walk |
+
+**Run it** (needs an intentionally running/rebuilt Windows app; not part of `make check`):
+
+```bash
+BRAWLER_UX_JOURNEY="J1 morning review" BRAWLER_UX_CARD=<hex7> BRAWLER_UX_STAGE=vertical \
+  make live-cycle LIVE_SPEC=tests/live/ux-checkpoint.live.spec.ts
+```
+
+The spec (`tests/live/ux-checkpoint.live.spec.ts`) drives the **mechanical** path — Today renders an attention stream **or** an explicit quiet state (never a blank pane or the error fallback), a visible Review action opens a company-scoped cockpit, return works — and writes evidence under gitignored `test-results/live/checkpoints/`. It is **not** a scripted happy-path replay to rubber-stamp; it frees the human to explore.
+
+**The human charter** (the part automation cannot do) names: one **exploratory question**, findings graded **P1/P2/P3**, a **verdict** `proceed | revise | block`, and **which judgments stayed human**. A **P1 blocks expansion** of the slice. Lower-severity friction enters Radicle (`bug` + labels) or the milestone retro's UX section honestly — never silently dropped. Only non-sensitive verdict metadata reaches the active Radicle card; screenshots + `manifest.json` stay local (the manifest carries a dataset **label**, never the DB path/contents). Details + privacy contract: [testing.md § Live drive](testing.md#live-drive-real-app-via-cdp).

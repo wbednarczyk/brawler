@@ -10,14 +10,18 @@
 // wall-clock/random, so parallel workers stay reproducible.
 
 import packageJson from "../../../package.json";
-import { SAMPLE_NOW } from "./entities";
+import { COMPANY_SPECS, SAMPLE_NOW, companyId as companyIdFor } from "./entities";
 import {
   legacyInvalidLicenseStatus,
   legacyLicenseStatus,
   legacyMissingLicenseStatus,
 } from "./legacyMinimal";
-import { buildScenario, type ScenarioData, type ScenarioName } from "./scenarios";
+import { buildScenario, type ScenarioData, type ScenarioName, type ScenarioSpec } from "./scenarios";
+import { createControlledAsync, type MockRuntimeControls } from "./controlledAsync";
 import type { ResearchEvidenceInput } from "../../api/researchTypes";
+import type { CommandError } from "../../api/generated/CommandError";
+
+export type { MockRuntimeControls, InvocationPhase, InvocationMatch, PendingInvocation } from "./controlledAsync";
 
 /** Narrow alias — the router treats every payload structurally. */
 type Args = Record<string, unknown> | undefined;
@@ -27,6 +31,12 @@ interface RuntimeContext {
   nextId(prefix: string): string;
   /** Per-company IR report URLs (command-only state, not a seeded collection). */
   irReportUrls: Map<string, string>;
+  /**
+   * Manual sector overrides (ADR 0067 Decision 3); command-only, not seeded.
+   * Absent from the map means "registry-sourced" — fall back to the
+   * company's seeded `sector` field.
+   */
+  companySectors: Map<string, string>;
   /** Immutable decision journal entries (ADR 0071); command-only, not seeded. */
   decisionEntries: Record<string, unknown>[];
   /** Pre-report expectations (ADR 0071); command-only, not seeded. */
@@ -55,9 +65,26 @@ export interface MockRuntime {
   /** Route one command. Resolves with the command's contract return shape. */
   invoke(command: string, args?: Args): Promise<unknown>;
   /** Replace the store with a fresh scenario (per-test isolation). */
-  reset(scenario?: ScenarioName): void;
+  reset(scenario?: ScenarioName | ScenarioSpec): void;
   /** The scenario the store was last (re)built from. */
   scenario: ScenarioName;
+  /**
+   * Minimal failure-injection seam (Radicle 5be14c9, epic `0db7a7a`). Queue a
+   * one-shot rejection for the NEXT invocation of `command`: instead of
+   * running its handler, `invoke` settles with `error` UNCHANGED — the same
+   * plain `{code, message}` shape (ADR 0070) a real typed backend rejection
+   * uses, so the frontend's `isCommandError`/`CommandInvocationError` path is
+   * exercised identically. `reset()` clears every queued failure. Q2's
+   * controlled-async `reject(id, error)` (`controlledAsync.ts`) delegates to
+   * this rather than reproducing the mapping — do not duplicate it elsewhere.
+   */
+  failNext(command: string, error: CommandError): void;
+  /**
+   * Controlled-async invocation control (ADR 0081 Q2, Radicle a9992e2):
+   * hold/pending/release/reject around `invoke`. Wired ONCE here — never
+   * inside individual handlers. See `controlledAsync.ts`.
+   */
+  controls: MockRuntimeControls;
 }
 
 /** `{ input: X }` → X, `{ companyId }` → the object, `undefined` → {}. */
@@ -71,6 +98,11 @@ function unwrap(args: Args): Record<string, unknown> {
 function str(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
+
+/** Registry-sourced sector per company id (mirrors the Rust registry auto-populate, ADR 0067 Decision 3). */
+const REGISTRY_SECTORS = new Map<string, string>(
+  COMPANY_SPECS.map((spec) => [companyIdFor(spec), spec.sector]),
+);
 
 /**
  * CredentialStatus for the MCP bearer token (ADR 0078 M1), derived from the
@@ -432,6 +464,41 @@ function buildHandlers(): Record<string, Handler> {
       d.companies = d.companies.filter((c) => c.id !== companyId);
       d.watchlistMemberships = d.watchlistMemberships.filter((m) => m.companyId !== companyId);
       return undefined;
+    },
+
+    // Price context read model (v0.53 T5, ADR 0067/0082). The scenario data
+    // carries no `daily_quotes` store yet, so every company reports its empty
+    // state, mirroring the real backend's answer for an untouched fixture: a
+    // GPW company (the mapped market, `commands::market_data`'s
+    // `MAPPED_EXCHANGE`) reports "no_quotes" (mapped provider, no bars
+    // fetched yet); any other exchange reports "unmapped_ticker".
+    get_price_context: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const company = d.companies.find((c) => c.id === companyId);
+      const emptyReason = company?.exchange.toUpperCase() === "GPW" ? "no_quotes" : "unmapped_ticker";
+      return {
+        lastClose: 0,
+        lastDate: "",
+        changeAbs: 0,
+        changePct: 0,
+        currency: "PLN",
+        week52High: 0,
+        week52Low: 0,
+        week52HighDistPct: 0,
+        week52LowDistPct: 0,
+        marketCap: null,
+        ratios: {
+          pe: null,
+          pbv: null,
+          evEbitda: null,
+          divYield: null,
+          fcfYield: null,
+          ownHistPercentile: null,
+        },
+        history: [],
+        fetchedAt: "",
+        emptyReason,
+      };
     },
 
     // --- Cockpit layouts (ADR 0053) ---
@@ -1312,6 +1379,8 @@ function buildHandlers(): Record<string, Handler> {
       base.id = ctx.nextId("period");
       base.companyId = str(input.companyId) ?? base.companyId;
       if (typeof input.fiscalYear === "number") base.fiscalYear = input.fiscalYear;
+      base.periodType = str(input.periodType) ?? base.periodType;
+      base.periodEndDate = str(input.periodEndDate) ?? null;
       d.financialPeriods = [...d.financialPeriods, base];
       return base;
     },
@@ -1339,7 +1408,10 @@ function buildHandlers(): Record<string, Handler> {
       const input = unwrap(a);
       base.id = ctx.nextId("fact");
       base.companyId = str(input.companyId) ?? base.companyId;
+      base.periodId = str(input.periodId) ?? base.periodId;
+      base.definitionId = str(input.definitionId) ?? base.definitionId;
       base.valueNumeric = str(input.valueNumeric) ?? base.valueNumeric;
+      base.supersedesId = str(input.supersedesId) ?? null;
       d.financialFacts = [...d.financialFacts, base];
       return base;
     },
@@ -2029,6 +2101,88 @@ function buildHandlers(): Record<string, Handler> {
       else ctx.irReportUrls.delete(companyId);
       return url;
     },
+    get_company_sector: (_d, a, ctx) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const override = ctx.companySectors.get(companyId);
+      if (override !== undefined) return override;
+      return REGISTRY_SECTORS.get(companyId) ?? null;
+    },
+    set_company_sector: (_d, a, ctx) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const sector = str(input.sector);
+      if (sector) {
+        ctx.companySectors.set(companyId, sector);
+        return sector;
+      }
+      ctx.companySectors.delete(companyId);
+      return REGISTRY_SECTORS.get(companyId) ?? null;
+    },
+    list_company_sectors: () => {
+      // Mirrors the real command: case variants fold to one entry (most
+      // frequent spelling wins), case-insensitive sort.
+      const variantsByFold = new Map<string, Map<string, number>>();
+      for (const sector of REGISTRY_SECTORS.values()) {
+        const fold = sector.toLocaleLowerCase();
+        const variants = variantsByFold.get(fold) ?? new Map<string, number>();
+        variants.set(sector, (variants.get(sector) ?? 0) + 1);
+        variantsByFold.set(fold, variants);
+      }
+      return [...variantsByFold.values()]
+        .map((variants) => [...variants.entries()].sort((a, b) => b[1] - a[1])[0][0])
+        .sort((a, b) => a.toLocaleLowerCase().localeCompare(b.toLocaleLowerCase()));
+    },
+    // Basic info read model (v0.53 follow-up): identity facts + sector with
+    // provenance + latest shares_outstanding fact, mirroring
+    // `commands::companies::compute_company_basic_info`.
+    get_company_basic_info: (d, a, ctx) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      const company = d.companies.find((c) => c.id === companyId);
+      if (!company) throw new Error(`no tracked company for id ${companyId}`);
+      const manual = ctx.companySectors.get(companyId) ?? null;
+      const registry = REGISTRY_SECTORS.get(companyId) ?? null;
+      const periodsById = new Map(
+        d.financialPeriods.filter((p) => p.companyId === companyId).map((p) => [p.id, p]),
+      );
+      // Mirror `latest_shares_outstanding` exactly (mock-fidelity, ADR 0049):
+      // exclude superseded facts, then order by fiscal year, then period end
+      // date (null last), then recency — never fiscal year alone.
+      const supersededIds = new Set(
+        d.financialFacts.map((f) => f.supersedesId).filter((id): id is string => Boolean(id)),
+      );
+      const sharesFacts = d.financialFacts
+        .filter(
+          (f) =>
+            f.companyId === companyId &&
+            f.definitionId === "kpidef_shares_outstanding" &&
+            periodsById.has(f.periodId) &&
+            !supersededIds.has(f.id),
+        )
+        .sort((a2, b2) => {
+          const pa = periodsById.get(a2.periodId);
+          const pb = periodsById.get(b2.periodId);
+          return (
+            (pb?.fiscalYear ?? 0) - (pa?.fiscalYear ?? 0) ||
+            (pb?.periodEndDate ?? "").localeCompare(pa?.periodEndDate ?? "") ||
+            b2.createdAt.localeCompare(a2.createdAt)
+          );
+        });
+      const latest = sharesFacts[0];
+      const latestPeriod = latest ? periodsById.get(latest.periodId) : undefined;
+      return {
+        displayName: company.displayName,
+        exchange: company.exchange,
+        ticker: company.ticker,
+        qualifiedTicker: company.qualifiedTicker,
+        isin: company.isin ?? null,
+        sector: manual ?? registry,
+        sectorSource: manual ? "manual" : registry ? "registry" : null,
+        sharesOutstanding: latest ? latest.valueNumeric : null,
+        sharesOutstandingPeriod: latestPeriod
+          ? `${latestPeriod.fiscalYear} ${latestPeriod.periodType.toUpperCase()}`
+          : null,
+      };
+    },
     resolve_ir_report: (d, a) => {
       const companyId = str(unwrap(a).companyId);
       return d.irResolutions.find((r) => r.document?.companyId === companyId) ?? d.irResolutions[0];
@@ -2522,17 +2676,41 @@ function buildHandlers(): Record<string, Handler> {
       error: ctx.mcpError,
     }),
 
+    // Mock fidelity: the real commands store/clear the key for EXACTLY the
+    // named provider and report that provider's status — never another row.
+    // A provider with no seeded status row upserts one, mirroring first-time
+    // configuration.
     set_provider_api_key: (d, a) => {
-      const providerId = str(unwrap(a).providerId);
-      const credential = d.credentialStatuses.find((c) => c.providerId === providerId);
-      if (credential) credential.configured = true;
-      return credential ?? d.credentialStatuses[0];
+      const providerId = str(unwrap(a).providerId) ?? "";
+      const existing = d.credentialStatuses.find((c) => c.providerId === providerId);
+      const credential = existing ?? {
+        providerId,
+        secretKind: "api_key",
+        configured: false,
+        storage: "keychain",
+        label: providerId,
+        devFallbackAvailable: false,
+        error: null,
+      };
+      if (!existing) d.credentialStatuses.push(credential);
+      credential.configured = true;
+      return credential;
     },
     clear_provider_api_key: (d, a) => {
-      const providerId = str(unwrap(a).providerId);
+      const providerId = str(unwrap(a).providerId) ?? "";
       const credential = d.credentialStatuses.find((c) => c.providerId === providerId);
       if (credential) credential.configured = false;
-      return credential ?? d.credentialStatuses[0];
+      return (
+        credential ?? {
+          providerId,
+          secretKind: "api_key",
+          configured: false,
+          storage: "keychain",
+          label: providerId,
+          devFallbackAvailable: false,
+          error: null,
+        }
+      );
     },
 
     // --- Backups ---
@@ -2673,21 +2851,54 @@ export const READ_COMMANDS: readonly string[] = Object.freeze([
   "list_source_adapters",
 ]);
 
-export function createMockRuntime(scenario: ScenarioName = "minimal"): MockRuntime {
-  let data = buildScenario(scenario);
+export function createMockRuntime(spec: ScenarioName | ScenarioSpec = "minimal"): MockRuntime {
+  const scenario: ScenarioName = typeof spec === "string" ? spec : spec.base;
+  let data = buildScenario(spec);
   let counter = 0;
+  // Deliverable A seam (5be14c9): one-shot rejections queued per command name.
+  const queuedFailures = new Map<string, CommandError[]>();
   const ctx: RuntimeContext = {
     nextId: (prefix) => {
       counter += 1;
       return `${prefix}_sample_new_${counter}`;
     },
     irReportUrls: new Map<string, string>(),
+    companySectors: new Map<string, string>(),
     decisionEntries: [],
     reportExpectations: [],
     mcpToken: null,
     mcpRunning: false,
     mcpError: null,
   };
+
+  /** Raw settlement layer: the Deliverable A seam, then the handler table. */
+  function rawInvoke(command: string, args: Args): Promise<unknown> {
+    const queue = queuedFailures.get(command);
+    if (queue && queue.length > 0) {
+      const error = queue.shift()!;
+      if (queue.length === 0) queuedFailures.delete(command);
+      return Promise.reject(error);
+    }
+    const handler = HANDLERS[command];
+    if (!handler) {
+      return Promise.reject(new Error(`Unhandled mock command: ${command}`));
+    }
+    try {
+      return Promise.resolve(handler(data, args, ctx));
+    } catch (error) {
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  function failNext(command: string, error: CommandError): void {
+    const queue = queuedFailures.get(command) ?? [];
+    queue.push(error);
+    queuedFailures.set(command, queue);
+  }
+
+  // Wired ONCE around the raw settlement layer (ADR 0081 Q2) — never inside
+  // individual handlers. `runtime.invoke` below IS the controlled invoke.
+  const controlledAsync = createControlledAsync(rawInvoke, failNext);
 
   const runtime: MockRuntime = {
     get data() {
@@ -2697,22 +2908,19 @@ export function createMockRuntime(scenario: ScenarioName = "minimal"): MockRunti
       data = next;
     },
     scenario,
-    invoke(command, args) {
-      const handler = HANDLERS[command];
-      if (!handler) {
-        return Promise.reject(new Error(`Unhandled mock command: ${command}`));
-      }
-      try {
-        return Promise.resolve(handler(data, args, ctx));
-      } catch (error) {
-        return Promise.reject(error instanceof Error ? error : new Error(String(error)));
-      }
-    },
+    failNext,
+    invoke: controlledAsync.invoke,
+    controls: controlledAsync.controls,
     reset(nextScenario) {
       data = buildScenario(nextScenario ?? scenario);
-      if (nextScenario) runtime.scenario = nextScenario;
+      if (nextScenario) {
+        runtime.scenario = typeof nextScenario === "string" ? nextScenario : nextScenario.base;
+      }
       counter = 0;
+      queuedFailures.clear();
+      controlledAsync.reset();
       ctx.irReportUrls.clear();
+      ctx.companySectors.clear();
       ctx.decisionEntries = [];
       ctx.reportExpectations = [];
       // MCP token + lifecycle state (ADR 0078 M1/M3).

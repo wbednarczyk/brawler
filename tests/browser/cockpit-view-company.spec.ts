@@ -98,4 +98,34 @@ test.describe("cockpit view company", { tag: "@clickable" }, () => {
     ).toBeVisible();
     await expectNoPageOverflow(page);
   });
+
+  test("the Dowody / Research preset renders the evidence panel following the view company", async ({
+    page,
+  }) => {
+    // Dashboard redesign (epic c793ca1): the retired standalone Research screen is
+    // now the "Evidence / Research" preset. Selecting it composes the research
+    // evidence panel; it follows the view company like every other preset (jsdom
+    // cannot mount dockview panel bodies after a rebuild, so this real render is
+    // proven here, in a real browser).
+    await openApp(page);
+    await openCdrDashboard(page);
+    const cockpit = page.getByLabel("Research cockpit");
+
+    await cockpit.getByLabel("Preset").selectOption("evidence");
+
+    // The real research evidence panel renders (jsdom cannot mount it after a
+    // rebuild; here it does). Assert the panel, not the `.research-timeline`
+    // sub-element, which density-collapses on narrow viewports (ADR 0076 D6).
+    await expect(cockpit.locator(".research-panel")).toBeVisible();
+    // The preset follows the view company: the cockpit is still scoped to CD PROJEKT.
+    await expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_cdr");
+    await expectNoPageOverflow(page);
+
+    // Switch the view company — the evidence panel follows: still the one research
+    // panel (retargets in place), and the cockpit is now scoped to KGHM.
+    await cockpit.getByLabel("View company").selectOption("company_gpw_kgh");
+    await expect(cockpit.locator(".research-panel")).toBeVisible();
+    await expect(cockpit).toHaveAttribute("data-company-id", "company_gpw_kgh");
+    await expectNoPageOverflow(page);
+  });
 });

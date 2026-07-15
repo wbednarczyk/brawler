@@ -1,12 +1,15 @@
 import AxeBuilder from "@axe-core/playwright";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
-import budgets from "../journeys/budgets.json" with { type: "json" };
 
 // Shared browser-test harness. Import `test`/`expect` from here (not directly
 // from @playwright/test) to get:
 //   - a console-error gate: any console.error / uncaught page error fails the
 //     test, catching React warnings and silent runtime breakage.
 //   - reusable layout invariants used across journeys and the smoke-walk.
+//   - the journey() friction-metrics wrapper (re-exported from ./journey —
+//     ADR 0074 pt 3 / ADR 0081 Q3; that module owns the orchestration, this
+//     file just re-exports it so specs keep a single harness import).
+export { journey, type Journey } from "./journey";
 
 // Console messages that are environmental noise rather than app defects. Keep
 // this list tight and justified — every entry is a hole in the gate.
@@ -216,87 +219,4 @@ export async function resetPaneSize(page: Page, pane?: Locator) {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Journey interaction counter (ADR 0074 pt 3) — the explicit, no-magic wrapper.
-//
-// Counting convention: ONE wrapper call = ONE user interaction. `click`, `fill`,
-// `press`, and `selectOption` each perform the Playwright action and increment
-// the counter by exactly 1 — nothing counts implicitly, so the count is the
-// number of discrete things the user did to complete the journey. Navigation
-// performed inside a journey (opening a cockpit panel, drilling into a company)
-// is driven through the SAME wrapper so its clicks are counted too; never mix a
-// raw `locator.click()` into a measured journey.
-//
-// Budgets are calibrated by FIRST measurement (per journey), recorded in
-// `tests/browser/journeys/budgets.json` as the ratchet FLOOR, and must never
-// exceed the documented ceilings in `docs/ux-journeys.md`. `assertBudget()`
-// reddens when the journey got LONGER than its floor (a UX regression, like a
-// byte-budget regression); when it got measurably SHORTER (> 2 under floor) it
-// logs a tighten suggestion so the floor is deliberately re-ratcheted down.
-export type Journey = {
-  click(locator: Locator): Promise<void>;
-  fill(locator: Locator, value: string): Promise<void>;
-  press(target: Locator | Page, key: string): Promise<void>;
-  selectOption(locator: Locator, value: string): Promise<void>;
-  /** Interactions performed so far. */
-  readonly count: number;
-  /** Assert count ≤ budget; log a tighten suggestion when well under. */
-  assertBudget(): void;
-};
-
-const journeyBudgets = budgets as Record<string, number>;
-
-// A Page has `keyboard`; a Locator does not — the discriminator for `press`.
-function isPage(target: Locator | Page): target is Page {
-  return "keyboard" in target;
-}
-
-export function journey(page: Page, id: string): Journey {
-  let count = 0;
-  const budget = journeyBudgets[id];
-
-  return {
-    async click(locator) {
-      await locator.click();
-      count += 1;
-    },
-    async fill(locator, value) {
-      await locator.fill(value);
-      count += 1;
-    },
-    async press(target, key) {
-      if (isPage(target)) await target.keyboard.press(key);
-      else await target.press(key);
-      count += 1;
-    },
-    async selectOption(locator, value) {
-      await locator.selectOption(value);
-      count += 1;
-    },
-    get count() {
-      return count;
-    },
-    assertBudget() {
-      expect(
-        budget,
-        `No budget entry for journey "${id}" in tests/browser/journeys/budgets.json`,
-      ).toBeGreaterThan(0);
-      const viewport = JSON.stringify(page.viewportSize());
-      expect(
-        count,
-        `Journey "${id}" exceeded its interaction budget: ${count} > ${budget} ` +
-          `(viewport ${viewport}). A journey got longer — this is a UX regression. ` +
-          `Fix the flow, or (if the extra step is genuinely required) raise the budget ` +
-          `in budgets.json AND ux-journeys.md deliberately.`,
-      ).toBeLessThanOrEqual(budget);
-      if (count < budget - 2) {
-        // eslint-disable-next-line no-console
-        console.log(
-          `[journey ${id}] measured ${count} interactions, budget ${budget} ` +
-            `(viewport ${viewport}). The journey is measurably shorter than its floor — ` +
-            `tighten budgets.json to ${count + 1} to ratchet the improvement in.`,
-        );
-      }
-    },
-  };
-}
+// Journey interaction/friction wrapper: see ./journey.ts (re-exported above).

@@ -346,3 +346,82 @@ describe("mock runtime — round-trip mutations", () => {
     expect(bCompanies).toHaveLength(4);
   });
 });
+
+// Deliverable A (Radicle 5be14c9, epic 0db7a7a) — the minimal invocation-
+// settlement seam Q2's controlled-async `reject(id, error)` delegates to.
+describe("mock runtime — failure-injection seam (Radicle 5be14c9)", () => {
+  it("failNext rejects the NEXT invocation of the selected command with the CommandError envelope (ADR 0070)", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.failNext("list_companies", { code: "internal", message: "sample seam failure" });
+    await expect(runtime.invoke("list_companies", {})).rejects.toMatchObject({
+      code: "internal",
+      message: "sample seam failure",
+    });
+  });
+
+  it("failNext is one-shot: the invocation after the rejected one runs the real handler", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.failNext("list_companies", { code: "internal", message: "sample seam failure" });
+    await expect(runtime.invoke("list_companies", {})).rejects.toBeTruthy();
+    const companies = await runtime.invoke("list_companies", {});
+    expect(Array.isArray(companies)).toBe(true);
+    expect((companies as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("failNext only rejects the SELECTED command, not others", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.failNext("list_companies", { code: "internal", message: "sample seam failure" });
+    const watchlists = await runtime.invoke("list_watchlists", {});
+    expect(Array.isArray(watchlists)).toBe(true);
+  });
+
+  it("reset clears every queued failure so no promise leaks across tests", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.failNext("list_companies", { code: "internal", message: "sample seam failure" });
+    runtime.reset();
+    const companies = await runtime.invoke("list_companies", {});
+    expect(Array.isArray(companies)).toBe(true);
+  });
+});
+
+// Q2 controlled-async wired end-to-end on a real MockRuntime (Radicle a9992e2).
+describe("mock runtime — controlled async (Radicle a9992e2)", () => {
+  it("holds a real read command, then releases it with the real handler result", async () => {
+    const runtime = createMockRuntime("minimal");
+    const id = runtime.controls.hold({ command: "list_companies" });
+    const promise = runtime.invoke("list_companies", {});
+    expect(runtime.controls.pending()).toHaveLength(1);
+    runtime.controls.release(id);
+    const companies = await promise;
+    expect(Array.isArray(companies)).toBe(true);
+    expect((companies as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("reject(id, CommandError) on a held command settles via the failNext seam (ADR 0070 envelope)", async () => {
+    const runtime = createMockRuntime("minimal");
+    const id = runtime.controls.hold({ command: "create_watchlist" });
+    const promise = runtime.invoke("create_watchlist", { input: { name: "Held", description: null } });
+    runtime.controls.reject(id, { code: "conflict", message: "held rejection" });
+    await expect(promise).rejects.toMatchObject({ code: "conflict", message: "held rejection" });
+  });
+
+  it("reset() clears held controls too — no promise leaks across a scenario reset", async () => {
+    const runtime = createMockRuntime("minimal");
+    runtime.controls.hold({ command: "list_companies" });
+    const promise = runtime.invoke("list_companies", {});
+    runtime.reset();
+    await expect(promise).rejects.toThrow(/reset/i);
+    expect(runtime.controls.pending()).toEqual([]);
+  });
+
+  it("two runtimes' controlled-async state is isolated — holding on one never affects the other", async () => {
+    const a = createMockRuntime("minimal");
+    const b = createMockRuntime("minimal");
+    a.controls.hold({ command: "list_companies" });
+    void a.invoke("list_companies", {});
+    expect(a.controls.pending()).toHaveLength(1);
+    expect(b.controls.pending()).toEqual([]);
+    const bCompanies = await b.invoke("list_companies", {});
+    expect(Array.isArray(bCompanies)).toBe(true);
+  });
+});

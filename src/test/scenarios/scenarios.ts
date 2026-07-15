@@ -14,6 +14,7 @@
 // Each call returns a FRESH deep clone (`structuredClone`), so a test that mutates
 // its dataset can never leak into another test or worker.
 
+import { applyScenarioOverlays, type ScenarioOverlayName } from "./overlays";
 import type { Company } from "../../api/types";
 import type { CockpitLayout } from "../../api/generated/CockpitLayout";
 import type { FactProvenance } from "../../api/generated/FactProvenance";
@@ -147,6 +148,17 @@ import type {
 } from "../../api/qualityFrameworksTypes";
 
 export type ScenarioName = "empty" | "minimal" | "rich";
+
+/**
+ * A base scenario plus composable overlays (ADR 0081 Q2). `buildScenario`
+ * accepts either the bare `ScenarioName` (unchanged, pre-Q2 callers) or a
+ * `ScenarioSpec` — never a bespoke seventh mega-scenario per overlay
+ * combination.
+ */
+export type ScenarioSpec = {
+  base: ScenarioName;
+  overlays?: readonly ScenarioOverlayName[];
+};
 
 /**
  * The canonical mock store. Both test layers materialize one of these and route
@@ -411,10 +423,14 @@ function buildEmpty(): ScenarioData {
 }
 
 /**
- * Build a fresh, deep-cloned dataset for the named scenario. The clone guarantees
- * mutation isolation: a test that writes to its store cannot affect another test.
+ * Build a fresh, deep-cloned dataset for the named scenario, optionally
+ * layering Q2 overlays (`ScenarioSpec`). The clone guarantees mutation
+ * isolation: a test that writes to its store cannot affect another test, and
+ * two builds from the same spec never share array/object references.
  */
-export function buildScenario(name: ScenarioName): ScenarioData {
+export function buildScenario(spec: ScenarioName | ScenarioSpec): ScenarioData {
+  const name: ScenarioName = typeof spec === "string" ? spec : spec.base;
+  const overlays: readonly ScenarioOverlayName[] = typeof spec === "string" ? [] : spec.overlays ?? [];
   let data: ScenarioData;
   switch (name) {
     case "empty":
@@ -452,6 +468,8 @@ export function buildScenario(name: ScenarioName): ScenarioData {
       pinnedCompanyIds: data.companies.slice(0, pinnedCount).map((company) => company.id),
     };
   }
+
+  data = applyScenarioOverlays(data, overlays);
 
   return structuredClone(data);
 }

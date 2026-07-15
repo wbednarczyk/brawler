@@ -203,3 +203,7 @@ Committed screenshot baselines under `tests/browser/visual/`: each panel × S/M/
 - **Run:** `rtk npx playwright test --project=chromium-visual --project=chromium-visual-light`. A red diff (> `maxDiffPixelRatio: 0.01`) is either an intended change (update below) or a regression (fix the code). Determinism: animations off, fixed `SAMPLE_NOW`, `document.fonts.ready` per shot.
 - **Deliberate update:** re-run with `--update-snapshots`, commit the PNGs with a message naming **which screens changed and why** — an unexplained baseline update is a review rejection.
 - **CI:** `ignoreSnapshots: !!process.env.CI` — CI executes the specs (layout/console gates hold) but skips pixel compare (font rendering differs across machines; pixels are a local check).
+
+### UX quality loop v2 handover checks (ADR 0081 — post-pilot only)
+
+The UX decision-validation loop ([ADR 0081](adr/0081-ux-quality-loop-v2.md)) is pilot-gated. Any short, universal handover check it produces (e.g. "non-mechanical UI work names its experience contract") lands **here** only after the J1/J2 pilot returns an `adopt` verdict with owner sign-off (plan Q9). The pilot infrastructure itself adds nothing universal to this handover gate.

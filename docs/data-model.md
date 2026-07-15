@@ -15,6 +15,7 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related references: [Con
 - Secrets live in the OS keychain, not in SQLite.
 - YAML config is import/export/bootstrap, not runtime truth.
 - Schema changes must be migration-managed from the first implementation milestone.
+- **Write transactions are `BEGIN IMMEDIATE`** (`transaction_with_behavior(Immediate)`): a DEFERRED read→write under WAL fails instantly with SQLITE_BUSY on snapshot upgrade — `busy_timeout` does not apply to that path (live-drive diagnosis 2026-07-14; enforced by the clippy `disallowed-methods` guardrail in `src-tauri/clippy.toml`).
 - **Domain recency is the domain date, never `created_at`.** Selecting or ranking "newest / latest / most recent" of anything (report, feed item, event, signal, fact) must order by the **domain date** — publication / period-end / event / signal date — and never by `created_at`/`updated_at`/ingestion order. `created_at` is the local insert time; a history backfill or re-ingest gives an **old** record a **newer** `created_at`, so created-order silently diverges from chronological order. Any such selection ships a test against **real backfilled data where `created_at` order ≠ domain-date order** (real-data validation). Guardrail from `d60305c` (autopilot detection fired on a 3-year-old report by ranking on `created_at`); policy [ADR 0045](adr/0045-guardrail-harvest-loop.md).
 
 ## Core Entities
@@ -33,12 +34,15 @@ Fields:
 - `isin`
 - `cik`
 - `lei`
+- `sector` (nullable) — company sector/industry classification ([ADR 0067](adr/0067-market-data-foundation.md), `v0.53.0`)
+- `sector_source` (nullable) — `registry` | `manual`; a `manual` value wins and is never clobbered by a registry refresh
 - `created_at`
 - `updated_at`
 
 Rules:
 
 - `qualified_ticker` is unique.
+- `sector`/`sector_source` are optional; reads tolerate a missing value with a safe default.
 - `ticker` alone is not unique.
 - `isin`, `cik`, and `lei` are optional.
 
@@ -124,6 +128,7 @@ Fields:
 - `source_adapter_id`
 - `source_url`
 - `fetched_at`
+- `sector` (nullable) — directory-sourced sector/industry ([ADR 0067](adr/0067-market-data-foundation.md), `v0.53.0`)
 - `active`
 - `created_at`
 - `updated_at`
@@ -133,6 +138,7 @@ Rules:
 - `exchange + ticker` is the uniqueness boundary.
 - Directory records are cached source data, not user-owned company records.
 - User-created companies are stored in `companies` and must not be overwritten silently by directory refresh.
+- On refresh (and on company creation) the cached `sector` is propagated onto the tracked `companies.sector` with `sector_source='registry'`, **unless** that company has a `sector_source='manual'` override — a manual value is never clobbered.
 - Feed matching should resolve source identifiers to ticker through this cache before using ISIN fallback.
 - Multiple company-directory sources are supported. GPW main market uses `GPW:<ticker>` and NewConnect uses `NC:<ticker>` behind the same directory boundary.
 - Company lookup and autocomplete search all active company-directory records. The exchange typed in the Companies form is used to prefer a match when the same ticker exists on multiple exchanges, but it must not hide companies from other registries.
@@ -654,6 +660,19 @@ Structured-first extraction provenance ([ADR 0061](adr/0061-deterministic-fundam
 - `company_id` (PK), `template_hash`, `scale` (`Ones` | `Thousands` | `Millions`), `profile_json` (serialized `OcrExtractionProfile`: `label_map`, `value_column` layout, `skip_columns`, `strip_enumerators`), `version`. Separate table from `company_extraction_profile` on purpose — OCR markdown has a different template fingerprint and drift semantics (a `Nota` column, a value-column layout, an enumerator convention) than the tier-2 PDF-text parser. A company with no row has never been bootstrapped at the OCR tier — tier-4 cannot yet parse deterministically for it (safe default).
 
 `kpi_extraction_jobs.committed_fact_count` (`INTEGER NOT NULL DEFAULT 0`, migration `0064_kpi_extraction_committed_facts.sql`): how many validated facts the run committed directly (tier-4 profile path, [ADR 0077](adr/0077-trusted-extraction-foundations.md) §4 / T4.5). `0` for the classic proposals-only path, so the review panel reads an honest outcome ("N facts committed" vs "N proposals"). Reads tolerate the default on old rows.
+
+### Market Data (Daily Quotes)
+
+EOD price series ([ADR 0067](adr/0067-market-data-foundation.md), source selection [ADR 0082](adr/0082-market-data-source-selection.md), `v0.53.0`). Feeds market cap + level-0 ratios (canonical derived metrics) and the workspace price section.
+
+`daily_quotes` — `(company_id, date, open, high, low, close, volume, source_adapter_id, fetched_at)`, PK `(company_id, date)`.
+
+Rules:
+
+- **Append-only**; corrections upsert by `(company_id, date)` — never a wholesale history rewrite. Full available history is backfilled from day one (52-week stats, own-history percentiles, future backtests).
+- `source_adapter_id` records provenance (`yahoo-eod`; historical rows may carry a removed provider id — provenance is never rewritten); `fetched_at` drives staleness attribution.
+- The PK serves the 52-week / percentile range scans (indexed reads, never a corpus recompute).
+- Migrations are append-only (0071); reads of quote-derived ratios tolerate missing facts (ratio resolves to `null`, never a crash).
 
 ### Management Claims
 

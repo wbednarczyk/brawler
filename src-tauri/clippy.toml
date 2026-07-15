@@ -1,0 +1,8 @@
+# Guardrail (2026-07-14, live-drive diagnosis): a DEFERRED transaction that
+# reads and then writes can fail INSTANTLY with SQLITE_BUSY ("database is
+# locked") under WAL when another writer commits first — the snapshot upgrade
+# is not retried, so `busy_timeout` does not apply. Every write transaction
+# must start as BEGIN IMMEDIATE.
+disallowed-methods = [
+    { path = "rusqlite::Connection::transaction", reason = "DEFERRED write transactions hit instant SQLITE_BUSY on WAL snapshot upgrade (busy_timeout does not apply); use transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)" },
+]

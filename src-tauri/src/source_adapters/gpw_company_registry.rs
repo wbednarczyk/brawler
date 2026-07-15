@@ -102,6 +102,8 @@ mod tests {
             entries[0].source_url,
             "https://www.gpw.pl/spolka?isin=PL11BTS00015"
         );
+        assert_eq!(entries[0].sector.as_deref(), Some("Gry"));
         assert_eq!(entries[1].qualified_ticker, "GPW:CDR");
+        assert_eq!(entries[1].sector.as_deref(), Some("Gry"));
     }
 }

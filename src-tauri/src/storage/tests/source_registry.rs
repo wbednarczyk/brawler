@@ -25,17 +25,30 @@ fn lists_seeded_source_adapters() {
         .list_source_adapters()
         .expect("source adapters should list");
 
-    assert_eq!(adapters.len(), 6);
+    assert_eq!(adapters.len(), 7);
 
     assert!(adapters
         .iter()
         .all(|adapter| adapter.visibility != "developer"));
 
+    // market_data EOD quote source (v0.53, ADR 0082 as amended 2026-07-14:
+    // the twelvedata-eod fallback was removed — GPW is paid-plan-only there).
+    let yahoo_eod = adapters
+        .iter()
+        .find(|adapter| adapter.id == "yahoo-eod")
+        .expect("yahoo-eod adapter should exist");
+    assert_eq!(yahoo_eod.display_name, "Yahoo Finance EOD Quotes");
+    assert_eq!(yahoo_eod.source_type, "market_data");
+    assert_eq!(yahoo_eod.fetch_mode, "public_json");
+    assert_eq!(yahoo_eod.markets, vec!["GPW".to_owned()]);
+    assert!(yahoo_eod.enabled);
+    assert_eq!(yahoo_eod.visibility, "optional");
+
     let developer_adapters = state
         .list_source_adapters_with_developer(true)
         .expect("developer source adapters should list");
 
-    assert_eq!(developer_adapters.len(), 12);
+    assert_eq!(developer_adapters.len(), 13);
 
     let report_adapter = developer_adapters
         .iter()

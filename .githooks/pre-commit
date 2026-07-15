@@ -20,8 +20,6 @@ set -euo pipefail
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
-printf '▶ pre-commit: running the full mandatory gate (make check) under Nix…\n'
-
 if ! command -v make >/dev/null 2>&1; then
   printf '✖ pre-commit: `make` not found — cannot run the gate. Install build tools, then retry.\n' >&2
   exit 1
@@ -31,6 +29,33 @@ if ! command -v nix >/dev/null 2>&1; then
   exit 1
 fi
 
-make check
+# Scope the gate to what changed (ADR 0062, 2026-07-13): a DOCS-ONLY changeset
+# cannot alter code behavior, so it runs only the doc meta-guards (mandatory-read
+# byte budgets + parity via gate-integrity, and docs drift) — not the full code
+# suite. ANY non-doc file → the full gate. A doc is `docs/**`, `wiki/**`, or any
+# `*.md`; everything else (src, tests, scripts, config, Makefile, .githooks,
+# Cargo/package manifests) is code and gets the whole gate.
+# diff-filter includes D: a commit that DELETES a code file must run the full
+# gate — a deletion breaks builds/tests exactly like an edit (review 2026-07-14).
+staged="$(git diff --cached --name-only --diff-filter=ACMRD)"
+docs_only=1
+[ -z "$staged" ] && docs_only=0
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    docs/*|wiki/*|*.md) ;;
+    *) docs_only=0 ;;
+  esac
+done <<STAGED
+$staged
+STAGED
 
-printf '✓ pre-commit: mandatory gate green — creating the commit.\n'
+if [ "$docs_only" -eq 1 ]; then
+  printf '▶ pre-commit: docs-only changeset — running the doc meta-guards (make check-docs)…\n'
+  make check-docs
+  printf '✓ pre-commit: doc meta-guards green — creating the commit.\n'
+else
+  printf '▶ pre-commit: running the full mandatory gate (make check) under Nix…\n'
+  make check
+  printf '✓ pre-commit: mandatory gate green — creating the commit.\n'
+fi

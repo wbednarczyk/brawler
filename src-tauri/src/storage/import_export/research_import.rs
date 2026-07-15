@@ -25,7 +25,8 @@ pub(super) fn apply_research_import(
     }
     let planned_summary = preview.summary.clone();
 
-    let transaction = connection.transaction()?;
+    let transaction =
+        connection.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     let company_id_by_ticker = apply_companies(&transaction, &document.companies)?;
     let summary = apply_watchlists_notebooks_questions(
         &transaction,

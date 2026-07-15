@@ -50,6 +50,11 @@ type AppShellProps = {
   refreshDatabaseBackedViews: () => void;
   refreshSources: (trigger: SourceRefreshTrigger) => void;
   setActiveSection: (section: Section) => void;
+  // Dashboard redesign (epic c793ca1): the "Dashboard" (Cockpit) nav entry opens
+  // the one company-scoped Dashboard seeded with a default company — never the
+  // blank feed-linked cockpit — so it routes through this handler, not the generic
+  // setActiveSection.
+  onOpenDashboard: () => void;
   onCreateView: () => void;
   cockpitViews: { id: string; name: string }[];
   activeCockpitViewId: string | null;
@@ -82,6 +87,7 @@ export function AppShell({
   refreshDatabaseBackedViews,
   refreshSources,
   setActiveSection,
+  onOpenDashboard,
   onCreateView,
   cockpitViews,
   activeCockpitViewId,
@@ -286,8 +292,13 @@ export function AppShell({
                       return (
                         <button
                           className={activeSection === item.label ? "nav-item nav-item-active" : "nav-item"}
+                          aria-current={activeSection === item.label ? "page" : undefined}
                           key={item.label}
-                          onClick={() => setActiveSection(item.label)}
+                          onClick={() =>
+                            item.label === "Cockpit"
+                              ? onOpenDashboard()
+                              : setActiveSection(item.label)
+                          }
                           type="button"
                           title={itemLabel}
                         >
@@ -309,6 +320,7 @@ export function AppShell({
                             <div className={isActive ? "pinned-row pinned-row-active" : "pinned-row"} key={view.id}>
                               <button
                                 className="nav-item"
+                                aria-current={isActive ? "page" : undefined}
                                 onClick={() => onOpenCockpitView(view.id)}
                                 type="button"
                                 title={view.name}
@@ -354,6 +366,7 @@ export function AppShell({
                       <div className={isActive ? "pinned-row pinned-row-active" : "pinned-row"} key={company.id}>
                         <button
                           className="nav-item pinned-company"
+                          aria-current={isActive ? "page" : undefined}
                           onClick={() => onOpenCompany(company.id)}
                           type="button"
                           title={text("Open {company} workspace").replace("{company}", company.name)}
@@ -436,7 +449,12 @@ export function AppShell({
             </div>
           </header>
 
-          <main className="workspace">{children}</main>
+          {/* Journey-metrics observation point (ADR 0074 pt 3 / ADR 0081 Q3):
+              semantic marker for the section currently on screen, not
+              test-only business state. */}
+          <main className="workspace" data-app-section={activeSection}>
+            {children}
+          </main>
         </div>
       </div>
     </CommandPaletteProvider>

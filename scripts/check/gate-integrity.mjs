@@ -41,7 +41,7 @@ const MANDATORY_MARKERS = {
 };
 
 // Targets whose recipes must never contain an exit-ignored (`-`-prefixed) step.
-const GUARDED_TARGETS = ["check", "check-epic"];
+const GUARDED_TARGETS = ["check", "check-epic", "check-docs"];
 
 /**
  * Extract the recipe lines (tab-indented commands) for a Makefile target. The

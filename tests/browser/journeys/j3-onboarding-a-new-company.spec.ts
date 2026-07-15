@@ -27,9 +27,11 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
   test("add a company and record why I'm watching it", async ({ page }) => {
     const j = journey(page, "J3");
     await openApp(page);
+    await j.markScreen("Today");
 
     await j.click(page.getByLabel("Primary navigation").getByRole("button", { name: "Companies" }));
     await expect(page.getByLabel("Companies list")).toBeVisible();
+    await j.markScreen("Companies");
     await expectNoA11yViolations(page, "Companies list (onboarding)");
 
     // Add a genuinely new company (exchange defaults to GPW). The registry lookup
@@ -46,6 +48,7 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
     // Open the new company's workspace and record the first note.
     await j.click(list.getByLabel("Open GPW:TST dashboard"));
     await expect(page.getByLabel("Research cockpit")).toBeVisible();
+    await j.markScreen("Company workspace");
     await expectNoPageOverflow(page);
 
     await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Notebook", exact: true }).first());
@@ -63,6 +66,6 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
     await expect(notebook.getByLabel("Select notebook entry: Why I'm watching")).toHaveCount(1);
     await expectNoPageOverflow(page);
 
-    j.assertBudget();
+    await j.assertBudget();
   });
 });
