@@ -3,6 +3,41 @@ use super::*;
 // identical kind/guidance semantics instead of a divergent raw insert.
 use crate::storage::quality_frameworks::{normalize_kind, require_guidance};
 
+/// Accepted `ownership_stakes.source` values (mirrors the migration 0082 CHECK).
+const OWNERSHIP_STAKE_SOURCES: &[&str] =
+    &["report_document", "espi_filing", "aggregator", "manual"];
+/// Accepted `ownership_stakes.holder_type` values (mirrors the migration 0082 CHECK).
+const OWNERSHIP_HOLDER_TYPES: &[&str] = &[
+    "founder_insider",
+    "family_foundation",
+    "tfi",
+    "ofe_pension",
+    "state_treasury",
+    "parent_company",
+    "treasury_shares",
+    "other_institutional",
+    "free_float_rest",
+];
+
+/// Keep a nullable provenance id only when the referenced row exists in the
+/// target DB, else drop it to NULL (import must not violate the FK, and the
+/// stake plus its history is the durable payload — the provenance link is not).
+fn resolve_optional_reference(
+    connection: &Connection,
+    table: &str,
+    id: Option<&str>,
+) -> StorageResult<Option<String>> {
+    let Some(id) = id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+    let exists: bool = connection.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = ?1)"),
+        [id],
+        |row| row.get(0),
+    )?;
+    Ok(exists.then(|| id.to_owned()))
+}
+
 pub(super) fn preview_research_import(
     connection: &Connection,
     contents: &str,
@@ -223,6 +258,49 @@ fn plan_research_import(
             continue;
         }
         summary.management_claims_created += 1;
+    }
+
+    let existing_stake_ids = existing_ids(connection, "ownership_stakes").unwrap_or_default();
+    for stake in &document.ownership_stakes {
+        if stake.id.trim().is_empty() || stake.holder_name_raw.trim().is_empty() {
+            errors.push("Ownership stake id and holder name are required".to_owned());
+            continue;
+        }
+        if existing_stake_ids.contains(&stake.id) {
+            summary.ownership_stakes_skipped += 1;
+            warnings.push(format!(
+                "Ownership stake {} already exists and will be skipped",
+                stake.id
+            ));
+            continue;
+        }
+        let company_ticker = stake.company_qualified_ticker.trim().to_uppercase();
+        if !imported_company_tickers.contains(&company_ticker)
+            && !existing_companies.contains_key(&company_ticker)
+        {
+            errors.push(format!(
+                "Ownership stake {} references missing company {}",
+                stake.id, stake.company_qualified_ticker
+            ));
+            continue;
+        }
+        if !OWNERSHIP_STAKE_SOURCES.contains(&stake.source.as_str()) {
+            errors.push(format!(
+                "Ownership stake {} has unsupported source {}",
+                stake.id, stake.source
+            ));
+            continue;
+        }
+        if let Some(holder_type) = stake.holder_type.as_deref() {
+            if !OWNERSHIP_HOLDER_TYPES.contains(&holder_type) {
+                errors.push(format!(
+                    "Ownership stake {} has unsupported holder type {}",
+                    stake.id, holder_type
+                ));
+                continue;
+            }
+        }
+        summary.ownership_stakes_created += 1;
     }
 
     let existing_question_ids = existing_ids(connection, "research_questions").unwrap_or_default();
@@ -1052,6 +1130,66 @@ fn apply_watchlists_notebooks_questions(
         )?;
 
         summary.management_claims_created += 1;
+    }
+
+    for stake in &document.ownership_stakes {
+        let exists: bool = connection.query_row(
+            "SELECT EXISTS(SELECT 1 FROM ownership_stakes WHERE id = ?1)",
+            [&stake.id],
+            |row| row.get(0),
+        )?;
+        if exists {
+            // Append-only: an existing snapshot is never rewritten on re-import.
+            summary.ownership_stakes_skipped += 1;
+            continue;
+        }
+
+        let company_id = company_id_by_ticker
+            .get(&stake.company_qualified_ticker.trim().to_uppercase())
+            .ok_or_else(|| StorageError::InvalidSettingValue {
+                key: "import_export",
+                value: format!(
+                    "missing ownership stake company {}",
+                    stake.company_qualified_ticker
+                ),
+            })?;
+
+        // Provenance ids are best-effort: keep them only if the referenced row
+        // exists in the target DB, else null (the stake and its history survive).
+        let report_document_id = resolve_optional_reference(
+            connection,
+            "report_documents",
+            stake.report_document_id.as_deref(),
+        )?;
+        let feed_item_id =
+            resolve_optional_reference(connection, "feed_items", stake.feed_item_id.as_deref())?;
+
+        connection.execute(
+            "
+            INSERT INTO ownership_stakes (
+                id, company_id, holder_name_raw, holder_name_normalized, holder_type,
+                capital_pct, votes_pct, as_of, source, report_document_id, feed_item_id,
+                created_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            ON CONFLICT(id) DO NOTHING
+            ",
+            params![
+                stake.id.trim(),
+                company_id,
+                stake.holder_name_raw.trim(),
+                stake.holder_name_normalized.trim(),
+                empty_string_to_none(stake.holder_type.clone()),
+                empty_string_to_none(stake.capital_pct.clone()),
+                empty_string_to_none(stake.votes_pct.clone()),
+                stake.as_of.trim(),
+                stake.source.trim(),
+                report_document_id,
+                feed_item_id,
+                stake.created_at.trim(),
+            ],
+        )?;
+
+        summary.ownership_stakes_created += 1;
     }
 
     for question in &document.research_questions {

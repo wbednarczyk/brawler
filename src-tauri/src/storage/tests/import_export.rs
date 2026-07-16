@@ -709,3 +709,91 @@ fn research_import_rejects_qualitative_criterion_without_guidance() {
         "no NULL-guidance qualitative criterion should be imported"
     );
 }
+
+#[test]
+fn research_data_round_trips_ownership_stakes() {
+    // ADR 0072 / plan v0.56 T2: ownership stakes are owner-durable. Export from a
+    // populated DB, import into a fresh one, and the derived current state and the
+    // full history must survive; the summary counts the section.
+    let source = AppState::new(open_in_memory_database().expect("database should open"));
+    let cdr = source
+        .create_company(tracked_company("CDR", "CD PROJEKT S.A."))
+        .expect("company should create");
+    let store = source.ownership();
+    // Two snapshots for one holder (history) + a one-sided disclosure for another.
+    store
+        .append_snapshot(NewOwnershipStake {
+            company_id: cdr.id.clone(),
+            holder_name_raw: "Marcin Iwiński".to_owned(),
+            holder_type: Some("founder_insider".to_owned()),
+            capital_pct: Some("12.50".to_owned()),
+            votes_pct: Some("18.20".to_owned()),
+            as_of: "2024-06-30".to_owned(),
+            source: "report_document".to_owned(),
+            report_document_id: None,
+            feed_item_id: None,
+        })
+        .expect("first snapshot");
+    store
+        .append_snapshot(NewOwnershipStake {
+            company_id: cdr.id.clone(),
+            holder_name_raw: "Marcin Iwiński".to_owned(),
+            holder_type: Some("founder_insider".to_owned()),
+            capital_pct: Some("11.00".to_owned()),
+            votes_pct: Some("16.10".to_owned()),
+            as_of: "2025-06-30".to_owned(),
+            source: "report_document".to_owned(),
+            report_document_id: None,
+            feed_item_id: None,
+        })
+        .expect("second snapshot");
+    store
+        .append_snapshot(NewOwnershipStake {
+            company_id: cdr.id.clone(),
+            holder_name_raw: "PKO TFI".to_owned(),
+            holder_type: Some("tfi".to_owned()),
+            capital_pct: None,
+            votes_pct: Some("5.01".to_owned()),
+            as_of: "2025-06-30".to_owned(),
+            source: "espi_filing".to_owned(),
+            report_document_id: None,
+            feed_item_id: None,
+        })
+        .expect("one-sided snapshot");
+
+    let export = source.export_research_data().expect("export");
+    assert_eq!(export.summary.ownership_stakes, 3);
+
+    let target = AppState::new(open_in_memory_database().expect("database should open"));
+    let preview = target
+        .preview_research_import(&export.contents)
+        .expect("preview");
+    assert!(preview.valid, "{:?}", preview.errors);
+    assert_eq!(preview.summary.ownership_stakes_created, 3);
+
+    target
+        .apply_research_import(&export.contents)
+        .expect("import applies");
+
+    let imported = target.list_companies().expect("companies");
+    assert_eq!(imported.len(), 1);
+    let company_id = &imported[0].id;
+
+    let current = target
+        .ownership()
+        .current_state(company_id)
+        .expect("current state");
+    assert_eq!(current.len(), 2, "current state = latest per holder");
+    let founder = current
+        .iter()
+        .find(|row| row.holder_name_raw == "Marcin Iwiński")
+        .expect("founder present");
+    assert_eq!(founder.capital_pct.as_deref(), Some("11.00"));
+    assert_eq!(founder.votes_pct.as_deref(), Some("16.10"));
+
+    let history = target
+        .ownership()
+        .history(company_id, None)
+        .expect("history");
+    assert_eq!(history.len(), 3, "full history round-trips");
+}

@@ -98,6 +98,17 @@ pub fn run() {
                 jobs::handlers::pool_layout(state.queue_config()),
             );
 
+            // Ownership extraction catch-up (ADR 0072 T3): a cold or
+            // persisted-but-stale DB may hold fetched periodic reports whose
+            // shareholders table was never parsed (neither a stake nor a residual
+            // recorded). Enqueue extraction for exactly those, off the UI thread on
+            // the durable queue. Best-effort — a failure is logged, never fatal.
+            let catch_up =
+                jobs::ownership_extraction::enqueue_ownership_extraction_catch_up(&state, None);
+            if catch_up > 0 {
+                log::info!("startup ownership extraction catch-up enqueued {catch_up} document(s)");
+            }
+
             // Start the Rust-side source scheduler (ADR 0055 / AV5): it owns the
             // refresh cadence, re-arming source/registry refresh jobs on the durable
             // queue. Replaces the frontend timer, which the webview throttles when
@@ -276,6 +287,12 @@ pub fn run() {
             commands::fundamentals_extraction::list_flagged_fact_provenance,
             commands::fundamentals_coverage::get_fundamentals_coverage,
             commands::market_data::get_price_context,
+            commands::ownership::get_ownership_overview,
+            commands::ownership::backfill_ownership_extraction,
+            commands::ownership::set_ownership_holder_type,
+            commands::ownership::confirm_ownership_holder_type_proposal,
+            commands::ownership::reject_ownership_holder_type_proposal,
+            commands::ownership::run_ownership_classification,
             commands::history_sweep::run_history_sweep,
             commands::history_sweep::get_history_sweep_progress,
             commands::report_documents_view::get_report_documents_view,

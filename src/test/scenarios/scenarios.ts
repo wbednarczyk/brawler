@@ -80,6 +80,7 @@ import {
   makePreReportCard,
   makeQualityFramework,
   makeRegistryEntry,
+  makeOwnershipOverview,
   makeReportDocument,
   makeReportPreparation,
   makeReportSeasonEntry,
@@ -134,6 +135,7 @@ import type {
   KpiRelevance,
 } from "../../api/financialsTypes";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
+import type { OwnershipOverview } from "../../api/ownership";
 import type {
   PreReportCard,
   ReportPreparation,
@@ -207,6 +209,9 @@ export interface ScenarioData {
   kpiRelevance: KpiRelevance[];
   kpiExtractionJobs: KpiExtractionJob[];
   reportDocuments: ReportDocument[];
+  // Ownership overviews per company (ADR 0072, v0.56 T6). Optional seed: a company
+  // with no entry reads back the empty overview (freeFloatPct "100").
+  ownershipOverviews?: OwnershipOverview[];
   // Structured-first extraction provenance (ADR 0061) — optional seed: legacy
   // facts have no row, so the tier/validation badge + drift card simply don't
   // render. A provenance-seeded scenario exercises that UI (badges + the
@@ -376,6 +381,7 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     kpiRelevance: deep.map(makeKpiRelevance),
     kpiExtractionJobs: deep.map(makeKpiExtractionJob),
     reportDocuments: deep.map(makeReportDocument),
+    ownershipOverviews: deep.map(makeOwnershipOverview),
     reportPreparations: deep.map(makeReportPreparation),
     shortPositions: [],
     shortPositionEvents: [],

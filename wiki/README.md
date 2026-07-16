@@ -27,6 +27,10 @@ per feature.
   automatic daily prices, the 52-week range, market cap and level-0 valuation
   ratios, the candlestick chart, sector classification with manual override,
   and the read-only Basic info panel.
+- **[Ownership](ownership.md)** — who holds each company and how that changes:
+  the current-structure donut with derived free float, capital % vs votes %
+  kept separate, stakes over time with ESPI threshold events, automatic holder
+  classification with confirm-only AI, and the BiznesRadar witness.
 - **[Composable cockpit views](cockpit-views.md)** — build your own
   multi-panel dashboards from a grid and a panel picker, save them by name,
   and switch between them from the sidebar.

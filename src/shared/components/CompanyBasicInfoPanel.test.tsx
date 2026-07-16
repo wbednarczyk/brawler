@@ -4,10 +4,40 @@ import userEvent from "@testing-library/user-event";
 
 import { CompanyBasicInfoPanel } from "./CompanyBasicInfoPanel";
 import { getCompanyBasicInfo } from "../../api/companyBasicInfo";
+import { getOwnershipOverview } from "../../api/ownership";
+import { ToastProvider } from "../../ui";
 
 vi.mock("../../api/companyBasicInfo", () => ({
   getCompanyBasicInfo: vi.fn(),
 }));
+// The Ownership section loads its own overview via this module; stub it so the
+// panel-identity tests exercise only the identity/edit behavior.
+vi.mock("../../api/ownership", () => ({
+  getOwnershipOverview: vi.fn(),
+  backfillOwnershipExtraction: vi.fn(),
+  setOwnershipHolderType: vi.fn(),
+  confirmOwnershipHolderTypeProposal: vi.fn(),
+  rejectOwnershipHolderTypeProposal: vi.fn(),
+}));
+
+const EMPTY_OWNERSHIP = {
+  companyId: "company_gpw_cdr",
+  freeFloatPct: "100",
+  disclosedSum: "0",
+  holders: [],
+  history: [],
+  freeFloatHistory: [],
+  residuals: [],
+  pendingProposals: [],
+};
+
+function renderPanel(companyId: string) {
+  return render(
+    <ToastProvider>
+      <CompanyBasicInfoPanel companyId={companyId} />
+    </ToastProvider>,
+  );
+}
 // The edit fields load their own state via the mocked `invoke` (out of scope);
 // stub them so the toggle test exercises only this panel's behavior.
 vi.mock("./CompanySectorField", () => ({
@@ -18,6 +48,7 @@ vi.mock("./CompanyIrReportsUrlField", () => ({
 }));
 
 const getMock = vi.mocked(getCompanyBasicInfo);
+const ownershipMock = vi.mocked(getOwnershipOverview);
 
 const INFO = {
   displayName: "CD PROJEKT S.A.",
@@ -35,10 +66,11 @@ describe("CompanyBasicInfoPanel (owner request 2026-07-14)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     getMock.mockResolvedValue(INFO);
+    ownershipMock.mockResolvedValue(EMPTY_OWNERSHIP);
   });
 
   it("renders identity facts, sector provenance and the shares fact read-only", async () => {
-    render(<CompanyBasicInfoPanel companyId="company_gpw_cdr" />);
+    renderPanel("company_gpw_cdr");
 
     await waitFor(() => {
       expect(screen.getByText("CD PROJEKT S.A.")).toBeInTheDocument();
@@ -54,7 +86,7 @@ describe("CompanyBasicInfoPanel (owner request 2026-07-14)", () => {
 
   it("reveals the sector/IR edit fields only behind the panel-level Edit toggle", async () => {
     const user = userEvent.setup();
-    render(<CompanyBasicInfoPanel companyId="company_gpw_cdr" />);
+    renderPanel("company_gpw_cdr");
     await waitFor(() => expect(screen.getByText("CD PROJEKT S.A.")).toBeInTheDocument());
 
     await user.click(screen.getByRole("button", { name: "Edit" }));
@@ -76,7 +108,7 @@ describe("CompanyBasicInfoPanel (owner request 2026-07-14)", () => {
       sharesOutstanding: null,
       sharesOutstandingPeriod: null,
     });
-    render(<CompanyBasicInfoPanel companyId="company_gpw_cdr" />);
+    renderPanel("company_gpw_cdr");
 
     await waitFor(() => expect(screen.getByText("CD PROJEKT S.A.")).toBeInTheDocument());
     expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);

@@ -30,6 +30,7 @@ export type CompanySignalCategory =
   | "general_meeting"
   | "auditor_opinion"
   | "short_position_change"
+  | "major_holdings_change"
   | "other";
 
 export type CompanyForm = {

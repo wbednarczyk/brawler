@@ -167,6 +167,28 @@ Acceptance criteria:
 - For a company in `autopilot` mode, step 5's confirm/edit/reject modal is bypassed: extraction runs automatically and produced facts land already committed as `auto_unreviewed`. The review point moves to Today/Pulse's Autopilot run card, which offers **Undo** (two-step confirm) instead of confirm/reject — it reverts exactly the facts that run produced, reusing the same supersede/reject mechanics, and the card then shows a "Reverted N facts" state ([ADR 0055](adr/0055-autonomous-report-pipeline-trust-ladder.md) §4). A company in `assist` mode still lands its proposals `pending` and goes through this journey's step 5 as normal.
 - A stored periodic financial statement can be diffed section-by-section against the previous same-type filing, from the company workspace and on new-report arrival ([ADR 0052](adr/0052-report-over-report-diff.md)).
 
+## Journey: Review Company Ownership Structure
+
+Intent: see who owns a tracked company and how stakes moved over time, straight from the Basic info panel, with every disclosure traced to its report ([ADR 0072](adr/0072-ownership-structure.md)). Decision support only — never advice.
+
+Flow:
+
+1. The user opens a company's cockpit dashboard; the **Ownership ("Akcjonariat") section** sits under the Basic info identity facts — no navigation, it is just there. Once the company's periodic reports are fetched, deterministic extraction has already populated it (zero interaction).
+2. The populated section shows a donut by holder type with the derived free-float slice, a stakes-over-time chart, and holder rows with type chips; the derived free float also appears as a Basic-info rowline.
+3. If nothing is disclosed yet, the section shows an empty state with a **"Wydobądź z raportów"** CTA that force-enqueues deterministic extraction across the company's reports (`backfill_ownership_extraction`), with per-document progress; normally the automatic post-backfill run makes this unnecessary.
+4. When an AI holder-type classification is proposed, its holder row carries a "type? to confirm" chip; the user confirms or rejects it — no type is applied automatically (`confirm`/`reject_ownership_holder_type_proposal`).
+5. The user can manually re-type any holder (its current type shows its source — dictionary / AI / manual); a manual label is authoritative and offers an immediate Undo (`set_ownership_holder_type`). Stake history is untouched — only the type label changes.
+6. A report the deterministic parser can't read (glyph-encoded font / image table) surfaces as a residual warnbox explaining why; its OCR/AI result lands in the company **Review queue** for confirmation, never auto-saved.
+
+Acceptance criteria:
+
+- The section populates automatically from fetched reports with zero user interaction; the backfill CTA only force-kicks the same deterministic job.
+- Free float is always derived (`100 − Σ disclosed capital`), rendered as a neutral hatched "uncertain" donut slice and a "Free float (derived)" rowline with an uncertainty hint (the 5% disclosure threshold hides smaller stakes).
+- Holder-type colors are fixed per holder TYPE, never cycled; more than four types fold into "Other".
+- No AI holder-type classification is applied without explicit confirmation; a manual re-type is authoritative and never overwritten by automation.
+- A residual (unreadable) document is never fabricated into data — it is disclosed and routed to the Review queue; partial ESPI data stays visible and an AI-unavailable state leaves the section unchanged.
+- The section stays usable in a ~340px narrow pane (donut over legend, full-width chart, rows wrap without horizontal scroll).
+
 ## Journey: Track A Management Claim To Verdict
 
 Intent: capture a management promise, then resolve whether it was delivered when the due period's report arrives ([ADR 0040](adr/0040-management-claims-tracker.md)).

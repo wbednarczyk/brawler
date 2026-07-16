@@ -1,0 +1,41 @@
+---
+source: src/fundamentals/ownership/tests.rs
+expression: parse_sample_xhtml()
+---
+OwnershipParseOutcome {
+    state: Found,
+    matched_heading: Some(
+        "Akcjonariusze posiadajacy co najmniej 5% ogolnej liczby glosow na WZ",
+    ),
+    rows: [
+        OwnershipRow {
+            holder_raw: "Jan Kowalski",
+            capital_pct: Some(
+                "12.34",
+            ),
+            votes_pct: Some(
+                "15.00",
+            ),
+        },
+        OwnershipRow {
+            holder_raw: "Aviva OFE",
+            capital_pct: Some(
+                "9.88",
+            ),
+            votes_pct: Some(
+                "7.41",
+            ),
+        },
+    ],
+    aggregates: [
+        AggregateRow {
+            label_raw: "Pozostali (free float)",
+            capital_pct: Some(
+                "77.78",
+            ),
+            votes_pct: Some(
+                "77.59",
+            ),
+        },
+    ],
+}

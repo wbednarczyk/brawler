@@ -54,6 +54,7 @@ import type {
   KpiRelevance,
 } from "../../api/financialsTypes";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
+import type { OwnershipOverview } from "../../api/ownership";
 import type {
   PreReportCard,
   ReportPreparation,
@@ -201,6 +202,49 @@ export function makeSignal(spec: CompanySpec, confirmed: boolean): CompanySignal
     sourceUrl: `https://example.test/feed/${spec.key}/0`,
     createdAt: SAMPLE_NOW,
     updatedAt: SAMPLE_NOW,
+  };
+}
+
+// Ownership overview seed (ADR 0072, v0.56 T6). Mirrors the storyboard's real
+// CBF case: two founders + two OFE + treasury (the donut's coloured groups) with
+// a derived 46.8% free float, two multi-year founder trajectories (the
+// stakes-over-time charts), one holder awaiting AI classification (pending
+// proposal), and one unreadable document (residual → OCR/AI review queue).
+export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
+  const founderPoints = (pct: string) => [
+    { asOf: "2023-12-31", capitalPct: pct },
+    { asOf: "2024-12-31", capitalPct: pct },
+    { asOf: "2025-12-31", capitalPct: pct },
+  ];
+  return {
+    companyId: companyId(spec),
+    asOf: "2025-12-31",
+    source: "report_document",
+    freeFloatPct: "46.8",
+    disclosedSum: "53.2",
+    freeFloatHistory: [
+      { asOf: "2023-12-31", pct: "52.4" },
+      { asOf: "2024-12-31", pct: "49.1" },
+      { asOf: "2025-12-31", pct: "46.8" },
+    ],
+    holders: [
+      { holderKey: "JACEK DUCH", name: "Jacek Duch", holderType: "founder_insider", capitalPct: "25.5", votesPct: "25.5", asOf: "2025-12-31", source: "report_document" },
+      { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", capitalPct: "15.9", votesPct: "15.9", asOf: "2025-12-31", source: "report_document" },
+      { holderKey: "NN PTE", name: "NN PTE", holderType: "ofe_pension", capitalPct: "6.0", votesPct: "6.0", asOf: "2025-12-31", source: "report_document" },
+      { holderKey: "PTE ALLIANZ POLSKA", name: "PTE Allianz Polska", holderType: "ofe_pension", capitalPct: "5.3", votesPct: "5.3", asOf: "2025-12-31", source: "report_document" },
+      { holderKey: "CYBER_FOLKS S.A.", name: "cyber_Folks S.A.", holderType: "treasury_shares", capitalPct: "0.5", votesPct: "0.5", asOf: "2025-12-31", source: "report_document" },
+      { holderKey: "ITEMA VENTURES UAB", name: "Itema Ventures UAB", asOf: "2025-12-31", source: "report_document" },
+    ],
+    history: [
+      { holderKey: "JACEK DUCH", name: "Jacek Duch", holderType: "founder_insider", points: founderPoints("25.5") },
+      { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", points: founderPoints("15.9") },
+    ],
+    residuals: [
+      { reportDocumentId: `doc_${spec.key}_2023`, parseState: "glyph_encoded", detectedAsOf: "2023-12-31", matchedHeading: "Akcjonariat" },
+    ],
+    pendingProposals: [
+      { id: `ownhtp_${spec.key}_itema`, holderKey: "ITEMA VENTURES UAB", proposedType: "other_institutional", confidence: 0.7, rationale: "foreign holding entity" },
+    ],
   };
 }
 

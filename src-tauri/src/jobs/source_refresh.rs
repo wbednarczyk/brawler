@@ -156,6 +156,12 @@ pub fn refresh_source_for_trigger(
 /// idempotent — it never fails the refresh.
 fn after_successful_refresh(state: &app_state::AppState) {
     crate::jobs::autopilot::run_detection_sweep(state);
+    // Ownership extraction (ADR 0072 T3): a newly ingested periodic report may
+    // carry an as-yet-unparsed shareholders table. Enqueue extraction for every
+    // fetched periodic document still lacking ownership coverage — deterministic,
+    // idempotent, and independent of the autopilot mode (its writes are final,
+    // not AI proposals).
+    crate::jobs::ownership_extraction::enqueue_ownership_extraction_catch_up(state, None);
 }
 
 pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {
@@ -299,6 +305,10 @@ fn runtime_adapters() -> Vec<RuntimeAdapter> {
         RuntimeAdapter {
             id: sa::knf_short_selling::ADAPTER_ID,
             behavior: RefreshBehavior::Fetcher(&sa::knf_short_selling::KnfShortSellingRefresh),
+        },
+        RuntimeAdapter {
+            id: sa::biznesradar_ownership::ADAPTER_ID,
+            behavior: RefreshBehavior::Fetcher(&sa::biznesradar_ownership::BiznesRadarOwnershipAdapter),
         },
         RuntimeAdapter {
             id: sa::gpw_company_registry::ADAPTER_ID,
@@ -784,6 +794,8 @@ mod tests {
         //   T4: knf-short-selling.
         //   T3: gpw-espi-ebi — the reconciliation witness now runs a Fetcher and
         //       joins the sweep (it reconciles against Bankier; it does NOT ingest).
+        //   v0.56 T4: biznesradar-akcjonariat — the ownership breadth source joins
+        //       the sweep (writes aggregator stakes; never ingests into the feed).
         use super::runtime_adapters;
 
         let members: Vec<&str> = runtime_adapters()
@@ -800,6 +812,7 @@ mod tests {
                 "gpw-market-events-rss",
                 "bankier-market-rss",
                 "knf-short-selling",
+                "biznesradar-akcjonariat",
                 "yahoo-eod",
                 "gpw-espi-ebi",
             ],

@@ -20,7 +20,9 @@ import {
 //    already covered end-to-end by watchlists.spec.ts; folding its 5-interaction
 //    picker in here would push J3 past its ≤12 ceiling. It stays out of this
 //    measured path by design.
-//  - Future steps (dated): v0.53+ sector & ratios, v0.56 ownership, v0.57 health
+//  - v0.56 ownership joined below (zero-interaction: the Basic Info ownership
+//    section empty-states/populates automatically once the company is tracked).
+//  - Future steps (dated): v0.53+ sector & ratios, v0.57 health
 //    scores arrive automatically once tracked; they join this journey when built.
 
 test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
@@ -50,6 +52,15 @@ test.describe("J3 — onboarding a new company", { tag: "@journey" }, () => {
     await expect(page.getByLabel("Research cockpit")).toBeVisible();
     await j.markScreen("Company workspace");
     await expectNoPageOverflow(page);
+
+    // v0.56 ownership (ADR 0072): the Basic Info ownership section shows up for
+    // a freshly tracked company with ZERO added interactions — the empty state
+    // invites the report backfill; population is fully automatic afterwards.
+    const ownershipSection = page.locator(".ownership-section");
+    await expect(ownershipSection).toBeVisible();
+    await expect(
+      ownershipSection.getByText("No ownership disclosures yet", { exact: false }),
+    ).toBeVisible();
 
     await j.click(page.getByLabel("Research cockpit").getByRole("button", { name: "Notebook", exact: true }).first());
     const notebookPane = page.locator(".cockpit-pane", { has: page.locator(".notebook-panel") });

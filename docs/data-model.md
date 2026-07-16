@@ -382,6 +382,89 @@ The persisted GPW ESPI/EBI witness ↔ Bankier agreement ledger ([ADR 0069](adr/
 - Matching is tolerant: exact ESPI report-number match (`N/YYYY`, e.g. Bankier "RB 15/2026") first, then a `(company, disclosure date)` fallback. Window = `[earliest witness disclosure date, now]` (default 7-day lookback when the listing is empty).
 - An `espi_only` result for a tracked company raises a **system** `attention_events` row (`trigger_type = source_reconciliation`, `evidence_ref = result id`), surfaced through the v0.54 attention routing (Today stream + toast + morning briefing). The full ledger is developer-diagnostics only (`list_source_reconciliation`).
 
+### Ownership Stakes
+
+Who owns each tracked company and how that changes over time ([ADR 0072](adr/0072-ownership-structure.md) — amended 2026-07-16, plan v0.56 T2). Migration `0082_ownership_stakes.sql`. Stored as **append-only snapshots** per `(source, as_of)` — history is the product, matching the financial-facts philosophy. Prior snapshots are never rewritten (one scoped exception: an `aggregator` same-basis re-ingest reconciles that basis's row set, see the witness section). Ingested from the BiznesRadar aggregator (breadth), stored periodic reports and the ESPI `major_holdings_change` signal (depth/freshness); `manual` entry is always available.
+
+`ownership_stakes` (append-only stake snapshots):
+
+- `id` — deterministic (`ownstake_{company}_{source}_{as_of}_{holder_normalized}`, `slug_part` idiom); a given `(company, source, as_of, holder)` maps to one row, so re-ingest **upserts in place**.
+- `company_id`
+- `holder_name_raw` (as printed) / `holder_name_normalized` (trim + collapse whitespace + uppercase — the **stable grouping key** that derives the stake id, so it is deliberately NOT deepened; T5's legal-form stripping lives in a separate matching-only `canonical_holder_key`, see Holder-type classification below)
+- `holder_type` — `founder_insider | family_foundation | tfi | ofe_pension | state_treasury | parent_company | treasury_shares | other_institutional | free_float_rest` (CHECK). **Nullable** = not yet classified (dictionary miss awaiting AI/manual re-type) — a NULL rather than a sentinel value.
+- `capital_pct` / `votes_pct` — **two separate** decimal-exact TEXT columns (the `financial_facts.value_numeric` convention, parsed with `rust_decimal`), each **nullable**: reports sometimes disclose only one, and preferred-vote shares make the gap itself investor signal.
+- `as_of` (domain date)
+- `source` — `report_document | espi_filing | aggregator | manual` (CHECK)
+- `report_document_id?` / `feed_item_id?` — provenance to the exact document / filing (nullable; `ON DELETE SET NULL`)
+- `created_at`
+- `UNIQUE(company_id, source, as_of, holder_name_normalized)`
+
+Rules:
+
+- **Append-only**: same `(company, source, as_of, holder)` updates the classification / percentages / provenance in place (never `created_at` or the domain key); a **new `as_of` always inserts** a fresh row, preserving the timeline.
+- **Current state** (`current_state`) = the latest disclosed stake per holder, selected by **`as_of`** (tie-break: latest `created_at`, then id) — **never `created_at`**, which backfill makes diverge from the domain date.
+- **Free float is NOT stored** — it is derived at read time: `100 − Σ disclosed capital_pct`, floored at 0, returned by `current_state_with_free_float` together with the component sum (`disclosed_capital_sum`) so the UI can show the uncertainty note (sub-threshold stakes hide in the float). `free_float_history` derives one point per **full-picture basis** (`report_document` and `aggregator` `as_of` groups, identity-deduped first); ESPI single-holder updates are deliberately not bases.
+- **Manual re-type** (`set_holder_type`) corrects `holder_type` across the holder's rows only — a classification label, never a new snapshot, and it never touches pct/as_of/history.
+
+`ownership_holder_dictionary` (holder classification, **seeded as data — extensible without code**):
+
+- `alias_normalized` (PK, uppercase normalized alias) → `holder_type` (same CHECK set) + `display_name?`, `created_at` / `updated_at`.
+- Seeded idempotently by migration 0082 with a starter set (major Polish TFI, OFE, State entities, treasury-share patterns); the deterministic classifier (`load_holder_dictionary`) looks holders up here, and new entries are added by inserting rows, not changing code.
+
+Owner-durable: the `ownership_stakes` section joins the v2 research import/export bundle. Import is idempotent by deterministic id (existing snapshots are skipped, never rewritten — append-only); provenance ids are kept only when they resolve in the target DB, else nulled.
+
+**Interface note for v0.57 (red-flags / insider sentiment)**: the fund-exit feed is read-only over this model — an exit event = a holder present in the previous disclosure basis and absent from the newest (or a `major_holdings_change` snapshot whose `capital_pct`/`votes_pct` decreased). Both derive from `ownership_stakes` history + `current_state`; v0.57 adds no ownership tables.
+
+**Current-state read = newest disclosure basis, not latest-per-holder-over-history** (real-data harvest 2026-07-16): a holder who drops below the 5% disclosure threshold *vanishes* from later filings (no "0%" row exists), so a naive latest-per-holder union resurrects stale holders and pushes the disclosed sum past 100% (free float goes to 0). `current_state` therefore scopes to a **baseline** = `max(as_of)` of the company's **full-picture bases** — `report_document` and `aggregator` snapshots (ADR 0072 amendment: the newest full picture wins, whichever source it came from; fallback: any source) — returns the latest per holder at `as_of >= baseline`, and overlays later `espi_filing`/`manual` snapshots. Pre-baseline holders remain in `history` only. The witness comparison path uses a **disclosed-only reference read** (same baseline logic restricted to non-`aggregator` sources) so the aggregator is never compared against itself. Free float derives from this scoped state. Within the scoped set, rows merge by **holder identity**: a shared dictionary `display_name` when the name resolves to a seeded entity alias (`HolderIdentityMap`; "NN PTE" = "Nationale-Nederlanden PTE S.A.", migration `0086`), else the parenthetical-stripped canonical key ("cyber_Folks S.A." = "cyber_Folks S.A. (akcje własne)"); generic marker aliases (`treasury_shares`) never act as identities. The most specific raw name represents the merged holder; history keeps every variant.
+
+**Report extraction** (plan v0.56 T3, migration `0083_ownership_extraction_residual.sql`, [ADR 0072](adr/0072-ownership-structure.md)): the `ownership_extraction` job parses the mandatory shareholders table of a stored periodic report and writes stakes **directly and finally** with `source = report_document` (owner decision 2026-07-16 — the deterministic parse needs no confirmation). A parse it cannot turn into holder rows (glyph-mangled font, image table, missing section) writes **zero** stakes and is parked in `ownership_extraction_residual` for the later AI/OCR path, whose results always require confirmation.
+
+`ownership_extraction_residual` (the deterministic parser's pending queue):
+
+- `report_document_id` (PK → `report_documents`, `ON DELETE CASCADE`) — one residual per document, so a re-run **upserts in place**; the job **clears** it the moment a (later) parser version succeeds, so a document is never both parsed and residual.
+- `company_id` (→ `companies`, `ON DELETE CASCADE`)
+- `parse_state` — `section_missing | table_unparsable | glyph_encoded` (CHECK) — why the deterministic parse could not write stakes.
+- `detected_as_of?` — the disclosure date resolved for the document, if any (carried so the AI/OCR write reuses it).
+- `matched_heading?` — the shareholders heading line that anchored the failed parse, verbatim (NULL for `section_missing`).
+- `created_at` / `updated_at`.
+
+**`as_of` resolution order** (deterministic and stable across re-runs, so the append-only stake id never churns): (1) the document's linked `financial_periods.period_end_date` (via `period_id`); (2) else the document-period derivation (`derive_report_period` — the ESEF iXBRL context end, else the title/URL end-of-period); (3) else the first date at/after the matched shareholders heading in the extracted section text. A parse that yields rows but no resolvable date writes nothing (never fabricates a date) — it is parked as a `table_unparsable` residual instead.
+
+**Triggers** (deterministic CPU parse on the **autopilot** worker lane, independent of autopilot mode): *on-new-report* (post-refresh) and *app-startup catch-up* enqueue every fetched periodic document lacking coverage (no `report_document` stake and no residual); a *backfill* pass force-enqueues every fetched periodic document of a company (UI/T6 + epic backfill). Residual is transient/derived state — **not** part of the import/export bundle.
+
+**Holder-type classification** (plan v0.56 T5, [ADR 0072](adr/0072-ownership-structure.md) §3). A holder's `holder_type` is resolved in a fixed order, each step only touching still-NULL rows so an earlier decision is never overwritten:
+
+1. **Dictionary** — `ownership_holder_dictionary`, matched on a *canonical key* (`canonical_holder_key`: fold Polish diacritics, drop punctuation, uppercase, collapse whitespace, strip legal-form suffixes/prefixes — S.A./Sp. z o.o./S.à r.l.… — while **keeping** type-signal tokens TFI/OFE/PTE/DFE/FIZ/SFIO; pure, deterministic, idempotent). Two modes: exact alias hit, then containment (a canonical alias appearing as a whole-token run inside the holder key, **longest-alias-wins**).
+2. **Heuristic name markers** — an unambiguous signal the name itself carries when the dictionary misses: `OFE`/"otwarty fundusz emerytalny" → `ofe_pension`; `TFI`/"towarzystwo funduszy inwestycyjnych" → `tfi`; a name beginning `FUNDACJA` → `family_foundation`; "akcje własne" → `treasury_shares`; "skarb państwa" → `state_treasury`. A plain issuer name (e.g. "cyber_Folks S.A.") never matches — it stays NULL.
+3. **AI classify-with-confirm** — the residual (dictionary miss + no marker) is proposed by the routable `ownership_holder_classification` AI capability ([ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md)) into `ownership_holder_type_proposals` and is **never auto-applied**.
+4. **Manual re-type** (`set_holder_type`) always wins and is never overwritten by a re-classification.
+
+Steps 1–2 run in `classify_unclassified_for_company` (called by the T3 extraction job and the UI); it stamps NULL rows only, creates no snapshot, and touches no history.
+
+`ownership_holder_type_proposals` (migration `0084_ownership_holder_type_proposals.sql`, AI proposals — **transient, not in the import/export bundle**):
+
+- `id` — deterministic (`ownhtp_{company}_{holder_normalized}`, `slug_part` idiom) + `UNIQUE(company_id, holder_name_normalized)`: one live proposal per holder, so a re-run **upserts in place** (never duplicates), and a **confirmed** proposal is never disturbed.
+- `company_id` (→ `companies`, `ON DELETE CASCADE`), `holder_name_normalized` (same key as `ownership_stakes`).
+- `proposed_type` (same CHECK set as `ownership_stakes.holder_type`), `confidence?` (REAL 0–1), `rationale?`.
+- `status` — `pending | confirmed | rejected` (CHECK, default `pending`). **Confirm** (`confirm_holder_type_proposal`) applies the type across the holder's rows via `set_holder_type`; **reject** (`reject_holder_type_proposal`) just marks it, leaving `holder_type` NULL. A malformed/low-signal model response yields no proposal and never a stamp.
+- `provider_id?` / `model?` (capability-routed provenance), `created_at` / `updated_at`.
+
+**ESPI major-holdings stake update** (plan v0.56 T4 stream 2, migration `0085_major_holdings_and_ownership_witness.sql`, [ADR 0072](adr/0072-ownership-structure.md) §2b). Migration 0085 seeds the `major_holdings_change` signal category (rule classifier over formulaic art. 69 title patterns — "znaczny pakiet akcji", "art. 69", "zmiana udziału w ogólnej liczbie głosów", …). When Bankier ingestion classifies a **confirmed** `major_holdings_change` signal, a post-classification sweep (`update_stakes_from_major_holdings`) runs a **conservative deterministic** parse of the notification body (`fundamentals::ownership::espi_notification`):
+
+- A **clean** parse (unambiguous holder + at least one resulting percentage; capital % and votes % kept separate) writes a stake with `source = espi_filing`, `as_of` = the filing disclosure date, and `feed_item_id` provenance. Idempotent: the deterministic stake id + a once-per-filing gate mean re-ingest never duplicates.
+- **Any ambiguity is never guessed** (silently-wrong ownership is worse than absent): conflicting before/after percentages, or no confidently-extractable holder, write **zero** stakes and park the filing in `ownership_espi_unparsed` (PK `feed_item_id` → `feed_items` `ON DELETE CASCADE`; `company_id`, `reason`, timestamps) — so each filing is attempted exactly once — plus a paired diagnostic event (`ownership_espi_unparsed`, developer-mode).
+
+**Aggregator ownership breadth source + reversed witness** (plan v0.56 T4 stream 3, migration 0085, [ADR 0072](adr/0072-ownership-structure.md) §2c as amended 2026-07-16). Adapter `biznesradar-akcjonariat` (`ownership` type, `primary` role, `optional`, daily): for each tracked GPW company it fetches BiznesRadar's public `/akcjonariat/<ticker>` page and **writes the "Główni akcjonariusze" table as a full-picture `aggregator` snapshot**. Table scope (real-page harvest 2026-07-16): the page carries TWO identically-headed tables — "Główni akcjonariusze" (the ≥5% disclosure picture; **the only one ingested**, anchored by its section heading with a first-`Akcjonariusz`-header-table fallback) and "Pozostali akcjonariusze" (sub-5% stakes lifted from fund financial statements — deliberately NOT ingested; deferred as a possible fund-positions depth feature). Guards: a row containing any `<th>` cell is a header/summary row ("razem") and is skipped; a row is rejected unless its holder name is non-empty and not itself a percentage and each parsed percentage is ≤ 100; a basis whose disclosed capital sums > 102 is **implausible — nothing is written** and a diagnostic is recorded (counts as a failed page for the all-fail guard). All written rows share one `as_of` = the newest "Data aktualizacji" in the ingested table (fallback: fetch date), so an unchanged page upserts the same basis in place; a **same-basis re-ingest reconciles the row set** (a holder gone from the page within an unchanged `as_of` is deleted — `aggregator` rows at that basis only; prior bases and other sources are never touched). Newly written holders go through the deterministic classification steps 1–2 (`classify_unclassified_for_company`). The refresh then compares the fetched table against the **disclosed-only reference read** (reports/ESPI witness the aggregator). Divergence = a holder present on only one side above the 5% threshold, or a matched holder's capital % (votes % fallback) differing by >1.0 pp; each divergence is a diagnostic event (`witness_divergence`).
+
+`ownership_witness_results` (last comparison per adapter+company — **transient/observability, not in the import/export bundle**):
+
+- `id` — deterministic (`ownwit_{adapter}_{company}`) + `UNIQUE(adapter_id, company_id)`: one row per adapter+company, re-run **upserts in place**.
+- `adapter_id`, `company_id` (→ `companies`, `ON DELETE CASCADE`).
+- `status` — `agree | diverged | no_reference` (CHECK; `no_reference` = we hold no disclosed stakes to compare yet).
+- `holders_compared`, `divergence_count`, `checked_at`, `created_at` / `updated_at`.
+
+A witness run marks the adapter healthy (`source_adapters.last_success_at`); an all-fail run records an error and does not (mirrors the KNF/GPW empty-witness guard).
+
 ### Transcript Jobs
 
 Supports Transcripts screen and company Transcripts tab.

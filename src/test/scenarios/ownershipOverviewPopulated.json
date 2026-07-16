@@ -1,0 +1,84 @@
+{
+  "asOf": "2025-12-31",
+  "companyId": "company_gpw_cbf",
+  "disclosedSum": "31.5",
+  "freeFloatHistory": [
+    { "asOf": "2024-12-31", "pct": "74.5" },
+    { "asOf": "2025-12-31", "pct": "68.5" }
+  ],
+  "freeFloatPct": "68.5",
+  "history": [
+    {
+      "holderKey": "ITEMA VENTURES UAB",
+      "name": "Itema Ventures UAB",
+      "points": [
+        {
+          "asOf": "2025-12-31"
+        }
+      ]
+    },
+    {
+      "holderKey": "JACEK DUCH",
+      "holderType": "founder_insider",
+      "name": "Jacek Duch",
+      "points": [
+        {
+          "asOf": "2024-12-31",
+          "capitalPct": "25.5"
+        },
+        {
+          "asOf": "2025-12-31",
+          "capitalPct": "25.5"
+        }
+      ]
+    },
+    {
+      "holderKey": "NN PTE",
+      "holderType": "ofe_pension",
+      "name": "NN PTE",
+      "points": [
+        {
+          "asOf": "2025-12-31",
+          "capitalPct": "6.0"
+        }
+      ]
+    }
+  ],
+  "holders": [
+    {
+      "asOf": "2025-12-31",
+      "holderKey": "ITEMA VENTURES UAB",
+      "name": "Itema Ventures UAB",
+      "source": "report_document"
+    },
+    {
+      "asOf": "2025-12-31",
+      "capitalPct": "25.5",
+      "holderKey": "JACEK DUCH",
+      "holderType": "founder_insider",
+      "name": "Jacek Duch",
+      "source": "report_document",
+      "votesPct": "25.5"
+    },
+    {
+      "asOf": "2025-12-31",
+      "capitalPct": "6.0",
+      "holderKey": "NN PTE",
+      "holderType": "ofe_pension",
+      "name": "NN PTE",
+      "source": "report_document",
+      "votesPct": "6.0"
+    }
+  ],
+  "pendingProposals": [
+    {
+      "confidence": 0.7,
+      "holderKey": "ITEMA VENTURES UAB",
+      "id": "ownhtp_company_gpw_cbf_itemaventuresuab",
+      "proposedType": "other_institutional",
+      "rationale": "foreign holding entity"
+    }
+  ],
+  "residuals": [],
+  "source": "report_document"
+}

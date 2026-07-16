@@ -210,6 +210,152 @@ fn migration_0062_widens_autopilot_run_trigger_and_preserves_rows() {
 }
 
 #[test]
+fn migration_0082_creates_ownership_tables_and_seeds_dictionary_idempotently() {
+    // ADR 0072 / plan v0.56 T2: migration 0082 adds `ownership_stakes` (append-only
+    // stake snapshots) + `ownership_holder_dictionary` (seeded as data). Both tables
+    // use IF NOT EXISTS and the dictionary seed is an idempotent upsert, so re-running
+    // the runner is a safe no-op that neither errors nor re-seeds duplicates.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    let seeded_before: i64 = count_rows(&connection, "ownership_holder_dictionary").expect("count");
+    assert!(seeded_before > 0, "the holder dictionary must be seeded");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("company insert");
+    connection
+        .execute(
+            "INSERT INTO ownership_stakes
+                (id, company_id, holder_name_raw, holder_name_normalized, capital_pct, votes_pct, as_of, source)
+             VALUES ('s1', 'c1', 'Marcin Iwiński', 'MARCIN IWIŃSKI', '10', '10', '2025-06-30', 'report_document')",
+            [],
+        )
+        .expect("an ownership stake row must be storable");
+
+    // Re-running the runner is a safe no-op on the new tables and seed.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+
+    let seeded_after: i64 = count_rows(&connection, "ownership_holder_dictionary").expect("count");
+    assert_eq!(
+        seeded_before, seeded_after,
+        "dictionary re-seed must not duplicate"
+    );
+    assert_eq!(
+        count_rows(&connection, "ownership_stakes").expect("count"),
+        1,
+        "re-running migrations must not disturb ownership data"
+    );
+}
+
+#[test]
+fn migration_0083_creates_ownership_residual_table_idempotently() {
+    // ADR 0072 / plan v0.56 T3: migration 0083 adds `ownership_extraction_residual`
+    // (the pending queue for periodic reports the deterministic parser could not
+    // turn into stakes). IF NOT EXISTS + an idempotent per-document upsert, so
+    // re-running the runner is a safe no-op that neither errors nor duplicates.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("company insert");
+    connection
+        .execute(
+            "INSERT INTO report_documents (id, company_id, source_type, url, fetch_status)
+             VALUES ('d1', 'c1', 'user_url', 'https://x/ssf.xhtml', 'fetched')",
+            [],
+        )
+        .expect("report document insert");
+    connection
+        .execute(
+            "INSERT INTO ownership_extraction_residual
+                (report_document_id, company_id, parse_state, detected_as_of)
+             VALUES ('d1', 'c1', 'glyph_encoded', '2025-12-31')",
+            [],
+        )
+        .expect("an extraction residual row must be storable");
+
+    // Re-running the runner is a safe no-op on the new table.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+
+    assert_eq!(
+        count_rows(&connection, "ownership_extraction_residual").expect("count"),
+        1,
+        "re-running migrations must not disturb residual data"
+    );
+
+    // The parse_state CHECK rejects an out-of-taxonomy value.
+    let bad = connection.execute(
+        "INSERT INTO ownership_extraction_residual (report_document_id, company_id, parse_state)
+         VALUES ('d2', 'c1', 'nonsense')",
+        [],
+    );
+    assert!(bad.is_err(), "parse_state CHECK must reject unknown states");
+}
+
+#[test]
+fn migration_0084_creates_holder_type_proposals_table_idempotently() {
+    // ADR 0072 §3 / plan v0.56 T5: migration 0084 adds
+    // `ownership_holder_type_proposals` (AI classify-with-confirm). IF NOT EXISTS +
+    // a deterministic id UNIQUE per (company, holder), so re-running the runner is a
+    // safe no-op that neither errors nor disturbs data.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("company insert");
+    connection
+        .execute(
+            "INSERT INTO ownership_holder_type_proposals
+                (id, company_id, holder_name_normalized, proposed_type, confidence, status)
+             VALUES ('p1', 'c1', 'ULTRO S.A.R.L.', 'other_institutional', 0.7, 'pending')",
+            [],
+        )
+        .expect("a holder-type proposal row must be storable");
+
+    // Re-running the runner is a safe no-op on the new table.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+    assert_eq!(
+        count_rows(&connection, "ownership_holder_type_proposals").expect("count"),
+        1,
+        "re-running migrations must not disturb proposal data"
+    );
+
+    // The proposed_type CHECK rejects an out-of-taxonomy value.
+    let bad_type = connection.execute(
+        "INSERT INTO ownership_holder_type_proposals (id, company_id, holder_name_normalized, proposed_type)
+         VALUES ('p2', 'c1', 'X', 'nonsense')",
+        [],
+    );
+    assert!(
+        bad_type.is_err(),
+        "proposed_type CHECK must reject unknown types"
+    );
+
+    // The status CHECK rejects an out-of-taxonomy value.
+    let bad_status = connection.execute(
+        "INSERT INTO ownership_holder_type_proposals (id, company_id, holder_name_normalized, proposed_type, status)
+         VALUES ('p3', 'c1', 'Y', 'tfi', 'nonsense')",
+        [],
+    );
+    assert!(
+        bad_status.is_err(),
+        "status CHECK must reject unknown states"
+    );
+}
+
+#[test]
 fn migration_0063_creates_ocr_profile_table_idempotently() {
     // ADR 0077 §4: migration 0063 adds the per-company OCR-markdown extraction
     // profile table. It must be idempotent (CREATE TABLE IF NOT EXISTS) and
@@ -831,4 +977,68 @@ fn migration_0070_drops_feed_items_story_key_and_index() {
     assert_eq!(survived, 1, "feed items must survive the column drop");
 
     apply_migrations(&mut connection).expect("re-run is safe");
+}
+
+#[test]
+fn migration_0088_deletes_aggregator_stakes_only() {
+    // Repair migration 0088 (parser-defect reset, 2026-07-16): the old aggregator
+    // parser ingested summary/"razem" rows and the sub-5% fund table, so every
+    // aggregator basis is garbage. 0088 deletes ALL `aggregator` stakes (the fixed
+    // parser rewrites clean bases on the next refresh) and touches nothing else.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 87).expect("apply schema through 0087");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed a company");
+    connection
+        .execute(
+            "INSERT INTO ownership_stakes
+                (id, company_id, holder_name_raw, holder_name_normalized, source, as_of, capital_pct)
+             VALUES
+                ('rep1', 'c1', 'Holder A', 'HOLDER A', 'report_document', '2026-06-30', '20'),
+                ('esp1', 'c1', 'Holder D', 'HOLDER D', 'espi_filing',     '2026-07-05', '9'),
+                ('agg1', 'c1', 'Holder B', 'HOLDER B', 'aggregator',      '2026-07-10', '18'),
+                ('agg2', 'c1', 'Holder C', 'HOLDER C', 'aggregator',      '2026-07-10', '6')",
+            [],
+        )
+        .expect("seed stakes across sources");
+
+    apply_migrations(&mut connection).expect("apply migration 0088");
+
+    let aggregator: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM ownership_stakes WHERE source = 'aggregator'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count aggregator");
+    assert_eq!(aggregator, 0, "0088 deletes every aggregator stake");
+
+    let others: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM ownership_stakes WHERE source != 'aggregator'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count non-aggregator");
+    assert_eq!(
+        others, 2,
+        "report_document and espi_filing stakes are untouched"
+    );
+
+    // Idempotent re-run leaves the non-aggregator rows in place.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    let others_after: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM ownership_stakes WHERE source != 'aggregator'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count non-aggregator after re-run");
+    assert_eq!(others_after, 2, "re-run keeps the non-aggregator rows");
 }

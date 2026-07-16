@@ -8,6 +8,8 @@ pub mod handlers;
 pub mod history_sweep;
 pub mod kpi_extraction;
 pub mod morning_briefing;
+pub mod ownership_classification;
+pub mod ownership_extraction;
 pub mod qualitative_assessment;
 pub mod queue;
 pub mod quote_backfill;

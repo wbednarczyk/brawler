@@ -35,6 +35,13 @@ pub use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
 /// optional narrative and persists the briefing. Assigned to the **ai** lane
 /// (the narrative is a provider call). Defined with the job.
 pub use crate::jobs::morning_briefing::MORNING_BRIEFING_KIND;
+/// Job kind: extract the shareholders table of one stored periodic report into
+/// `ownership_stakes` (ADR 0072, v0.56.0 T3). The payload carries
+/// `{companyId, reportDocumentId}`; the handler runs the deterministic parser and
+/// writes stakes directly, or records a residual for the AI/OCR path. A
+/// deterministic CPU parse chained from ingestion — assigned to the **autopilot**
+/// lane (the history-sweep family), never a provider call. Defined with the job.
+pub use crate::jobs::ownership_extraction::OWNERSHIP_EXTRACTION_KIND;
 /// Job kind: assess qualitative quality-framework criteria (ADR 0075, v0.50.0).
 /// The payload carries `{companyId, frameworkId, criterionIds?}`; the handler
 /// gathers evidence, assesses each criterion through the capability pool, and
@@ -168,6 +175,23 @@ impl JobHandler for HistorySweepHandler {
 
     fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
         crate::jobs::history_sweep::run_history_sweep_job(state, payload)
+    }
+}
+
+/// Ownership extraction (ADR 0072, v0.56 T3). Runs the deterministic parse and
+/// returns its Result: a storage-level abort returns `Err` so the queue records
+/// it, while domain outcomes (a residual recorded, a missing/unfetched document
+/// skipped) return `Ok`. Deterministic — no per-job status table (its read model
+/// is the stakes/residual rows it writes).
+struct OwnershipExtractionHandler;
+
+impl JobHandler for OwnershipExtractionHandler {
+    fn kind(&self) -> &'static str {
+        OWNERSHIP_EXTRACTION_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::ownership_extraction::run_ownership_extraction_job(state, payload)
     }
 }
 
@@ -308,6 +332,7 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(QualitativeAssessmentHandler));
     worker.register(Arc::new(MorningBriefingHandler));
     worker.register(Arc::new(HistorySweepHandler));
+    worker.register(Arc::new(OwnershipExtractionHandler));
     worker.register(Arc::new(AutopilotStageHandler));
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
     worker.register(Arc::new(SourceCompanyRefreshHandler));
@@ -338,7 +363,11 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
         },
         WorkerPool {
             name: "autopilot",
-            kinds: vec![AUTOPILOT_STAGE_KIND, HISTORY_SWEEP_KIND],
+            kinds: vec![
+                AUTOPILOT_STAGE_KIND,
+                HISTORY_SWEEP_KIND,
+                OWNERSHIP_EXTRACTION_KIND,
+            ],
             workers: config.autopilot_workers.max(1) as usize,
         },
         WorkerPool {

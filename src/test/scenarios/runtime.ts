@@ -19,6 +19,7 @@ import {
 import { buildScenario, type ScenarioData, type ScenarioName, type ScenarioSpec } from "./scenarios";
 import { createControlledAsync, type MockRuntimeControls } from "./controlledAsync";
 import type { ResearchEvidenceInput } from "../../api/researchTypes";
+import type { OwnershipOverview } from "../../api/ownership";
 import type { CommandError } from "../../api/generated/CommandError";
 
 export type { MockRuntimeControls, InvocationPhase, InvocationMatch, PendingInvocation } from "./controlledAsync";
@@ -387,6 +388,32 @@ function evaluateExpectationOutcome(
   return met ? "met" : "missed";
 }
 
+// Ownership overview (ADR 0072, v0.56 T6). A company with no seeded overview
+// reads back the empty overview (freeFloatPct "100"), mirroring the real
+// backend's answer for a company with no disclosed stakes.
+function emptyOwnershipOverview(companyId: string): OwnershipOverview {
+  return {
+    companyId,
+    freeFloatPct: "100",
+    disclosedSum: "0",
+    holders: [],
+    history: [],
+    freeFloatHistory: [],
+    residuals: [],
+    pendingProposals: [],
+  };
+}
+
+function ensureOwnershipOverview(data: ScenarioData, companyId: string): OwnershipOverview {
+  if (!data.ownershipOverviews) data.ownershipOverviews = [];
+  let overview = data.ownershipOverviews.find((entry) => entry.companyId === companyId);
+  if (!overview) {
+    overview = emptyOwnershipOverview(companyId);
+    data.ownershipOverviews.push(overview);
+  }
+  return overview;
+}
+
 // ---------------------------------------------------------------------------
 // Handler table
 // ---------------------------------------------------------------------------
@@ -525,6 +552,55 @@ function buildHandlers(): Record<string, Handler> {
         emptyReason,
       };
     },
+
+    // --- Ownership overview + review (v0.56 T6, ADR 0072) ---
+    get_ownership_overview: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return (
+        d.ownershipOverviews?.find((o) => o.companyId === companyId) ??
+        emptyOwnershipOverview(companyId)
+      );
+    },
+    // Deterministic extraction drains on the queue (not the mock); the CTA just
+    // reports how many documents it would enqueue — none in the mock store.
+    backfill_ownership_extraction: () => 0,
+    set_ownership_holder_type: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const holderKey = str(input.holderKey) ?? "";
+      const holderType = input.holderType == null ? undefined : (str(input.holderType) ?? undefined);
+      const overview = ensureOwnershipOverview(d, companyId);
+      overview.holders = overview.holders.map((h) =>
+        h.holderKey === holderKey ? { ...h, holderType } : h,
+      );
+      overview.history = overview.history.map((s) =>
+        s.holderKey === holderKey ? { ...s, holderType } : s,
+      );
+      return overview;
+    },
+    confirm_ownership_holder_type_proposal: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const proposalId = str(input.proposalId) ?? "";
+      const overview = ensureOwnershipOverview(d, companyId);
+      const proposal = overview.pendingProposals.find((p) => p.id === proposalId);
+      if (proposal) {
+        overview.holders = overview.holders.map((h) =>
+          h.holderKey === proposal.holderKey ? { ...h, holderType: proposal.proposedType } : h,
+        );
+        overview.pendingProposals = overview.pendingProposals.filter((p) => p.id !== proposalId);
+      }
+      return overview;
+    },
+    reject_ownership_holder_type_proposal: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const proposalId = str(input.proposalId) ?? "";
+      const overview = ensureOwnershipOverview(d, companyId);
+      overview.pendingProposals = overview.pendingProposals.filter((p) => p.id !== proposalId);
+      return overview;
+    },
+    run_ownership_classification: () => ({ examined: 0, proposed: 0, skipped: 0, errors: 0 }),
 
     // --- Cockpit layouts (ADR 0053) ---
     list_cockpit_layouts: (d) => d.cockpitLayouts,

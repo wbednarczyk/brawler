@@ -324,6 +324,11 @@ export const DockLayout = forwardRef<DockLayoutHandle, DockLayoutProps>(function
       else if (index === 3) addAt(api, spec, specs[1].id, "below");
       else addPanelDefault(api, spec, specs[index - 1].id); // extras tab in
     });
+    // Extras tab INTO the 4th (anchor) group and dockview activates each tab as
+    // it is added — burying the anchor under the last extra. Re-activate the
+    // anchor so the curated default greets with it (e.g. the dashboard's Basic
+    // info, not an empty Notebook — v0.56 J3 regression).
+    if (specs.length > 4) api.getPanel(specs[3].id)?.api.setActive();
   }
 
   // Lay panels out as an exact cols×rows grid (composable grid views): the first

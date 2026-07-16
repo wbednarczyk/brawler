@@ -63,6 +63,10 @@ export const CAPABILITY_DESCRIPTORS: ReadonlyArray<{ key: string; labelEn: strin
   { key: "signal_classification", labelEn: "Signal classification" },
   { key: "qualitative_assessment", labelEn: "Qualitative assessment" }, // T7-C
   { key: "vision_extraction", labelEn: "Vision extraction" }, // ADR 0077 T4.2
+  // Ownership holder-type classification residual (ADR 0072 §3, v0.56 T5):
+  // dictionary/heuristics run deterministically; only unknown holders go to
+  // this capability, always confirm-before-apply.
+  { key: "ownership_holder_classification", labelEn: "Ownership holder classification" },
 ];
 
 // Per-capability ordered provider routing (ADR 0060 as amended). Each

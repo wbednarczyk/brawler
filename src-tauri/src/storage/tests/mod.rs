@@ -1,6 +1,7 @@
 use super::companies::company_directories_are_stale;
 use super::feed_matching::{media_duplicate_signature, MediaMatchCompany};
 use super::migrations::{apply_migrations, database_status, expected_migration_count};
+use super::ownership::normalize_holder_name;
 use super::*;
 
 const PORTAL_ANALIZ_ADAPTER_ID: &str = "portal-analiz";
@@ -28,8 +29,10 @@ mod migration_safety;
 mod mock_fidelity;
 mod notebooks;
 mod ocr_extraction_profile;
+mod ownership;
 mod quality_frameworks;
 mod real_data_extraction;
+mod real_data_ownership;
 mod report_documents;
 mod report_expectations;
 mod report_season;

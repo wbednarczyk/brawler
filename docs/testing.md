@@ -147,6 +147,49 @@ per-tier (esef/pdf/html_aggregator) rollup, and an overall summary.
 relying on this pipeline by default or before the ADR 0060 decision-3 default-model flip, per
 the real-data-validation-precedes-implementation guardrail above.
 
+### Ownership shareholders-table harness (v0.56 T1)
+
+The ownership parser (`fundamentals::ownership::parse_shareholders`, ADR 0072) has its own
+real-data recall/precision net, `storage::tests::real_data_ownership` — same **inert-in-CI**
+gating as above (`BRAWLER_REAL_DB` + `BRAWLER_REAL_DATA_DIR`). It runs `extract_report` →
+`parse_shareholders` per labeled document and prints **row recall** (matched labeled rows /
+labeled rows) and **row precision** (matched / emitted holder rows), keyed by `SourceFormat`
+(`xhtml` vs `pdf`), plus per-document missed/spurious holders. Sanity assertion only (some
+document resolved) — the metrics decide the deterministic-vs-AI tier split before T2/T3.
+
+`BRAWLER_OWNERSHIP_GROUND_TRUTH` overrides the path (default
+`private/realdata/ownership_ground_truth.json`, gitignored, hand-authored). Shape — one entry
+per labeled document, holder rows with **capital % and votes % separate** (either may be null
+for a one-sided disclosure):
+
+```json
+{
+  "documents": [
+    {
+      "ticker": "CBF",
+      "match": { "urlContains": "raport_roczny", "contentHash": null },
+      "asOf": "2025-12-31",
+      "rows": [ { "holder": "Jan Kowalski", "capitalPct": "12.34", "votesPct": "15.00" } ]
+    }
+  ]
+}
+```
+
+`match` takes `urlContains` and/or `contentHash` (at least one). A labeled row matches an emitted
+row on normalized holder name (case-fold, whitespace-collapse, minimal legal-suffix strip) with
+0.01 absolute tolerance on each non-null percentage side.
+
+**Labeling rules (harvested from two real T1 labeling errors, 2026-07-16):** label from the FULL
+section dump of the source document, never a truncated grep window (a cut window dropped a real
+KRU holder row); documents can carry the section twice — an infographic/image first and a real
+table later — so scan the whole document before declaring a negative case (MDV). A
+parser-vs-label disagreement is investigated on the source document before either side changes;
+the ground truth stays orchestrator/owner-owned — extraction agents never edit it.
+
+```bash
+cargo test -p brawler --lib real_data_ownership_recall_precision -- --ignored --nocapture
+```
+
 ### Real-data extraction corpus (structural regression)
 
 A second, coarser real-data net pins the **extraction outcome** of every document in a real

@@ -413,6 +413,41 @@ const MIGRATIONS: &[Migration] = &[
         name: "espi_witness_reconciliation",
         sql: include_str!("../../migrations/0081_espi_witness_reconciliation.sql"),
     },
+    Migration {
+        version: 82,
+        name: "ownership_stakes",
+        sql: include_str!("../../migrations/0082_ownership_stakes.sql"),
+    },
+    Migration {
+        version: 83,
+        name: "ownership_extraction_residual",
+        sql: include_str!("../../migrations/0083_ownership_extraction_residual.sql"),
+    },
+    Migration {
+        version: 84,
+        name: "ownership_holder_type_proposals",
+        sql: include_str!("../../migrations/0084_ownership_holder_type_proposals.sql"),
+    },
+    Migration {
+        version: 85,
+        name: "major_holdings_and_ownership_witness",
+        sql: include_str!("../../migrations/0085_major_holdings_and_ownership_witness.sql"),
+    },
+    Migration {
+        version: 86,
+        name: "ownership_holder_identity_aliases",
+        sql: include_str!("../../migrations/0086_ownership_holder_identity_aliases.sql"),
+    },
+    Migration {
+        version: 87,
+        name: "ownership_adapter_source_type",
+        sql: include_str!("../../migrations/0087_ownership_adapter_source_type.sql"),
+    },
+    Migration {
+        version: 88,
+        name: "ownership_aggregator_reset",
+        sql: include_str!("../../migrations/0088_ownership_aggregator_reset.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

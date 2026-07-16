@@ -753,6 +753,229 @@
   margin: 0;
 }
 
+/* Ownership ("Akcjonariat") section (v0.56 T6, ADR 0072). Sits under the
+   identity facts in the Basic Info panel; same card idiom. */
+.ownership-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.ownership-as-of {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.ownership-progress {
+  color: var(--primary);
+  font-size: var(--font-sm);
+}
+
+:root[data-theme="light"] .ownership-progress {
+  color: var(--primary-strong);
+}
+
+.ownership-donut-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.ownership-donut-center-value {
+  font-size: var(--font-md);
+  font-weight: 700;
+}
+
+.ownership-donut-center-label {
+  font-size: var(--font-2xs);
+  color: var(--muted);
+}
+
+.ownership-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--font-xs);
+  min-width: 0;
+  flex: 1;
+}
+
+.ownership-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Owner dogfooding 2026-07-16: the value hugs the label (no flex:1 spacer that
+   pushed percentages to the far edge of the pane). */
+.ownership-legend-label {
+  min-width: 0;
+}
+
+.ownership-trajectories {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.ownership-trajectory-name {
+  font-size: var(--font-xs);
+  color: var(--muted);
+}
+
+.ownership-classify-cta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}
+
+.ownership-holders {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-2);
+}
+
+.ownership-holder-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+
+.ownership-holder-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.ownership-holder-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ownership-holder-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ownership-proposal-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.ownership-type-chip {
+  display: inline-block;
+  font-size: var(--font-2xs);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0 var(--space-2);
+  line-height: 16px;
+  color: var(--text);
+  flex: none;
+}
+
+.ownership-type-chip-unknown {
+  color: var(--muted);
+}
+
+.ownership-type-chip-founder {
+  border-color: var(--own-founder);
+  background: color-mix(in srgb, var(--own-founder) 16%, transparent);
+}
+
+.ownership-type-chip-ofe {
+  border-color: var(--own-ofe);
+  background: color-mix(in srgb, var(--own-ofe) 16%, transparent);
+}
+
+.ownership-type-chip-tfi {
+  border-color: var(--own-tfi);
+  background: color-mix(in srgb, var(--own-tfi) 16%, transparent);
+}
+
+.ownership-type-chip-misc {
+  border-color: var(--own-misc);
+  background: color-mix(in srgb, var(--own-misc) 16%, transparent);
+}
+
+.ownership-retype {
+  flex-basis: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised, var(--surface));
+}
+
+.ownership-okbox {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: 1px solid var(--tone-positive);
+  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-xs);
+  color: var(--tone-positive);
+  background: color-mix(in srgb, var(--tone-positive) 8%, transparent);
+}
+
+.ownership-warnbox {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  border: 1px solid var(--tone-warning, var(--warning));
+  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-xs);
+  color: var(--tone-warning, var(--warning));
+  background: color-mix(in srgb, var(--tone-warning, var(--warning)) 8%, transparent);
+}
+
+.ownership-warnbox p {
+  margin: 0;
+}
+
+.ownership-warnbox-count {
+  white-space: nowrap;
+}
+
+@container pane (max-width: 419px) {
+  .ownership-donut-wrap {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
 .basic-info-grid > div,
 .price-context-range-grid > div,
 .price-context-ratio-grid > div {
@@ -1023,3 +1246,27 @@
   }
 }
 
+
+/* Owner dogfooding 2026-07-16: donut + merged trajectories side by side;
+   stacks in narrow panes (same container query as the rest of the section). */
+.ownership-overview-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  min-width: 0;
+}
+
+.ownership-overview-row .ownership-donut-wrap {
+  flex: 0 0 auto;
+}
+
+.ownership-overview-row .ownership-trajectories {
+  flex: 1;
+  min-width: 0;
+}
+
+@container pane (max-width: 560px) {
+  .ownership-overview-row {
+    flex-direction: column;
+  }
+}

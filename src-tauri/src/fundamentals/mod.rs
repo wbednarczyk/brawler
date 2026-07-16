@@ -11,6 +11,7 @@
 pub mod expr;
 pub mod extraction;
 pub mod metrics;
+pub mod ownership;
 pub mod scorecard;
 pub mod templates;
 pub mod validation;

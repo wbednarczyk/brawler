@@ -26,6 +26,7 @@ pub mod mcp;
 pub mod metrics;
 pub mod morning_briefing;
 pub mod notebooks;
+pub mod ownership;
 pub mod quality_frameworks;
 pub mod report_diff;
 pub mod report_documents_view;

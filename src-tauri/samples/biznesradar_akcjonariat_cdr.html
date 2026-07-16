@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<!--
+  Trimmed BiznesRadar "Akcjonariat" sample (probe 2026-07-16, /akcjonariat/CD-PROJEKT).
+  Structure preserved verbatim: two `qTableFull` tables under "Główni" and
+  "Pozostali akcjonariusze" headings, seven columns each
+  (Akcjonariusz | Udział | Liczba akcji | Wartość rynkowa | Udział na WZA |
+  Liczba głosów | Data aktualizacji). One synthetic preferred-vote holder
+  (Skarb Państwa, 30% capital / 45% votes) exercises the separate capital/votes
+  columns; an empty-holder residual row exercises the skip. Compare-only witness —
+  never a source of truth (ADR 0072 §2c).
+-->
+<html>
+<body>
+<h2 class="sub">Główni akcjonariusze</h2>
+<table class="qTableFull">
+	<tr>
+		<th>Akcjonariusz</th>
+		<th>Udział</th>
+		<th>Liczba akcji</th>
+		<th>Wartość rynkowa</th>
+		<th>Udział na WZA</th>
+		<th>Liczba głosów</th>
+		<th>Data aktualizacji</th>
+	</tr>
+	<tr>
+		<td>Marcin Iwiński</td>
+		<td>12.66 %</td>
+		<td>12 650 000</td>
+		<td>2 987 930 000</td>
+		<td>12.66 %</td>
+		<td>12 650 000</td>
+		<td>23.06.2026</td>
+	</tr>
+	<tr>
+		<td>Skarb Państwa</td>
+		<td>30.00 %</td>
+		<td>30 000 000</td>
+		<td>7 083 000 000</td>
+		<td>45.00 %</td>
+		<td>45 000 000</td>
+		<td>23.06.2026</td>
+	</tr>
+	<tr>
+		<td>OFE Nationale Nederlanden</td>
+		<td>5.83 %</td>
+		<td>5 827 917</td>
+		<td>1 376 553 995</td>
+		<td>5.83 %</td>
+		<td>5 827 917</td>
+		<td>30.12.2025</td>
+	</tr>
+</table>
+<h2 class="sub">Pozostali akcjonariusze</h2>
+<table class="qTableFull">
+	<tr>
+		<th>Akcjonariusz</th>
+		<th>Udział</th>
+		<th>Liczba akcji</th>
+		<th>Wartość rynkowa</th>
+		<th>Udział na WZA</th>
+		<th>Liczba głosów</th>
+		<th>Data aktualizacji</th>
+	</tr>
+	<tr>
+		<td>OFE Allianz Polska</td>
+		<td>4.08 %</td>
+		<td>4 080 615</td>
+		<td>963 841 263</td>
+		<td>4.08 %</td>
+		<td>4 080 615</td>
+		<td>23.06.2026</td>
+	</tr>
+	<tr>
+		<td></td>
+		<td>40.50 %</td>
+		<td>-</td>
+		<td>-</td>
+		<td>40.50 %</td>
+		<td>-</td>
+		<td>-</td>
+	</tr>
+</table>
+</body>
+</html>

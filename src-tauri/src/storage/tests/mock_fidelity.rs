@@ -90,6 +90,31 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Ownership overview + review (v0.56 T6, ADR 0072). Same computed helper /
+        // store method the command wrappers delegate to, so the corpus can never
+        // diverge from real assembly.
+        "get_ownership_overview" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::ownership::compute_ownership_overview(state, company_id)
+                    .expect("get_ownership_overview"),
+            )
+            .unwrap()
+        }
+        "set_ownership_holder_type" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            let holder_key = input["holderKey"].as_str().expect("holderKey");
+            let holder_type = input["holderType"].as_str();
+            state
+                .ownership()
+                .set_holder_type(company_id, holder_key, holder_type)
+                .expect("set_ownership_holder_type");
+            serde_json::to_value(
+                crate::commands::ownership::compute_ownership_overview(state, company_id)
+                    .expect("get_ownership_overview"),
+            )
+            .unwrap()
+        }
         // Basic info read model (v0.53 follow-up): same computed-model helper
         // the command wrapper uses.
         "get_company_basic_info" => {

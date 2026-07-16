@@ -27,8 +27,9 @@ fn lists_seeded_source_adapters() {
 
     // 8 user-visible + gpw-espi-ebi, which v0.55 T3 (ADR 0069 D2) promoted from
     // Developer to Optional so the reconciliation witness shows as a health
-    // mechanism on the normal-user Sources screen.
-    assert_eq!(adapters.len(), 9);
+    // mechanism on the normal-user Sources screen, + biznesradar-akcjonariat, the
+    // v0.56 T4 ownership breadth source (ADR 0072 §2c amended; Optional, primary).
+    assert_eq!(adapters.len(), 10);
 
     assert!(adapters
         .iter()
@@ -44,6 +45,19 @@ fn lists_seeded_source_adapters() {
     assert_eq!(witness.role, "witness");
     assert!(witness.enabled);
     assert!(witness.user_configurable);
+
+    // The ownership breadth source (v0.56 T4, ADR 0072 §2c as amended 2026-07-16):
+    // user-visible, enabled, and PRIMARY — it writes a full-picture aggregator
+    // basis (the disclosed reports/ESPI witness it). `source_type` is "ownership"
+    // (migration 0087 renamed the DB-seeded "ownership_witness").
+    let ownership_source = adapters
+        .iter()
+        .find(|adapter| adapter.id == "biznesradar-akcjonariat")
+        .expect("biznesradar-akcjonariat ownership source should be user-visible");
+    assert_eq!(ownership_source.visibility, "optional");
+    assert_eq!(ownership_source.role, "primary");
+    assert_eq!(ownership_source.source_type, "ownership");
+    assert!(ownership_source.enabled);
 
     // market_data EOD quote source (v0.53, ADR 0082 as amended 2026-07-14:
     // the twelvedata-eod fallback was removed — GPW is paid-plan-only there).
@@ -74,7 +88,7 @@ fn lists_seeded_source_adapters() {
         .list_source_adapters_with_developer(true)
         .expect("developer source adapters should list");
 
-    assert_eq!(developer_adapters.len(), 14);
+    assert_eq!(developer_adapters.len(), 15);
 
     let report_adapter = developer_adapters
         .iter()

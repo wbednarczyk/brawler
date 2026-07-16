@@ -35,6 +35,10 @@ pub enum AiCapability {
     /// Agent-assessed qualitative quality-framework criteria (ADR 0075) — one
     /// request per criterion per company, grounded in app-held evidence.
     QualitativeAssessment,
+    /// Ownership holder-type classification (ADR 0072 §3): the residual holders a
+    /// deterministic dictionary + heuristic markers leave unclassified, proposed
+    /// with confirm-before-apply. Text-kind (the holder name is the input).
+    OwnershipHolderClassification,
     /// Tier-4 vision extraction from a report document (ADR 0077 §4): the
     /// last-resort OCR path (Mistral OCR → parser/text-LLM) that runs only when
     /// determinism ends Flagged|Empty. Document-kind — routes only to a
@@ -51,7 +55,7 @@ pub enum CapabilityKind {
 }
 
 impl AiCapability {
-    pub const ALL: [AiCapability; 10] = [
+    pub const ALL: [AiCapability; 11] = [
         AiCapability::KpiExtraction,
         AiCapability::ClaimExtraction,
         AiCapability::FeedAnalysis,
@@ -61,6 +65,7 @@ impl AiCapability {
         AiCapability::EventDate,
         AiCapability::SignalClassification,
         AiCapability::QualitativeAssessment,
+        AiCapability::OwnershipHolderClassification,
         AiCapability::VisionExtraction,
     ];
 
@@ -77,6 +82,7 @@ impl AiCapability {
             AiCapability::EventDate => "event_date",
             AiCapability::SignalClassification => "signal_classification",
             AiCapability::QualitativeAssessment => "qualitative_assessment",
+            AiCapability::OwnershipHolderClassification => "ownership_holder_classification",
             AiCapability::VisionExtraction => "vision_extraction",
         }
     }
@@ -93,7 +99,8 @@ impl AiCapability {
             | AiCapability::MorningBriefing
             | AiCapability::EventDate
             | AiCapability::SignalClassification
-            | AiCapability::QualitativeAssessment => CapabilityKind::Text,
+            | AiCapability::QualitativeAssessment
+            | AiCapability::OwnershipHolderClassification => CapabilityKind::Text,
         }
     }
 

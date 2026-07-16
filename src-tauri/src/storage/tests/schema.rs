@@ -214,7 +214,7 @@ fn reports_database_status() {
     // +2 market_data adapters seeded by 0071, -1 (twelvedata-eod) removed by
     // 0076 (ADR 0082 amendment 2026-07-14: GPW is paid-plan-only there),
     // +1 knf-short-selling seeded by 0080 (v0.55 T4, ADR 0069 decision 3).
-    assert_eq!(status.source_adapters, 14);
+    assert_eq!(status.source_adapters, 15);
     // +4 queue worker/concurrency settings seeded by migration 0056 (ADR 0059).
     assert_eq!(status.settings, 26);
 }

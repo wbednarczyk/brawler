@@ -57,6 +57,7 @@ pub struct ImportExportSummary {
     pub ai_research_digest_citations: usize,
     pub quality_frameworks: usize,
     pub user_metrics: usize,
+    pub ownership_stakes: usize,
     pub settings: usize,
 }
 
@@ -109,6 +110,8 @@ pub struct ImportApplySummary {
     pub quality_frameworks_skipped: usize,
     pub user_metrics_created: usize,
     pub user_metrics_skipped: usize,
+    pub ownership_stakes_created: usize,
+    pub ownership_stakes_skipped: usize,
     pub settings_updated: usize,
 }
 
@@ -155,6 +158,8 @@ pub(super) struct ResearchExportDocument {
     pub(super) quality_frameworks: Vec<ExportQualityFramework>,
     #[serde(default)]
     pub(super) user_metrics: Vec<ExportUserMetric>,
+    #[serde(default)]
+    pub(super) ownership_stakes: Vec<ExportOwnershipStake>,
 }
 
 /// A quality framework with its criteria nested (ADR 0046). Frameworks are
@@ -272,6 +277,26 @@ pub(super) struct ExportManagementClaim {
     pub(super) target_unit: Option<String>,
     pub(super) created_at: String,
     pub(super) updated_at: String,
+}
+
+/// An ownership stake snapshot (ADR 0072, plan v0.56 T2). Company is carried by
+/// `qualified_ticker` so it resolves into the target DB's company id on import;
+/// provenance ids are best-effort (nulled on import if they do not resolve).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ExportOwnershipStake {
+    pub(super) id: String,
+    pub(super) company_qualified_ticker: String,
+    pub(super) holder_name_raw: String,
+    pub(super) holder_name_normalized: String,
+    pub(super) holder_type: Option<String>,
+    pub(super) capital_pct: Option<String>,
+    pub(super) votes_pct: Option<String>,
+    pub(super) as_of: String,
+    pub(super) source: String,
+    pub(super) report_document_id: Option<String>,
+    pub(super) feed_item_id: Option<String>,
+    pub(super) created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

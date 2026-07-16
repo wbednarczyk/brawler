@@ -818,6 +818,15 @@ pub(super) fn ingest_bankier_company_items(
         );
     }
 
+    // ESPI major-holdings → deterministic stake update (ADR 0072 §2b, plan v0.56
+    // T4). Newly-confirmed `major_holdings_change` signals whose notification body
+    // yields an unambiguous resulting holding become `espi_filing` stakes; any
+    // ambiguity is recorded (marker + diagnostic), never guessed. Best-effort — a
+    // failure here never rolls back ingestion or fails the refresh.
+    if let Err(error) = ownership::update_stakes_from_major_holdings(connection) {
+        log::warn!("module=ownership stage=espi_stake_update error={error}");
+    }
+
     Ok(SourceIngestionResult {
         adapter_id: BANKIER_COMPANY_ADAPTER_ID.to_owned(),
         items_fetched: items.len(),

@@ -29,6 +29,15 @@
   --line-body: 1.45;
   --line-heading: 1.25;
   --line-numeric: 1.2;
+
+  /* Ownership donut categories (ADR 0072, v0.56 T6). Fixed hue per holder TYPE,
+     never cycled; validated on the dark raised surface (dataviz validate_palette,
+     all PASS). Theme-independent chart-category colours. */
+  --own-founder: #1d9fd6; /* founder_insider */
+  --own-ofe: #cc6d31; /* ofe_pension */
+  --own-tfi: #9d7bf5; /* tfi / other_institutional */
+  --own-misc: #e2599b; /* family_foundation / state / parent / treasury (folded) */
+  --own-float: #5b6690; /* free_float_rest — neutral + hatched (uncertainty) */
 }
 
 html,

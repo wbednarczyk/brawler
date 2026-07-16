@@ -951,6 +951,47 @@ Percent fields are scaled to points (`changePct`, `week52*DistPct`, `divYield`, 
 
 Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_price_context`. Failure codes: `not_found` (unknown company).
 
+## Ownership
+
+Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownership-structure.md), `v0.56`): the "Akcjonariat" section of the Basic Info panel. A computed read model over the append-only ownership store (no stored projection); storage rules are canonical in [Data Model § Ownership](data-model.md). Decision support only.
+
+`get_ownership_overview(companyId)` returns everything the section renders (heavy work off the UI thread via `spawn_blocking`):
+
+```json
+{
+  "companyId": "company_gpw_cbf",
+  "asOf": "2025-12-31",
+  "source": "report_document",
+  "freeFloatPct": "46.8",
+  "disclosedSum": "53.2",
+  "holders": [
+    { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "capitalPct": "25.5", "votesPct": "25.5", "asOf": "2025-12-31", "source": "report_document" }
+  ],
+  "history": [
+    { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "points": [ { "asOf": "2024-12-31", "capitalPct": "24.0" }, { "asOf": "2025-12-31", "capitalPct": "25.5" } ] }
+  ],
+  "residuals": [
+    { "reportDocumentId": "doc_…", "parseState": "glyph_encoded", "detectedAsOf": "2023-12-31", "matchedHeading": "Akcjonariat" }
+  ],
+  "pendingProposals": [
+    { "id": "ownhtp_…", "holderKey": "ITEMA VENTURES UAB", "proposedType": "other_institutional", "confidence": 0.7, "rationale": "foreign fund" }
+  ]
+}
+```
+
+- Percentages are **decimal-exact TEXT** (the `financial_facts.value_numeric` convention), not floats. `freeFloatPct` is always present (`"100"` when nothing disclosed); `disclosedSum` is Σ of disclosed `capitalPct` across current holders; `asOf`/`source` are omitted when there are no stakes yet. `holderType`/`capitalPct`/`votesPct` are omitted when absent (never a fabricated value).
+- `holders` is the current state (latest disclosed stake per holder); `history` is each current holder's chronological capital-% trajectory; `residuals` are documents whose shareholders table the deterministic parser could not read (awaiting OCR/AI, whose results always require confirmation); `pendingProposals` are AI holder-type classifications awaiting confirmation (never auto-applied).
+
+Mutations return the **freshly recomputed** `OwnershipOverview` so the UI updates in one round-trip:
+
+- `set_ownership_holder_type(companyId, holderKey, holderType)` — manual re-type across the holder's rows (`holderType` `null` clears it; a manual label is authoritative, never overwritten by automation).
+- `confirm_ownership_holder_type_proposal(companyId, proposalId)` — applies a pending AI proposal across the holder's rows.
+- `reject_ownership_holder_type_proposal(companyId, proposalId)` — leaves the holder unclassified.
+
+`backfill_ownership_extraction(companyId)` force-enqueues deterministic extraction across the company's fetched periodic reports (the "Wydobądź z raportów" CTA) and returns the number of documents queued (extraction drains on the autopilot lane). `run_ownership_classification()` runs the AI holder-type classify-with-confirm job over every company's residual holders, returning `{ examined, proposed, skipped, errors }`.
+
+Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`, `confirm_ownership_holder_type_proposal`, `reject_ownership_holder_type_proposal`, `run_ownership_classification`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+
 ## Company Signal
 
 Company signals are typed classifications of official ESPI/EBI filings. A signal is the canonical output of classification, separate from the raw feed item and from calendar events. See [ADR 0034](adr/0034-espi-event-classification.md) and [data-model.md](data-model.md) (Company Signal Model).

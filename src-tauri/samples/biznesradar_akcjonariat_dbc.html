@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<!--
+  Trimmed BiznesRadar "Akcjonariat" sample (real fetch 2026-07-16, /akcjonariat/DBC).
+  Structure preserved verbatim from the live page: TWO identically-headed
+  `table.qTableFull`, each under an `<h2 class="sub">` heading and each ending in a
+  `<tr class="summary">` whose first cell is `<th>razem</th>`:
+    1. "Główni akcjonariusze" — the >=5% disclosure picture (the ONLY table ingested),
+    2. "Pozostali akcjonariusze" — sub-5% stakes from fund financial statements
+       (deliberately NOT ingested).
+  Scripts/ads/nav/styling stripped; the two headings and both complete tables
+  (including the `TH razem` summary rows) are kept byte-for-byte so the parser's
+  table-selection and row guards are exercised against real markup (ADR 0072 §2c
+  amended 2026-07-16).
+-->
+<html>
+<body>
+<h2 class="sub">Główni akcjonariusze</h2>
+			<table class="qTableFull">
+		<tr>
+			<th>Akcjonariusz</th>
+			<th>Udział</th>
+			<th>Liczba akcji</th>
+			<th>Wartość rynkowa</th>
+			<th>Udział na WZA</th>
+			<th>Liczba głosów</th>
+			<th>Data aktualizacji</th>
+		</tr>
+				<tr>
+			<td>Goodyear Holdings S.ar.l.</td>
+			<td>87.25 %</td>
+			<td>12 042 976</td>
+			<td>1 180 211 648</td>
+			<td>87.25 %</td>
+			<td>12 042 976</td>
+			<td>19.09.2025</td>
+		</tr>
+				<tr>
+			<td>Porozumienie NN PTE, PKO PTE</td>
+			<td>5.97 %</td>
+			<td>824 503</td>
+			<td>80 801 294</td>
+			<td>5.97 %</td>
+			<td>824 503</td>
+			<td>20.05.2025</td>
+		</tr>
+				<tr class="summary">
+			<th>razem</th>
+			<td>93.22 %</td>
+			<td>12 867 479</td>
+			<td>1 261 012 942</td>
+			<td>93.22 %</td>
+			<td>12 867 479</td>
+			<td></td>
+		</tr>
+
+	</table>
+					<h2 class="sub">Pozostali akcjonariusze</h2>
+			<table class="qTableFull">
+		<tr>
+			<th>Akcjonariusz</th>
+			<th>Udział</th>
+			<th>Liczba akcji</th>
+			<th>Wartość rynkowa</th>
+			<th>Udział na WZA</th>
+			<th>Liczba głosów</th>
+			<th>Data aktualizacji</th>
+		</tr>
+				<tr>
+			<td>OFE PKO BP Bankowy</td>
+			<td>3.50 %</td>
+			<td>483 056</td>
+			<td>47 339 488</td>
+			<td>3.50 %</td>
+			<td>483 056</td>
+			<td>30.12.2025</td>
+		</tr>
+				<tr>
+			<td>OFE Nationale Nederlanden</td>
+			<td>2.44 %</td>
+			<td>337 159</td>
+			<td>33 041 582</td>
+			<td>2.44 %</td>
+			<td>337 159</td>
+			<td>30.12.2025</td>
+		</tr>
+				<tr>
+			<td>OFE Vienna</td>
+			<td>0.18 %</td>
+			<td>24 213</td>
+			<td>2 372 874</td>
+			<td>0.18 %</td>
+			<td>24 213</td>
+			<td>30.12.2025</td>
+		</tr>
+				<tr>
+			<td>DFE PKO</td>
+			<td>0.06 %</td>
+			<td>8 271</td>
+			<td>810 558</td>
+			<td>0.06 %</td>
+			<td>8 271</td>
+			<td>30.12.2025</td>
+		</tr>
+				<tr class="summary">
+			<th>razem</th>
+			<td>6.18 %</td>
+			<td>852 699</td>
+			<td>83 564 502</td>
+			<td>6.18 %</td>
+			<td>852 699</td>
+			<td></td>
+		</tr>
+
+	</table>
+</body>
+</html>

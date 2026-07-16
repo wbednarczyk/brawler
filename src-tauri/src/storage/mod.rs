@@ -58,6 +58,7 @@ mod metrics;
 mod migrations;
 mod morning_briefings;
 mod notebooks;
+mod ownership;
 mod pool;
 mod quality_frameworks;
 mod queue_config;
@@ -146,6 +147,12 @@ pub use morning_briefings::{
     MorningBriefingItem, MorningBriefingStore,
 };
 pub use notebooks::NotebookStore;
+pub use ownership::{
+    compare_witness, DocumentNeedingOwnershipExtraction, HolderDictionaryEntry,
+    HolderTypeProposalRow, NewHolderTypeProposal, NewOwnershipStake, OwnershipCurrentState,
+    OwnershipExtractionResidual, OwnershipStakeRow, OwnershipStore, OwnershipWitnessResult,
+    WitnessComparison, WitnessDivergence, WitnessHolder,
+};
 pub use pool::open_pool;
 pub use quality_frameworks::QualityFrameworkStore;
 pub use quality_frameworks::{
@@ -622,6 +629,11 @@ impl AppState {
     /// Source-reconciliation domain store (ADR 0069 decision 2, plan v0.55 T3).
     pub fn reconciliation(&self) -> reconciliation::ReconciliationStore {
         reconciliation::ReconciliationStore::new(self.db.clone())
+    }
+
+    /// Ownership-stakes domain store (ADR 0072, plan v0.56 T2).
+    pub fn ownership(&self) -> ownership::OwnershipStore {
+        ownership::OwnershipStore::new(self.db.clone())
     }
 
     /// Attention (alert rules + attention events) domain store (ADR 0068).

@@ -855,6 +855,109 @@
   letter-spacing: 0.04em;
 }
 
+/* Donut chart (ownership structure by holder type, ADR 0072 v0.56 T6). */
+.ui-donut {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.ui-donut-svg {
+  display: block;
+}
+
+.ui-donut-slice {
+  stroke: var(--muted);
+}
+
+.ui-donut-slice-founder {
+  stroke: var(--own-founder);
+}
+
+.ui-donut-slice-ofe {
+  stroke: var(--own-ofe);
+}
+
+.ui-donut-slice-tfi {
+  stroke: var(--own-tfi);
+}
+
+.ui-donut-slice-misc {
+  stroke: var(--own-misc);
+}
+
+/* Not-yet-classified holders: solid neutral (no identity yet) — texture-distinct
+   from the hatched free float (owner dogfooding round 2, 2026-07-16). */
+.ui-donut-slice-unknown {
+  stroke: var(--own-float);
+}
+
+.ui-donut-hatch-line {
+  stroke: var(--own-float);
+}
+
+.ui-donut-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  pointer-events: none;
+}
+
+.ui-donut-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: var(--space-4);
+  color: var(--muted);
+  font-size: var(--font-base);
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.ui-donut-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+  background: var(--muted);
+}
+
+.ui-donut-swatch-founder {
+  background: var(--own-founder);
+}
+
+.ui-donut-swatch-ofe {
+  background: var(--own-ofe);
+}
+
+.ui-donut-swatch-tfi {
+  background: var(--own-tfi);
+}
+
+.ui-donut-swatch-misc {
+  background: var(--own-misc);
+}
+
+.ui-donut-swatch-unknown {
+  background: var(--own-float);
+}
+
+.ui-donut-swatch-uncertain {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--own-float) 0 2px,
+    transparent 2px 4px
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Modal                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -1051,4 +1154,83 @@
   .filter-toolbar-controls[data-collapsed="true"] {
     display: none;
   }
+}
+
+/* MultiLineChart (v0.56, owner dogfooding 2026-07-16): up to four series on
+   one shared scale. Series hues = the validated ownership categorical set
+   (tokens.css), assigned by slot, never cycled. */
+.ui-multi-line-chart {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--space-1) var(--space-2);
+}
+
+.ui-multi-line-chart svg {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  grid-column: 2;
+}
+
+.ui-multi-line-chart .ui-line-chart-ylabels {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.ui-multi-line-chart .ui-line-chart-xlabels,
+.ui-multi-line-chart .ui-multi-line-legend {
+  grid-column: 2;
+}
+
+.ui-multi-line-series {
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+
+.ui-multi-line-series-0 { stroke: var(--own-founder); }
+.ui-multi-line-series-1 { stroke: var(--own-ofe); }
+.ui-multi-line-series-2 { stroke: var(--own-tfi); }
+.ui-multi-line-series-3 { stroke: var(--own-misc); }
+
+.ui-multi-line-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  font-size: var(--font-xs);
+}
+
+.ui-multi-line-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.ui-multi-line-swatch {
+  width: 10px;
+  height: 3px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.ui-multi-line-swatch.ui-multi-line-series-0 { background: var(--own-founder); }
+.ui-multi-line-swatch.ui-multi-line-series-1 { background: var(--own-ofe); }
+.ui-multi-line-swatch.ui-multi-line-series-2 { background: var(--own-tfi); }
+.ui-multi-line-swatch.ui-multi-line-series-3 { background: var(--own-misc); }
+
+/* Neutral (derived) series — dashed grey, outside the categorical slots. */
+.ui-multi-line-series-neutral {
+  stroke: var(--own-float);
+  stroke-dasharray: 4 3;
+}
+
+.ui-multi-line-swatch.ui-multi-line-series-neutral {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--own-float) 0 4px,
+    transparent 4px 7px
+  );
 }

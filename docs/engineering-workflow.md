@@ -12,11 +12,11 @@ Doc map: [CLAUDE.md](../CLAUDE.md) § Required Reading. Related: [Testing](testi
 
 ## WSL And Windows Runtime Split
 
-WSL2 Ubuntu 24.04 with Nix is the primary development layer; Windows 11 is the primary hands-on runtime target — an intentional split: WSL/Nix is canonical for automated checks, frontend builds, Rust tests, contract tests, CI-equivalent validation; Windows is canonical for clickable desktop sanity testing, native Tauri window behavior, OS integration, file dialogs, keychain behavior, packaging checks, subjective UX review.
+WSL2 Ubuntu 24.04 with Nix is the primary development layer; Windows 11 is the primary hands-on runtime target — an intentional split: WSL/Nix owns automated checks, builds, tests, and CI-equivalent validation; Windows owns clickable desktop sanity, native Tauri window/OS behavior (dialogs, keychain), packaging checks, and subjective UX review.
 
 Do not assume a Linux GUI inside WSL — a WSL Tauri build is a Linux application, not a Windows executable.
 
-**Disk hygiene (guardrail, 2026-07-11).** WSL2's grow-only `ext4.vhdx` means a full host C: kills sessions while `df` inside WSL still shows free — so `disk-guard` (first step of `check`/`check-fast`) watches both WSL root and `/mnt/c` (fail <10 GiB, warn <40) and names the remedy: `make disk-clean` / `disk-clean-deep` (details in the Makefile); vhdx shrink is host-side only (`wsl --shutdown`, then `wsl --manage <distro> --set-sparse true`).
+**Disk hygiene (guardrail, 2026-07-11).** WSL2's grow-only `ext4.vhdx` means a full host C: kills sessions while `df` inside WSL still shows free — so `disk-guard` (first step of `check`/`check-fast`) watches both WSL root and `/mnt/c` (fail <10 GiB, warn <40) and names the remedy: `make disk-clean` / `disk-clean-deep`; vhdx shrink is host-side only (`wsl --shutdown`, then `wsl --manage <distro> --set-sparse true`).
 
 Recommended workflow:
 
@@ -28,7 +28,7 @@ Recommended workflow:
 
 ## Nix Development Environment
 
-Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop` the explicit entrypoint (optional `direnv`/`nix-direnv`). Nix provides toolchains/libraries, not a command hiding place — build/test commands stay runnable inside `nix develop`. `.env`/envdir secrets stay outside the Nix store (never in `flake.nix`/`flake.lock`/`.envrc`); commit `flake.lock`. Flake provides: Rust + fmt/lint, Node.js/npm, Linux Tauri prerequisites, SQLite dev libs, `pkg-config`, plus `devShells.windows-cross` (`packaging` skill). GitHub Actions runs the same commands inside `nix develop`; avoid heavy Nix packaging in default CI.
+Brawler uses Nix from the first scaffold: `flake.nix` is canonical, `nix develop` the explicit entrypoint (optional `direnv`). Nix provides toolchains, not a command hiding place — build/test commands stay runnable inside `nix develop`. Secrets stay outside the Nix store (never in `flake.nix`/`flake.lock`/`.envrc`); commit `flake.lock`. Flake provides: Rust + fmt/lint, Node.js/npm, Linux Tauri prerequisites, SQLite dev libs, `pkg-config`, plus `devShells.windows-cross` (`packaging` skill). GitHub Actions runs the same commands inside `nix develop`; avoid heavy Nix packaging in default CI.
 
 ## CI Posture
 
@@ -53,7 +53,7 @@ Brawler is **spec-driven for intent** (docs/ADRs define behavior before code) an
 
 **The loop for every behavior change:** 1) **write/extend the test first**, at the cheapest layer that proves the behavior (map below) — a feature isn't "done" until a test **reddens when it breaks**; 2) **iterate against a targeted, fast subset** (seconds; see "Targeted run" below, or `make check-fast`); 3) the **full `make check` runs at push-to-master** — run it yourself before "done" (the floor, not the ceiling).
 
-**Anti-rot rule (`gate-integrity`).** Every deterministic/hermetic suite is a hard-fail step of `make check`; no step may be `-`-prefixed (silent red is what rotted the browser suite). Exclusions and rationale: [Testing](testing.md). **Anti-drift rule (`docs-drift`, [ADR 0065](adr/0065-spec-code-drift-gates.md)).** The same gate fails if contracts.md/ui-information-architecture.md/data-model.md diverge from the code, or ADR `Status:`/INDEX.md hygiene rots — a spec-ahead-of-code section is tagged `Status: planned (vX.Y.Z, ADR NNNN)`, never left silently wrong.
+**Anti-rot rule (`gate-integrity`).** Every deterministic/hermetic suite is a hard-fail step of `make check`; no step may be `-`-prefixed (silent red rotted the browser suite). Exclusions: [Testing](testing.md). **Anti-drift rule (`docs-drift`, [ADR 0065](adr/0065-spec-code-drift-gates.md)).** The same gate fails if contracts.md/ui-information-architecture.md/data-model.md diverge from the code, or ADR `Status:`/INDEX.md hygiene rots — a spec-ahead-of-code section is tagged `Status: planned (vX.Y.Z, ADR NNNN)`, never left silently wrong.
 
 **Which test where** — change type → layer → targeted run. Details in [testing.md](testing.md); this is the scannable index.
 
@@ -73,9 +73,9 @@ Brawler is **spec-driven for intent** (docs/ADRs define behavior before code) an
 
 ## Definition of Done (the handover gate)
 
-**This is the single stop gate before you report "done" or hand changes back.** "Done" is a claim that the *whole thing* is working and verified — not that the slice you touched compiles. The recurring failure is handing over on a *subset* of checks ("it compiles", "tests pass" but not under Nix / never looked at the UI / never ran the real feature). **Do not hand over until every applicable box is checked; the handoff states what you verified and how (and what you did not).**
+**This is the single stop gate before you report "done" or hand changes back.** "Done" claims the *whole thing* works and is verified — not that your slice compiles. The recurring failure is handing over on a *subset* of checks ("tests pass" but not under Nix / never looked at the UI / never ran the real feature). **Do not hand over until every applicable box is checked; the handoff states what you verified and how (and what you did not).**
 
-It is **scope-aware** (do the sections your change touches; always do §A, §H, §K) and a **living checklist** — when the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)) produces a lesson that can't be a clean automated gate, add a line here. Command reference: [Agent Day-To-Day Check Loop](#agent-day-to-day-check-loop) and [Testing](testing.md). When unsure whether something is testable a given way, assume it is and check [Testing](testing.md) — "I didn't know I could test that" is not an acceptable handoff.
+It is **scope-aware** (do the sections your change touches; always do §A, §H, §K) and a **living checklist** — when the guardrail-harvest loop ([ADR 0045](adr/0045-guardrail-harvest-loop.md)) produces a lesson that can't be a clean automated gate, add a line here. Commands: [Agent Day-To-Day Check Loop](#agent-day-to-day-check-loop), [Testing](testing.md). When unsure whether something is testable, assume it is and check [Testing](testing.md) — "I didn't know I could test that" is no handoff.
 
 ### §0 — Triage: what changed?
 Frontend/UI · Rust/backend · dependency or packaging · migration · feature-gated code · code removed/refactored · docs only. Tick the sections below that apply.
@@ -203,7 +203,7 @@ Strategy, test layers/pyramid, per-area minimum gates, and smoke procedures live
 Committed screenshot baselines under `tests/browser/visual/`: each panel × S/M/L pane widths on `chromium-visual` (dark) + one M pass on `chromium-visual-light`; only these two projects run `tests/browser/visual/**` (others `testIgnore` it).
 
 - **Run:** `rtk npx playwright test --project=chromium-visual --project=chromium-visual-light`. A red diff (> `maxDiffPixelRatio: 0.01`) is either an intended change (update below) or a regression (fix the code). Determinism: animations off, fixed `SAMPLE_NOW`, `document.fonts.ready` per shot.
-- **Deliberate update:** re-run with `--update-snapshots`, commit the PNGs with a message naming **which screens changed and why** — an unexplained baseline update is a review rejection.
+- **Deliberate update:** re-run with `--update-snapshots`, commit the PNGs with a message naming **which screens changed and why** — an unexplained update is a review rejection. **A small intended change can slip under `maxDiffPixelRatio`: the compare passes, `--update-snapshots` rewrites nothing, and the stale baseline re-legitimizes the old UI — `rm` the affected PNGs first, then regenerate** (harvested 2026-07-16).
 - **CI:** `ignoreSnapshots: !!process.env.CI` — CI executes the specs (layout/console gates hold) but skips pixel compare (font rendering differs across machines; pixels are a local check).
 
 ### UX quality loop v2 handover checks (ADR 0081 — post-pilot only)

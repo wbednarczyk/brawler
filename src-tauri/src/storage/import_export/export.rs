@@ -15,6 +15,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
     let ai_research_digest_citations = export_ai_research_digest_citations(connection)?;
     let quality_frameworks = export_quality_frameworks(connection)?;
     let user_metrics = export_user_metrics(connection)?;
+    let ownership_stakes = export_ownership_stakes(connection)?;
     let exported_at = now_rfc3339()?;
 
     let document = ResearchExportDocument {
@@ -32,6 +33,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
             "research_reminders".to_owned(),
             "ai_research_digests".to_owned(),
             "quality_frameworks".to_owned(),
+            "ownership_stakes".to_owned(),
         ],
         companies,
         watchlists,
@@ -47,6 +49,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         ai_research_digest_citations,
         quality_frameworks,
         user_metrics,
+        ownership_stakes,
     };
     let summary = ImportExportSummary {
         companies: document.companies.len(),
@@ -63,6 +66,7 @@ pub(super) fn export_research_data(connection: &Connection) -> StorageResult<Exp
         ai_research_digest_citations: document.ai_research_digest_citations.len(),
         quality_frameworks: document.quality_frameworks.len(),
         user_metrics: document.user_metrics.len(),
+        ownership_stakes: document.ownership_stakes.len(),
         settings: 0,
     };
 
@@ -263,6 +267,47 @@ fn export_management_claims(connection: &Connection) -> StorageResult<Vec<Export
         })
     })?;
     Ok(rows.collect::<Result<Vec<_>, _>>()?)
+}
+
+fn export_ownership_stakes(connection: &Connection) -> StorageResult<Vec<ExportOwnershipStake>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            ownership_stakes.id,
+            companies.qualified_ticker,
+            ownership_stakes.holder_name_raw,
+            ownership_stakes.holder_name_normalized,
+            ownership_stakes.holder_type,
+            ownership_stakes.capital_pct,
+            ownership_stakes.votes_pct,
+            ownership_stakes.as_of,
+            ownership_stakes.source,
+            ownership_stakes.report_document_id,
+            ownership_stakes.feed_item_id,
+            ownership_stakes.created_at
+        FROM ownership_stakes
+        INNER JOIN companies ON companies.id = ownership_stakes.company_id
+        ORDER BY companies.qualified_ticker, ownership_stakes.as_of DESC, ownership_stakes.id
+        ",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(ExportOwnershipStake {
+            id: row.get(0)?,
+            company_qualified_ticker: row.get(1)?,
+            holder_name_raw: row.get(2)?,
+            holder_name_normalized: row.get(3)?,
+            holder_type: row.get(4)?,
+            capital_pct: row.get(5)?,
+            votes_pct: row.get(6)?,
+            as_of: row.get(7)?,
+            source: row.get(8)?,
+            report_document_id: row.get(9)?,
+            feed_item_id: row.get(10)?,
+            created_at: row.get(11)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
 }
 
 fn export_notebook_origins(

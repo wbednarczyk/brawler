@@ -8,6 +8,8 @@ import { ChipList } from "./ChipList";
 import { ClearButton } from "./ClearButton";
 import { DenseRow } from "./DenseRow";
 import { DetailSection } from "./DetailSection";
+import { DonutChart, donutSwatchClass } from "./DonutChart";
+import { MultiLineChart } from "./MultiLineChart";
 import { EmptyState } from "./EmptyState";
 import { ErrorText } from "./ErrorText";
 import { FieldRow, SelectField } from "./Fields";
@@ -199,6 +201,58 @@ export function PrimitiveGallery() {
         <DenseRow interactive selected>
           <span>Selectable dense row</span>
         </DenseRow>
+      </section>
+
+      <section aria-labelledby="g-charts">
+        <SectionHeader title="Donut chart" titleId="g-charts" level="h3" />
+        <div className="ui-donut-wrap-demo">
+          <DonutChart
+            ariaLabel="Ownership structure by holder type"
+            centerLabel={<span className="num-tabular">46,8%</span>}
+            slices={[
+              { key: "founder", label: "Founders", value: 41.4, kind: "founder" },
+              { key: "ofe", label: "OFE", value: 11.3, kind: "ofe" },
+              { key: "misc", label: "Treasury", value: 0.5, kind: "misc" },
+              { key: "float", label: "Free float", value: 46.8, kind: "uncertain" },
+            ]}
+          />
+          <ul className="ui-donut-legend-demo">
+            <li>
+              <span className={donutSwatchClass("founder")} /> Founders 41,4%
+            </li>
+            <li>
+              <span className={donutSwatchClass("ofe")} /> OFE 11,3%
+            </li>
+            <li>
+              <span className={donutSwatchClass("uncertain")} /> Free float 46,8%
+            </li>
+          </ul>
+        </div>
+        <SectionHeader title="Multi-line chart" titleId="g-multiline" level="h3" />
+        <MultiLineChart
+          ariaLabel="Top holders — capital % over time"
+          series={[
+            {
+              key: "duch",
+              label: "Jacek Duch",
+              legendValue: "25,2%",
+              points: [
+                { label: "2024-12-31", value: 25.5 },
+                { label: "2025-12-31", value: 25.5 },
+                { label: "2026-03-31", value: 25.2 },
+              ],
+            },
+            {
+              key: "nn",
+              label: "NN PTE",
+              legendValue: "6,1%",
+              points: [
+                { label: "2025-12-31", value: 6.0 },
+                { label: "2026-03-31", value: 6.1 },
+              ],
+            },
+          ]}
+        />
       </section>
 
       <section aria-labelledby="g-nav">

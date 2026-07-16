@@ -3,7 +3,9 @@ import { render } from "@testing-library/react";
 
 import { CandlestickChart } from "./CandlestickChart";
 import { niceScale } from "./chartScale";
+import { DonutChart } from "./DonutChart";
 import { LineChart } from "./LineChart";
+import { MultiLineChart } from "./MultiLineChart";
 
 describe("niceScale", () => {
   it("expands a price-like span to round ticks (owner report 2026-07-14)", () => {
@@ -164,5 +166,141 @@ describe("TrendChart", () => {
       <TrendChart ariaLabel="loss" points={[{ label: "Q1", value: -50 }]} />,
     );
     expect(container.querySelector("rect.ui-trend-chart-bar-negative")).not.toBeNull();
+  });
+});
+
+describe("DonutChart", () => {
+  const slices = [
+    { key: "founder", label: "Founders", value: 41.4, kind: "founder" as const },
+    { key: "ofe", label: "OFE", value: 11.3, kind: "ofe" as const },
+    { key: "float", label: "Free float", value: 46.8, kind: "uncertain" as const },
+  ];
+
+  it("renders one colour-classed segment per positive slice", () => {
+    const { container } = render(
+      <DonutChart ariaLabel="Ownership structure by holder type" slices={slices} />,
+    );
+    expect(container.querySelectorAll("circle.ui-donut-slice")).toHaveLength(3);
+    expect(container.querySelector("circle.ui-donut-slice-founder")).not.toBeNull();
+    expect(container.querySelector("circle.ui-donut-slice-ofe")).not.toBeNull();
+    expect(container.querySelector("circle.ui-donut-slice-uncertain")).not.toBeNull();
+  });
+
+  it("exposes an accessible name on an image-role SVG", () => {
+    const { getByRole } = render(
+      <DonutChart ariaLabel="Ownership structure by holder type" slices={slices} />,
+    );
+    expect(getByRole("img", { name: "Ownership structure by holder type" })).toBeInTheDocument();
+  });
+
+  it("hatches the uncertain (free-float) slice via a pattern stroke", () => {
+    const { container } = render(<DonutChart ariaLabel="Ownership" slices={slices} />);
+    expect(container.querySelector("pattern .ui-donut-hatch-line")).not.toBeNull();
+    const uncertain = container.querySelector("circle.ui-donut-slice-uncertain");
+    expect(uncertain?.getAttribute("stroke")).toMatch(/^url\(#/);
+  });
+
+  it("drops zero/negative slices and renders an empty placeholder for no data", () => {
+    const { container, getByText } = render(
+      <DonutChart ariaLabel="Nothing disclosed" slices={[{ key: "a", label: "a", value: 0, kind: "misc" }]} />,
+    );
+    expect(container.querySelector("svg")).toBeNull();
+    expect(getByText("Nothing disclosed")).toBeInTheDocument();
+  });
+
+  it("renders the centre label overlay when provided", () => {
+    const { getByText } = render(
+      <DonutChart ariaLabel="Ownership" slices={slices} centerLabel={<span>46,8%</span>} />,
+    );
+    expect(getByText("46,8%")).toBeInTheDocument();
+  });
+});
+
+describe("MultiLineChart", () => {
+  const series = [
+    {
+      key: "a",
+      label: "Holder A",
+      legendValue: "25,2%",
+      points: [
+        { label: "2024-12-31", value: 25.5 },
+        { label: "2026-03-31", value: 25.2 },
+      ],
+    },
+    {
+      key: "b",
+      label: "Holder B",
+      points: [
+        { label: "2025-12-31", value: 6.0 },
+        { label: "2026-03-31", value: 6.1 },
+      ],
+    },
+  ];
+
+  it("draws every series as a slot-coloured polyline on one shared scale", () => {
+    const { container } = render(
+      <MultiLineChart ariaLabel="Top holders — capital % over time" series={series} />,
+    );
+    expect(container.querySelectorAll("polyline.ui-multi-line-series")).toHaveLength(2);
+    expect(container.querySelector("polyline.ui-multi-line-series-0")).not.toBeNull();
+    expect(container.querySelector("polyline.ui-multi-line-series-1")).not.toBeNull();
+    // Shared x-domain: first/last labels come from the union of all series.
+    expect(container.textContent).toContain("2024-12-31");
+    expect(container.textContent).toContain("2026-03-31");
+  });
+
+  it("renders a legend with the value beside each series label", () => {
+    const { container, getByText } = render(
+      <MultiLineChart ariaLabel="Top holders — capital % over time" series={series} />,
+    );
+    expect(container.querySelectorAll(".ui-multi-line-legend li")).toHaveLength(2);
+    const label = getByText("Holder A");
+    expect(label.parentElement?.textContent).toContain("25,2%");
+  });
+
+  it("caps at four series and empty-states below two drawable points", () => {
+    const many = Array.from({ length: 6 }, (_, i) => ({
+      key: `s${i}`,
+      label: `S${i}`,
+      points: [
+        { label: "2025-01-01", value: i + 1 },
+        { label: "2025-06-30", value: i + 2 },
+      ],
+    }));
+    const { container } = render(
+      <MultiLineChart ariaLabel="capped" series={many} />,
+    );
+    expect(container.querySelectorAll("polyline.ui-multi-line-series")).toHaveLength(4);
+
+    const { container: empty } = render(
+      <MultiLineChart
+        ariaLabel="not enough data"
+        series={[{ key: "x", label: "X", points: [{ label: "2025-01-01", value: 1 }] }]}
+      />,
+    );
+    expect(empty.querySelector(".ui-line-chart-empty")).not.toBeNull();
+  });
+
+  it("renders a neutral (dashed) series outside the colour slots", () => {
+    const { container } = render(
+      <MultiLineChart
+        ariaLabel="with float"
+        series={[
+          ...series,
+          {
+            key: "float",
+            label: "Free float",
+            neutral: true,
+            points: [
+              { label: "2024-12-31", value: 74.5 },
+              { label: "2026-03-31", value: 68.5 },
+            ],
+          },
+        ]}
+      />,
+    );
+    expect(container.querySelector("polyline.ui-multi-line-series-neutral")).not.toBeNull();
+    // Neutral doesn't consume a categorical slot: slots 0 and 1 stay the holders'.
+    expect(container.querySelectorAll("polyline.ui-multi-line-series-0, polyline.ui-multi-line-series-1")).toHaveLength(2);
   });
 });
