@@ -1,5 +1,75 @@
 # Changelog
 
+## v0.56.0 - 2026-07-16
+
+Ownership structure: the app now knows **who owns every company you track and
+how that changes over time** — gathered automatically, with visible sources.
+The Basic info panel gains an **Ownership section**: a donut of the current
+structure by holder type (founder/OFE/TFI/State Treasury/treasury shares…),
+the top holders' stakes over time on one chart with a dashed free-float line,
+and the **derived free float** (100% − disclosed stakes, with an honest
+uncertainty note). Mid-milestone the source roles were pivoted on real-data
+evidence (ADR 0072 amended): **BiznesRadar covers the whole watchlist daily**,
+while periodic reports and ESPI threshold filings add depth, provenance, and
+freshness where they exist — the newest full picture wins, and the sources
+audit each other. Decision support only, all local. Guide:
+[Ownership](wiki/ownership.md).
+
+### Added
+
+- **`ownership_stakes` with history** — append-only snapshots per (source,
+  as-of, holder) with **capital % and votes % kept separate** (the
+  preferred-share gap is itself a signal); deterministic ids make re-ingest
+  idempotent, and re-ingest never wipes a classification (COALESCE upsert
+  pinned by test).
+- **BiznesRadar "Akcjonariat" as the automatic breadth source** — a daily
+  polite fetch per tracked GPW company writes the "Główni akcjonariusze"
+  table as a full-picture `aggregator` basis (single as-of from the page's
+  "Data aktualizacji"); plausibility gates (summary rows skipped, >100%
+  rejected, implausible sums written as diagnostics instead of data) mean the
+  automaton can never write garbage stakes.
+- **Report extraction** — the mandatory "shareholders ≥5%" table of stored
+  periodic reports parsed deterministically on the autopilot lane (90.2%
+  recall / 100% precision on a hand-labeled real-data ground truth);
+  unreadable documents queue in a residual list for the future OCR/AI path
+  (always confirm-gated).
+- **ESPI major-holdings signal** — art. 69 threshold notifications classified
+  as a new typed signal; a confirmed notification updates stakes with a
+  conservative parse that never guesses (ambiguity → diagnostics, not data).
+- **Holder-type classification** — a seeded dictionary of Polish TFI/OFE/state
+  entities + name heuristics classify most holders; the residual goes to AI
+  **as proposals you confirm or reject**; a manual re-type always wins.
+  Cosmetic name variants merge by holder identity ("NN PTE" =
+  "Nationale-Nederlanden PTE S.A.").
+- **Two chart primitives** — `DonutChart` and `MultiLineChart` (shared scale,
+  dataviz-validated palette, dashed neutral series, SVG tooltip), reusable
+  beyond ownership.
+- New wiki guide: [Ownership](wiki/ownership.md).
+
+### Changed
+
+- **Witness direction reversed** (ADR 0072 amendment): the disclosed
+  reports/ESPI state now audits the BiznesRadar table; divergences above the
+  disclosure threshold land in Diagnostics, same as before.
+- The Ownership header labels its basis source honestly — "periodic report",
+  "ESPI filing", "BiznesRadar", or "manual entry" (previously hardcoded).
+- Current state reads by **disclosure basis**: holders who drop below the 5%
+  threshold vanish from the current view (they never file "0%") but stay in
+  history; the newest full picture across reports and BiznesRadar wins, with
+  ESPI/manual overlays on top.
+
+### Fixed
+
+- **Aggregator parser defect caught live in owner dogfooding**: the page's
+  "razem" summary rows were ingested as holders (share counts as percentages
+  — a 13,720,265% donut) and the sub-5% fund-statement table was swallowed
+  wholesale, on every tracked company. Fixed with table anchoring + row/basis
+  plausibility gates, a repair migration that resets aggregator rows, a real
+  regression sample, and a live spec asserting every rendered percentage
+  stays ≤ 100.
+- Dockview cockpit no longer buries the Basic info tab under the last-added
+  panel on default layouts.
+
 ## v0.55.0 - 2026-07-15
 
 Source reliability & disclosure signals: the feed is now **harder to fool and
