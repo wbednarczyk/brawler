@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.57.0 - 2026-07-18
+
+Company health: the app now **raises "something smells here" on its own** for
+every company you track. The Quality panel gains **health scores** — Piotroski F
+(0–9) and Altman Z″ EM (safe/grey/distress) — computed deterministically from
+confirmed facts with the published formulas cited, an expandable per-component
+breakdown, and honest states: a full score or "insufficient data" listing
+exactly what's missing (never a rescaled number), "not applicable" for banks,
+insurers and brokers. Scores were validated against BiznesRadar's published
+values on the maintainer's real portfolio (their EM-Score = 3.25 + our Z″,
+matched to ±0.12). A new **Warning signals** cockpit panel collects auditor red
+flags, late periodic reports, fund exits (including an ESPI filing crossing
+below the 5% disclosure threshold), health-score deteriorations and
+short-selling spikes — each with a severity, an evidence link, an acknowledge
+flow, and full alert-rule wiring. The Ownership section gains **Insiders**:
+parsed MAR art. 19 transactions (who/role/direction, volumes and prices filled
+from the attached notification PDFs), management/supervisory holdings parsed
+from periodic reports, rolling 90-day/12-month net buy-sell, and a
+**skin-in-the-game badge** on shareholders tied to the board — including stakes
+held via family foundations and holding vehicles. Guides:
+[wiki/quality-frameworks.md](wiki/quality-frameworks.md),
+[wiki/red-flags.md](wiki/red-flags.md), [wiki/ownership.md](wiki/ownership.md).
+
+### Added
+
+- Health scores (Piotroski F + Altman Z″ EM) in the Quality panel, usable in
+  scorecard criteria (`piotroski_f` / `altman_z`); 4 new extracted
+  balance-sheet concepts + a health-facts re-extraction backfill.
+- Warning signals (red flags) panel in the default cockpit set with acknowledge
+  → history semantics; derived flags raise typed signals through the existing
+  alert rules (report delay, fund exit, score deterioration).
+- Insider substrate: MAR art. 19 cover-note parser + attachment-PDF tier,
+  management-holdings section parser (both ground-truth-validated on the real
+  database), insider sentiment view, founder/insider stamping with the
+  indirect-via vehicle bridge.
+- Ownership OCR for unreadable shareholder tables (vision tier), always
+  confirm-before-apply in the Review queue; xhtml residuals OCR their PDF
+  siblings.
+
+### Changed
+
+- **Report history now backfills automatically** for every automated company —
+  adding a company pulls its reports, facts and sectors with zero clicks
+  (previously manual per company; 33 of 50 tracked companies had no coverage).
+- Alert hygiene: historical ingest never impersonates the present (14-day
+  freshness gate, wall-clock firing times), persistent toasts are capped at 3
+  with a "+N more" summary and no longer cover the navigation; attention toasts
+  show tickers and localized labels.
+- Financial-statement companies (PKO, PEO, PZU, XTB, GPW, KRU) are classified
+  via their registry sector so health scores honestly report "not applicable".
+
+### Fixed
+
+- ESPI insider-transaction classifier seeds matched 0/22 real filings —
+  corrected patterns with a real-title corpus test; a startup catch-up
+  reclassifies stored filings.
+- Unit-scale detection: a narrative "mln zł" mention no longer overrides a
+  statement's "w tys. zł" declaration (this had silently mis-scaled two stored
+  CD PROJEKT facts ×1000 — repaired by a guarded migration; zero divergences
+  across all companies after).
+- Skin-in-the-game corroboration, management-holdings junk-row gate, and the
+  KRU section parse — all found and fixed during live verification on the real
+  app.
+
 ## v0.56.0 - 2026-07-16
 
 Ownership structure: the app now knows **who owns every company you track and
