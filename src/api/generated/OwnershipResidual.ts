@@ -7,4 +7,11 @@ export type OwnershipResidual = { reportDocumentId: string,
 /**
  * `section_missing | table_unparsable | glyph_encoded`.
  */
-parseState: string, detectedAsOf?: string, matchedHeading?: string, };
+parseState: string, detectedAsOf?: string, matchedHeading?: string, 
+/**
+ * The tier-4 OCR lifecycle marker (v0.57 T8): absent = eligible for a bulk
+ * OCR pass; `proposed` = a pending OCR proposal awaits review; `rejected` =
+ * the user rejected it; `no_table` = OCR found no shareholders table. The
+ * warnbox uses this to pick the right action/state per residual.
+ */
+ocrState?: string, };

@@ -137,11 +137,19 @@ import type { SearchMatch } from "../api/search";
 type AppStateRootProps = {
   initialLicenseStatus?: LicenseStatus | null;
   initialSection?: Section;
+  /** App.tsx bridge for the Toast primitive's persistent-overflow summary row
+   * (see App.tsx for why this is a bind-into-a-ref, not a direct prop): called
+   * whenever the translated label or the navigate-to-Today handler changes. */
+  onBindPersistentOverflow?: (config: {
+    label: (hiddenCount: number) => string;
+    onClick: () => void;
+  }) => void;
 };
 
 export function AppStateRoot({
   initialLicenseStatus = null,
   initialSection = "Today",
+  onBindPersistentOverflow,
 }: AppStateRootProps) {
   const contentGridRef = useRef<HTMLElement | null>(null);
   const sourceRefreshInFlightRef = useRef(false);
@@ -466,7 +474,35 @@ export function AppStateRoot({
     retryFeedItemAiAnalysis,
   } = useAiAnalysisController({ selectedFeedItem, selectedCompanyFeedItem });
 
-  const text = makeTextTranslator(locale);
+  // Memoized (not recreated every render): the persistent-overflow bridge
+  // effect below depends on `text`'s identity to know when to rebind. An
+  // unmemoized `text` is a fresh closure every render, so that effect would
+  // fire on every AppStateRoot render rather than only on a real locale
+  // change (see the bridge's own comment for why that distinction matters).
+  const text = useMemo(() => makeTextTranslator(locale), [locale]);
+
+  // Toast persistent-overflow summary bridge (bug fix: unbounded attention
+  // toasts covered the sidebar nav). Today has no per-list anchor to deep-link
+  // into (the attention rows share one unlabeled stream with autopilot/verify/
+  // upcoming — see TodayScreen.tsx), so the finest available target is the
+  // Today section itself. Rebinds whenever the translated label would change
+  // (i.e. whenever `locale` changes — `text` above is memoized on it).
+  //
+  // App.tsx stores the bound config in STATE, not a ref (D1 fix, v0.57 fix
+  // wave 2): a persistent-toast burst can fire — and get baked into the
+  // rendered "+N more" summary — before the locale setting has loaded, and
+  // with no further toast/dismiss afterward there is no other trigger to
+  // re-render the summary once the real locale arrives. A ref rebind alone
+  // does not re-render `ToastViewport` (it is a sibling of this tree under
+  // `ToastProvider`, not a descendant, so this component re-rendering never
+  // cascades to it) — only a state update in `App` (which owns `ToastProvider`)
+  // does. See App.tsx's `bindPersistentOverflow` for the state side.
+  useEffect(() => {
+    onBindPersistentOverflow?.({
+      label: (hiddenCount) => `+${hiddenCount} ${text("more")}`,
+      onClick: () => setActiveSection("Today"),
+    });
+  }, [text, onBindPersistentOverflow, setActiveSection]);
   // ADR 0076 D5: reversible-destroy orchestration (immediate delete + undo toast).
   const runUndoableDelete = useUndoableDelete();
   // ADR 0068 T6: transient async-success feedback on the shared Toast surface.

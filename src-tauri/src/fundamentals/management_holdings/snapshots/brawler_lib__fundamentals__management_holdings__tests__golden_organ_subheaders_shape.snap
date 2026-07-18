@@ -1,0 +1,50 @@
+---
+source: src/fundamentals/management_holdings/tests.rs
+assertion_line: 390
+expression: parse(text)
+---
+MgmtHoldingsOutcome {
+    state: Parsed,
+    matched_heading: Some(
+        "Stan posiadania akcji emitenta przez osoby zarządzające i nadzorujące",
+    ),
+    rows: [
+        MgmtHoldingRow {
+            person_raw: "Andrzej Przybysz",
+            role: Some(
+                Management,
+            ),
+            shares: Some(
+                "0",
+            ),
+            indirect_via_raw: None,
+            prior_shares: None,
+            prior_as_of: None,
+        },
+        MgmtHoldingRow {
+            person_raw: "Krzysztof Kucharek",
+            role: Some(
+                Management,
+            ),
+            shares: Some(
+                "25000",
+            ),
+            indirect_via_raw: None,
+            prior_shares: None,
+            prior_as_of: None,
+        },
+        MgmtHoldingRow {
+            person_raw: "Jan Woźnicki",
+            role: Some(
+                Supervisory,
+            ),
+            shares: Some(
+                "0",
+            ),
+            indirect_via_raw: None,
+            prior_shares: None,
+            prior_as_of: None,
+        },
+    ],
+    zero_organs: [],
+}

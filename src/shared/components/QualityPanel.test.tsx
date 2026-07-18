@@ -22,6 +22,14 @@ import type {
   QualityFramework,
 } from "../../api/qualityFrameworksTypes";
 
+vi.mock("../../api/companyHealth", () => ({
+  // CompanyHealthSection fetches on mount inside QualityPanel; an unmocked
+  // module would fall through to the real invoke (undefined in vitest).
+  getCompanyHealth: vi.fn(() =>
+    Promise.resolve({ companyId: "company_1", periods: [] }),
+  ),
+}));
+
 vi.mock("../../api/qualityFrameworks", () => ({
   listQualityFrameworks: vi.fn(),
   listFrameworkEvaluations: vi.fn(),

@@ -40,6 +40,12 @@ export type OwnershipSectionProps = {
   onSetHolderType: (holderKey: string, holderType: string | null) => void;
   onConfirmProposal: (proposalId: string) => void;
   onRejectProposal: (proposalId: string) => void;
+  /** Run the tier-4 OCR pass over this company's residual documents (T8). */
+  onRunOcr: () => void;
+  /** Confirm an OCR shareholders-table proposal (writes stakes, clears residual). */
+  onConfirmOcrProposal: (reportDocumentId: string) => void;
+  /** Reject an OCR shareholders-table proposal (parks the residual). */
+  onRejectOcrProposal: (reportDocumentId: string) => void;
   className?: string;
 };
 
@@ -91,6 +97,9 @@ export function OwnershipSection({
   onSetHolderType,
   onConfirmProposal,
   onRejectProposal,
+  onRunOcr,
+  onConfirmOcrProposal,
+  onRejectOcrProposal,
   className,
 }: OwnershipSectionProps) {
   const { text, locale } = useLocale();
@@ -294,6 +303,23 @@ export function OwnershipSection({
     );
   };
 
+  // Skin-in-the-game badge: a holder corroborated by a parsed management-holdings
+  // row or an insider transaction — by person name, or as the vehicle a founder
+  // holds through (ADR 0083 D6). Sits in the fixed trailing chip slot so it never
+  // shifts the row layout (ui-authoring: trailing chips in fixed slots).
+  const renderSkinBadge = (holder: OwnershipHolder) => {
+    const skin = holder.skinInTheGame;
+    if (!skin) return null;
+    const detail = skin.via
+      ? `${text("Corroborated by")}: ${skin.person} (${text("via")} ${skin.via})`
+      : `${text("Corroborated by")}: ${skin.person}`;
+    return (
+      <span className="ownership-skin-badge" title={detail}>
+        <StatusChip tone="ok">{text("skin in the game")}</StatusChip>
+      </span>
+    );
+  };
+
   const proposalByHolder = new Map(data.pendingProposals.map((p) => [p.holderKey, p]));
 
   return wrap(
@@ -367,6 +393,7 @@ export function OwnershipSection({
                 ) : (
                   renderTypeChip(holder)
                 )}
+                {renderSkinBadge(holder)}
               </div>
               <div className="ownership-holder-meta">
                 {proposal ? (
@@ -470,19 +497,109 @@ export function OwnershipSection({
         </div>
       ) : null}
 
-      {data.residuals.length > 0 ? (
-        <div className="ownership-warnbox" role="status">
-          <p>
-            {text(
-              "Some report has an unreadable text layer (non-standard font). Its shareholder table will go through OCR — the result lands in the review queue and is never saved automatically.",
-            )}
-          </p>
-          <span className="ownership-warnbox-count num-tabular">
-            {data.residuals.length}{" "}
-            {pluralNoun(locale, data.residuals.length, REPORT_FORMS)}
-          </span>
+      {/* Tier-4 OCR shareholder-table proposals awaiting review (ADR 0077 over
+          ADR 0072 decision 2a): a whole table read from a residual document's
+          OCR, ALWAYS confirm-before-apply — never auto-saved. */}
+      {data.ocrProposals.map((proposal) => (
+        <div
+          key={proposal.reportDocumentId}
+          className="ownership-ocr-proposal"
+          role="group"
+          aria-label={text("OCR shareholder table to review")}
+        >
+          <div className="ownership-ocr-proposal-head">
+            <StatusChip tone="warn">{text("OCR — confirm to save")}</StatusChip>
+            <span className="ownership-as-of">
+              {text("as of")} {proposal.asOf}
+              {proposal.sourceDocumentId !== proposal.reportDocumentId
+                ? ` · ${text("read from a companion PDF")}`
+                : ""}
+            </span>
+          </div>
+          <ul className="ownership-ocr-rows">
+            {proposal.holders.map((holder, index) => (
+              <li key={`${proposal.reportDocumentId}-${index}`} className="ownership-ocr-row">
+                <span className="ownership-holder-name">{holder.holderNameRaw}</span>
+                <span className="num-tabular">
+                  {formatPct(holder.capitalPct, locale)} {text("cap.")} ·{" "}
+                  {formatPct(holder.votesPct, locale)} {text("votes")}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="ownership-ocr-actions">
+            <Button
+              className="compact-button"
+              variant="secondary"
+              disabled={busy}
+              onClick={() => onConfirmOcrProposal(proposal.reportDocumentId)}
+            >
+              {text("Confirm and save")}
+            </Button>
+            <Button
+              className="compact-button"
+              variant="minimal"
+              disabled={busy}
+              onClick={() => onRejectOcrProposal(proposal.reportDocumentId)}
+            >
+              {text("Reject")}
+            </Button>
+          </div>
         </div>
-      ) : null}
+      ))}
+
+      {/* Residual warnbox: documents the deterministic parser could not read.
+          Its OCR result lands in the review surface above, never auto-saved. A
+          residual awaiting a run (or that OCR found no table for) offers the Run
+          OCR action; a rejected one is noted; while running, the state shows. */}
+      {(() => {
+        const runnable = data.residuals.filter(
+          (r) => r.ocrState !== "proposed" && r.ocrState !== "rejected",
+        );
+        const rejected = data.residuals.filter((r) => r.ocrState === "rejected");
+        const proposedCount = data.ocrProposals.length;
+        if (runnable.length === 0 && rejected.length === 0 && proposedCount === 0) return null;
+        const noTable = runnable.some((r) => r.ocrState === "no_table");
+        return (
+          <div className="ownership-warnbox" role="status">
+            <p>
+              {text(
+                "Some report has an unreadable text layer (non-standard font). Its shareholder table goes through OCR — the result lands here for review and is never saved automatically.",
+              )}
+            </p>
+            {runnable.length > 0 ? (
+              <div className="ownership-warnbox-action">
+                <Button
+                  className="compact-button"
+                  data-ux-primary-action="true"
+                  disabled={busy}
+                  onClick={onRunOcr}
+                >
+                  {busy
+                    ? text("Reading with OCR…")
+                    : noTable
+                      ? text("Retry OCR")
+                      : text("Read with OCR")}
+                </Button>
+                <span className="ownership-warnbox-count num-tabular">
+                  {runnable.length} {pluralNoun(locale, runnable.length, REPORT_FORMS)}
+                </span>
+              </div>
+            ) : null}
+            {noTable && !busy ? (
+              <span className="ownership-warnbox-note">
+                {text("OCR could not find a shareholder table in the last run.")}
+              </span>
+            ) : null}
+            {rejected.length > 0 ? (
+              <span className="ownership-warnbox-note">
+                {rejected.length} {pluralNoun(locale, rejected.length, REPORT_FORMS)}:{" "}
+                {text("OCR result rejected — not re-proposed.")}
+              </span>
+            ) : null}
+          </div>
+        );
+      })()}
 
       <Hint>{text("A manual type always wins — automation never overwrites it.")}</Hint>
     </>,

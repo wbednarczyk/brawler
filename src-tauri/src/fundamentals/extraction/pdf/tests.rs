@@ -44,6 +44,26 @@ fn detects_thousands_and_millions() {
     assert_eq!(detect_unit_scale("bez jednostki"), UnitScale::Thousands);
 }
 
+/// Regression (card e6ebda3, CDR Q3 2023 Polish `Skonsolidowane sprawozdanie`):
+/// a statement DECLARED in thousands ("wszystkie kwoty … w tys. zł") that also
+/// mentions a millions amount in NARRATIVE prose ("około 95 mln zł") must stay
+/// Thousands — the prose token must NOT override the statement's scale
+/// declaration, or every value over-scales ×1000. Only a genuine millions
+/// *declaration* ("w mln"/"w milionach") wins.
+#[test]
+fn prose_millions_token_does_not_override_a_thousands_declaration() {
+    let doc = "Skonsolidowane sprawozdanie finansowe. Wszystkie kwoty są w tys. \
+               złotych o ile nie podano inaczej. Koszty kampanii to około 95 mln zł. \
+               Zasądzona szkoda wyniosła co najmniej 16 mln zł.";
+    assert_eq!(detect_unit_scale(doc), UnitScale::Thousands);
+    // A real millions declaration still resolves to millions even with a stray
+    // "w tys. sztuk" share-count note present.
+    let millions = "Dane w mln zł. Liczba akcji w tysiącach sztuk 100 388.";
+    assert_eq!(detect_unit_scale(millions), UnitScale::Millions);
+    // A bare "mln zł" with NO thousands declaration keeps signalling millions.
+    assert_eq!(detect_unit_scale("Aktywa (mln zł)"), UnitScale::Millions);
+}
+
 // ---------------------------------------------------------------------------
 // Core extraction
 // ---------------------------------------------------------------------------

@@ -239,6 +239,49 @@ const shortPositions = [
   },
 ];
 
+// Red-flags panel state (v0.57 T7, ADR 0083 D8). CD PROJEKT carries two active
+// flags (a high auditor flag with an evidence item + a medium fund-exit) and one
+// acknowledged flag in history — exercising the severity chips, the evidence
+// "Open" affordance, the acknowledge flow, and the collapsed history group.
+const redFlagsByCompany: NonNullable<ScenarioData["redFlagsByCompany"]> = {
+  company_gpw_cdr: {
+    active: [
+      {
+        flagId: "rf:auditor_red_flag:company_gpw_cdr:fi_cdr_audit",
+        flagType: "auditor_red_flag",
+        severity: "high",
+        title: "Opinia biegłego rewidenta z zastrzeżeniem",
+        raisedDate: "2026-05-01",
+        evidenceUrl: "https://example.test/audit",
+        evidenceFeedItemId: "feed_cdr_1",
+        ackedAt: null,
+      },
+      {
+        flagId: "rf:fund_exit:company_gpw_cdr:beta@2026-03-31",
+        flagType: "fund_exit",
+        severity: "medium",
+        title: "Wyjście z akcjonariatu: Nationale-Nederlanden OFE",
+        raisedDate: "2026-03-31",
+        evidenceUrl: null,
+        evidenceFeedItemId: null,
+        ackedAt: null,
+      },
+    ],
+    history: [
+      {
+        flagId: "rf:report_delay:company_gpw_cdr:evt_old",
+        flagType: "report_delay",
+        severity: "high",
+        title: "Opóźniony raport okresowy: Raport za IV kwartał",
+        raisedDate: "2026-02-01",
+        evidenceUrl: null,
+        evidenceFeedItemId: null,
+        ackedAt: "2026-02-10T09:00:00Z",
+      },
+    ],
+  },
+};
+
 const shortPositionEvents = [
   {
     companyId: "company_gpw_cdr",
@@ -785,6 +828,7 @@ function seedBrowserStore(data: ScenarioData) {
   data.kpiExtractionJobs = [structuredClone(seedExtractionJob("doc_cdr_q3_2025"))];
   data.shortPositions = structuredClone(shortPositions);
   data.shortPositionEvents = structuredClone(shortPositionEvents);
+  data.redFlagsByCompany = structuredClone(redFlagsByCompany);
   data.irResolutions = [
     {
       document: null,

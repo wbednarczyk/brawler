@@ -965,7 +965,7 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
   "freeFloatPct": "46.8",
   "disclosedSum": "53.2",
   "holders": [
-    { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "capitalPct": "25.5", "votesPct": "25.5", "asOf": "2025-12-31", "source": "report_document" }
+    { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "capitalPct": "25.5", "votesPct": "25.5", "asOf": "2025-12-31", "source": "report_document", "skinInTheGame": { "person": "Jacek Duch" } }
   ],
   "history": [
     { "holderKey": "JACEK DUCH", "name": "Jacek Duch", "holderType": "founder_insider", "points": [ { "asOf": "2024-12-31", "capitalPct": "24.0" }, { "asOf": "2025-12-31", "capitalPct": "25.5" } ] }
@@ -981,16 +981,62 @@ Shareholder-structure read model + review commands ([ADR 0072](adr/0072-ownershi
 
 - Percentages are **decimal-exact TEXT** (the `financial_facts.value_numeric` convention), not floats. `freeFloatPct` is always present (`"100"` when nothing disclosed); `disclosedSum` is Σ of disclosed `capitalPct` across current holders; `asOf`/`source` are omitted when there are no stakes yet. `holderType`/`capitalPct`/`votesPct` are omitted when absent (never a fabricated value).
 - `holders` is the current state (latest disclosed stake per holder); `history` is each current holder's chronological capital-% trajectory; `residuals` are documents whose shareholders table the deterministic parser could not read (awaiting OCR/AI, whose results always require confirmation); `pendingProposals` are AI holder-type classifications awaiting confirmation (never auto-applied).
+- `skinInTheGame` (v0.57, ADR 0083 D6) is present on a holder corroborated by a parsed management-holdings row or an insider transaction — by exact person name, or as the `via` vehicle a founder holds through (`{ person, via? }`). It drives the Ownership "skin in the game" badge; omitted when there is no management/insider match. Founder-name stamping (`founder_insider`) and this corroboration are joined by canonical holder identity — never a shared surname.
 
 Mutations return the **freshly recomputed** `OwnershipOverview` so the UI updates in one round-trip:
 
 - `set_ownership_holder_type(companyId, holderKey, holderType)` — manual re-type across the holder's rows (`holderType` `null` clears it; a manual label is authoritative, never overwritten by automation).
 - `confirm_ownership_holder_type_proposal(companyId, proposalId)` — applies a pending AI proposal across the holder's rows.
 - `reject_ownership_holder_type_proposal(companyId, proposalId)` — leaves the holder unclassified.
+- `run_company_ownership_ocr(companyId)` — runs the tier-4 OCR pass over this company's residual documents (the residual-warnbox action, re-arming its `no_table` markers) and returns the freshly recomputed overview so any new proposal renders in one round-trip.
+- `confirm_ownership_ocr_proposal(companyId, reportDocumentId)` — writes the proposed OCR shareholder rows as `report_document` stakes at the proposal's `as_of`, stamps deterministic holder types, and clears the residual.
+- `reject_ownership_ocr_proposal(companyId, reportDocumentId)` — discards the OCR proposal and parks the residual (`ocr_state='rejected'`) so it is not re-proposed.
 
-`backfill_ownership_extraction(companyId)` force-enqueues deterministic extraction across the company's fetched periodic reports (the "Wydobądź z raportów" CTA) and returns the number of documents queued (extraction drains on the autopilot lane). `run_ownership_classification()` runs the AI holder-type classify-with-confirm job over every company's residual holders, returning `{ examined, proposed, skipped, errors }`.
+The overview also carries `ocrProposals` (v0.57 T8, [ADR 0077](adr/0077-trusted-extraction-foundations.md)): pending tier-4 OCR shareholders-table proposals — `{ reportDocumentId, sourceDocumentId, asOf, matchedHeading?, providerId?, holders: [{ holderNameRaw, capitalPct?, votesPct? }] }` — a whole table read from a residual document's OCR, **never auto-applied**; the residual warnbox renders these with per-holder rows and confirm/reject. `sourceDocumentId` is the document actually OCR'd (equals `reportDocumentId` for a PDF residual, or the fetched PDF **sibling** when the residual is an unreadable xhtml pdf2htmlEX container). Each `residuals[]` entry carries `ocrState?` (`proposed | rejected | no_table`; absent = eligible) so the warnbox picks the right action/state.
 
-Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`, `confirm_ownership_holder_type_proposal`, `reject_ownership_holder_type_proposal`, `run_ownership_classification`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+`backfill_ownership_extraction(companyId)` force-enqueues deterministic extraction across the company's fetched periodic reports (the "Wydobądź z raportów" CTA) and returns the number of documents queued (extraction drains on the autopilot lane). `run_ownership_classification()` runs the AI holder-type classify-with-confirm job over every company's residual holders, returning `{ examined, proposed, skipped, errors }`. `run_ownership_ocr_extraction()` runs the tier-4 OCR pass over **every** company's eligible residuals — `parse_state ∈ {table_unparsable, glyph_encoded}` (the card's population; `section_missing` is excluded from bulk to avoid burning provider calls) with `ocr_state IS NULL` — returning `{ examined, proposed, noTable, skipped, errors }`; a no-vision-provider state is a clean no-op (residuals counted as `skipped`), never an error ([ADR 0060](adr/0060-ai-capability-routing-and-openai-compatible-provider.md) capability routing — `VisionExtraction`, no general-analysis fallback). It is a **headless/programmatic** entry (epic backfill / future global action) — the per-company `run_company_ownership_ocr` is the UI trigger, so there is no TS wrapper for the bulk command yet. `run_company_ownership_ocr` is broader (an explicit user retry): it re-arms the company's `no_table` residuals **and** includes `section_missing`. An xhtml residual (pdf2htmlEX container) is OCR'd via its fetched **PDF sibling** of the same period; no sibling → `no_table`.
+
+Typed commands ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_ownership_overview`, `backfill_ownership_extraction`, `set_ownership_holder_type`, `confirm_ownership_holder_type_proposal`, `reject_ownership_holder_type_proposal`, `run_ownership_classification`, `run_ownership_ocr_extraction`, `run_company_ownership_ocr`, `confirm_ownership_ocr_proposal`, `reject_ownership_ocr_proposal`. Surfaced by the Ownership section of the Basic Info panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+
+## Company Health
+
+Deterministic health scores + insider overview + red flags ([ADR 0083](adr/0083-company-health-scores-and-red-flags.md)). All read models are computed (no stored projections); heavy work off the UI thread via `spawn_blocking`. Storage rules canonical in [Data Model § Company Health](data-model.md#company-health-insider-substrate--red-flag-acks). Decision support only — published-formula citations, never verdict language.
+
+### Health scores (v0.57.0)
+
+`get_company_health(companyId)` returns `CompanyHealth` — deterministic Piotroski F (2000) + Altman Z″ EM (1995) computed over confirmed FY facts (ADR 0083 Decisions 2–4):
+
+- `companyId`, `statementType`, and the always-visible `piotroskiVariant` / `altmanVariant` citation labels.
+- `latest` (the latest-FY entry, absent when the company has no annual period) and `history` (every FY period, newest-first, including `latest`).
+- Each entry (`HealthPeriodScores`) carries `periodId`, `fiscalYear`, and two tagged scores keyed by `state`:
+  - `piotroski`: `{ state: "headline", score (0–9), signals[9] }` · `{ state: "insufficient_data", signals, missing[] }` · `{ state: "not_applicable", reason }`. Each `PiotroskiSignal` = `code` (`F1`..`F9`), `name`, `passed`, `points`, and the `inputs` (`{ key, value }`) it measured.
+  - `altman`: `{ state: "headline", zScore, band, components[4] }` · `{ state: "insufficient_data", components, missing[] }` · `{ state: "not_applicable", reason }`. `band` ∈ `safe | grey | distress` (>2.6 / 1.1–2.6 / <1.1). Each `AltmanComponent` = `code` (`X1`..`X4`), `name`, `weight`, `ratio`, `contribution`, `inputs`.
+
+Strict completeness (Decision 3): a headline renders only when **every** input is present; a missing balance-sheet input (e.g. `current_liabilities`) is `insufficient_data` (never read as zero); financials (non-`industrial` `statementType`) are `not_applicable`; a company with no prior FY is `insufficient_data (prior_fy_period)`. Never a partial or rescaled headline. F5 leverage uses **total non-current liabilities** (`total_liabilities − current_liabilities`, ADR 0083 D4 amendment) — `long_term_debt` stays extracted but is no longer a score input; the signal's `leverage_input` detail records the basis.
+
+Score scalars `piotroski_f` / `altman_z` (the latest-FY headlines only) are additionally referenceable in scorecard criterion expressions (ADR 0046 amendment in ADR 0083 §2); a non-headline latest FY resolves the scalar `unavailable`.
+
+`backfill_company_health_facts(companyId)` (**headless-only — no UI**, ADR 0083 D4 amendment (d)) force-re-extracts the deterministic ESEF facts over a company's stored packages so the v0.57 health concepts persist as confirmed facts (stored facts predate the concept-map extension; the history sweep only re-attacks zero-fact periods). Additive + idempotent: an existing slot is re-observed, a divergent value surfaced, never overwritten. Returns `{ documentsProcessed, documentsSkippedNoPeriod, factsCreated, factsReobserved, divergences }`. Invoked for the T9 live pass and the T3 validation-gate harness.
+
+### Red flags (v0.57.0)
+
+`RedFlagsView` is a computed read model (no stored projection); both commands are async / `spawn_blocking`. Surfaced by the `redFlags` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
+
+- `get_red_flags(companyId)` → `RedFlagsView` `{ active: RedFlag[], history: RedFlag[] }`. Each `RedFlag` = `flagId` (deterministic `rf:<type>:<company>:<evidence>`), `flagType` (`auditor_red_flag | report_delay | fund_exit | score_deterioration | short_spike`), `severity` (`high | medium`, ADR 0083 D8 static map), `title`, `raisedDate`, `evidenceUrl?`, `evidenceFeedItemId?`, `ackedAt?` (history only). `active` is highest-severity-first; `history` is newest-ack-first.
+- `acknowledge_red_flag(input)`: `{ flagId }` — moves a flag from `active` to `history`; idempotent; the same evidence never re-raises (and its signal, already written, never re-fires). Returns the refreshed `RedFlagsView`.
+
+Three flag types are **detected + raised** at the producing seams (ownership ingest → `fund_exit`; fact-confirmation recompute → `score_deterioration`; refresh completion → `report_delay`) via the KNF pattern — one synthetic `feed_items` row + one `confirmed` `company_signals` row in the empty-pattern category, so existing `signal_category` alert rules fire (Attention Routing below, no new alert commands). `auditor_red_flag` and `short_spike` are **composed at read** from the existing `auditor_opinion` signal and the KNF short-position view (which already alert), raising nothing new; `short_spike` fires above `delta_30d_pp > 0.5` pp.
+
+### Insider overview (v0.57.0)
+
+`get_insider_overview(companyId)` returns `InsiderOverview` — the parsed insider substrate folded into a computed read model (ADR 0083 Decision 7); async / `spawn_blocking`. Surfaced by the "Insiderzy" block of the Ownership area ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)). Decision support only — counts, volumes, and who; never verdict language.
+
+- `companyId`, `transactions` (the timeline, newest effective-date first), `holdings` (latest disclosure per management/supervisory person, newest first), and `window90d` / `window12m` (the rolling aggregates).
+- Each `InsiderTransactionEntry` = `id`, `person`, `role?` (`management | supervisory | closely_associated`), `relatedPdmr?`, `direction?` (`buy | sell | other`), `instrument?`, `volume?` / `price?` / `currency?`, `txDate?`, `effectiveDate?` (the date used for windowing — `txDate`, else the filing signal date), `dateSource` (`transaction | filing | unknown`), `feedItemId`, `sourceUrl?`. Figure fields are nullable and never fabricated (the cover note omits volume/price/date for most filings; T4b fills them from the attachment PDF).
+- Each `ManagementHoldingEntry` = `person`, `role?`, `shares?` (nullable — an explicit `"0"` is a real zero, `null` is stated-but-unreadable or a `-`/`nd.` cell, never coerced), `indirectVia?` (the vehicle a founder holds through), `asOf`.
+- `WindowAggregate` is a tagged union keyed by `state` so an aggregate can never render below the 2-transaction minimum: `{ state: "belowMinimum", count }` (< 2 in-window transactions — the timeline still shows them, no aggregate) · `{ state: "computed", count, buys, sells, undetermined, net, buyVolume?, sellVolume?, volumeKnown, volumeTotal }`. `net = buys − sells`; directionless transactions (`direction` NULL or `other`) count only in `undetermined`, never in the net. `buyVolume` / `sellVolume` sum only the in-window transactions with a known volume (null when none did); `volumeKnown` / `volumeTotal` are the coverage note. Until T4b (ADR 0083 D6 amendment), the aggregate is count-based net direction with volume-where-known, labeled honestly.
+
+**Window inclusivity rule**: a transaction is in a window when its `effectiveDate` is on or after the window's lower bound **and** on or before the read date — **both boundaries inclusive**. So a transaction dated exactly 90 days (resp. 12 months) before the read date is IN the window; 91 days is out. A transaction with no effective date is listed in the timeline but excluded from every window.
 
 ## Company Signal
 

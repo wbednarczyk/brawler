@@ -135,7 +135,14 @@ pub(super) fn classify_and_store_signal(
     // confirmed signal fires any matching `signal_category` alert rule. Runs in
     // the same classification pass — no new worker lane. Best-effort: an
     // evaluation failure is logged and never rolls back the signal.
-    if affected > 0 {
+    //
+    // Freshness gate (ADR 0068 amendment, v0.57 fix wave 2): this is the
+    // historical-ingest seam — a report-history backfill re-ingests years of old
+    // filings through here, and each stale filing must NOT raise an alert (the
+    // toast-wall regression). The signal itself is always STORED (the timeline
+    // keeps it); only the alert evaluation is skipped when the signal's domain
+    // date is outside the freshness window.
+    if affected > 0 && !super::attention::signal_is_stale(normalized_date.as_deref()) {
         if let Err(error) = super::attention::evaluate_signal_rules(
             connection,
             company_id,

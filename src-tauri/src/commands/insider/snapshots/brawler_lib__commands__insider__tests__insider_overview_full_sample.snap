@@ -1,0 +1,207 @@
+---
+source: src/commands/insider/tests.rs
+expression: overview
+---
+InsiderOverview {
+    company_id: "company_gpw_gtn",
+    transactions: [
+        InsiderTransactionEntry {
+            id: "t5",
+            person: "Jan Testowy",
+            role: Some(
+                "closely_associated",
+            ),
+            related_pdmr: Some(
+                "Marek Góral",
+            ),
+            direction: Some(
+                "buy",
+            ),
+            instrument: Some(
+                "shares",
+            ),
+            volume: None,
+            price: None,
+            currency: None,
+            tx_date: None,
+            effective_date: Some(
+                "2026-06-25",
+            ),
+            date_source: "filing",
+            feed_item_id: "feed_t5",
+            source_url: Some(
+                "https://example.test/filing",
+            ),
+        },
+        InsiderTransactionEntry {
+            id: "t1",
+            person: "Jan Testowy",
+            role: Some(
+                "management",
+            ),
+            related_pdmr: None,
+            direction: Some(
+                "buy",
+            ),
+            instrument: Some(
+                "shares",
+            ),
+            volume: Some(
+                "500",
+            ),
+            price: None,
+            currency: None,
+            tx_date: Some(
+                "2026-06-20",
+            ),
+            effective_date: Some(
+                "2026-06-20",
+            ),
+            date_source: "transaction",
+            feed_item_id: "feed_t1",
+            source_url: Some(
+                "https://example.test/filing",
+            ),
+        },
+        InsiderTransactionEntry {
+            id: "t2",
+            person: "Jan Testowy",
+            role: Some(
+                "management",
+            ),
+            related_pdmr: None,
+            direction: Some(
+                "buy",
+            ),
+            instrument: Some(
+                "shares",
+            ),
+            volume: None,
+            price: None,
+            currency: None,
+            tx_date: Some(
+                "2026-06-10",
+            ),
+            effective_date: Some(
+                "2026-06-10",
+            ),
+            date_source: "transaction",
+            feed_item_id: "feed_t2",
+            source_url: Some(
+                "https://example.test/filing",
+            ),
+        },
+        InsiderTransactionEntry {
+            id: "t3",
+            person: "Jan Testowy",
+            role: Some(
+                "management",
+            ),
+            related_pdmr: None,
+            direction: Some(
+                "sell",
+            ),
+            instrument: Some(
+                "shares",
+            ),
+            volume: Some(
+                "200",
+            ),
+            price: None,
+            currency: None,
+            tx_date: Some(
+                "2026-05-15",
+            ),
+            effective_date: Some(
+                "2026-05-15",
+            ),
+            date_source: "transaction",
+            feed_item_id: "feed_t3",
+            source_url: Some(
+                "https://example.test/filing",
+            ),
+        },
+        InsiderTransactionEntry {
+            id: "t4",
+            person: "Jan Testowy",
+            role: Some(
+                "management",
+            ),
+            related_pdmr: None,
+            direction: Some(
+                "buy",
+            ),
+            instrument: Some(
+                "shares",
+            ),
+            volume: None,
+            price: None,
+            currency: None,
+            tx_date: Some(
+                "2025-08-01",
+            ),
+            effective_date: Some(
+                "2025-08-01",
+            ),
+            date_source: "transaction",
+            feed_item_id: "feed_t4",
+            source_url: Some(
+                "https://example.test/filing",
+            ),
+        },
+    ],
+    holdings: [
+        ManagementHoldingEntry {
+            person: "Anna Kowalska",
+            role: Some(
+                "management",
+            ),
+            shares: Some(
+                "12000",
+            ),
+            indirect_via: None,
+            as_of: "2025-12-31",
+        },
+        ManagementHoldingEntry {
+            person: "Marek Góral",
+            role: Some(
+                "management",
+            ),
+            shares: None,
+            indirect_via: Some(
+                "Góral Fundacja Rodzinna",
+            ),
+            as_of: "2025-12-31",
+        },
+    ],
+    window90d: Computed {
+        count: 4,
+        buys: 3,
+        sells: 1,
+        undetermined: 0,
+        net: 2,
+        buy_volume: Some(
+            "500",
+        ),
+        sell_volume: Some(
+            "200",
+        ),
+        volume_known: 2,
+        volume_total: 4,
+    },
+    window12m: Computed {
+        count: 5,
+        buys: 4,
+        sells: 1,
+        undetermined: 0,
+        net: 3,
+        buy_volume: Some(
+            "500",
+        ),
+        sell_volume: Some(
+            "200",
+        ),
+        volume_known: 2,
+        volume_total: 5,
+    },
+}

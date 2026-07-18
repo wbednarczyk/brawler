@@ -1134,7 +1134,7 @@ pub(super) fn list_available_metric_keys(
 
 /// Build the metrics context for a company: all global + company-scoped
 /// definitions and the company's confirmed-fact period series (newest first).
-fn load_metrics_context(
+pub(super) fn load_metrics_context(
     connection: &Connection,
     company_id: &str,
 ) -> StorageResult<MetricsContext> {
@@ -1203,7 +1203,15 @@ fn load_metrics_context(
         });
     }
 
-    Ok(MetricsContext::new(definitions, periods))
+    let context = MetricsContext::new(definitions, periods);
+
+    // Inject the latest-FY health scalars (ADR 0083 Decision 2) so scorecard
+    // criteria can reference `piotroski_f` / `altman_z`. Computed over the
+    // just-built context (confirmed facts only); a non-headline latest FY
+    // leaves the scalar `None`, resolving `Unavailable` at the engine boundary.
+    let statement_type = super::companies::get_statement_type(connection, company_id)?;
+    let scalars = crate::fundamentals::health::latest_fy_scalars(&context, &statement_type);
+    Ok(context.with_health_scalars(scalars))
 }
 
 /// Load confirmed facts for one period as `metric_key -> value`, preferring the

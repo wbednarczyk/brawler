@@ -90,6 +90,54 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Company health scores (v0.57 T2, ADR 0083). Same computed helper the
+        // command wrapper offloads, so the corpus can never diverge from real
+        // score assembly.
+        "get_company_health" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::company_health::compute_company_health(state, company_id)
+                    .expect("get_company_health"),
+            )
+            .unwrap()
+        }
+        // Red-flags panel state (v0.57 T7, ADR 0083 D8). Same store method the
+        // command wrapper offloads, so the corpus can never diverge from real
+        // assembly. Detections are adapter/extraction-triggered, so an untouched
+        // company reads back the empty view (no active flags, empty history).
+        "get_red_flags" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                state
+                    .red_flags()
+                    .red_flags_view(company_id)
+                    .expect("get_red_flags"),
+            )
+            .unwrap()
+        }
+        "acknowledge_red_flag" => {
+            let flag_id = inner["flagId"].as_str().expect("flagId");
+            serde_json::to_value(
+                state
+                    .red_flags()
+                    .acknowledge(flag_id)
+                    .expect("acknowledge_red_flag"),
+            )
+            .unwrap()
+        }
+        // Insider overview (v0.57 T6, ADR 0083 D7). Same computed helper the command
+        // wrapper offloads, so the corpus can never diverge from real assembly. An
+        // untouched company has no parsed substrate → the empty overview (no
+        // transactions/holdings, both windows below the 2-transaction minimum). No
+        // wall-clock field is serialized, so the dual execution stays deterministic.
+        "get_insider_overview" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::insider::compute_insider_overview(state, company_id)
+                    .expect("get_insider_overview"),
+            )
+            .unwrap()
+        }
         // Ownership overview + review (v0.56 T6, ADR 0072). Same computed helper /
         // store method the command wrappers delegate to, so the corpus can never
         // diverge from real assembly.
@@ -109,6 +157,38 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
                 .ownership()
                 .set_holder_type(company_id, holder_key, holder_type)
                 .expect("set_ownership_holder_type");
+            serde_json::to_value(
+                crate::commands::ownership::compute_ownership_overview(state, company_id)
+                    .expect("get_ownership_overview"),
+            )
+            .unwrap()
+        }
+        // Tier-4 OCR proposal confirm/reject (v0.57 T8, ADR 0077): the same store
+        // methods + recompute the command wrappers use.
+        "confirm_ownership_ocr_proposal" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            let report_document_id = input["reportDocumentId"]
+                .as_str()
+                .expect("reportDocumentId");
+            state
+                .ownership()
+                .confirm_ocr_proposal(report_document_id)
+                .expect("confirm_ownership_ocr_proposal");
+            serde_json::to_value(
+                crate::commands::ownership::compute_ownership_overview(state, company_id)
+                    .expect("get_ownership_overview"),
+            )
+            .unwrap()
+        }
+        "reject_ownership_ocr_proposal" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            let report_document_id = input["reportDocumentId"]
+                .as_str()
+                .expect("reportDocumentId");
+            state
+                .ownership()
+                .reject_ocr_proposal(report_document_id)
+                .expect("reject_ownership_ocr_proposal");
             serde_json::to_value(
                 crate::commands::ownership::compute_ownership_overview(state, company_id)
                     .expect("get_ownership_overview"),

@@ -81,6 +81,8 @@ import {
   makeQualityFramework,
   makeRegistryEntry,
   makeOwnershipOverview,
+  makeCompanyHealth,
+  makeInsiderOverview,
   makeReportDocument,
   makeReportPreparation,
   makeReportSeasonEntry,
@@ -136,6 +138,9 @@ import type {
 } from "../../api/financialsTypes";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { OwnershipOverview } from "../../api/ownership";
+import type { CompanyHealth } from "../../api/companyHealth";
+import type { InsiderOverview } from "../../api/insider";
+import type { RedFlagsView } from "../../api/redFlags";
 import type {
   PreReportCard,
   ReportPreparation,
@@ -212,6 +217,18 @@ export interface ScenarioData {
   // Ownership overviews per company (ADR 0072, v0.56 T6). Optional seed: a company
   // with no entry reads back the empty overview (freeFloatPct "100").
   ownershipOverviews?: OwnershipOverview[];
+  // Company-health scores per company (ADR 0083, v0.57 T2). Optional seed: a
+  // company with no entry reads back the empty read model (no latest, empty
+  // history — the "no annual periods yet" state).
+  companyHealthReports?: CompanyHealth[];
+  // Insider overviews per company (ADR 0083 D7, v0.57 T6). Optional seed: a
+  // company with no entry reads back the empty overview (no transactions/holdings,
+  // both windows below the 2-transaction minimum).
+  insiderOverviews?: InsiderOverview[];
+  // Red-flags panel state per company (ADR 0083 D8, v0.57 T7). Optional seed: a
+  // company with no entry reads back the empty view (no active flags, empty
+  // history). `acknowledge_red_flag` mutates the matching entry in place.
+  redFlagsByCompany?: Record<string, RedFlagsView>;
   // Structured-first extraction provenance (ADR 0061) — optional seed: legacy
   // facts have no row, so the tier/validation badge + drift card simply don't
   // render. A provenance-seeded scenario exercises that UI (badges + the
@@ -382,6 +399,8 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     kpiExtractionJobs: deep.map(makeKpiExtractionJob),
     reportDocuments: deep.map(makeReportDocument),
     ownershipOverviews: deep.map(makeOwnershipOverview),
+    companyHealthReports: deep.map(makeCompanyHealth),
+    insiderOverviews: deep.map(makeInsiderOverview),
     reportPreparations: deep.map(makeReportPreparation),
     shortPositions: [],
     shortPositionEvents: [],

@@ -60,7 +60,7 @@ export type { RangeFieldProps } from "./RangeField";
 export { TextareaField } from "./TextareaField";
 export type { TextareaFieldProps } from "./TextareaField";
 export { ToastProvider, useToast } from "./Toast";
-export type { ToastApi, ToastInput, ToastTone } from "./Toast";
+export type { ToastApi, ToastInput, ToastProviderProps, ToastTone } from "./Toast";
 export { useUndoableDelete } from "./useUndoableDelete";
 export type { UndoableDeleteConfig } from "./useUndoableDelete";
 export { Skeleton } from "./Skeleton";

@@ -60,6 +60,10 @@ pub struct OwnershipOverview {
     pub residuals: Vec<OwnershipResidual>,
     /// Pending AI holder-type proposals awaiting user confirmation.
     pub pending_proposals: Vec<OwnershipProposal>,
+    /// Pending tier-4 OCR shareholders-table proposals awaiting confirmation
+    /// (v0.57 T8, ADR 0077): a whole table read from a residual document's OCR,
+    /// never auto-applied — the review surface renders these with per-holder rows.
+    pub ocr_proposals: Vec<OwnershipOcrProposal>,
 }
 
 /// One current holder (latest disclosed stake).
@@ -86,6 +90,30 @@ pub struct OwnershipHolder {
     pub votes_pct: Option<String>,
     pub as_of: String,
     pub source: String,
+    /// Skin-in-the-game corroboration: present when this holder is matched by a
+    /// parsed management-holdings row or an insider transaction (by person name, or
+    /// as the vehicle a founder holds through). Drives the Ownership badge.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub skin_in_the_game: Option<SkinInTheGame>,
+}
+
+/// The skin-in-the-game evidence behind the Ownership badge: the natural person,
+/// and the vehicle when the holding is indirect.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinInTheGame {
+    /// The natural person behind the stake (a board member or PDMR).
+    pub person: String,
+    /// The vehicle the person holds through, when the holding is indirect.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub via: Option<String>,
 }
 
 /// A holder's capital-% trajectory over time.
@@ -152,6 +180,13 @@ pub struct OwnershipResidual {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts-export", ts(optional))]
     pub matched_heading: Option<String>,
+    /// The tier-4 OCR lifecycle marker (v0.57 T8): absent = eligible for a bulk
+    /// OCR pass; `proposed` = a pending OCR proposal awaits review; `rejected` =
+    /// the user rejected it; `no_table` = OCR found no shareholders table. The
+    /// warnbox uses this to pick the right action/state per residual.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub ocr_state: Option<String>,
 }
 
 /// A pending AI holder-type proposal (never auto-applied).
@@ -190,6 +225,68 @@ pub struct OwnershipClassificationResult {
     pub errors: u32,
 }
 
+/// One proposed shareholder row from the tier-4 OCR pass (v0.57 T8).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnershipOcrHolder {
+    pub holder_name_raw: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub capital_pct: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub votes_pct: Option<String>,
+}
+
+/// A pending tier-4 OCR shareholders-table proposal (v0.57 T8) — the whole table
+/// read from one residual document, awaiting confirm/reject. Confirm writes the
+/// rows as `report_document` stakes and clears the residual; reject parks it.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnershipOcrProposal {
+    /// Identifies the proposal (one per residual document) for confirm/reject.
+    pub report_document_id: String,
+    /// The document actually OCR'd (v0.57 T8): equals `reportDocumentId` for a PDF
+    /// residual, or the fetched PDF **sibling** when the residual is an xhtml
+    /// pdf2htmlEX container. Provenance of the OCR run for the review card.
+    pub source_document_id: String,
+    /// The disclosure date every written stake will carry.
+    pub as_of: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub matched_heading: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "ts-export", ts(optional))]
+    pub provider_id: Option<String>,
+    pub holders: Vec<OwnershipOcrHolder>,
+}
+
+/// Outcome of one bulk OCR-extraction pass (ts-rs mirror of the T8 job summary).
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "ts-export", derive(ts_rs::TS))]
+#[cfg_attr(
+    feature = "ts-export",
+    ts(export, export_to = "../../src/api/generated/")
+)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnershipOcrExtractionResult {
+    pub examined: u32,
+    pub proposed: u32,
+    pub no_table: u32,
+    pub skipped: u32,
+    pub errors: u32,
+}
+
 // ============================================================================
 // Read model assembly
 // ============================================================================
@@ -218,6 +315,15 @@ pub fn compute_ownership_overview(
     let proposals = ownership
         .list_holder_type_proposals(company_id, true)
         .map_err(|error| error.to_string())?;
+    let ocr_proposals = ownership
+        .list_ocr_proposals(company_id)
+        .map_err(|error| error.to_string())?;
+    // Skin-in-the-game corroboration keyed by canonical holder identity (the
+    // founder-badge join over the management-holdings + insider substrates).
+    let skin = state
+        .management_holdings()
+        .skin_in_the_game(company_id)
+        .map_err(|error| error.to_string())?;
 
     let holders: Vec<OwnershipHolder> = current
         .stakes
@@ -230,6 +336,16 @@ pub fn compute_ownership_overview(
             votes_pct: stake.votes_pct.clone(),
             as_of: stake.as_of.clone(),
             source: stake.source.clone(),
+            skin_in_the_game: skin
+                .get(
+                    &crate::fundamentals::ownership::classify::canonical_holder_identity(
+                        &stake.holder_name_raw,
+                    ),
+                )
+                .map(|m| SkinInTheGame {
+                    person: m.person.clone(),
+                    via: m.via.clone(),
+                }),
         })
         .collect();
 
@@ -311,6 +427,7 @@ pub fn compute_ownership_overview(
                 parse_state: r.parse_state,
                 detected_as_of: r.detected_as_of,
                 matched_heading: r.matched_heading,
+                ocr_state: r.ocr_state,
             })
             .collect(),
         pending_proposals: proposals
@@ -321,6 +438,25 @@ pub fn compute_ownership_overview(
                 proposed_type: p.proposed_type,
                 confidence: p.confidence,
                 rationale: p.rationale,
+            })
+            .collect(),
+        ocr_proposals: ocr_proposals
+            .into_iter()
+            .map(|p| OwnershipOcrProposal {
+                report_document_id: p.report_document_id,
+                source_document_id: p.source_document_id,
+                as_of: p.as_of,
+                matched_heading: p.matched_heading,
+                provider_id: p.provider_id,
+                holders: p
+                    .rows
+                    .into_iter()
+                    .map(|row| OwnershipOcrHolder {
+                        holder_name_raw: row.holder_name_raw,
+                        capital_pct: row.capital_pct,
+                        votes_pct: row.votes_pct,
+                    })
+                    .collect(),
             })
             .collect(),
     })
@@ -441,12 +577,105 @@ pub async fn run_ownership_classification(
     })
 }
 
+/// Run the tier-4 OCR pass over EVERY company's eligible ownership residuals
+/// (v0.57 T8, ADR 0077). Lands shareholders tables as confirm-before-apply
+/// proposals; a no-vision-provider state is a clean no-op (skipped), never an
+/// error. Already async (provider IO); awaited directly.
+#[tauri::command]
+pub async fn run_ownership_ocr_extraction(
+    state: tauri::State<'_, AppState>,
+) -> Result<OwnershipOcrExtractionResult, String> {
+    let state = state.inner().clone();
+    let summary =
+        crate::jobs::ownership_ocr_extraction::run_ownership_ocr_extraction(&state).await?;
+    Ok(OwnershipOcrExtractionResult {
+        examined: summary.examined as u32,
+        proposed: summary.proposed as u32,
+        no_table: summary.no_table as u32,
+        skipped: summary.skipped as u32,
+        errors: summary.errors as u32,
+    })
+}
+
+/// Run the tier-4 OCR pass over ONE company's residuals (the residual-warnbox
+/// action), re-arming its `no_table` markers (an explicit user retry). Returns
+/// the freshly recomputed overview so the warnbox re-renders with any new
+/// proposal in one round-trip.
+#[tauri::command]
+pub async fn run_company_ownership_ocr(
+    company_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<OwnershipOverview, String> {
+    let state = state.inner().clone();
+    crate::jobs::ownership_ocr_extraction::run_company_ownership_ocr_extraction(
+        &state,
+        &company_id,
+    )
+    .await?;
+    let recompute_state = state.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        compute_ownership_overview(&recompute_state, &company_id)
+    })
+    .await
+    .map_err(|error| format!("ownership overview task failed: {error}"))?
+}
+
+/// Confirm a pending OCR shareholders-table proposal: write its rows as
+/// `report_document` stakes, classify holder types, and clear the residual.
+/// Returns the refreshed overview.
+#[tauri::command]
+pub async fn confirm_ownership_ocr_proposal(
+    company_id: String,
+    report_document_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<OwnershipOverview, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state
+            .ownership()
+            .confirm_ocr_proposal(&report_document_id)
+            .map_err(|error| error.to_string())?;
+        // Same ownership-ingest seam the deterministic extraction job uses: a
+        // holder that vanished from the newly-confirmed full-picture basis raises
+        // a `fund_exit` (ADR 0083 D8, T7). Best-effort — never fails the confirm.
+        if let Err(error) = state.red_flags().detect_fund_exits(&company_id) {
+            log::warn!(
+                "ownership OCR confirm: fund_exit detection failed for {company_id}: {error}"
+            );
+        }
+        compute_ownership_overview(&state, &company_id)
+    })
+    .await
+    .map_err(|error| format!("confirm OCR proposal task failed: {error}"))?
+}
+
+/// Reject a pending OCR shareholders-table proposal: discard it and park the
+/// residual so it is not re-proposed. Returns the refreshed overview.
+#[tauri::command]
+pub async fn reject_ownership_ocr_proposal(
+    company_id: String,
+    report_document_id: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<OwnershipOverview, String> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        state
+            .ownership()
+            .reject_ocr_proposal(&report_document_id)
+            .map_err(|error| error.to_string())?;
+        compute_ownership_overview(&state, &company_id)
+    })
+    .await
+    .map_err(|error| format!("reject OCR proposal task failed: {error}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::storage::{
         open_in_memory_database, AppState, CaptureReportDocumentInput, NewCompany,
-        NewHolderTypeProposal, NewOwnershipStake, OwnershipExtractionResidual,
+        NewHolderTypeProposal, NewManagementHolding, NewOwnershipStake,
+        OwnershipExtractionResidual,
     };
 
     fn state() -> AppState {
@@ -614,6 +843,7 @@ mod tests {
                 parse_state: "glyph_encoded".to_owned(),
                 detected_as_of: Some("2023-12-31".to_owned()),
                 matched_heading: Some("Akcjonariat".to_owned()),
+                ocr_state: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             })
@@ -631,6 +861,175 @@ mod tests {
             overview.pending_proposals[0].proposed_type,
             "other_institutional"
         );
+    }
+
+    #[test]
+    fn overview_surfaces_skin_in_the_game_for_direct_and_vehicle_holders() {
+        let s = state();
+        let c = company(&s, "SNT");
+        // A direct founder stake and a vehicle stake a founder holds through.
+        stake(
+            &s,
+            &c,
+            "Cezary Kozielski",
+            Some("founder_insider"),
+            "24.0",
+            "24.0",
+            "2025-09-30",
+        );
+        stake(
+            &s,
+            &c,
+            "Melhus Company Ltd",
+            None,
+            "10.0",
+            "10.0",
+            "2025-09-30",
+        );
+        let doc = s
+            .report_documents()
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: c.clone(),
+                source_type: "espi".to_owned(),
+                url: "https://example.com/snt-q3.xhtml".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Raport kwartalny 2025".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        // Direct person holding + an indirect holding via the vehicle.
+        s.management_holdings()
+            .upsert_holding(NewManagementHolding {
+                company_id: c.clone(),
+                report_document_id: doc.id.clone(),
+                person_name_raw: "Dariusz Korecki".to_owned(),
+                role: Some("management".to_owned()),
+                shares: Some("100000".to_owned()),
+                indirect_via_raw: None,
+                prior_shares: None,
+                prior_as_of: None,
+                as_of: "2025-09-30".to_owned(),
+            })
+            .expect("holding");
+        s.management_holdings()
+            .upsert_holding(NewManagementHolding {
+                company_id: c.clone(),
+                report_document_id: doc.id.clone(),
+                person_name_raw: "Cezary Kozielski".to_owned(),
+                role: Some("management".to_owned()),
+                shares: Some("2047380".to_owned()),
+                indirect_via_raw: Some("Melhus Company Ltd".to_owned()),
+                prior_shares: None,
+                prior_as_of: None,
+                as_of: "2025-09-30".to_owned(),
+            })
+            .expect("holding via");
+
+        let overview = compute_ownership_overview(&s, &c).expect("overview");
+        // The vehicle stake badges via its founder; a direct person match badges too.
+        let vehicle = overview
+            .holders
+            .iter()
+            .find(|h| h.name == "Melhus Company Ltd")
+            .expect("vehicle holder");
+        let skin = vehicle.skin_in_the_game.as_ref().expect("vehicle skin");
+        assert_eq!(skin.person, "Cezary Kozielski");
+        assert_eq!(skin.via.as_deref(), Some("Melhus Company Ltd"));
+        // A holder with no management/insider match carries no badge.
+        assert!(overview
+            .holders
+            .iter()
+            .find(|h| h.name == "Cezary Kozielski")
+            .map(|h| h.skin_in_the_game.is_some())
+            .unwrap_or(false));
+    }
+
+    /// Faithful ABE live shape (F-A1, owner dogfooding 2026-07-17): a founder's
+    /// most-recent disclosed stake (`founder_insider`, materially above 5%) sits at
+    /// an OLDER `as_of` than the newest full-picture basis, because that newest
+    /// report's shareholder table was only partially extracted (OFE funds only,
+    /// no founders). The disclosure-basis scoping in `current_state` was dropping
+    /// the founder entirely, so the read model never surfaced the holder — and the
+    /// skin-in-the-game badge, which attaches to a surfaced holder, could never
+    /// appear even though the stake is stamped AND corroborated by a matching
+    /// management-holdings person row. The corroboration join itself is correct
+    /// (see `overview_surfaces_skin_in_the_game_for_direct_and_vehicle_holders`);
+    /// the defect is upstream — a founder is not an OFE and does not silently
+    /// vanish below 5% (crossing the threshold is itself an ESPI-disclosable
+    /// event), so a stamped founder stays in current state (sticky overlay).
+    #[test]
+    fn founder_below_newest_partial_basis_stays_surfaced_with_skin_badge() {
+        let s = state();
+        let c = company(&s, "ABE");
+        // The founder's newest disclosed stake is 2025-06-30 (8.13% — material).
+        stake(
+            &s,
+            &c,
+            "Andrzej Przybyło",
+            Some("founder_insider"),
+            "8.13",
+            "8.13",
+            "2025-06-30",
+        );
+        // A NEWER full-picture basis (2026-03-31) whose shareholder table was only
+        // partially parsed — an OFE fund, but NOT the founder.
+        stake(
+            &s,
+            &c,
+            "PKO BP Bankowy OFE",
+            Some("ofe_pension"),
+            "5.10",
+            "5.10",
+            "2026-03-31",
+        );
+        // The management-holdings substrate corroborates the founder (T5 join key).
+        let doc = s
+            .report_documents()
+            .create_or_find_pending_report_document(CaptureReportDocumentInput {
+                company_id: c.clone(),
+                source_type: "espi".to_owned(),
+                url: "https://example.com/abe-annual.xhtml".to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Sprawozdanie z działalności 2025".to_owned()),
+                attribution: None,
+            })
+            .expect("document");
+        s.management_holdings()
+            .upsert_holding(NewManagementHolding {
+                company_id: c.clone(),
+                report_document_id: doc.id.clone(),
+                person_name_raw: "Andrzej Przybyło".to_owned(),
+                role: Some("management".to_owned()),
+                shares: Some("1316200".to_owned()),
+                indirect_via_raw: None,
+                prior_shares: None,
+                prior_as_of: None,
+                as_of: "2025-09-30".to_owned(),
+            })
+            .expect("holding");
+
+        let overview = compute_ownership_overview(&s, &c).expect("overview");
+        // The founder must remain a current holder despite the newer partial basis.
+        let founder = overview
+            .holders
+            .iter()
+            .find(|h| h.name == "Andrzej Przybyło")
+            .expect("founder still surfaced in current state");
+        assert_eq!(founder.holder_type.as_deref(), Some("founder_insider"));
+        // And the corroboration badge attaches to that surfaced holder.
+        let skin = founder
+            .skin_in_the_game
+            .as_ref()
+            .expect("founder carries the skin-in-the-game badge");
+        assert_eq!(skin.person, "Andrzej Przybyło");
+        assert!(skin.via.is_none());
+        // The OFE from the newest basis is still there too.
+        assert!(overview
+            .holders
+            .iter()
+            .any(|h| h.name == "PKO BP Bankowy OFE"));
     }
 
     #[test]

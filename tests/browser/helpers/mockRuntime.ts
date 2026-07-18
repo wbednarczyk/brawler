@@ -13,7 +13,8 @@ export type ScenarioOverlayName =
   | "partial-data"
   | "stale-processing"
   | "conflicting-statuses"
-  | "mixed-locale";
+  | "mixed-locale"
+  | "attention-overflow";
 
 export type ScenarioSpec = {
   base: ScenarioName;

@@ -21,6 +21,15 @@ use crate::storage::{AppState, BackfillProgress};
 /// user-configurable setting (default 3, clamped 1–10); this const is the
 /// last-resort default so a settings read error never blocks the fetch.
 pub const BACKFILL_YEARS: i64 = 3;
+/// Durable-queue job kind for an automatic per-company report-history backfill
+/// (v0.57 catch-up, ADR 0077 amendment). Payload `{companyId}`. Drains on the
+/// **sources** lane and serializes on the Bankier-company source lock (ADR 0059),
+/// so an automatic backfill never races the scheduled per-company refresh.
+pub const COMPANY_BACKFILL_KIND: &str = "company_backfill";
+/// Retry budget for one automatic backfill (transient Bankier/network failures
+/// ride the queue's capped backoff; a terminal outcome is recorded on the
+/// progress row + chained sweep).
+const COMPANY_BACKFILL_MAX_ATTEMPTS: i64 = 3;
 /// Page cap so a single backfill cannot run unbounded (25 items/page ≫ 3 years of filings).
 pub const MAX_BACKFILL_PAGES: usize = 80;
 /// Throttle between Bankier requests, matching the company-komunikaty rate policy.
@@ -168,6 +177,82 @@ pub fn run_backfill(
 
     state.set_backfill_progress(progress.clone());
     progress
+}
+
+/// Enqueue an automatic report-history backfill for every automated company that
+/// has NO fetched periodic report — the v0.57 catch-up that makes backfill happen
+/// without the user clicking (ADR 0077 amendment: backfill is automatic for
+/// automated companies). Runs at app startup and after every successful source
+/// refresh, mirroring the ownership / management-holdings catch-up parity.
+///
+/// Idempotent by two independent guards:
+/// 1. **Coverage predicate** — a company that already has a fetched periodic
+///    report is not selected (`companies_lacking_periodic_coverage`).
+/// 2. **Stable per-company job id** enqueued with INSERT-OR-IGNORE semantics
+///    ([`crate::storage::JobsStore::enqueue`]) — a company with a queued, running,
+///    or completed backfill is never re-enqueued, so a genuinely empty issuer is
+///    attempted **once**, not on every refresh (no re-fetch loop).
+///
+/// A company in mode `off` (or with no autopilot row) is skipped with an explicit
+/// logged reason (`automation_off`), never silently dropped (ADR 0077 §3
+/// amendment (c) idiom). `company_id = None` scans all companies; `Some` narrows
+/// to one. Returns the number of backfills enqueued. Pacing is the ADR 0059 queue
+/// serialization (one Bankier backfill at a time via the source lock) — no extra
+/// per-pass cap is needed.
+pub fn enqueue_company_backfill_catch_up(state: &AppState, company_id: Option<&str>) -> usize {
+    let pending = match state.companies_lacking_periodic_coverage(company_id) {
+        Ok(pending) => pending,
+        Err(error) => {
+            log::warn!("module=backfill stage=catch_up selection failed: {error}");
+            return 0;
+        }
+    };
+    let mut enqueued = 0usize;
+    let mut skipped_off = 0usize;
+    for (company, mode) in &pending {
+        if mode == crate::storage::MODE_OFF {
+            skipped_off += 1;
+            continue;
+        }
+        let job_id = format!("{COMPANY_BACKFILL_KIND}:{company}");
+        let payload = serde_json::json!({ "companyId": company }).to_string();
+        match state.jobs().enqueue(
+            &job_id,
+            COMPANY_BACKFILL_KIND,
+            &payload,
+            COMPANY_BACKFILL_MAX_ATTEMPTS,
+        ) {
+            Ok(true) => enqueued += 1,
+            // Already queued / running / completed under the stable id — the
+            // once-ever guard that prevents a re-fetch loop.
+            Ok(false) => {}
+            Err(error) => {
+                log::warn!("module=backfill stage=catch_up enqueue failed for {company}: {error}")
+            }
+        }
+    }
+    if skipped_off > 0 {
+        log::info!(
+            "module=backfill stage=catch_up skipped={skipped_off} reason=automation_off (lack report history but mode=off)"
+        );
+    }
+    enqueued
+}
+
+/// Queue entry point for the `company_backfill` job: resolve `companyId` and run
+/// the report-history backfill with the live HTTP fetchers. Best-effort —
+/// [`backfill_company_history`] records its own errors on the progress row and
+/// chains the history sweep, so this returns `Ok` whatever the domain outcome; a
+/// malformed payload is the only `Err`.
+pub fn run_company_backfill_job(state: &AppState, payload: &str) -> Result<(), String> {
+    let parsed: serde_json::Value =
+        serde_json::from_str(payload).map_err(|error| error.to_string())?;
+    let company_id = parsed
+        .get("companyId")
+        .and_then(|value| value.as_str())
+        .ok_or("company backfill missing companyId")?;
+    backfill_company_history(state, company_id);
+    Ok(())
 }
 
 fn find_target(state: &AppState, company_id: &str) -> Result<Option<BankierCompanyTarget>, String> {
@@ -581,5 +666,134 @@ mod tests {
 
         assert_eq!(progress.status, "failed");
         assert!(progress.error.is_some());
+    }
+
+    // --- automatic backfill catch-up (v0.57, ADR 0077 amendment) ---------------
+
+    fn automated_company(state: &AppState, ticker: &str) -> String {
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: ticker.to_owned(),
+                display_name: format!("{ticker} S.A."),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company should create");
+        state
+            .autopilot()
+            .set_mode(&company.id, crate::storage::MODE_AUTOPILOT)
+            .expect("mode should set");
+        company.id
+    }
+
+    /// Seed a fetched **periodic** (`periodic_ssf`) report document — the coverage
+    /// the catch-up predicate treats as "has report history".
+    fn seed_fetched_periodic_doc(state: &AppState, company_id: &str, url: &str) {
+        let doc = state
+            .report_documents()
+            .create_or_find_pending_report_document(crate::storage::CaptureReportDocumentInput {
+                company_id: company_id.to_owned(),
+                source_type: "user_url".to_owned(),
+                url: url.to_owned(),
+                period_id: None,
+                origin_ref: None,
+                title: Some("Skonsolidowany raport kwartalny QSr 1/2025".to_owned()),
+                attribution: None,
+            })
+            .expect("register document");
+        state
+            .report_documents()
+            .mark_report_document_fetched(
+                &doc.id,
+                Some("reports/x.pdf"),
+                Some("application/pdf"),
+                None,
+                Some(10),
+            )
+            .expect("mark fetched");
+    }
+
+    fn backfill_job_is_pending(state: &AppState, company_id: &str) -> bool {
+        state
+            .jobs()
+            .pending_payload(&format!("{COMPANY_BACKFILL_KIND}:{company_id}"))
+            .expect("pending payload query")
+            .is_some()
+    }
+
+    #[test]
+    fn catch_up_enqueues_one_backfill_for_an_automated_company_without_coverage() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = automated_company(&state, "CDR");
+
+        let enqueued = enqueue_company_backfill_catch_up(&state, None);
+        assert_eq!(
+            enqueued, 1,
+            "an automated company with no report history is backfilled"
+        );
+        assert!(
+            backfill_job_is_pending(&state, &company_id),
+            "a durable company_backfill job is queued under the stable id"
+        );
+
+        // Idempotent: a second pass enqueues nothing (the stable job id already
+        // exists) — no re-fetch loop while the backfill is queued/running/done.
+        let again = enqueue_company_backfill_catch_up(&state, None);
+        assert_eq!(again, 0, "a second catch-up pass does not re-enqueue");
+    }
+
+    #[test]
+    fn catch_up_skips_a_company_in_mode_off() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        // A company with no autopilot row defaults to `off`; set it explicitly.
+        let company = state
+            .create_company(NewCompany {
+                exchange: "GPW".to_owned(),
+                ticker: "PKN".to_owned(),
+                display_name: "PKN ORLEN S.A.".to_owned(),
+                isin: None,
+                cik: None,
+                lei: None,
+            })
+            .expect("company");
+        state
+            .autopilot()
+            .set_mode(&company.id, crate::storage::MODE_OFF)
+            .expect("mode off");
+
+        let enqueued = enqueue_company_backfill_catch_up(&state, None);
+        assert_eq!(enqueued, 0, "an off-mode company is never auto-backfilled");
+        assert!(!backfill_job_is_pending(&state, &company.id));
+    }
+
+    #[test]
+    fn catch_up_skips_a_company_that_already_has_periodic_coverage() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let company_id = automated_company(&state, "LPP");
+        seed_fetched_periodic_doc(&state, &company_id, "https://x/lpp-ssf-2025.pdf");
+
+        let enqueued = enqueue_company_backfill_catch_up(&state, None);
+        assert_eq!(
+            enqueued, 0,
+            "a company with a fetched periodic report is not re-backfilled"
+        );
+        assert!(!backfill_job_is_pending(&state, &company_id));
+    }
+
+    #[test]
+    fn run_company_backfill_job_rejects_a_malformed_payload() {
+        let connection = open_in_memory_database().expect("database should initialize");
+        let state = AppState::new(connection);
+        let error =
+            run_company_backfill_job(&state, "{}").expect_err("missing companyId is an error");
+        assert!(
+            error.contains("companyId"),
+            "error names the missing field: {error}"
+        );
     }
 }

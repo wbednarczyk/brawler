@@ -10,6 +10,7 @@ const ALL_OVERLAYS: readonly ScenarioOverlayName[] = [
   "stale-processing",
   "conflicting-statuses",
   "mixed-locale",
+  "attention-overflow",
 ];
 const BASES: readonly ScenarioName[] = ["empty", "minimal", "rich"];
 
@@ -108,6 +109,13 @@ describe("scenario overlays — required content", () => {
     expect(adapter?.lastError).toBeTruthy();
     expect(ingestion?.detailItemsFailed).toBe(0);
     expect(ingestion?.itemsFetched).toBeGreaterThan(0);
+  });
+
+  it("attention-overflow: 20 additional unseen attention events (persistent-toast cap regression)", () => {
+    const data = buildScenario({ base: "minimal", overlays: ["attention-overflow"] });
+    const overflowEvents = data.attentionEvents.filter((event) => event.id.startsWith("attn_overlay_overflow_"));
+    expect(overflowEvents.length).toBe(20);
+    expect(overflowEvents.every((event) => !event.seen && !event.dismissed)).toBe(true);
   });
 
   it("mixed-locale: realistic Polish AND English source strings, not planted UI literals", () => {

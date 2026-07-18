@@ -106,6 +106,61 @@ const PENDING_NAME_CAP: usize = 200;
 /// Maximum plausible holder-name length after cleanup.
 const NAME_CAP: usize = 120;
 
+/// Normalize Mistral-OCR markdown into the plain, deflatable line stream the
+/// deterministic shareholders parser consumes (tier-4, v0.57 T8, ADR 0077).
+/// OCR v4 returns markdown tables (`| cell | cell |`), separator rules
+/// (`|---|:--:|`), and `#`-prefixed headings; the deterministic parser already
+/// handles arbitrary intra-word spacing and the same-line "name  numbers"
+/// shape, so we only turn the table syntax into whitespace-separated columns
+/// and drop the noise — reusing the whole battle-tested parser rather than a
+/// fragile new markdown-table reader. Pure and deterministic (a golden pins it).
+pub fn normalize_ocr_markdown(markdown: &str) -> String {
+    let mut out = Vec::new();
+    for line in markdown.lines() {
+        let trimmed = line.trim();
+        // Drop markdown table separator rows (|---|:--:|---|) — pure syntax.
+        if is_table_separator(trimmed) {
+            continue;
+        }
+        // Strip a leading heading marker but KEEP the heading text (the parser
+        // anchors on the shareholders heading).
+        let without_heading = trimmed.trim_start_matches('#').trim_start();
+        // Turn table cell pipes into spaces so each table row becomes the
+        // same-line "name  col  col" shape the parser already assembles.
+        let cells = without_heading.replace('|', " ");
+        out.push(cells.trim().to_owned());
+    }
+    out.join("\n")
+}
+
+/// A markdown table separator row (`|---|:--:|---|` / `---`): every pipe-split
+/// cell is non-empty and made only of `-`/`:`.
+fn is_table_separator(line: &str) -> bool {
+    let body = line.trim_matches('|');
+    if body.trim().is_empty() {
+        return false;
+    }
+    body.split('|').all(|cell| {
+        let c = cell.trim();
+        !c.is_empty() && c.chars().all(|ch| ch == '-' || ch == ':')
+    })
+}
+
+/// Parse a shareholders table out of OCR markdown (tier-4, v0.57 T8). Normalizes
+/// the markdown ([`normalize_ocr_markdown`]), wraps it as one document section,
+/// and runs the SAME deterministic parser the report-extraction path uses. OCR
+/// defeats the glyph encoding (it reads the rendered pixels), so a residual that
+/// was `glyph_encoded` on the raw text layer now yields real, readable text.
+pub fn parse_ocr_shareholders(markdown: &str) -> OwnershipParseOutcome {
+    let normalized = normalize_ocr_markdown(markdown);
+    let section = Section {
+        ordinal: 0,
+        heading: "<preamble>".to_owned(),
+        body: normalized,
+    };
+    parse_shareholders(&[section], SourceFormat::Pdf)
+}
+
 /// Parse the shareholders table out of a report's ordered text sections.
 ///
 /// Deterministic and panic-free for arbitrary input. Both formats go through

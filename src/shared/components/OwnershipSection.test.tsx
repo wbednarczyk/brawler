@@ -64,6 +64,7 @@ const OVERVIEW: OwnershipOverview = {
       rationale: "foreign fund",
     },
   ],
+  ocrProposals: [],
 };
 
 const NOOPS = {
@@ -72,6 +73,9 @@ const NOOPS = {
   onSetHolderType: vi.fn(),
   onConfirmProposal: vi.fn(),
   onRejectProposal: vi.fn(),
+  onRunOcr: vi.fn(),
+  onConfirmOcrProposal: vi.fn(),
+  onRejectOcrProposal: vi.fn(),
 };
 
 describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
@@ -127,7 +131,9 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
     expect(onRejectProposal).toHaveBeenCalledWith("prop1");
   });
 
-  it("surfaces the residual warnbox when extraction residuals exist", () => {
+  it("surfaces the residual warnbox with a Run OCR action for an eligible residual", async () => {
+    const user = userEvent.setup();
+    const onRunOcr = vi.fn();
     render(
       <OwnershipSection
         data={{
@@ -142,9 +148,81 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
           ],
         }}
         {...NOOPS}
+        onRunOcr={onRunOcr}
       />,
     );
     expect(screen.getByText(/unreadable text layer/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Read with OCR" }));
+    expect(onRunOcr).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a running state and disables the OCR action while busy", () => {
+    render(
+      <OwnershipSection
+        data={{
+          ...OVERVIEW,
+          residuals: [{ reportDocumentId: "doc1", parseState: "glyph_encoded" }],
+        }}
+        {...NOOPS}
+        busy
+      />,
+    );
+    const button = screen.getByRole("button", { name: "Reading with OCR…" });
+    expect(button).toBeDisabled();
+  });
+
+  it("notes a rejected residual and offers no run action for it", () => {
+    render(
+      <OwnershipSection
+        data={{
+          ...OVERVIEW,
+          residuals: [
+            { reportDocumentId: "doc1", parseState: "glyph_encoded", ocrState: "rejected" },
+          ],
+        }}
+        {...NOOPS}
+      />,
+    );
+    expect(screen.getByText(/rejected — not re-proposed/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Read with OCR" })).not.toBeInTheDocument();
+  });
+
+  it("renders an OCR shareholders-table proposal with per-holder rows and confirm/reject", async () => {
+    const user = userEvent.setup();
+    const onConfirmOcrProposal = vi.fn();
+    const onRejectOcrProposal = vi.fn();
+    render(
+      <OwnershipSection
+        data={{
+          ...OVERVIEW,
+          residuals: [{ reportDocumentId: "doc1", parseState: "glyph_encoded", ocrState: "proposed" }],
+          ocrProposals: [
+            {
+              reportDocumentId: "doc1",
+              sourceDocumentId: "doc1_pdf",
+              asOf: "2023-12-31",
+              matchedHeading: "Akcjonariusze",
+              providerId: "mistral",
+              holders: [
+                { holderNameRaw: "Jan Kowalski", capitalPct: "12.34", votesPct: "15.00" },
+                { holderNameRaw: "Aviva OFE", capitalPct: "9.88", votesPct: "7.41" },
+              ],
+            },
+          ],
+        }}
+        {...NOOPS}
+        onConfirmOcrProposal={onConfirmOcrProposal}
+        onRejectOcrProposal={onRejectOcrProposal}
+      />,
+    );
+    expect(screen.getByText("OCR — confirm to save")).toBeInTheDocument();
+    // Both proposed holder rows render.
+    expect(screen.getByText("Jan Kowalski")).toBeInTheDocument();
+    expect(screen.getByText("Aviva OFE")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Confirm and save" }));
+    expect(onConfirmOcrProposal).toHaveBeenCalledWith("doc1");
+    await user.click(screen.getByRole("button", { name: "Reject" }));
+    expect(onRejectOcrProposal).toHaveBeenCalledWith("doc1");
   });
 
   it("offers the AI classification trigger only for unclassified holders without a proposal", async () => {
@@ -204,5 +282,53 @@ describe("OwnershipSection (v0.56 T6, ADR 0072)", () => {
     // Undo restores the previous (founder_insider) type.
     await user.click(screen.getByRole("button", { name: "Undo" }));
     expect(onSetHolderType).toHaveBeenLastCalledWith("JACEK DUCH", "founder_insider");
+  });
+
+  it("shows the skin-in-the-game badge for a direct founder match", () => {
+    const data: OwnershipOverview = {
+      ...OVERVIEW,
+      holders: [
+        {
+          ...OVERVIEW.holders[0],
+          skinInTheGame: { person: "Jacek Duch" },
+        },
+        OVERVIEW.holders[1],
+      ],
+    };
+    render(<OwnershipSection data={data} {...NOOPS} />);
+    const badges = screen.getAllByText("skin in the game");
+    expect(badges.length).toBe(1);
+    expect(badges[0].closest(".ownership-skin-badge")).toHaveAttribute(
+      "title",
+      "Corroborated by: Jacek Duch",
+    );
+  });
+
+  it("shows the badge with the vehicle detail for an indirect (via-vehicle) match", () => {
+    const data: OwnershipOverview = {
+      ...OVERVIEW,
+      holders: [
+        {
+          holderKey: "MELHUS COMPANY LTD",
+          name: "Melhus Company Ltd",
+          holderType: "family_foundation",
+          capitalPct: "24.0",
+          votesPct: "24.0",
+          asOf: "2025-12-31",
+          source: "report_document",
+          skinInTheGame: { person: "Cezary Kozielski", via: "Melhus Company Ltd" },
+        },
+      ],
+    };
+    render(<OwnershipSection data={data} {...NOOPS} />);
+    expect(screen.getByText("skin in the game").closest(".ownership-skin-badge")).toHaveAttribute(
+      "title",
+      "Corroborated by: Cezary Kozielski (via Melhus Company Ltd)",
+    );
+  });
+
+  it("shows no badge when a holder has no management/insider corroboration", () => {
+    render(<OwnershipSection data={OVERVIEW} {...NOOPS} />);
+    expect(screen.queryByText("skin in the game")).not.toBeInTheDocument();
   });
 });

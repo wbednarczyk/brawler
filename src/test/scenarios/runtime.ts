@@ -20,6 +20,9 @@ import { buildScenario, type ScenarioData, type ScenarioName, type ScenarioSpec 
 import { createControlledAsync, type MockRuntimeControls } from "./controlledAsync";
 import type { ResearchEvidenceInput } from "../../api/researchTypes";
 import type { OwnershipOverview } from "../../api/ownership";
+import type { CompanyHealth } from "../../api/generated/CompanyHealth";
+import type { InsiderOverview } from "../../api/insider";
+import type { RedFlagsView } from "../../api/redFlags";
 import type { CommandError } from "../../api/generated/CommandError";
 
 export type { MockRuntimeControls, InvocationPhase, InvocationMatch, PendingInvocation } from "./controlledAsync";
@@ -401,6 +404,29 @@ function emptyOwnershipOverview(companyId: string): OwnershipOverview {
     freeFloatHistory: [],
     residuals: [],
     pendingProposals: [],
+    ocrProposals: [],
+  };
+}
+
+function emptyCompanyHealth(companyId: string): CompanyHealth {
+  return {
+    companyId,
+    statementType: "industrial",
+    piotroskiVariant: "Piotroski F (2000)",
+    altmanVariant: "Altman Z″ EM (1995)",
+    history: [],
+  };
+}
+
+// A company with no parsed insider substrate reads back the empty overview: no
+// transactions, no holdings, both windows below the 2-transaction minimum.
+function emptyInsiderOverview(companyId: string): InsiderOverview {
+  return {
+    companyId,
+    transactions: [],
+    holdings: [],
+    window90d: { state: "belowMinimum", count: 0 },
+    window12m: { state: "belowMinimum", count: 0 },
   };
 }
 
@@ -553,6 +579,53 @@ function buildHandlers(): Record<string, Handler> {
       };
     },
 
+    // --- Company health scores (v0.57 T2, ADR 0083) ---
+    // A fresh company has no FY periods, so the read model is the empty default
+    // (no latest, empty history); populated F/Z correctness is pinned by the
+    // Rust golden + TS QualityPanel tests, not the corpus.
+    get_company_health: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return (
+        d.companyHealthReports?.find((h) => h.companyId === companyId) ??
+        emptyCompanyHealth(companyId)
+      );
+    },
+
+    // --- Red flags (v0.57 T7, ADR 0083 D8) ---
+    // Computed panel state; a company with no seed reads back the empty view.
+    get_red_flags: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return d.redFlagsByCompany?.[companyId] ?? { active: [], history: [] };
+    },
+    // Acknowledge: move the flag from active to history (idempotent), return the
+    // refreshed view. The flag id encodes the company (`rf:<type>:<company>:…`).
+    acknowledge_red_flag: (d, a) => {
+      const flagId = str(unwrap(a).flagId) ?? "";
+      const companyId = flagId.split(":")[2] ?? "";
+      const view = d.redFlagsByCompany?.[companyId] ?? { active: [], history: [] };
+      const flag = view.active.find((f) => f.flagId === flagId);
+      const next: RedFlagsView = flag
+        ? {
+            active: view.active.filter((f) => f.flagId !== flagId),
+            history: [{ ...flag, ackedAt: SAMPLE_NOW }, ...view.history],
+          }
+        : view;
+      if (d.redFlagsByCompany) d.redFlagsByCompany[companyId] = next;
+      return next;
+    },
+
+    // --- Insider overview (v0.57 T6, ADR 0083 D7) ---
+    // Computed read model; a company with no parsed substrate reads back the empty
+    // overview. Populated window-math correctness is pinned by the Rust golden +
+    // TS component tests, not the corpus.
+    get_insider_overview: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return (
+        d.insiderOverviews?.find((o) => o.companyId === companyId) ??
+        emptyInsiderOverview(companyId)
+      );
+    },
+
     // --- Ownership overview + review (v0.56 T6, ADR 0072) ---
     get_ownership_overview: (d, a) => {
       const companyId = str(unwrap(a).companyId) ?? "";
@@ -601,6 +674,62 @@ function buildHandlers(): Record<string, Handler> {
       return overview;
     },
     run_ownership_classification: () => ({ examined: 0, proposed: 0, skipped: 0, errors: 0 }),
+
+    // --- Tier-4 OCR over ownership residuals (v0.57 T8, ADR 0077) ---
+    run_ownership_ocr_extraction: () => ({
+      examined: 0,
+      proposed: 0,
+      noTable: 0,
+      skipped: 0,
+      errors: 0,
+    }),
+    run_company_ownership_ocr: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      // No vision provider / no residual in the mock world → a clean no-op that
+      // returns the (unchanged) overview, mirroring the Rust no-op.
+      return d.ownershipOverviews?.find((o) => o.companyId === companyId) ??
+        emptyOwnershipOverview(companyId);
+    },
+    confirm_ownership_ocr_proposal: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const reportDocumentId = str(input.reportDocumentId) ?? "";
+      const overview = ensureOwnershipOverview(d, companyId);
+      // Confirm applies each proposed row as a stake, then drops the proposal.
+      const proposal = overview.ocrProposals.find((p) => p.reportDocumentId === reportDocumentId);
+      if (proposal) {
+        for (const holder of proposal.holders) {
+          overview.holders.push({
+            holderKey: holder.holderNameRaw.trim().toUpperCase(),
+            name: holder.holderNameRaw,
+            capitalPct: holder.capitalPct,
+            votesPct: holder.votesPct,
+            asOf: proposal.asOf,
+            source: "report_document",
+          });
+        }
+        overview.ocrProposals = overview.ocrProposals.filter(
+          (p) => p.reportDocumentId !== reportDocumentId,
+        );
+        overview.residuals = overview.residuals.filter(
+          (r) => r.reportDocumentId !== reportDocumentId,
+        );
+      }
+      return overview;
+    },
+    reject_ownership_ocr_proposal: (d, a) => {
+      const input = unwrap(a);
+      const companyId = str(input.companyId) ?? "";
+      const reportDocumentId = str(input.reportDocumentId) ?? "";
+      const overview = ensureOwnershipOverview(d, companyId);
+      overview.ocrProposals = overview.ocrProposals.filter(
+        (p) => p.reportDocumentId !== reportDocumentId,
+      );
+      overview.residuals = overview.residuals.map((r) =>
+        r.reportDocumentId === reportDocumentId ? { ...r, ocrState: "rejected" } : r,
+      );
+      return overview;
+    },
 
     // --- Cockpit layouts (ADR 0053) ---
     list_cockpit_layouts: (d) => d.cockpitLayouts,

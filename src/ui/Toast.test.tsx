@@ -76,10 +76,50 @@ function renderHarness() {
   );
 }
 
+// Harness for the persistent-overflow cap (bug: unbounded attention toasts
+// covered the sidebar nav): six buttons, each firing one distinct persistent
+// toast, so a test can push the queue past PERSISTENT_VISIBLE_CAP (3).
+function OverflowHarness() {
+  const { show } = useToast();
+  return (
+    <div>
+      {Array.from({ length: 6 }, (_, index) => (
+        <button
+          key={index}
+          type="button"
+          onClick={() => show({ message: `alert-${index + 1}`, persistent: true, tone: "caution" })}
+        >
+          fire-{index + 1}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const overflowClickSpy = vi.fn();
+
+function renderOverflowHarness() {
+  return render(
+    <ToastProvider
+      onPersistentOverflowClick={overflowClickSpy}
+      persistentOverflowLabel={(hiddenCount) => `+${hiddenCount} more`}
+    >
+      <OverflowHarness />
+    </ToastProvider>,
+  );
+}
+
+function fireOverflowToasts(count: number) {
+  for (let i = 1; i <= count; i += 1) {
+    fireEvent.click(screen.getByRole("button", { name: `fire-${i}` }));
+  }
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   onActionSpy.mockReset();
   onDismissSpy.mockReset();
+  overflowClickSpy.mockReset();
 });
 
 afterEach(() => {
@@ -205,5 +245,61 @@ describe("Toast", () => {
     expect(screen.getByText("toast-two")).toBeInTheDocument();
     expect(screen.getByText("toast-three")).toBeInTheDocument();
     expect(screen.getByText("toast-four")).toBeInTheDocument();
+  });
+});
+
+describe("Toast — persistent-overflow cap (bug fix: unbounded attention toasts covered the sidebar nav)", () => {
+  it("caps persistent toasts at 3 and collapses the rest into a '+N more' summary row", () => {
+    renderOverflowHarness();
+    fireOverflowToasts(6);
+
+    // Only the 3 most recent persistent toasts render as full alert toasts.
+    expect(screen.getAllByRole("alert")).toHaveLength(3);
+    expect(screen.queryByText("alert-1")).toBeNull();
+    expect(screen.queryByText("alert-2")).toBeNull();
+    expect(screen.queryByText("alert-3")).toBeNull();
+    expect(screen.getByText("alert-4")).toBeInTheDocument();
+    expect(screen.getByText("alert-5")).toBeInTheDocument();
+    expect(screen.getByText("alert-6")).toBeInTheDocument();
+
+    // The summary row covers the 3 hidden (oldest) toasts and renders as the
+    // last item, using the caller-supplied translated label.
+    const summary = screen.getByRole("button", { name: "+3 more" });
+    expect(summary).toBeInTheDocument();
+  });
+
+  it("invokes the caller's overflow callback when the summary row is clicked", () => {
+    renderOverflowHarness();
+    fireOverflowToasts(6);
+    fireEvent.click(screen.getByRole("button", { name: "+3 more" }));
+    expect(overflowClickSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders no summary row while the persistent count is at or under the cap", () => {
+    renderOverflowHarness();
+    fireOverflowToasts(3);
+    expect(screen.getAllByRole("alert")).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
+  });
+
+  it("still caps at 3 (silently, no summary row) when no overflow callback is supplied — back-compat for existing ToastProvider call sites", () => {
+    render(
+      <ToastProvider>
+        <OverflowHarness />
+      </ToastProvider>,
+    );
+    fireOverflowToasts(6);
+    expect(screen.getAllByRole("alert")).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: /more$/ })).toBeNull();
+  });
+
+  it("transient MAX_STACK cap is unaffected by the persistent-overflow cap", () => {
+    renderHarness();
+    fireEvent.click(screen.getByRole("button", { name: "one" }));
+    fireEvent.click(screen.getByRole("button", { name: "two" }));
+    fireEvent.click(screen.getByRole("button", { name: "three" }));
+    fireEvent.click(screen.getByRole("button", { name: "four" }));
+    expect(screen.getAllByRole("status")).toHaveLength(3);
+    expect(screen.queryByText("toast-one")).toBeNull();
   });
 });

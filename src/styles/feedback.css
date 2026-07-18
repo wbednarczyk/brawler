@@ -8,7 +8,13 @@
 .ui-toast-viewport {
   position: fixed;
   bottom: var(--space-5);
-  left: var(--space-5);
+  /* Bottom-LEFT corner intent stays (ADR 0068), offset clear of the left
+     sidebar nav (--sidebar-width, defined in shell.css) — the viewport used
+     to sit at `left: var(--space-5)` directly on top of the 232px sidebar,
+     blocking nav clicks whenever several persistent toasts stacked up.
+     `var(--sidebar-width, 0px)` falls back to 0 on screens with no sidebar
+     (onboarding/license). */
+  left: calc(var(--sidebar-width, 0px) + var(--space-5));
   z-index: 1200;
   display: flex;
   flex-direction: column-reverse;
@@ -16,7 +22,9 @@
   margin: 0;
   padding: 0;
   list-style: none;
-  max-width: min(360px, calc(100vw - var(--space-8)));
+  /* Same total left+right margin budget as before (--space-8), now measured
+     past the sidebar offset so narrow (~1024px) viewports still fit. */
+  max-width: min(360px, calc(100vw - var(--sidebar-width, 0px) - var(--space-8)));
   pointer-events: none;
 }
 
@@ -96,6 +104,35 @@
 
 .ui-toast-persistent .field-clear-button {
   flex: 0 0 auto;
+}
+
+/* Persistent-overflow summary row ("+N more", Toast.tsx PERSISTENT_VISIBLE_CAP):
+   the last item in the viewport once more than 3 persistent toasts are
+   queued. A full-width button inside the same `.ui-toast` shell so it reads
+   as part of the stack rather than a stray control. */
+.ui-toast-overflow {
+  justify-content: center;
+  padding: var(--space-2) var(--space-4);
+}
+
+.ui-toast-overflow-button {
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 650;
+  text-align: center;
+  cursor: pointer;
+}
+
+.ui-toast-overflow-button:hover {
+  color: var(--primary);
+}
+
+.ui-toast-overflow-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
 }
 
 /* -------------------------------------------------------------------------- */

@@ -45,3 +45,84 @@ test("ownership section does not overflow horizontally in a narrow pane", async 
     `ownership section overflows horizontally (${overflow.scrollWidth} > ${overflow.clientWidth})`,
   ).toBeLessThanOrEqual(overflow.clientWidth + 1);
 });
+
+test("skin-in-the-game badge renders for corroborated founders without breaking layout", async ({
+  page,
+}) => {
+  await openApp(page);
+  const pane = await openBasicInfo(page);
+  const section = pane.locator(".ownership-section");
+  await expect(section).toBeVisible();
+
+  // The seeded founders are corroborated by management holdings → a badge each
+  // (one direct, one via a family-foundation vehicle).
+  const badges = section.locator(".ownership-skin-badge");
+  await expect(badges).toHaveCount(2);
+  await expect(badges.first()).toHaveAttribute("title", /Jacek Duch/);
+  await expect(badges.nth(1)).toHaveAttribute("title", /Dwernicki Fundacja Rodzinna/);
+
+  // The badge sits in the trailing chip slot beside the type chip — the founder
+  // row still shows its type chip, and the page never overflows sideways.
+  await expect(section.locator(".ownership-type-chip").first()).toBeVisible();
+  await expectNoPageOverflow(page);
+});
+
+test("insider block renders below the ownership section without breaking the narrow pane", async ({
+  page,
+}) => {
+  await openApp(page);
+  const pane = await openBasicInfo(page);
+
+  // The "Insiderzy" block extends the Ownership area (v0.57 T6, ADR 0083 D7).
+  const insider = pane.locator(".insider-section");
+  await expect(insider).toBeVisible();
+  await expect(insider.getByRole("heading", { name: "Insiders" })).toBeVisible();
+
+  // The aggregate strip shows both rolling windows (seeded computed, ≥ 2 tx).
+  await expect(insider.getByText("Last 90 days")).toBeVisible();
+  await expect(insider.getByText("Last 12 months")).toBeVisible();
+
+  // The timeline lists transactions with the role chip in its fixed slot.
+  await expect(insider.locator(".insider-tx-row").first()).toBeVisible();
+  await expect(insider.locator(".insider-role-slot").first()).toBeVisible();
+
+  // No document-level overflow, and the section never scrolls sideways.
+  await expectNoPageOverflow(page);
+  const overflow = await insider.evaluate((el) => ({
+    scrollWidth: el.scrollWidth,
+    clientWidth: el.clientWidth,
+  }));
+  expect(
+    overflow.scrollWidth,
+    `insider section overflows horizontally (${overflow.scrollWidth} > ${overflow.clientWidth})`,
+  ).toBeLessThanOrEqual(overflow.clientWidth + 1);
+});
+
+test("OCR shareholders-table proposal reviews in place and the residual offers Read with OCR (v0.57 T8, ADR 0077)", async ({
+  page,
+}) => {
+  await openApp(page);
+  const pane = await openBasicInfo(page);
+  const section = pane.locator(".ownership-section");
+  await expect(section).toBeVisible();
+
+  // The seeded tier-4 OCR proposal renders as a confirm-before-apply card with
+  // per-holder rows — never auto-applied.
+  const proposal = section.locator(".ownership-ocr-proposal");
+  await expect(proposal).toBeVisible();
+  await expect(proposal.getByText("Marek Zborowski")).toBeVisible();
+  await expect(proposal.getByText("Aviva OFE")).toBeVisible();
+
+  // The other residual (no marker) offers the explicit Read-with-OCR action.
+  await expect(
+    section.getByRole("button", { name: /Read with OCR|Odczytaj przez OCR/ }),
+  ).toBeVisible();
+
+  // No overflow in a narrow pane even with the proposal card + warnbox.
+  await expectNoPageOverflow(page);
+
+  // Reject removes the proposal in place (the mock returns the updated overview).
+  await proposal.getByRole("button", { name: /^Reject$|^Odrzuć$/ }).click();
+  await expect(section.locator(".ownership-ocr-proposal")).toHaveCount(0);
+  await expect(section.getByText(/rejected — not re-proposed|odrzucony/i)).toBeVisible();
+});

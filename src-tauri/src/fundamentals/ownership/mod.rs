@@ -38,5 +38,6 @@ pub use espi_notification::{
     parse_major_holding_notification, EspiHoldingParse, ParsedEspiHolding,
 };
 pub use parse::{
-    parse_shareholders, AggregateRow, OwnershipParseOutcome, OwnershipParseState, OwnershipRow,
+    normalize_ocr_markdown, parse_ocr_shareholders, parse_shareholders, AggregateRow,
+    OwnershipParseOutcome, OwnershipParseState, OwnershipRow,
 };

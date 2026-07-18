@@ -22,6 +22,9 @@ describe("populated OwnershipOverview wire contract (v0.56 T6)", () => {
     onConfirmProposal: vi.fn(),
     onRejectProposal: vi.fn(),
     onRunClassification: vi.fn(),
+    onRunOcr: vi.fn(),
+    onConfirmOcrProposal: vi.fn(),
+    onRejectOcrProposal: vi.fn(),
   };
 
   it("the real Rust wire JSON renders through OwnershipSection", () => {

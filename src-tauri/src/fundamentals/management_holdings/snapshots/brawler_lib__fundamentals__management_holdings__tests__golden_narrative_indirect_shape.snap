@@ -1,0 +1,28 @@
+---
+source: src/fundamentals/management_holdings/tests.rs
+assertion_line: 402
+expression: parse(text)
+---
+MgmtHoldingsOutcome {
+    state: Parsed,
+    matched_heading: Some(
+        "Akcje Spółki w posiadaniu członków Zarządu i Rady Nadzorczej",
+    ),
+    rows: [
+        MgmtHoldingRow {
+            person_raw: "Cezary Kozielski",
+            role: Some(
+                Management,
+            ),
+            shares: Some(
+                "2047380",
+            ),
+            indirect_via_raw: Some(
+                "Melhus Company Ltd",
+            ),
+            prior_shares: None,
+            prior_as_of: None,
+        },
+    ],
+    zero_organs: [],
+}

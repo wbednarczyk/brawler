@@ -88,7 +88,9 @@ fn lists_seeded_source_adapters() {
         .list_source_adapters_with_developer(true)
         .expect("developer source adapters should list");
 
-    assert_eq!(developer_adapters.len(), 15);
+    // +1 internal brawler-red-flags (developer-only, disabled) — the derived
+    // red-flag synthetic-feed-item owner seeded by 0092 (v0.57 T7, ADR 0083 D8).
+    assert_eq!(developer_adapters.len(), 16);
 
     let report_adapter = developer_adapters
         .iter()

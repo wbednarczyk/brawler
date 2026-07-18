@@ -1,8 +1,9 @@
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import {
   appTestState,
   expect,
+  handleAppCommand,
   initialCompanies,
   invoke,
   renderApp,
@@ -342,9 +343,11 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     const pinnedIndexes = tickers.flatMap((ticker, i) => (ticker === pinnedTicker ? [i] : []));
     expect(pinnedIndexes).toEqual([pinnedIndexes[0], pinnedIndexes[0] + 1]);
     expect(tickers).toContain(otherTicker);
-    // The rule's category (profit_warning) is the "what fired" context, not
-    // just a bare trigger-type label.
-    expect(within(rows[0]).getByText(/profit_warning/)).toBeInTheDocument();
+    // The rule's category is the "what fired" context, not just a bare
+    // trigger-type label — and its human display name (D3 fix), never the
+    // raw enum code the backend/rule actually stores.
+    expect(within(rows[0]).getByText("Profit warning / estimate")).toBeInTheDocument();
+    expect(within(rows[0]).queryByText(/^profit_warning$/)).not.toBeInTheDocument();
   });
 
   it("dismisses a fired event: the row disappears and the domain command fires", async () => {
@@ -400,7 +403,13 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     await screen.findByRole("alert");
 
     expect(screen.getAllByRole("alert")).toHaveLength(1);
-    expect(screen.getByText(/profit_warning/, { selector: ".ui-toast-message" })).toBeInTheDocument();
+    // The category's human display name (D3 fix), never the raw enum code.
+    expect(
+      screen.getByText(/Profit warning \/ estimate/, { selector: ".ui-toast-message" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/\bprofit_warning\b/, { selector: ".ui-toast-message" }),
+    ).not.toBeInTheDocument();
 
     // Today unmounts on navigating away (`AppStateRoot` only renders it while
     // `activeSection === "Today"`) and remounts on return — the real "refresh"
@@ -413,6 +422,48 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
     expect(screen.getAllByRole("alert")).toHaveLength(1);
   });
 
+  it("resolves the company id to its ticker even when the attention list loads before the company list (live defect: raw 'company_gpw_scw' id shown)", async () => {
+    // Live-defect fix (v0.57 fix wave 2, D2, owner screenshot 27-toast-stack.png):
+    // `companies` and the attention-events/alert-rules pair are two
+    // independent fetches (AppStateRoot's own company load vs
+    // `useTodayPulse`'s). If the attention fetch settles first, the
+    // toast-raising effect built its `companyById` map off the still-empty
+    // `companies` array and permanently baked the raw company id into the
+    // toast message — the module-scoped `toastedAttentionEventIds` dedup Set
+    // means it is never retried once the real company list arrives. Force
+    // that exact ordering: hold `list_companies` open until the attention
+    // event has already had a chance to fire, then release it.
+    seedOnlyAttention([attentionEvent({ id: "attn_race_company_1" })]);
+
+    let releaseCompanies: (() => void) | undefined;
+    const companiesGate = new Promise<void>((resolve) => {
+      releaseCompanies = resolve;
+    });
+    vi.mocked(invoke).mockImplementation(async (command, args) => {
+      if (command === "list_companies") {
+        await companiesGate;
+      }
+      return handleAppCommand(command as string, args as Record<string, unknown> | undefined);
+    });
+
+    const { container } = renderApp({ section: "Today" });
+
+    // Attention data can settle first, but the toast must not fire — and must
+    // not mark the event toasted — until the company list is actually usable.
+    await findCategoryRow(container as HTMLElement, "attention");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    releaseCompanies?.();
+
+    // The toast must show the resolved ticker, never the raw internal id.
+    expect(
+      await screen.findByText(new RegExp(`^${pinnedTicker} —`), { selector: ".ui-toast-message" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(new RegExp(pinnedCompanyId), { selector: ".ui-toast-message" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders no attention rows when there are nothing fired (same stream, no special sub-state)", async () => {
     appTestState.autopilotRunsResponse = [{ ...baseAutopilotRun }];
     appTestState.attentionEventsResponse = [];
@@ -422,6 +473,41 @@ describe("Today attention list — fired alerts (ADR 0068 T4)", () => {
 
     expect(container.querySelector('li[data-category="attention"]')).toBeNull();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+// D3 fix (v0.57 fix wave 2, owner screenshot 27-toast-stack.png): the toast's
+// reconciliation message and its Review/Dismiss actions are `text()` literals
+// with real `plText` entries already — but nothing exercised them in the
+// Polish locale end to end, so a regression here (or in how `locale` reaches
+// this screen) would have slipped through unnoticed exactly like D1/D2 did.
+describe("Today attention toast — Polish locale content (D3 fix)", () => {
+  it("renders the reconciliation message and Review/Dismiss actions in Polish, not English", async () => {
+    appTestState.settingsResponse = { ...appTestState.settingsResponse, locale: "pl" };
+    appTestState.autopilotRunsResponse = [];
+    appTestState.attentionEventsResponse = [
+      attentionEvent({
+        id: "attn_reconciliation_pl_1",
+        triggerType: "source_reconciliation",
+        evidenceType: "source_reconciliation",
+        ruleId: null,
+      }),
+    ];
+    appTestState.feedItemsResponse = [];
+    appTestState.claimsToVerifyResponse = { due: [], overdue: [], upcoming: [] };
+    appTestState.reportSeasonUpcomingResponse = [];
+
+    renderApp({ section: "Today" });
+
+    const alert = await screen.findByRole("alert");
+    expect(
+      within(alert).getByText(/Raport oficjalny pominięty/, { selector: ".ui-toast-message" }),
+    ).toBeInTheDocument();
+    expect(within(alert).getByRole("button", { name: "Przejrzyj" })).toBeInTheDocument();
+    expect(within(alert).getByRole("button", { name: "Odrzuć" })).toBeInTheDocument();
+    expect(screen.queryByText(/Official report missed/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Review" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Dismiss" })).not.toBeInTheDocument();
   });
 });
 

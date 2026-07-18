@@ -55,6 +55,19 @@ fn concept_to_metric_key(local_name: &str) -> Option<&'static str> {
         "Liabilities" => "total_liabilities",
         "Equity" => "total_equity",
         "CashAndCashEquivalents" => "cash",
+        // Balance sheet — health-score inputs (ADR 0083 Decision 5). Tags verified
+        // against the maintainer's real GPW ESEF packages: filers report these as
+        // dimensionless instant totals. `RetainedEarnings` and `LongtermBorrowings`
+        // are the reliable statement-line tags — where a filer uses a company
+        // extension (e.g. `RetainedEarningsAndOtherCapital`) or omits the
+        // borrowings line, the concept is intentionally left unmapped so the score
+        // reports `insufficient_data` rather than a wrong value (never silently
+        // wrong). `LongtermBorrowings` is the borrowings-specific non-current tag —
+        // *not* `NoncurrentLiabilities`, which is total non-current liabilities.
+        "CurrentAssets" => "current_assets",
+        "CurrentLiabilities" => "current_liabilities",
+        "RetainedEarnings" => "retained_earnings",
+        "LongtermBorrowings" => "long_term_debt",
         // Income statement (duration).
         "Revenue" | "RevenueFromContractsWithCustomers" => "revenue",
         "GrossProfit" => "gross_profit",

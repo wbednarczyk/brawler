@@ -82,3 +82,4 @@
 - [0080](0080-retire-embedding-model.md) — Retire the Local Embedding Model and Dead Subsystems — Accepted (2026-07-11, owner sign-off)
 - [0081](0081-ux-quality-loop-v2.md) — UX Quality Loop v2 — Experience Contracts, Adversarial Validation, Continuous Dogfooding — Accepted (owner sign-off 2026-07-12)
 - [0082](0082-market-data-source-selection.md) — Market-Data Source Selection — Yahoo primary, robots-allowed witnesses (Twelve Data secondary removed by amendment) — Accepted
+- [0083](0083-company-health-scores-and-red-flags.md) — 0083-company-health-scores-and-red-flags.md — Accepted (2026-07-17, owner decisions at milestone planning)

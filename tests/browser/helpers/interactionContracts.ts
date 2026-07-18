@@ -57,9 +57,25 @@ export async function expectActionBeforeScroll(action: Locator, scrollOwner: Loc
   // under test (flaked under I/O load, 2026-07-14). The contract itself (the
   // action sits inside the UNSCROLLED viewport) is asserted below, unchanged.
   await expect(action).toBeVisible();
-  const [ownerBox, actionBox] = await Promise.all([scrollOwner.boundingBox(), action.boundingBox()]);
-  expect(ownerBox, "expectActionBeforeScroll: scrollOwner has no bounding box (not visible/rendered)").not.toBeNull();
-  expect(actionBox, "expectActionBeforeScroll: action has no bounding box (not visible/rendered)").not.toBeNull();
+  // toBeVisible alone is not enough: a React re-render can swap the DOM node
+  // BETWEEN the visibility check and the box read, so boundingBox() hits a
+  // momentarily-detached node and yields null (recurred under full-suite CPU
+  // load, 2026-07-18, two different projects). Poll until both boxes read
+  // non-null — the geometric contract asserted below stays unchanged.
+  let ownerBox: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  let actionBox: Awaited<ReturnType<Locator["boundingBox"]>> = null;
+  await expect
+    .poll(
+      async () => {
+        [ownerBox, actionBox] = await Promise.all([scrollOwner.boundingBox(), action.boundingBox()]);
+        return ownerBox !== null && actionBox !== null;
+      },
+      {
+        message:
+          "expectActionBeforeScroll: scrollOwner/action never yielded a stable bounding box (not visible/rendered)",
+      },
+    )
+    .toBe(true);
   const owner = ownerBox!;
   const box = actionBox!;
   const withinScrollport = box.y >= owner.y && box.y + box.height <= owner.y + owner.height;

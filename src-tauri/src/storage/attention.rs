@@ -7,14 +7,26 @@
 //! new worker lane (the evaluation is a handful of indexed reads; plan §T2). Each
 //! fired rule persists an [`AttentionEvent`] linked to its evidence.
 //!
-//! Dedup + throttle:
+//! Dedup + throttle + freshness:
 //! - **Dedup**: at most one event per `(rule, evidence_type, evidence_ref)`.
 //!   Re-running evaluation over the same evidence is a no-op (mirrors
 //!   `classify_and_store_signal`), so no re-fire on re-ingest.
 //! - **Daily throttle**: at most [`DAILY_THROTTLE_PER_RULE`] event(s) per rule
-//!   per day, keyed on the evidence's DOMAIN date (`fired_at`), not wall-clock
-//!   ingestion time — a rule pings at most once a day however many distinct
-//!   pieces of evidence it matches, keeping the attention surface quiet.
+//!   per **wall-clock** day, keyed on `fired_at` (the actual firing time). A rule
+//!   pings at most once a day however many distinct pieces of evidence it matches
+//!   that day, keeping the attention surface quiet. `fired_at` is the wall-clock
+//!   firing time — NOT the evidence's domain date (ADR 0068 amendment): keying
+//!   the throttle on the domain date let a history backfill re-ingesting years of
+//!   filings raise one event per historical date (each a "different day"), which
+//!   is the toast-wall regression this repair closes.
+//! - **Freshness gate** ([`SIGNAL_FRESHNESS_DAYS`] via [`signal_is_stale`]): the
+//!   historical-ingest seam (`classify_and_store_signal`) does not evaluate alert
+//!   rules for evidence whose DOMAIN date is older than the window relative to
+//!   wall-clock now — "historical ingest never impersonates the present". A
+//!   backfill of old filings is silent; only genuinely new signals alert. Applied
+//!   at the ingest seam (not inside `evaluate_signal_rules`) so present-detection
+//!   callers — derived red flags, KNF short-position changes — still alert on a
+//!   current condition even when its underlying period is old.
 
 use serde::{Deserialize, Serialize};
 
@@ -27,6 +39,15 @@ use super::*;
 /// own feeds). Chosen per plan §T2 ("1/day"); a future per-trigger override can
 /// widen this without a schema change.
 pub const DAILY_THROTTLE_PER_RULE: i64 = 1;
+
+/// Freshness window for signal-rule evaluation (ADR 0068 amendment). A confirmed
+/// signal whose DOMAIN date (publication/signal date) is older than this many days
+/// relative to wall-clock now never fires an attention event: a history backfill
+/// re-ingesting years of filings must not raise a wall of alerts for evidence that
+/// is not actually new. A signal with no/unparseable domain date is treated as
+/// fresh — we cannot prove it is old, and suppressing an undated fresh signal
+/// would be the worse failure.
+pub const SIGNAL_FRESHNESS_DAYS: i64 = 14;
 
 pub const TRIGGER_SIGNAL_CATEGORY: &str = "signal_category";
 pub const TRIGGER_AUTOPILOT_RUN_COMPLETED: &str = "autopilot_run_completed";
@@ -512,24 +533,28 @@ fn attention_event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Attenti
     })
 }
 
-/// Persist one attention event, applying dedup + the per-rule daily throttle.
-/// Returns `true` only when a new event row was created.
+/// Persist one attention event, applying dedup + the per-rule wall-clock daily
+/// throttle, stamping the row with its `trigger_type`. Returns `true` only when a
+/// new event row was created.
 ///
 /// - Dedup: if `(rule_id, evidence_type, evidence_ref)` already fired, this is a
 ///   no-op and returns `false` (never counts against the throttle).
 /// - Throttle: otherwise, if the rule already fired [`DAILY_THROTTLE_PER_RULE`]
-///   event(s) on `fire_date`, the new evidence is suppressed (returns `false`).
+///   event(s) on the current **wall-clock** day, the new evidence is suppressed
+///   (returns `false`) — so however many distinct pieces of evidence a rule
+///   matches in one ingestion pass, it pings at most once that day.
 ///
-/// `fire_date` is the evidence's domain date (`YYYY-MM-DD`); it is stored in
-/// `fired_at` so both dedup and throttle are deterministic and never keyed on
-/// wall-clock ingestion time.
+/// `fired_at` is the wall-clock firing time (not the evidence's domain date): the
+/// evidence's own date lives on its linked signal/quote/run. `trigger_type` is
+/// stamped directly on the row (ADR 0068 / W4) so grouping does not depend on a
+/// join back to the rule.
 pub(super) fn insert_attention_event(
     connection: &Connection,
     rule_id: &str,
+    trigger_type: &str,
     company_id: &str,
     evidence_type: &str,
     evidence_ref: &str,
-    fire_date: &str,
 ) -> StorageResult<bool> {
     let already: bool = connection.query_row(
         "SELECT EXISTS(
@@ -543,10 +568,11 @@ pub(super) fn insert_attention_event(
         return Ok(false);
     }
 
+    let today = today_iso();
     let fired_today: i64 = connection.query_row(
         "SELECT COUNT(*) FROM attention_events
          WHERE rule_id = ?1 AND substr(fired_at, 1, 10) = ?2",
-        params![rule_id, fire_date],
+        params![rule_id, today],
         |row| row.get(0),
     )?;
     if fired_today >= DAILY_THROTTLE_PER_RULE {
@@ -559,14 +585,14 @@ pub(super) fn insert_attention_event(
         slug_part(evidence_type),
         slug_part(evidence_ref)
     );
-    let fired_at = format!("{fire_date}T00:00:00Z");
+    let fired_at = now_rfc3339();
     let affected = connection.execute(
         "
-        INSERT INTO attention_events (id, rule_id, company_id, evidence_type, evidence_ref, fired_at)
-        VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        INSERT INTO attention_events (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
         ON CONFLICT(rule_id, evidence_type, evidence_ref) DO NOTHING
         ",
-        params![id, rule_id, company_id, evidence_type, evidence_ref, fired_at],
+        params![id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at],
     )?;
     Ok(affected > 0)
 }
@@ -661,25 +687,59 @@ fn enabled_rules_for_company(
 // Evaluation (inline hooks — see module docs). Best-effort at call sites.
 // ---------------------------------------------------------------------------
 
-/// Today's date (`YYYY-MM-DD`, UTC) — the fire date for evidence without a
-/// domain date (autopilot completion).
+/// Today's date (`YYYY-MM-DD`, UTC) — the wall-clock day the per-rule throttle
+/// counts against.
 fn today_iso() -> String {
     time::OffsetDateTime::now_utc()
         .format(&time::format_description::well_known::Iso8601::DATE)
         .unwrap_or_else(|_| "0000-01-01".to_owned())
 }
 
+/// Wall-clock now as RFC3339 — the `fired_at` firing time stamped on every event.
+fn now_rfc3339() -> String {
+    time::OffsetDateTime::now_utc()
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_else(|_| format!("{}T00:00:00Z", today_iso()))
+}
+
+/// Is a signal too old to alert on? `true` when its domain date is strictly older
+/// than [`SIGNAL_FRESHNESS_DAYS`] before wall-clock now. An absent or unparseable
+/// date is treated as fresh (`false`) — we never suppress a signal we cannot prove
+/// is stale (see [`SIGNAL_FRESHNESS_DAYS`]). Applied by the historical-ingest seam
+/// (`classify_and_store_signal`) so a backfill of old official filings is silent,
+/// while present-detection paths (red flags, KNF) are not gated.
+pub(super) fn signal_is_stale(signal_date: Option<&str>) -> bool {
+    use time::macros::format_description;
+    let Some(raw) = signal_date.map(str::trim).filter(|value| !value.is_empty()) else {
+        return false;
+    };
+    let day: String = raw.chars().take(10).collect();
+    let format = format_description!("[year]-[month]-[day]");
+    let Ok(parsed) = time::Date::parse(&day, &format) else {
+        return false;
+    };
+    let cutoff = time::OffsetDateTime::now_utc()
+        .date()
+        .saturating_sub(time::Duration::days(SIGNAL_FRESHNESS_DAYS));
+    parsed < cutoff
+}
+
 /// A confirmed signal was just created for `company_id`. Fire every enabled
 /// `signal_category` rule whose category matches and whose scope covers the
 /// company. Returns the number of new attention events.
+///
+/// Freshness is the CALLER's decision (see [`signal_is_stale`]). The gate lives on
+/// the historical-ingest seam (`classify_and_store_signal`), NOT here: a
+/// present-detection path (derived red flags, KNF short-position changes) raises a
+/// signal NOW whose DOMAIN date is the underlying report's period — old, but not a
+/// re-ingest — and must still alert. Gating here would wrongly suppress those.
 pub(super) fn evaluate_signal_rules(
     connection: &Connection,
     company_id: &str,
     category: &str,
     signal_id: &str,
-    signal_date: Option<&str>,
+    _signal_date: Option<&str>,
 ) -> StorageResult<usize> {
-    let fire_date = normalize_fire_date(signal_date);
     let mut fired = 0;
     for rule in enabled_rules_for_company(connection, TRIGGER_SIGNAL_CATEGORY, company_id)? {
         if rule.signal_category.as_deref() != Some(category) {
@@ -688,10 +748,10 @@ pub(super) fn evaluate_signal_rules(
         if insert_attention_event(
             connection,
             &rule.id,
+            &rule.trigger_type,
             company_id,
             EVIDENCE_COMPANY_SIGNAL,
             signal_id,
-            &fire_date,
         )? {
             fired += 1;
         }
@@ -706,17 +766,16 @@ pub(super) fn evaluate_autopilot_completion(
     company_id: &str,
     run_id: &str,
 ) -> StorageResult<usize> {
-    let fire_date = today_iso();
     let mut fired = 0;
     for rule in enabled_rules_for_company(connection, TRIGGER_AUTOPILOT_RUN_COMPLETED, company_id)?
     {
         if insert_attention_event(
             connection,
             &rule.id,
+            &rule.trigger_type,
             company_id,
             EVIDENCE_AUTOPILOT_RUN,
             run_id,
-            &fire_date,
         )? {
             fired += 1;
         }
@@ -735,7 +794,9 @@ pub(super) fn evaluate_price_rules(
     let Some(latest) = market_data::latest_quote_for(connection, company_id)? else {
         return Ok(0);
     };
-    let fire_date = latest.date.clone();
+    // The quote's domain date is the event's dedup key (`evidence_ref`) — one
+    // event per bar. `fired_at` is stamped wall-clock inside `insert_attention_event`.
+    let quote_date = latest.date.clone();
     let mut fired = 0;
 
     for rule in enabled_rules_for_company(connection, TRIGGER_PRICE_ENTERS_RANGE, company_id)? {
@@ -747,10 +808,10 @@ pub(super) fn evaluate_price_rules(
             && insert_attention_event(
                 connection,
                 &rule.id,
+                &rule.trigger_type,
                 company_id,
                 EVIDENCE_DAILY_QUOTE,
-                &fire_date,
-                &fire_date,
+                &quote_date,
             )?
         {
             fired += 1;
@@ -763,10 +824,10 @@ pub(super) fn evaluate_price_rules(
             if insert_attention_event(
                 connection,
                 &rule.id,
+                &rule.trigger_type,
                 company_id,
                 EVIDENCE_DAILY_QUOTE,
-                &fire_date,
-                &fire_date,
+                &quote_date,
             )? {
                 fired += 1;
             }
@@ -795,14 +856,6 @@ fn is_new_week52_low(
         Some(prior) => latest.close < prior,
         None => false,
     })
-}
-
-/// Normalize a domain date to `YYYY-MM-DD`, falling back to today when absent.
-fn normalize_fire_date(date: Option<&str>) -> String {
-    date.map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.chars().take(10).collect::<String>())
-        .unwrap_or_else(today_iso)
 }
 
 /// Shift an ISO `YYYY-MM-DD` date back `delta_days` days, saturating rather than

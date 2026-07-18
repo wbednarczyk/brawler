@@ -1,4 +1,5 @@
 import type { AlertRule, AttentionEvent } from "../../api/attention";
+import { formatSignalCategoryDisplayName } from "../../shared/formatting/labels";
 
 /**
  * Today attention list + toast wiring (ADR 0068 T4): composes the badge/title
@@ -40,7 +41,17 @@ export function attentionEventTitleText(
 ): string {
   switch (event.triggerType) {
     case "signal_category":
-      return rule?.signalCategory ?? event.triggerType;
+      // D3 fix (v0.57 fix wave 2, owner screenshot 27-toast-stack.png): the
+      // raw category code ("insider_transaction") rendered verbatim in both
+      // locales — this must resolve through the SAME category → display-name
+      // mapping `text(signal.categoryDisplayName)` uses elsewhere
+      // (`formatSignalCategoryDisplayName`, matching the backend's
+      // `signal_categories` seed), never a raw enum value. No rule (a
+      // system-raised event with nothing to look up) keeps the prior
+      // trigger-type fallback.
+      return rule?.signalCategory
+        ? text(formatSignalCategoryDisplayName(rule.signalCategory))
+        : event.triggerType;
     case "autopilot_run_completed":
       return text("Autopilot finished");
     case "price_enters_range":

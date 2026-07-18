@@ -55,6 +55,8 @@ import type {
 } from "../../api/financialsTypes";
 import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { OwnershipOverview } from "../../api/ownership";
+import type { CompanyHealth } from "../../api/companyHealth";
+import type { InsiderOverview } from "../../api/insider";
 import type {
   PreReportCard,
   ReportPreparation,
@@ -228,8 +230,8 @@ export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
       { asOf: "2025-12-31", pct: "46.8" },
     ],
     holders: [
-      { holderKey: "JACEK DUCH", name: "Jacek Duch", holderType: "founder_insider", capitalPct: "25.5", votesPct: "25.5", asOf: "2025-12-31", source: "report_document" },
-      { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", capitalPct: "15.9", votesPct: "15.9", asOf: "2025-12-31", source: "report_document" },
+      { holderKey: "JACEK DUCH", name: "Jacek Duch", holderType: "founder_insider", capitalPct: "25.5", votesPct: "25.5", asOf: "2025-12-31", source: "report_document", skinInTheGame: { person: "Jacek Duch" } },
+      { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", capitalPct: "15.9", votesPct: "15.9", asOf: "2025-12-31", source: "report_document", skinInTheGame: { person: "Jakub Dwernicki", via: "Dwernicki Fundacja Rodzinna" } },
       { holderKey: "NN PTE", name: "NN PTE", holderType: "ofe_pension", capitalPct: "6.0", votesPct: "6.0", asOf: "2025-12-31", source: "report_document" },
       { holderKey: "PTE ALLIANZ POLSKA", name: "PTE Allianz Polska", holderType: "ofe_pension", capitalPct: "5.3", votesPct: "5.3", asOf: "2025-12-31", source: "report_document" },
       { holderKey: "CYBER_FOLKS S.A.", name: "cyber_Folks S.A.", holderType: "treasury_shares", capitalPct: "0.5", votesPct: "0.5", asOf: "2025-12-31", source: "report_document" },
@@ -240,11 +242,206 @@ export function makeOwnershipOverview(spec: CompanySpec): OwnershipOverview {
       { holderKey: "JAKUB DWERNICKI", name: "Jakub Dwernicki", holderType: "founder_insider", points: founderPoints("15.9") },
     ],
     residuals: [
+      // Eligible for OCR (no marker) → the warnbox offers "Read with OCR".
       { reportDocumentId: `doc_${spec.key}_2023`, parseState: "glyph_encoded", detectedAsOf: "2023-12-31", matchedHeading: "Akcjonariat" },
+      // Already OCR'd → a pending proposal awaits review (v0.57 T8, ADR 0077).
+      { reportDocumentId: `doc_${spec.key}_2022`, parseState: "glyph_encoded", detectedAsOf: "2022-12-31", matchedHeading: "Akcjonariat", ocrState: "proposed" },
     ],
     pendingProposals: [
       { id: `ownhtp_${spec.key}_itema`, holderKey: "ITEMA VENTURES UAB", proposedType: "other_institutional", confidence: 0.7, rationale: "foreign holding entity" },
     ],
+    ocrProposals: [
+      {
+        reportDocumentId: `doc_${spec.key}_2022`,
+        // The xhtml residual was resolved via its fetched PDF sibling (T8).
+        sourceDocumentId: `doc_${spec.key}_2022_pdf`,
+        asOf: "2022-12-31",
+        matchedHeading: "Akcjonariat",
+        providerId: "mistral",
+        holders: [
+          { holderNameRaw: "Marek Zborowski", capitalPct: "18.20", votesPct: "18.20" },
+          { holderNameRaw: "Aviva OFE", capitalPct: "7.10", votesPct: "7.10" },
+        ],
+      },
+    ],
+  };
+}
+
+/// A populated company-health read model (ADR 0083): a full-input latest FY
+/// (F headline + Z″ safe) plus a prior FY whose Piotroski is insufficient
+/// (missing long_term_debt) — so the Quality-panel health tiles, the
+/// per-component breakdown, and the insufficient-data state all render.
+export function makeCompanyHealth(spec: CompanySpec): CompanyHealth {
+  const id = companyId(spec);
+  return {
+    companyId: id,
+    statementType: "industrial",
+    piotroskiVariant: "Piotroski F (2000)",
+    altmanVariant: "Altman Z″ EM (1995)",
+    latest: {
+      periodId: `${id}_fy2025`,
+      fiscalYear: 2025,
+      piotroski: {
+        state: "headline",
+        score: 8,
+        signals: [
+          {
+            code: "F1",
+            name: "roa_positive",
+            passed: true,
+            points: 1,
+            inputs: [
+              { key: "net_profit@FY2025", value: "100" },
+              { key: "total_assets@FY2025", value: "1000" },
+            ],
+          },
+          {
+            code: "F9",
+            name: "turnover_improved",
+            passed: false,
+            points: 0,
+            inputs: [
+              { key: "revenue@FY2025", value: "1000" },
+              { key: "total_assets@FY2025", value: "1000" },
+              { key: "basis", value: "two_year_average" },
+            ],
+          },
+        ],
+      },
+      // Altman is insufficient here (a real coverage gap — retained_earnings is
+      // often note-level) so the panel exercises the insufficient-data render +
+      // missing-input list alongside the Piotroski headline breakdown.
+      altman: {
+        state: "insufficient_data",
+        components: [
+          {
+            code: "X1",
+            name: "working_capital_to_assets",
+            weight: "6.56",
+            ratio: "0.25",
+            contribution: "1.64",
+            inputs: [
+              { key: "working_capital@FY2025", value: "250" },
+              { key: "total_assets@FY2025", value: "1000" },
+            ],
+          },
+        ],
+        missing: [{ metric: "retained_earnings", period: "FY2025" }],
+      },
+    },
+    history: [
+      {
+        periodId: `${id}_fy2025`,
+        fiscalYear: 2025,
+        piotroski: { state: "insufficient_data", signals: [], missing: [] },
+        altman: { state: "insufficient_data", components: [], missing: [] },
+      },
+    ],
+  };
+}
+
+/// A populated insider overview (ADR 0083 D7): a management-holdings group (a
+/// founder holding indirectly via a foundation with an unstated share count, and
+/// a management member with a real count), a multi-transaction timeline (buy /
+/// sell / a directionless filing / a closely-associated filing dated via its
+/// filing signal), and both windows computed above the 2-transaction minimum with
+/// the volume-coverage note. Mirrors the ownership seed's founder (Jakub
+/// Dwernicki via his family foundation) so the two Ownership-area blocks agree.
+export function makeInsiderOverview(spec: CompanySpec): InsiderOverview {
+  const id = companyId(spec);
+  return {
+    companyId: id,
+    holdings: [
+      {
+        person: "Jakub Dwernicki",
+        role: "management",
+        shares: null,
+        indirectVia: "Dwernicki Fundacja Rodzinna",
+        asOf: "2025-12-31",
+      },
+      {
+        person: "Anna Nowak",
+        role: "supervisory",
+        shares: "12000",
+        indirectVia: null,
+        asOf: "2025-12-31",
+      },
+    ],
+    transactions: [
+      {
+        id: `insidertx_${spec.key}_1`,
+        person: "Jakub Dwernicki",
+        role: "management",
+        relatedPdmr: null,
+        direction: "buy",
+        instrument: "shares",
+        volume: "5000",
+        price: "24.80",
+        currency: "PLN",
+        txDate: "2026-05-20",
+        effectiveDate: "2026-05-20",
+        dateSource: "transaction",
+        feedItemId: `feed_${spec.key}_ins1`,
+        sourceUrl: "https://www.bankier.pl/wiadomosc/insider-1.html",
+      },
+      {
+        id: `insidertx_${spec.key}_2`,
+        person: "Anna Nowak",
+        role: "supervisory",
+        relatedPdmr: null,
+        direction: "sell",
+        instrument: "shares",
+        volume: "1500",
+        price: "25.10",
+        currency: "PLN",
+        txDate: "2026-05-12",
+        effectiveDate: "2026-05-12",
+        dateSource: "transaction",
+        feedItemId: `feed_${spec.key}_ins2`,
+        sourceUrl: "https://www.bankier.pl/wiadomosc/insider-2.html",
+      },
+      {
+        id: `insidertx_${spec.key}_3`,
+        person: "Dwernicki Fundacja Rodzinna",
+        role: "closely_associated",
+        relatedPdmr: "Jakub Dwernicki",
+        direction: "buy",
+        instrument: "shares",
+        volume: null,
+        price: null,
+        currency: null,
+        txDate: null,
+        effectiveDate: "2026-04-30",
+        dateSource: "filing",
+        feedItemId: `feed_${spec.key}_ins3`,
+        sourceUrl: "https://www.bankier.pl/wiadomosc/insider-3.html",
+      },
+    ],
+    // 3 in-window (2 buys, 1 sell) → net +1; two of three disclosed a volume.
+    window90d: {
+      state: "computed",
+      count: 3,
+      buys: 2,
+      sells: 1,
+      undetermined: 0,
+      net: 1,
+      buyVolume: "5000",
+      sellVolume: "1500",
+      volumeKnown: 2,
+      volumeTotal: 3,
+    },
+    window12m: {
+      state: "computed",
+      count: 3,
+      buys: 2,
+      sells: 1,
+      undetermined: 0,
+      net: 1,
+      buyVolume: "5000",
+      sellVolume: "1500",
+      volumeKnown: 2,
+      volumeTotal: 3,
+    },
   };
 }
 

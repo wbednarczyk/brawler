@@ -1,3 +1,12 @@
+:root {
+  /* Shared with feedback.css: the toast viewport offsets past the sidebar so
+     it never overlaps the nav (bug: persistent toasts piling up covered the
+     sidebar's clickable area). Kept at :root (not scoped to .app-shell) so
+     the `var(--sidebar-width, 0px)` fallback elsewhere is a deliberate
+     no-sidebar case, not a "variable undefined" one. */
+  --sidebar-width: 232px;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, auto) minmax(0, 1fr);
@@ -12,7 +21,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  width: 232px;
+  width: var(--sidebar-width);
   min-height: 0;
   padding: var(--space-3) var(--space-3);
   overflow-y: auto;

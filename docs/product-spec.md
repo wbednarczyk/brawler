@@ -181,6 +181,19 @@ At the top of Today the investor sees a **morning briefing** answering "what cha
 
 When an AI provider is configured the briefing is additionally phrased as a short **narrative with citations** that link each statement back to an item in the composed list. With **no provider configured** — or if a narrative can't cite cleanly against the list — the briefing still renders as the **structured item list**, never blocked and never an error. Like every AI surface it is decision support: facts and citations, never a buy/sell/hold call.
 
+## Company Health
+
+Status: planned (v0.57.0, ADR 0083)
+
+The app computes published, citable health formulas over a company's confirmed financial facts and raises red flags on its own — so concerns surface before the investor reads a report ([ADR 0083](adr/0083-company-health-scores-and-red-flags.md)).
+
+Behavior:
+
+- **Health scores**: Piotroski F (0–9) and Altman Z″ (emerging-markets variant; safe/grey/distress bands) computed deterministically from confirmed facts for annual periods, shown in the Quality area with an expandable per-component breakdown and the formula citation. A score renders only when every input is present; otherwise an explicit "insufficient data" state lists what computed and what is missing — never a partial or rescaled headline number. Banks, insurers, and other financial-statement companies show "not applicable" for Z″. Scores are also usable in scorecard criteria.
+- **Insider activity**: MAR art. 19 notifications are parsed into who bought or sold, in what role, how much, and when; the mandatory periodic-report management-holdings table is parsed the same way. Together they mark founder/management shareholders in the Ownership section (skin-in-the-game badge) and feed an insider timeline with rolling 90-day and 12-month net buy/sell aggregates (shown only once at least 2 transactions exist).
+- **Red flags**: a per-company panel collects auditor red flags (qualified opinion / going concern), report publication delays (expected calendar date passed with no filing), fund exits (a disclosed holder vanishing from the newest ownership picture), score deteriorations, and short-position spikes — each with a fixed severity, a link to its evidence, and an acknowledge action (acknowledged flags move to history and never re-raise for the same evidence). New flags raise typed signals, so existing alert rules and the morning briefing pick them up.
+- Everything is decision support: scores cite their published formulas, flags state facts with evidence, and no surface phrases a buy/sell/hold action or composes the inputs into a single conviction rating.
+
 ## Report Documents
 
 The company workspace lists the stored report documents for a company, each shown with its **document kind** — consolidated report, standalone report, audit report, presentation, governance, or other — so the investor can tell a periodic report from supporting material at a glance. By default the list is **grouped by reporting period** (newest first), with the period's **canonical report starred**, its audit reports beside it, and the signature/data companion files folded out of the way; filings that belong to no period (announcements, general-meeting materials, and the like) collect in a separate collapsed group. A **Group by period** toggle returns to a flat chronological list. The list can be **searched** by title and **filtered by kind** (including unclassified), and a **Refresh classification** action re-derives the kind of every stored document at once, for documents captured before the classification existed. Kinds and grouping are decision-support presentation only; the classification is deterministic and never alters the stored document or its source attribution.

@@ -132,6 +132,48 @@ impl QuoteFacts {
     }
 }
 
+/// Composite health-score scalars for one company as of its latest FY period
+/// (ADR 0083 Decision 2, the scoped ADR 0046 amendment). Injected into metric
+/// resolution the same way [`QuoteFacts`] market scalars are, so scorecard
+/// criteria can reference `piotroski_f` / `altman_z` (`piotroski_f >= 7`).
+///
+/// The injected value is the **latest-FY headline** only; when the score is
+/// `InsufficientData` or `NotApplicable` the field is `None`, so the key
+/// resolves `Unavailable` at the engine boundary (rendered as an `unavailable`
+/// verdict) — never a partial or rescaled number. These are composite scores
+/// with indicator logic and prior-period references that do not fit the
+/// catalog grammar; quotes and health scores are the only two injection seams,
+/// the open-catalog rule stands for everything else.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct HealthScalars {
+    /// Piotroski F (0..=9) as a scalar, or `None` when not a headline.
+    pub piotroski_f: Option<Decimal>,
+    /// Altman Z″ (EM) value as a scalar, or `None` when not a headline.
+    pub altman_z: Option<Decimal>,
+}
+
+impl HealthScalars {
+    /// Look up one of the two health-score scalar names. Unknown keys return
+    /// `None`, deferring to the period-fact/derived-formula resolution path.
+    fn get(&self, key: &str) -> Option<Decimal> {
+        match key {
+            "piotroski_f" => self.piotroski_f,
+            "altman_z" => self.altman_z,
+            _ => None,
+        }
+    }
+}
+
+/// One annual (`FY`) period's position in the context's newest-first series,
+/// the coordinate the health engine scores over.
+#[derive(Debug, Clone)]
+pub struct FyPeriodRef {
+    /// Index into the newest-first `periods` series.
+    pub idx: usize,
+    pub period_id: String,
+    pub fiscal_year: i64,
+}
+
 /// The loaded, immutable view the metrics service computes over.
 #[derive(Debug, Clone)]
 pub struct MetricsContext {
@@ -140,6 +182,9 @@ pub struct MetricsContext {
     periods: Vec<PeriodFacts>,
     /// One as-of-date quote snapshot, if attached via [`Self::with_quotes`].
     quotes: Option<QuoteFacts>,
+    /// Latest-FY health-score scalars, if attached via
+    /// [`Self::with_health_scalars`].
+    health: Option<HealthScalars>,
 }
 
 impl MetricsContext {
@@ -148,7 +193,45 @@ impl MetricsContext {
             definitions,
             periods,
             quotes: None,
+            health: None,
         }
+    }
+
+    /// Attach the latest-FY health scalars (ADR 0083 Decision 2) so criteria
+    /// referencing `piotroski_f` / `altman_z` resolve. Additive: a context that
+    /// never calls this keeps resolving those keys to `None`.
+    pub fn with_health_scalars(mut self, health: HealthScalars) -> Self {
+        self.health = Some(health);
+        self
+    }
+
+    /// Resolve a metric at an explicit period index (0 = latest), starting a
+    /// fresh cycle-guard. The entry point the health engine uses to read a
+    /// prior FY period's reported and derived values.
+    pub fn value_for(&self, key: &str, idx: usize) -> Option<Decimal> {
+        let visiting = RefCell::new(HashSet::new());
+        self.value_at(key, idx, &visiting)
+    }
+
+    /// The fiscal year of the period at `idx`, if it exists.
+    pub fn fiscal_year_at(&self, idx: usize) -> Option<i64> {
+        self.periods.get(idx).map(|p| p.fiscal_year)
+    }
+
+    /// Every annual (`FY`) period, newest-first, with its series index — the
+    /// coordinates the health engine scores over (interim periods are skipped,
+    /// so "prior FY" is the next FY, never an intervening quarter).
+    pub fn fy_period_refs(&self) -> Vec<FyPeriodRef> {
+        self.periods
+            .iter()
+            .enumerate()
+            .filter(|(_, p)| p.is_annual)
+            .map(|(idx, p)| FyPeriodRef {
+                idx,
+                period_id: p.period_id.clone(),
+                fiscal_year: p.fiscal_year,
+            })
+            .collect()
     }
 
     /// Attach a quote snapshot (ADR 0067 Decision 4) so formulas referencing
@@ -217,6 +300,15 @@ impl MetricsContext {
         // at every period index -- a daily quote has no fiscal-period index
         // of its own.
         if let Some(v) = self.quotes.as_ref().and_then(|q| q.get(base)) {
+            return Some(v);
+        }
+
+        // Health-score scalars (ADR 0083 Decision 2): the latest-FY composite
+        // headlines, resolved ahead of period facts and available uniformly at
+        // every period index (a company-level score, not a per-period fact).
+        // `None` (InsufficientData / NotApplicable) falls through and the key
+        // resolves `Unavailable`.
+        if let Some(v) = self.health.as_ref().and_then(|h| h.get(base)) {
             return Some(v);
         }
 

@@ -31,6 +31,13 @@ import { ClearButton } from "./ClearButton";
 
 const AUTO_DISMISS_MS = 6000;
 const MAX_STACK = 3;
+// Persistent (attention-event) toasts are exempt from MAX_STACK, but an
+// unbounded queue overlaps other chrome (bug: the bottom-left viewport grew to
+// 19 stacked toasts, covering the sidebar nav). PERSISTENT_VISIBLE_CAP bounds
+// how many render as full toasts; anything beyond that collapses into one
+// "+N more" summary row (see ToastViewport). Keeps the newest N — the most
+// recently fired attention events are the most likely to still be actionable.
+const PERSISTENT_VISIBLE_CAP = 3;
 
 export type ToastTone = "neutral" | "positive" | "caution" | "negative";
 
@@ -79,7 +86,31 @@ export function useToast(): ToastApi {
 
 let toastCounter = 0;
 
-export function ToastProvider({ children }: { children: ReactNode }) {
+export type ToastProviderProps = {
+  children: ReactNode;
+  /**
+   * Invoked when the persistent-overflow summary row ("+N more") is clicked
+   * or activated via keyboard. Omit to keep the primitive's default of no
+   * summary row at all (existing `<ToastProvider>` call sites — tests, the
+   * gallery — that don't pass it keep compiling and behaving as before,
+   * except that persistent toasts beyond PERSISTENT_VISIBLE_CAP are still
+   * silently capped rather than piling up unbounded).
+   */
+  onPersistentOverflowClick?: () => void;
+  /**
+   * Formats the summary row's label from the hidden persistent-toast count.
+   * The primitive stays locale-agnostic (see file header) — callers pass a
+   * translated formatter (e.g. built from `text("more")`). Defaults to the
+   * English literal "+{n} more", matching the `dismissLabel` convention.
+   */
+  persistentOverflowLabel?: (hiddenCount: number) => string;
+};
+
+export function ToastProvider({
+  children,
+  onPersistentOverflowClick,
+  persistentOverflowLabel,
+}: ToastProviderProps) {
   const [toasts, setToasts] = useState<ToastRecord[]>([]);
 
   const dismiss = useCallback((id: string) => {
@@ -113,26 +144,62 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <ToastViewport toasts={toasts} onDismiss={dismiss} />
+      <ToastViewport
+        toasts={toasts}
+        onDismiss={dismiss}
+        onPersistentOverflowClick={onPersistentOverflowClick}
+        persistentOverflowLabel={persistentOverflowLabel}
+      />
     </ToastContext.Provider>
   );
+}
+
+function defaultPersistentOverflowLabel(hiddenCount: number): string {
+  return `+${hiddenCount} more`;
 }
 
 function ToastViewport({
   toasts,
   onDismiss,
+  onPersistentOverflowClick,
+  persistentOverflowLabel,
 }: {
   toasts: ToastRecord[];
   onDismiss: (id: string) => void;
+  onPersistentOverflowClick?: () => void;
+  persistentOverflowLabel?: (hiddenCount: number) => string;
 }) {
   if (toasts.length === 0) {
     return null;
   }
+
+  // Cap VISIBLE persistent toasts at PERSISTENT_VISIBLE_CAP regardless of
+  // whether a summary row can be shown (see ToastProviderProps doc): drop the
+  // OLDEST persistent toasts beyond the cap, keeping the most recent ones plus
+  // every transient toast (already capped independently by MAX_STACK in
+  // `show`). Filtering `toasts` (not rebuilding from sublists) preserves the
+  // original insertion order.
+  const persistentToasts = toasts.filter((toast) => toast.persistent);
+  const hiddenCount = Math.max(0, persistentToasts.length - PERSISTENT_VISIBLE_CAP);
+  const hiddenIds = new Set(persistentToasts.slice(0, hiddenCount).map((toast) => toast.id));
+  const visibleToasts = toasts.filter((toast) => !hiddenIds.has(toast.id));
+
   return (
     <ol className="ui-toast-viewport">
-      {toasts.map((toast) => (
+      {visibleToasts.map((toast) => (
         <ToastItem key={toast.id} toast={toast} onDismiss={onDismiss} />
       ))}
+      {hiddenCount > 0 && onPersistentOverflowClick ? (
+        <li className="ui-toast ui-toast-overflow">
+          <button
+            type="button"
+            className="ui-toast-overflow-button"
+            onClick={onPersistentOverflowClick}
+          >
+            {(persistentOverflowLabel ?? defaultPersistentOverflowLabel)(hiddenCount)}
+          </button>
+        </li>
+      ) : null}
     </ol>
   );
 }

@@ -240,6 +240,7 @@ fn persist_outcome(
                 parse_state: parse_state.to_owned(),
                 detected_as_of,
                 matched_heading: outcome.matched_heading.clone(),
+                ocr_state: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             })
@@ -264,6 +265,7 @@ fn persist_outcome(
                 parse_state: "table_unparsable".to_owned(),
                 detected_as_of: None,
                 matched_heading: outcome.matched_heading.clone(),
+                ocr_state: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             })
@@ -303,6 +305,16 @@ fn persist_outcome(
         .ownership()
         .clear_extraction_residual(&document.id)
         .map_err(|error| error.to_string())?;
+
+    // Red-flag detection at the ownership-ingest seam (ADR 0083 D8, T7): a holder
+    // that vanished from the newest full-picture basis raises a `fund_exit`.
+    // Best-effort — a detection failure never fails the ingest.
+    if let Err(error) = state.red_flags().detect_fund_exits(&document.company_id) {
+        log::warn!(
+            "ownership extraction: fund_exit detection failed for {}: {error}",
+            document.company_id
+        );
+    }
     Ok(())
 }
 
@@ -744,6 +756,7 @@ mod tests {
                 parse_state: "glyph_encoded".to_owned(),
                 detected_as_of: None,
                 matched_heading: None,
+                ocr_state: None,
                 created_at: String::new(),
                 updated_at: String::new(),
             })

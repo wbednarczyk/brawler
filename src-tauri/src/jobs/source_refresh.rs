@@ -162,6 +162,24 @@ fn after_successful_refresh(state: &app_state::AppState) {
     // idempotent, and independent of the autopilot mode (its writes are final,
     // not AI proposals).
     crate::jobs::ownership_extraction::enqueue_ownership_extraction_catch_up(state, None);
+    // Management-holdings extraction (ADR 0083 T5): the same newly ingested periodic
+    // reports may carry an as-yet-unparsed management-holdings section. Deterministic
+    // and idempotent — its writes are final, not AI proposals.
+    crate::jobs::management_holdings_extraction::enqueue_management_extraction_catch_up(
+        state, None,
+    );
+    // Report-history backfill catch-up (v0.57, ADR 0077 amendment): an automated
+    // company with NO fetched periodic report gets one automatic backfill enqueued
+    // — the trigger parity that makes backfill happen without the user clicking.
+    // Idempotent (coverage predicate + stable per-company job id), off-thread on
+    // the durable queue, `off`-mode companies skipped with an explicit reason.
+    crate::jobs::backfill::enqueue_company_backfill_catch_up(state, None);
+    // Red-flag reconciliation (ADR 0083 D8, T7): an expected periodic report whose
+    // calendar date passed the grace with no official report ingested raises a
+    // `report_delay`. Best-effort — a detection failure never fails the refresh.
+    if let Err(error) = state.red_flags().detect_report_delays() {
+        log::warn!("module=sources stage=red_flags report_delay detection failed: {error}");
+    }
 }
 
 pub fn record_scheduler_skip(state: &app_state::AppState, reason: &str) {
@@ -524,6 +542,37 @@ pub fn refresh_one_bankier_company(
     {
         let _ = state
             .record_source_adapter_error(adapter_id, &format!("attachment fetch failed: {error}"));
+    }
+
+    // Insider attachment-PDF tier (ADR 0083 D6, plan v0.57 T4b): fetch + parse the
+    // MAR art. 19 notification documents for newly cover-note-parsed insider filings
+    // and fill the NULL volume/price/tx_date figures. Runs here (source/refresh lane,
+    // network off the ingestion write path), attempt-once per filing. Best-effort — a
+    // failure never fails the refresh.
+    match crate::jobs::insider_attachment::fetch_and_parse_insider_attachments(
+        state,
+        &document_fetcher,
+    ) {
+        Ok(summary) if summary.filings_attempted > 0 => log::info!(
+            "module=insider_attachment stage=sweep attempted={} parsed={} filled={} \
+             appended={} conflicts={} no_attachment={} no_text_layer={} not_found={} retry={}",
+            summary.filings_attempted,
+            summary.parsed,
+            summary.filled,
+            summary.appended,
+            summary.conflicts,
+            summary.no_attachment,
+            summary.no_text_layer,
+            summary.not_found,
+            summary.fetch_retry,
+        ),
+        Ok(_) => {}
+        Err(error) => {
+            let _ = state.record_source_adapter_error(
+                adapter_id,
+                &format!("insider attachment tier failed: {error}"),
+            );
+        }
     }
 
     Ok(result)

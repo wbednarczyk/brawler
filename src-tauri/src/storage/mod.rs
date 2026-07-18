@@ -49,10 +49,12 @@ mod fundamentals_provenance;
 mod history_sweeps;
 mod import_export;
 mod ingestion;
+mod insider;
 mod jobs;
 mod kpi_extraction;
 mod licensing;
 mod management_claims;
+mod management_holdings;
 mod market_data;
 mod metrics;
 mod migrations;
@@ -63,6 +65,7 @@ mod pool;
 mod quality_frameworks;
 mod queue_config;
 mod reconciliation;
+mod red_flags;
 mod registry;
 mod report_documents;
 mod report_expectations;
@@ -123,6 +126,10 @@ pub use fundamentals_provenance::{FactProvenance, FundamentalsProvenanceStore, N
 pub use history_sweeps::{HistorySweep, HistorySweepOutcome, HistorySweepStore};
 pub use import_export::ImportExportStore;
 pub use import_export::{ExportPayload, ImportApplyResult, ImportPreview};
+pub use insider::{
+    AttachmentConflict, AttachmentMergeOutcome, AttachmentPendingFiling, InsiderOverviewSource,
+    InsiderStore, InsiderTransactionRow,
+};
 pub use jobs::{ClaimedJob, JobQueueCounts, JobQueueStore, JobStatusRow};
 pub use kpi_extraction::KpiExtractionStore;
 pub use kpi_extraction::{
@@ -137,6 +144,10 @@ pub use management_claims::{
     ClaimToVerify, ClaimsToVerify, ManagementClaim, ManagementClaimUpdate, NewManagementClaim,
     SetClaimVerdictInput, VerifyingFactCandidate,
 };
+pub use management_holdings::{
+    DocumentNeedingManagementExtraction, ManagementHoldingRow, ManagementHoldingsResidual,
+    ManagementHoldingsStore, NewManagementHolding, SkinInTheGameMatch,
+};
 pub use metrics::{
     LocalMetricsSnapshot, MetricKind, MetricLabel, MetricSample, MetricUnit, RuntimeMetricCounters,
 };
@@ -149,9 +160,11 @@ pub use morning_briefings::{
 pub use notebooks::NotebookStore;
 pub use ownership::{
     compare_witness, DocumentNeedingOwnershipExtraction, HolderDictionaryEntry,
-    HolderTypeProposalRow, NewHolderTypeProposal, NewOwnershipStake, OwnershipCurrentState,
-    OwnershipExtractionResidual, OwnershipStakeRow, OwnershipStore, OwnershipWitnessResult,
-    WitnessComparison, WitnessDivergence, WitnessHolder,
+    HolderTypeProposalRow, NewHolderTypeProposal, NewOwnershipOcrProposal, NewOwnershipStake,
+    OcrHolderRow, OwnershipCurrentState, OwnershipExtractionResidual, OwnershipOcrProposalRecord,
+    OwnershipStakeRow, OwnershipStore, OwnershipWitnessResult, ResidualNeedingOcr,
+    WitnessComparison, WitnessDivergence, WitnessHolder, OCR_STATE_NO_TABLE, OCR_STATE_PROPOSED,
+    OCR_STATE_REJECTED,
 };
 pub use pool::open_pool;
 pub use quality_frameworks::QualityFrameworkStore;
@@ -163,6 +176,7 @@ pub use quality_frameworks::{
     UpdateFrameworkCriterion, UpdateQualityFramework, ValidateCriterionResult,
 };
 pub use queue_config::QueueConfig;
+pub use red_flags::{AcknowledgeRedFlagInput, RedFlag, RedFlagStore, RedFlagsInput, RedFlagsView};
 pub use registry::SourceRegistryStore;
 pub use report_documents::ReportDocumentStore;
 pub use report_documents::{
@@ -634,6 +648,21 @@ impl AppState {
     /// Ownership-stakes domain store (ADR 0072, plan v0.56 T2).
     pub fn ownership(&self) -> ownership::OwnershipStore {
         ownership::OwnershipStore::new(self.db.clone())
+    }
+
+    /// Parsed insider-transaction (MAR art. 19) domain store (ADR 0083, plan v0.57 T4).
+    pub fn insider(&self) -> insider::InsiderStore {
+        insider::InsiderStore::new(self.db.clone())
+    }
+
+    /// Parsed management-holdings domain store + founder stamping (ADR 0083, plan v0.57 T5).
+    pub fn management_holdings(&self) -> management_holdings::ManagementHoldingsStore {
+        management_holdings::ManagementHoldingsStore::new(self.db.clone())
+    }
+
+    /// Company red-flags domain store (ADR 0083, plan v0.57 T7).
+    pub fn red_flags(&self) -> red_flags::RedFlagStore {
+        red_flags::RedFlagStore::new(self.db.clone())
     }
 
     /// Attention (alert rules + attention events) domain store (ADR 0068).
@@ -1884,6 +1913,26 @@ impl AppState {
     ) -> StorageResult<Vec<ReportDocument>> {
         self.report_documents()
             .list_report_documents_by_company(company_id)
+    }
+
+    pub fn list_report_documents_by_origin(
+        &self,
+        origin_ref: &str,
+    ) -> StorageResult<Vec<ReportDocument>> {
+        self.report_documents()
+            .list_report_documents_by_origin(origin_ref)
+    }
+
+    /// Tracked companies with no fetched periodic report document, paired with
+    /// their autopilot mode — the selection behind the automatic backfill catch-up
+    /// (v0.57, ADR 0077 amendment). See
+    /// [`ReportDocumentsStore::companies_lacking_periodic_coverage`].
+    pub fn companies_lacking_periodic_coverage(
+        &self,
+        company_id: Option<&str>,
+    ) -> StorageResult<Vec<(String, String)>> {
+        self.report_documents()
+            .companies_lacking_periodic_coverage(company_id)
     }
 
     pub fn reclassify_report_documents(&self) -> StorageResult<ReclassifyReportDocumentsSummary> {

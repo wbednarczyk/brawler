@@ -827,6 +827,23 @@ pub(super) fn ingest_bankier_company_items(
         log::warn!("module=ownership stage=espi_stake_update error={error}");
     }
 
+    // Red-flag detection at the ESPI ownership-ingest seam (ADR 0083 D8, T7): a
+    // just-written `espi_filing` stake that crossed below the 5% disclosure
+    // threshold is a `fund_exit`. ESPI is the fresh depth source — waiting for the
+    // next full-picture basis loses days. Best-effort — never fails the refresh.
+    if let Err(error) = red_flags::detect_all_espi_crossings(connection) {
+        log::warn!("module=red_flags stage=espi_crossing error={error}");
+    }
+
+    // Insider MAR art. 19 → deterministic cover-note parse (ADR 0083 D6, plan
+    // v0.57 T4). Runs after classification so newly-confirmed `insider_transaction`
+    // signals are parsed in the same refresh; each filing is attempted once
+    // (rows or a parked marker), so re-runs create zero new rows. Best-effort — a
+    // failure here never rolls back ingestion or fails the refresh.
+    if let Err(error) = insider::parse_insider_transactions(connection) {
+        log::warn!("module=insider stage=cover_note_parse error={error}");
+    }
+
     Ok(SourceIngestionResult {
         adapter_id: BANKIER_COMPANY_ADAPTER_ID.to_owned(),
         items_fetched: items.len(),

@@ -590,4 +590,79 @@ impl ReportDocumentStore {
 
         reclassify_all(&connection)
     }
+
+    /// Every report document registered from one originating feed item (`origin_ref`),
+    /// newest first — the insider attachment tier's discovery of a filing's
+    /// notification documents (T4b).
+    pub fn list_report_documents_by_origin(
+        &self,
+        origin_ref: &str,
+    ) -> StorageResult<Vec<ReportDocument>> {
+        let connection = self.db.checkout()?;
+        list_by_origin(&connection, origin_ref)
+    }
+
+    /// Tracked companies with NO fetched periodic (`periodic_ssf`/`periodic_jsf`)
+    /// report document, each paired with its autopilot mode (`off` when the company
+    /// has no settings row). Drives the automatic report-history backfill catch-up
+    /// (v0.57, ADR 0077 amendment). `company_id = Some` narrows to one company; the
+    /// caller enqueues a backfill for the automated ones and records the `off`-mode
+    /// skips (never a silent drop).
+    pub fn companies_lacking_periodic_coverage(
+        &self,
+        company_id: Option<&str>,
+    ) -> StorageResult<Vec<(String, String)>> {
+        let connection = self.db.checkout()?;
+        companies_lacking_periodic_coverage(&connection, company_id)
+    }
+}
+
+/// The coverage predicate for the backfill catch-up: a company "has report
+/// history" iff it has at least one **fetched periodic** report document
+/// (`periodic_ssf`/`periodic_jsf`) — the same eligibility the extraction pipeline
+/// requires. Returns `(company_id, mode)` for those that do NOT, so the caller can
+/// gate on automation. `NOT EXISTS` keeps it index-friendly on the doc-kind index.
+fn companies_lacking_periodic_coverage(
+    connection: &Connection,
+    company_id: Option<&str>,
+) -> StorageResult<Vec<(String, String)>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT companies.id,
+               COALESCE(company_autopilot_settings.mode, 'off') AS mode
+        FROM companies
+        LEFT JOIN company_autopilot_settings
+            ON company_autopilot_settings.company_id = companies.id
+        WHERE (?1 IS NULL OR companies.id = ?1)
+          AND NOT EXISTS (
+              SELECT 1 FROM report_documents
+              WHERE report_documents.company_id = companies.id
+                AND report_documents.fetch_status = 'fetched'
+                AND report_documents.doc_kind IN ('periodic_ssf', 'periodic_jsf')
+          )
+        ORDER BY companies.id
+        ",
+    )?;
+    let rows = statement.query_map(params![company_id], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+fn list_by_origin(connection: &Connection, origin_ref: &str) -> StorageResult<Vec<ReportDocument>> {
+    let mut statement = connection.prepare(
+        "
+        SELECT
+            id, company_id, period_id, source_type, origin_ref, url, local_path,
+            content_type, content_hash, byte_size, title, attribution, fetch_status,
+            fetch_error, fetched_at, created_at, updated_at, doc_kind
+        FROM report_documents
+        WHERE origin_ref = ?1
+        ORDER BY created_at DESC
+        ",
+    )?;
+    let rows = statement.query_map(params![origin_ref], report_document_from_row)?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
 }

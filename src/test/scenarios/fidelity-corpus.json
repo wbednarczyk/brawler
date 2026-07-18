@@ -1159,8 +1159,8 @@
       ]
     },
     {
-      "name": "ownership overview reads the empty state and set-type is a no-op keyed by company (v0.56 T6, ADR 0072)",
-      "_comment": "Ownership stakes are written only through the network/report-extraction path (same rationale as the T2.1 coverage step), so the corpus exercises the seed-free empty case: a fresh company has no disclosed stakes, so the overview reads back freeFloatPct '100' with empty holders. expectField pins the deterministic derived companyId (company_gpw_<ticker>, identical on both sides) plus the always-present freeFloatPct scalar. set_ownership_holder_type on a holder that does not exist affects zero rows on the Rust side and mutates nothing in the mock, so both dispatchers return the SAME empty overview — proving each implements get + set and keys the DTO by the scoped company. Populated donut/history/proposal/residual correctness is pinned by the Rust unit tests in commands/ownership.rs, the shared populated wire-contract fixture, and the TS OwnershipSection tests.",
+      "name": "ownership overview reads the empty state and set-type / OCR confirm-reject are no-ops keyed by company (v0.56 T6 + v0.57 T8, ADR 0072/0077)",
+      "_comment": "Ownership stakes are written only through the network/report-extraction path (same rationale as the T2.1 coverage step), so the corpus exercises the seed-free empty case: a fresh company has no disclosed stakes, so the overview reads back freeFloatPct '100' with empty holders. expectField pins the deterministic derived companyId (company_gpw_<ticker>, identical on both sides) plus the always-present freeFloatPct scalar. set_ownership_holder_type on a holder that does not exist, and the T8 OCR confirm/reject on a report_document_id with no proposal, all affect zero rows on the Rust side and mutate nothing in the mock, so both dispatchers return the SAME empty overview — proving each implements get + set + the OCR confirm/reject commands and keys the DTO by the scoped company. Populated donut/history/proposal/residual/ocrProposals correctness is pinned by the Rust unit tests in commands/ownership.rs and jobs/ownership_ocr_extraction.rs, the shared populated wire-contract fixture, and the TS OwnershipSection tests.",
       "steps": [
         {
           "command": "create_company",
@@ -1197,6 +1197,85 @@
           "expectField": {
             "companyId": "company_gpw_ownr",
             "freeFloatPct": "100"
+          }
+        },
+        {
+          "command": "confirm_ownership_ocr_proposal",
+          "input": {
+            "companyId": "$cid",
+            "reportDocumentId": "no_such_document"
+          },
+          "expectField": {
+            "companyId": "company_gpw_ownr",
+            "freeFloatPct": "100"
+          }
+        },
+        {
+          "command": "reject_ownership_ocr_proposal",
+          "input": {
+            "companyId": "$cid",
+            "reportDocumentId": "no_such_document"
+          },
+          "expectField": {
+            "companyId": "company_gpw_ownr",
+            "freeFloatPct": "100"
+          }
+        }
+      ]
+    },
+    {
+      "name": "company health reads the empty state for a fresh company (v0.57 T2, ADR 0083)",
+      "_comment": "Financial facts land only through the network/extraction path, so the corpus exercises the seed-free empty case: a fresh company has no FY periods, so the health read model reads back an empty history and no latest scores. expectField pins the deterministic derived companyId (company_gpw_<ticker>, identical on both sides), the always-present statement_type default ('industrial'), and the citation labels that always ship with the scores. Populated F/Z correctness is pinned by the Rust unit + golden tests in fundamentals/health and the TS QualityPanel tests.",
+      "steps": [
+        {
+          "command": "create_company",
+          "input": {
+            "input": {
+              "exchange": "GPW",
+              "ticker": "HLTH",
+              "displayName": "Health Test S.A.",
+              "isin": null,
+              "cik": null,
+              "lei": null
+            }
+          },
+          "capture": "cid"
+        },
+        {
+          "command": "get_company_health",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_hlth",
+            "statementType": "industrial",
+            "piotroskiVariant": "Piotroski F (2000)",
+            "altmanVariant": "Altman Z″ EM (1995)"
+          }
+        },
+        {
+          "_comment": "Insider overview (v0.57 T6, ADR 0083 D7): a fresh company has no parsed insider substrate, so both sides return the empty overview (empty transactions/holdings; both windows belowMinimum count 0). The transactions/holdings arrays are empty, so structural equality is asserted by parity-of-execution; expectField pins only the scalar companyId. No wall-clock field is serialized, so the dual execution stays deterministic.",
+          "command": "get_insider_overview",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_hlth"
+          }
+        },
+        {
+          "_comment": "Red flags (v0.57 T7, ADR 0083 D8): a fresh company has no detections, so both sides return the empty computed view (active + history are empty arrays — asserted by parity-of-execution, not expectField, since === cannot match empty arrays). acknowledge_red_flag on a non-present flag id is idempotent and returns the same empty view on both sides.",
+          "command": "get_red_flags",
+          "input": {
+            "companyId": "$cid"
+          }
+        },
+        {
+          "command": "acknowledge_red_flag",
+          "input": {
+            "input": {
+              "flagId": "rf:fund_exit:company_gpw_hlth:none"
+            }
           }
         }
       ]

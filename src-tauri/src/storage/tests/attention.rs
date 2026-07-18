@@ -20,15 +20,35 @@ fn tracked_company(state: &AppState) -> Company {
     company(state, "CDR", "CD PROJEKT S.A.", "PLOPTTC00011")
 }
 
-fn insider_item(company: &Company, article_id: &str) -> BankierCompanyItem {
+/// A date `n` days before wall-clock now, formatted as a publication timestamp
+/// (`YYYY-MM-DDT12:00:00`). Tests compute dates relative to now so the
+/// [`crate::storage::attention::SIGNAL_FRESHNESS_DAYS`] freshness gate stays
+/// meaningful as the clock advances (a hard-coded date would silently drift past
+/// the window and change what the test proves).
+fn days_ago(n: i64) -> String {
+    use time::macros::format_description;
+    let format = format_description!("[year]-[month]-[day]");
+    let day = (time::OffsetDateTime::now_utc() - time::Duration::days(n))
+        .date()
+        .format(&format)
+        .expect("date should format");
+    format!("{day}T12:00:00")
+}
+
+/// An insider filing published `days` days ago (fresh by default).
+fn insider_item_dated(
+    company: &Company,
+    article_id: &str,
+    published_at: &str,
+) -> BankierCompanyItem {
     BankierCompanyItem {
         company_id: company.id.clone(),
         qualified_ticker: company.qualified_ticker.clone(),
         title: "Powiadomienie o transakcjach, o których mowa w art. 19 ust. 1 MAR".to_owned(),
         link: format!("https://www.bankier.pl/wiadomosc/CD-PROJEKT-SA-{article_id}.html"),
         summary: "Komunikat ESPI/EBI".to_owned(),
-        published_at: Some("2026-05-28T17:33:09".to_owned()),
-        fetched_at: "2026-05-31T10:00:00Z".to_owned(),
+        published_at: Some(published_at.to_owned()),
+        fetched_at: days_ago(0),
         article_id: article_id.to_owned(),
         pub_id: 3,
         dedupe_key: format!("bankier-company-komunikaty:article:{article_id}"),
@@ -37,6 +57,12 @@ fn insider_item(company: &Company, article_id: &str) -> BankierCompanyItem {
         attachments: Vec::new(),
         detail_fetch_attempted: true,
     }
+}
+
+/// A fresh insider filing (published 3 days ago) — inside the freshness window, so
+/// it alerts. The default helper for the behavioral tests below.
+fn insider_item(company: &Company, article_id: &str) -> BankierCompanyItem {
+    insider_item_dated(company, article_id, &days_ago(3))
 }
 
 fn new_signal_rule(company_id: &str) -> NewAlertRule {
@@ -161,7 +187,7 @@ fn signal_rule_dedups_across_reingestion() {
 }
 
 #[test]
-fn signal_rule_daily_throttle_caps_one_event_per_day() {
+fn signal_rule_daily_throttle_coalesces_distinct_fresh_evidence_per_wall_clock_day() {
     let connection = open_in_memory_database().expect("database should initialize");
     let state = AppState::new(connection);
     let company = tracked_company(&state);
@@ -171,18 +197,76 @@ fn signal_rule_daily_throttle_caps_one_event_per_day() {
         .create_alert_rule(new_signal_rule(&company.id))
         .expect("rule");
 
-    // Two DISTINCT insider filings on the same domain day (2026-05-28).
+    // Two DISTINCT fresh insider filings with DIFFERENT domain dates (3 and 6 days
+    // ago), ingested in the same pass. The throttle now keys on the WALL-CLOCK
+    // firing day, not the evidence's domain date, so distinct recent dates
+    // coalesce to a single ping (the old domain-date throttle fired twice — the
+    // toast-wall regression this closes).
     state
         .ingest_bankier_company_items(&[
-            insider_item(&company, "9300040"),
-            insider_item(&company, "9300041"),
+            insider_item_dated(&company, "9300040", &days_ago(3)),
+            insider_item_dated(&company, "9300041", &days_ago(6)),
         ])
         .expect("ingestion");
 
     assert_eq!(
         events(&state).len(),
         1,
-        "the per-rule daily throttle caps distinct same-day evidence at one event"
+        "the per-rule throttle coalesces distinct same-wall-clock-day evidence at one event"
+    );
+}
+
+#[test]
+fn signal_rule_does_not_fire_for_stale_backfilled_evidence() {
+    // Freshness gate (ADR 0068 amendment): a history backfill re-ingesting old
+    // filings must raise NO alerts. An insider filing published 60 days ago — well
+    // outside the 14-day window — fires nothing, even though a matching enabled
+    // rule exists. This is the root-cause fix for the owner's toast wall.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .attention()
+        .create_alert_rule(new_signal_rule(&company.id))
+        .expect("rule");
+
+    state
+        .ingest_bankier_company_items(&[insider_item_dated(&company, "9300070", &days_ago(60))])
+        .expect("ingestion");
+
+    assert!(
+        events(&state).is_empty(),
+        "a stale (backfilled) signal must not fire an attention event"
+    );
+}
+
+#[test]
+fn signal_rule_fires_for_fresh_evidence_and_stamps_wall_clock_fired_at() {
+    // The complement of the freshness gate: a fresh signal (3 days ago) DOES fire,
+    // and its `fired_at` is the wall-clock firing day (today), never the evidence's
+    // older domain date.
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let company = tracked_company(&state);
+
+    state
+        .attention()
+        .create_alert_rule(new_signal_rule(&company.id))
+        .expect("rule");
+
+    state
+        .ingest_bankier_company_items(&[insider_item_dated(&company, "9300071", &days_ago(3))])
+        .expect("ingestion");
+
+    let events = events(&state);
+    assert_eq!(events.len(), 1, "a fresh signal fires one event");
+    // `days_ago(0)` is the wall-clock day; its first 10 chars are today's date.
+    let today = days_ago(0);
+    assert_eq!(
+        &events[0].fired_at[..10],
+        &today[..10],
+        "fired_at is the wall-clock firing day, not the evidence's domain date"
     );
 }
 
@@ -380,6 +464,55 @@ fn price_week52_low_rule_fires_on_new_low() {
     assert_eq!(fired, 1, "a new 52-week low fires");
     assert_eq!(events(&state).len(), 1);
     assert_eq!(events(&state)[0].evidence_ref, "2026-07-01");
+}
+
+// --- trigger_type stamping (W4) ----------------------------------------------
+
+#[test]
+fn attention_event_writer_stamps_trigger_type_on_the_row() {
+    // W4: the writer stamps `trigger_type` directly on the row (previously NULL
+    // for rule-backed events, derived only via COALESCE at read). A direct read of
+    // the column — the path grouping/diagnostics use without joining alert_rules —
+    // now carries the real trigger.
+    let connection = open_in_memory_database().expect("database should initialize");
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO alert_rules (id, trigger_type, signal_category, scope_type, scope_ref)
+             VALUES ('r1', 'signal_category', 'insider_transaction', 'company', 'c1')",
+            [],
+        )
+        .expect("seed rule");
+
+    let created = crate::storage::attention::insert_attention_event(
+        &connection,
+        "r1",
+        "signal_category",
+        "c1",
+        crate::storage::attention::EVIDENCE_COMPANY_SIGNAL,
+        "sig1",
+    )
+    .expect("insert event");
+    assert!(created, "a new event row is created");
+
+    let stored: Option<String> = connection
+        .query_row(
+            "SELECT trigger_type FROM attention_events WHERE rule_id = 'r1'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read stored trigger_type");
+    assert_eq!(
+        stored.as_deref(),
+        Some("signal_category"),
+        "the writer stamps trigger_type directly on the row, not NULL"
+    );
 }
 
 // --- event lifecycle ---------------------------------------------------------

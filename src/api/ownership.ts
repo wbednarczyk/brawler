@@ -10,6 +10,8 @@ export type { OwnershipSeriesPoint } from "./generated/OwnershipSeriesPoint";
 export type { OwnershipResidual } from "./generated/OwnershipResidual";
 export type { OwnershipProposal } from "./generated/OwnershipProposal";
 export type { OwnershipClassificationResult } from "./generated/OwnershipClassificationResult";
+export type { OwnershipOcrProposal } from "./generated/OwnershipOcrProposal";
+export type { OwnershipOcrHolder } from "./generated/OwnershipOcrHolder";
 
 /// Ownership overview for the Basic Info panel's Akcjonariat section.
 export function getOwnershipOverview(companyId: string) {
@@ -55,4 +57,34 @@ export function rejectOwnershipHolderTypeProposal(companyId: string, proposalId:
 /// Run the AI holder-type classify-with-confirm job over residual holders.
 export function runOwnershipClassification() {
   return callCommand<OwnershipClassificationResult>("run_ownership_classification");
+}
+
+// NOTE: the bulk `run_ownership_ocr_extraction` command (every company's
+// residuals, mirroring `run_ownership_classification`) is registered in Rust as
+// a headless/programmatic entry (epic backfill / future global action). The
+// per-company `run_company_ownership_ocr` below is the UI trigger, so no TS
+// wrapper for the bulk command exists yet (would be a knip-orphaned export).
+
+/// Run the tier-4 OCR pass over ONE company's residuals (the residual-warnbox
+/// action), re-arming its `no_table` markers. Returns the refreshed overview.
+export function runCompanyOwnershipOcr(companyId: string) {
+  return callCommand<OwnershipOverview>("run_company_ownership_ocr", { companyId });
+}
+
+/// Confirm a pending OCR shareholders-table proposal (writes the rows as stakes
+/// and clears the residual). Returns the refreshed overview.
+export function confirmOwnershipOcrProposal(companyId: string, reportDocumentId: string) {
+  return callCommand<OwnershipOverview>("confirm_ownership_ocr_proposal", {
+    companyId,
+    reportDocumentId,
+  });
+}
+
+/// Reject a pending OCR shareholders-table proposal (parks the residual).
+/// Returns the refreshed overview.
+export function rejectOwnershipOcrProposal(companyId: string, reportDocumentId: string) {
+  return callCommand<OwnershipOverview>("reject_ownership_ocr_proposal", {
+    companyId,
+    reportDocumentId,
+  });
 }

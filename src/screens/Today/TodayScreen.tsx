@@ -247,6 +247,17 @@ export function TodayScreen({
   // module-level id set (not component state) keeps a fired event from
   // re-toasting on every re-render or re-entry into Today within the session.
   useEffect(() => {
+    // D2 fix (v0.57 fix wave 2, owner screenshot 27-toast-stack.png): the
+    // attention-events/alert-rules fetch (`useTodayPulse`) and the company
+    // list (`AppStateRoot`) are two fully independent round trips. If the
+    // former settles first, `companyById` is still built off an empty
+    // `companies` array, and the toast below would permanently bake the raw
+    // company id into its message — the dedup Set above means it is never
+    // retried once the real company list arrives. Wait for at least one
+    // company to be loaded before composing/firing anything; `attentionRows`
+    // (built from `companyById`) changes reference once `companies` resolves,
+    // so this effect re-runs and fires the toast then, with the real ticker.
+    if (companies.length === 0) return;
     for (const event of attentionRows) {
       if (event.seen || event.dismissed) continue;
       if (toastedAttentionEventIds.has(event.id)) continue;
@@ -265,7 +276,7 @@ export function TodayScreen({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [attentionRows]);
+  }, [attentionRows, companies.length]);
 
   // Counter tiles show the full live counts (pre-cap), ADR 0076 U-Rb D5.
   const counts = {

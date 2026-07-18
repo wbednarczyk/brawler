@@ -10,6 +10,9 @@
 
 pub mod expr;
 pub mod extraction;
+pub mod health;
+pub mod insider;
+pub mod management_holdings;
 pub mod metrics;
 pub mod ownership;
 pub mod scorecard;

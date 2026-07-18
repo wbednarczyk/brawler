@@ -48,6 +48,15 @@ fn default_dictionary() -> &'static [(&'static str, &'static str)] {
         ("razem kapitał własny", "total_equity"),
         ("środki pieniężne i ich ekwiwalenty", "cash"),
         ("środki pieniężne i ekwiwalenty środków pieniężnych", "cash"),
+        // Balance-sheet health-score inputs (ADR 0083 Decision 5). `zyski
+        // zatrzymane` is the standard retained-earnings line; `kredyty i pożyczki
+        // długoterminowe` is the borrowings-specific long-term-debt line — never
+        // `zobowiązania długoterminowe`, which is *total* non-current liabilities.
+        ("aktywa obrotowe", "current_assets"),
+        ("zobowiązania krótkoterminowe", "current_liabilities"),
+        ("zyski zatrzymane", "retained_earnings"),
+        ("kredyty i pożyczki długoterminowe", "long_term_debt"),
+        ("długoterminowe kredyty i pożyczki", "long_term_debt"),
         // Income statement.
         ("przychody netto ze sprzedaży", "revenue"),
         ("przychody ze sprzedaży", "revenue"),
@@ -123,15 +132,30 @@ impl UnitScale {
 /// Detects the document-wide monetary unit from phrases like `w tys. zł` /
 /// `dane w tysiącach` / `w mln zł`. Defaults to thousands — the overwhelmingly
 /// common convention for Polish statements — when nothing is found.
+///
+/// Precedence (card e6ebda3): a millions **declaration** (`w mln` / `w milionach`,
+/// as in "dane w mln zł" / "w milionach złotych") is authoritative. A BARE
+/// `mln zł` token, by contrast, is very often narrative prose ("koszty to około
+/// 95 mln zł") inside a statement that is itself DECLARED in thousands — so it
+/// only implies a millions scale when the document carries **no** explicit
+/// thousands declaration; otherwise the thousands statement wins. Without this the
+/// CDR Q3 2023 `Skonsolidowane sprawozdanie` (declared "w tys. zł", two prose
+/// "mln zł" mentions) over-scaled every figure ×1000.
 pub fn detect_unit_scale(text: &str) -> UnitScale {
     let t = text.to_lowercase();
-    if t.contains("w mln") || t.contains("w milionach") || t.contains("mln zł") {
-        UnitScale::Millions
-    } else {
-        // Thousands is the dominant Polish convention and the default; the
-        // explicit `w tys.` wording resolves here too.
-        UnitScale::Thousands
+    // Explicit millions declaration — authoritative.
+    if t.contains("w mln") || t.contains("w milionach") {
+        return UnitScale::Millions;
     }
+    // A bare "mln zł" token only wins when nothing declares thousands.
+    let declares_thousands =
+        t.contains("w tys") || t.contains("w tysiącach") || t.contains("tys. zł");
+    if t.contains("mln zł") && !declares_thousands {
+        return UnitScale::Millions;
+    }
+    // Thousands is the dominant Polish convention and the default; the explicit
+    // `w tys.` wording resolves here too.
+    UnitScale::Thousands
 }
 
 /// A single numeric token read from a statement line, with the shape cues used

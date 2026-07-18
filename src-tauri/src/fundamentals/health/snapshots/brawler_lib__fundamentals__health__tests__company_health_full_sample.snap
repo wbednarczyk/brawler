@@ -1,0 +1,659 @@
+---
+source: src/fundamentals/health/tests.rs
+expression: scores
+---
+[
+    HealthPeriodScores {
+        period_id: "p2025",
+        fiscal_year: 2025,
+        piotroski: Headline {
+            score: 8,
+            signals: [
+                PiotroskiSignal {
+                    code: "F1",
+                    name: "roa_positive",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "net_profit@FY2025",
+                            value: "100",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F2",
+                    name: "cfo_positive",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_cash_flow@FY2025",
+                            value: "150",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F3",
+                    name: "roa_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "net_profit@FY2025",
+                            value: "100",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "net_profit@FY2024",
+                            value: "80",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F4",
+                    name: "accrual_quality",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_cash_flow@FY2025",
+                            value: "150",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "net_profit@FY2025",
+                            value: "100",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F5",
+                    name: "leverage_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "total_liabilities@FY2025",
+                            value: "400",
+                        },
+                        MeasuredInput {
+                            key: "current_liabilities@FY2025",
+                            value: "250",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "total_liabilities@FY2024",
+                            value: "450",
+                        },
+                        MeasuredInput {
+                            key: "current_liabilities@FY2024",
+                            value: "250",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                        MeasuredInput {
+                            key: "leverage_input",
+                            value: "non_current_liabilities",
+                        },
+                        MeasuredInput {
+                            key: "basis",
+                            value: "two_year_average",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F6",
+                    name: "liquidity_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "current_ratio@FY2025",
+                            value: "2",
+                        },
+                        MeasuredInput {
+                            key: "current_ratio@FY2024",
+                            value: "1.6",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F7",
+                    name: "no_dilution",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "shares_outstanding@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "shares_outstanding@FY2024",
+                            value: "1000",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F8",
+                    name: "margin_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "gross_profit@FY2025",
+                            value: "350",
+                        },
+                        MeasuredInput {
+                            key: "revenue@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "gross_profit@FY2024",
+                            value: "270",
+                        },
+                        MeasuredInput {
+                            key: "revenue@FY2024",
+                            value: "900",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F9",
+                    name: "turnover_improved",
+                    passed: false,
+                    points: 0,
+                    inputs: [
+                        MeasuredInput {
+                            key: "revenue@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "revenue@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                        MeasuredInput {
+                            key: "basis",
+                            value: "two_year_average",
+                        },
+                    ],
+                },
+            ],
+        },
+        altman: Headline {
+            z_score: "4.9994",
+            band: Safe,
+            components: [
+                AltmanComponent {
+                    code: "X1",
+                    name: "working_capital_to_assets",
+                    weight: "6.56",
+                    ratio: "0.25",
+                    contribution: "1.64",
+                    inputs: [
+                        MeasuredInput {
+                            key: "working_capital@FY2025",
+                            value: "250",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X2",
+                    name: "retained_earnings_to_assets",
+                    weight: "3.26",
+                    ratio: "0.3",
+                    contribution: "0.978",
+                    inputs: [
+                        MeasuredInput {
+                            key: "retained_earnings@FY2025",
+                            value: "300",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X3",
+                    name: "ebit_to_assets",
+                    weight: "6.72",
+                    ratio: "0.12",
+                    contribution: "0.8064",
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_profit@FY2025",
+                            value: "120",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2025",
+                            value: "1000",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X4",
+                    name: "equity_to_liabilities",
+                    weight: "1.05",
+                    ratio: "1.5",
+                    contribution: "1.575",
+                    inputs: [
+                        MeasuredInput {
+                            key: "total_equity@FY2025",
+                            value: "600",
+                        },
+                        MeasuredInput {
+                            key: "total_liabilities@FY2025",
+                            value: "400",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    HealthPeriodScores {
+        period_id: "p2024",
+        fiscal_year: 2024,
+        piotroski: Headline {
+            score: 8,
+            signals: [
+                PiotroskiSignal {
+                    code: "F1",
+                    name: "roa_positive",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "net_profit@FY2024",
+                            value: "80",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F2",
+                    name: "cfo_positive",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_cash_flow@FY2024",
+                            value: "120",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F3",
+                    name: "roa_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "net_profit@FY2024",
+                            value: "80",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "net_profit@FY2023",
+                            value: "60",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F4",
+                    name: "accrual_quality",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_cash_flow@FY2024",
+                            value: "120",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "net_profit@FY2024",
+                            value: "80",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F5",
+                    name: "leverage_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "total_liabilities@FY2024",
+                            value: "450",
+                        },
+                        MeasuredInput {
+                            key: "current_liabilities@FY2024",
+                            value: "250",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "total_liabilities@FY2023",
+                            value: "380",
+                        },
+                        MeasuredInput {
+                            key: "current_liabilities@FY2023",
+                            value: "200",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                        MeasuredInput {
+                            key: "leverage_input",
+                            value: "non_current_liabilities",
+                        },
+                        MeasuredInput {
+                            key: "basis",
+                            value: "period_end",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F6",
+                    name: "liquidity_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "current_ratio@FY2024",
+                            value: "1.6",
+                        },
+                        MeasuredInput {
+                            key: "current_ratio@FY2023",
+                            value: "1.5",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F7",
+                    name: "no_dilution",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "shares_outstanding@FY2024",
+                            value: "1000",
+                        },
+                        MeasuredInput {
+                            key: "shares_outstanding@FY2023",
+                            value: "1000",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F8",
+                    name: "margin_improved",
+                    passed: true,
+                    points: 1,
+                    inputs: [
+                        MeasuredInput {
+                            key: "gross_profit@FY2024",
+                            value: "270",
+                        },
+                        MeasuredInput {
+                            key: "revenue@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "gross_profit@FY2023",
+                            value: "220",
+                        },
+                        MeasuredInput {
+                            key: "revenue@FY2023",
+                            value: "820",
+                        },
+                    ],
+                },
+                PiotroskiSignal {
+                    code: "F9",
+                    name: "turnover_improved",
+                    passed: false,
+                    points: 0,
+                    inputs: [
+                        MeasuredInput {
+                            key: "revenue@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                        MeasuredInput {
+                            key: "revenue@FY2023",
+                            value: "820",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                        MeasuredInput {
+                            key: "basis",
+                            value: "period_end",
+                        },
+                    ],
+                },
+            ],
+        },
+        altman: Headline {
+            z_score: "3.7311",
+            band: Safe,
+            components: [
+                AltmanComponent {
+                    code: "X1",
+                    name: "working_capital_to_assets",
+                    weight: "6.56",
+                    ratio: "0.1667",
+                    contribution: "1.0933",
+                    inputs: [
+                        MeasuredInput {
+                            key: "working_capital@FY2024",
+                            value: "150",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X2",
+                    name: "retained_earnings_to_assets",
+                    weight: "3.26",
+                    ratio: "0.2222",
+                    contribution: "0.7244",
+                    inputs: [
+                        MeasuredInput {
+                            key: "retained_earnings@FY2024",
+                            value: "200",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X3",
+                    name: "ebit_to_assets",
+                    weight: "6.72",
+                    ratio: "0.1111",
+                    contribution: "0.7467",
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_profit@FY2024",
+                            value: "100",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2024",
+                            value: "900",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X4",
+                    name: "equity_to_liabilities",
+                    weight: "1.05",
+                    ratio: "1.1111",
+                    contribution: "1.1667",
+                    inputs: [
+                        MeasuredInput {
+                            key: "total_equity@FY2024",
+                            value: "500",
+                        },
+                        MeasuredInput {
+                            key: "total_liabilities@FY2024",
+                            value: "450",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+    HealthPeriodScores {
+        period_id: "p2023",
+        fiscal_year: 2023,
+        piotroski: InsufficientData {
+            signals: [],
+            missing: [
+                MissingInput {
+                    metric: "prior_fy_period",
+                    period: "before FY2023",
+                },
+            ],
+        },
+        altman: Headline {
+            z_score: "3.1415",
+            band: Safe,
+            components: [
+                AltmanComponent {
+                    code: "X1",
+                    name: "working_capital_to_assets",
+                    weight: "6.56",
+                    ratio: "0.125",
+                    contribution: "0.82",
+                    inputs: [
+                        MeasuredInput {
+                            key: "working_capital@FY2023",
+                            value: "100",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X2",
+                    name: "retained_earnings_to_assets",
+                    weight: "3.26",
+                    ratio: "0.15",
+                    contribution: "0.489",
+                    inputs: [
+                        MeasuredInput {
+                            key: "retained_earnings@FY2023",
+                            value: "120",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X3",
+                    name: "ebit_to_assets",
+                    weight: "6.72",
+                    ratio: "0.1",
+                    contribution: "0.672",
+                    inputs: [
+                        MeasuredInput {
+                            key: "operating_profit@FY2023",
+                            value: "80",
+                        },
+                        MeasuredInput {
+                            key: "total_assets@FY2023",
+                            value: "800",
+                        },
+                    ],
+                },
+                AltmanComponent {
+                    code: "X4",
+                    name: "equity_to_liabilities",
+                    weight: "1.05",
+                    ratio: "1.1053",
+                    contribution: "1.1605",
+                    inputs: [
+                        MeasuredInput {
+                            key: "total_equity@FY2023",
+                            value: "420",
+                        },
+                        MeasuredInput {
+                            key: "total_liabilities@FY2023",
+                            value: "380",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+]

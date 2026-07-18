@@ -16,6 +16,7 @@
 
 import {
   SAMPLE_NOW,
+  makeAttentionEvent,
   makeCompany,
   makeFeedItem,
   makeFinancialPeriod,
@@ -32,7 +33,8 @@ export type ScenarioOverlayName =
   | "partial-data"
   | "stale-processing"
   | "conflicting-statuses"
-  | "mixed-locale";
+  | "mixed-locale"
+  | "attention-overflow";
 
 // One fixed, distinct `CompanySpec` per overlay so simultaneous overlays never
 // collide on IDs and each overlay's content is independently identifiable.
@@ -172,6 +174,28 @@ function applyMixedLocale(data: ScenarioData): ScenarioData {
   return { ...data, feedItems: [plItem, enItem, ...data.feedItems] };
 }
 
+// Persistent-toast overflow cap regression (bug: 19+ unseen attention events
+// piled up unbounded persistent toasts, covering the sidebar nav — Toast.tsx
+// PERSISTENT_VISIBLE_CAP). 20 unseen events reused across the base scenario's
+// companies (falling back to a fixed id when there are none) — Playwright's
+// only lever into "many unseen attention events" without a dedicated bridge
+// method, mirroring `applyDenseHistory`'s "materializes only when selected".
+const ATTENTION_OVERFLOW_COUNT = 20;
+
+function applyAttentionOverflow(data: ScenarioData): ScenarioData {
+  const ruleId = data.alertRules[0]?.id ?? "alert_rule_sample_1";
+  const companyIds = data.companies.length > 0 ? data.companies.map((c) => c.id) : ["company_overlay_missing"];
+  const extra = Array.from({ length: ATTENTION_OVERFLOW_COUNT }, (_, index) => ({
+    ...makeAttentionEvent(
+      `attn_overlay_overflow_${index}`,
+      ruleId,
+      companyIds[index % companyIds.length],
+    ),
+    firedAt: SAMPLE_NOW,
+  }));
+  return { ...data, attentionEvents: [...extra, ...data.attentionEvents] };
+}
+
 const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData> = {
   "partial-data": applyPartialData,
   "stale-processing": applyStaleProcessing,
@@ -179,6 +203,7 @@ const OVERLAYS: Record<ScenarioOverlayName, (data: ScenarioData) => ScenarioData
   "hostile-content": applyHostileContent,
   "dense-history": applyDenseHistory,
   "mixed-locale": applyMixedLocale,
+  "attention-overflow": applyAttentionOverflow,
 };
 
 /** Fixed application order — independent of the order the caller supplies. */
@@ -189,6 +214,7 @@ const OVERLAY_ORDER: readonly ScenarioOverlayName[] = [
   "hostile-content",
   "dense-history",
   "mixed-locale",
+  "attention-overflow",
 ];
 
 /**

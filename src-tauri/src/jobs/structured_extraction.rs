@@ -252,6 +252,51 @@ pub(crate) fn is_esef_route(content_type: Option<&str>, local_path: &str) -> boo
     lower.ends_with(".xbri") || lower.ends_with(".zip")
 }
 
+/// A fetched periodic (ssf/jsf) document with a stored file — the extractability
+/// gate shared by the ownership + management-holdings extraction jobs.
+pub(crate) fn is_fetched_periodic(document: &crate::storage::ReportDocument) -> bool {
+    document.fetch_status == "fetched"
+        && document.local_path.is_some()
+        && matches!(
+            document.doc_kind.as_deref(),
+            Some("periodic_ssf") | Some("periodic_jsf")
+        )
+}
+
+/// Find a fetched **PDF** sibling of an xhtml/html residual document: a periodic
+/// PDF of the SAME company and SAME derived report period. `None` when the
+/// document is not xhtml/html, has no derivable period, or no matching PDF
+/// exists. Shared by the management-holdings glyph path (T5) and the ownership
+/// OCR path (T8) so the sibling rule lives in one place — a pdf2htmlEX container
+/// (unreadable text layer) is exactly why such documents are residual, and their
+/// real content is in the companion PDF.
+pub(crate) fn find_pdf_sibling(
+    state: &AppState,
+    document: &crate::storage::ReportDocument,
+) -> Option<crate::storage::ReportDocument> {
+    let format = SourceFormat::resolve(
+        document.content_type.as_deref(),
+        document.local_path.as_deref().unwrap_or(""),
+    );
+    if format != SourceFormat::Xhtml {
+        return None;
+    }
+    let target_period = derive_report_period(state, document).map(|(_, _, end)| end)?;
+    let siblings = state
+        .list_report_documents_by_company(&document.company_id)
+        .ok()?;
+    siblings.into_iter().find(|sibling| {
+        sibling.id != document.id
+            && is_fetched_periodic(sibling)
+            && SourceFormat::resolve(
+                sibling.content_type.as_deref(),
+                sibling.local_path.as_deref().unwrap_or(""),
+            ) == SourceFormat::Pdf
+            && derive_report_period(state, sibling).map(|(_, _, end)| end)
+                == Some(target_period.clone())
+    })
+}
+
 /// The inline-XBRL **instance** bytes for a stored document, if it is (or
 /// contains) one — the single seam shared by [`derive_report_period`] and
 /// [`run_structured_extraction`] so the on-demand button and autopilot resolve

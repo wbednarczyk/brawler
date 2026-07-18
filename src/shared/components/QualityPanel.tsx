@@ -36,6 +36,7 @@ import type {
   MetricKeyInfo,
   QualityFramework,
 } from "../../api/qualityFrameworksTypes";
+import { CompanyHealthSection } from "./CompanyHealthSection";
 import { useFocusAfterRemove } from "../focus/focusAfterRemove";
 import { formatCriterionMeasure } from "../format/criterionMeasure";
 import { useLocale } from "../locale";
@@ -751,6 +752,8 @@ export function QualityPanel({ companyId }: QualityPanelProps) {
       />
 
       {error ? <ErrorText>{error}</ErrorText> : null}
+
+      <CompanyHealthSection companyId={companyId} />
 
       {frameworks.length === 0 ? (
         <EmptyState>{text("No quality frameworks yet. Create one or clone a template.")}</EmptyState>

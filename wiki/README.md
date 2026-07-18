@@ -30,7 +30,9 @@ per feature.
 - **[Ownership](ownership.md)** — who holds each company and how that changes:
   the current-structure donut with derived free float, capital % vs votes %
   kept separate, stakes over time with ESPI threshold events, automatic holder
-  classification with confirm-only AI, and the BiznesRadar witness.
+  classification with confirm-only AI, the BiznesRadar witness, the **Insiders**
+  block (MAR art. 19 transactions, management holdings, skin-in-the-game badge),
+  and the OCR review flow for unreadable shareholder tables.
 - **[Composable cockpit views](cockpit-views.md)** — build your own
   multi-panel dashboards from a grid and a panel picker, save them by name,
   and switch between them from the sidebar.
@@ -40,7 +42,12 @@ per feature.
 - **[Quality frameworks](quality-frameworks.md)** — score a company against your
   own quality checklists: quantitative criteria computed from reported
   fundamentals, plus qualitative criteria (moat, capital allocation…) assessed
-  by an AI agent from your stored evidence, with citations.
+  by an AI agent from your stored evidence, with citations. Also covers the
+  published **health scores** (Piotroski F, Altman Z″) shown in the Quality tab.
+- **[Red flags](red-flags.md)** — the per-company panel that surfaces auditor
+  concerns, report delays, fund exits, score deteriorations, and short-selling
+  spikes automatically, each with evidence, an acknowledge action, and alert
+  wiring.
 - **[DSL reference](dsl-reference.md)** — the small expression language used to
   write quality-framework criteria (e.g. `roic >= 15%`,
   `net_debt_to_ebitda < 2.5 AND fcf > 0`).

@@ -950,8 +950,8 @@
 
 .ownership-warnbox {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
   gap: var(--space-2);
   border: 1px solid var(--tone-warning, var(--warning));
   border-radius: 8px;
@@ -965,8 +965,63 @@
   margin: 0;
 }
 
+.ownership-warnbox-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
 .ownership-warnbox-count {
   white-space: nowrap;
+}
+
+.ownership-warnbox-note {
+  color: var(--text-muted, var(--text-secondary));
+}
+
+/* Tier-4 OCR shareholders-table proposal card (v0.57 T8, ADR 0077) */
+.ownership-ocr-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  border: 1px solid var(--tone-warning, var(--warning));
+  border-radius: 8px;
+  padding: var(--space-2) var(--space-3);
+  background: color-mix(in srgb, var(--tone-warning, var(--warning)) 6%, transparent);
+}
+
+.ownership-ocr-proposal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.ownership-ocr-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ownership-ocr-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font-size: var(--font-xs);
+}
+
+.ownership-ocr-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
 }
 
 @container pane (max-width: 419px) {
@@ -974,6 +1029,150 @@
     flex-direction: column;
     align-items: center;
   }
+}
+
+/* Insiders block — "Insiderzy" in the Ownership area (v0.57 T6, ADR 0083 D7) */
+.insider-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.insider-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.insider-windows {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  min-width: 0;
+}
+
+.insider-window {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+  flex: 1 1 200px;
+  font-size: var(--font-xs);
+}
+
+.insider-net {
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.insider-net b {
+  font-size: var(--font-md);
+}
+
+.insider-net-buy b {
+  color: var(--pos, var(--own-founder));
+}
+
+.insider-net-sell b {
+  color: var(--neg, var(--danger));
+}
+
+.insider-net-split {
+  color: var(--muted);
+}
+
+.insider-window-vol,
+.insider-window-coverage,
+.insider-window-below {
+  color: var(--muted);
+}
+
+.insider-holdings,
+.insider-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.insider-holding-row,
+.insider-tx-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-3);
+  min-width: 0;
+  font-size: var(--font-sm);
+}
+
+.insider-holding-main,
+.insider-tx-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+.insider-person {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Role chip stays in a fixed slot so it never migrates between rows. */
+.insider-role-slot {
+  flex: none;
+  display: inline-flex;
+}
+
+.insider-holding-meta,
+.insider-tx-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  color: var(--muted);
+}
+
+.insider-muted {
+  color: var(--muted);
+}
+
+.insider-dir {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-0);
+  flex: none;
+  font-weight: 600;
+}
+
+.insider-dir-mark {
+  font-weight: 700;
+}
+
+.insider-dir-buy {
+  color: var(--pos, var(--own-founder));
+}
+
+.insider-dir-sell {
+  color: var(--neg, var(--danger));
+}
+
+.insider-dir-other {
+  color: var(--muted);
+}
+
+.insider-tx-link {
+  color: var(--primary);
 }
 
 .basic-info-grid > div,

@@ -44,8 +44,10 @@ import { useCockpitCompanyFeed } from "./useCockpitCompanyFeed";
 import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
 import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
 import { useCockpitShortPositions } from "./useCockpitShortPositions";
+import { useCockpitRedFlags } from "./useCockpitRedFlags";
 import { DecisionJournalSection } from "./DecisionJournalSection";
 import { ShortPositionsSection } from "./ShortPositionsSection";
+import { RedFlagsSection } from "./RedFlagsSection";
 import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
 import { formatDetailTimestamp } from "../../shared/format/datetime";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
@@ -71,7 +73,8 @@ type PinnedKind =
   | "companyFeed"
   | "companyNotebook"
   | "decisionJournal"
-  | "shortPositions";
+  | "shortPositions"
+  | "redFlags";
 
 const LINKED: { id: string; kind: LinkedKind }[] = [
   { id: "feed", kind: "feed" },
@@ -93,6 +96,7 @@ const PINNED_KINDS: PinnedKind[] = [
   "companyNotebook",
   "decisionJournal",
   "shortPositions",
+  "redFlags",
 ];
 
 // Global singleton panels (ADR 0053 phase 4c): full app screens that own their
@@ -167,6 +171,7 @@ const DASHBOARD_DEFAULT_KINDS: PinnedKind[] = [
   "claims",
   "quality",
   "documents",
+  "redFlags",
   "companyNotebook",
 ];
 
@@ -217,6 +222,8 @@ function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string 
       return text("Decision journal");
     case "shortPositions":
       return text("Short selling (KNF)");
+    case "redFlags":
+      return text("Warning signals");
   }
 }
 
@@ -680,6 +687,14 @@ function CockpitWorkspace({
         const company = companyById.get(companyId);
         return company ? (
           <CockpitShortPositionsPanel company={company} />
+        ) : (
+          <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
+        );
+      }
+      case "redFlags": {
+        const company = companyById.get(companyId);
+        return company ? (
+          <CockpitRedFlagsPanel company={company} />
         ) : (
           <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
         );
@@ -1400,6 +1415,20 @@ function CockpitCompanyNotebookPanel({ company }: { company: Company }) {
 function CockpitShortPositionsPanel({ company }: { company: Company }) {
   const { view, error } = useCockpitShortPositions(company);
   return <ShortPositionsSection company={company} view={view} error={error} />;
+}
+
+function CockpitRedFlagsPanel({ company }: { company: Company }) {
+  const { view, error, acknowledge } = useCockpitRedFlags(company);
+  const { selectFeedItem } = useCockpitSelection();
+  return (
+    <RedFlagsSection
+      company={company}
+      view={view}
+      error={error}
+      onAcknowledge={acknowledge}
+      onOpenEvidence={selectFeedItem}
+    />
+  );
 }
 
 function CockpitDecisionJournalPanel({ company }: { company: Company }) {

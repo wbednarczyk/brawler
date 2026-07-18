@@ -51,9 +51,51 @@ notifications. The full history — including vanished holders — stays on the
 timeline. History is append-only: re-reading a report never rewrites what was
 recorded.
 
+## Insiders: who inside the company is buying or selling
+
+Below the ownership structure sits an **Insiders** block, built from two
+official, deterministic sources — no AI, no guessing:
+
+- **MAR art. 19 notifications** (managers' and closely-associated persons'
+  transactions), parsed from the filings Brawler already stores into *who*
+  bought or sold, in what *role*, and — where the notification document spells
+  it out — *how much*, at what *price*, and *when*.
+- The mandatory **management-holdings table** from periodic reports: each
+  board/supervisory person's shareholding, parsed the same way.
+
+What you see:
+
+- **A transaction timeline** (newest first). Figures the notification's cover
+  note omits stay blank rather than invented — Brawler fetches the notification
+  **attachment PDF** to fill in volume, price, and date where that document
+  parses cleanly.
+- **Rolling net direction** over the **last 90 days** and **last 12 months** —
+  buys minus sells, with a volume readout where volumes are known. An aggregate
+  only appears once there are **at least 2 transactions** in the window; below
+  that the timeline still lists them but shows no net (too little to summarise).
+  Transactions with no direction count as *undetermined*, never in the net.
+- **A "skin in the game" badge** on holders in the structure above who are
+  corroborated as insiders — a management-holdings row or a MAR transaction ties
+  the stake to a named person. It also fires when a founder holds **through a
+  vehicle** (a foundation or holdco); hover the badge to see who, and via what.
+
+Counts, volumes, and names only — never a verdict.
+
+## Reading tables Brawler can't parse (OCR review)
+
+Some reports publish the shareholders table as an **image** or with a broken
+text layer (a non-standard font). Those land as a **residual** with a clear
+warning instead of a silent gap, and a **Read with OCR** action. Running it
+sends just that one table to your configured vision provider; the result comes
+back as a **proposal** — a full table you review row by row and **confirm before
+anything is saved** (or reject, which parks the residual so it isn't proposed
+again). Nothing from OCR is ever written automatically. Confirm a proposal and
+its stakes appear in the structure and the residual clears. Without a vision
+provider configured, the action is simply a no-op — no error, nothing sent.
+
 ## Getting started
 
 Nothing to configure. Track a company → the section appears (empty at first,
 with a one-click "Extract from reports" backfill for companies tracked before
-v0.56). Fund exits and founder moves feed the alerting rules and the upcoming
-red-flags panel.
+v0.56). Fund exits and founder moves feed the alerting rules and the
+[red-flags panel](red-flags.md).

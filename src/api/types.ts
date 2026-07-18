@@ -31,6 +31,11 @@ export type CompanySignalCategory =
   | "auditor_opinion"
   | "short_position_change"
   | "major_holdings_change"
+  // Derived red-flag categories (v0.57 T7, ADR 0083 D8): empty-pattern signal
+  // categories raised by the detection seams (never text-classified).
+  | "report_delay"
+  | "fund_exit"
+  | "score_deterioration"
   | "other";
 
 export type CompanyForm = {

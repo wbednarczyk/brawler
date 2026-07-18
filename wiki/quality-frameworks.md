@@ -21,6 +21,42 @@ framework measures facts and evidence, it never tells you to buy or sell.
 
 Open a company, then the **Quality** tab (next to *Fundamentals*).
 
+## Company health scores
+
+Above your own frameworks, the Quality tab shows two **published health scores**
+computed straight from the company's confirmed annual facts — deterministic,
+offline, and always with the formula named next to them:
+
+- **Piotroski F (0–9)** — a nine-signal test of profitability, leverage, and
+  operating efficiency, scored against the prior financial year.
+- **Altman Z″ (safe / grey / distress)** — a solvency score. Brawler uses the
+  **emerging-markets (EM) variant**, financials excluded — and it reports the
+  bare Z″ **without the +3.25 constant** some publishers fold in, so the number
+  is directly comparable to the classic thresholds (**safe > 2.6**, grey
+  1.1–2.6, distress < 1.1). If you compare with a site that adds 3.25, add it
+  yourself. The variant label is printed on the tile.
+
+Click a score to **expand its breakdown** — every signal or component, whether
+it passed, and the measured inputs behind it. So you see *why* the number is
+what it is, not just the number.
+
+Three honest states, never a made-up number:
+
+- **A score** — every input the formula needs was present.
+- **Insufficient data** — at least one input is missing. Expanding the tile
+  **lists exactly what's missing** (e.g. `retained_earnings`, or
+  `prior_fy_period` when only one annual period is stored). A missing figure is
+  never read as zero, and a partial score is never rescaled into a headline.
+- **Not applicable** — banks, insurers, and brokers don't fit the Z″ model, so
+  it reads *not applicable to financial statements* rather than a misleading
+  number.
+
+The scores need at least one **full annual period**; a company with none shows a
+short "no annual periods yet" note. Both scores are also usable in your own
+framework criteria as `piotroski_f` and `altman_z` (a non-headline latest year
+resolves as *no data*). Like everything here, they're decision support — a
+score, its formula, and its inputs, never a buy/sell verdict.
+
 ## Frameworks that ship with Brawler
 
 Brawler comes with a **Quality (Kroeze-style)** template — a general quality

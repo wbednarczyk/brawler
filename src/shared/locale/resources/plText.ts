@@ -1,4 +1,44 @@
 export const plText: Record<string, string> = {
+  // Company health scores — Piotroski F / Altman Z″ (ADR 0083)
+  "Company health": "Kondycja spółki",
+  "Published-formula health scores over confirmed annual facts. Decision support only.":
+    "Wskaźniki kondycji z opublikowanych formuł, na potwierdzonych danych rocznych. Wyłącznie wsparcie decyzji.",
+  "No annual periods yet — health scores need at least one full-year report.":
+    "Brak okresów rocznych — wskaźniki kondycji wymagają co najmniej jednego raportu rocznego.",
+  "Piotroski F": "Piotroski F",
+  "Altman Z": "Altman Z",
+  "Insufficient data": "Za mało danych",
+  "Not applicable to financial statements": "Nie dotyczy spółek finansowych",
+  "Missing inputs": "Brakujące dane",
+  "No point": "Bez punktu",
+  "Safe": "Bezpieczna",
+  "Grey zone": "Strefa szara",
+  "Distress": "Zagrożenie",
+  "Return on assets is positive": "Rentowność aktywów (ROA) dodatnia",
+  "Operating cash flow is positive": "Przepływy operacyjne dodatnie",
+  "Return on assets improved": "ROA poprawiła się",
+  "Cash flow exceeds profit (accrual quality)": "Przepływy przewyższają zysk (jakość memoriałowa)",
+  "Long-term leverage did not rise": "Zadłużenie długoterminowe nie wzrosło",
+  "Current ratio improved": "Wskaźnik bieżącej płynności poprawił się",
+  "No share dilution": "Brak rozwodnienia akcji",
+  "Gross margin improved": "Marża brutto poprawiła się",
+  "Asset turnover improved": "Rotacja aktywów poprawiła się",
+  "Working capital / assets": "Kapitał obrotowy / aktywa",
+  "Retained earnings / assets": "Zyski zatrzymane / aktywa",
+  "Operating profit / assets": "Zysk operacyjny / aktywa",
+  "Equity / liabilities": "Kapitał własny / zobowiązania",
+  // Missing-input / not-applicable reasons rendered as human sentences, never
+  // a raw internal token (bug fixed 2026-07-18, owner screenshot).
+  "prior fiscal year (needed before FY{year})": "poprzedni rok obrotowy (potrzebny przed FY{year})",
+  "zero denominator": "zerowy mianownik",
+  "Averaging basis": "Podstawa uśredniania",
+  "two-year average": "średnia dwuletnia",
+  "period-end": "na koniec okresu",
+  "Leverage basis": "Podstawa dźwigni",
+  "non-current liabilities": "zobowiązania długoterminowe",
+  "Banking": "Bankowość",
+  "Insurance": "Ubezpieczenia",
+  "Specialty finance": "Finanse specjalistyczne",
   // Alerts settings — rules manager + fired-event review (ADR 0068 T3)
   "Alerts": "Alerty",
   "Alerts tell you when something you care about happens — a signal category, an autopilot run, or a price condition — on a company or a whole watchlist. They surface in the app only; nothing leaves your machine.":
@@ -82,6 +122,10 @@ export const plText: Record<string, string> = {
   "Filter the stream": "Filtruj strumień",
   "Nothing needs your attention.": "Nic nie wymaga Twojej uwagi.",
   "Checking what needs your attention…": "Sprawdzanie, co wymaga uwagi…",
+  // Persistent-toast overflow summary (bug: unbounded attention toasts
+  // covered the sidebar nav) — "+{n} " is composed outside text(), matching
+  // the codebase's other count-prefixed strings.
+  "more": "więcej",
   // Morning briefing Today card (ADR 0068 decision 4, v0.54 §T5)
   "Morning briefing": "Poranny przegląd",
   "Generate briefing": "Wygeneruj przegląd",
@@ -1548,6 +1592,25 @@ export const plText: Record<string, string> = {
   "Calculation date": "Data obliczenia",
   "Change history": "Historia zmian",
   "No registered short positions": "Brak zarejestrowanych pozycji krótkich",
+  "Warning signals": "Sygnały ostrzegawcze",
+  "Derived signals for": "Sygnały pochodne dla",
+  "deteriorating health, delayed reports, fund exits, auditor opinion, short selling.":
+    "pogorszenie kondycji, opóźnione raporty, wyjścia funduszy, opinia audytora, krótka sprzedaż.",
+  "Could not load warning signals": "Nie udało się wczytać sygnałów ostrzegawczych",
+  "No active warning signals": "Brak aktywnych sygnałów ostrzegawczych",
+  "Nothing to flag right now — the app watches reports, ownership, scores, the auditor, and short selling.":
+    "Na razie nic nie wymaga uwagi — aplikacja śledzi raporty, akcjonariat, wskaźniki, audytora i krótką sprzedaż.",
+  "Acknowledged history": "Historia (potwierdzone)",
+  "Acknowledge": "Potwierdź",
+  "Acknowledge this flag?": "Potwierdzić ten sygnał?",
+  "Yes": "Tak",
+  "Auditor red flag": "Zastrzeżenia audytora",
+  "Report delay": "Opóźniony raport okresowy",
+  "Fund exit": "Wyjście z akcjonariatu",
+  "Score deterioration": "Pogorszenie kondycji",
+  "Short-selling spike": "Skok krótkiej sprzedaży",
+  "Each raised flag also posts a signal in the company feed — attach an alert rule to be notified.":
+    "Każdy wykryty sygnał trafia też do kanału spółki — podłącz regułę alertu, aby dostać powiadomienie.",
   "No holder has reported a position ≥ 0.5% for":
     "Żaden podmiot nie zgłosił pozycji ≥ 0,5% dla",
   "Last presence in the register": "Ostatnia obecność w rejestrze",
@@ -1719,6 +1782,9 @@ export const plText: Record<string, string> = {
   "Top holders — capital % over time": "Najwięksi akcjonariusze — % kapitału w czasie",
   "capital % over time": "% kapitału w czasie",
   "type? to confirm": "typ? do potwierdzenia",
+  "skin in the game": "zaangażowany kapitał",
+  "Corroborated by": "Potwierdzone przez",
+  "via": "przez",
   "Confirm classification": "Potwierdź klasyfikację",
   "Reject classification": "Odrzuć klasyfikację",
   "cap.": "kap.",
@@ -1727,10 +1793,52 @@ export const plText: Record<string, string> = {
   "Change type to": "Zmień na",
   "Changed to": "Zmieniono na",
   "manually": "ręcznie",
-  "Some report has an unreadable text layer (non-standard font). Its shareholder table will go through OCR — the result lands in the review queue and is never saved automatically.":
-    "Któryś raport ma nieczytelną warstwę tekstu (niestandardowy font). Jego tabela akcjonariuszy pójdzie przez OCR — wynik trafi do kolejki „Do przeglądu” i nigdy nie zapisze się sam.",
+  "Some report has an unreadable text layer (non-standard font). Its shareholder table goes through OCR — the result lands here for review and is never saved automatically.":
+    "Któryś raport ma nieczytelną warstwę tekstu (niestandardowy font). Jego tabela akcjonariuszy idzie przez OCR — wynik trafia tutaj do przeglądu i nigdy nie zapisuje się sam.",
+  "OCR shareholder table to review": "Tabela akcjonariuszy z OCR do przeglądu",
+  "OCR — confirm to save": "OCR — potwierdź, aby zapisać",
+  "read from a companion PDF": "odczytane z towarzyszącego PDF",
+  "Confirm and save": "Potwierdź i zapisz",
+  "Read with OCR": "Odczytaj przez OCR",
+  "Retry OCR": "Ponów OCR",
+  "Reading with OCR…": "Odczytuję przez OCR…",
+  "OCR could not find a shareholder table in the last run.":
+    "OCR nie znalazł tabeli akcjonariuszy w ostatnim przebiegu.",
+  "OCR result rejected — not re-proposed.": "Wynik OCR odrzucony — nie będzie proponowany ponownie.",
+  "No OCR provider configured, or OCR found no shareholder table.":
+    "Brak skonfigurowanego dostawcy OCR albo OCR nie znalazł tabeli akcjonariuszy.",
   "A manual type always wins — automation never overwrites it.":
     "Ręczny typ ma zawsze pierwszeństwo — automat nigdy go nie nadpisze.",
   "Started reading ownership from": "Zaczynam czytać akcjonariat z",
   "reports": "raportów",
+
+  // Insiders block — "Insiderzy" in the Ownership area (v0.57 T6, ADR 0083 D7)
+  "Insiders": "Insiderzy",
+  "Failed to load insiders": "Nie udało się wczytać insiderów",
+  "No insider filings parsed from the saved reports yet.":
+    "Brak odczytanych zgłoszeń insiderów z zapisanych raportów.",
+  "Management board": "Zarząd",
+  "Supervisory board": "Rada nadzorcza",
+  "Closely associated": "Osoba blisko związana",
+  "Management and supervisory board": "Zarząd i rada nadzorcza",
+  "Transactions": "Transakcje",
+  "buy": "kupno",
+  "sell": "sprzedaż",
+  "other": "inna",
+  "buys": "kupno",
+  "sells": "sprzedaż",
+  "undetermined": "nieokreślone",
+  "Last 90 days": "Ostatnie 90 dni",
+  "Last 12 months": "Ostatnie 12 miesięcy",
+  "No transactions in this window": "Brak transakcji w tym oknie",
+  "tx — too few for an aggregate (min. 2)": "transakcje — za mało do agregatu (min. 2)",
+  "volume known for": "wolumen znany dla",
+  "Volume": "Wolumen",
+  "shares": "akcji",
+  "count not stated": "liczba nie podana",
+  "figures in the attachment": "dane w załączniku",
+  "filing date": "data zgłoszenia",
+  "filing": "zgłoszenie",
+  "Counts and who — decision support only. Volume, price and date are often in the notification attachment (not yet fetched), so aggregates state their coverage.":
+    "Liczby i kto — tylko wsparcie decyzji. Wolumen, cena i data często są w załączniku do powiadomienia (jeszcze niepobieranym), dlatego agregaty podają swoje pokrycie.",
 };

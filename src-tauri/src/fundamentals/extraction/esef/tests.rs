@@ -35,6 +35,32 @@ const SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
   </body>
 </html>"#;
 
+/// Balance-sheet sample carrying the four v0.57 health-score concepts
+/// (ADR 0083 Decision 5): current assets/liabilities (Piotroski current ratio,
+/// working capital → Altman X1), retained earnings (Altman X2) and long-term
+/// borrowings (Piotroski leverage). Concept tags are the ones GPW ESEF filers
+/// actually use — verified against the maintainer's real report packages
+/// (`ifrs-full:CurrentAssets`, `CurrentLiabilities`, `RetainedEarnings`,
+/// `LongtermBorrowings`), each a dimensionless instant total.
+const HEALTH_SAMPLE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns:ix="http://www.xbrl.org/2013/inlineXBRL"
+      xmlns:xbrli="http://www.xbrl.org/2003/instance"
+      xmlns:ifrs-full="http://xbrl.ifrs.org/taxonomy/2023/ifrs-full"
+      xmlns:iso4217="http://www.xbrl.org/2003/iso4217">
+  <body>
+    <ix:header><ix:resources>
+      <xbrli:context id="c">
+        <xbrli:period><xbrli:instant>2025-12-31</xbrli:instant></xbrli:period>
+      </xbrli:context>
+      <xbrli:unit id="pln"><xbrli:measure>iso4217:PLN</xbrli:measure></xbrli:unit>
+    </ix:resources></ix:header>
+    <p>Aktywa obrotowe: <ix:nonFraction name="ifrs-full:CurrentAssets" contextRef="c" unitRef="pln" scale="3" format="ixt:num-space-comma-decimal">18 000</ix:nonFraction></p>
+    <p>Zobowiązania krótkoterminowe: <ix:nonFraction name="ifrs-full:CurrentLiabilities" contextRef="c" unitRef="pln" scale="3">9 000</ix:nonFraction></p>
+    <p>Zyski zatrzymane: <ix:nonFraction name="ifrs-full:RetainedEarnings" contextRef="c" unitRef="pln" scale="3">14 000</ix:nonFraction></p>
+    <p>Kredyty długoterminowe: <ix:nonFraction name="ifrs-full:LongtermBorrowings" contextRef="c" unitRef="pln" scale="3">6 000</ix:nonFraction></p>
+  </body>
+</html>"#;
+
 fn d(v: i64) -> Decimal {
     Decimal::from(v)
 }
@@ -200,6 +226,25 @@ fn dimensional_member_facts_are_skipped_only_the_default_total_survives() {
     // With only the default-member totals, the identity holds and validates.
     let report = validate_period(&set, &Tolerance::default());
     assert_eq!(report.status, Status::Passed);
+}
+
+#[test]
+fn extracts_health_score_balance_sheet_concepts() {
+    // ADR 0083 Decision 5: the four new reported inputs behind Piotroski F and
+    // Altman Z″ must extract from the tags GPW filers use, as dimensionless
+    // instant totals mapped to their canonical keys.
+    let facts = parse_esef(HEALTH_SAMPLE.as_bytes()).expect("health sample parses");
+    let set = fact_set_for_period(&facts, "2025-12-31");
+    assert_eq!(set.get("current_assets"), Some(&d(18_000_000)));
+    assert_eq!(set.get("current_liabilities"), Some(&d(9_000_000)));
+    assert_eq!(set.get("retained_earnings"), Some(&d(14_000_000)));
+    assert_eq!(set.get("long_term_debt"), Some(&d(6_000_000)));
+    // Citations preserve the source IFRS concept for provenance.
+    let ca = facts
+        .iter()
+        .find(|f| f.metric_key == "current_assets")
+        .unwrap();
+    assert_eq!(ca.citation, "CurrentAssets");
 }
 
 // ---------------------------------------------------------------------------

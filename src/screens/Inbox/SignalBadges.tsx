@@ -18,6 +18,9 @@ const CATEGORY_TONE: Record<CompanySignalCategory, StatusChipTone> = {
   auditor_opinion: "danger",
   short_position_change: "warn",
   major_holdings_change: "accent",
+  report_delay: "danger",
+  fund_exit: "warn",
+  score_deterioration: "warn",
   other: "neutral",
 };
 

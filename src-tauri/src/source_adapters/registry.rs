@@ -335,6 +335,21 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         rate_limit_policy: "Disabled event-source candidate; calendar extraction requires source-specific tests before runtime enablement",
         policy_note: "Fallback/cross-check candidate for calendar and report-date coverage. Disabled until source-specific sample parsing and matching quality are accepted.",
     },
+    SourceAdapterDescriptor {
+        id: "brawler-red-flags",
+        role: SourceRole::Primary,
+        display_name: "Brawler — derived red flags",
+        source_url: "internal://red-flags",
+        source_type: "derived",
+        fetch_mode: "internal",
+        // No market rows: internal adapters are marketless (migration 0092
+        // seeds no source_adapter_markets entries).
+        markets: &[],
+        visibility: SourceVisibility::Developer,
+        default_poll_interval_seconds: 86_400,
+        rate_limit_policy: "Internal derived-event owner; never fetches — red-flag detections write their synthetic feed items under this adapter id (v0.57 T7, ADR 0083 D8)",
+        policy_note: "Not a real source: owns the synthetic feed items derived red flags raise (report_delay / fund_exit / score_deterioration) so provenance and the KNF-pattern alert path stay uniform. Seeded disabled by migration 0092; no network access, no scheduler participation.",
+    },
 ];
 
 /// Look up an adapter descriptor by its id.

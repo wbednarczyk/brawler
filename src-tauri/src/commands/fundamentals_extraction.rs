@@ -106,7 +106,7 @@ pub async fn run_structured_extraction(
 
     // Offload the filesystem read + parse + DB writes off the UI thread.
     tauri::async_runtime::spawn_blocking(move || {
-        jobs::structured_extraction::run_structured_extraction(
+        let result = jobs::structured_extraction::run_structured_extraction(
             &state,
             &input.company_id,
             &input.report_document_id,
@@ -116,11 +116,29 @@ pub async fn run_structured_extraction(
             &mode,
             // A user-invoked deterministic run permits the tier-4 OCR fallback.
             jobs::structured_extraction::Tier4Gate::Allowed,
-        )
-        .map(summarize)
+        )?;
+        detect_score_deterioration_after_extraction(&state, &input.company_id, result.emitted);
+        Ok(summarize(result))
     })
     .await
     .map_err(|e| format!("structured extraction task failed: {e}"))?
+}
+
+/// Red-flag detection at the fact-confirmation seam (ADR 0083 D8, T7): a fresh
+/// batch of confirmed facts can flip a company's Piotroski F / Altman Z″ enough to
+/// raise a `score_deterioration`. Best-effort — a detection failure never fails
+/// the extraction — and only when the run actually emitted facts.
+fn detect_score_deterioration_after_extraction(
+    state: &app_state::AppState,
+    company_id: &str,
+    emitted: bool,
+) {
+    if !emitted {
+        return;
+    }
+    if let Err(error) = state.red_flags().detect_score_deterioration(company_id) {
+        log::warn!("score_deterioration detection failed for {company_id}: {error}");
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -274,6 +292,9 @@ pub async fn extract_report_document_data(
             ),
         }
 
+        if let Ok(res) = &result {
+            detect_score_deterioration_after_extraction(&state, &input.company_id, res.emitted);
+        }
         result.map(summarize)
     })
     .await

@@ -1042,3 +1042,378 @@ fn migration_0088_deletes_aggregator_stakes_only() {
         .expect("count non-aggregator after re-run");
     assert_eq!(others_after, 2, "re-run keeps the non-aggregator rows");
 }
+
+#[test]
+fn migration_0095_maps_financial_sectors_only_from_industrial_default() {
+    // ADR 0083 D4 amendment: map unambiguous financial-issuer registry sectors to
+    // their sector `statement_type` — but ONLY where the column still holds the
+    // 'industrial' default (a manual value is authoritative). Conservative
+    // allow-list: banks / insurers / brokers-and-exchanges; borderline sectors
+    // (debt collectors, investment holdings) stay untouched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 94).expect("apply schema through 0094");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name, sector) VALUES
+                ('bank', 'GPW', 'PKO', 'GPW:PKO', 'PKO BP',    'banki komercyjne'),
+                ('ins',  'GPW', 'PZU', 'GPW:PZU', 'PZU',       'firmy ubezpieczeniowe'),
+                ('brk',  'GPW', 'XTB', 'GPW:XTB', 'XTB',       'giełdy i biura maklerskie'),
+                ('exch', 'GPW', 'GPW', 'GPW:GPW', 'GPW',       'giełdy i biura maklerskie'),
+                ('ind',  'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT','oprogramowanie'),
+                ('debt', 'GPW', 'KRU', 'GPW:KRU', 'KRUK',      'Wierzytelności'),
+                ('none', 'GPW', 'ABC', 'GPW:ABC', 'No Sector', NULL);
+             -- A manually-set statement_type on a bank-sector company: never overwritten.
+             INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name, sector, statement_type) VALUES
+                ('manual', 'GPW', 'MAN', 'GPW:MAN', 'Manual Co', 'banki komercyjne', 'insurance');",
+        )
+        .expect("seed companies with sectors");
+
+    // Isolate to 0095 — the later 0098 maps the debt-collector sector, so applying
+    // the full chain here would flip `debt`; 0095's own contract leaves it alone.
+    apply_migrations_up_to(&mut connection, 95).expect("apply migration 0095");
+
+    fn st(conn: &rusqlite::Connection, id: &str) -> String {
+        conn.query_row(
+            "SELECT statement_type FROM companies WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("statement_type")
+    }
+
+    assert_eq!(
+        st(&connection, "bank"),
+        "banking",
+        "commercial banks → banking"
+    );
+    assert_eq!(st(&connection, "ins"), "insurance", "insurers → insurance");
+    assert_eq!(
+        st(&connection, "brk"),
+        "specialty_finance",
+        "brokers → specialty_finance"
+    );
+    assert_eq!(
+        st(&connection, "exch"),
+        "specialty_finance",
+        "exchanges → specialty_finance"
+    );
+    assert_eq!(
+        st(&connection, "ind"),
+        "industrial",
+        "a real-sector industrial stays industrial"
+    );
+    assert_eq!(
+        st(&connection, "debt"),
+        "industrial",
+        "borderline debt collectors stay untouched (conservative)"
+    );
+    assert_eq!(
+        st(&connection, "none"),
+        "industrial",
+        "no sector → untouched"
+    );
+    assert_eq!(
+        st(&connection, "manual"),
+        "insurance",
+        "a manually-set statement_type is authoritative, never overwritten"
+    );
+
+    // Idempotent: a re-run flips nothing further (mapped rows are no longer
+    // 'industrial').
+    apply_migrations_up_to(&mut connection, 95).expect("re-run must be safe");
+    assert_eq!(st(&connection, "bank"), "banking");
+    assert_eq!(st(&connection, "manual"), "insurance");
+    // 0095's contract: the debt-collector sector is left at the default (0098 is
+    // what later maps it — asserted in migration_0098_…).
+    assert_eq!(st(&connection, "debt"), "industrial");
+}
+
+#[test]
+fn migration_0098_maps_debt_collectors_but_not_investment_holdings() {
+    // ADR 0083 D4 amendment (owner decision 2026-07-18): the debt-collector
+    // sector ('Wierzytelności' — KRU) that 0095 conservatively left alone is now
+    // mapped to specialty_finance, so Altman Z″ / Piotroski F return NotApplicable.
+    // Investment holdings ('Działalność Inwestycyjna' — GKI) STAY untouched (still
+    // an open owner decision). Only rows at the 'industrial' default are rewritten.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 97).expect("apply schema through 0097");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name, sector) VALUES
+                ('kru',  'GPW', 'KRU', 'GPW:KRU', 'KRUK',          'Wierzytelności'),
+                ('kru2', 'GPW', 'KR2', 'GPW:KR2', 'Other Debt Co', 'Wierzytelności'),
+                ('gki',  'GPW', 'GKI', 'GPW:GKI', 'GK Immobile',   'Działalność Inwestycyjna'),
+                ('ind',  'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT',    'oprogramowanie');
+             -- A manually-set statement_type on a debt collector: never overwritten.
+             INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name, sector, statement_type) VALUES
+                ('man', 'GPW', 'MAN', 'GPW:MAN', 'Manual Co', 'Wierzytelności', 'banking');",
+        )
+        .expect("seed companies");
+
+    apply_migrations(&mut connection).expect("apply migration 0098");
+
+    fn st(conn: &rusqlite::Connection, id: &str) -> String {
+        conn.query_row(
+            "SELECT statement_type FROM companies WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("statement_type")
+    }
+
+    assert_eq!(
+        st(&connection, "kru"),
+        "specialty_finance",
+        "debt collectors → specialty_finance (Altman/Piotroski not applicable)"
+    );
+    assert_eq!(
+        st(&connection, "kru2"),
+        "specialty_finance",
+        "every industrial-default debt collector is mapped, not just KRU"
+    );
+    assert_eq!(
+        st(&connection, "gki"),
+        "industrial",
+        "investment holdings stay untouched (open owner decision)"
+    );
+    assert_eq!(
+        st(&connection, "ind"),
+        "industrial",
+        "a real-sector industrial stays industrial"
+    );
+    assert_eq!(
+        st(&connection, "man"),
+        "banking",
+        "a manually-set statement_type is authoritative, never overwritten"
+    );
+
+    // Idempotent: a re-run flips nothing further.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(st(&connection, "kru"), "specialty_finance");
+    assert_eq!(st(&connection, "gki"), "industrial");
+}
+
+#[test]
+fn migration_0099_repairs_only_the_misscaled_cdr_q3_2023_facts() {
+    // Card e6ebda3: the v0.57 backfill mis-scaled CDR Q3 2023 current_assets /
+    // current_liabilities ×1000 (a bare "mln zł" prose token wrongly flipped the
+    // scale to Millions). This forward repair divides them back to thousands,
+    // touching ONLY the exact mis-scaled auto_unreviewed facts and nothing else.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 98).expect("apply schema through 0098");
+
+    // The canonical current_assets / current_liabilities definitions are already
+    // seeded (migration 0089); reference their ids rather than re-inserting.
+    let def_id = |conn: &rusqlite::Connection, key: &str| -> String {
+        conn.query_row(
+            "SELECT id FROM kpi_definitions WHERE metric_key = ?1 AND scope = 'canonical'",
+            [key],
+            |row| row.get::<_, String>(0),
+        )
+        .unwrap_or_else(|_| panic!("seeded canonical definition for {key}"))
+    };
+    let def_ca = def_id(&connection, "current_assets");
+    let def_cl = def_id(&connection, "current_liabilities");
+
+    connection
+        .execute_batch(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+                VALUES ('cdr', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.');
+             INSERT INTO financial_periods (id, company_id, fiscal_year, period_type, period_end_date)
+                VALUES ('per_q3', 'cdr', 2023, 'Q3', '2023-09-30'),
+                       ('per_fy', 'cdr', 2023, 'FY', '2023-12-31');",
+        )
+        .expect("seed company + periods");
+
+    connection
+        .execute(
+            "INSERT INTO financial_facts
+                (id, company_id, period_id, definition_id, value_numeric, extraction_method,
+                 confirmation_state, source_document_ref, statement_basis)
+             VALUES
+                -- The two mis-scaled facts (×1000 too big), from the Polish Q3 2023 doc.
+                ('f_ca', 'cdr', 'per_q3', ?1, '1137807000000', 'html_positional', 'auto_unreviewed',
+                 'doc_gpw_cdr_skonsolidowane_sprawozdanie_finansowe_grupy_cd_projekt_za_3q_2023_x.xhtml', 'consolidated'),
+                ('f_cl', 'cdr', 'per_q3', ?2, '164335000000',  'html_positional', 'auto_unreviewed',
+                 'doc_gpw_cdr_skonsolidowane_sprawozdanie_finansowe_grupy_cd_projekt_za_3q_2023_x.xhtml', 'consolidated'),
+                -- Controls that must stay untouched: an already-correct fact (same
+                -- metric/period, different basis), and a FY-period fact from another doc.
+                ('f_ok', 'cdr', 'per_q3', ?1, '1137807000', 'html_positional', 'auto_unreviewed',
+                 'doc_gpw_cdr_skonsolidowane_sprawozdanie_finansowe_grupy_cd_projekt_za_3q_2023_x.xhtml', 'standalone'),
+                ('f_fy', 'cdr', 'per_fy', ?1, '1137807000000', 'html_positional', 'auto_unreviewed',
+                 'doc_gpw_cdr_annual_2023.xhtml', 'consolidated')",
+            rusqlite::params![def_ca, def_cl],
+        )
+        .expect("seed facts");
+
+    apply_migrations(&mut connection).expect("apply migration 0099");
+
+    fn val(conn: &rusqlite::Connection, id: &str) -> String {
+        conn.query_row(
+            "SELECT value_numeric FROM financial_facts WHERE id = ?1",
+            [id],
+            |row| row.get::<_, String>(0),
+        )
+        .expect("value")
+    }
+
+    assert_eq!(
+        val(&connection, "f_ca"),
+        "1137807000",
+        "current_assets ÷1000"
+    );
+    assert_eq!(
+        val(&connection, "f_cl"),
+        "164335000",
+        "current_liabilities ÷1000"
+    );
+    assert_eq!(
+        val(&connection, "f_ok"),
+        "1137807000",
+        "an already-correct fact is untouched"
+    );
+    assert_eq!(
+        val(&connection, "f_fy"),
+        "1137807000000",
+        "a fact in a different (FY) period is not matched"
+    );
+
+    // Idempotent: a re-run corrects nothing further (the mis-scaled source values
+    // no longer match).
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(val(&connection, "f_ca"), "1137807000");
+    assert_eq!(val(&connection, "f_cl"), "164335000");
+}
+
+#[test]
+fn migration_0096_dismisses_stale_unseen_attention_events_only() {
+    // v0.57 fix wave 2 (ADR 0068 amendment): the repair clears the pre-existing
+    // wall of stale, unseen attention events a history backfill wrote, WITHOUT
+    // touching fresh events or events the user already engaged with.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 95).expect("apply schema through 0095");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO alert_rules (id, trigger_type, signal_category, scope_type, scope_ref)
+             VALUES ('r1', 'signal_category', 'insider_transaction', 'company', 'c1')",
+            [],
+        )
+        .expect("seed rule");
+    // stale + unseen (the backlog to clear); fresh + unseen (keep); stale + seen (keep).
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, company_id, evidence_type, evidence_ref, fired_at, seen, dismissed)
+             VALUES
+                ('e_stale', 'r1', 'c1', 'company_signal', 's_stale', '2020-01-01T00:00:00Z', 0, 0),
+                ('e_fresh', 'r1', 'c1', 'company_signal', 's_fresh',
+                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 0, 0),
+                ('e_seen',  'r1', 'c1', 'company_signal', 's_seen',  '2019-06-01T00:00:00Z', 1, 0)",
+            [],
+        )
+        .expect("seed events");
+
+    apply_migrations(&mut connection).expect("apply 0096/0097");
+
+    // A free helper (not a capturing closure) so the immutable read borrow is
+    // released before the idempotency re-run's `&mut connection`.
+    fn dismissed(connection: &rusqlite::Connection, id: &str) -> i64 {
+        connection
+            .query_row(
+                "SELECT dismissed FROM attention_events WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .expect("read dismissed")
+    }
+    assert_eq!(
+        dismissed(&connection, "e_stale"),
+        1,
+        "the stale unseen event is dismissed"
+    );
+    assert_eq!(
+        dismissed(&connection, "e_fresh"),
+        0,
+        "the fresh event is untouched"
+    );
+    assert_eq!(
+        dismissed(&connection, "e_seen"),
+        0,
+        "an already-seen stale event is untouched (predicate requires seen = 0)"
+    );
+
+    // Idempotent: a re-run flips nothing further.
+    apply_migrations(&mut connection).expect("re-run must be safe");
+    assert_eq!(dismissed(&connection, "e_stale"), 1);
+    assert_eq!(dismissed(&connection, "e_fresh"), 0);
+}
+
+#[test]
+fn migration_0097_backfills_null_trigger_type_from_the_rule() {
+    // v0.57 fix wave 2 (W4): legacy rule-backed events left trigger_type NULL
+    // (derived only via COALESCE at read). The repair stamps the column from the
+    // owning rule so a direct read / grouping sees the trigger; system events and
+    // already-stamped rows are untouched.
+    let mut connection = rusqlite::Connection::open_in_memory().expect("open in-memory database");
+    apply_migrations_up_to(&mut connection, 95).expect("apply schema through 0095");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("seed company");
+    connection
+        .execute(
+            "INSERT INTO alert_rules (id, trigger_type, signal_category, scope_type, scope_ref)
+             VALUES ('r1', 'autopilot_run_completed', NULL, 'company', 'c1')",
+            [],
+        )
+        .expect("seed rule");
+    // Legacy rule-backed event with NULL trigger_type; a system event already carrying one.
+    connection
+        .execute(
+            "INSERT INTO attention_events
+                (id, rule_id, trigger_type, company_id, evidence_type, evidence_ref, fired_at)
+             VALUES
+                ('e_rule', 'r1', NULL, 'c1', 'autopilot_run', 'run1',
+                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+                ('e_sys',  NULL, 'source_reconciliation', 'c1', 'source_reconciliation', 'rec1',
+                    strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))",
+            [],
+        )
+        .expect("seed events");
+
+    apply_migrations(&mut connection).expect("apply 0097");
+
+    let trigger = |id: &str| -> Option<String> {
+        connection
+            .query_row(
+                "SELECT trigger_type FROM attention_events WHERE id = ?1",
+                [id],
+                |row| row.get(0),
+            )
+            .expect("read trigger_type")
+    };
+    assert_eq!(
+        trigger("e_rule").as_deref(),
+        Some("autopilot_run_completed"),
+        "the legacy rule-backed event is backfilled from its rule"
+    );
+    assert_eq!(
+        trigger("e_sys").as_deref(),
+        Some("source_reconciliation"),
+        "a system event keeps its own trigger_type"
+    );
+}

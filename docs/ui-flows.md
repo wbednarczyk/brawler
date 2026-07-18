@@ -189,6 +189,26 @@ Acceptance criteria:
 - A residual (unreadable) document is never fabricated into data — it is disclosed and routed to the Review queue; partial ESPI data stays visible and an AI-unavailable state leaves the section unchanged.
 - The section stays usable in a ~340px narrow pane (donut over legend, full-width chart, rows wrap without horizontal scroll).
 
+## Journey: Review Company Health
+
+Status: planned (v0.57.0, ADR 0083)
+
+Intent: see at a glance whether a company's published health formulas and disclosure behavior raise concerns, with every number and flag traced to evidence ([ADR 0083](adr/0083-company-health-scores-and-red-flags.md)). Decision support only — never advice.
+
+Flow:
+
+1. The user opens a company's cockpit dashboard; the Quality panel shows Piotroski F and Altman Z″ tiles (band-colored, variant labeled) computed automatically from confirmed facts — or an explicit "insufficient data" state listing the missing inputs, or "not applicable" for financials.
+2. Expanding a score tile reveals its per-component breakdown (each of the 9 F signals / 4 Z″ inputs with measured values) and the published-formula citation.
+3. The **Red flags panel** lists active flags (auditor red flag, report delay, fund exit, score deterioration, short spike) with severity and an evidence link; acknowledging a flag moves it to history and never re-raises it for the same evidence. No flags = a calm explicit "no active flags" state.
+4. In the Ownership section, founder/management holders carry a skin-in-the-game badge; the insider view shows the parsed transaction timeline and rolling 90-day / 12-month net buy−sell (only once ≥ 2 transactions exist).
+5. A newly raised flag fires existing alert rules (typed signal) and appears in the morning briefing.
+
+Acceptance criteria:
+
+- A score never renders as a partial or rescaled headline; missing inputs are enumerated, not papered over.
+- Every flag links to its evidence (filing, ownership basis, calendar event, or score history); acknowledged flags persist in history.
+- No surface phrases advice or composes a single conviction rating (ADR 0042 guardrail).
+
 ## Journey: Track A Management Claim To Verdict
 
 Intent: capture a management promise, then resolve whether it was delivered when the due period's report arrives ([ADR 0040](adr/0040-management-claims-tracker.md)).

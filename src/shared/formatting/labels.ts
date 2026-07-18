@@ -1,3 +1,33 @@
+// Signal-category code → its human display name, matching the backend's
+// `signal_categories.display_name` seed EXACTLY (migrations 0041 buyback→
+// 0044 own_shares rename, 0079 auditor_opinion, 0080 short_position_change,
+// 0085 major_holdings_change, 0092 report_delay/fund_exit/score_deterioration)
+// so `text()` resolves the SAME locale entries `text(signal.categoryDisplayName)`
+// already relies on elsewhere (`SignalBadges`, `InboxDetailPane`) — never a
+// second, drifting copy of the same names. Used where only the raw category
+// code is available (an `AlertRule.signalCategory`), not a full `CompanySignal`
+// carrying its own `categoryDisplayName` from the backend.
+export function formatSignalCategoryDisplayName(category: string) {
+  const labels: Record<string, string> = {
+    insider_transaction: "Insider transaction",
+    dividend: "Dividend",
+    profit_warning: "Profit warning / estimate",
+    significant_contract: "Significant contract",
+    own_shares: "Own-share transactions",
+    guidance_change: "Guidance change",
+    general_meeting: "General meeting",
+    auditor_opinion: "Auditor opinion",
+    short_position_change: "Short position",
+    major_holdings_change: "Major holdings change",
+    report_delay: "Report delay",
+    fund_exit: "Fund exit",
+    score_deterioration: "Score deterioration",
+    other: "Other official filing",
+  };
+
+  return labels[category] ?? formatEnumLabel(category);
+}
+
 export function formatEnumLabel(value: string) {
   return value
     .split("_")

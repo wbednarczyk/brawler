@@ -185,6 +185,46 @@ fn matches_any(t: &str, markers: &[&str]) -> bool {
     markers.iter().any(|m| t.contains(m))
 }
 
+/// Management activity-report markers ("sprawozdanie [zarządu] z działalności"
+/// / "SzD"). Kept separate from [`FINANCIAL_MARKERS`] because the SzD is NOT a
+/// financial statement — it is deliberately routed to [`DocKind::Other`] via
+/// [`OTHER_EARLY_MARKERS`] so financial-metrics extraction never picks it. But
+/// the MANAGEMENT-HOLDINGS table (management/supervisory-board shareholdings)
+/// lives exactly in this document, so the management-holdings extraction
+/// selection needs a positive predicate for it (F-A3, owner dogfooding
+/// 2026-07-17: KRU's holdings live only in its `SzD_Grupa_KRUK.xhtml`, a
+/// `doc_kind='other'` filing the periodic-only selection was skipping).
+const MANAGEMENT_REPORT_MARKERS: &[&str] = &[
+    " z dzialalnosci",
+    " z działalności",
+    " sprawozdanie zarzadu",
+    " sprawozdanie zarządu",
+    " szd ",
+];
+
+/// Whether a stored document is a management activity report (SzD) that carries
+/// the management-holdings table. Deliberately conservative and orthogonal to
+/// [`classify_doc_kind`] (which keeps the SzD as `Other`): it excludes the
+/// auditor / governance / presentation / companion documents whose titles can
+/// co-mention "działalność", then requires a management-report marker. A false
+/// positive only costs one parse attempt that records a benign residual; a false
+/// negative silently loses a company's holdings (the KRU class), so the tests
+/// pin both KRU and ABE SzD shapes as positives and the RN report as a negative.
+pub fn is_management_report(title: &str, url: &str) -> bool {
+    let raw = format!("{title} {url}").to_lowercase();
+    if COMPANION_EXTENSIONS.iter().any(|ext| raw.contains(ext)) {
+        return false;
+    }
+    let t = normalize(&raw);
+    if matches_any(&t, AUDITOR_MARKERS)
+        || matches_any(&t, GOVERNANCE_MARKERS)
+        || matches_any(&t, PRESENTATION_MARKERS)
+    {
+        return false;
+    }
+    matches_any(&t, MANAGEMENT_REPORT_MARKERS)
+}
+
 /// Classify a stored report document from its title and URL. Total and
 /// deterministic; the labeled corpus (G-2) is the behavior contract.
 pub fn classify_doc_kind(title: &str, url: &str) -> DocKind {
@@ -382,6 +422,48 @@ mod tests {
         period: (i32, u8),
     ) -> Option<&'a str> {
         map.get(&period).map(|c| c.document_id.as_str())
+    }
+
+    #[test]
+    fn management_report_predicate_recognizes_szd_but_not_financials_or_governance() {
+        // KRU (F-A3): the holdings table lives only in the SzD — an abbreviated
+        // filename ("SZD_Grupa_KRUK_2025rok.xhtml") whose title carries the full
+        // "z Działalności" phrase. It is `doc_kind='other'`, so the periodic-only
+        // selection skipped it and KRU got zero management-holdings rows.
+        assert!(is_management_report(
+            "SZD Grupa KRUK 2025rok.xhtml Sprawozdania z Działalności GRUPA KRUK",
+            "https://bonnier.pl/static/att/emitent/2026-03/..._SZD_Grupa_KRUK_2025rok.xhtml"
+        ));
+        // ABE's annual SzD (also doc_kind='other').
+        assert!(is_management_report(
+            "Sprawozdanie z działalności Zarządu",
+            "https://bonnier.pl/.../Y24_25_Sprawozdanie_z_dzialalnos-ci_zarza-du.xhtml"
+        ));
+        // Financial statements are NOT management reports (their holdings, if any,
+        // come via the existing periodic selection — not this predicate).
+        assert!(!is_management_report(
+            "Skonsolidowane sprawozdanie finansowe",
+            "grupakruk_sf_2q_2023.pdf"
+        ));
+        assert!(!is_management_report(
+            "ESEF",
+            "esef_ssf_grupakruk_2025_12_31.xbri"
+        ));
+        // A supervisory-board activity report is governance, never a holdings source.
+        assert!(!is_management_report(
+            "Sprawozdanie z działalności Rady Nadzorczej",
+            "sprawozdanie_rady_nadzorczej.xhtml"
+        ));
+        // An auditor report that co-mentions działalność stays excluded.
+        assert!(!is_management_report(
+            "Sprawozdanie z badania sprawozdania z działalności",
+            "szb_2024.xhtml"
+        ));
+        // A companion signature file is never the document it accompanies.
+        assert!(!is_management_report(
+            "Sprawozdanie z działalności Zarządu",
+            "Sprawozdanie_z_dzialalnosci.xhtml.xades"
+        ));
     }
 
     #[test]

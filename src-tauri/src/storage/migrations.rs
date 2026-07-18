@@ -448,6 +448,61 @@ const MIGRATIONS: &[Migration] = &[
         name: "ownership_aggregator_reset",
         sql: include_str!("../../migrations/0088_ownership_aggregator_reset.sql"),
     },
+    Migration {
+        version: 89,
+        name: "company_health_kpi_definitions",
+        sql: include_str!("../../migrations/0089_company_health_kpi_definitions.sql"),
+    },
+    Migration {
+        version: 90,
+        name: "insider_transactions",
+        sql: include_str!("../../migrations/0090_insider_transactions.sql"),
+    },
+    Migration {
+        version: 91,
+        name: "management_holdings",
+        sql: include_str!("../../migrations/0091_management_holdings.sql"),
+    },
+    Migration {
+        version: 92,
+        name: "red_flag_acks",
+        sql: include_str!("../../migrations/0092_red_flag_acks.sql"),
+    },
+    Migration {
+        version: 93,
+        name: "ownership_ocr_proposals",
+        sql: include_str!("../../migrations/0093_ownership_ocr_proposals.sql"),
+    },
+    Migration {
+        version: 94,
+        name: "insider_attachment_attempts",
+        sql: include_str!("../../migrations/0094_insider_attachment_attempts.sql"),
+    },
+    Migration {
+        version: 95,
+        name: "financial_statement_type_from_sector",
+        sql: include_str!("../../migrations/0095_financial_statement_type_from_sector.sql"),
+    },
+    Migration {
+        version: 96,
+        name: "dismiss_stale_attention_events",
+        sql: include_str!("../../migrations/0096_dismiss_stale_attention_events.sql"),
+    },
+    Migration {
+        version: 97,
+        name: "backfill_attention_trigger_type",
+        sql: include_str!("../../migrations/0097_backfill_attention_trigger_type.sql"),
+    },
+    Migration {
+        version: 98,
+        name: "kru_statement_type_specialty_finance",
+        sql: include_str!("../../migrations/0098_kru_statement_type_specialty_finance.sql"),
+    },
+    Migration {
+        version: 99,
+        name: "repair_cdr_q3_2023_misscaled_facts",
+        sql: include_str!("../../migrations/0099_repair_cdr_q3_2023_misscaled_facts.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

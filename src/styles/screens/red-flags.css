@@ -1,0 +1,125 @@
+/* Red-flags cockpit panel (v0.57 T7, ADR 0083 Decision 8/9). Composes the design
+   system for the mockup at docs/mockups/v057-red-flags-panel.html. Every grid/flex
+   ancestor carries min-width: 0 so long evidence titles wrap instead of forcing a
+   page-level horizontal scrollbar; the severity chip sits in a FIXED leading slot
+   so chips never migrate between rows (trailing chips in fixed slots,
+   ui-authoring.md styling rules, DoD §B). */
+
+.red-flags-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.red-flags-attr {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.red-flags-list,
+.red-flags-history {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+/* One flag row: fixed severity-chip slot · title (flex, truncates) · date · actions.
+   The severity slot has a fixed min-width so chips align down the column. */
+.red-flags-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+}
+
+.red-flags-row:last-child {
+  border-bottom: 0;
+}
+
+.red-flags-severity-slot {
+  justify-self: start;
+}
+
+.red-flags-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-0);
+  min-width: 0;
+}
+
+.red-flags-type {
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+.red-flags-title {
+  color: var(--muted);
+  font-size: var(--font-xs);
+  overflow-wrap: anywhere;
+}
+
+.red-flags-date {
+  color: var(--muted);
+  font-size: var(--font-sm);
+  white-space: nowrap;
+  justify-self: end;
+}
+
+.red-flags-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  justify-self: end;
+}
+
+.red-flags-row-acked {
+  opacity: 0.75;
+}
+
+.red-flags-history-toggle {
+  margin-top: calc(-1 * var(--space-1));
+}
+
+.red-flags-history-label {
+  font-size: var(--font-sm);
+  color: var(--muted);
+}
+
+/* Empty state (a calm, reassuring case): stacked lines, centered. */
+.red-flags-empty {
+  display: grid;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.red-flags-empty-title {
+  font-size: var(--font-md);
+  color: var(--text);
+}
+
+.red-flags-foot {
+  padding-top: var(--space-2);
+  border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+/* Narrow pane: the date/actions wrap under the title (ADR 0076 D6). */
+@container pane (max-width: 419px) {
+  .red-flags-row {
+    grid-template-columns: 64px minmax(0, 1fr);
+  }
+
+  .red-flags-date,
+  .red-flags-actions {
+    grid-column: 2;
+    justify-self: start;
+  }
+}

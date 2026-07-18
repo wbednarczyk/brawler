@@ -26,10 +26,23 @@ pub const RESEARCH_DIGEST_KIND: &str = "research_digest";
 /// payload carries `{run_id, stage}`; the handler runs that stage and chains the
 /// next, so a crash mid-stage resumes that stage only.
 pub use crate::jobs::autopilot::AUTOPILOT_STAGE_KIND;
+/// Job kind: automatic per-company report-history backfill (v0.57 catch-up, ADR
+/// 0077 amendment). Payload `{companyId}`; the handler paginates the Bankier
+/// company listing back N years and ingests periodic reports through the normal
+/// path, then chains a history sweep. Drains on the **sources** lane and
+/// serializes on the Bankier-company source lock. Defined with the job.
+pub use crate::jobs::backfill::COMPANY_BACKFILL_KIND;
 /// Job kind: run a history sweep (ADR 0077 §3). The payload carries `{sweepId}`;
 /// the handler enqueues a full autopilot run for every canonical periodic report
 /// whose period lacks accepted facts, through the shared `enqueue_extraction_run`.
 pub use crate::jobs::history_sweep::HISTORY_SWEEP_KIND;
+/// Job kind: extract the management-holdings section of one stored periodic report
+/// into `management_holdings` + stamp founder/insiders (ADR 0083 D6, v0.57 T5). The
+/// payload carries `{companyId, reportDocumentId}`; the handler runs the
+/// deterministic parser and writes rows directly, or records a residual for the
+/// AI/OCR path. A deterministic CPU parse chained from ingestion — assigned to the
+/// **autopilot** lane, never a provider call. Defined with the job.
+pub use crate::jobs::management_holdings_extraction::MANAGEMENT_EXTRACTION_KIND;
 /// Job kind: compose a morning briefing (ADR 0068 decision 4, v0.54.0). The
 /// payload carries `{force}`; the handler runs the deterministic composer + an
 /// optional narrative and persists the briefing. Assigned to the **ai** lane
@@ -195,6 +208,20 @@ impl JobHandler for OwnershipExtractionHandler {
     }
 }
 
+/// Management-holdings extraction (ADR 0083 D6, v0.57 T5). Deterministic sibling of
+/// the ownership handler: writes holdings + stamps founders, or parks a residual.
+struct ManagementExtractionHandler;
+
+impl JobHandler for ManagementExtractionHandler {
+    fn kind(&self) -> &'static str {
+        MANAGEMENT_EXTRACTION_KIND
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::management_holdings_extraction::run_management_extraction_job(state, payload)
+    }
+}
+
 /// One stage of an autopilot run. The handler runs the stage (reusing existing
 /// services) and chains the next on success; a fatal stage failure finalizes the
 /// run inside [`run_stage`] (still notified), so the handler returns Ok and the
@@ -293,6 +320,29 @@ impl JobHandler for QuoteBackfillHandler {
     }
 }
 
+/// An automatic per-company report-history backfill (v0.57 catch-up, ADR 0077
+/// amendment). Runs [`crate::jobs::backfill::backfill_company_history`] for one
+/// company through the durable queue instead of the manual IPC path, so a cold or
+/// persisted-but-stale DB fills its report history without the user clicking.
+/// Serializes on the Bankier-company source lock (ADR 0059) so it never races the
+/// scheduled per-company refresh. Returns `Ok` on any domain outcome (the progress
+/// row + chained sweep carry the result); a malformed payload returns `Err`.
+struct CompanyBackfillHandler;
+
+impl JobHandler for CompanyBackfillHandler {
+    fn kind(&self) -> &'static str {
+        COMPANY_BACKFILL_KIND
+    }
+
+    fn serialization_key(&self, _payload: &str) -> Option<String> {
+        Some(crate::source_adapters::bankier_company::ADAPTER_ID.to_owned())
+    }
+
+    fn run(&self, payload: &str, state: &AppState) -> Result<(), String> {
+        crate::jobs::backfill::run_company_backfill_job(state, payload)
+    }
+}
+
 /// A scheduled company-registry refresh-if-stale check (Rust-side scheduler).
 struct ScheduledRegistryRefreshHandler;
 
@@ -333,11 +383,13 @@ pub fn build_worker(state: AppState) -> JobWorker {
     worker.register(Arc::new(MorningBriefingHandler));
     worker.register(Arc::new(HistorySweepHandler));
     worker.register(Arc::new(OwnershipExtractionHandler));
+    worker.register(Arc::new(ManagementExtractionHandler));
     worker.register(Arc::new(AutopilotStageHandler));
     worker.register(Arc::new(ScheduledSourceRefreshHandler));
     worker.register(Arc::new(SourceCompanyRefreshHandler));
     worker.register(Arc::new(ScheduledRegistryRefreshHandler));
     worker.register(Arc::new(QuoteBackfillHandler));
+    worker.register(Arc::new(CompanyBackfillHandler));
     worker
 }
 
@@ -358,6 +410,7 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 SOURCE_COMPANY_REFRESH_KIND,
                 REGISTRY_REFRESH_KIND,
                 crate::jobs::quote_backfill::QUOTE_BACKFILL_KIND,
+                COMPANY_BACKFILL_KIND,
             ],
             workers: config.sources_workers.max(1) as usize,
         },
@@ -367,6 +420,7 @@ pub fn pool_layout(config: crate::storage::QueueConfig) -> Vec<WorkerPool> {
                 AUTOPILOT_STAGE_KIND,
                 HISTORY_SWEEP_KIND,
                 OWNERSHIP_EXTRACTION_KIND,
+                MANAGEMENT_EXTRACTION_KIND,
             ],
             workers: config.autopilot_workers.max(1) as usize,
         },

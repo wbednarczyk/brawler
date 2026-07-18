@@ -109,6 +109,51 @@ pub fn run() {
                 log::info!("startup ownership extraction catch-up enqueued {catch_up} document(s)");
             }
 
+            // Management-holdings extraction catch-up (ADR 0083 T5): the same cold-DB
+            // gap-filling for the insider-substrate holdings section.
+            let mgmt_catch_up =
+                jobs::management_holdings_extraction::enqueue_management_extraction_catch_up(
+                    &state, None,
+                );
+            if mgmt_catch_up > 0 {
+                log::info!(
+                    "startup management-holdings extraction catch-up enqueued {mgmt_catch_up} document(s)"
+                );
+            }
+
+            // Report-history backfill catch-up (v0.57, ADR 0077 amendment): a cold
+            // or persisted-but-stale DB may hold automated companies with NO fetched
+            // periodic report (the owner's live DB: 33/50). Enqueue one automatic
+            // backfill each, off the UI thread on the durable queue. Idempotent
+            // (coverage predicate + stable per-company job id) and `off`-mode-aware.
+            // Best-effort — a failure is logged, never fatal.
+            let backfill_catch_up =
+                jobs::backfill::enqueue_company_backfill_catch_up(&state, None);
+            if backfill_catch_up > 0 {
+                log::info!(
+                    "startup report-history backfill catch-up enqueued {backfill_catch_up} company backfill(s)"
+                );
+            }
+
+            // Insider cover-note parse catch-up (F-B): the deterministic art. 19
+            // cover-note parse only runs inside a source refresh, so a cold or
+            // persisted-but-stale DB may hold confirmed `insider_transaction`
+            // signals (ingested by a prior version) whose cover notes were never
+            // parsed — leaving the insider timeline empty until a manual refresh.
+            // Parse those pending filings now, mirroring the ownership and
+            // management-holdings catch-ups above. `parse_pending` is idempotent
+            // (already-parsed or parked filings are skipped), so it writes zero
+            // duplicate rows. Best-effort — a failure is logged, never fatal.
+            match state.insider().parse_pending() {
+                Ok(0) => {}
+                Ok(written) => log::info!(
+                    "startup insider cover-note parse catch-up wrote {written} transaction row(s)"
+                ),
+                Err(error) => {
+                    log::warn!("startup insider cover-note parse catch-up failed: {error}");
+                }
+            }
+
             // Start the Rust-side source scheduler (ADR 0055 / AV5): it owns the
             // refresh cadence, re-arming source/registry refresh jobs on the durable
             // queue. Replaces the frontend timer, which the webview throttles when
@@ -286,6 +331,11 @@ pub fn run() {
             commands::fundamentals_extraction::list_fact_provenance,
             commands::fundamentals_extraction::list_flagged_fact_provenance,
             commands::fundamentals_coverage::get_fundamentals_coverage,
+            commands::company_health::get_company_health,
+            commands::company_health::backfill_company_health_facts,
+            commands::company_health::get_red_flags,
+            commands::company_health::acknowledge_red_flag,
+            commands::insider::get_insider_overview,
             commands::market_data::get_price_context,
             commands::ownership::get_ownership_overview,
             commands::ownership::backfill_ownership_extraction,
@@ -293,6 +343,10 @@ pub fn run() {
             commands::ownership::confirm_ownership_holder_type_proposal,
             commands::ownership::reject_ownership_holder_type_proposal,
             commands::ownership::run_ownership_classification,
+            commands::ownership::run_ownership_ocr_extraction,
+            commands::ownership::run_company_ownership_ocr,
+            commands::ownership::confirm_ownership_ocr_proposal,
+            commands::ownership::reject_ownership_ocr_proposal,
             commands::history_sweep::run_history_sweep,
             commands::history_sweep::get_history_sweep_progress,
             commands::report_documents_view::get_report_documents_view,

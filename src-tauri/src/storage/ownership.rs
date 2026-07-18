@@ -99,8 +99,73 @@ pub struct OwnershipExtractionResidual {
     pub parse_state: String,
     pub detected_as_of: Option<String>,
     pub matched_heading: Option<String>,
+    /// The tier-4 OCR lifecycle marker (v0.57 T8): `None` = never attempted
+    /// (eligible for a bulk OCR pass); `proposed` = a pending OCR proposal
+    /// awaits review; `rejected` = the user rejected it (never re-proposed);
+    /// `no_table` = OCR yielded no shareholders table (bulk skips, manual
+    /// per-company re-arms). See `OCR_STATE_*`.
+    pub ocr_state: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/// A residual awaiting an OCR pass — the residual plus the fields the tier-4
+/// job needs to OCR the stored document (from `report_documents`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResidualNeedingOcr {
+    pub report_document_id: String,
+    pub company_id: String,
+    pub parse_state: String,
+    pub detected_as_of: Option<String>,
+    pub matched_heading: Option<String>,
+}
+
+/// `ocr_state` values on `ownership_extraction_residual` (v0.57 T8). `None`
+/// (NULL) means eligible; these are the terminal/awaiting markers.
+pub const OCR_STATE_PROPOSED: &str = "proposed";
+pub const OCR_STATE_REJECTED: &str = "rejected";
+pub const OCR_STATE_NO_TABLE: &str = "no_table";
+
+/// One proposed shareholder row from the tier-4 OCR pass (v0.57 T8).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OcrHolderRow {
+    pub holder_name_raw: String,
+    pub capital_pct: Option<String>,
+    pub votes_pct: Option<String>,
+}
+
+/// A new OCR-extracted shareholders table awaiting confirmation. One per
+/// residual document; recording it stamps the residual `ocr_state='proposed'`.
+#[derive(Debug, Clone)]
+pub struct NewOwnershipOcrProposal {
+    /// The residual document this proposal resolves (its coverage gap closes on
+    /// confirm; its residual is cleared).
+    pub report_document_id: String,
+    /// The document actually OCR'd — equals `report_document_id` for a PDF
+    /// residual, or the PDF sibling for an xhtml container (v0.57 T8).
+    pub source_document_id: String,
+    pub company_id: String,
+    pub as_of: String,
+    pub matched_heading: Option<String>,
+    pub provider_id: Option<String>,
+    pub model: Option<String>,
+    pub rows: Vec<OcrHolderRow>,
+}
+
+/// A stored OCR proposal (header + its rows) awaiting confirm/reject. Confirming
+/// writes the rows as `report_document` stakes and clears the residual; rejecting
+/// parks the residual `ocr_state='rejected'`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnershipOcrProposalRecord {
+    pub report_document_id: String,
+    pub source_document_id: String,
+    pub company_id: String,
+    pub as_of: String,
+    pub matched_heading: Option<String>,
+    pub provider_id: Option<String>,
+    pub model: Option<String>,
+    pub created_at: String,
+    pub rows: Vec<OcrHolderRow>,
 }
 
 /// A fetched periodic report document lacking ownership coverage — neither a
@@ -249,10 +314,76 @@ pub(super) fn current_state(
         "
     ))?;
     let rows = statement.query_map([company_id], row_from)?;
-    let rows = rows
+    let mut rows = rows
         .collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)?;
+    // Founder-insider sticky overlay (F-A1, owner dogfooding 2026-07-17). The
+    // disclosure-basis rule above legitimately drops an OFE that vanished below
+    // the 5% threshold in a newer report. A `founder_insider` is categorically
+    // different: a founder crossing below the disclosure threshold is itself an
+    // ESPI-disclosable event, not a silent vanish, AND the founder stake is
+    // corroborated by the management/insider substrate (the skin-in-the-game
+    // join). When a newer full-picture basis only partially captures the
+    // shareholder table (OFE funds parsed, founders missed — the ABE live shape),
+    // the founder's most-recent disclosed stake must persist in current state so
+    // the holder — and its corroboration badge — is still surfaced. Overlay each
+    // founder's latest stake ONLY when that holder identity is absent from the
+    // baseline-scoped set (a founder still in the newest basis keeps that row).
+    overlay_sticky_founders(connection, company_id, &mut rows)?;
     dedup_stakes_by_identity(connection, rows)
+}
+
+/// Append each `founder_insider` holder's most-recent stake to `rows` when that
+/// holder's canonical identity is not already present. Founders are natural
+/// persons (no dictionary alias), so the parenthetical-stripped canonical key is
+/// their identity — the same key the founder-stamping and badge joins use.
+fn overlay_sticky_founders(
+    connection: &Connection,
+    company_id: &str,
+    rows: &mut Vec<OwnershipStakeRow>,
+) -> StorageResult<()> {
+    let present: std::collections::HashSet<String> = rows
+        .iter()
+        .map(|row| {
+            crate::fundamentals::ownership::classify::canonical_holder_identity(
+                &row.holder_name_raw,
+            )
+        })
+        .collect();
+    // Latest stake per founder holder, across ALL history (newest as_of, then
+    // newest disclosure, then id — mirrors the baseline tie-break).
+    let mut statement = connection.prepare(&format!(
+        "
+        SELECT {STAKE_COLUMNS}
+        FROM ownership_stakes o
+        WHERE o.company_id = ?1
+          AND o.holder_type = 'founder_insider'
+          AND NOT EXISTS (
+            SELECT 1 FROM ownership_stakes o2
+            WHERE o2.company_id = o.company_id
+              AND o2.holder_name_normalized = o.holder_name_normalized
+              AND (
+                o2.as_of > o.as_of
+                OR (o2.as_of = o.as_of AND o2.created_at > o.created_at)
+                OR (o2.as_of = o.as_of AND o2.created_at = o.created_at AND o2.id > o.id)
+              )
+          )
+        ORDER BY o.holder_name_normalized
+        "
+    ))?;
+    let founders = statement
+        .query_map([company_id], row_from)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)?;
+    for founder in founders {
+        let identity = crate::fundamentals::ownership::classify::canonical_holder_identity(
+            &founder.holder_name_raw,
+        );
+        if !identity.is_empty() && !present.contains(&identity) {
+            rows.push(founder);
+        }
+    }
+    Ok(())
 }
 
 /// The DISCLOSED-only reference state — the pre-amendment `current_state`
@@ -827,7 +958,7 @@ pub(super) fn reject_holder_type_proposal(
 }
 
 const RESIDUAL_COLUMNS: &str = "report_document_id, company_id, parse_state, \
-     detected_as_of, matched_heading, created_at, updated_at";
+     detected_as_of, matched_heading, ocr_state, created_at, updated_at";
 
 fn residual_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<OwnershipExtractionResidual> {
     Ok(OwnershipExtractionResidual {
@@ -836,8 +967,9 @@ fn residual_from(row: &rusqlite::Row<'_>) -> rusqlite::Result<OwnershipExtractio
         parse_state: row.get(2)?,
         detected_as_of: row.get(3)?,
         matched_heading: row.get(4)?,
-        created_at: row.get(5)?,
-        updated_at: row.get(6)?,
+        ocr_state: row.get(5)?,
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
     })
 }
 
@@ -970,6 +1102,290 @@ pub(super) fn documents_needing_ownership_extraction(
     };
     rows.collect::<Result<Vec<_>, _>>()
         .map_err(StorageError::from)
+}
+
+// ---------------------------------------------------------------------------
+// Tier-4 OCR proposals (v0.57 T8, ADR 0077 over ADR 0072 decision 2a)
+// ---------------------------------------------------------------------------
+
+/// Deterministic proposal-row id: one row per `(document, index)`, so a re-OCR
+/// of the same document reconciles rather than duplicating.
+fn ocr_row_id(report_document_id: &str, index: usize) -> String {
+    format!("ownocrrow_{}_{index}", slug_part(report_document_id))
+}
+
+/// Residuals eligible for a tier-4 OCR pass. `company_id = None` scans every
+/// company (the bulk pass); `Some` narrows to one. `include_no_table` re-arms
+/// the `no_table` markers too — the manual per-company retry uses it, the bulk
+/// pass does not (so a doc OCR already found unreadable is not re-spent). A
+/// `proposed` or `rejected` residual is NEVER selected (awaiting review / the
+/// user said no). Joined to `report_documents` so the caller can OCR the file.
+pub(super) fn residuals_needing_ocr(
+    connection: &Connection,
+    company_id: Option<&str>,
+    include_no_table: bool,
+    include_section_missing: bool,
+) -> StorageResult<Vec<ResidualNeedingOcr>> {
+    // NULL is always eligible; `no_table` only when re-arming. `proposed`/
+    // `rejected` are always excluded.
+    let state_clause = if include_no_table {
+        "(r.ocr_state IS NULL OR r.ocr_state = 'no_table')"
+    } else {
+        "r.ocr_state IS NULL"
+    };
+    // Parse-state scope (orchestrator gate, T8 real-data): the bulk pass targets
+    // the card's population — `table_unparsable` + `glyph_encoded` (unreadable
+    // tables that OCR can defeat). `section_missing` (a document genuinely
+    // lacking the shareholders section) is EXCLUDED from bulk to avoid burning
+    // provider calls on nothing; the manual per-company retry includes it.
+    let parse_clause = if include_section_missing {
+        "r.parse_state IN ('table_unparsable', 'glyph_encoded', 'section_missing')"
+    } else {
+        "r.parse_state IN ('table_unparsable', 'glyph_encoded')"
+    };
+    let mut sql = format!(
+        "SELECT r.report_document_id, r.company_id, r.parse_state, \
+                r.detected_as_of, r.matched_heading \
+         FROM ownership_extraction_residual r \
+         JOIN report_documents rd ON rd.id = r.report_document_id \
+         WHERE {state_clause} AND {parse_clause} \
+           AND rd.fetch_status = 'fetched' AND rd.local_path IS NOT NULL"
+    );
+    if company_id.is_some() {
+        sql.push_str(" AND r.company_id = ?1");
+    }
+    sql.push_str(" ORDER BY r.created_at DESC, r.report_document_id DESC");
+    let mut statement = connection.prepare(&sql)?;
+    let map = |row: &rusqlite::Row<'_>| {
+        Ok(ResidualNeedingOcr {
+            report_document_id: row.get(0)?,
+            company_id: row.get(1)?,
+            parse_state: row.get(2)?,
+            detected_as_of: row.get(3)?,
+            matched_heading: row.get(4)?,
+        })
+    };
+    let rows = match company_id {
+        Some(id) => statement.query_map([id], map)?,
+        None => statement.query_map([], map)?,
+    };
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+/// Stamp a residual's `ocr_state` (a no-op if the residual is gone). Used to
+/// mark `no_table` (OCR yielded nothing) and by confirm/reject indirectly.
+pub(super) fn set_residual_ocr_state(
+    connection: &Connection,
+    report_document_id: &str,
+    ocr_state: Option<&str>,
+) -> StorageResult<()> {
+    connection.execute(
+        "UPDATE ownership_extraction_residual \
+         SET ocr_state = ?2, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') \
+         WHERE report_document_id = ?1",
+        params![report_document_id, ocr_state],
+    )?;
+    Ok(())
+}
+
+/// Record (upsert) an OCR shareholders-table proposal for one residual document
+/// and mark the residual `ocr_state='proposed'`. Idempotent per document: the
+/// header upserts and the rows are fully replaced, so a re-OCR reconciles.
+/// **Writes no stakes** — confirmation is the only door.
+pub(super) fn record_ocr_proposal(
+    connection: &Connection,
+    proposal: &NewOwnershipOcrProposal,
+) -> StorageResult<()> {
+    connection.execute(
+        "INSERT INTO ownership_ocr_proposals \
+            (report_document_id, source_document_id, company_id, as_of, matched_heading, provider_id, model) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7) \
+         ON CONFLICT(report_document_id) DO UPDATE SET \
+            source_document_id = excluded.source_document_id, \
+            company_id = excluded.company_id, as_of = excluded.as_of, \
+            matched_heading = excluded.matched_heading, \
+            provider_id = excluded.provider_id, model = excluded.model, \
+            updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
+        params![
+            proposal.report_document_id,
+            proposal.source_document_id,
+            proposal.company_id,
+            proposal.as_of,
+            proposal.matched_heading,
+            proposal.provider_id,
+            proposal.model,
+        ],
+    )?;
+    connection.execute(
+        "DELETE FROM ownership_ocr_proposal_rows WHERE report_document_id = ?1",
+        [&proposal.report_document_id],
+    )?;
+    for (index, row) in proposal.rows.iter().enumerate() {
+        connection.execute(
+            "INSERT INTO ownership_ocr_proposal_rows \
+                (id, report_document_id, row_index, holder_name_raw, capital_pct, votes_pct) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                ocr_row_id(&proposal.report_document_id, index),
+                proposal.report_document_id,
+                index as i64,
+                row.holder_name_raw,
+                row.capital_pct,
+                row.votes_pct,
+            ],
+        )?;
+    }
+    set_residual_ocr_state(
+        connection,
+        &proposal.report_document_id,
+        Some(OCR_STATE_PROPOSED),
+    )?;
+    Ok(())
+}
+
+fn ocr_rows_for(
+    connection: &Connection,
+    report_document_id: &str,
+) -> StorageResult<Vec<OcrHolderRow>> {
+    let mut statement = connection.prepare(
+        "SELECT holder_name_raw, capital_pct, votes_pct \
+         FROM ownership_ocr_proposal_rows WHERE report_document_id = ?1 ORDER BY row_index",
+    )?;
+    let rows = statement.query_map([report_document_id], |row| {
+        Ok(OcrHolderRow {
+            holder_name_raw: row.get(0)?,
+            capital_pct: row.get(1)?,
+            votes_pct: row.get(2)?,
+        })
+    })?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(StorageError::from)
+}
+
+/// The OCR proposal for one document, if any (header + rows).
+pub(super) fn get_ocr_proposal(
+    connection: &Connection,
+    report_document_id: &str,
+) -> StorageResult<Option<OwnershipOcrProposalRecord>> {
+    let header = connection
+        .query_row(
+            "SELECT report_document_id, source_document_id, company_id, as_of, matched_heading, \
+                    provider_id, model, created_at \
+             FROM ownership_ocr_proposals WHERE report_document_id = ?1",
+            [report_document_id],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<String>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                    row.get::<_, Option<String>>(6)?,
+                    row.get::<_, String>(7)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((
+        report_document_id,
+        source_document_id,
+        company_id,
+        as_of,
+        matched_heading,
+        provider_id,
+        model,
+        created_at,
+    )) = header
+    else {
+        return Ok(None);
+    };
+    let rows = ocr_rows_for(connection, &report_document_id)?;
+    Ok(Some(OwnershipOcrProposalRecord {
+        report_document_id,
+        source_document_id,
+        company_id,
+        as_of,
+        matched_heading,
+        provider_id,
+        model,
+        created_at,
+        rows,
+    }))
+}
+
+/// All pending OCR proposals for a company (header + rows), newest first.
+pub(super) fn list_ocr_proposals(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<Vec<OwnershipOcrProposalRecord>> {
+    let ids: Vec<String> = {
+        let mut statement = connection.prepare(
+            "SELECT report_document_id FROM ownership_ocr_proposals \
+             WHERE company_id = ?1 ORDER BY created_at DESC, report_document_id DESC",
+        )?;
+        let rows = statement.query_map([company_id], |row| row.get::<_, String>(0))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(StorageError::from)?
+    };
+    let mut proposals = Vec::with_capacity(ids.len());
+    for id in ids {
+        if let Some(proposal) = get_ocr_proposal(connection, &id)? {
+            proposals.push(proposal);
+        }
+    }
+    Ok(proposals)
+}
+
+/// Confirm an OCR proposal: write each proposed row as a `report_document`
+/// stake at the proposal's `as_of` (the standard extraction write path), stamp
+/// the deterministic holder-type classification, CLEAR the residual entirely,
+/// and delete the proposal. Idempotent per confirm. Returns rows written.
+pub(super) fn confirm_ocr_proposal(
+    connection: &Connection,
+    report_document_id: &str,
+) -> StorageResult<usize> {
+    let Some(proposal) = get_ocr_proposal(connection, report_document_id)? else {
+        return Ok(0);
+    };
+    for row in &proposal.rows {
+        let stake = NewOwnershipStake {
+            company_id: proposal.company_id.clone(),
+            holder_name_raw: row.holder_name_raw.clone(),
+            holder_type: None,
+            capital_pct: row.capital_pct.clone(),
+            votes_pct: row.votes_pct.clone(),
+            as_of: proposal.as_of.clone(),
+            source: "report_document".to_owned(),
+            report_document_id: Some(report_document_id.to_owned()),
+            feed_item_id: None,
+        };
+        append_snapshot(connection, &stake)?;
+    }
+    classify_unclassified_for_company(connection, &proposal.company_id)?;
+    // Confirm resolves the residual: the deterministic gap is now filled, so the
+    // residual is cleared exactly as a successful deterministic parse would.
+    clear_extraction_residual(connection, report_document_id)?;
+    connection.execute(
+        "DELETE FROM ownership_ocr_proposals WHERE report_document_id = ?1",
+        [report_document_id],
+    )?;
+    Ok(proposal.rows.len())
+}
+
+/// Reject an OCR proposal: delete it and park the residual `ocr_state='rejected'`
+/// so the bulk/manual pass never re-proposes it. Writes no stakes.
+pub(super) fn reject_ocr_proposal(
+    connection: &Connection,
+    report_document_id: &str,
+) -> StorageResult<()> {
+    connection.execute(
+        "DELETE FROM ownership_ocr_proposals WHERE report_document_id = ?1",
+        [report_document_id],
+    )?;
+    set_residual_ocr_state(connection, report_document_id, Some(OCR_STATE_REJECTED))?;
+    Ok(())
 }
 
 /// Ownership domain store (ADR 0072). `AppState::ownership()`.
@@ -1162,6 +1578,74 @@ impl OwnershipStore {
     ) -> StorageResult<HolderTypeProposalRow> {
         let connection = self.db.checkout()?;
         reject_holder_type_proposal(&connection, proposal_id)
+    }
+
+    // ---- Tier-4 OCR proposals (T8) ----
+
+    /// Residuals eligible for a tier-4 OCR pass (`None` = all companies).
+    /// `include_no_table` re-arms `no_table` markers (the manual per-company
+    /// retry); the bulk pass passes `false`.
+    pub fn residuals_needing_ocr(
+        &self,
+        company_id: Option<&str>,
+        include_no_table: bool,
+        include_section_missing: bool,
+    ) -> StorageResult<Vec<ResidualNeedingOcr>> {
+        let connection = self.db.checkout()?;
+        residuals_needing_ocr(
+            &connection,
+            company_id,
+            include_no_table,
+            include_section_missing,
+        )
+    }
+
+    /// Stamp a residual's `ocr_state` (e.g. `no_table` after an empty OCR run).
+    pub fn set_residual_ocr_state(
+        &self,
+        report_document_id: &str,
+        ocr_state: Option<&str>,
+    ) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        set_residual_ocr_state(&connection, report_document_id, ocr_state)
+    }
+
+    /// Record (upsert) an OCR shareholders-table proposal; marks the residual
+    /// `ocr_state='proposed'`. Writes no stakes.
+    pub fn record_ocr_proposal(&self, proposal: NewOwnershipOcrProposal) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        record_ocr_proposal(&connection, &proposal)
+    }
+
+    /// The OCR proposal for one document, if any.
+    pub fn get_ocr_proposal(
+        &self,
+        report_document_id: &str,
+    ) -> StorageResult<Option<OwnershipOcrProposalRecord>> {
+        let connection = self.db.checkout()?;
+        get_ocr_proposal(&connection, report_document_id)
+    }
+
+    /// All pending OCR proposals for a company (header + rows).
+    pub fn list_ocr_proposals(
+        &self,
+        company_id: &str,
+    ) -> StorageResult<Vec<OwnershipOcrProposalRecord>> {
+        let connection = self.db.checkout()?;
+        list_ocr_proposals(&connection, company_id)
+    }
+
+    /// Confirm an OCR proposal: write stakes, classify, clear the residual,
+    /// delete the proposal. Returns rows written.
+    pub fn confirm_ocr_proposal(&self, report_document_id: &str) -> StorageResult<usize> {
+        let connection = self.db.checkout()?;
+        confirm_ocr_proposal(&connection, report_document_id)
+    }
+
+    /// Reject an OCR proposal: delete it, park the residual `ocr_state='rejected'`.
+    pub fn reject_ocr_proposal(&self, report_document_id: &str) -> StorageResult<()> {
+        let connection = self.db.checkout()?;
+        reject_ocr_proposal(&connection, report_document_id)
     }
 
     // ---- ESPI major-holdings stake update (T4 stream 2) ----

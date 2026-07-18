@@ -50,6 +50,12 @@ impl CompanyStore {
         get_company_sector(&connection, company_id)
     }
 
+    /// The company's `statement_type` (ADR 0083 Decision 4 health-score gate).
+    pub fn get_statement_type(&self, company_id: &str) -> StorageResult<String> {
+        let connection = self.db.checkout()?;
+        get_statement_type(&connection, company_id)
+    }
+
     pub fn set_company_sector(
         &self,
         company_id: &str,
@@ -573,6 +579,25 @@ pub(super) fn set_company_ir_reports_url(
 }
 
 /// The company's current sector and its source (`registry` | `manual`), or `(None, None)`.
+/// The company's `statement_type` discriminator (`industrial` / `bank` /
+/// `insurance` / `broker` …), which selects canonical packs and gates the
+/// health scores (ADR 0083 Decision 4 — financials are `NotApplicable`).
+/// Defaults to `industrial` for an unknown company, matching the column
+/// default and tolerating a missing row.
+pub(super) fn get_statement_type(
+    connection: &Connection,
+    company_id: &str,
+) -> StorageResult<String> {
+    let value = connection
+        .query_row(
+            "SELECT statement_type FROM companies WHERE id = ?1",
+            [company_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(value.unwrap_or_else(|| "industrial".to_owned()))
+}
+
 pub(super) fn get_company_sector(
     connection: &Connection,
     company_id: &str,

@@ -18,6 +18,15 @@ vi.mock("../../api/ownership", () => ({
   setOwnershipHolderType: vi.fn(),
   confirmOwnershipHolderTypeProposal: vi.fn(),
   rejectOwnershipHolderTypeProposal: vi.fn(),
+  runOwnershipClassification: vi.fn(),
+  runCompanyOwnershipOcr: vi.fn(),
+  confirmOwnershipOcrProposal: vi.fn(),
+  rejectOwnershipOcrProposal: vi.fn(),
+}));
+// The Insiderzy block (v0.57 T6) fetches on mount; stub it so this panel's
+// identity-facts tests exercise only the Basic-info behavior.
+vi.mock("../../api/insider", () => ({
+  getInsiderOverview: vi.fn(() => Promise.resolve(null)),
 }));
 
 const EMPTY_OWNERSHIP = {
@@ -29,6 +38,7 @@ const EMPTY_OWNERSHIP = {
   freeFloatHistory: [],
   residuals: [],
   pendingProposals: [],
+  ocrProposals: [],
 };
 
 function renderPanel(companyId: string) {

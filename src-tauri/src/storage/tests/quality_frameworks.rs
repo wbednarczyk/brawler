@@ -1493,6 +1493,91 @@ fn every_canonical_derived_metric_is_computable_from_a_representative_fact_set()
     }
 }
 
+#[test]
+fn health_score_liquidity_metrics_derive_from_current_items() {
+    // ADR 0083 Decision 5 (v0.57): the four reported health-score inputs are
+    // seeded as canonical reported definitions, and the two liquidity derivations
+    // (`working_capital`, `current_ratio`) compute from `current_assets` and
+    // `current_liabilities` alone — nothing else. Reddens until migration 0089
+    // seeds the rows (compare the ROIC/ROCE regression this guard-class caught).
+    use crate::fundamentals::expr::MetricResolver as _;
+    use crate::fundamentals::metrics::{
+        parse_formula, Computation, MetricDef, MetricsContext, PeriodFacts,
+    };
+    use rust_decimal::Decimal;
+    use std::collections::HashMap;
+
+    let connection = open_in_memory_database().expect("database should initialize");
+    let state = AppState::new(connection);
+    let definitions = state
+        .list_kpi_definitions(ListKpiDefinitionsInput {
+            scope: None,
+            sector: None,
+            company_id: None,
+        })
+        .expect("definitions");
+
+    // The four new reported inputs exist as canonical reported metrics.
+    for key in [
+        "current_assets",
+        "current_liabilities",
+        "retained_earnings",
+        "long_term_debt",
+    ] {
+        let def = definitions
+            .iter()
+            .find(|d| d.metric_key == key)
+            .unwrap_or_else(|| panic!("reported metric `{key}` should be seeded"));
+        assert_eq!(def.scope, "canonical");
+        assert_eq!(def.computation, "reported");
+    }
+
+    // Build a context with only the two current items reported, then prove both
+    // liquidity derivations resolve from them (working_capital = 18000 - 9000,
+    // current_ratio = 18000 / 9000 = 2).
+    let mut defs: HashMap<String, MetricDef> = HashMap::new();
+    for def in &definitions {
+        let computation = if def.computation == "derived" {
+            Computation::Derived
+        } else {
+            Computation::Reported
+        };
+        let formula = def
+            .formula
+            .clone()
+            .filter(|f| !f.trim().is_empty())
+            .and_then(|f| parse_formula(&f));
+        defs.entry(def.metric_key.clone()).or_insert(MetricDef {
+            computation,
+            formula,
+            value_kind: def.value_kind.clone(),
+            unit: def.unit.clone(),
+        });
+    }
+    let mut reported: HashMap<String, Decimal> = HashMap::new();
+    reported.insert("current_assets".to_owned(), Decimal::from(18_000));
+    reported.insert("current_liabilities".to_owned(), Decimal::from(9_000));
+    let period = PeriodFacts {
+        period_id: "period-liquidity".to_owned(),
+        fiscal_year: 2025,
+        is_annual: true,
+        reported,
+    };
+    let context = MetricsContext::new(defs, vec![period]);
+    let resolver = context.resolver();
+
+    assert_eq!(
+        resolver.value("working_capital"),
+        Some(Decimal::from(9_000)),
+        "working_capital = current_assets - current_liabilities"
+    );
+    assert_eq!(
+        resolver.value("current_ratio"),
+        Some(Decimal::from(2)),
+        "current_ratio = current_assets / current_liabilities"
+    );
+}
+
 // ============================================================================
 // U8a — bilingual template seeds + non-destructive top-up (ADR 0076 Decision 8)
 // ============================================================================

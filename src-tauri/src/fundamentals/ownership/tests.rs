@@ -409,3 +409,67 @@ Fundusz Emerytalny oraz Dobrowolny Fundusz Emerytalny";
     assert_eq!(out.rows[0].holder_raw, "Skarb Panstwa");
     assert_eq!(out.rows[0].capital_pct.as_deref(), Some("31.79"));
 }
+
+// ---------------------------------------------------------------------------
+// Tier-4 OCR normalization + parse (v0.57 T8, ADR 0077)
+// ---------------------------------------------------------------------------
+
+/// Golden for the OCR-markdown table-normalization step (testing.md OCR-v4
+/// rule): a synthetic OCR-shaped shareholders table (markdown pipes + a
+/// separator rule + `#` heading) normalizes to the plain, deflatable line
+/// stream the deterministic parser consumes — pipes → spaces, separator rows
+/// dropped, heading markers stripped (heading text kept). Never copied from
+/// `private/`.
+#[test]
+fn normalize_ocr_markdown_golden() {
+    let markdown = "# Sprawozdanie\n\
+        ## Akcjonariusze posiadajacy 5% glosow\n\n\
+        | Akcjonariusz | % kapitalu | % glosow |\n\
+        |---|:---:|---:|\n\
+        | Jan Kowalski | 12,34 | 15,00 |\n\
+        | Aviva OFE | 9,88 | 7,41 |\n";
+    let normalized = normalize_ocr_markdown(markdown);
+    let expected = "Sprawozdanie\n\
+        Akcjonariusze posiadajacy 5% glosow\n\
+        \n\
+        Akcjonariusz   % kapitalu   % glosow\n\
+        Jan Kowalski   12,34   15,00\n\
+        Aviva OFE   9,88   7,41";
+    assert_eq!(normalized, expected);
+}
+
+/// End-to-end: the OCR markdown parses through the SAME deterministic parser and
+/// yields the holder rows with capital ≠ votes (OCR defeats a glyph residual).
+#[test]
+fn parse_ocr_shareholders_reads_the_table() {
+    let filler = "Niniejszy raport okresowy zawiera dane oraz komentarz. ".repeat(40);
+    let markdown = format!(
+        "# Raport\n\n{filler}\n\n\
+         ## Akcjonariusze posiadajacy co najmniej 5% ogolnej liczby glosow\n\n\
+         | Akcjonariusz | Liczba akcji | % kapitalu | Liczba glosow | % glosow |\n\
+         |---|---|---|---|---|\n\
+         | Jan Kowalski | 1 234 567 | 12,34 | 2 000 000 | 15,00 |\n\
+         | Aviva OFE | 987 654 | 9,88 | 987 654 | 7,41 |\n"
+    );
+    let out = parse_ocr_shareholders(&markdown);
+    assert_eq!(out.state, OwnershipParseState::Found);
+    let jan = out
+        .rows
+        .iter()
+        .find(|r| r.holder_raw == "Jan Kowalski")
+        .expect("Jan parsed from OCR markdown");
+    assert_eq!(jan.capital_pct.as_deref(), Some("12.34"));
+    assert_eq!(
+        jan.votes_pct.as_deref(),
+        Some("15.00"),
+        "votes kept separate"
+    );
+}
+
+/// Pure prose (no shareholders anchor) → SectionMissing, never a fabricated row.
+#[test]
+fn parse_ocr_shareholders_prose_is_section_missing() {
+    let out = parse_ocr_shareholders("Sprawozdanie finansowe. Bilans i rachunek wynikow spolki.");
+    assert_eq!(out.state, OwnershipParseState::SectionMissing);
+    assert!(out.rows.is_empty());
+}

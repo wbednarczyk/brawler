@@ -68,7 +68,50 @@ const PL_KPI_LABELS: Record<string, string> = {
   properties_count: "Nieruchomości",
   same_store_noi: "NOI porównywalny (same-store)",
   walt: "Średni ważony okres najmu (WALT)",
+  // Balance-sheet inputs behind Company health (Piotroski F / Altman Z″,
+  // ADR 0083 Decision 5) — canonical labels seeded in migrations 0034/0089.
+  current_assets: "Aktywa obrotowe",
+  current_liabilities: "Zobowiązania krótkoterminowe",
+  total_liabilities: "Zobowiązania razem",
+  retained_earnings: "Zyski zatrzymane",
+  long_term_debt: "Dług długoterminowy",
+  working_capital: "Kapitał obrotowy",
+  current_ratio: "Wskaźnik bieżącej płynności",
 };
+
+// English canonical labels for KPI keys shown where only the metric_key is
+// available (no full KpiDefinition load) — e.g. the Company health section's
+// missing-inputs list (ADR 0083). Values mirror the canonical seed labels in
+// migrations 0034/0089 so they stay identical to what the Fundamentals panel
+// would show for the same metric. Extend as Company health names new keys;
+// this must cover exactly the keys `localizedKpiLabelForKey` is used for.
+const EN_KPI_LABELS: Record<string, string> = {
+  revenue: "Revenue",
+  gross_profit: "Gross profit",
+  operating_profit: "Operating profit",
+  net_profit: "Net profit",
+  total_assets: "Total assets",
+  total_equity: "Total equity",
+  shares_outstanding: "Shares outstanding",
+  operating_cash_flow: "Operating cash flow",
+  current_assets: "Current assets",
+  current_liabilities: "Current liabilities",
+  total_liabilities: "Total liabilities",
+  retained_earnings: "Retained earnings",
+  long_term_debt: "Long-term debt",
+  working_capital: "Working capital",
+  current_ratio: "Current ratio",
+};
+
+/**
+ * Localized display name for a bare metric key (no `KpiDefinition` at hand),
+ * via the same {@link localizedKpiLabel} mechanism the Fundamentals panel
+ * uses — reused, not duplicated. Falls back to the metric key itself for a
+ * key {@link EN_KPI_LABELS} doesn't cover (never renders `undefined`).
+ */
+export function localizedKpiLabelForKey(metricKey: string, locale: LocaleCode): string {
+  return localizedKpiLabel({ metricKey, label: EN_KPI_LABELS[metricKey] ?? metricKey }, locale);
+}
 
 /** Localized display name for a KPI definition; falls back to its stored label. */
 export function localizedKpiLabel(
