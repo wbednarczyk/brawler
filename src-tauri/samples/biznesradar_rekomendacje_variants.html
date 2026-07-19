@@ -1,0 +1,52 @@
+<!-- Synthetic edge-case fixture (the real captured pages carried no missing-target
+     / missing-PDF / parenthesis-free-author rows, so these variant rows are
+     constructed to exercise those defensive parse paths). Table shape matches the
+     real BiznesRadar rekomendacje table. Also exercises the paź / lis / sty month
+     abbreviations. No private/realdata path is referenced from code. -->
+<html>
+<head><title>SPÓŁKA (SPX) Rekomendacje - BiznesRadar.pl</title></head>
+<body>
+<table class="qTableFull contentList ralign recommendations">
+    <tr>
+        <th>Rodzaj</th>
+        <th>Cena<br />docelowa*</th>
+        <th>Kurs<br />aktualny</th>
+        <th>CD/K**</th>
+        <th>Kurs z dnia<br />wydania*</th>
+        <th>Data<br />upublicznienia</th>
+        <th>Autor</th>
+        <th>Plik</th>
+    </tr>
+    <tr>
+        <td><span class="sell-big">redukuj</span></td>
+        <td class="bvalue"></td>
+        <td><span class="q_ch_act">100.00</span></td>
+        <td class="bvalue"><span class="cminus">-5.00%</span></td>
+        <td>105.00</td>
+        <td>07 paź 2025 09:15</td>
+        <td>Anna Nowak (Ipopema Securities)</td>
+        <td><a target="_blank" href="/storage/a/sp/x-/spx-ipopema-2025-10-07.pdf"><span class="attachment pdf" /></a></td>
+    </tr>
+    <tr>
+        <td><span class="buy-big">kupuj</span></td>
+        <td class="bvalue">150.00</td>
+        <td><span class="q_ch_act">100.00</span></td>
+        <td class="bvalue"><span class="cplus">50.00%</span></td>
+        <td>98.00</td>
+        <td>12 lis 2025 00:00</td>
+        <td>Erste Group</td>
+        <td></td>
+    </tr>
+    <tr>
+        <td><span style="font-weight:bold">trzymaj</span></td>
+        <td class="bvalue">120.00</td>
+        <td><span class="q_ch_act">100.00</span></td>
+        <td class="bvalue"><span class="cplus">20.00%</span></td>
+        <td>110.00</td>
+        <td>03 sty 2026 14:30</td>
+        <td>Jan Kowalski (DM Trigon)</td>
+        <td><a target="_blank" href="https://broker.example.com/report.pdf"><span class="attachment pdf" /></a></td>
+    </tr>
+</table>
+</body>
+</html>

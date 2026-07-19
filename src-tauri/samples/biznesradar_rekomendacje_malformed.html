@@ -1,0 +1,25 @@
+<!-- Malformed fixture: a recommendations table IS present (so it is not a landing
+     page), but a data row is structurally broken (too few columns). Structural
+     drift must fail loud as a Parse error, never panic or silently ingest. -->
+<html>
+<head><title>SPÓŁKA (SPX) Rekomendacje - BiznesRadar.pl</title></head>
+<body>
+<table class="qTableFull contentList ralign recommendations">
+    <tr>
+        <th>Rodzaj</th>
+        <th>Cena<br />docelowa*</th>
+        <th>Kurs<br />aktualny</th>
+        <th>CD/K**</th>
+        <th>Kurs z dnia<br />wydania*</th>
+        <th>Data<br />upublicznienia</th>
+        <th>Autor</th>
+        <th>Plik</th>
+    </tr>
+    <tr>
+        <td><span class="buy-big">kupuj</span></td>
+        <td class="bvalue">150.00</td>
+        <td>18 cze 2026 08:40</td>
+    </tr>
+</table>
+</body>
+</html>

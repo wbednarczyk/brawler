@@ -48,6 +48,11 @@ per feature.
   concerns, report delays, fund exits, score deteriorations, and short-selling
   spikes automatically, each with evidence, an acknowledge action, and alert
   wiring.
+- **[Analyst recommendations](analyst-recommendations.md)** — broker ratings and
+  target prices tracked as attributed third-party opinions: verbatim ratings
+  with upgrade/downgrade markers, an append-only local history, a
+  recommendation-change signal for alerts, and a "vs target" readout beside the
+  price — never advice.
 - **[DSL reference](dsl-reference.md)** — the small expression language used to
   write quality-framework criteria (e.g. `roic >= 15%`,
   `net_debt_to_ebitda < 2.5 AND fcf > 0`).

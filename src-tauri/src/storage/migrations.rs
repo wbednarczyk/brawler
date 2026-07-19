@@ -503,6 +503,11 @@ const MIGRATIONS: &[Migration] = &[
         name: "repair_cdr_q3_2023_misscaled_facts",
         sql: include_str!("../../migrations/0099_repair_cdr_q3_2023_misscaled_facts.sql"),
     },
+    Migration {
+        version: 100,
+        name: "analyst_recommendations",
+        sql: include_str!("../../migrations/0100_analyst_recommendations.sql"),
+    },
 ];
 
 pub fn open_database(path: impl AsRef<Path>) -> StorageResult<Connection> {

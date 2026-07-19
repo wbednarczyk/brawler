@@ -1271,6 +1271,16 @@
           }
         },
         {
+          "_comment": "Analyst recommendations (v0.58 A3, ADR 0073): a fresh company has no ingested recommendations, so both sides return the empty view (empty entries array — parity-of-execution; latestTarget + lastRefreshedAt omitted because the adapter never ran). expectField pins the scalar companyId.",
+          "command": "get_analyst_recommendations",
+          "input": {
+            "companyId": "$cid"
+          },
+          "expectField": {
+            "companyId": "company_gpw_hlth"
+          }
+        },
+        {
           "command": "acknowledge_red_flag",
           "input": {
             "input": {

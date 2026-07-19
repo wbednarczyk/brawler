@@ -66,6 +66,7 @@ export function SettingsScreen() {
   licenseKeyDraft,
   feedPruneRetentionDays,
   feedPruneResult,
+  onPruneFeedItems,
   geminiCredentialStatus,
   geminiCredentialError,
   geminiCredentialInFlight,
@@ -175,6 +176,7 @@ export function SettingsScreen() {
             <SourceSettings
               feedPruneRetentionDays={feedPruneRetentionDays}
               feedPruneResult={feedPruneResult}
+              onPruneFeedItems={onPruneFeedItems}
               settings={settings}
               onPollIntervalChange={onPollIntervalChange}
               onBackfillYearsChange={onBackfillYearsChange}

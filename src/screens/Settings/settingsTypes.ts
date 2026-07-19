@@ -15,6 +15,7 @@ export type SettingsScreenProps = {
   licenseKeyDraft: string;
   feedPruneRetentionDays: number;
   feedPruneResult: FeedPruneResult | null;
+  onPruneFeedItems: () => void;
   geminiCredentialStatus: CredentialStatus | null;
   geminiCredentialError: string | null;
   geminiCredentialInFlight: boolean;

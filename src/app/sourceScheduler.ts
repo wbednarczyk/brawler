@@ -1,17 +1,7 @@
 export const gpwRegistryAdapterId = "gpw-company-registry";
 export const eventSourceAdapterIds = ["gpw-market-events-rss", "bankier-kalendarium-html"];
+// Retention window (days) for the MANUAL feed cleanup action. Automatic timed
+// pruning was disabled by owner decision 2026-07-19 (it silently deleted
+// researched reports); the constants that drove the retired auto-prune timer
+// (interval / initial delay / start jitter) were removed with it.
 export const feedPruneRetentionDays = 30;
-export const feedPruneIntervalMs = 24 * 60 * 60 * 1000;
-export const feedPruneInitialDelayMs = 2 * 60 * 1000;
-
-export function schedulerStartJitterMs(intervalMs: number) {
-  const jitterWindowMs = Math.min(Math.max(Math.floor(intervalMs * 0.1), 1000), 60000);
-
-  if (jitterWindowMs < 2000) {
-    return Math.floor(Math.random() * jitterWindowMs);
-  }
-
-  const minimumJitterMs = Math.min(15000, Math.floor(jitterWindowMs / 2));
-
-  return minimumJitterMs + Math.floor(Math.random() * (jitterWindowMs - minimumJitterMs + 1));
-}

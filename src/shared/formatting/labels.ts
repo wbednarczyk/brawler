@@ -1,7 +1,8 @@
 // Signal-category code → its human display name, matching the backend's
 // `signal_categories.display_name` seed EXACTLY (migrations 0041 buyback→
 // 0044 own_shares rename, 0079 auditor_opinion, 0080 short_position_change,
-// 0085 major_holdings_change, 0092 report_delay/fund_exit/score_deterioration)
+// 0085 major_holdings_change, 0092 report_delay/fund_exit/score_deterioration,
+// 0100 recommendation_change)
 // so `text()` resolves the SAME locale entries `text(signal.categoryDisplayName)`
 // already relies on elsewhere (`SignalBadges`, `InboxDetailPane`) — never a
 // second, drifting copy of the same names. Used where only the raw category
@@ -19,6 +20,7 @@ export function formatSignalCategoryDisplayName(category: string) {
     auditor_opinion: "Auditor opinion",
     short_position_change: "Short position",
     major_holdings_change: "Major holdings change",
+    recommendation_change: "Analyst recommendation change",
     report_delay: "Report delay",
     fund_exit: "Fund exit",
     score_deterioration: "Score deterioration",

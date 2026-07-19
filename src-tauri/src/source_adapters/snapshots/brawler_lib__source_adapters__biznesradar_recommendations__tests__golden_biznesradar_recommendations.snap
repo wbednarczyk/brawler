@@ -1,0 +1,69 @@
+---
+source: src/source_adapters/biznesradar_recommendations.rs
+expression: entries
+---
+[
+    AnalystRecommendationEntry {
+        firm: "Noble Securities",
+        analyst: Some(
+            "Mateusz Chrzanowski",
+        ),
+        rating: "akumuluj",
+        target_price: Some(
+            "250.00",
+        ),
+        target_currency: Some(
+            "PLN",
+        ),
+        price_at_issue: Some(
+            "224.70",
+        ),
+        published_at: "2026-06-18T08:40:00",
+        source_url: "https://www.biznesradar.pl/rekomendacje-spolki/CDPROJEKT",
+        report_url: Some(
+            "https://www.biznesradar.pl/storage/a/cd/r-/cdr-noble-2026-06-23-0e33ac3.pdf",
+        ),
+    },
+    AnalystRecommendationEntry {
+        firm: "BOS DM",
+        analyst: Some(
+            "Tomasz Rodak",
+        ),
+        rating: "trzymaj",
+        target_price: Some(
+            "270.00",
+        ),
+        target_currency: Some(
+            "PLN",
+        ),
+        price_at_issue: Some(
+            "249.20",
+        ),
+        published_at: "2026-02-27T18:05:00",
+        source_url: "https://www.biznesradar.pl/rekomendacje-spolki/CDPROJEKT",
+        report_url: Some(
+            "https://www.biznesradar.pl/storage/a/mo/nt/monthly-3-mr-9-2026-dm-bos-pl-disclaimer-cce8a47.pdf",
+        ),
+    },
+    AnalystRecommendationEntry {
+        firm: "BM mBank",
+        analyst: Some(
+            "Piotr Poniatowski",
+        ),
+        rating: "kupuj",
+        target_price: Some(
+            "294.00",
+        ),
+        target_currency: Some(
+            "PLN",
+        ),
+        price_at_issue: Some(
+            "231.50",
+        ),
+        published_at: "2025-11-26T00:00:00",
+        source_url: "https://www.biznesradar.pl/rekomendacje-spolki/CDPROJEKT",
+        report_url: Some(
+            "https://www.biznesradar.pl/storage/a/mb/an/mbank-zestawienie-rekomendacji-2026-03-12-15ed1e9.pdf",
+        ),
+    },
+]

@@ -13,6 +13,8 @@ import { ActionRow, Button, EmptyState, ErrorText, InfoGrid, InlineConfirm, Sect
 import { listFactProvenance, type FactProvenance } from "../../api/fundamentalsExtraction";
 import { getPriceContext } from "../../api/marketData";
 import type { PriceContext } from "../../api/marketData";
+import { getAnalystRecommendations } from "../../api/analystRecommendations";
+import type { AnalystRecommendationTarget } from "../../api/analystRecommendations";
 import { PriceContextSection } from "./PriceContextSection";
 import type { FactMatrixRow } from "./factMatrix";
 import type {
@@ -39,6 +41,9 @@ type FundamentalsPanelProps = {
   cancelEditingFinancialFact: () => void;
   updateFundamentalsForm: (field: keyof FundamentalsForm, value: string) => void;
   updateFinancialFactForm: (field: keyof FinancialFactForm, value: string) => void;
+  // Cross-panel focus for the "vs target" readout (v0.58 A3, storyboard frame 8):
+  // pins/focuses the analyst-recommendations panel. Omitted in standalone renders.
+  onOpenRecommendations?: () => void;
 };
 
 /**
@@ -103,6 +108,7 @@ export function FundamentalsPanel({
   cancelEditingFinancialFact,
   updateFundamentalsForm,
   updateFinancialFactForm,
+  onOpenRecommendations,
 }: FundamentalsPanelProps) {
   const { text, locale } = useLocale();
 
@@ -162,6 +168,24 @@ export function FundamentalsPanel({
       })
       .catch((cause) => {
         if (!cancelled) setPriceContextError(String(cause));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId]);
+
+  // Newest attributed analyst target (v0.58 A3, ADR 0073) for the "vs target"
+  // readout beside the close. Best-effort — a load failure just omits the readout.
+  const [analystTarget, setAnalystTarget] = useState<AnalystRecommendationTarget | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setAnalystTarget(null);
+    getAnalystRecommendations(companyId)
+      .then((view) => {
+        if (!cancelled) setAnalystTarget(view.latestTarget ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setAnalystTarget(null);
       });
     return () => {
       cancelled = true;
@@ -288,7 +312,12 @@ export function FundamentalsPanel({
           custom KPIs, forms) after. Sector and the IR reports URL live in the
           Basic info panel, not here. */}
       {priceContext ? (
-        <PriceContextSection data={priceContext} className="fundamentals-section" />
+        <PriceContextSection
+          data={priceContext}
+          className="fundamentals-section"
+          analystTarget={analystTarget}
+          onFocusRecommendations={onOpenRecommendations}
+        />
       ) : priceContextError ? (
         <ErrorText>
           {text("Failed to load price context")}: {priceContextError}

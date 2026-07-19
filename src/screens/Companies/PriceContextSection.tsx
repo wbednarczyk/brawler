@@ -1,11 +1,16 @@
 import { ExternalLink } from "lucide-react";
 import { useLocale } from "../../shared/locale";
-import { formatDetailTimestamp, formatListTimestamp } from "../../shared/format/datetime";
+import {
+  formatDetailTimestamp,
+  formatListTimestamp,
+  formatLocalIsoDate,
+} from "../../shared/format/datetime";
 import { formatFinancialValue } from "../../shared/format/financialValue";
 import { Button, CandlestickChart, EmptyState, InfoGrid, SectionHeader, StatusChip } from "../../ui";
 import type { PriceContext } from "../../api/generated/PriceContext";
 import type { PriceContextRatios } from "../../api/generated/PriceContextRatios";
 import type { PriceContextHistoryPoint } from "../../api/generated/PriceContextHistoryPoint";
+import type { AnalystRecommendationTarget } from "../../api/analystRecommendations";
 
 // v0.53 T5 — fundamentals-adjacent "Price context" section (ADR 0067, plan
 // docs/plans/v0.53-market-data-foundation.md). Renders against the
@@ -20,6 +25,14 @@ export type PriceContextSectionProps = {
   // Cross-screen action, optional like CompanyFeedSection's — the workspace
   // wires it to Sources navigation, a standalone render can omit it.
   onViewSourceHealth?: () => void;
+  // The newest attributed analyst target (v0.58 A3, ADR 0073) for the "vs target"
+  // readout beside the close. Optional: absent when the company has no target.
+  // ADR 0073 hard rule — the readout NEVER renders a bare number; firm + date sit
+  // inseparably beneath it, labelled an external opinion.
+  analystTarget?: AnalystRecommendationTarget | null;
+  // Optional cross-panel focus: pins/focuses the analyst-recommendations panel
+  // (storyboard frame 8). Omitted when no cheap navigation seam is available.
+  onFocusRecommendations?: () => void;
 };
 
 const DASH = "—";
@@ -50,7 +63,13 @@ function formatPercent(value: number | null, locale: "en" | "pl"): string {
 }
 
 
-export function PriceContextSection({ data, className, onViewSourceHealth }: PriceContextSectionProps) {
+export function PriceContextSection({
+  data,
+  className,
+  onViewSourceHealth,
+  analystTarget,
+  onFocusRecommendations,
+}: PriceContextSectionProps) {
   const { text, locale } = useLocale();
 
   const staleness = text("Prices as of") + " " + formatDetailTimestamp(data.fetchedAt, text("Unknown"));
@@ -160,6 +179,45 @@ export function PriceContextSection({ data, className, onViewSourceHealth }: Pri
           },
         ]}
       />
+
+      {analystTarget
+        ? (() => {
+            const targetNum = Number.parseFloat(analystTarget.targetPrice.replace(",", "."));
+            const hasTarget = Number.isFinite(targetNum);
+            const upsidePct =
+              hasTarget && data.lastClose > 0 ? ((targetNum - data.lastClose) / data.lastClose) * 100 : null;
+            const upsideTone =
+              upsidePct === null ? "" : upsidePct >= 0 ? "price-context-target-up" : "price-context-target-down";
+            return (
+              <div className="price-context-target">
+                <span className="price-context-target-value">
+                  {text("Analyst target price")}:{" "}
+                  <strong className="num-tabular">
+                    {formatPricePerShare(targetNum, analystTarget.targetCurrency ?? data.currency, locale)}
+                  </strong>
+                  {upsidePct !== null ? (
+                    <span className={`price-context-target-delta ${upsideTone}`}>
+                      {" "}
+                      ({upsidePct >= 0 ? "+" : ""}
+                      {formatPercent(upsidePct, locale)})
+                    </span>
+                  ) : null}
+                </span>
+                <span className="price-context-target-attr">
+                  {text("per")} {analystTarget.firm}, {formatLocalIsoDate(analystTarget.publishedAt)} —{" "}
+                  {text("external opinion (BiznesRadar)")}
+                </span>
+                {onFocusRecommendations ? (
+                  <span className="price-context-target-action">
+                    <Button className="compact-button" onClick={onFocusRecommendations}>
+                      {text("View recommendations")}
+                    </Button>
+                  </span>
+                ) : null}
+              </div>
+            );
+          })()
+        : null}
 
       {historyPoints.length > 1 ? (
         <div className="price-context-chart">

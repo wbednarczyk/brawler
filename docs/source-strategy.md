@@ -458,11 +458,21 @@ Authenticated sources must never become a generic "log in and scrape any website
 
 ## Analyst Recommendation Sources
 
-Planned (`v0.58.0`, [ADR 0073](adr/0073-analyst-recommendations-tracking.md)): recommendation items (firm, rating change, target price, date) from policy-reviewed public paths — Bankier/BiznesRadar recommendation items and brokerage RSS candidates. Each concrete source is enabled only after its own source-policy review; no scraping beyond policy, no paid consensus feeds (an aggregate-consensus adapter stays deferred behind a flag + ADR). Presentation is always attributed third-party opinion — tracking, never advice.
+Scope ([ADR 0073](adr/0073-analyst-recommendations-tracking.md)): recommendation items (firm, rating change, target price, date) from policy-reviewed public paths only; no scraping beyond policy, no paid consensus feeds (an aggregate-consensus adapter stays deferred behind a flag + ADR). Presentation is always attributed third-party opinion — tracking, never advice.
+
+- **BiznesRadar recommendations** — **Live (`v0.58.0`)**, adapter `biznesradar-rekomendacje`, `analyst_recommendation` type, visibility `optional`, `primary` role, daily cadence, one polite page fetch per tracked GPW company. Parses the public `/rekomendacje-spolki/<slug>` table (verbatim rating, target price + currency, price at issuance, publication datetime, analyst + issuing firm, broker PDF link; the derived kurs-aktualny/CD-K columns are not stored); the GPW ticker resolves to the canonical slug via the same 301 redirect the ownership adapter relies on (policy probe 2026-07-19: `robots.txt` `Allow: /` with disallows not covering this path; no anti-bot). **Depth honesty:** the free page carries only the ~3–5 most recent entries — the full history is BR Plus (paid) and stays out of policy scope; local history accumulates append-only from ingestion start, per the ADR 0073 premise. Rating vocabulary is preserved verbatim; the normalized direction (upgrade/downgrade/initiate/reiterate) is derived against the same firm's prior stored entry.
+- **Bankier recommendation items / brokerage RSS** — deferred candidates; each needs its own policy review before an adapter exists.
 
 ## Future Official Sources
 
 Later adapters should follow the same source adapter contract.
+
+**Live-probe rule (guardrail, 2026-07-19):** an adapter implementation contract is written
+against **freshly probed** source facts (exact URL shape, robots, redirect behavior, content
+depth, table anatomy — probe date recorded in the policy note), never solely against recorded
+research notes. Research claims age: the v0.58 recommendations source had drifted from its
+v0.53 research on both the URL path (`/rekomendacje-spolki/`, not `/rekomendacje/`) and the
+free-page depth (~3–5 newest entries, not "dozens" — the full history is paywalled).
 
 Candidates:
 

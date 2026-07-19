@@ -24,6 +24,14 @@ vi.mock("../../api/marketData", () => ({
   getPriceContext: vi.fn(() => Promise.resolve(null)),
 }));
 
+// The panel also reads the newest analyst target for the "vs target" readout
+// (v0.58 A3); stub it so the fetch resolves to no target in these tests.
+vi.mock("../../api/analystRecommendations", () => ({
+  getAnalystRecommendations: vi.fn(() =>
+    Promise.resolve({ companyId: "c", entries: [] }),
+  ),
+}));
+
 const identity = (value: string) => value;
 
 const noop = () => {};

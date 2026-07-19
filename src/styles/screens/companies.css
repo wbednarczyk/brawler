@@ -729,6 +729,45 @@
   color: var(--muted);
 }
 
+/* Analyst "vs target" readout beside the close (v0.58 A3, ADR 0073, storyboard
+   frame 8). The attribution (firm + date + external-opinion label) sits
+   inseparably beneath the number — never a bare target. */
+.price-context-target {
+  display: grid;
+  gap: var(--space-0);
+  padding-top: var(--space-2);
+  margin-top: var(--space-1);
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  min-width: 0;
+}
+
+.price-context-target-value {
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.price-context-target-delta {
+  font-size: var(--font-sm);
+}
+
+.price-context-target-up {
+  color: var(--success);
+}
+
+.price-context-target-down {
+  color: var(--danger);
+}
+
+.price-context-target-attr {
+  font-size: var(--font-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.price-context-target-action {
+  margin-top: var(--space-1);
+}
+
 /* Basic info panel (owner request 2026-07-14): read-only identity facts in the
    shared key/value row idiom; edit fields fold behind the panel-level toggle. */
 .basic-info-grid dd > .ui-status-chip {

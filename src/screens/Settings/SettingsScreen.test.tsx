@@ -55,12 +55,19 @@ describe("Settings screen workflows", () => {
     expect(within(settingsRegion).getByRole("heading", { name: "Sources" })).toBeInTheDocument();
     expect(within(settingsRegion).getByRole("heading", { name: "Feed Cleanup" })).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Feed cleanup")).toBeInTheDocument();
+    // Automatic cleanup is disabled (owner decision 2026-07-19): Off, and the
+    // "Cleanup interval: Daily" row is gone — nothing deletes on a timer.
+    expect(within(settingsRegion).getByText("Off")).toBeInTheDocument();
+    expect(within(settingsRegion).queryByText("Cleanup interval")).not.toBeInTheDocument();
+    expect(within(settingsRegion).queryByText("Daily")).not.toBeInTheDocument();
     expect(within(settingsRegion).getByText("30 days")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Cleanup interval")).toBeInTheDocument();
-    expect(within(settingsRegion).getByText("Daily")).toBeInTheDocument();
     expect(within(settingsRegion).getByText("Last cleanup")).toBeInTheDocument();
     expect(within(settingsRegion).getAllByText("Not run this session")).toHaveLength(2);
     expect(within(settingsRegion).getByText("Saved")).toBeInTheDocument();
+    // The capability stays user-reachable via a manual "clean up now" action.
+    expect(
+      within(settingsRegion).getByRole("button", { name: "Clean up feed now" }),
+    ).toBeInTheDocument();
 
     await user.click(within(settingsRegion).getByRole("button", { name: "AI" }));
 
@@ -711,6 +718,52 @@ describe("Settings screen workflows", () => {
       input: { historySweepAiCallLimit: 10 },
     });
     await waitFor(() => expect(budgetInput).toHaveValue(10));
+  });
+
+  // Feed cleanup is manual-only (owner decision 2026-07-19): the app must never
+  // delete feed items on a timer; the capability stays reachable as a button.
+  it("runs feed cleanup only when the user clicks, never on a timer", async () => {
+    const user = userEvent.setup();
+
+    renderApp();
+
+    await user.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsRegion = await screen.findByLabelText("Application settings");
+    await user.click(within(settingsRegion).getByRole("button", { name: "Sources" }));
+
+    const cleanupButton = within(settingsRegion).getByRole("button", {
+      name: "Clean up feed now",
+    });
+    // Secondary control idiom — not flagged as the screen's primary action.
+    expect(cleanupButton).not.toHaveAttribute("data-ux-primary-action");
+    // Nothing was pruned just by rendering the app / opening the section.
+    expect(
+      vi.mocked(invoke).mock.calls.filter(([command]) => command === "prune_old_feed_items"),
+    ).toHaveLength(0);
+
+    await user.click(cleanupButton);
+
+    expect(invoke).toHaveBeenCalledWith("prune_old_feed_items", {
+      input: { retentionDays: 30 },
+    });
+  });
+
+  it("never prunes the feed on a background lifecycle timer", async () => {
+    vi.useFakeTimers();
+    try {
+      renderApp();
+
+      // Advance well past the retired auto-prune initial delay (2 min + up to 60s
+      // jitter = ≤3 min) — the exact window that fired today's silent purge. The
+      // timer is gone, so the prune command must never be invoked on its own.
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000);
+
+      expect(
+        vi.mocked(invoke).mock.calls.filter(([command]) => command === "prune_old_feed_items"),
+      ).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // U7-E2 density contract (ADR 0076 D6): at the S tier the section tab list

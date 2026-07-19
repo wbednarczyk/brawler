@@ -1,4 +1,5 @@
 pub mod ai_analysis;
+pub mod analyst_recommendations;
 pub mod attention;
 pub mod autopilot;
 pub mod backups;

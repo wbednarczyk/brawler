@@ -59,6 +59,7 @@ const PRESETS: readonly Preset[] = [
   { key: "insider", label: "Insider transactions", triggerType: "signal_category", signalCategory: "insider_transaction", icon: Users },
   { key: "auditor_opinion", label: "Auditor opinion", triggerType: "signal_category", signalCategory: "auditor_opinion", icon: FileWarning },
   { key: "short_position", label: "Short position", triggerType: "signal_category", signalCategory: "short_position_change", icon: TrendingDown },
+  { key: "recommendation", label: "Analyst recommendation", triggerType: "signal_category", signalCategory: "recommendation_change", icon: FileWarning },
   { key: "week52_low", label: "52-week low", triggerType: "price_week52_low", signalCategory: null, icon: BarChart3 },
   { key: "price_range", label: "Price range", triggerType: "price_enters_range", signalCategory: null, icon: Coins },
   { key: "autopilot", label: "Autopilot finished", triggerType: "autopilot_run_completed", signalCategory: null, icon: Bot },

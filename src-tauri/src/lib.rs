@@ -337,6 +337,7 @@ pub fn run() {
             commands::company_health::acknowledge_red_flag,
             commands::insider::get_insider_overview,
             commands::market_data::get_price_context,
+            commands::analyst_recommendations::get_analyst_recommendations,
             commands::ownership::get_ownership_overview,
             commands::ownership::backfill_ownership_extraction,
             commands::ownership::set_ownership_holder_type,

@@ -10,11 +10,6 @@ import { getSchedulerStatus } from "../api/sources";
 import type { CompanyEventMode, CompanyEventViewMode } from "../shared/types/events";
 import type { Section } from "./navigation";
 import { emptyNotebookForm, notebookFormFromEntry } from "./notebookForms";
-import {
-  feedPruneInitialDelayMs,
-  feedPruneIntervalMs,
-  schedulerStartJitterMs,
-} from "./sourceScheduler";
 
 // How often the UI mirrors the Rust scheduler's next-due snapshot and reloads
 // views when a background refresh has fired. The Rust scheduler owns the actual
@@ -38,7 +33,6 @@ type AppLifecycleEffectsInput = {
   eventWeekFetchAttemptedRef: MutableRefObject<Set<string>>;
   filteredFeedItems: FeedItem[];
   licenseCanUseApp: boolean;
-  pruneOldFeedItems: () => void;
   refreshBankierCalendarWeek: (date: string, trigger?: "manual") => void;
   refreshCompanies: () => void;
   refreshCompanyEvents: (mode?: CompanyEventMode) => void;
@@ -90,7 +84,6 @@ export function useAppLifecycleEffects({
   eventWeekFetchAttemptedRef,
   filteredFeedItems,
   licenseCanUseApp,
-  pruneOldFeedItems,
   refreshBankierCalendarWeek,
   refreshCompanies,
   refreshCompanyEvents,
@@ -208,28 +201,11 @@ export function useAppLifecycleEffects({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch each week once (guarded by eventWeekFetchAttemptedRef); the non-memoized refreshBankierCalendarWeek identity is intentionally excluded
   }, [licenseCanUseApp, activeSection, companyEventViewMode, companyEventWeekRange.start]);
 
-  useEffect(() => {
-    if (!licenseCanUseApp) {
-      return undefined;
-    }
-
-    const firstRunDelayMs = feedPruneInitialDelayMs + schedulerStartJitterMs(feedPruneIntervalMs);
-    let intervalId: number | null = null;
-    const timeoutId = window.setTimeout(() => {
-      void pruneOldFeedItems();
-      intervalId = window.setInterval(() => {
-        void pruneOldFeedItems();
-      }, feedPruneIntervalMs);
-    }, firstRunDelayMs);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- schedule the feed-prune timer once per license gate; the non-memoized pruneOldFeedItems identity is intentionally excluded
-  }, [licenseCanUseApp]);
+  // Feed cleanup is manual-only (owner decision 2026-07-19). The app must never
+  // delete feed items on a timer — an automatic 30-day prune silently removed
+  // ~3,900 items (incl. researched periodic reports) before it was disabled. The
+  // capability lives on as a user-triggered action in Settings; the future
+  // retention mechanism is tracked as a backlog card.
 
   // Source/registry refresh cadence is owned by the Rust-side scheduler (ADR 0055
   // / AV5) — a webview timer is throttled when the window is hidden/suspended, so

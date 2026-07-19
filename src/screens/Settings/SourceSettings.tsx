@@ -1,6 +1,7 @@
 import type { FeedPruneResult, UserSettings } from "../../api/types";
 import { useLocale } from "../../shared/locale";
 import {
+  Button,
   FieldRow,
   Hint,
   InfoGrid,
@@ -22,6 +23,7 @@ const clampBackfillYears = (value: number): number =>
 type SourceSettingsProps = {
   feedPruneRetentionDays: number;
   feedPruneResult: FeedPruneResult | null;
+  onPruneFeedItems: () => void;
   settings: UserSettings | null;
   onPollIntervalChange: (pollIntervalSeconds: number) => void;
   onBackfillYearsChange: (backfillYears: number) => void;
@@ -32,6 +34,7 @@ type SourceSettingsProps = {
 export function SourceSettings({
   feedPruneRetentionDays,
   feedPruneResult,
+  onPruneFeedItems,
   settings,
   onPollIntervalChange,
   onBackfillYearsChange,
@@ -117,9 +120,11 @@ export function SourceSettings({
         <InfoGrid
           className="settings-grid"
           items={[
-            { label: text("Feed cleanup"), value: text("On") },
-            { label: text("Feed retention"), value: `${feedPruneRetentionDays} ${text("days")}` },
-            { label: text("Cleanup interval"), value: text("Daily") },
+            { label: text("Feed cleanup"), value: text("Off") },
+            {
+              label: text("Manual cleanup retention"),
+              value: `${feedPruneRetentionDays} ${text("days")}`,
+            },
             {
               label: text("Last cleanup"),
               value: formatTimestamp(feedPruneResult?.prunedAt, text("Not run this session")),
@@ -131,6 +136,16 @@ export function SourceSettings({
             { label: text("Protected feed items"), value: text("Saved") },
           ]}
         />
+        <Hint>
+          {text(
+            "Automatic cleanup is disabled (owner decision 2026-07-19) — the app deletes nothing on its own. Cleanup runs only when you click below, removing unsaved feed items older than the retention window.",
+          )}
+        </Hint>
+        <FieldRow>
+          <Button className="compact-button" onClick={onPruneFeedItems}>
+            {text("Clean up feed now")}
+          </Button>
+        </FieldRow>
       </section>
 
     </>

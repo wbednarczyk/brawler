@@ -155,6 +155,28 @@ const companySignals: CompanySignal[] = [
     createdAt: "2026-06-05T09:15:00Z",
     updatedAt: "2026-06-05T09:15:00Z",
   },
+  // Analyst-recommendation change (v0.58 A3, ADR 0073): a rule-classified,
+  // confirmed signal so the `recommendation_change` badge renders in feed/Inbox.
+  {
+    id: "signal_feed_results_report_recommendation_change",
+    companyId: "company_gpw_cdr",
+    company: "GPW:CDR",
+    companyName: "CD PROJEKT S.A.",
+    feedItemId: "feed_results_report",
+    category: "recommendation_change",
+    categoryDisplayName: "Analyst recommendation change",
+    confidence: 1.0,
+    classifiedBy: "rule",
+    status: "confirmed",
+    signalDate: "2026-06-18",
+    providerId: null,
+    modelId: null,
+    derivedEventId: null,
+    title: "CD PROJEKT S.A. — Noble Securities: akumuluj (cel 250,00 zł)",
+    sourceUrl: "https://www.biznesradar.pl/rekomendacje-spolki/CDR",
+    createdAt: "2026-06-18T08:40:00Z",
+    updatedAt: "2026-06-18T08:40:00Z",
+  },
 ];
 
 const sourceAdapters: SourceAdapter[] = [
@@ -279,6 +301,69 @@ const redFlagsByCompany: NonNullable<ScenarioData["redFlagsByCompany"]> = {
         ackedAt: "2026-02-10T09:00:00Z",
       },
     ],
+  },
+};
+
+// Analyst recommendations (v0.58 A3, ADR 0073). CD PROJEKT carries an attributed
+// history — an upgrade with a target (+ broker PDF), an initiate that keeps a
+// target, and a partial entry with neither target nor PDF — for the panel journey
+// and narrow-pane overflow assertion. ORLEN has none (empty-state coverage).
+const analystRecommendationsByCompany: NonNullable<
+  ScenarioData["analystRecommendationsByCompany"]
+> = {
+  company_gpw_cdr: {
+    companyId: "company_gpw_cdr",
+    entries: [
+      {
+        firm: "Noble Securities",
+        analyst: "Mateusz Chrzanowski",
+        rating: "akumuluj",
+        ratingPrev: "trzymaj",
+        direction: "upgrade",
+        targetPrice: "250.00",
+        targetCurrency: "PLN",
+        targetPrev: "230.00",
+        priceAtIssue: "232.00",
+        publishedAt: "2026-06-18T08:40:00",
+        reportUrl: "https://static.example/rec/cdr-noble-2026-06.pdf",
+        sourceUrl: "https://www.biznesradar.pl/rekomendacje-spolki/CDR",
+      },
+      {
+        firm: "BOŚ DM",
+        analyst: "Tomasz Rodak",
+        rating: "trzymaj",
+        ratingPrev: null,
+        direction: "initiate",
+        targetPrice: "270.00",
+        targetCurrency: "PLN",
+        targetPrev: null,
+        priceAtIssue: "228.00",
+        publishedAt: "2026-02-27T07:30:00",
+        reportUrl: "https://static.example/rec/cdr-bos-2026-02.pdf",
+        sourceUrl: "https://www.biznesradar.pl/rekomendacje-spolki/CDR",
+      },
+      {
+        firm: "BM mBank",
+        analyst: null,
+        rating: "trzymaj",
+        ratingPrev: null,
+        direction: "initiate",
+        targetPrice: null,
+        targetCurrency: null,
+        targetPrev: null,
+        priceAtIssue: null,
+        publishedAt: "2025-11-26T00:00:00",
+        reportUrl: null,
+        sourceUrl: "https://www.biznesradar.pl/rekomendacje-spolki/CDR",
+      },
+    ],
+    latestTarget: {
+      firm: "Noble Securities",
+      targetPrice: "250.00",
+      targetCurrency: "PLN",
+      publishedAt: "2026-06-18T08:40:00",
+    },
+    lastRefreshedAt: "2026-07-19T08:12:00Z",
   },
 };
 
@@ -829,6 +914,7 @@ function seedBrowserStore(data: ScenarioData) {
   data.shortPositions = structuredClone(shortPositions);
   data.shortPositionEvents = structuredClone(shortPositionEvents);
   data.redFlagsByCompany = structuredClone(redFlagsByCompany);
+  data.analystRecommendationsByCompany = structuredClone(analystRecommendationsByCompany);
   data.irResolutions = [
     {
       document: null,

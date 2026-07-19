@@ -57,6 +57,7 @@ import type { ReportDocument } from "../../api/reportDocumentsTypes";
 import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyHealth } from "../../api/companyHealth";
 import type { InsiderOverview } from "../../api/insider";
+import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type {
   PreReportCard,
   ReportPreparation,
@@ -442,6 +443,95 @@ export function makeInsiderOverview(spec: CompanySpec): InsiderOverview {
       volumeKnown: 2,
       volumeTotal: 3,
     },
+  };
+}
+
+// Analyst recommendations panel view (v0.58 A3, ADR 0073): a small attributed
+// history — an upgrade (with derived prior rating/target), an initiate that keeps
+// a target, and a partial entry with neither target nor broker PDF. The newest
+// target-carrying entry drives the "vs target" readout; `lastRefreshedAt` feeds
+// the footer's honest refresh line. Third-party opinions — never advice.
+export function makeAnalystRecommendationsView(spec: CompanySpec): AnalystRecommendationsView {
+  const source = `https://www.biznesradar.pl/rekomendacje-spolki/${spec.ticker}`;
+  return {
+    companyId: companyId(spec),
+    entries: [
+      {
+        firm: "Noble Securities",
+        analyst: "Mateusz Chrzanowski",
+        rating: "akumuluj",
+        ratingPrev: "trzymaj",
+        direction: "upgrade",
+        targetPrice: "250.00",
+        targetCurrency: "PLN",
+        targetPrev: "230.00",
+        priceAtIssue: "232.00",
+        publishedAt: "2026-06-18T08:40:00",
+        reportUrl: `https://static.example/rec/${spec.key}-noble-2026-06.pdf`,
+        sourceUrl: source,
+      },
+      {
+        firm: "BOŚ DM",
+        analyst: "Tomasz Rodak",
+        rating: "trzymaj",
+        ratingPrev: null,
+        direction: "initiate",
+        targetPrice: "270.00",
+        targetCurrency: "PLN",
+        targetPrev: null,
+        priceAtIssue: "228.00",
+        publishedAt: "2026-02-27T07:30:00",
+        reportUrl: `https://static.example/rec/${spec.key}-bos-2026-02.pdf`,
+        sourceUrl: source,
+      },
+      {
+        firm: "BM mBank",
+        analyst: null,
+        rating: "trzymaj",
+        ratingPrev: null,
+        direction: "initiate",
+        targetPrice: null,
+        targetCurrency: null,
+        targetPrev: null,
+        priceAtIssue: null,
+        publishedAt: "2025-11-26T00:00:00",
+        reportUrl: null,
+        sourceUrl: source,
+      },
+    ],
+    latestTarget: {
+      firm: "Noble Securities",
+      targetPrice: "250.00",
+      targetCurrency: "PLN",
+      publishedAt: "2026-06-18T08:40:00",
+    },
+    lastRefreshedAt: SAMPLE_NOW,
+  };
+}
+
+// A `recommendation_change` filing signal (v0.58 A3, ADR 0073) so the category
+// renders in the feed/Inbox badges, digests, and the Alerts dropdown. Emitted
+// directly by the adapter (rule-classified, confirmed), never AI-proposed.
+export function makeRecommendationSignal(spec: CompanySpec): CompanySignal {
+  return {
+    id: `signal_sample_${spec.key}_recommendation`,
+    companyId: companyId(spec),
+    company: qualifiedTicker(spec),
+    companyName: spec.name,
+    feedItemId: `feed_sample_${spec.key}_0`,
+    category: "recommendation_change",
+    categoryDisplayName: "Analyst recommendation change",
+    confidence: 1.0,
+    classifiedBy: "rule",
+    status: "confirmed",
+    signalDate: SAMPLE_NOW,
+    providerId: null,
+    modelId: null,
+    derivedEventId: null,
+    title: `${spec.name} — Noble Securities: akumuluj (cel 250,00 zł)`,
+    sourceUrl: `https://www.biznesradar.pl/rekomendacje-spolki/${spec.ticker}`,
+    createdAt: SAMPLE_NOW,
+    updatedAt: SAMPLE_NOW,
   };
 }
 

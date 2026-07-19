@@ -31,6 +31,7 @@ use serde::{Deserialize, Serialize};
 use self::database::{Database, DbGuard};
 
 mod ai_analysis;
+mod analyst_recommendations;
 mod attention;
 mod autopilot;
 mod backup;
@@ -87,6 +88,10 @@ mod watchlists;
 pub use ai_analysis::{
     AiAnalysisJob, AiAnalysisResult, AiAnalysisSourceReference, CompletedAiAnalysis,
     NewAiAnalysisJob, NewAiAnalysisSourceReference,
+};
+pub use analyst_recommendations::{
+    AnalystRecommendationEntry, AnalystRecommendationRow, AnalystRecommendationStore,
+    AnalystRecommendationTarget,
 };
 pub use attention::{
     AlertRule, AlertRuleUpdate, AttentionEvent, AttentionEventListInput, AttentionStore,
@@ -638,6 +643,11 @@ impl AppState {
     /// KNF short-selling domain store (ADR 0069 decision 3).
     pub fn short_positions(&self) -> short_positions::ShortPositionStore {
         short_positions::ShortPositionStore::new(self.db.clone())
+    }
+
+    /// Analyst-recommendations domain store (ADR 0073, plan v0.58 A1).
+    pub fn analyst_recommendations(&self) -> analyst_recommendations::AnalystRecommendationStore {
+        analyst_recommendations::AnalystRecommendationStore::new(self.db.clone())
     }
 
     /// Source-reconciliation domain store (ADR 0069 decision 2, plan v0.55 T3).

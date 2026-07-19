@@ -856,7 +856,7 @@ pub struct CompanySignal {
     #[cfg_attr(
         feature = "ts-export",
         ts(
-            type = "\"insider_transaction\" | \"dividend\" | \"profit_warning\" | \"significant_contract\" | \"own_shares\" | \"guidance_change\" | \"general_meeting\" | \"auditor_opinion\" | \"short_position_change\" | \"major_holdings_change\" | \"report_delay\" | \"fund_exit\" | \"score_deterioration\" | \"other\""
+            type = "\"insider_transaction\" | \"dividend\" | \"profit_warning\" | \"significant_contract\" | \"own_shares\" | \"guidance_change\" | \"general_meeting\" | \"auditor_opinion\" | \"short_position_change\" | \"major_holdings_change\" | \"recommendation_change\" | \"report_delay\" | \"fund_exit\" | \"score_deterioration\" | \"other\""
         )
     )]
     pub category: String,

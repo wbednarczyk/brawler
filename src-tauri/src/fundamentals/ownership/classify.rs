@@ -93,7 +93,13 @@ pub fn canonical_holder_key(name: &str) -> String {
         let folded = fold_diacritic(c);
         if folded.is_alphanumeric() {
             for upper in folded.to_uppercase() {
-                cleaned.push(upper);
+                // Uppercasing can decompose (e.g. 'ǰ' U+01F0 → "J" + combining
+                // caron U+030C, which has no precomposed uppercase form); keep
+                // only the alphanumeric parts so a second pass sees the same
+                // string (idempotence property).
+                if upper.is_alphanumeric() {
+                    cleaned.push(upper);
+                }
             }
         } else {
             cleaned.push(' ');

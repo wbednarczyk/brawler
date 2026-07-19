@@ -125,6 +125,20 @@ fn dispatch(state: &AppState, lifecycle: &McpLifecycle, command: &str, input: &V
             )
             .unwrap()
         }
+        // Analyst recommendations (v0.58 A3, ADR 0073). Same computed helper the
+        // command wrapper offloads, so the corpus can never diverge from real
+        // assembly. The register is adapter-populated, so an untouched company
+        // reads back the empty view (no entries, no latest target, no refresh).
+        "get_analyst_recommendations" => {
+            let company_id = input["companyId"].as_str().expect("companyId");
+            serde_json::to_value(
+                crate::commands::analyst_recommendations::compute_analyst_recommendations(
+                    state, company_id,
+                )
+                .expect("get_analyst_recommendations"),
+            )
+            .unwrap()
+        }
         // Insider overview (v0.57 T6, ADR 0083 D7). Same computed helper the command
         // wrapper offloads, so the corpus can never diverge from real assembly. An
         // untouched company has no parsed substrate → the empty overview (no

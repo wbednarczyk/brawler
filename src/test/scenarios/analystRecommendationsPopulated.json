@@ -1,0 +1,53 @@
+{
+  "companyId": "company_gpw_rec",
+  "entries": [
+    {
+      "firm": "Noble Securities",
+      "analyst": "Mateusz Chrzanowski",
+      "rating": "akumuluj",
+      "ratingPrev": "trzymaj",
+      "direction": "upgrade",
+      "targetPrice": "250.00",
+      "targetCurrency": "PLN",
+      "targetPrev": "230.00",
+      "priceAtIssue": "232.00",
+      "publishedAt": "2026-06-18T08:40:00",
+      "reportUrl": "https://static.example/rec/noble-2026-06.pdf",
+      "sourceUrl": "https://www.biznesradar.pl/rekomendacje-spolki/REC"
+    },
+    {
+      "firm": "Noble Securities",
+      "analyst": "Jan Kowalski",
+      "rating": "trzymaj",
+      "ratingPrev": null,
+      "direction": "initiate",
+      "targetPrice": "230.00",
+      "targetCurrency": "PLN",
+      "targetPrev": null,
+      "priceAtIssue": "220.00",
+      "publishedAt": "2026-02-01T09:00:00",
+      "reportUrl": "https://static.example/rec/noble-2026-02.pdf",
+      "sourceUrl": "https://www.biznesradar.pl/rekomendacje-spolki/REC"
+    },
+    {
+      "firm": "BM mBank",
+      "analyst": null,
+      "rating": "trzymaj",
+      "ratingPrev": null,
+      "direction": "initiate",
+      "targetPrice": null,
+      "targetCurrency": null,
+      "targetPrev": null,
+      "priceAtIssue": null,
+      "publishedAt": "2025-11-26T00:00:00",
+      "reportUrl": null,
+      "sourceUrl": "https://www.biznesradar.pl/rekomendacje-spolki/REC"
+    }
+  ],
+  "latestTarget": {
+    "firm": "Noble Securities",
+    "targetPrice": "250.00",
+    "targetCurrency": "PLN",
+    "publishedAt": "2026-06-18T08:40:00"
+  }
+}

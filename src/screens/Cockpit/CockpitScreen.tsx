@@ -45,9 +45,11 @@ import { useCockpitCompanyNotebook } from "./useCockpitCompanyNotebook";
 import { useCockpitDecisionJournal } from "./useCockpitDecisionJournal";
 import { useCockpitShortPositions } from "./useCockpitShortPositions";
 import { useCockpitRedFlags } from "./useCockpitRedFlags";
+import { useCockpitAnalystRecommendations } from "./useCockpitAnalystRecommendations";
 import { DecisionJournalSection } from "./DecisionJournalSection";
 import { ShortPositionsSection } from "./ShortPositionsSection";
 import { RedFlagsSection } from "./RedFlagsSection";
+import { AnalystRecommendationsSection } from "../../shared/components/AnalystRecommendationsSection";
 import { DecisionJournalGlobalPanel } from "./DecisionJournalGlobalPanel";
 import { formatDetailTimestamp } from "../../shared/format/datetime";
 import { CockpitSelectionProvider, useCockpitSelection } from "./CockpitSelectionContext";
@@ -74,7 +76,8 @@ type PinnedKind =
   | "companyNotebook"
   | "decisionJournal"
   | "shortPositions"
-  | "redFlags";
+  | "redFlags"
+  | "analystRecommendations";
 
 const LINKED: { id: string; kind: LinkedKind }[] = [
   { id: "feed", kind: "feed" },
@@ -97,6 +100,7 @@ const PINNED_KINDS: PinnedKind[] = [
   "decisionJournal",
   "shortPositions",
   "redFlags",
+  "analystRecommendations",
 ];
 
 // Global singleton panels (ADR 0053 phase 4c): full app screens that own their
@@ -224,6 +228,8 @@ function pinnedKindLabel(kind: PinnedKind, text: (s: string) => string): string 
       return text("Short selling (KNF)");
     case "redFlags":
       return text("Warning signals");
+    case "analystRecommendations":
+      return text("Analyst recommendations");
   }
 }
 
@@ -632,7 +638,13 @@ function CockpitWorkspace({
       case "basicInfo":
         return <CompanyBasicInfoPanel key={companyId} companyId={companyId} />;
       case "fundamentals":
-        return <CockpitFundamentalsPanel companyId={companyId} revision={fundamentalsRevision} />;
+        return (
+          <CockpitFundamentalsPanel
+            companyId={companyId}
+            revision={fundamentalsRevision}
+            onOpenRecommendations={() => openPinned(companyId, "analystRecommendations")}
+          />
+        );
       case "coverage":
         return (
           <CompanyCoveragePanel
@@ -695,6 +707,14 @@ function CockpitWorkspace({
         const company = companyById.get(companyId);
         return company ? (
           <CockpitRedFlagsPanel company={company} />
+        ) : (
+          <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
+        );
+      }
+      case "analystRecommendations": {
+        const company = companyById.get(companyId);
+        return company ? (
+          <CockpitAnalystRecommendationsPanel company={company} />
         ) : (
           <EmptyState>{text("Select a feed item to inspect it.")}</EmptyState>
         );
@@ -1313,13 +1333,16 @@ function InspectorPanel({
 function CockpitFundamentalsPanel({
   companyId,
   revision,
+  onOpenRecommendations,
 }: {
   companyId: string;
   // Bumped by a sibling report-documents extraction; forces a facts refetch.
   revision: number;
+  // Opens/pins the analyst-recommendations panel from the "vs target" readout.
+  onOpenRecommendations?: () => void;
 }) {
   const props = useCockpitFundamentals(companyId, revision);
-  return <FundamentalsPanel {...props} />;
+  return <FundamentalsPanel {...props} onOpenRecommendations={onOpenRecommendations} />;
 }
 
 // Company-scoped feed panel for the curated dashboard (ADR 0057). It reuses the
@@ -1427,6 +1450,24 @@ function CockpitRedFlagsPanel({ company }: { company: Company }) {
       error={error}
       onAcknowledge={acknowledge}
       onOpenEvidence={selectFeedItem}
+    />
+  );
+}
+
+// Palette-only analyst-recommendations panel (v0.58 A3, ADR 0073). Not in the
+// curated dashboard defaults — an opt-in quiet read surface (storyboard frame 1).
+function CockpitAnalystRecommendationsPanel({ company }: { company: Company }) {
+  const { view, error, loading, lastClose, currency, reload } =
+    useCockpitAnalystRecommendations(company);
+  return (
+    <AnalystRecommendationsSection
+      company={company}
+      view={view}
+      error={error}
+      loading={loading}
+      onRetry={reload}
+      lastClose={lastClose}
+      currency={currency}
     />
   );
 }

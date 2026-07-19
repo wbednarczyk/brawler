@@ -1417,3 +1417,79 @@ fn migration_0097_backfills_null_trigger_type_from_the_rule() {
         "a system event keeps its own trigger_type"
     );
 }
+
+#[test]
+fn migration_0100_creates_analyst_recommendations_and_seeds_catalog_idempotently() {
+    // ADR 0073 / plan v0.58 A1: migration 0100 adds `analyst_recommendations`
+    // (append-only recommendation history), seeds the `recommendation_change`
+    // signal category, and seeds the `biznesradar-rekomendacje` catalog rows. The
+    // table uses IF NOT EXISTS and every seed is an idempotent upsert, so re-running
+    // the runner is a safe no-op that neither errors nor duplicates.
+    let mut connection = open_in_memory_database().expect("database should initialize");
+
+    let category_before: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM signal_categories WHERE key = 'recommendation_change'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count category");
+    assert_eq!(
+        category_before, 1,
+        "the signal category must be seeded once"
+    );
+
+    let adapter_before: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM source_adapters WHERE id = 'biznesradar-rekomendacje'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count adapter");
+    assert_eq!(adapter_before, 1, "the catalog row must be seeded once");
+
+    connection
+        .execute(
+            "INSERT INTO companies (id, exchange, ticker, qualified_ticker, display_name)
+             VALUES ('c1', 'GPW', 'CDR', 'GPW:CDR', 'CD PROJEKT S.A.')",
+            [],
+        )
+        .expect("company insert");
+    connection
+        .execute(
+            "INSERT INTO analyst_recommendations
+                (id, company_id, firm, rating, direction, target_price, published_at, source_url)
+             VALUES ('r1', 'c1', 'DM BOŚ', 'akumuluj', 'initiate', '120.00', '2026-06-18T08:40:00Z', 'https://x/rekomendacje')",
+            [],
+        )
+        .expect("a recommendation row must be storable");
+
+    // Re-running the runner is a safe no-op on the new table and seeds.
+    apply_migrations(&mut connection).expect("re-running migrations should be safe");
+
+    assert_eq!(
+        count_rows(&connection, "analyst_recommendations").expect("count"),
+        1,
+        "re-running migrations must not disturb recommendation data"
+    );
+    let category_after: i64 = connection
+        .query_row(
+            "SELECT COUNT(*) FROM signal_categories WHERE key = 'recommendation_change'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("count category");
+    assert_eq!(
+        category_before, category_after,
+        "category re-seed must not duplicate"
+    );
+
+    // The direction CHECK rejects an out-of-taxonomy value.
+    let bad = connection.execute(
+        "INSERT INTO analyst_recommendations
+            (id, company_id, firm, rating, direction, published_at, source_url)
+         VALUES ('r2', 'c1', 'DM BOŚ', 'akumuluj', 'nonsense', '2026-06-18T08:40:00Z', 'https://x')",
+        [],
+    );
+    assert!(bad.is_err(), "direction CHECK must reject unknown values");
+}

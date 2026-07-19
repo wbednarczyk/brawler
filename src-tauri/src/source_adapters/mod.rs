@@ -2,6 +2,7 @@ pub mod bankier_calendar;
 pub mod bankier_company;
 pub mod bankier_rss;
 pub mod biznesradar_ownership;
+pub mod biznesradar_recommendations;
 pub mod company_directory;
 pub mod gpw_company_registry;
 pub mod gpw_espi_ebi;

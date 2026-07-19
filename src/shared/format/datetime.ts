@@ -120,6 +120,18 @@ export function formatDetailTimestamp(
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${hhmm(date)}`;
 }
 
+/**
+ * A wall-clock ISO date (`2026-06-18T08:40:00`, no timezone) → `DD.MM.YYYY`,
+ * read TEXTUALLY from the date fields so a Warsaw-local timestamp is never
+ * shifted through UTC (v0.58 analyst recommendations — `published_at` is Warsaw
+ * wall-clock with no `Z`). Non-date input returns its trimmed self.
+ */
+export function formatLocalIsoDate(value: string | null | undefined): string {
+  const trimmed = value?.trim() ?? "";
+  const [year, month, day] = trimmed.slice(0, 10).split("-");
+  return year && month && day ? `${day}.${month}.${year}` : trimmed;
+}
+
 /** Localized "D mon – D mon" week label (ADR 0076 D4: "30 cze – 4 lip"). */
 export function formatWeekRange(startDate: string, endDate: string, locale: LocaleCode = "en"): string {
   const month = months(locale);

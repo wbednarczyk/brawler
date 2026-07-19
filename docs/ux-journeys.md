@@ -51,7 +51,7 @@ Enforcement lives in `tests/browser/journeys/` (one `@journey` spec per journey)
 ## J6 — Buy / pass decision (full from v0.52, enriched through v0.64)
 
 - **Trigger:** research maturity or a price condition (v0.54 alert: price enters my range).
-- **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review).
+- **Steps:** Company workspace synthesis (fundamentals, quality score, red flags, analyst-recommendation context — attributed third-party opinions with a vs-target readout (v0.58), valuation range, thesis when available) → record the decision in the journal (kind + rationale + evidence links) → (v0.64: link to thesis, plan the review).
 - **Screens:** Company workspace, decision journal.
 - **Budget:** ≤15 interactions for the recording flow (the thinking is not budgeted).
 - **Done well:** the decision has a date, a rationale, provenance — and will come back for outcome review (NS2 calibration).

@@ -211,12 +211,13 @@ fn reports_database_status() {
 
     assert_eq!(status.applied_migrations, super::expected_migration_count());
     assert_eq!(status.companies, 0);
-    // +2 market_data adapters seeded by 0071, -1 (twelvedata-eod) removed by
-    // 0076 (ADR 0082 amendment 2026-07-14: GPW is paid-plan-only there),
-    // +1 knf-short-selling seeded by 0080 (v0.55 T4, ADR 0069 decision 3),
-    // +1 internal brawler-red-flags (disabled) seeded by 0092 — owns the
-    // synthetic feed items derived red flags raise (v0.57 T7, ADR 0083 D8).
-    assert_eq!(status.source_adapters, 16);
+    // DB-seeded adapter rows must match the code registry, derived — never a
+    // hand-counted constant (guardrail 2026-07-19; content parity is guarded by
+    // `registry_matches_seeded_catalog`).
+    assert_eq!(
+        status.source_adapters,
+        crate::source_adapters::registry::REGISTRY.len() as i64
+    );
     // +4 queue worker/concurrency settings seeded by migration 0056 (ADR 0059).
     assert_eq!(status.settings, 26);
 }

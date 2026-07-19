@@ -1,0 +1,248 @@
+/* Analyst-recommendations cockpit panel (v0.58 A3, ADR 0073). Composes the design
+   system for the approved storyboard docs/mockups/v058-analyst-recommendations-
+   storyboard.html. Every grid/flex ancestor carries min-width: 0 so long firm /
+   analyst names wrap instead of forcing a page-level horizontal scrollbar; the
+   leading rating-chip sits in a FIXED-width slot so chips + direction sub-labels
+   stay column-aligned down the list (trailing/leading chips in fixed slots,
+   ui-authoring.md). A quiet read surface — no primary action anywhere. */
+
+.analyst-recs-panel {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.analyst-recs-attr {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  color: var(--muted);
+  font-size: var(--font-xs);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.analyst-recs-attr a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+/* Summary tiles: a row that wraps to a column at narrow panes. */
+.analyst-recs-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.analyst-recs-stat {
+  flex: 1 1 132px;
+  min-width: 0;
+  display: grid;
+  gap: var(--space-0);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-raised) 40%, transparent);
+}
+
+.analyst-recs-stat-value {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.analyst-recs-stat-label {
+  display: grid;
+  gap: var(--space-0);
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.analyst-recs-stat-attr {
+  color: var(--muted);
+}
+
+/* One recommendation row: fixed rating-chip slot · flexible main (target + firm) ·
+   fixed trailing side (date + PDF), so leading chips and trailing dates stay
+   column-aligned regardless of an absent optional PDF link. */
+.analyst-recs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.analyst-recs-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  min-width: 0;
+}
+
+.analyst-recs-row:last-child {
+  border-bottom: 0;
+}
+
+/* Fixed leading slot — reserved width so chips never migrate between rows. */
+.analyst-recs-rating-slot {
+  flex: none;
+  width: 6.5rem;
+  display: grid;
+  gap: var(--space-0);
+  justify-items: start;
+}
+
+.analyst-recs-dir {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+.analyst-recs-dir-up {
+  color: var(--success);
+}
+
+.analyst-recs-dir-down {
+  color: var(--danger);
+}
+
+.analyst-recs-main {
+  min-width: 0;
+  display: grid;
+  gap: var(--space-0);
+}
+
+.analyst-recs-target {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.analyst-recs-delta {
+  margin-left: var(--space-1);
+  font-weight: 400;
+  font-size: var(--font-xs);
+}
+
+.analyst-recs-delta-up {
+  color: var(--success);
+}
+
+.analyst-recs-delta-down {
+  color: var(--danger);
+}
+
+.analyst-recs-firm {
+  color: var(--text);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+}
+
+.analyst-recs-analyst {
+  color: var(--muted);
+}
+
+.analyst-recs-side {
+  flex: none;
+  display: grid;
+  gap: var(--space-0);
+  justify-items: end;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.analyst-recs-date {
+  color: var(--muted);
+  font-size: var(--font-sm);
+}
+
+.analyst-recs-pdf {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: var(--font-xs);
+}
+
+.analyst-recs-pdf-empty {
+  color: var(--muted);
+  font-size: var(--font-xs);
+}
+
+/* Empty state (frame 2): stacked lines, centered. */
+.analyst-recs-empty {
+  display: grid;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+.analyst-recs-empty-title {
+  font-size: var(--font-md);
+  color: var(--text);
+}
+
+/* Loading skeleton (frame 3): three shimmer bars, no layout shift. */
+.analyst-recs-skeleton {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+}
+
+.analyst-recs-skel {
+  height: 0.75rem;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
+}
+
+.analyst-recs-skel:nth-child(1) {
+  width: 70%;
+}
+
+.analyst-recs-skel:nth-child(2) {
+  width: 90%;
+}
+
+.analyst-recs-skel:nth-child(3) {
+  width: 80%;
+}
+
+.analyst-recs-foot {
+  padding-top: var(--space-2);
+  border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+/* Accent-colored small text (source + PDF links) fails WCAG AA on the light
+   palettes at --primary; the stronger accent clears it (ui-authoring.md styling
+   rules). Dark themes keep --primary (higher contrast there). */
+:root[data-theme="light"] .analyst-recs-attr a,
+:root[data-theme="light"] .analyst-recs-pdf {
+  color: var(--primary-strong);
+}
+
+/* Narrow pane (frame 7, ~230px): the row stacks vertically and the summary
+   tiles collapse to a single column; readability of target + firm at 230px. */
+@container pane (max-width: 419px) {
+  .analyst-recs-stat {
+    flex-basis: 100%;
+  }
+
+  .analyst-recs-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .analyst-recs-rating-slot {
+    width: auto;
+    grid-auto-flow: column;
+    justify-content: start;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .analyst-recs-side {
+    justify-items: start;
+    text-align: left;
+    grid-auto-flow: column;
+    gap: var(--space-2);
+  }
+}

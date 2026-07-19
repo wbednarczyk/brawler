@@ -99,7 +99,10 @@ decision-3 document-tier default-model change. It complements
 end-to-end (queue drain, terminal state) but does not measure accuracy.
 
 **Setup:** refresh the DB copy per `private/realdata/README.md`, then work on a throwaway copy
-so tests never mutate the master snapshot.
+so tests never mutate the master snapshot. **Never measure against the live DB file in place**
+(guardrail, 2026-07-19): a `?immutable=1` read ignores the WAL, so with the app running you see
+a stale pre-checkpoint state — two agents read wildly different row counts minutes apart this
+way. Copy + `wal_checkpoint(TRUNCATE)` first; query only the copy.
 
 **Env:**
 

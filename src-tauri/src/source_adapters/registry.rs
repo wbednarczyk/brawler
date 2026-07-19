@@ -257,6 +257,21 @@ pub const REGISTRY: &[SourceAdapterDescriptor] = &[
         rate_limit_policy: "Manual refresh plus daily scheduled refresh; one public akcjonariat page per tracked GPW company with a polite inter-request delay; the parsed table is written as a full-picture aggregator ownership basis (never enters the feed)",
         policy_note: "BiznesRadar public \"Akcjonariat\" pages as the automatic ownership BREADTH source (ADR 0072 §2c as amended 2026-07-16, probe 2026-07-16). Chosen over Bankier: BiznesRadar robots.txt is fully permissive and its host is independent of the primary Bankier official-report channel. Server-rendered tables with separate capital % and votes % (WZA); the GPW ticker resolves to the canonical slug via redirect. Each refresh writes the table as an aggregator ownership snapshot (visible source label, no per-row confirmation — a deterministic parse of a machine-published table); disclosed reports/ESPI witness it (reversed comparison) and divergences are recorded as diagnostics and a per-company witness result.",
     },
+    // Analyst recommendations (ADR 0073, plan v0.58). Catalog row seeded by
+    // migration 0100; runtime adapter wired in `runtime_adapters()` (slice A2).
+    SourceAdapterDescriptor {
+        id: crate::source_adapters::biznesradar_recommendations::ADAPTER_ID,
+        role: SourceRole::Primary,
+        display_name: crate::source_adapters::biznesradar_recommendations::DISPLAY_NAME,
+        source_url: crate::source_adapters::biznesradar_recommendations::SOURCE_URL,
+        source_type: "analyst_recommendation",
+        fetch_mode: "public_page",
+        markets: GPW,
+        visibility: SourceVisibility::Optional,
+        default_poll_interval_seconds: 86_400,
+        rate_limit_policy: "Manual refresh plus daily scheduled refresh; one public rekomendacje-spolki page per tracked GPW company with a polite inter-request delay; append-only recommendation history",
+        policy_note: "BiznesRadar public \"Rekomendacje\" pages as an analyst-recommendation source (ADR 0073), displayed strictly as attributed third-party opinion, never advice. robots.txt is fully permissive for /rekomendacje-spolki/; the GPW ticker redirects to the canonical slug. The free page carries the most recent items only — our own history accumulates append-only from ingestion start. Each new recommendation emits a recommendation_change signal.",
+    },
     SourceAdapterDescriptor {
         id: crate::source_adapters::gpw_espi_ebi::ADAPTER_ID,
         role: SourceRole::Witness,

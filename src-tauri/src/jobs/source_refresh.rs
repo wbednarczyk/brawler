@@ -329,6 +329,12 @@ fn runtime_adapters() -> Vec<RuntimeAdapter> {
             behavior: RefreshBehavior::Fetcher(&sa::biznesradar_ownership::BiznesRadarOwnershipAdapter),
         },
         RuntimeAdapter {
+            id: sa::biznesradar_recommendations::ADAPTER_ID,
+            behavior: RefreshBehavior::Fetcher(
+                &sa::biznesradar_recommendations::BiznesRadarRecommendationsAdapter,
+            ),
+        },
+        RuntimeAdapter {
             id: sa::gpw_company_registry::ADAPTER_ID,
             behavior: RefreshBehavior::Fetcher(&sa::gpw_company_registry::GpwCompanyRegistryRefresh),
         },
@@ -845,6 +851,8 @@ mod tests {
         //       joins the sweep (it reconciles against Bankier; it does NOT ingest).
         //   v0.56 T4: biznesradar-akcjonariat — the ownership breadth source joins
         //       the sweep (writes aggregator stakes; never ingests into the feed).
+        //   v0.58 A2: biznesradar-rekomendacje — the analyst-recommendation source
+        //       joins the sweep (feeds the append-only recommendation store).
         use super::runtime_adapters;
 
         let members: Vec<&str> = runtime_adapters()
@@ -862,6 +870,7 @@ mod tests {
                 "bankier-market-rss",
                 "knf-short-selling",
                 "biznesradar-akcjonariat",
+                "biznesradar-rekomendacje",
                 "yahoo-eod",
                 "gpw-espi-ebi",
             ],

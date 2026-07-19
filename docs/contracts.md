@@ -689,6 +689,36 @@ Per-company read model for the KNF short-selling register ([ADR 0069](adr/0069-s
 
 Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `list_short_positions`. A company with no register presence reads back the empty view (`positions: []`, `lastExit: null`, zero aggregate/delta). Surfaced by the palette-only `shortPositions` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)).
 
+## Analyst Recommendations
+
+Per-company read model for sell-side analyst recommendations ([ADR 0073](adr/0073-analyst-recommendations-tracking.md), `v0.58`). Attributed third-party opinions — **never advice**: every row carries firm + date inseparably from each number, ratings are stored/displayed verbatim in the source vocabulary, and nothing here feeds scorecards or app-generated analysis. Read-only: the append-only history is populated by the `biznesradar-rekomendacje` adapter; storage rules (natural-key dedupe, direction/prev derivation, `recommendation_change` signal emission) are canonical in [Data Model § Analyst Recommendations](data-model.md#analyst-recommendations).
+
+`get_analyst_recommendations(companyId)` returns the panel view:
+
+```json
+{
+  "companyId": "company_gpw_rec",
+  "entries": [
+    {
+      "firm": "Noble Securities", "analyst": "Mateusz Chrzanowski",
+      "rating": "akumuluj", "ratingPrev": "trzymaj", "direction": "upgrade",
+      "targetPrice": "250.00", "targetCurrency": "PLN", "targetPrev": "230.00",
+      "priceAtIssue": "232.00", "publishedAt": "2026-06-18T08:40:00",
+      "reportUrl": "https://.../noble.pdf",
+      "sourceUrl": "https://www.biznesradar.pl/rekomendacje-spolki/REC"
+    }
+  ],
+  "latestTarget": { "firm": "Noble Securities", "targetPrice": "250.00", "targetCurrency": "PLN", "publishedAt": "2026-06-18T08:40:00" },
+  "lastRefreshedAt": "2026-07-19T08:12:00Z"
+}
+```
+
+- `entries` is the full local history, **newest-first by `publishedAt`** (never `createdAt`). `publishedAt` is an unqualified **local wall-clock** ISO (Warsaw, no `Z`) — display it as a plain local date, never convert through UTC. Money/target figures are decimal-exact **TEXT**. Row optionals (`analyst`, `ratingPrev`, `targetPrice`, `targetCurrency`, `targetPrev`, `priceAtIssue`, `reportUrl`) are serialized as `null` when absent (not omitted). `direction` ∈ `upgrade | downgrade | initiate | reiterate`, derived at ingest against the latest prior same-firm entry.
+- `latestTarget` (optional, omitted when no entry has a target) is the newest target-carrying entry, for the attributed "vs target" readout beside Price context (`PriceContextSection`) — always shown with firm + date.
+- `lastRefreshedAt` (optional, omitted before the adapter has ever run) mirrors `source_adapters.last_success_at` for `biznesradar-rekomendacje`, for the footer's honest refresh line — never faked.
+
+Typed command ([ADR 0070](adr/0070-typed-command-error-envelope.md) `CommandError`): `get_analyst_recommendations`. A company with no ingested recommendations reads back the empty view (`entries: []`, `latestTarget`/`lastRefreshedAt` omitted). Surfaced by the palette-only, opt-in `analystRecommendations` cockpit panel ([UI IA § Company Cockpit Dashboard Panels](ui-information-architecture.md)); each new entry also emits a `recommendation_change` signal (feed/Today/digests/alerts).
+
 ## Research Cockpit
 
 The research cockpit ([ADR 0053](adr/0053-dockview-layout-pilot.md)): the dockview docking shell. The only persisted state is **named saved layouts** (`cockpit_layouts`); the panel arrangement itself is live UI state. Decision 3A: layouts live in SQLite (not `localStorage`), with versioned dockview geometry and a safe fallback.
@@ -2912,12 +2942,13 @@ Initial `refresh_sources` behavior:
 - Refresh commands must not prune old feed items from any source.
 - Automated tests continue to use bundled GPW listing test samples or injected fetchers; default checks must not require live network access.
 
-Initial `prune_old_feed_items` behavior:
+`prune_old_feed_items` behavior:
 
 - Runs as a separate asynchronous maintenance command, not as part of any source refresh path.
-- Deletes unsaved feed items older than the requested retention window, initially scheduled by the desktop runtime once per day with a 30-day retention window.
-- Settings exposes the current cleanup status, retention window, interval, and protected item class. Last-run and enable/configuration controls remain later v1 hardening work.
-- Settings exposes the last cleanup timestamp and deleted item count for the current app session after the background cleanup command runs.
+- Deletes unsaved feed items older than the requested retention window (30-day default).
+- **Manual-only (owner decision 2026-07-19).** The command is invoked ONLY by an explicit user action ("Clean up feed now" in Settings → Sources). There is no automatic timer — the app never deletes feed items on its own. (The prior once-per-day auto-prune silently removed ~3,900 items, including researched periodic reports; the future retention mechanism is tracked as backlog card `cc674d4`.)
+- Settings exposes cleanup as Off (no automatic run), the manual retention window, the protected item class, and the manual "Clean up feed now" action. There is no cleanup-interval control.
+- Settings exposes the last cleanup timestamp and deleted item count for the current app session after the manual cleanup command runs.
 - Preserves saved feed items regardless of age.
 - Removes dependent feed item company links, attachments, and AI analysis rows before deleting pruned feed items.
 - Returns retention days, deleted item count, and prune timestamp.

@@ -18,6 +18,9 @@ const CATEGORY_TONE: Record<CompanySignalCategory, StatusChipTone> = {
   auditor_opinion: "danger",
   short_position_change: "warn",
   major_holdings_change: "accent",
+  // A neutral/info tone: a third-party opinion change is context, not an app
+  // warning (ADR 0073 — never advice).
+  recommendation_change: "neutral",
   report_delay: "danger",
   fund_exit: "warn",
   score_deterioration: "warn",

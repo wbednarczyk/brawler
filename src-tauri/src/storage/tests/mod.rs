@@ -9,6 +9,7 @@ use crate::source_adapters::gpw_company_registry::ADAPTER_ID as GPW_REGISTRY_ADA
 use crate::source_adapters::newconnect_company_directory::ADAPTER_ID as NEWCONNECT_DIRECTORY_ADAPTER_ID;
 
 mod ai_analysis;
+mod analyst_recommendations;
 mod attention;
 mod autopilot;
 mod backup_pool;

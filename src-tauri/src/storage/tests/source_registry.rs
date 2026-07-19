@@ -25,11 +25,18 @@ fn lists_seeded_source_adapters() {
         .list_source_adapters()
         .expect("source adapters should list");
 
-    // 8 user-visible + gpw-espi-ebi, which v0.55 T3 (ADR 0069 D2) promoted from
-    // Developer to Optional so the reconciliation witness shows as a health
-    // mechanism on the normal-user Sources screen, + biznesradar-akcjonariat, the
-    // v0.56 T4 ownership breadth source (ADR 0072 §2c amended; Optional, primary).
-    assert_eq!(adapters.len(), 10);
+    // The DB-seeded rows must match the code registry's non-developer set
+    // (guardrail 2026-07-19: expected counts are DERIVED from `REGISTRY`, never
+    // hand-counted — a new adapter previously required bumping three scattered
+    // constants, and fan-out agents missed one). Registry↔seed *content* parity
+    // is guarded separately by `registry_matches_seeded_catalog`.
+    let non_developer_expected = crate::source_adapters::registry::REGISTRY
+        .iter()
+        .filter(|descriptor| {
+            descriptor.visibility != crate::source_adapters::registry::SourceVisibility::Developer
+        })
+        .count();
+    assert_eq!(adapters.len(), non_developer_expected);
 
     assert!(adapters
         .iter()
@@ -84,13 +91,28 @@ fn lists_seeded_source_adapters() {
     assert!(knf_shorts.enabled);
     assert_eq!(knf_shorts.visibility, "optional");
 
+    // analyst-recommendation source: BiznesRadar Rekomendacje (v0.58 A1, ADR 0073).
+    let recommendations = adapters
+        .iter()
+        .find(|adapter| adapter.id == "biznesradar-rekomendacje")
+        .expect("biznesradar-rekomendacje adapter should exist");
+    assert_eq!(recommendations.display_name, "BiznesRadar Rekomendacje");
+    assert_eq!(recommendations.source_type, "analyst_recommendation");
+    assert_eq!(recommendations.fetch_mode, "public_page");
+    assert_eq!(recommendations.markets, vec!["GPW".to_owned()]);
+    assert_eq!(recommendations.role, "primary");
+    assert_eq!(recommendations.visibility, "optional");
+
     let developer_adapters = state
         .list_source_adapters_with_developer(true)
         .expect("developer source adapters should list");
 
-    // +1 internal brawler-red-flags (developer-only, disabled) — the derived
-    // red-flag synthetic-feed-item owner seeded by 0092 (v0.57 T7, ADR 0083 D8).
-    assert_eq!(developer_adapters.len(), 16);
+    // Full catalog = the code registry, derived (guardrail 2026-07-19 — see the
+    // non-developer assertion above).
+    assert_eq!(
+        developer_adapters.len(),
+        crate::source_adapters::registry::REGISTRY.len()
+    );
 
     let report_adapter = developer_adapters
         .iter()

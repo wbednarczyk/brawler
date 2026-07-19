@@ -23,6 +23,7 @@ import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyHealth } from "../../api/generated/CompanyHealth";
 import type { InsiderOverview } from "../../api/insider";
 import type { RedFlagsView } from "../../api/redFlags";
+import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type { CommandError } from "../../api/generated/CommandError";
 
 export type { MockRuntimeControls, InvocationPhase, InvocationMatch, PendingInvocation } from "./controlledAsync";
@@ -612,6 +613,18 @@ function buildHandlers(): Record<string, Handler> {
         : view;
       if (d.redFlagsByCompany) d.redFlagsByCompany[companyId] = next;
       return next;
+    },
+
+    // --- Analyst recommendations (v0.58 A3, ADR 0073) ---
+    // Attributed third-party opinions; a company with no seed reads back the empty
+    // view (no entries, no latest target, no refresh) — the adapter-populated
+    // register is empty until a refresh ingests a page.
+    get_analyst_recommendations: (d, a) => {
+      const companyId = str(unwrap(a).companyId) ?? "";
+      return (
+        d.analystRecommendationsByCompany?.[companyId] ??
+        ({ companyId, entries: [] } satisfies AnalystRecommendationsView)
+      );
     },
 
     // --- Insider overview (v0.57 T6, ADR 0083 D7) ---

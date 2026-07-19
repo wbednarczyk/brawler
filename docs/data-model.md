@@ -329,7 +329,7 @@ Fields:
 
 Rules:
 
-- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `own_shares` (own-share/treasury transactions, purchases and sales; generalized from `buyback` in migration 0044), `guidance_change`, `general_meeting`, `auditor_opinion` (auditor red flags — qualified opinion / disclaimer / negative opinion / going-concern emphasis; migration 0079, ADR 0069), `short_position_change` (KNF short-selling register changes; migration 0080, ADR 0069 — emitted directly by the KNF adapter, empty patterns), `other`.
+- Seed keys: `insider_transaction` (MAR Art. 19), `dividend`, `profit_warning`, `significant_contract`, `own_shares` (own-share/treasury transactions, purchases and sales; generalized from `buyback` in migration 0044), `guidance_change`, `general_meeting`, `auditor_opinion` (auditor red flags — qualified opinion / disclaimer / negative opinion / going-concern emphasis; migration 0079, ADR 0069), `short_position_change` (KNF short-selling register changes; migration 0080, ADR 0069 — emitted directly by the KNF adapter, empty patterns), `recommendation_change` (analyst-recommendation revisions; migration 0100, ADR 0073 — emitted directly by the recommendation adapter, empty patterns), `other`.
 - `rule_definition_json` is consumed by the interpretation-layer `RuleClassifier` ([ADR 0035](adr/0035-two-layer-ai-and-local-interpretative-layer.md)). Shape: `{ "patterns": [..], "confidence": 0.0..1.0 }`, where any case-insensitive substring match against the filing text selects the category. An empty `patterns` list never rule-matches — `other` carries no patterns and is reachable only via the AI fallback.
 - `derives_event = 1` marks categories that materialize a derived `company_events` row when the filing carries a future date. Only `dividend` and `general_meeting` derive events (ADR 0034); all other seed categories are `derives_event = 0`.
 - The registry is source-neutral so a future GPW re-enable feeds the same classifier.
@@ -369,6 +369,32 @@ Rules:
 - Exit detection treats the current register as complete for positions ≥ 0.5%: a stored live position whose holder is absent from a fresh snapshot is marked `exited`.
 
 **Read model** (`v0.55` T4b): `short_positions_view(company_id)` composes the cockpit panel view (contract in [Contracts § Short Positions (KNF)](contracts.md#short-positions-knf)) — never a stored projection. Active positions (aggregate = sum of active `net_position_pct`), the change history newest-first by `position_date`, the most recent remembered exit, and `delta_30d_pp` = the **signed sum of in-window event deltas** (entered `+to`, increased/decreased `to−from`, exited `−from`). The signed-delta sum is used because a clean "aggregate 30 days ago" is not reconstructable from the current mirror alone (only the latest per-holder value is stored); it equals `aggregate_now − aggregate_30d_ago` since the ingester writes exactly one event per detected change. The 30-day window is anchored to the read's UTC date.
+
+### Analyst Recommendations
+
+Sell-side recommendations (rating, target price, issuing firm) for tracked GPW companies, kept strictly as attributed third-party opinions — never as advice ([ADR 0073](adr/0073-analyst-recommendations-tracking.md)). Fed by the `biznesradar-rekomendacje` analyst-recommendation adapter (migration 0100; runtime adapter slice A2). The free source page carries only the most recent items, so history accumulates **append-only from ingestion start** — it cannot be backfilled.
+
+`analyst_recommendations` (append-only recommendation history, one row per issued recommendation):
+
+- `id` (deterministic — sha256 of the natural key)
+- `company_id` (canonical company; FK CASCADE)
+- `firm` (issuing brokerage, verbatim) / `analyst` (nullable)
+- `rating` (source vocabulary preserved **verbatim**, e.g. `akumuluj`) / `rating_prev` (nullable — the same-firm prior rating, derived)
+- `direction` — `upgrade` | `downgrade` | `initiate` | `reiterate` (CHECK)
+- `target_price` / `target_currency` / `target_prev` (nullable; decimal-exact TEXT, the repo convention)
+- `price_at_issue` (nullable; decimal-exact TEXT)
+- `published_at` (ISO-8601) / `source_url` / `report_url` (nullable broker PDF)
+- `created_at` / `updated_at`
+- `UNIQUE(company_id, firm, published_at, rating, COALESCE(target_price, ''))` — the natural key (ADR 0073 decision 4); a per-`(company_id, published_at DESC)` index backs the read path.
+
+Rules:
+
+- **Natural-key dedupe**: `INSERT … ON CONFLICT DO NOTHING` on the deterministic id + the natural-key UNIQUE index. Re-ingesting the same page is a no-op — no new rows, feed items, or signals.
+- **Direction derivation**: the source page has no "rating before"; `direction`, `rating_prev` and `target_prev` are derived at ingest by comparing each entry against the latest prior stored entry of the **same firm** (`published_at` order). No prior → `initiate`. Known ratings on both sides compare by rank (`kupuj` > `akumuluj` > `trzymaj` > `redukuj` > `sprzedaj`): higher → `upgrade`, lower → `downgrade`, equal → `reiterate` unless the target moved (then follow the target). A rating outside the known vocabulary falls back to the target direction, else `reiterate`.
+- Each **newly** inserted recommendation writes one `feed_items` row (`Official report` type, `biznesradar-rekomendacje` adapter) and one `confirmed` `recommendation_change` `company_signals` row, firing matching `signal_category` alert rules ([ADR 0068](adr/0068-attention-routing.md)) on the same path as the KNF short-position ingester.
+- Companies are pre-resolved by the adapter (BiznesRadar redirects the GPW ticker to its canonical slug); the ingester takes a `company_id` directly.
+
+**Read models**: `list_analyst_recommendations(company_id)` — the history newest-first by `published_at` (never `created_at`); `latest_target(company_id)` — the newest entry that carries a target price (firm + date + target), for the attributed "vs target" readout beside market data.
 
 ### Source Reconciliation (ESPI/EBI witness)
 

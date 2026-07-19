@@ -47,6 +47,20 @@ fact is either validated or flagged — **never silently wrong**.
    already-discovered structured packages (today it fetches PDFs and skips them).
 2. **Structured xHTML "wybrane dane finansowe"** (some interims) — deterministic HTML-table parse via the
    existing xHTML seam.
+   - **2a. ESPI cover-note "WYBRANE DANE FINANSOWE" (`EspiCoverNote`)** — *Status: planned (spike-adopted
+     2026-07-19, card `76a4636`)*. The same mandated table, taken not from a fetched attachment but from
+     the plain-text body of the periodic-report komunikat **already ingested** by the Bankier primary —
+     zero-fetch, available the day of publication, instant breadth for companies with no fetched
+     documents. Slots **below** `StructuredXhtml` (issuer cover-note figures are untagged, so they never
+     outrank iXBRL/xHTML) and above `Pdf`. Deterministic row grammar (roman-numeral or custom-label rows;
+     tys/mln unit headers; minus and parenthesis signs) with the **PLN↔EUR cross-check as the emit gate**:
+     a concatenated digit run is split only when the form's own FX-footnote rate confirms exactly one
+     split — abstain otherwise. Extraction runs **at ingest time** and persists via
+     `fundamentals_provenance` with a feed-item citation — mandatory, because feed retention can delete
+     the carrier text (measured 2026-07-19: a prune removed 448/451 WDF bodies). Known limits: headline
+     lines only (no health-score depth — ESEF/PDF stay necessary); `Liczba akcji` scale depends on a
+     per-row `(w tys.)` annotation and is treated conservatively. Spike evidence: 15-doc hand-labeled
+     corpus, 347/347 recall and precision, 0 false values (`private/realdata/spikes/espi-wdf/RESULTS.md`).
 3. **Deterministic PDF parser** (interim full statements) — a curated **Polish label → `metric_key`**
    dictionary + a value parser (current-period column selection, unit multiplier tys/mln, sign =
    parentheses, note-ref/dot-leader stripping).
@@ -151,3 +165,15 @@ attachments from `metadata_only` to `pending`), the corresponding `.xades` signa
 and autopilot detection prefers the structured document on a disclosure-date tie against a PDF sibling.
 **ZIP/ESEF package attachments (the multi-file taxonomy bundle) remain out of scope** — only single-file
 `.xhtml` links are handled; unpacking a ZIP package is a separate follow-up.
+
+**Amendment (2026-07-19) — `EspiCoverNote` tier adopted from the espi-wdf spike** (v0.58 spike card
+`bdda6cf`, owner decision in-session). The mandated ESPI "WYBRANE DANE FINANSOWE" cover table, already
+present as plain text in ingested Bankier periodic-report komunikaty, becomes a planned tier `2a`
+(decision 1 above): zero-fetch, publication-day breadth, strictly below `StructuredXhtml` in trust.
+Measured on a 15-document hand-labeled corpus from the owner DB (347 facts, pass-2 verified): recall
+and precision 347/347, zero false values; 33 ambiguous digit-run splits all resolved by the form's own
+PLN↔EUR rate, which becomes the emit gate (abstain over guess). Implementation is a separate card
+(`76a4636`, parent epic scope): 1:1 Rust port of the measured parser pinned to the same ground truth,
+ingest-time hook in the Bankier adapter, provenance citation of the feed item. The ingest-time
+requirement is load-bearing: the same session measured the app's (since-disabled) automatic feed prune
+deleting 448 of 451 WDF carrier bodies — lazily reading old feed text is not a viable route.

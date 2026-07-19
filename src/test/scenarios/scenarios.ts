@@ -83,6 +83,9 @@ import {
   makeOwnershipOverview,
   makeCompanyHealth,
   makeInsiderOverview,
+  makeAnalystRecommendationsView,
+  makeRecommendationSignal,
+  companyId,
   makeReportDocument,
   makeReportPreparation,
   makeReportSeasonEntry,
@@ -141,6 +144,7 @@ import type { OwnershipOverview } from "../../api/ownership";
 import type { CompanyHealth } from "../../api/companyHealth";
 import type { InsiderOverview } from "../../api/insider";
 import type { RedFlagsView } from "../../api/redFlags";
+import type { AnalystRecommendationsView } from "../../api/analystRecommendations";
 import type {
   PreReportCard,
   ReportPreparation,
@@ -229,6 +233,10 @@ export interface ScenarioData {
   // company with no entry reads back the empty view (no active flags, empty
   // history). `acknowledge_red_flag` mutates the matching entry in place.
   redFlagsByCompany?: Record<string, RedFlagsView>;
+  // Analyst-recommendations panel view per company (ADR 0073, v0.58 A3). Optional
+  // seed: a company with no entry reads back the empty view (no entries, no latest
+  // target, no refresh — the "source published nothing yet" state).
+  analystRecommendationsByCompany?: Record<string, AnalystRecommendationsView>;
   // Structured-first extraction provenance (ADR 0061) — optional seed: legacy
   // facts have no row, so the tier/validation badge + drift card simply don't
   // render. A provenance-seeded scenario exercises that UI (badges + the
@@ -341,7 +349,7 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
   for (const spec of specs) {
     for (let i = 0; i < density.feedPerCompany; i += 1) feedItems.push(makeFeedItem(spec, i));
     for (let i = 0; i < density.notebooksPerCompany; i += 1) notebookEntries.push(makeNotebookEntry(spec, i));
-    signals.push(makeSignal(spec, true), makeSignal(spec, false));
+    signals.push(makeSignal(spec, true), makeSignal(spec, false), makeRecommendationSignal(spec));
     events.push(makeEvent(spec));
     transcriptJobs.push(makeTranscriptJob(spec));
     for (let i = 0; i < density.segmentsPerTranscript; i += 1) transcriptSegments.push(makeTranscriptSegment(spec, i));
@@ -401,6 +409,9 @@ function buildPopulated(specs: readonly CompanySpec[], density: Density): Scenar
     ownershipOverviews: deep.map(makeOwnershipOverview),
     companyHealthReports: deep.map(makeCompanyHealth),
     insiderOverviews: deep.map(makeInsiderOverview),
+    analystRecommendationsByCompany: Object.fromEntries(
+      deep.map((spec) => [companyId(spec), makeAnalystRecommendationsView(spec)]),
+    ),
     reportPreparations: deep.map(makeReportPreparation),
     shortPositions: [],
     shortPositionEvents: [],
