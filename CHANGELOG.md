@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.58.0 - 2026-07-19
+
+Analyst recommendations: Brawler now tracks **what sell-side firms say about
+your companies** — strictly as attributed, quoted third-party opinions, never
+as the app's own advice.
+
+### Added
+
+- **Analyst recommendations panel** (opt-in, from the cockpit panel palette):
+  each entry shows the rating **verbatim** ("kupuj", "akumuluj", "trzymaj",
+  "redukuj", "sprzedaj") with an upgrade/downgrade/new/reiterated marker versus
+  the same firm's prior entry, the target price with % vs the current close,
+  the analyst + issuing firm, the publication date, and a link to the broker's
+  PDF report. A summary strip shows the latest target (always with its firm and
+  date), local-history depth, and the last change.
+- **Append-only local history**: the free BiznesRadar page only carries the few
+  most recent recommendations, so Brawler accumulates its own revision history
+  from the day tracking starts — the panel footer says this honestly. Daily,
+  polite, robots-clean ingestion for the whole watchlist (first real run:
+  93 recommendations across 41 companies).
+- **`recommendation_change` signal**: every new or changed recommendation lands
+  in the feed with a badge, reaches Today and the morning briefing, and can
+  drive alert rules like any other signal category.
+- **"Vs target" readout** beside the price context — target price and distance
+  from the current close, always naming the firm and date beneath the number,
+  with a jump into the full panel. A bare, unattributed number never appears.
+- **ESPI "Wybrane dane finansowe" tier-0 verdict** (research spike, adopted):
+  the mandatory cover table of every ESPI periodic report — already flowing
+  through the feed — was measured on a 347-value hand-labeled corpus at
+  **100% recall and precision with zero false values**, using the form's own
+  PLN↔EUR columns as a built-in checksum. Adopted as a planned extraction tier
+  (`EspiCoverNote`, ADR 0061 amendment); implementation tracked separately.
+
+### Changed
+
+- **Automatic feed cleanup is disabled** (owner decision): the previous 30-day
+  auto-prune silently deleted old feed items — including periodic reports used
+  for research. Nothing is deleted on a timer anymore; cleanup is a manual
+  "Clean up feed now" action in Settings → Sources, and the settings section
+  now reports the true state. A redesigned, safe retention mechanism is tracked
+  as a backlog card.
+
+### Fixed
+
+- Holder-name canonicalization is now idempotent for Unicode characters whose
+  uppercase form decomposes (found by its own property test; counterexample
+  pinned).
+- Adapter-count test assertions are derived from the source registry instead of
+  hand-counted constants (adding a source no longer requires bumping scattered
+  numbers).
+
 ## v0.57.0 - 2026-07-18
 
 Company health: the app now **raises "something smells here" on its own** for
