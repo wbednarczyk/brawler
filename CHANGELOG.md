@@ -1,5 +1,76 @@
 # Changelog
 
+## v0.59.0 - 2026-07-22
+
+The biggest philosophical release since the first scaffold: **the in-app AI
+analysis layer is gone, and financial data became a full automaton.** Brawler is
+now a deterministic research substrate — numbers simply arrive, honestly
+labeled, with nothing waiting for your confirmation — and intelligence comes
+from **your own agent** over the local MCP port (BYOA: bring your own agent).
+
+### Changed
+
+- **The in-app AI analysis layer is retired** (ADR 0084). All eleven routed AI
+  capabilities — feed analysis, research briefs/digests, KPI and claim
+  extraction, signal/event/ownership classification fallbacks, qualitative
+  assessment, briefing narration — plus the provider routing, failover pools,
+  provider adapters and their API keys are removed. The only AI left in the app
+  is **YouTube transcription** (Gemini, data acquisition). Saved outputs from
+  the AI era remain readable as your data. The morning briefing is a fully
+  deterministic composed list.
+- **Core financial figures now arrive automatically, review-free** (ADR 0086).
+  BiznesRadar is the **primary source for core KPIs**: once a day Brawler
+  politely reads three public report pages per tracked company (income
+  statement, balance sheet, cash flow) and ingests **every period column** they
+  carry — a newly tracked company gets its whole reported history on day one.
+  Issuer filings (annual ESEF, interim ESPI "Wybrane dane finansowe" cover
+  tables, structured/positional xHTML) always outrank the aggregator and take
+  over its slots; **your manual edits are untouchable**. Facts land
+  `confirmed` immediately — the pending/ratification workflow is gone; origin
+  is a provenance label with a citation down to the source row, never a to-do.
+- **PDFs are for humans now.** The deterministic PDF fact-extraction arm is
+  deleted (every issuer's layout was a separate fight and a source of silent
+  scale errors). PDF text is still read for reporting-period detection and
+  insider/ownership attachments, and a PDF report's Today card honestly says
+  "core figures arrive from the aggregator source" instead of framing the
+  by-design gap as a failure.
+- **Cross-source witnessing is reversed.** Where the issuer's filing (or your
+  manual entry) holds a figure and the aggregator disagrees, an informational
+  disagreement entry with a plain-language diff is recorded on the Coverage
+  panel's Flagged periods — nothing is blocked or overwritten. Empty/zero
+  aggregator cells are never treated as data.
+
+### Added
+
+- **`rebuild_fundamentals`** headless command: repopulates all fundamentals
+  from sources (aggregator pull + full ESEF re-extraction + WDF cover-note
+  re-scan) with a per-tier verdict — used for the one-off v0.59 data rebuild.
+- **Mapping guardrails** that make metric-semantics errors impossible to ship
+  silently: a source-scan gate proving every emittable metric key has a catalog
+  definition; a golden "source vocabulary contract" pinning every row of the
+  real BiznesRadar pages as mapped-or-explicitly-skipped; and a cross-company
+  "mapping suspect" alarm when one metric disagrees at many companies at once.
+  Both hard gates caught real bugs on their first run.
+- **Parent-attributable metrics** (equity and net profit attributable to the
+  parent's shareholders, discontinued-operations result, inventories) as
+  first-class catalog KPIs with Polish/English labels — BiznesRadar's
+  parent-equity row no longer masquerades as group equity.
+
+### Fixed
+
+- 22 verified code-review findings across the new pipeline, including:
+  BiznesRadar's parent-equity row silently understating group `total_equity`
+  (the root cause of a cross-check failure that discarded a whole ESEF
+  filing); 16 cover-note metric keys whose facts silently vanished for lack of
+  catalog definitions; glued quarter headers (`3Q2024`) collapsing to H1;
+  aggregator-sourced priors vetoing issuer filings in the comparative
+  cross-check; a contradicted ESEF set surfacing as a silent "empty" instead
+  of a flagged, reviewable outcome; ~9,000 per-fact write transactions per
+  daily pull batched down to ~150.
+- The company KPI catalog now always includes the shared canonical definitions
+  (the fact matrix no longer invents placeholder English labels or loses
+  per-share formatting), with concise Polish labels for the new metrics.
+
 ## v0.58.0 - 2026-07-19
 
 Analyst recommendations: Brawler now tracks **what sell-side firms say about
